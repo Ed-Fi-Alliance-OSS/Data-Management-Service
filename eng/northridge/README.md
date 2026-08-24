@@ -85,12 +85,20 @@ ARTIFACT=EdFi_DMS_Northridge_v80_20260819_PG
 # 1. Download and verify. A checksum mismatch means stop -- do not restore a partial download.
 mkdir -p "$ART" && cd "$ART"
 curl -O "https://odsassets.blob.core.windows.net/public/Northridge/${ARTIFACT}.7z"
-echo "49129363581eab342146e8dd9a4da95dd6f7b035f0c39ee39c9691176cd856a0  ${ARTIFACT}.7z" | sha256sum -c -
+#    The status is checked rather than printed. This recipe carries no `set -e`, so on its own
+#    sha256sum reports FAILED and a pasted run carries straight on into the extraction and the
+#    restore with a partial, wrong, or left-over-from-last-time archive.
+echo "49129363581eab342146e8dd9a4da95dd6f7b035f0c39ee39c9691176cd856a0  ${ARTIFACT}.7z" | sha256sum -c - || \
+  { echo "archive checksum failed -- delete ${ARTIFACT}.7z and download it again; do NOT continue"; exit 1; }
 
-# 2. Extract, in a container so no host 7-Zip is needed. The inner dump is 888,167,269 bytes with
-#    sha256 08c03fe279e7ab10516f3e29c8009dca76b154fe67b5b0aaaad31409035d4167.
+# 2. Extract, in a container so no host 7-Zip is needed. The inner dump is 888,167,269 bytes.
 docker run --rm -v "$PWD:/w" alpine sh -c \
   "apk add --no-cache p7zip >/dev/null 2>&1 && cd /w && 7z x -y ${ARTIFACT}.7z >/dev/null"
+#    Checked for the same reason as the archive, and because this is the file the restore
+#    actually reads: a failed extraction leaves whatever dump was already in $ART, and a stale
+#    one satisfies every later step while restoring the wrong dataset.
+echo "08c03fe279e7ab10516f3e29c8009dca76b154fe67b5b0aaaad31409035d4167  ${ARTIFACT}.dump" | sha256sum -c - || \
+  { echo "extracted dump checksum failed -- delete ${ARTIFACT}.dump and extract it again; do NOT continue"; exit 1; }
 DUMP="$ART/${ARTIFACT}.dump"
 
 # 3. REQUIRED: stage the schema set as CORE ONLY, before bootstrap.
@@ -145,17 +153,33 @@ pwsh -NoProfile -File ./prepare-dms-schema.ps1 -ApiSchemaPath "$ART/apischema-co
 pwsh -NoProfile -File ./bootstrap-local-dms.ps1 -DatabaseEngine postgresql -IdentityProvider self-contained
 
 # 5. Stop the applications, then restore. Nothing may hold a connection during the restore.
-#    Read the live values rather than assuming defaults.
+#    Read the live values rather than assuming defaults. The superuser name is one of them:
+#    postgresql.yml sets POSTGRES_USER: ${POSTGRES_USER:-postgres}, so it is a supported
+#    override, and the repository's own scripts resolve it rather than assuming the default. A
+#    stack that uses one must not meet a hard-coded superuser here, nor a `username=postgres`
+#    in the connection string built in step 9 -- the first fails outright, and the second
+#    registers a data store that saves cleanly and cannot connect.
 DB=$(docker exec dms-postgresql printenv POSTGRES_DB_NAME)
+DBUSER=$(docker exec dms-postgresql printenv POSTGRES_USER)
+test -n "$DB" -a -n "$DBUSER" || \
+  { echo "could not read the database name and superuser from the dms-postgresql container"; exit 1; }
 docker stop ed-fi-api ed-fi-api-config-service
 docker cp "$DUMP" dms-postgresql:/tmp/nr.dump
-docker exec dms-postgresql psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
-  -c "DROP DATABASE IF EXISTS \"$DB\";" -c "CREATE DATABASE \"$DB\";"
+
+#    Recreated with dropdb/createdb rather than psql -c "DROP DATABASE ...", so the name travels
+#    as a command argument and is never parsed as SQL. This is the pattern the repository's own
+#    eng/docker-compose/postgresql-init.sh uses to create the same database, for the same reason:
+#    a supported POSTGRES_DB_NAME is not required to be a well-behaved SQL identifier. `--` also
+#    protects a name that begins with a dash.
+docker exec dms-postgresql dropdb -U "$DBUSER" --maintenance-db=postgres --if-exists -- "$DB" || \
+  { echo "could not drop database $DB -- something still holds a connection to it"; exit 1; }
+docker exec dms-postgresql createdb -U "$DBUSER" --maintenance-db=postgres -- "$DB" || \
+  { echo "could not create database $DB"; exit 1; }
 
 #    --exit-on-error stops at the first failed archive entry. Without it pg_restore skips the entry,
 #    carries on to the end of the archive, and summarises what it swallowed as
 #    "errors ignored on restore: N" -- leaving a database that is missing tables you never saw named.
-docker exec dms-postgresql pg_restore -U postgres -d "$DB" --no-owner --no-privileges \
+docker exec dms-postgresql pg_restore -U "$DBUSER" -d "$DB" --no-owner --no-privileges \
   --exit-on-error /tmp/nr.dump > "$ART/restore.log" 2>&1
 RC=$?
 docker exec -u 0 dms-postgresql rm -f /tmp/nr.dump
@@ -196,7 +220,7 @@ echo "pg_restore finished with no reported errors"
 #    exit (3), but this recipe carries no `set -e`, so nothing stops on its own: without the check a
 #    failed content verification prints its ERROR and a pasted recipe carries straight on into step 7,
 #    which is the one outcome this block exists to prevent.
-if ! docker exec -i dms-postgresql psql -U postgres -d "$DB" -v ON_ERROR_STOP=1 -q <<'SQL'
+if ! docker exec -i dms-postgresql psql -U "$DBUSER" -d "$DB" -v ON_ERROR_STOP=1 -q <<'SQL'
 DO $$
 DECLARE
     checked  int;
@@ -303,10 +327,10 @@ IDK=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' ed-fi-api-co
       sed -n 's/^IdentitySettings__EncryptionKey=//p')
 test -n "$IDK" || { echo "could not read the CMS identity encryption key"; exit 1; }
 pwsh -NoProfile -File ./Generate-OpenIddictKey-Insert.ps1 -EncryptionKey "$IDK" > "$ART/newkey.sql"
-docker exec dms-postgresql psql -U postgres -d "$DB" -v ON_ERROR_STOP=1 \
+docker exec dms-postgresql psql -U "$DBUSER" -d "$DB" -v ON_ERROR_STOP=1 \
   -c 'UPDATE dmscs."OpenIddictKey" SET "IsActive" = FALSE;'
 docker cp "$ART/newkey.sql" dms-postgresql:/tmp/newkey.sql
-docker exec dms-postgresql psql -U postgres -d "$DB" -v ON_ERROR_STOP=1 -f /tmp/newkey.sql
+docker exec dms-postgresql psql -U "$DBUSER" -d "$DB" -v ON_ERROR_STOP=1 -f /tmp/newkey.sql
 docker exec -u 0 dms-postgresql rm -f /tmp/newkey.sql && rm -f "$ART/newkey.sql"
 
 # 8. REQUIRED: rotate dms.DataStoreIdentity.SourceIdentity.
@@ -318,7 +342,7 @@ docker exec -u 0 dms-postgresql rm -f /tmp/newkey.sql && rm -f "$ART/newkey.sql"
 #    use this UPDATE. Rotate through the CDC recovery workflow instead, which also requires a new
 #    binding generation, topics and consumer state namespace.
 SHIPPED_SOURCE_ID=8b962de6-b979-49aa-bce0-ca59e0a1ad51
-NEW_SOURCE_ID=$(docker exec dms-postgresql psql -U postgres -d "$DB" -v ON_ERROR_STOP=1 -tAc \
+NEW_SOURCE_ID=$(docker exec dms-postgresql psql -U "$DBUSER" -d "$DB" -v ON_ERROR_STOP=1 -tAc \
   'UPDATE dms."DataStoreIdentity" SET "SourceIdentity" = gen_random_uuid()
    WHERE "DataStoreIdentitySingletonId" = 1
    RETURNING "SourceIdentity";')
@@ -355,10 +379,11 @@ T=$(curl -s -X POST "$CMS/connect/token" -H "Content-Type: application/x-www-for
 test -n "$T" || { echo "no token: step 7 did not take effect"; exit 1; }
 
 PW=$(docker exec dms-postgresql printenv POSTGRES_PASSWORD)
-test -n "$PW" -a -n "$DB" || { echo "could not read the database password and name from the container"; exit 1; }
+test -n "$PW" -a -n "$DB" -a -n "$DBUSER" || { echo "could not read the database password, name and user from the container"; exit 1; }
 
-#    Neither value is pasted into the request by hand. Both come from the running container and may
-#    hold characters that are special in JSON (") or in a connection string (; ' " =). Raw
+#    None of these three values is pasted into the request by hand. All come from the running
+#    container and may hold characters that are special in JSON (") or in a connection string
+#    (; ' " =) -- POSTGRES_USER no less than the password, since it is an override like the others. Raw
 #    interpolation either breaks the JSON outright or -- worse -- produces a connection string that
 #    CMS stores happily and Npgsql then reads differently, which is a data store that saves cleanly
 #    and cannot connect. So DbConnectionStringBuilder assembles the connection string, applying the
@@ -368,18 +393,19 @@ test -n "$PW" -a -n "$DB" || { echo "could not read the database password and na
 #    `.PSBase` is required when SETTING ConnectionString: without it PowerShell's dictionary adapter
 #    stores a keyword literally named ConnectionString instead of parsing the string, and the check
 #    below would pass on an empty builder.
-PW="$PW" DB="$DB" ART="$ART" pwsh -NoProfile -Command '
+PW="$PW" DB="$DB" DBUSER="$DBUSER" ART="$ART" pwsh -NoProfile -Command '
   $csb = [System.Data.Common.DbConnectionStringBuilder]::new()
   $csb.Add("host", "dms-postgresql")
   $csb.Add("port", "5432")
-  $csb.Add("username", "postgres")
+  $csb.Add("username", $env:DBUSER)
   $csb.Add("password", $env:PW)
   $csb.Add("database", $env:DB)
   $connectionString = $csb.PSBase.ConnectionString
 
   $check = [System.Data.Common.DbConnectionStringBuilder]::new()
   $check.PSBase.ConnectionString = $connectionString
-  if ($check["password"] -cne $env:PW -or $check["database"] -cne $env:DB) {
+  if ($check["password"] -cne $env:PW -or $check["database"] -cne $env:DB -or
+      $check["username"] -cne $env:DBUSER) {
       throw "the assembled connection string does not read back as the values it was built from"
   }
 
@@ -428,7 +454,7 @@ test -n "$CID" -a -n "$CSEC" -a -n "$CSCOPE" || \
 #     Delete before recreating. setup-openiddict.ps1 inserts ON CONFLICT DO NOTHING, so on its own it
 #     leaves the producer's secret hash exactly where it is and reports success. The two dependent
 #     tables, OpenIddictApplicationScope and OpenIddictClientRole, are ON DELETE CASCADE.
-docker exec dms-postgresql psql -U postgres -d "$DB" -v ON_ERROR_STOP=1 \
+docker exec dms-postgresql psql -U "$DBUSER" -d "$DB" -v ON_ERROR_STOP=1 \
   -c "DELETE FROM dmscs.\"OpenIddictApplication\" WHERE \"ClientId\" = '$CID';"
 pwsh -NoProfile -File ./setup-openiddict.ps1 -InsertData \
   -NewClientId "$CID" -NewClientName "CMS ReadOnly Access" -ClientScopeName "$CSCOPE" \
