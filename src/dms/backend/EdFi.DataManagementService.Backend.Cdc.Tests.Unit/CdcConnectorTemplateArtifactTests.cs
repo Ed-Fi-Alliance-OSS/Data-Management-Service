@@ -193,6 +193,50 @@ public class Given_CdcConnectorTemplateArtifactTests
     }
 
     [Test]
+    public void It_returns_diagnostics_and_keeps_the_redacted_payload_when_the_manifest_directory_cannot_be_written()
+    {
+        string artifactDirectoryPath = Path.Combine(
+            TestContext.CurrentContext.WorkDirectory,
+            $"cdc-connector-template-artifacts-{Guid.NewGuid():N}"
+        );
+        File.WriteAllText(artifactDirectoryPath, "not a directory");
+
+        CdcConnectorTemplateResult result = Render(
+            BuildRequest(
+                CdcProvider.Postgresql,
+                artifactOutput: new CdcConnectorTemplateArtifactOutputRequest(
+                    includeRedactedArtifactPayload: false,
+                    manifestOutputDirectoryPath: artifactDirectoryPath
+                )
+            )
+        );
+
+        CdcConnectorTemplateDiagnostic diagnostic = result.Diagnostics.Should().ContainSingle().Subject;
+
+        using var _ = new AssertionScope();
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
+        result.Config.Should().NotBeEmpty();
+        result.RegistrationPayload.Should().NotBeNull();
+        result.ConfigSha256.Should().MatchRegex("^sha256:[0-9a-f]{64}$");
+        result.RedactedArtifactPayload.Should().NotBeNull();
+        result
+            .RedactedArtifactPayload!.FileName.Should()
+            .Be(new CdcSafeName("cdc-connector-template.postgresql.dms_binding_connector.manifest.json"));
+        result.RedactedArtifactPayload.Json.Should().Contain("\"redactedConfig\"");
+        diagnostic.Code.Should().Be(CdcConnectorTemplateDiagnosticCodes.ArtifactOutputFailed);
+        diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.ArtifactOutputFailure);
+        diagnostic.Severity.Should().Be(CdcConnectorTemplateDiagnosticSeverity.Error);
+        diagnostic.PropertyName.Should().Be("artifactOutput.manifestOutputDirectoryPath");
+        diagnostic.SafeArtifactOrObjectName.Should().Be(result.RedactedArtifactPayload.FileName);
+        diagnostic.ExpectedValue.Should().Be("writable-artifact-directory");
+        diagnostic.ObservedValue.Should().Be("IOException");
+        diagnostic.Provider.Should().Be(CdcProvider.Postgresql);
+        diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.Render);
+        diagnostic.RedactionClassification.Should().Be(CdcConnectorTemplateRedactionClassification.Safe);
+        diagnostic.ObservedValue.Should().NotContain(artifactDirectoryPath);
+    }
+
+    [Test]
     public void It_writes_same_provider_manifest_files_by_connector_name_without_overwriting()
     {
         string artifactDirectory = Path.Combine(

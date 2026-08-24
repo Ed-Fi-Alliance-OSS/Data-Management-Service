@@ -24,10 +24,6 @@ internal sealed class CdcConnectorTemplateRenderer(
     private const string ManifestFileNameConnectorHashPrefix = ".sha256-";
     private const string RedactedArtifactValue = "[redacted]";
 
-    private static readonly System.Text.Encoding Utf8NoBom = new System.Text.UTF8Encoding(
-        encoderShouldEmitUTF8Identifier: false
-    );
-
     public CdcConnectorTemplateResult Render(CdcConnectorTemplateRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -56,20 +52,27 @@ internal sealed class CdcConnectorTemplateRenderer(
         IReadOnlyDictionary<string, string> config = BuildConfig(request);
         var registrationPayload = new CdcKafkaConnectRegistrationPayload(request.ConnectorName, config);
         string configSha256 = ComputeCanonicalConfigSha256(config);
+        CdcConnectorTemplateDiagnostic? artifactOutputDiagnostic;
         CdcConnectorTemplateArtifactPayload? artifactPayload = BuildArtifactPayloadIfRequested(
             request,
             config,
-            configSha256
+            configSha256,
+            out artifactOutputDiagnostic
         );
+        IReadOnlyList<CdcConnectorTemplateDiagnostic> resultDiagnostics = artifactOutputDiagnostic is null
+            ? diagnostics
+            : [.. diagnostics, artifactOutputDiagnostic];
 
         return new CdcConnectorTemplateResult(
             request.BindingIdentity,
-            CdcConnectorTemplateOutcome.Rendered,
+            artifactOutputDiagnostic is null
+                ? CdcConnectorTemplateOutcome.Rendered
+                : CdcConnectorTemplateOutcome.ValidationFailed,
             config,
             registrationPayload,
             artifactPayload,
             configSha256,
-            diagnostics
+            resultDiagnostics
         );
     }
 
@@ -308,9 +311,12 @@ internal sealed class CdcConnectorTemplateRenderer(
     private CdcConnectorTemplateArtifactPayload? BuildArtifactPayloadIfRequested(
         CdcConnectorTemplateRequest request,
         IReadOnlyDictionary<string, string> config,
-        string configSha256
+        string configSha256,
+        out CdcConnectorTemplateDiagnostic? artifactOutputDiagnostic
     )
     {
+        artifactOutputDiagnostic = null;
+
         if (request.ArtifactOutput is not { IncludeRedactedArtifactPayload: true } artifactOutput)
         {
             return null;
@@ -322,11 +328,11 @@ internal sealed class CdcConnectorTemplateRenderer(
 
         if (artifactOutput.ManifestOutputDirectoryPath is not null)
         {
-            Directory.CreateDirectory(artifactOutput.ManifestOutputDirectoryPath);
-            File.WriteAllText(
-                Path.Combine(artifactOutput.ManifestOutputDirectoryPath, fileName.Value),
-                json,
-                Utf8NoBom
+            artifactOutputDiagnostic = CdcConnectorTemplateArtifactOutputWriter.WriteManifestPayload(
+                artifactOutput.ManifestOutputDirectoryPath,
+                payload,
+                request.Provider,
+                CdcConnectorTemplateSourcePhase.Render
             );
         }
 

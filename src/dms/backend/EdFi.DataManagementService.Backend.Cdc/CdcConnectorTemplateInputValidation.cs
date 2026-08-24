@@ -70,6 +70,7 @@ public static class CdcConnectorTemplateDiagnosticCodes
     public const string LiveReadBackSecretMismatch = "CDC_TEMPLATE_LIVE_READBACK_SECRET_MISMATCH";
     public const string LiveReadBackSourcePartitionMismatch =
         "CDC_TEMPLATE_LIVE_READBACK_SOURCE_PARTITION_MISMATCH";
+    public const string ArtifactOutputFailed = "CDC_TEMPLATE_ARTIFACT_OUTPUT_FAILED";
     public const string PinnedImageDockerPrerequisiteFailure =
         "CDC_TEMPLATE_PINNED_IMAGE_DOCKER_PREREQUISITE_FAILURE";
     public const string PinnedImageConnectorConfigValidationFailure =

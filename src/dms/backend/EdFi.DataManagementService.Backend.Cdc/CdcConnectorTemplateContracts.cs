@@ -33,6 +33,7 @@ public enum CdcConnectorTemplateDiagnosticCategory
     SchemaHistoryConfigurationViolation,
     LiveReadBackMismatch,
     SecretRedactionViolation,
+    ArtifactOutputFailure,
 }
 
 public enum CdcConnectorTemplateDiagnosticSeverity
