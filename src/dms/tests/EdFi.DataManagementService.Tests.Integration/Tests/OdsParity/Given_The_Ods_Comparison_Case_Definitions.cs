@@ -451,6 +451,18 @@ public class Given_The_Ods_Comparison_Case_Definitions
         );
 
         defaultCount.Seed.Should().Be(105, "the recorded arithmetic is stated for this candidate count");
+        defaultCount
+            .Executor.Should()
+            .Be(
+                "sizing-true-ceiling",
+                "the omitted-count case must run through the executor that decodes every token and "
+                    + "proves the ranges tile the seed, not through a plainer request executor"
+            );
+
+        OdsComparisonCatalog
+            .Definitions.Cases.Single(comparisonCase => comparisonCase.Id == "partition-sizing-true-ceiling")
+            .Executor.Should()
+            .Be("sizing-true-ceiling", "both sizing halves share the same proving executor");
         defaultCount.Dms.Expect!["tokenCount"]!
             .GetValue<int>()
             .Should()

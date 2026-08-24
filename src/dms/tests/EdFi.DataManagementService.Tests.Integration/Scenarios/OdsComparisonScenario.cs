@@ -7,10 +7,12 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Tests.Integration.OdsParity;
 using FluentAssertions;
+using Microsoft.AspNetCore.WebUtilities;
 
 namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 
@@ -109,15 +111,17 @@ internal static class OdsComparisonScenario
         int hostMaximumPageSize
     )
     {
-        IReadOnlyDictionary<string, string> placeholders = Placeholders(hostMaximumPageSize);
+        IReadOnlyDictionary<string, string> rawPlaceholders = Placeholders(hostMaximumPageSize);
+        IReadOnlyDictionary<string, string> placeholders = ForQueryString(rawPlaceholders);
 
-        ExpectedOutcome dms = comparisonCase.Dms.Resolve(placeholders);
-        ExpectedOutcome ods = comparisonCase.Ods.Resolve(placeholders);
+        ExpectedOutcome dms = comparisonCase.Dms.Resolve(rawPlaceholders);
+        ExpectedOutcome ods = comparisonCase.Ods.Resolve(rawPlaceholders);
 
         ObservedOutcome observation = await ObserveAsync(
             harness,
             comparisonCase,
             placeholders,
+            rawPlaceholders,
             hostMaximumPageSize
         );
 
@@ -190,6 +194,82 @@ internal static class OdsComparisonScenario
         token.Length % 4 == 0 ? token : token + new string('=', 4 - (token.Length % 4));
 
     /// <summary>
+    /// Percent-encodes every placeholder value for use inside a query-string value.
+    /// </summary>
+    /// <remarks>
+    /// Load-bearing rather than defensive. A token carrying a standard-base64 <c>+</c> is the whole
+    /// point of the forbidden-alphabet case, and an unescaped <c>+</c> in a query value decodes to a
+    /// space: the request would still be rejected, but for whitespace rather than for the forbidden
+    /// character, and the case would prove nothing about the alphabet. Padding characters have the same
+    /// hazard. Escaping every value keeps what the application receives equal to what the case names,
+    /// and <see cref="AssertQueryCarriesTheIntendedValues" /> proves it for each request.
+    /// </remarks>
+    private static Dictionary<string, string> ForQueryString(
+        IReadOnlyDictionary<string, string> placeholders
+    ) =>
+        placeholders.ToDictionary(
+            placeholder => placeholder.Key,
+            placeholder => Uri.EscapeDataString(placeholder.Value),
+            StringComparer.Ordinal
+        );
+
+    /// <summary>
+    /// Proves the built query really delivers the value the case names, by parsing it the way the
+    /// server does and comparing each substituted parameter against its unescaped value.
+    /// </summary>
+    /// <remarks>
+    /// Without this, an escaping mistake turns a decoder case into evidence about something else
+    /// entirely and still returns the expected status.
+    /// </remarks>
+    private static void AssertQueryCarriesTheIntendedValues(
+        ComparisonCase comparisonCase,
+        string query,
+        IReadOnlyDictionary<string, string> rawPlaceholders
+    )
+    {
+        if (string.IsNullOrEmpty(comparisonCase.Query))
+        {
+            return;
+        }
+
+        var parsed = QueryHelpers.ParseQuery(query);
+
+        foreach (Match match in _substitutedParameter.Matches(comparisonCase.Query))
+        {
+            string parameterName = match.Groups["name"].Value;
+            string placeholder = match.Groups["placeholder"].Value;
+
+            if (!rawPlaceholders.TryGetValue(placeholder, out string? intended))
+            {
+                throw new InvalidOperationException(
+                    $"Comparison case '{comparisonCase.Id}' names unknown placeholder '{placeholder}'."
+                );
+            }
+
+            parsed
+                .Should()
+                .ContainKey(parameterName, "case '{0}' sends '{1}'", comparisonCase.Id, parameterName);
+            parsed[parameterName]
+                .ToString()
+                .Should()
+                .Be(
+                    intended,
+                    "case '{0}' must deliver '{1}' to the application exactly as written, not as the "
+                        + "query-string decoder happens to reinterpret it",
+                    comparisonCase.Id,
+                    placeholder
+                );
+        }
+    }
+
+    /// <summary>Matches a query parameter whose value is a single placeholder.</summary>
+    private static readonly Regex _substitutedParameter = new(
+        @"[?&](?<name>[^=&]+)=(?<placeholder>\{[A-Za-z0-9]+\})",
+        RegexOptions.None,
+        TimeSpan.FromSeconds(1)
+    );
+
+    /// <summary>
     /// Encodes an arbitrary payload the way the codec encodes a range, so a token the decoder must
     /// reject differs from a valid one only in its payload rather than in its transport encoding.
     /// </summary>
@@ -200,10 +280,13 @@ internal static class OdsComparisonScenario
         ApiIntegrationHarness harness,
         ComparisonCase comparisonCase,
         IReadOnlyDictionary<string, string> placeholders,
+        IReadOnlyDictionary<string, string> rawPlaceholders,
         int hostMaximumPageSize
     )
     {
         string query = Substitute(comparisonCase.Query, placeholders);
+
+        AssertQueryCarriesTheIntendedValues(comparisonCase, query, rawPlaceholders);
 
         return comparisonCase.Executor switch
         {
@@ -395,7 +478,7 @@ internal static class OdsComparisonScenario
         int hostMaximumPageSize
     )
     {
-        await CursorContractSupport.SeedExtensionItemsAsync(
+        var seeded = await CursorContractSupport.SeedExtensionItemsAsync(
             harness,
             comparisonCase.Seed
                 ?? throw new InvalidOperationException(
@@ -410,19 +493,23 @@ internal static class OdsComparisonScenario
             $"{CursorContractSupport.ExtensionItemsPartitionsEndpoint}{query}"
         );
 
-        List<int> counts = [];
+        AssertRangesTileTheIdentitySpace(pageTokens, comparisonCase);
+
+        List<IReadOnlyList<string>> walkedPartitions = [];
 
         foreach (string pageToken in pageTokens)
         {
-            var walked = await CursorContractSupport.WalkFromTokenAsync(
-                harness,
-                CursorContractSupport.ExtensionItemsEndpoint,
-                pageToken,
-                hostMaximumPageSize
+            walkedPartitions.Add(
+                await CursorContractSupport.WalkFromTokenAsync(
+                    harness,
+                    CursorContractSupport.ExtensionItemsEndpoint,
+                    pageToken,
+                    hostMaximumPageSize
+                )
             );
-
-            counts.Add(walked.Count);
         }
+
+        AssertPartitionsCoverTheSeed(walkedPartitions, seeded, comparisonCase);
 
         return new ObservedOutcome(
             200,
@@ -431,10 +518,121 @@ internal static class OdsComparisonScenario
             new Dictionary<string, JsonNode?>(StringComparer.Ordinal)
             {
                 ["tokenCount"] = JsonValue.Create(pageTokens.Count),
-                ["firstPartitionDocumentCount"] = JsonValue.Create(counts[0]),
-                ["finalPartitionDocumentCount"] = JsonValue.Create(counts[^1]),
+                ["firstPartitionDocumentCount"] = JsonValue.Create(walkedPartitions[0].Count),
+                ["finalPartitionDocumentCount"] = JsonValue.Create(walkedPartitions[^1].Count),
             }
         );
+    }
+
+    /// <summary>
+    /// Decodes every token a sizing case was handed and asserts the intervals they name really tile the
+    /// identity space: each valid, each finite one ending exactly one below the next one's start, and the
+    /// last unbounded above.
+    /// </summary>
+    /// <remarks>
+    /// The counts the comparison reports cannot see this. A boundary bug inside an intermediate
+    /// partition can leave the token count and the first and final document counts untouched while the
+    /// ranges overlap or leave a gap, so these invariants are asserted directly rather than inferred.
+    /// Adjacency rather than mere non-overlap is what also rules out a gap.
+    /// </remarks>
+    private static void AssertRangesTileTheIdentitySpace(
+        IReadOnlyList<string> pageTokens,
+        ComparisonCase comparisonCase
+    )
+    {
+        List<CursorRange> ranges = [];
+
+        foreach (string pageToken in pageTokens)
+        {
+            PageTokenCodec
+                .TryDecode(pageToken, out CursorRange? range)
+                .Should()
+                .BeTrue(
+                    "case '{0}': a token the partitions response handed out must decode through the codec",
+                    comparisonCase.Id
+                );
+            ranges.Add(range!);
+        }
+
+        ranges.Should().NotBeEmpty("case '{0}' partitions a non-empty collection", comparisonCase.Id);
+        ranges[0]
+            .InclusiveMinimum.Should()
+            .BePositive("case '{0}': the first partition starts at a real identity", comparisonCase.Id);
+
+        for (var index = 0; index < ranges.Count; index++)
+        {
+            ranges[index]
+                .InclusiveMaximum.Should()
+                .BeGreaterThanOrEqualTo(
+                    ranges[index].InclusiveMinimum,
+                    "case '{0}': partition {1} must name a range that can match something",
+                    comparisonCase.Id,
+                    index
+                );
+
+            if (index + 1 < ranges.Count)
+            {
+                ranges[index]
+                    .InclusiveMaximum.Should()
+                    .Be(
+                        ranges[index + 1].InclusiveMinimum - 1,
+                        "case '{0}': partition {1} must end exactly where partition {2} begins, leaving "
+                            + "neither a gap nor an overlap",
+                        comparisonCase.Id,
+                        index,
+                        index + 1
+                    );
+            }
+        }
+
+        ranges[^1]
+            .InclusiveMaximum.Should()
+            .Be(long.MaxValue, "case '{0}': the final partition is unbounded above", comparisonCase.Id);
+    }
+
+    /// <summary>
+    /// Asserts the partitions a sizing case walked hold every seeded document exactly once and nothing
+    /// else, and that no two of them hold the same document.
+    /// </summary>
+    private static void AssertPartitionsCoverTheSeed(
+        IReadOnlyList<IReadOnlyList<string>> walkedPartitions,
+        IReadOnlyList<CursorContractSupport.SeededExtensionItem> seeded,
+        ComparisonCase comparisonCase
+    )
+    {
+        for (var partition = 0; partition < walkedPartitions.Count; partition++)
+        {
+            walkedPartitions[partition]
+                .Should()
+                .OnlyHaveUniqueItems(
+                    "case '{0}': partition {1} must not return a document twice",
+                    comparisonCase.Id,
+                    partition
+                );
+
+            for (var other = partition + 1; other < walkedPartitions.Count; other++)
+            {
+                walkedPartitions[partition]
+                    .Should()
+                    .NotIntersectWith(
+                        walkedPartitions[other],
+                        "case '{0}': partitions {1} and {2} cover disjoint ranges",
+                        comparisonCase.Id,
+                        partition,
+                        other
+                    );
+            }
+        }
+
+        walkedPartitions
+            .SelectMany(static partition => partition)
+            .Should()
+            .BeEquivalentTo(
+                seeded.Select(item => item.Id),
+                "case '{0}': the partitions together cover every seeded document exactly once and "
+                    + "nothing else",
+                comparisonCase.Id
+            );
     }
 
     private static async Task<ObservedOutcome> ObserveCollisionAsync(
