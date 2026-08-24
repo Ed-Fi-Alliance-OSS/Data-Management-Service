@@ -453,6 +453,68 @@ public class Given_CollectionPagingTelemetry
             );
     }
 
+    // The strings an operator types into an AddMeter call and into every dashboard query. They are the
+    // one part of the published contract that reading a constant back cannot check: every other test
+    // here reaches an instrument through the same constant that named it, so both sides of the
+    // comparison move together under a rename and no assertion notices. Spelled as literals from the
+    // Instruments table and the Collecting These Metrics section of docs/PAGING-TELEMETRY.md, for the
+    // same reason the dimension values above are.
+    [Test]
+    public void It_publishes_exactly_the_documented_meter_and_instrument_names()
+    {
+        CollectionPagingTelemetry.MeterName.Should().Be("EdFi.DataManagementService.CollectionPaging");
+        CollectionPagingTelemetry.RequestCounterName.Should().Be("edfi.dms.collection_paging.requests");
+        CollectionPagingTelemetry.DurationName.Should().Be("edfi.dms.collection_paging.duration");
+        CollectionPagingTelemetry
+            .RequestedPageSizeName.Should()
+            .Be("edfi.dms.collection_paging.page_size.requested");
+        CollectionPagingTelemetry
+            .ReturnedPageSizeName.Should()
+            .Be("edfi.dms.collection_paging.page_size.returned");
+        CollectionPagingTelemetry
+            .RequestedPartitionCountName.Should()
+            .Be("edfi.dms.collection_paging.partition_count.requested");
+        CollectionPagingTelemetry
+            .ReturnedPartitionCountName.Should()
+            .Be("edfi.dms.collection_paging.partition_count.returned");
+    }
+
+    // The meter name is published only by the parameterless constructor, which is the one dependency
+    // injection selects and the only one that reaches the process-static meter. Every other test here
+    // supplies its own meter, so pinning the constant alone would prove a constant has a value without
+    // proving the meter an operator subscribes to carries it.
+    [Test]
+    public void It_publishes_on_the_documented_meter_from_the_production_constructor()
+    {
+        List<string> observedMeterNames = [];
+        using MeterListener listener = new()
+        {
+            InstrumentPublished = static (instrument, listener) =>
+            {
+                if (instrument.Name == CollectionPagingTelemetry.RequestCounterName)
+                {
+                    listener.EnableMeasurementEvents(instrument);
+                }
+            },
+        };
+        listener.SetMeasurementEventCallback<long>(
+            (instrument, _, _, _) => observedMeterNames.Add(instrument.Meter.Name)
+        );
+        listener.Start();
+
+        CollectionPagingTelemetry telemetry = new();
+        telemetry.RecordValidationRejected(
+            FailureContext(CollectionPagingTelemetryLabel.TraditionalPagingMode)
+        );
+
+        // OnlyContain rather than a single expected element: the meter is process-static, so a
+        // concurrent test recording on it would be observed here too — and would carry this same name.
+        observedMeterNames
+            .Should()
+            .NotBeEmpty("the production constructor must publish the request counter")
+            .And.OnlyContain(name => name == "EdFi.DataManagementService.CollectionPaging");
+    }
+
     [TestCase(null)]
     [TestCase("")]
     [TestCase("   ")]
