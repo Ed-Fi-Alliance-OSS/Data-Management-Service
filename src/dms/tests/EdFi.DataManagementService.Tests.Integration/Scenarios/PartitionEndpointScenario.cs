@@ -420,6 +420,96 @@ internal static class PartitionEndpointScenario
         );
     }
 
+    /// <summary>
+    /// The one outcome whose name is a claim about database work. <c>early_empty</c> reports that the API
+    /// answered without issuing a boundary command, and this is where the partitions side of that claim is
+    /// measured rather than stated.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The GET-many twin of this case lives in <see cref="CursorPagingExecutionScenario" />. Both are
+    /// needed because the two short-circuits are separate code — a partitions request prepares through its
+    /// own path and answers with its own result type — and only the collection read's was measured. A
+    /// regression in this one reports the request as an executed boundary command instead: <c>success</c>
+    /// with <c>command_category=boundary</c>, claiming database work that never happened and filing a
+    /// duration under the boundary shape. Every other assertion in this suite stays green through that,
+    /// because they all describe requests where the command really did run — including the emptied
+    /// candidate set above, which is this case's executed twin and is exactly what makes the distinction
+    /// worth measuring instead of asserting from a handed-in result in a unit test.
+    /// </para>
+    /// <para>
+    /// A descriptor <c>id</c> filter carrying something that is not a UUID cannot match any row, and the
+    /// API determines that from the value alone, so the boundaries are answered with no candidate
+    /// selection at all. That is what makes zero the expected count here where every other telemetry case
+    /// in this suite costs exactly one.
+    /// </para>
+    /// <para>
+    /// The collection is seeded first even though the filter matches none of it. Without the seed the
+    /// empty token array and the zero count would both be statements about an empty database rather than
+    /// about the short-circuit, which is the property under test.
+    /// </para>
+    /// <para>
+    /// The descriptor endpoint carries this case because it is the one this fixture's ApiSchema gives an
+    /// <c>id</c> query field to. The regular resource here declares no query fields at all, so the same
+    /// request against it would be refused as an unknown field and never reach a selection decision.
+    /// </para>
+    /// </remarks>
+    public static async Task It_records_an_early_empty_partition_request_without_a_database_command(
+        ApiIntegrationHarness harness,
+        string expectedProvider
+    )
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedProvider);
+
+        ApiIntegrationQueryRecorder recorder =
+            harness.QueryRecorder
+            ?? throw new InvalidOperationException(
+                "This scenario counts database commands and requires CaptureQueryPlans."
+            );
+
+        await SeedDescriptorsAsync(harness, "early-empty");
+
+        using var metrics = CollectionPagingMetricCollector.Start();
+
+        metrics.Clear();
+        int commandsBefore = recorder.DatabaseCommands;
+
+        using (
+            HttpResponseMessage response = await harness.HttpClient.GetAsync(
+                $"{DescriptorPartitionsEndpoint}?number={RequestedPartitionCount}&id=not-a-uuid"
+            )
+        )
+        {
+            string body = await response.Content.ReadAsStringAsync();
+            int databaseCommands = recorder.DatabaseCommands - commandsBefore;
+
+            // The response shape does not change for a short-circuit: a client walking zero tokens
+            // special-cases nothing, and the boundary set is still plain JSON with no paging headers.
+            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            response.Content.Headers.ContentType!.MediaType.Should().Be(StandardJsonContentType);
+            response.Headers.Contains("Total-Count").Should().BeFalse();
+            response.Headers.Contains("Next-Page-Token").Should().BeFalse();
+            JsonNode.Parse(body)!["pageTokens"]!.AsArray().Should().BeEmpty();
+
+            databaseCommands
+                .Should()
+                .Be(
+                    0,
+                    "early_empty reports that no boundary command was issued, so any count above zero "
+                        + "would make the outcome name false"
+                );
+        }
+
+        metrics.AssertSinglePartitions(
+            expectedProvider,
+            CollectionPagingTelemetryLabel.NoCommandCategory,
+            CollectionPagingTelemetryLabel.EarlyEmptyOutcome,
+            RequestedPartitionCount,
+            expectedReturnedPartitionCount: 0
+        );
+    }
+
     private static async Task AssertMethodNotAllowedAsync(HttpResponseMessage response)
     {
         using (response)

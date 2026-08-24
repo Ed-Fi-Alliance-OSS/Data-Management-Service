@@ -82,4 +82,11 @@ public sealed class Given_Mssql_PartitionEndpoint : MssqlApiIntegrationTestBase
             Harness,
             CollectionPagingTelemetryLabel.SqlServerProvider
         );
+
+    [Test]
+    public Task It_records_an_early_empty_partition_request_without_a_database_command() =>
+        PartitionEndpointScenario.It_records_an_early_empty_partition_request_without_a_database_command(
+            Harness,
+            CollectionPagingTelemetryLabel.SqlServerProvider
+        );
 }
