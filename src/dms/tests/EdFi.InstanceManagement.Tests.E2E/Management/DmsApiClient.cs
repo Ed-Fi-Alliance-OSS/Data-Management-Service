@@ -78,10 +78,38 @@ public class DmsApiClient : IDisposable
     public async Task<HttpResponseMessage> GetResourceAsync(
         string districtId,
         string schoolYear,
-        string resource
+        string resource,
+        string? query = null
     )
     {
         var url = BuildPath($"/{districtId}/{schoolYear}/data/ed-fi/{resource}");
+
+        if (!string.IsNullOrEmpty(query))
+        {
+            url = $"{url}?{query}";
+        }
+
+        var response = await _httpClient.GetAsync(url);
+
+        return response;
+    }
+
+    /// <summary>
+    /// GET the partitions sibling of a resource collection, with route qualifiers.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately built from the same path <see cref="GetResourceAsync" /> composes, so a routed
+    /// partitions request cannot silently lose the tenant segment or a qualifier the collection
+    /// request keeps.
+    /// </remarks>
+    public async Task<HttpResponseMessage> GetPartitionsAsync(
+        string districtId,
+        string schoolYear,
+        string resource
+    )
+    {
+        var url = BuildPath($"/{districtId}/{schoolYear}/data/ed-fi/{resource}/partitions");
+
         var response = await _httpClient.GetAsync(url);
 
         return response;
