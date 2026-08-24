@@ -44,13 +44,13 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
         }
 
         CdcConnectorTemplateRequest templateRequest = request.TemplateRequest;
-        List<CdcConnectorTemplateDiagnostic> diagnostics = [];
-
-        CdcConnectorTemplateValidationResult templateRequestValidationResult = inputValidator.ValidateRequest(
+        CdcConnectorTemplateRequest expectedTemplateRequest = BuildExpectedTemplateRequest(
             templateRequest,
-            sourcePhase
+            request.ProviderSetupEvidence
         );
-        if (!templateRequestValidationResult.IsValid)
+        CdcConnectorTemplateValidationResult expectedTemplateRequestValidationResult =
+            inputValidator.ValidateRequest(expectedTemplateRequest, sourcePhase);
+        if (!expectedTemplateRequestValidationResult.IsValid)
         {
             return BuildResult(
                 templateRequest.BindingIdentity,
@@ -58,10 +58,14 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
                 new SortedDictionary<string, string>(StringComparer.Ordinal),
                 registrationPayload: null,
                 configSha256: null,
-                templateRequestValidationResult.Diagnostics
+                expectedTemplateRequestValidationResult.Diagnostics
             );
         }
 
+        List<CdcConnectorTemplateDiagnostic> diagnostics =
+        [
+            .. expectedTemplateRequestValidationResult.Diagnostics,
+        ];
         AddProviderSetupEvidenceDiagnostics(request, sourcePhase, diagnostics);
         if (HasErrors(diagnostics))
         {
@@ -75,21 +79,14 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
             );
         }
 
-        CdcConnectorTemplateRequest expectedTemplateRequest = BuildExpectedTemplateRequest(
-            templateRequest,
-            request.ProviderSetupEvidence
+        CdcConnectorTemplateResult expectedResult = renderer.RenderValidated(
+            expectedTemplateRequest,
+            sourcePhase,
+            expectedTemplateRequestValidationResult.Diagnostics
         );
-        CdcConnectorTemplateResult expectedResult = renderer.Render(expectedTemplateRequest);
         if (expectedResult.Outcome == CdcConnectorTemplateOutcome.ValidationFailed)
         {
-            return BuildResult(
-                templateRequest.BindingIdentity,
-                CdcConnectorTemplateOutcome.ValidationFailed,
-                expectedResult.Config,
-                expectedResult.RegistrationPayload,
-                expectedResult.ConfigSha256,
-                expectedResult.Diagnostics.Select(diagnostic => WithSourcePhase(diagnostic, sourcePhase))
-            );
+            return expectedResult;
         }
 
         AddEffectiveConfigDiagnostics(request, expectedResult.Config, sourcePhase, diagnostics);
@@ -128,25 +125,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
         List<CdcConnectorTemplateDiagnostic> diagnostics
     )
     {
-        CdcBindingIdentity bindingIdentity = request.TemplateRequest.BindingIdentity;
-        CdcConnectorProviderSetupEvidence providerSetupEvidence = request.ProviderSetupEvidence;
-        CdcProviderSetupResult result = providerSetupEvidence.Result;
-
-        if (result.Provider != bindingIdentity.Provider)
-        {
-            diagnostics.Add(
-                BuildDiagnostic(
-                    CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch,
-                    CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure,
-                    "providerSetup.provider",
-                    bindingIdentity.Provider.ToString(),
-                    result.Provider.ToString(),
-                    request.TemplateRequest,
-                    sourcePhase,
-                    CdcConnectorTemplateRedactionClassification.Safe
-                )
-            );
-        }
+        CdcProviderSetupResult result = request.ProviderSetupEvidence.Result;
 
         if (
             sourcePhase == CdcConnectorTemplateSourcePhase.LiveReadBack
@@ -167,14 +146,17 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
             );
         }
 
-        if (ProviderSetupOutcomeIsNotAccepted(result.Outcome, sourcePhase))
+        if (
+            sourcePhase == CdcConnectorTemplateSourcePhase.LiveReadBack
+            && result.Outcome != CdcProviderSetupOutcome.ExactMatch
+        )
         {
             diagnostics.Add(
                 BuildDiagnostic(
                     CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch,
                     CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
                     "providerSetup.outcome",
-                    ExpectedProviderSetupOutcome(sourcePhase),
+                    CdcProviderSetupOutcome.ExactMatch.ToString(),
                     result.Outcome.ToString(),
                     request.TemplateRequest,
                     sourcePhase,
@@ -183,118 +165,6 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
             );
         }
 
-        if (providerSetupEvidence.BindingGeneration != bindingIdentity.BindingGeneration)
-        {
-            diagnostics.Add(
-                BuildDiagnostic(
-                    CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch,
-                    CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure,
-                    "providerSetup.bindingGeneration",
-                    bindingIdentity.BindingGeneration.ToString(),
-                    providerSetupEvidence.BindingGeneration.ToString(),
-                    request.TemplateRequest,
-                    sourcePhase,
-                    CdcConnectorTemplateRedactionClassification.Safe
-                )
-            );
-        }
-
-        if (!result.BoundPhysicalSourceFingerprint.Equals(bindingIdentity.BoundPhysicalSourceFingerprint))
-        {
-            diagnostics.Add(
-                BuildDiagnostic(
-                    CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch,
-                    CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure,
-                    "providerSetup.boundPhysicalSourceFingerprint",
-                    "binding physical-source fingerprint",
-                    RedactedValue,
-                    request.TemplateRequest,
-                    sourcePhase,
-                    CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
-                )
-            );
-        }
-
-        if (
-            result.ObservedSourceFingerprint is null
-            || !result.ObservedSourceFingerprint.Equals(bindingIdentity.BoundPhysicalSourceFingerprint)
-        )
-        {
-            diagnostics.Add(
-                BuildDiagnostic(
-                    CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch,
-                    CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure,
-                    "providerSetup.observedPhysicalSourceFingerprint",
-                    "binding physical-source fingerprint",
-                    RedactedValue,
-                    request.TemplateRequest,
-                    sourcePhase,
-                    CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
-                )
-            );
-        }
-
-        if (!CdcConnectorTemplateSharedRules.HasRequiredSourceTableMembership(result.SourceTableInventory))
-        {
-            diagnostics.Add(
-                BuildDiagnostic(
-                    CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch,
-                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
-                    "providerSetup.sourceTableInventory",
-                    "dms.DocumentCache, dms.Document, and dms.CdcHeartbeat",
-                    RedactedValue,
-                    request.TemplateRequest,
-                    sourcePhase,
-                    CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
-                )
-            );
-        }
-
-        if (!CdcConnectorTemplateSharedRules.HasExpectedMessageKeyColumns(result.ExpectedMessageKeyColumns))
-        {
-            diagnostics.Add(
-                BuildDiagnostic(
-                    CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch,
-                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
-                    "providerSetup.expectedMessageKeyColumns",
-                    "DocumentUuid keys for document sources",
-                    RedactedValue,
-                    request.TemplateRequest,
-                    sourcePhase,
-                    CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
-                )
-            );
-        }
-
-        if (result.HeartbeatActionQuery is null)
-        {
-            diagnostics.Add(
-                BuildDiagnostic(
-                    CdcConnectorTemplateDiagnosticCodes.LiveReadBackProviderSetupMismatch,
-                    CdcConnectorTemplateDiagnosticCategory.ProviderSetupResultFailure,
-                    "providerSetup.heartbeatActionQuery",
-                    "fresh provider heartbeat action query",
-                    null,
-                    request.TemplateRequest,
-                    sourcePhase,
-                    CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
-                )
-            );
-        }
-
-        if (HasErrors(diagnostics))
-        {
-            return;
-        }
-
-        diagnostics.AddRange(
-            CdcProviderSetupPrerequisiteRules.Validate(
-                result,
-                request.TemplateRequest.ConnectorName,
-                sourcePhase,
-                request.TemplateRequest.ProviderArtifactNames
-            )
-        );
         if (HasErrors(diagnostics))
         {
             return;
@@ -302,19 +172,6 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
 
         AddProviderSetupEvidenceDriftDiagnostics(request, sourcePhase, diagnostics);
     }
-
-    private static bool ProviderSetupOutcomeIsNotAccepted(
-        CdcProviderSetupOutcome outcome,
-        CdcConnectorTemplateSourcePhase sourcePhase
-    ) =>
-        sourcePhase == CdcConnectorTemplateSourcePhase.LiveReadBack
-            ? outcome != CdcProviderSetupOutcome.ExactMatch
-            : outcome is not (CdcProviderSetupOutcome.CreatedOrMatched or CdcProviderSetupOutcome.ExactMatch);
-
-    private static string ExpectedProviderSetupOutcome(CdcConnectorTemplateSourcePhase sourcePhase) =>
-        sourcePhase == CdcConnectorTemplateSourcePhase.LiveReadBack
-            ? CdcProviderSetupOutcome.ExactMatch.ToString()
-            : "CreatedOrMatched or ExactMatch";
 
     private static void AddProviderSetupEvidenceDriftDiagnostics(
         CdcConnectorTemplateEffectiveConfigValidationRequest request,
@@ -1023,23 +880,6 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
             request.Provider,
             sourcePhase,
             redactionClassification
-        );
-
-    private static CdcConnectorTemplateDiagnostic WithSourcePhase(
-        CdcConnectorTemplateDiagnostic diagnostic,
-        CdcConnectorTemplateSourcePhase sourcePhase
-    ) =>
-        new(
-            diagnostic.Code,
-            diagnostic.Category,
-            diagnostic.Severity,
-            diagnostic.PropertyName,
-            diagnostic.SafeArtifactOrObjectName,
-            diagnostic.ExpectedValue,
-            diagnostic.ObservedValue,
-            diagnostic.Provider,
-            sourcePhase,
-            diagnostic.RedactionClassification
         );
 
     private static CdcConnectorTemplateResult BuildResult(

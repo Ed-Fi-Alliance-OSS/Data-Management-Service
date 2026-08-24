@@ -277,7 +277,7 @@ public class Given_CdcConnectorTemplateValidationTests
     }
 
     [Test]
-    public void It_returns_validation_failed_for_invalid_template_request_contracts_during_preflight_and_live_read_back()
+    public void It_uses_fresh_provider_setup_evidence_during_preflight_and_live_read_back()
     {
         using ServiceProvider serviceProvider = new ServiceCollection()
             .AddCdcConnectorTemplates()
@@ -315,23 +315,30 @@ public class Given_CdcConnectorTemplateValidationTests
         using var _ = new AssertionScope();
         preflightResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
         liveReadBackResult.Outcome.Should().Be(CdcConnectorTemplateOutcome.ValidationFailed);
-        preflightResult.Config.Should().BeEmpty();
-        liveReadBackResult.Config.Should().BeEmpty();
+        preflightResult.Config.Should().NotBeEmpty();
+        liveReadBackResult.Config.Should().NotBeEmpty();
         preflightResult
             .Diagnostics.Should()
-            .ContainSingle(diagnostic =>
-                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.BindingIdentityMismatch
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure
-                && diagnostic.PropertyName == "providerSetup.bindingGeneration"
+            .Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackPropertyMissing
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch
+                && diagnostic.PropertyName == "connector.class"
                 && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.Preflight
             );
         liveReadBackResult
             .Diagnostics.Should()
-            .ContainSingle(diagnostic =>
-                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.BindingIdentityMismatch
-                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure
-                && diagnostic.PropertyName == "providerSetup.bindingGeneration"
+            .Contain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackPropertyMissing
+                && diagnostic.Category == CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch
+                && diagnostic.PropertyName == "connector.class"
                 && diagnostic.SourcePhase == CdcConnectorTemplateSourcePhase.LiveReadBack
+            );
+        preflightResult
+            .Diagnostics.Concat(liveReadBackResult.Diagnostics)
+            .Should()
+            .NotContain(diagnostic =>
+                diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.BindingIdentityMismatch
+                && diagnostic.PropertyName == "providerSetup.bindingGeneration"
             );
     }
 

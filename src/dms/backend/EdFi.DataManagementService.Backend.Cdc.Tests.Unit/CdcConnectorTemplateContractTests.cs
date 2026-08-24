@@ -843,6 +843,7 @@ public class Given_CdcConnectorTemplateContractTests
             nameof(CdcConnectorTemplateDiagnosticCategory.SchemaHistoryConfigurationViolation),
             nameof(CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch),
             nameof(CdcConnectorTemplateDiagnosticCategory.SecretRedactionViolation),
+            nameof(CdcConnectorTemplateDiagnosticCategory.ArtifactOutputFailure),
         ];
 
         Enum.GetNames<CdcConnectorTemplateDiagnosticCategory>().Should().BeEquivalentTo(expectedCategories);

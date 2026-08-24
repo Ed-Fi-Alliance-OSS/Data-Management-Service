@@ -12,6 +12,12 @@ namespace EdFi.DataManagementService.Backend.Cdc;
 internal interface ICdcConnectorTemplateRenderer
 {
     CdcConnectorTemplateResult Render(CdcConnectorTemplateRequest request);
+
+    CdcConnectorTemplateResult RenderValidated(
+        CdcConnectorTemplateRequest request,
+        CdcConnectorTemplateSourcePhase sourcePhase,
+        IReadOnlyList<CdcConnectorTemplateDiagnostic> diagnostics
+    );
 }
 
 internal sealed class CdcConnectorTemplateRenderer(
@@ -49,6 +55,18 @@ internal sealed class CdcConnectorTemplateRenderer(
             );
         }
 
+        return RenderValidated(request, CdcConnectorTemplateSourcePhase.Render, diagnostics);
+    }
+
+    public CdcConnectorTemplateResult RenderValidated(
+        CdcConnectorTemplateRequest request,
+        CdcConnectorTemplateSourcePhase sourcePhase,
+        IReadOnlyList<CdcConnectorTemplateDiagnostic> diagnostics
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(diagnostics);
+
         IReadOnlyDictionary<string, string> config = BuildConfig(request);
         var registrationPayload = new CdcKafkaConnectRegistrationPayload(request.ConnectorName, config);
         string configSha256 = ComputeCanonicalConfigSha256(config);
@@ -57,6 +75,7 @@ internal sealed class CdcConnectorTemplateRenderer(
             request,
             config,
             configSha256,
+            sourcePhase,
             out artifactOutputDiagnostic
         );
         IReadOnlyList<CdcConnectorTemplateDiagnostic> resultDiagnostics = artifactOutputDiagnostic is null
@@ -312,6 +331,7 @@ internal sealed class CdcConnectorTemplateRenderer(
         CdcConnectorTemplateRequest request,
         IReadOnlyDictionary<string, string> config,
         string configSha256,
+        CdcConnectorTemplateSourcePhase sourcePhase,
         out CdcConnectorTemplateDiagnostic? artifactOutputDiagnostic
     )
     {
@@ -332,7 +352,7 @@ internal sealed class CdcConnectorTemplateRenderer(
                 artifactOutput.ManifestOutputDirectoryPath,
                 payload,
                 request.Provider,
-                CdcConnectorTemplateSourcePhase.Render
+                sourcePhase
             );
         }
 
