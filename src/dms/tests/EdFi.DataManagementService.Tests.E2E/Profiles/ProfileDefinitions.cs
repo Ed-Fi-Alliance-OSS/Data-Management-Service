@@ -380,6 +380,28 @@ public static class ProfileDefinitions
     /// Profile for School with WriteContentType using IncludeAll.
     /// POST requests should succeed because no required fields are excluded.
     /// </summary>
+    /// <summary>
+    /// Profile for School that is genuinely write-only: it declares a WriteContentType and no
+    /// ReadContentType at all. Every other write profile here also declares a readable content type, so
+    /// none of them can exercise the read side of the profile rules.
+    /// </summary>
+    /// <remarks>
+    /// Used by the partitions contract scenarios for the two outcomes that need a resource a profile
+    /// cannot read: the HTTP 405 profile method-usage response, and the profile document that keeps the
+    /// writable collection path while omitting its /partitions sibling. It has to be defined here rather
+    /// than created inside a scenario, because the profile catalog is cached for the run from the set
+    /// this hook creates up front, and a profile created later is not published as a document.
+    /// </remarks>
+    public const string SchoolWriteOnlyName = "E2E-Test-School-WriteOnly";
+
+    public const string SchoolWriteOnlyXml = """
+        <Profile name="E2E-Test-School-WriteOnly">
+            <Resource name="School">
+                <WriteContentType memberSelection="IncludeAll"/>
+            </Resource>
+        </Profile>
+        """;
+
     public const string SchoolWriteIncludeAllName = "E2E-Test-School-Write-IncludeAll";
 
     public const string SchoolWriteIncludeAllXml = """
@@ -699,6 +721,7 @@ public static class ProfileDefinitions
                 (SchoolWriteExcludeRequiredCollectionName, SchoolWriteExcludeRequiredCollectionXml),
                 (SchoolWriteIncludeOnlyMissingRequiredName, SchoolWriteIncludeOnlyMissingRequiredXml),
                 (SchoolWriteIncludeAllName, SchoolWriteIncludeAllXml),
+                (SchoolWriteOnlyName, SchoolWriteOnlyXml),
                 (SchoolWriteRequiredCollectionWithRuleName, SchoolWriteRequiredCollectionWithRuleXml),
                 // PUT merge profiles
                 (SchoolWriteAddressExcludeNameOfCountyName, SchoolWriteAddressExcludeNameOfCountyXml),
