@@ -408,6 +408,19 @@ internal static class CursorContractSupport
     }
 
     /// <summary>
+    /// Deletes one document through the public endpoint.
+    /// </summary>
+    internal static async Task DeleteAsync(ApiIntegrationHarness harness, string endpoint, string id)
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+
+        using HttpResponseMessage response = await harness.HttpClient.DeleteAsync($"{endpoint}/{id}");
+        string body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent, $"DELETE {endpoint}/{id} body: {body}");
+    }
+
+    /// <summary>
     /// Creates one document and returns the id from its <c>Location</c> header.
     /// </summary>
     internal static async Task<string> CreateAsync(
