@@ -1,0 +1,428 @@
+# Ownership Tokens and API-client Ownership Demo
+#
+# This REST Client file is a guided walkthrough for the Configuration Service
+# endpoints that manage ownership tokens and assign them to API clients.
+#
+# Run the requests from top to bottom in VS Code REST Client or another
+# compatible .http client. Each request shows one business concept:
+#
+# 1. Get an administrator token for the Configuration Service.
+# 2. Create the minimum vendor, data store, application, and API-client records
+#    needed for a realistic demo.
+# 3. Create ownership tokens in the tenant-wide ownership token catalog.
+# 4. Assign those tokens to one API client through the ownership subresource.
+# 5. Read the API client back and verify the ownership fields appear in both
+#    item and collection responses.
+# 6. Try optional validation examples to show how the API protects the model.
+#
+# Key idea for demo audiences:
+# - Ownership tokens are labels that identify who owns data in DMS.
+# - creatorOwnershipTokenId answers: "Which token will this API client stamp on
+#   records it creates?"
+# - ownershipTokenIds answers: "Which existing ownership tokens may this API
+#   client read or modify?"
+# - API-client create/update does not accept ownership fields directly. Use
+#   /v3/apiClients/{id}/ownership so ownership assignment is explicit and easy
+#   to audit.
+
+@configPort=8081
+@configBaseUrl=http://localhost:{{configPort}}
+
+# These are the default local administrator credentials used by the
+# Configuration Service E2E/local setup.
+@sysAdminId=DmsConfigurationService
+@sysAdminSecret=ValidClientSecret1234567890!Abcd
+
+# Use a suffix so repeated demos create distinct records instead of colliding
+# with data left by an earlier run.
+@demoSuffix={{$randomInt 100000 999999}}
+
+### ============================================================================
+### STEP 1: Authenticate as a Configuration Service administrator
+### ============================================================================
+### The ownership endpoints are Management API endpoints. They require an
+### administrator bearer token with the edfi_admin_api/full_access scope.
+###
+### Expected result: 200 OK with an access_token in the JSON response body.
+
+# @name configTokenRequest
+POST {{configBaseUrl}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{sysAdminId}}
+&client_secret={{sysAdminSecret}}
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+###
+@configToken={{configTokenRequest.response.body.access_token}}
+
+
+### ============================================================================
+### STEP 2: Create demo setup data
+### ============================================================================
+### Ownership is assigned to an API client, and an API client belongs to an
+### application. The application belongs to a vendor and references one or more
+### data stores. These setup calls create that small hierarchy.
+
+### Create a vendor
+### A vendor represents the organization that owns one or more applications.
+### Expected result: 201 Created with a Location header.
+# @name createOwnershipDemoVendor
+POST {{configBaseUrl}}/v3/vendors
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "company": "Ownership Demo Vendor {{demoSuffix}}",
+    "contactName": "Demo Administrator",
+    "contactEmailAddress": "ownership-demo-{{demoSuffix}}@example.org",
+    "namespacePrefixes": "uri://ownership-demo.example.org"
+}
+
+###
+@vendorLocation={{createOwnershipDemoVendor.response.headers.location}}
+
+### Read the vendor back so the demo can capture its numeric id
+### The vendor POST returns the new resource URI in Location. This GET follows
+### that URI and reads the id needed by the application create request.
+# @name getOwnershipDemoVendor
+GET {{vendorLocation}}
+Authorization: bearer {{configToken}}
+
+###
+@vendorId={{getOwnershipDemoVendor.response.body.id}}
+
+
+### Create a data store
+### A data store identifies the DMS database/instance an API client is allowed
+### to use. This demo uses a harmless Test connection string because the point
+### here is Configuration Service ownership metadata, not DMS data access.
+### Expected result: 201 Created with an id in the response body.
+# @name createOwnershipDemoDataStore
+POST {{configBaseUrl}}/v3/dataStores
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "dataStoreType": "Test",
+    "name": "Ownership Demo Data Store {{demoSuffix}}",
+    "connectionString": "Server=test;Database=OwnershipDemo{{demoSuffix}};"
+}
+
+###
+@dataStoreId={{createOwnershipDemoDataStore.response.body.id}}
+
+
+### Create an application
+### An application groups one or more API clients under the same vendor,
+### claim set, and data store access. The Configuration Service also creates
+### default client credentials for the application, but the next request creates
+### a named API client so the ownership demo is explicit.
+### Expected result: 201 Created with application id, key, and secret.
+# @name createOwnershipDemoApplication
+POST {{configBaseUrl}}/v3/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "vendorId": {{vendorId}},
+    "applicationName": "Ownership Demo Application {{demoSuffix}}",
+    "claimSetName": "TestClaim01",
+    "dataStoreIds": [{{dataStoreId}}]
+}
+
+###
+@applicationId={{createOwnershipDemoApplication.response.body.id}}
+
+
+### Create a named API client
+### This is the credential-bearing client record that will receive ownership
+### settings. isApproved=true means the client is enabled. dataStoreIds limits
+### the data stores the client can use.
+###
+### Expected result: 201 Created. The response body includes:
+### - id: internal numeric API-client id used by /v3/apiClients/{id}/ownership
+### - key: client id string used by GET /v3/apiClients/{clientId}
+### - secret: shown once so the integrator can authenticate to DMS later
+# @name createOwnershipDemoApiClient
+POST {{configBaseUrl}}/v3/apiClients
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "applicationId": {{applicationId}},
+    "name": "Ownership Demo API Client {{demoSuffix}}",
+    "isApproved": true,
+    "dataStoreIds": [{{dataStoreId}}]
+}
+
+###
+@apiClientId={{createOwnershipDemoApiClient.response.body.id}}
+@apiClientKey={{createOwnershipDemoApiClient.response.body.key}}
+
+
+### ============================================================================
+### STEP 3: Read the API client's ownership before assigning tokens
+### ============================================================================
+### New API clients start without configured ownership. That is represented as:
+### - creatorOwnershipTokenId: null
+### - ownershipTokenIds: []
+###
+### Expected result: 200 OK with the empty ownership representation.
+# @name getInitialApiClientOwnership
+GET {{configBaseUrl}}/v3/apiClients/{{apiClientId}}/ownership
+Authorization: bearer {{configToken}}
+
+
+### ============================================================================
+### STEP 4: Create ownership tokens in the catalog
+### ============================================================================
+### The catalog is tenant-wide. Creating a token only creates the label; it does
+### not give any API client access until the token is assigned to that client.
+###
+### Description is required and limited to 50 characters.
+
+### Create the token this API client will use when it creates records
+### Expected result: 201 Created with Location: /v3/ownershipTokens/{id}.
+# @name createCreatorOwnershipToken
+POST {{configBaseUrl}}/v3/ownershipTokens
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "description": "Creator Token {{demoSuffix}}"
+}
+
+###
+@creatorOwnershipTokenLocation={{createCreatorOwnershipToken.response.headers.location}}
+
+### Read the creator token back to capture its id
+### POST intentionally returns the new resource URI instead of a response body.
+### This GET makes the id visible for the later ownership assignment payload.
+# @name getCreatorOwnershipToken
+GET {{creatorOwnershipTokenLocation}}
+Authorization: bearer {{configToken}}
+
+###
+@creatorOwnershipTokenId={{getCreatorOwnershipToken.response.body.id}}
+
+
+### Create the token this API client may read or modify
+### A client can have many read/modify ownership tokens. This demo uses one so
+### the relationship is easy to see in the response.
+# @name createReadOwnershipToken
+POST {{configBaseUrl}}/v3/ownershipTokens
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "description": "Read Token {{demoSuffix}}"
+}
+
+###
+@readOwnershipTokenLocation={{createReadOwnershipToken.response.headers.location}}
+
+### Read the read/modify token back to capture its id
+# @name getReadOwnershipToken
+GET {{readOwnershipTokenLocation}}
+Authorization: bearer {{configToken}}
+
+###
+@readOwnershipTokenId={{getReadOwnershipToken.response.body.id}}
+
+
+### List ownership tokens with ordering and paging
+### This endpoint is useful for admin screens and audits. It returns catalog
+### tokens only; it does not say which clients use each token.
+###
+### Supported demo query values:
+### - orderBy=description sorts by the human-readable label.
+### - direction=asc or direction=desc controls sort direction.
+### - limit and offset page through larger catalogs.
+# @name listOwnershipTokens
+GET {{configBaseUrl}}/v3/ownershipTokens?orderBy=description&direction=asc&limit=25&offset=0
+Authorization: bearer {{configToken}}
+
+
+### Update a token description
+### Use this when an admin wants to rename a token without changing which API
+### clients reference it. The route id and request body id must match.
+###
+### Expected result: 204 No Content. A later GET shows the new description.
+# @name updateReadOwnershipToken
+PUT {{configBaseUrl}}/v3/ownershipTokens/{{readOwnershipTokenId}}
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "id": {{readOwnershipTokenId}},
+    "description": "Updated Read Token {{demoSuffix}}"
+}
+
+
+### Verify the token description changed
+# @name getUpdatedReadOwnershipToken
+GET {{configBaseUrl}}/v3/ownershipTokens/{{readOwnershipTokenId}}
+Authorization: bearer {{configToken}}
+
+
+### ============================================================================
+### STEP 5: Assign ownership tokens to the API client
+### ============================================================================
+### This is the central endpoint for the feature.
+###
+### PUT /v3/apiClients/{id}/ownership replaces the complete ownership
+### representation for one API client. It is a full replacement, not a patch:
+### any token omitted from ownershipTokenIds is removed from that client's
+### read/modify list.
+###
+### Expected result: 204 No Content.
+# @name replaceApiClientOwnership
+PUT {{configBaseUrl}}/v3/apiClients/{{apiClientId}}/ownership
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "apiClientId": {{apiClientId}},
+    "creatorOwnershipTokenId": {{creatorOwnershipTokenId}},
+    "ownershipTokenIds": [{{readOwnershipTokenId}}]
+}
+
+
+### Read the ownership subresource after replacement
+### This is the most direct way for an admin tool to answer:
+### "What ownership configuration does this API client have right now?"
+###
+### Expected result:
+### {
+###   "apiClientId": <the client id>,
+###   "creatorOwnershipTokenId": <creator token id>,
+###   "ownershipTokenIds": [<read token id>]
+### }
+# @name getAssignedApiClientOwnership
+GET {{configBaseUrl}}/v3/apiClients/{{apiClientId}}/ownership
+Authorization: bearer {{configToken}}
+
+
+### ============================================================================
+### STEP 6: Verify ownership appears on API-client read endpoints
+### ============================================================================
+### The API-client read endpoints include the ownership columns so admin tools
+### do not need a second request just to display the configured ownership.
+
+### Read one API client by its client id string
+### The route uses the public client id/key, not the internal numeric id.
+### Expected result includes creatorOwnershipTokenId and ownershipTokenIds.
+# @name getApiClientByClientId
+GET {{configBaseUrl}}/v3/apiClients/{{apiClientKey}}
+Authorization: bearer {{configToken}}
+
+
+### Read the API-client collection
+### This demonstrates that list responses expose the same ownership fields as
+### the single-item response. That matters for admin grids and demo screens
+### because they can show ownership without opening each client.
+# @name listApiClientsWithOwnership
+GET {{configBaseUrl}}/v3/apiClients?offset=0&limit=25
+Authorization: bearer {{configToken}}
+
+
+### ============================================================================
+### STEP 7: Clear the API client's ownership
+### ============================================================================
+### Sending null for creatorOwnershipTokenId and an empty ownershipTokenIds array
+### removes ownership settings from this API client. This is also a full
+### replacement, so the previous creator/read tokens remain in the catalog but
+### are no longer assigned to this API client.
+###
+### Expected result: 204 No Content.
+# @name clearApiClientOwnership
+PUT {{configBaseUrl}}/v3/apiClients/{{apiClientId}}/ownership
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "apiClientId": {{apiClientId}},
+    "creatorOwnershipTokenId": null,
+    "ownershipTokenIds": []
+}
+
+
+### Verify ownership was cleared
+### Expected result has creatorOwnershipTokenId=null and ownershipTokenIds=[].
+# @name getClearedApiClientOwnership
+GET {{configBaseUrl}}/v3/apiClients/{{apiClientId}}/ownership
+Authorization: bearer {{configToken}}
+
+
+### ============================================================================
+### OPTIONAL VALIDATION EXAMPLES
+### ============================================================================
+### These requests intentionally produce errors. Use them in demos to explain
+### how the API prevents ambiguous ownership changes.
+
+### Validation: route id and body apiClientId must match
+### Expected result: 400 Bad Request. The server rejects the request before
+### changing anything because it cannot safely know which API client you meant.
+# @name rejectMismatchedApiClientOwnershipId
+PUT {{configBaseUrl}}/v3/apiClients/{{apiClientId}}/ownership
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "apiClientId": 999999,
+    "creatorOwnershipTokenId": null,
+    "ownershipTokenIds": []
+}
+
+
+### Validation: ownership fields are not accepted on API-client update
+### Expected result: 400 Bad Request. Ownership must be managed through the
+### ownership subresource so normal client edits do not accidentally change
+### data ownership permissions.
+# @name rejectOwnershipFieldsOnApiClientUpdate
+PUT {{configBaseUrl}}/v3/apiClients/{{apiClientId}}
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "id": {{apiClientId}},
+    "applicationId": {{applicationId}},
+    "name": "Ownership Demo API Client {{demoSuffix}}",
+    "isApproved": true,
+    "creatorOwnershipTokenId": {{creatorOwnershipTokenId}},
+    "ownershipTokenIds": [{{readOwnershipTokenId}}],
+    "dataStoreIds": [{{dataStoreId}}]
+}
+
+
+### Validation: referenced ownership tokens must exist
+### Expected result: 409 Conflict. The payload shape is valid, but token 32767
+### has not been created in this tenant, so assigning it would create a broken
+### reference.
+# @name rejectMissingOwnershipToken
+PUT {{configBaseUrl}}/v3/apiClients/{{apiClientId}}/ownership
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "apiClientId": {{apiClientId}},
+    "creatorOwnershipTokenId": 32767,
+    "ownershipTokenIds": []
+}
+
+
+### Validation: ownershipTokenIds cannot contain duplicates
+### Expected result: 400 Bad Request. Duplicate read/modify tokens would not add
+### access, so the API rejects them as invalid input.
+# @name rejectDuplicateOwnershipTokenIds
+PUT {{configBaseUrl}}/v3/apiClients/{{apiClientId}}/ownership
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "apiClientId": {{apiClientId}},
+    "creatorOwnershipTokenId": null,
+    "ownershipTokenIds": [{{readOwnershipTokenId}}, {{readOwnershipTokenId}}]
+}

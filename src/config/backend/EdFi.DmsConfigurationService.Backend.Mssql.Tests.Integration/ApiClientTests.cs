@@ -10,6 +10,7 @@ using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.DataStore;
+using EdFi.DmsConfigurationService.DataModel.Model.OwnershipToken;
 using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using FluentAssertions;
@@ -214,6 +215,142 @@ public class ApiClientTests : DatabaseTest
                 .ToList();
             names.Should().HaveCount(3);
             names.Should().ContainInOrder("Charlie-Client", "Bravo-App", "Alpha-Client");
+        }
+    }
+
+    [TestFixture]
+    public class Given_api_client_ownership_projection : ApiClientTests
+    {
+        private int _applicationId;
+        private int _configuredApiClientId;
+        private string _configuredClientId = string.Empty;
+        private int _unconfiguredApiClientId;
+        private int _creatorTokenId;
+        private int _readTokenId1;
+        private int _readTokenId2;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            IVendorRepository vendorRepository = new VendorRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<VendorRepository>.Instance,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+            var vendorResult = await vendorRepository.InsertVendor(
+                new VendorInsertCommand
+                {
+                    Company = "Projection Test Vendor",
+                    ContactEmailAddress = "projection@test.com",
+                    ContactName = "Projection Tester",
+                    NamespacePrefixes = "uri://projection-test.example",
+                }
+            );
+            vendorResult.Should().BeOfType<VendorInsertResult.Success>();
+
+            var applicationResult = await _applicationRepository.InsertApplication(
+                new ApplicationInsertCommand
+                {
+                    ApplicationName = "ProjectionTestApp",
+                    VendorId = ((VendorInsertResult.Success)vendorResult).Id,
+                    ClaimSetName = "TestClaimSet",
+                    EducationOrganizationIds = [],
+                },
+                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+            applicationResult.Should().BeOfType<ApplicationInsertResult.Success>();
+            _applicationId = ((ApplicationInsertResult.Success)applicationResult).Id;
+
+            (_configuredApiClientId, _configuredClientId) = await InsertApiClient("Configured Client");
+            (_unconfiguredApiClientId, _) = await InsertApiClient("Unconfigured Client");
+
+            IOwnershipTokenRepository ownershipTokenRepository = new OwnershipTokenRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OwnershipTokenRepository>.Instance,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+
+            _readTokenId2 = await InsertToken(ownershipTokenRepository, "Read 2");
+            _creatorTokenId = await InsertToken(ownershipTokenRepository, "Creator");
+            _readTokenId1 = await InsertToken(ownershipTokenRepository, "Read 1");
+
+            var update = await ownershipTokenRepository.UpdateApiClientOwnership(
+                new ApiClientOwnershipUpdateCommand
+                {
+                    ApiClientId = _configuredApiClientId,
+                    CreatorOwnershipTokenId = _creatorTokenId,
+                    OwnershipTokenIds = [_readTokenId2, _readTokenId1],
+                }
+            );
+            update.Should().BeOfType<ApiClientOwnershipUpdateResult.Success>();
+        }
+
+        [Test]
+        public async Task It_returns_creator_and_sorted_read_modify_tokens_on_get_by_client_id()
+        {
+            var result = await _apiClientRepository.GetApiClientByClientId(_configuredClientId);
+
+            result.Should().BeOfType<ApiClientGetResult.Success>();
+            var response = ((ApiClientGetResult.Success)result).ApiClientResponse;
+            response.CreatorOwnershipTokenId.Should().Be(_creatorTokenId);
+            response.OwnershipTokenIds.Should().Equal(_readTokenId1, _readTokenId2);
+        }
+
+        [Test]
+        public async Task It_returns_creator_and_sorted_read_modify_tokens_on_query()
+        {
+            var result = await _apiClientRepository.QueryApiClient(
+                new ApiClientQuery { ApplicationId = _applicationId }
+            );
+
+            result.Should().BeOfType<ApiClientQueryResult.Success>();
+            var response = ((ApiClientQueryResult.Success)result).ApiClientResponses.Single(apiClient =>
+                apiClient.Id == _configuredApiClientId
+            );
+            response.CreatorOwnershipTokenId.Should().Be(_creatorTokenId);
+            response.OwnershipTokenIds.Should().Equal(_readTokenId1, _readTokenId2);
+        }
+
+        [Test]
+        public async Task It_returns_empty_ownership_for_unconfigured_api_client()
+        {
+            var result = await _apiClientRepository.GetApiClientById(_unconfiguredApiClientId);
+
+            result.Should().BeOfType<ApiClientGetResult.Success>();
+            var response = ((ApiClientGetResult.Success)result).ApiClientResponse;
+            response.CreatorOwnershipTokenId.Should().BeNull();
+            response.OwnershipTokenIds.Should().BeEmpty();
+        }
+
+        private async Task<(int Id, string ClientId)> InsertApiClient(string name)
+        {
+            string clientId = Guid.NewGuid().ToString();
+            var insertResult = await _apiClientRepository.InsertApiClient(
+                new ApiClientInsertCommand
+                {
+                    ApplicationId = _applicationId,
+                    Name = name,
+                    IsApproved = true,
+                    DataStoreIds = [],
+                },
+                new ApiClientCommand { ClientId = clientId, ClientUuid = Guid.NewGuid() }
+            );
+            insertResult.Should().BeOfType<ApiClientInsertResult.Success>();
+            return (((ApiClientInsertResult.Success)insertResult).Id, clientId);
+        }
+
+        private static async Task<int> InsertToken(
+            IOwnershipTokenRepository ownershipTokenRepository,
+            string description
+        )
+        {
+            var insert = await ownershipTokenRepository.InsertOwnershipToken(
+                new OwnershipTokenInsertCommand { Description = description }
+            );
+            insert.Should().BeOfType<OwnershipTokenInsertResult.Success>();
+            return ((OwnershipTokenInsertResult.Success)insert).Id;
         }
     }
 

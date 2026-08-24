@@ -17,6 +17,7 @@ public class Given_CMS_PostgreSQL_database_shape
     [
         "ApiClient",
         "ApiClientDataStore",
+        "ApiClientOwnershipToken",
         "Application",
         "ApplicationEducationOrganization",
         "ApplicationProfile",
@@ -34,6 +35,7 @@ public class Given_CMS_PostgreSQL_database_shape
         "OpenIddictRole",
         "OpenIddictScope",
         "OpenIddictToken",
+        "OwnershipToken",
         "Profile",
         "ResourceClaim",
         "Tenant",
@@ -125,6 +127,7 @@ public class Given_CMS_PostgreSQL_database_shape
         ("ClaimSet", "TenantId"),
         ("ClaimsHierarchy", "Id"),
         ("DataStore", "TenantId"),
+        ("OwnershipToken", "TenantId"),
         ("ResourceClaim", "TenantId"),
         ("Tenant", "Id"),
         ("Vendor", "TenantId"),
