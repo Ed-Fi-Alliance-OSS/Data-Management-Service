@@ -1,0 +1,56 @@
+[
+  {
+    "scenarioId": "traditional-offset-zero",
+    "pageSize": 25,
+    "offset": 0,
+    "parameters": {
+      "limit": 25,
+      "offset": 0
+    }
+  },
+  {
+    "scenarioId": "traditional-offset-zero",
+    "pageSize": 500,
+    "offset": 0,
+    "parameters": {
+      "limit": 500,
+      "offset": 0
+    }
+  },
+  {
+    "scenarioId": "traditional-offset-shallow",
+    "pageSize": 25,
+    "offset": 25,
+    "parameters": {
+      "limit": 25,
+      "offset": 25
+    }
+  },
+  {
+    "scenarioId": "traditional-offset-shallow",
+    "pageSize": 500,
+    "offset": 500,
+    "parameters": {
+      "limit": 500,
+      "offset": 500
+    }
+  },
+  {
+    "scenarioId": "traditional-offset-deep",
+    "pageSize": 25,
+    "offset": 450000,
+    "parameters": {
+      "limit": 25,
+      "offset": 450000
+    }
+  },
+  {
+    "scenarioId": "traditional-offset-deep",
+    "pageSize": 500,
+    "offset": 450000,
+    "parameters": {
+      "limit": 500,
+      "offset": 450000
+    }
+  }
+]

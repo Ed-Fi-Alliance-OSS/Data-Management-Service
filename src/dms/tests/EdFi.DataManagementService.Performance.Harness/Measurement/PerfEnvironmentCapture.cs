@@ -1,0 +1,251 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Data.Common;
+using System.Globalization;
+using System.Reflection;
+using System.Runtime;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
+using EdFi.DataManagementService.Backend.Postgresql;
+using EdFi.DataManagementService.Performance.Harness.Configuration;
+using EdFi.DataManagementService.Performance.Harness.Results;
+using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
+
+namespace EdFi.DataManagementService.Performance.Harness.Measurement;
+
+/// <summary>
+/// Captures the run manifest's environment identity: server version and settings from the
+/// live database, driver identity from the connection's assembly, and host facts from the
+/// runtime. The machine fingerprint is a pseudonym of Environment.MachineName (a hash
+/// prefix), so committed artifacts can prove two runs shared an environment without
+/// publishing it — it is not a hardware identity and is meaningful only alongside the
+/// recorded OS/CPU/core/memory/.NET facts.
+/// </summary>
+public static class PerfEnvironmentCapture
+{
+    private static readonly string[] _postgresqlSettingNames =
+    [
+        "shared_buffers",
+        "work_mem",
+        "jit",
+        "track_io_timing",
+        "max_parallel_workers_per_gather",
+        "plan_cache_mode",
+    ];
+
+    public static async Task<PerfEnvironmentIdentity> CaptureAsync(
+        DbConnection connection,
+        PerfProvider provider,
+        string imageTag,
+        string imageDigest,
+        string storageNote,
+        string rawConnectionString
+    )
+    {
+        string serverVersion;
+        List<PerfSetting> settings = [];
+        if (provider == PerfProvider.Postgresql)
+        {
+            serverVersion = await ScalarStringAsync(connection, "SELECT version();");
+            await using DbCommand command = connection.CreateCommand();
+            command.CommandText =
+                "SELECT name, setting FROM pg_settings WHERE name = ANY(@names) ORDER BY name;";
+            DbParameter parameter = command.CreateParameter();
+            parameter.ParameterName = "names";
+            parameter.Value = _postgresqlSettingNames;
+            command.Parameters.Add(parameter);
+            await using DbDataReader reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                settings.Add(new PerfSetting(reader.GetString(0), reader.GetString(1)));
+            }
+
+            if (settings.Count == 0)
+            {
+                throw new PerfObservationException("No server settings could be captured.");
+            }
+
+            settings.AddRange(CaptureNpgsqlAutoPrepareSettings(rawConnectionString));
+        }
+        else
+        {
+            serverVersion = await ScalarStringAsync(connection, "SELECT @@VERSION;");
+            settings.Add(
+                new PerfSetting(
+                    "edition",
+                    await ScalarStringAsync(
+                        connection,
+                        "SELECT CAST(SERVERPROPERTY('Edition') AS nvarchar(128));"
+                    )
+                )
+            );
+            settings.Add(
+                new PerfSetting(
+                    "is_read_committed_snapshot_on",
+                    await ScalarStringAsync(
+                        connection,
+                        """
+                        SELECT CAST(is_read_committed_snapshot_on AS nvarchar(5))
+                        FROM sys.databases
+                        WHERE name = DB_NAME();
+                        """
+                    )
+                )
+            );
+            await using DbCommand command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT name, CAST(value_in_use AS nvarchar(64))
+                FROM sys.configurations
+                WHERE name IN ('max degree of parallelism', 'cost threshold for parallelism', 'max server memory (MB)')
+                ORDER BY name;
+                """;
+            await using DbDataReader reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                settings.Add(new PerfSetting(reader.GetString(0), reader.GetString(1)));
+            }
+        }
+
+        Assembly driverAssembly = connection.GetType().Assembly;
+        AssemblyName driver = driverAssembly.GetName();
+        string driverLabel = driver.Name ?? "driver";
+
+        return PerfEnvironmentIdentity.Create(
+            PerfServerIdentity.Create(
+                serverVersion,
+                imageTag,
+                imageDigest,
+                storageNote,
+                RedactConnectionString(rawConnectionString),
+                settings
+            ),
+            new PerfHostIdentity(
+                RuntimeInformation.OSDescription,
+                RuntimeInformation.ProcessArchitecture.ToString(),
+                ResolveCpuModel(),
+                Environment.ProcessorCount,
+                GC.GetGCMemoryInfo().TotalAvailableMemoryBytes,
+                Environment.Version.ToString(),
+                GCSettings.IsServerGC,
+                MachineFingerprint()
+            ),
+            [
+                new PerfSetting(driverLabel, DriverPackageVersionOf(driverAssembly)),
+                new PerfSetting(driverLabel + "-assembly", driver.Version?.ToString() ?? "unknown"),
+            ]
+        );
+    }
+
+    /// <summary>
+    /// The effective Npgsql plan-caching settings of the measured application's
+    /// connections. The production NpgsqlDataSourceCache rewrites the configured
+    /// connection string in code (auto-prepare above all), so the raw connection string
+    /// cannot prove these values; they are read back from a data source built by that same
+    /// production code path from the same leased connection string.
+    /// </summary>
+    public static IReadOnlyList<PerfSetting> CaptureNpgsqlAutoPrepareSettings(string leasedConnectionString)
+    {
+        using NpgsqlDataSourceCache cache = new(NullLogger<NpgsqlDataSourceCache>.Instance);
+        NpgsqlConnectionStringBuilder effective = new(
+            cache.GetOrCreate(leasedConnectionString).ConnectionString
+        );
+        return
+        [
+            new PerfSetting(
+                "npgsql_auto_prepare_min_usages",
+                effective.AutoPrepareMinUsages.ToString(CultureInfo.InvariantCulture)
+            ),
+            new PerfSetting(
+                "npgsql_max_auto_prepare",
+                effective.MaxAutoPrepare.ToString(CultureInfo.InvariantCulture)
+            ),
+        ];
+    }
+
+    /// <summary>
+    /// Replaces every password/pwd value in the connection string with REDACTED. Only the
+    /// explicitly configured keys survive, normalized by DbConnectionStringBuilder; options
+    /// the application's data-source code sets on top of this string (such as Npgsql
+    /// auto-prepare) are not visible here and are captured as settings instead.
+    /// </summary>
+    public static string RedactConnectionString(string rawConnectionString)
+    {
+        DbConnectionStringBuilder builder = new() { ConnectionString = rawConnectionString };
+        foreach (string key in builder.Keys.Cast<string>().ToList())
+        {
+            string normalized = key.Trim().ToLowerInvariant();
+            if (normalized is "password" or "pwd")
+            {
+                builder[key] = "REDACTED";
+            }
+        }
+
+        return builder.ConnectionString;
+    }
+
+    /// <summary>
+    /// The driver's NuGet package version, taken from the informational version attribute
+    /// (with build metadata stripped). The assembly version alone is too coarse for the
+    /// final gate's driver-parity check: SqlClient ships assembly version 6.0.0.0 across
+    /// several package versions.
+    /// </summary>
+    public static string DriverPackageVersionOf(Assembly assembly) =>
+        NormalizePackageVersion(
+            assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion,
+            assembly.GetName().Version
+        );
+
+    public static string NormalizePackageVersion(string? informationalVersion, Version? assemblyVersion)
+    {
+        if (!string.IsNullOrWhiteSpace(informationalVersion))
+        {
+            return informationalVersion.Split('+')[0].Trim();
+        }
+
+        return assemblyVersion?.ToString() ?? "unknown";
+    }
+
+    private static string MachineFingerprint() =>
+        Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(Environment.MachineName)))[..16];
+
+    /// <summary>
+    /// The processor identity string: PROCESSOR_IDENTIFIER on Windows, which names the
+    /// family/model/stepping rather than the marketing model name, or the /proc/cpuinfo
+    /// model name elsewhere.
+    /// </summary>
+    private static string ResolveCpuModel()
+    {
+        string? fromEnvironment = Environment.GetEnvironmentVariable("PROCESSOR_IDENTIFIER");
+        if (!string.IsNullOrWhiteSpace(fromEnvironment))
+        {
+            return fromEnvironment;
+        }
+
+        const string cpuInfoPath = "/proc/cpuinfo";
+        if (File.Exists(cpuInfoPath))
+        {
+            string? modelLine = File.ReadLines(cpuInfoPath)
+                .FirstOrDefault(line => line.StartsWith("model name", StringComparison.Ordinal));
+            if (modelLine is not null)
+            {
+                return modelLine[(modelLine.IndexOf(':') + 1)..].Trim();
+            }
+        }
+
+        throw new PerfObservationException("The CPU model could not be resolved on this host.");
+    }
+
+    private static async Task<string> ScalarStringAsync(DbConnection connection, string sql)
+    {
+        await using DbCommand command = connection.CreateCommand();
+        command.CommandText = sql;
+        object? value = await command.ExecuteScalarAsync();
+        return value as string
+            ?? throw new PerfObservationException($"Scalar string query returned no value: {sql}");
+    }
+}
