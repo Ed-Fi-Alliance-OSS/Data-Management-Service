@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
@@ -151,21 +152,6 @@ public sealed record PageDocumentIdAuthorizationSpec(
     NamespacePrefixParameterization? NamespacePrefixParameterization = null,
     IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck>? CustomViewChecks = null
 );
-
-/// <summary>
-/// The page-selection ordering key for page-<c>DocumentId</c> query compilation.
-/// </summary>
-public enum PageOrderingMode
-{
-    /// <summary>Order page selection by the root table's <c>DocumentId</c>. The default.</summary>
-    DocumentId,
-
-    /// <summary>
-    /// Order page selection by the root table's mirrored <c>ContentVersion</c> column. Selected
-    /// only for max-bearing change-version windows; see <c>ChangeQueryPageOrderingPolicy</c>.
-    /// </summary>
-    ContentVersion,
-}
 
 /// <summary>
 /// The canonical bare SQL parameter names used by each page-<c>DocumentId</c> candidate mode.
