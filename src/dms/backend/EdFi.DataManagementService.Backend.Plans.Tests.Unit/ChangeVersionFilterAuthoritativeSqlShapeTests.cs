@@ -121,7 +121,7 @@ public class Given_ChangeVersionFilters_Over_Authoritative_MappingSets
             new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
             _paginationParameters,
             changeVersionRange: _changeVersionRange,
-            orderingMode: ChangeQueryPageOrderingPolicy.Default.ResolveForLiveQuery(_changeVersionRange)
+            orderingMode: PageOrderingMode.ContentVersion
         );
 
         keyset.Plan.PageDocumentIdSql.Should().Contain("ORDER BY r.\"ContentVersion\" ASC");
@@ -141,45 +141,22 @@ public class Given_ChangeVersionFilters_Over_Authoritative_MappingSets
             new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
             _paginationParameters,
             changeVersionRange: minOnlyRange,
-            orderingMode: ChangeQueryPageOrderingPolicy.Default.ResolveForLiveQuery(minOnlyRange)
+            orderingMode: PageOrderingMode.DocumentId
         );
 
         keyset.Plan.PageDocumentIdSql.Should().Contain("ORDER BY r.\"DocumentId\" ASC");
     }
 
     [Test]
-    [TestCase(100L, 200L, "ORDER BY r.\"ContentVersion\" ASC")]
-    [TestCase(null, 200L, "ORDER BY r.\"ContentVersion\" ASC")]
-    [TestCase(100L, null, "ORDER BY r.\"DocumentId\" ASC")]
-    [TestCase(null, null, "ORDER BY r.\"DocumentId\" ASC")]
-    public void It_selects_page_ordering_from_the_change_version_filter_shape(
-        long? minChangeVersion,
-        long? maxChangeVersion,
+    [TestCase(PageOrderingMode.ContentVersion, "ORDER BY r.\"ContentVersion\" ASC")]
+    [TestCase(PageOrderingMode.DocumentId, "ORDER BY r.\"DocumentId\" ASC")]
+    public void It_orders_page_selection_by_the_supplied_ordering_mode(
+        PageOrderingMode orderingMode,
         string expectedOrderByFragment
     )
     {
         var resource = new QualifiedResourceName("Ed-Fi", "Student");
         var readPlan = _ds52MappingSet.GetReadPlanOrThrow(resource);
-        var changeVersionRange = new ChangeVersionRange(minChangeVersion, maxChangeVersion);
-        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
-
-        var keyset = planner.Plan(
-            readPlan.Model.Root,
-            new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
-            _paginationParameters,
-            changeVersionRange: changeVersionRange,
-            orderingMode: ChangeQueryPageOrderingPolicy.Default.ResolveForLiveQuery(changeVersionRange)
-        );
-
-        keyset.Plan.PageDocumentIdSql.Should().Contain(expectedOrderByFragment);
-    }
-
-    [Test]
-    public void It_retains_document_id_ordering_for_bounded_windows_when_the_kill_switch_is_enabled()
-    {
-        var resource = new QualifiedResourceName("Ed-Fi", "Student");
-        var readPlan = _ds52MappingSet.GetReadPlanOrThrow(resource);
-        var legacyPolicy = new ChangeQueryPageOrderingPolicy(useLegacyDocumentIdOrdering: true);
         var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
 
         var keyset = planner.Plan(
@@ -187,7 +164,30 @@ public class Given_ChangeVersionFilters_Over_Authoritative_MappingSets
             new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
             _paginationParameters,
             changeVersionRange: _changeVersionRange,
-            orderingMode: legacyPolicy.ResolveForLiveQuery(_changeVersionRange)
+            orderingMode: orderingMode
+        );
+
+        keyset.Plan.PageDocumentIdSql.Should().Contain(expectedOrderByFragment);
+    }
+
+    /// <summary>
+    /// A bounded change-version window compiled with DocumentId ordering — the shape a deployment
+    /// running the legacy kill switch gets — must emit DocumentId ordering and nothing else. Which
+    /// filter shapes resolve to which mode is the ordering policy's contract, not this compiler's.
+    /// </summary>
+    [Test]
+    public void It_orders_a_bounded_window_by_document_id_alone_when_document_id_ordering_is_supplied()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "Student");
+        var readPlan = _ds52MappingSet.GetReadPlanOrThrow(resource);
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var keyset = planner.Plan(
+            readPlan.Model.Root,
+            new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            _paginationParameters,
+            changeVersionRange: _changeVersionRange,
+            orderingMode: PageOrderingMode.DocumentId
         );
 
         keyset.Plan.PageDocumentIdSql.Should().Contain("ORDER BY r.\"DocumentId\" ASC");
@@ -215,26 +215,31 @@ public class Given_ChangeVersionFilters_Over_Authoritative_MappingSets
     }
 
     [Test]
-    [TestCase(100L, 200L, "ORDER BY r.[ContentVersion] ASC", TestName = "Mssql_ordering_min_and_max")]
-    [TestCase(null, 200L, "ORDER BY r.[ContentVersion] ASC", TestName = "Mssql_ordering_max_only")]
-    [TestCase(100L, null, "ORDER BY r.[DocumentId] ASC", TestName = "Mssql_ordering_min_only")]
-    public void It_selects_mssql_page_ordering_from_the_change_version_filter_shape(
-        long? minChangeVersion,
-        long? maxChangeVersion,
+    [TestCase(
+        PageOrderingMode.ContentVersion,
+        "ORDER BY r.[ContentVersion] ASC",
+        TestName = "Mssql_content_version_ordering"
+    )]
+    [TestCase(
+        PageOrderingMode.DocumentId,
+        "ORDER BY r.[DocumentId] ASC",
+        TestName = "Mssql_document_id_ordering"
+    )]
+    public void It_orders_mssql_page_selection_by_the_supplied_ordering_mode(
+        PageOrderingMode orderingMode,
         string expectedOrderByFragment
     )
     {
         var resource = new QualifiedResourceName("Ed-Fi", "Student");
         var readPlan = _ds52MssqlMappingSet.GetReadPlanOrThrow(resource);
-        var changeVersionRange = new ChangeVersionRange(minChangeVersion, maxChangeVersion);
         var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Mssql);
 
         var keyset = planner.Plan(
             readPlan.Model.Root,
             new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
             _paginationParameters,
-            changeVersionRange: changeVersionRange,
-            orderingMode: ChangeQueryPageOrderingPolicy.Default.ResolveForLiveQuery(changeVersionRange)
+            changeVersionRange: _changeVersionRange,
+            orderingMode: orderingMode
         );
 
         keyset.Plan.PageDocumentIdSql.Should().Contain(expectedOrderByFragment);

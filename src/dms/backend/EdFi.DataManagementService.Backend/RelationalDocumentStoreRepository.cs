@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
+using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;

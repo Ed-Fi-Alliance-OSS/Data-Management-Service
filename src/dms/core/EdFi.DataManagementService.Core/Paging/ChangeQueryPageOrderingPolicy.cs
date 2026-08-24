@@ -5,7 +5,7 @@
 
 using EdFi.DataManagementService.Core.External.Model;
 
-namespace EdFi.DataManagementService.Backend;
+namespace EdFi.DataManagementService.Core.Paging;
 
 /// <summary>
 /// Resolves page-selection ordering for GET-many queries from the request's change-version filter
@@ -16,11 +16,18 @@ namespace EdFi.DataManagementService.Backend;
 /// let offset paging return it twice while its departure shifts offsets and skips another row.
 /// </summary>
 /// <remarks>
+/// Lives in Core because the resolved ordering is the page anchor, and the anchor is needed on both
+/// sides of the request: Core stamps it on the outgoing continuation token and checks an incoming
+/// token's marker against it, and the backend compiles page-selection SQL against the column it
+/// names. Resolving it in both places would be two implementations of one rule, so Core resolves it
+/// once and carries it down on the request.
+/// <para>
 /// Only traditional limit/offset page selection consumes the resolved ordering. Cursor and partition
 /// selection always anchor on <c>DocumentId</c>: their candidate modes carry no ordering choice at
 /// all, so a resolved mode reaching them is discarded rather than applied. Snapshot data sources get
 /// their own explicit entry point when snapshot support lands; do not widen
 /// <see cref="ResolveForLiveQuery"/> to cover them.
+/// </para>
 /// </remarks>
 public sealed class ChangeQueryPageOrderingPolicy(bool useLegacyDocumentIdOrdering)
 {
