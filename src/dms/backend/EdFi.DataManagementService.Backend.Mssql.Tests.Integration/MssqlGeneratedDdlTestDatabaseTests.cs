@@ -126,6 +126,21 @@ public class Given_MssqlGeneratedDdlTestDatabase
         secondCollectionItemId.Should().Be(firstCollectionItemId);
     }
 
+    [Test]
+    public async Task It_waits_until_the_SQL_Server_UTC_clock_advances_past_the_required_timestamp()
+    {
+        var before = await _database.ExecuteScalarAsync<DateTimeOffset>(
+            "SELECT TODATETIMEOFFSET(SYSUTCDATETIME(), '+00:00');"
+        );
+
+        await _database.WaitForUtcClockToAdvancePastAsync(before);
+
+        var after = await _database.ExecuteScalarAsync<DateTimeOffset>(
+            "SELECT TODATETIMEOFFSET(SYSUTCDATETIME(), '+00:00');"
+        );
+        after.Should().BeAfter(before);
+    }
+
     private async Task<MssqlGeneratedDdlBaselineCounts> ReadBaselineCountsAsync()
     {
         return new(

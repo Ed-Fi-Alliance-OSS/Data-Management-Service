@@ -1759,6 +1759,6 @@ public class MssqlReferentialIdentityTests
 
     private async Task DelayForDistinctTimestampsAsync()
     {
-        await _database.ExecuteNonQueryAsync("""WAITFOR DELAY '00:00:00.050';""");
+        await _database.WaitForUtcClockToAdvanceAsync();
     }
 }
