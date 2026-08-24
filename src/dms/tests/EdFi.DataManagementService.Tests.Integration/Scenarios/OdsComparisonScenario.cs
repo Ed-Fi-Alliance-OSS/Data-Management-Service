@@ -1,0 +1,696 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Globalization;
+using System.Net;
+using System.Text;
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Paging;
+using EdFi.DataManagementService.Tests.Integration.OdsParity;
+using FluentAssertions;
+
+namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
+
+/// <summary>
+/// Executes the static ODS 7.3.2 comparison cases against this host and holds each observation against
+/// both the DMS outcome the case declares and the ODS outcome it records.
+///
+/// <para>
+/// Fail-closed in both directions. An observation that differs from the recorded ODS outcome must name
+/// an approved difference from the committed catalog, or the case fails as an unmapped difference. A
+/// case that declares a difference which no longer materializes fails too, so a catalog entry cannot
+/// outlive the behavior it describes. A case declaring parity must observe exactly the recorded ODS
+/// outcome.
+/// </para>
+///
+/// <para>
+/// Only the DMS half is executed. No ODS instance is stood up, which is explicitly out of scope; the
+/// ODS column is static expected data derived from the pinned sources the reference metadata names.
+/// </para>
+/// </summary>
+internal static class OdsComparisonScenario
+{
+    /// <summary>The page size fixtures binding the sizing group must configure their host with.</summary>
+    /// <remarks>
+    /// Two puts the minimum partition size at ten rows, which is what lets a twenty-five document seed
+    /// be cut by a computed size rather than by the minimum — the only arrangement in which a true
+    /// ceiling and a floor produce different boundaries.
+    /// </remarks>
+    internal const int HostMaximumPageSize = 2;
+
+    internal const int HostDefaultPartitionCount = 10;
+
+    private const string CollisionNumber = "105";
+
+    /// <summary>
+    /// The collection whose profile document and runtime profile behavior the profile group observes. It
+    /// belongs to the profile fixture, which is the only one carrying profile XML.
+    /// </summary>
+    private const string ProfileMergeItemsPartitionsEndpoint =
+        "/data/ed-fi/profileRootOnlyMergeItems/partitions";
+
+    /// <summary>
+    /// Names the write-only profile with the readable usage, which is how a client explicitly asks to
+    /// read through a profile that has no readable content type for the resource.
+    /// </summary>
+    private const string WriteOnlyReadableContentType =
+        "application/vnd.ed-fi.profilerootonlymergeitem.profilerootonlymergeitem-writeonly.readable+json";
+
+    internal const string ProfileDocumentProfileName = "AcademicWeek-WriteOnly";
+
+    private const string CoreResourcesDocument = "/metadata/specifications/resources-spec.json";
+
+    private const string ProfileResourcesDocument =
+        $"/metadata/specifications/profiles/{ProfileDocumentProfileName}/resources-spec.json";
+
+    /// <summary>
+    /// The Data Standard 5.2 collection the write-only profile covers, and its partition sibling. The
+    /// authoritative document really publishes both, which is what makes the profile document's omission
+    /// of the second one observable.
+    /// </summary>
+    private const string ProfiledCollectionPath = "/ed-fi/academicWeeks";
+
+    private const string ProfiledPartitionsPath = $"{ProfiledCollectionPath}/partitions";
+
+    /// <summary>Runs every case in one group and reports them all before failing.</summary>
+    public static async Task RunGroupAsync(ApiIntegrationHarness harness, string group)
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+
+        ComparisonCase[] cases =
+        [
+            .. OdsComparisonCatalog.Definitions.Cases.Where(comparisonCase => comparisonCase.Group == group),
+        ];
+
+        cases.Should().NotBeEmpty($"group '{group}' must contain at least one comparison case");
+
+        foreach (ComparisonCase comparisonCase in cases)
+        {
+            await RunCaseAsync(harness, comparisonCase);
+        }
+    }
+
+    private static async Task RunCaseAsync(ApiIntegrationHarness harness, ComparisonCase comparisonCase)
+    {
+        IReadOnlyDictionary<string, string> placeholders = Placeholders();
+
+        ExpectedOutcome dms = comparisonCase.Dms.Resolve(placeholders);
+        ExpectedOutcome ods = comparisonCase.Ods.Resolve(placeholders);
+
+        Observation observation = await ObserveAsync(harness, comparisonCase, placeholders);
+
+        AssertMatches(observation, dms, comparisonCase, "DMS");
+
+        bool matchesOds = Matches(observation, ods);
+
+        if (comparisonCase.DeclaresDifference)
+        {
+            matchesOds
+                .Should()
+                .BeFalse(
+                    "case '{0}' declares a difference from ODS 7.3.2, so the observed outcome must not "
+                        + "be the recorded ODS outcome; if the behavior converged, the case and the "
+                        + "approved difference it names are both out of date",
+                    comparisonCase.Id
+                );
+
+            comparisonCase
+                .ApprovedDifference.Should()
+                .NotBeNullOrWhiteSpace(
+                    "case '{0}' differs from ODS 7.3.2 and must name an approved difference",
+                    comparisonCase.Id
+                );
+
+            OdsComparisonCatalog
+                .Definitions.Catalog.Select(entry => entry.Id)
+                .Should()
+                .Contain(
+                    comparisonCase.ApprovedDifference!,
+                    "case '{0}' names an approved difference that must resolve in the committed catalog",
+                    comparisonCase.Id
+                );
+        }
+        else
+        {
+            matchesOds
+                .Should()
+                .BeTrue(
+                    "case '{0}' declares parity with ODS 7.3.2, so the observed outcome must be the "
+                        + "recorded ODS outcome",
+                    comparisonCase.Id
+                );
+        }
+    }
+
+    private static Dictionary<string, string> Placeholders() =>
+        new(StringComparer.Ordinal)
+        {
+            ["{maximumPageSize}"] = HostMaximumPageSize.ToString(CultureInfo.InvariantCulture),
+            ["{defaultPartitionCount}"] = HostDefaultPartitionCount.ToString(CultureInfo.InvariantCulture),
+            ["{validToken}"] = PageTokenCodec.Encode(new CursorRange(1, 100)),
+            ["{invalidToken}"] = "!!!",
+            ["{leadingPlusDecimalToken}"] = EncodePayload("+1,100"),
+            ["{whitespaceDecimalToken}"] = EncodePayload("1, 100"),
+            ["{beyondInt32Token}"] = PageTokenCodec.Encode(new CursorRange(3_000_000_000L, 4_000_000_000L)),
+        };
+
+    /// <summary>
+    /// Encodes an arbitrary payload the way the codec encodes a range, so a token the decoder must
+    /// reject differs from a valid one only in its payload rather than in its transport encoding.
+    /// </summary>
+    private static string EncodePayload(string payload) =>
+        System.Buffers.Text.Base64Url.EncodeToString(Encoding.UTF8.GetBytes(payload));
+
+    private static async Task<Observation> ObserveAsync(
+        ApiIntegrationHarness harness,
+        ComparisonCase comparisonCase,
+        IReadOnlyDictionary<string, string> placeholders
+    )
+    {
+        string query = Substitute(comparisonCase.Query, placeholders);
+
+        return comparisonCase.Executor switch
+        {
+            "collection-get" => await ObserveRequestAsync(
+                harness,
+                $"{CursorContractSupport.ExtensionItemsEndpoint}{query}",
+                comparisonCase
+            ),
+            "partitions-get" => await ObserveRequestAsync(
+                harness,
+                $"{CursorContractSupport.ExtensionItemsPartitionsEndpoint}{query}",
+                comparisonCase
+            ),
+            "change-query-get" => await ObserveRequestAsync(
+                harness,
+                $"{CursorContractSupport.ExtensionItemsEndpoint}{comparisonCase.Path}{query}",
+                comparisonCase
+            ),
+            "served-document" => await ObserveDocumentAsync(harness, comparisonCase),
+            "sizing-true-ceiling" => await ObserveSizingAsync(harness, query),
+            "number-collision" => await ObserveCollisionAsync(harness),
+            "empty-hydration" => await ObserveEmptyHydrationAsync(harness),
+            "identity-maximum" => await ObserveIdentityMaximumAsync(harness),
+            "profile-partitions-get" => await ObserveProfilePartitionsAsync(harness),
+            "profile-document-partitions-omission" => await ObserveProfileDocumentOmissionAsync(harness),
+            _ => throw new InvalidOperationException(
+                $"Comparison case '{comparisonCase.Id}' names unknown executor "
+                    + $"'{comparisonCase.Executor}'."
+            ),
+        };
+    }
+
+    private static async Task<Observation> ObserveRequestAsync(
+        ApiIntegrationHarness harness,
+        string requestUri,
+        ComparisonCase comparisonCase
+    )
+    {
+        if (comparisonCase.Seed is { } seed)
+        {
+            await CursorContractSupport.SeedExtensionItemsAsync(
+                harness,
+                seed,
+                labelFor: _ => "included",
+                numberFor: _ => int.Parse(CollisionNumber, CultureInfo.InvariantCulture)
+            );
+        }
+
+        using HttpResponseMessage response = await harness.HttpClient.GetAsync(requestUri);
+        string body = await response.Content.ReadAsStringAsync();
+
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+        {
+            AssertShell(response, body, comparisonCase);
+
+            return new Observation(
+                (int)response.StatusCode,
+                [.. JsonNode.Parse(body)!["errors"]!.AsArray().Select(error => error!.GetValue<string>())],
+                new Dictionary<string, JsonNode?>(StringComparer.Ordinal)
+            );
+        }
+
+        Dictionary<string, JsonNode?> expectations = new(StringComparer.Ordinal);
+
+        if (response.IsSuccessStatusCode && body.StartsWith('['))
+        {
+            expectations["documentCount"] = JsonValue.Create(JsonNode.Parse(body)!.AsArray().Count);
+            expectations["headerPresent"] = JsonValue.Create(
+                response.Headers.Contains(CursorContractSupport.NextPageTokenHeaderName)
+            );
+        }
+
+        return new Observation((int)response.StatusCode, null, expectations);
+    }
+
+    /// <summary>
+    /// Asserts the complete ProblemDetails shell a rejection answers in, including its media type. The
+    /// case names which of the two shells applies, because several recorded differences turn on which
+    /// one answers a request faulty in more than one way.
+    /// </summary>
+    private static void AssertShell(HttpResponseMessage response, string body, ComparisonCase comparisonCase)
+    {
+        JsonNode problem = JsonNode.Parse(body)!;
+
+        response
+            .Content.Headers.ContentType?.MediaType.Should()
+            .Be("application/json", "case '{0}' answers in the DMS response media type", comparisonCase.Id);
+
+        (string expectedType, string expectedTitle, string expectedDetail) =
+            comparisonCase.Shell == ComparisonCase.BadRequestShell
+                ? (
+                    BadRequestProblemDetails.ProblemType,
+                    BadRequestProblemDetails.ProblemTitle,
+                    BadRequestProblemDetails.ProblemDetail
+                )
+                : (
+                    ParameterValidationProblemDetails.ProblemType,
+                    ParameterValidationProblemDetails.ProblemTitle,
+                    ParameterValidationProblemDetails.ProblemDetail
+                );
+
+        problem["detail"]!.GetValue<string>().Should().Be(expectedDetail, "case '{0}'", comparisonCase.Id);
+        problem["type"]!.GetValue<string>().Should().Be(expectedType, "case '{0}'", comparisonCase.Id);
+        problem["title"]!.GetValue<string>().Should().Be(expectedTitle, "case '{0}'", comparisonCase.Id);
+        problem["status"]!.GetValue<int>().Should().Be(400, "case '{0}'", comparisonCase.Id);
+        problem["correlationId"]!
+            .GetValue<string>()
+            .Should()
+            .NotBeNullOrWhiteSpace("case '{0}'", comparisonCase.Id);
+        problem["validationErrors"]!.AsObject().Should().BeEmpty("case '{0}'", comparisonCase.Id);
+    }
+
+    private static async Task<Observation> ObserveDocumentAsync(
+        ApiIntegrationHarness harness,
+        ComparisonCase comparisonCase
+    )
+    {
+        using HttpResponseMessage response = await harness.HttpClient.GetAsync(comparisonCase.Document!);
+        string body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+
+        JsonNode document = JsonNode.Parse(body)!;
+        JsonObject values = [];
+
+        foreach (
+            var pointer in comparisonCase.Dms.Expect!["jsonValues"]!.AsObject().Select(member => member.Key)
+        )
+        {
+            values[pointer] = ResolvePointer(document, pointer);
+        }
+
+        return new Observation(
+            (int)response.StatusCode,
+            null,
+            new Dictionary<string, JsonNode?>(StringComparer.Ordinal) { ["jsonValues"] = values }
+        );
+    }
+
+    private static JsonNode? ResolvePointer(JsonNode document, string pointer)
+    {
+        JsonNode? current = document;
+
+        foreach (string segment in pointer.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            current = current?[segment];
+
+            if (current is null)
+            {
+                return null;
+            }
+        }
+
+        return current.DeepClone();
+    }
+
+    private static async Task<Observation> ObserveSizingAsync(ApiIntegrationHarness harness, string query)
+    {
+        await CursorContractSupport.SeedExtensionItemsAsync(
+            harness,
+            25,
+            labelFor: _ => "included",
+            numberFor: _ => int.Parse(CollisionNumber, CultureInfo.InvariantCulture)
+        );
+
+        var pageTokens = await CursorContractSupport.ReadPageTokensAsync(
+            harness,
+            $"{CursorContractSupport.ExtensionItemsPartitionsEndpoint}{query}"
+        );
+
+        List<int> counts = [];
+
+        foreach (string pageToken in pageTokens)
+        {
+            var walked = await CursorContractSupport.WalkFromTokenAsync(
+                harness,
+                CursorContractSupport.ExtensionItemsEndpoint,
+                pageToken,
+                HostMaximumPageSize
+            );
+
+            counts.Add(walked.Count);
+        }
+
+        return new Observation(
+            200,
+            null,
+            new Dictionary<string, JsonNode?>(StringComparer.Ordinal)
+            {
+                ["tokenCount"] = JsonValue.Create(pageTokens.Count),
+                ["firstPartitionDocumentCount"] = JsonValue.Create(counts[0]),
+                ["finalPartitionDocumentCount"] = JsonValue.Create(counts[^1]),
+            }
+        );
+    }
+
+    private static async Task<Observation> ObserveCollisionAsync(ApiIntegrationHarness harness)
+    {
+        var seeded = await CursorContractSupport.SeedExtensionItemsAsync(
+            harness,
+            25,
+            labelFor: _ => "included",
+            numberFor: index => 100 + index
+        );
+
+        var filtered = await CursorContractSupport.ReadPageAsync(
+            harness,
+            $"{CursorContractSupport.ExtensionItemsEndpoint}?number={CollisionNumber}"
+        );
+
+        var pageTokens = await CursorContractSupport.ReadPageTokensAsync(
+            harness,
+            $"{CursorContractSupport.ExtensionItemsPartitionsEndpoint}?number={CollisionNumber}"
+        );
+
+        List<string> walked = [];
+
+        foreach (string pageToken in pageTokens)
+        {
+            walked.AddRange(
+                await CursorContractSupport.WalkFromTokenAsync(
+                    harness,
+                    CursorContractSupport.ExtensionItemsEndpoint,
+                    pageToken,
+                    HostMaximumPageSize
+                )
+            );
+        }
+
+        return new Observation(
+            200,
+            null,
+            new Dictionary<string, JsonNode?>(StringComparer.Ordinal)
+            {
+                ["collectionFilteredCount"] = JsonValue.Create(filtered.DocumentIds.Count),
+                ["partitionsCoverWholeCollection"] = JsonValue.Create(
+                    walked.Count == seeded.Count
+                        && seeded.All(item => walked.Contains(item.Id, StringComparer.Ordinal))
+                ),
+            }
+        );
+    }
+
+    private static async Task<Observation> ObserveEmptyHydrationAsync(ApiIntegrationHarness harness)
+    {
+        await CursorContractSupport.SeedExtensionItemsAsync(
+            harness,
+            8,
+            labelFor: _ => "included",
+            numberFor: _ => int.Parse(CollisionNumber, CultureInfo.InvariantCulture)
+        );
+
+        var page = await CursorContractSupport.ReadPageAsync(
+            harness,
+            $"{CursorContractSupport.ExtensionItemsEndpoint}"
+                + $"?pageToken={CursorContractSupport.EntryPageToken}&pageSize={HostMaximumPageSize}"
+        );
+
+        return new Observation(
+            200,
+            null,
+            new Dictionary<string, JsonNode?>(StringComparer.Ordinal)
+            {
+                ["documentCount"] = JsonValue.Create(page.DocumentIds.Count),
+                ["headerPresent"] = JsonValue.Create(page.NextPageToken is not null),
+            }
+        );
+    }
+
+    /// <summary>
+    /// Reseeds the document identity sequence so a single created document lands on
+    /// <see cref="long.MaxValue"/>, then observes what its page carries.
+    /// </summary>
+    /// <remarks>
+    /// The database is leased per test, so the reseed cannot reach another test. Exactly one document is
+    /// created afterwards, because a second would have no identity left to take.
+    /// </remarks>
+    private static async Task<Observation> ObserveIdentityMaximumAsync(ApiIntegrationHarness harness)
+    {
+        await ReseedDocumentIdentityAsync(harness);
+
+        await CursorContractSupport.SeedExtensionItemsAsync(
+            harness,
+            1,
+            labelFor: _ => "included",
+            numberFor: _ => int.Parse(CollisionNumber, CultureInfo.InvariantCulture)
+        );
+
+        long maximumDocumentId = await ReadMaximumDocumentIdAsync(harness);
+
+        maximumDocumentId
+            .Should()
+            .Be(
+                long.MaxValue,
+                "the reseed must put the created document on the maximum identity, or the missing header "
+                    + "below would be evidence of nothing"
+            );
+
+        var page = await CursorContractSupport.ReadPageAsync(
+            harness,
+            CursorContractSupport.ExtensionItemsEndpoint
+        );
+
+        return new Observation(
+            200,
+            null,
+            new Dictionary<string, JsonNode?>(StringComparer.Ordinal)
+            {
+                ["documentCount"] = JsonValue.Create(page.DocumentIds.Count),
+                ["headerPresent"] = JsonValue.Create(page.NextPageToken is not null),
+            }
+        );
+    }
+
+    private static async Task ReseedDocumentIdentityAsync(ApiIntegrationHarness harness)
+    {
+        await using var command = harness.DbConnection.CreateCommand();
+
+        // SQL Server's reseed is row-count dependent: on a table that already holds rows the next
+        // identity is the reseed value plus the increment, while on an empty one it is the reseed value
+        // itself. Choosing the value from the row count is what makes a single created document land on
+        // the maximum either way; PostgreSQL's restart is unconditional.
+        command.CommandText = IsPostgresql(harness)
+            ? """ALTER TABLE dms."Document" ALTER COLUMN "DocumentId" RESTART WITH 9223372036854775807"""
+            : """
+                IF EXISTS (SELECT 1 FROM [dms].[Document])
+                    DBCC CHECKIDENT ('dms.Document', RESEED, 9223372036854775806);
+                ELSE
+                    DBCC CHECKIDENT ('dms.Document', RESEED, 9223372036854775807);
+                """;
+
+        await command.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>
+    /// Reads the highest document identity the leased database holds, so the identity-maximum case can
+    /// prove it really reached the maximum rather than merely observing a missing header.
+    /// </summary>
+    private static async Task<long> ReadMaximumDocumentIdAsync(ApiIntegrationHarness harness)
+    {
+        await using var command = harness.DbConnection.CreateCommand();
+        command.CommandText = IsPostgresql(harness)
+            ? "SELECT MAX(\"DocumentId\") FROM dms.\"Document\""
+            : "SELECT MAX([DocumentId]) FROM [dms].[Document]";
+
+        object? maximum = await command.ExecuteScalarAsync();
+
+        return maximum is long value ? value : 0L;
+    }
+
+    private static bool IsPostgresql(ApiIntegrationHarness harness) =>
+        harness.DbConnection.GetType().Name.Contains("Npgsql", StringComparison.Ordinal);
+
+    private static async Task<Observation> ObserveProfilePartitionsAsync(ApiIntegrationHarness harness)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, ProfileMergeItemsPartitionsEndpoint);
+        request.Headers.TryAddWithoutValidation("Accept", WriteOnlyReadableContentType);
+
+        using HttpResponseMessage response = await harness.HttpClient.SendAsync(request);
+
+        return new Observation(
+            (int)response.StatusCode,
+            null,
+            new Dictionary<string, JsonNode?>(StringComparer.Ordinal)
+        );
+    }
+
+    /// <summary>
+    /// Observes which paths the core document and a write-only profile document publish for one
+    /// resource.
+    /// </summary>
+    /// <remarks>
+    /// Every observation but the last is reported so the comparison cannot pass vacuously. A profile
+    /// document with no paths at all, or one that lost the collection path along with the partition
+    /// path, would satisfy "the partitions path is absent" while proving nothing; requiring the core
+    /// document to publish both paths, and the profile document to publish the collection path with a
+    /// write operation and no read operation, is what makes the missing sibling the only thing under
+    /// test.
+    /// </remarks>
+    private static async Task<Observation> ObserveProfileDocumentOmissionAsync(ApiIntegrationHarness harness)
+    {
+        JsonObject corePaths = await ReadDocumentPathsAsync(harness, CoreResourcesDocument);
+        JsonObject profilePaths = await ReadDocumentPathsAsync(harness, ProfileResourcesDocument);
+
+        JsonNode? profileCollection = profilePaths[ProfiledCollectionPath];
+
+        return new Observation(
+            200,
+            null,
+            new Dictionary<string, JsonNode?>(StringComparer.Ordinal)
+            {
+                ["coreDocumentHasPaths"] = JsonValue.Create(corePaths.Count > 0),
+                ["coreCollectionPathPresent"] = JsonValue.Create(
+                    corePaths.ContainsKey(ProfiledCollectionPath)
+                ),
+                ["corePartitionsPathPresent"] = JsonValue.Create(
+                    corePaths.ContainsKey(ProfiledPartitionsPath)
+                ),
+                ["profileDocumentHasPaths"] = JsonValue.Create(profilePaths.Count > 0),
+                ["profileCollectionPathPresent"] = JsonValue.Create(profileCollection is not null),
+                ["profileCollectionHasWriteOperation"] = JsonValue.Create(
+                    profileCollection?["post"] is not null
+                ),
+                ["profileCollectionHasReadOperation"] = JsonValue.Create(
+                    profileCollection?["get"] is not null
+                ),
+                ["profilePartitionsPathPresent"] = JsonValue.Create(
+                    profilePaths.ContainsKey(ProfiledPartitionsPath)
+                ),
+            }
+        );
+    }
+
+    private static async Task<JsonObject> ReadDocumentPathsAsync(
+        ApiIntegrationHarness harness,
+        string document
+    )
+    {
+        using HttpResponseMessage response = await harness.HttpClient.GetAsync(document);
+        string body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+
+        return JsonNode.Parse(body)!["paths"]?.AsObject() ?? [];
+    }
+
+    private static void AssertMatches(
+        Observation observation,
+        ExpectedOutcome expected,
+        ComparisonCase comparisonCase,
+        string side
+    )
+    {
+        observation.Status.Should().Be(expected.Status, "{0} status for case '{1}'", side, comparisonCase.Id);
+
+        if (expected.Errors is not null)
+        {
+            observation
+                .Errors.Should()
+                .NotBeNull("case '{0}' expects a rejection body", comparisonCase.Id)
+                .And.Equal(expected.Errors, "{0} errors for case '{1}'", side, comparisonCase.Id);
+        }
+
+        if (expected.Expect is null)
+        {
+            return;
+        }
+
+        foreach (var member in expected.Expect)
+        {
+            observation
+                .Expectations.Should()
+                .ContainKey(member.Key, "case '{0}' observes '{1}'", comparisonCase.Id, member.Key);
+
+            JsonNode
+                .DeepEquals(observation.Expectations[member.Key], member.Value)
+                .Should()
+                .BeTrue(
+                    "{0} expectation '{1}' for case '{2}': observed {3}, expected {4}",
+                    side,
+                    member.Key,
+                    comparisonCase.Id,
+                    observation.Expectations[member.Key]?.ToJsonString() ?? "null",
+                    member.Value?.ToJsonString() ?? "null"
+                );
+        }
+    }
+
+    private static bool Matches(Observation observation, ExpectedOutcome expected)
+    {
+        if (observation.Status != expected.Status)
+        {
+            return false;
+        }
+
+        if (
+            expected.Errors is not null
+            && (observation.Errors is null || !observation.Errors.SequenceEqual(expected.Errors))
+        )
+        {
+            return false;
+        }
+
+        if (expected.Expect is null)
+        {
+            return true;
+        }
+
+        foreach (var member in expected.Expect)
+        {
+            if (!observation.Expectations.TryGetValue(member.Key, out JsonNode? observed))
+            {
+                return false;
+            }
+
+            if (!JsonNode.DeepEquals(observed, member.Value))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static string Substitute(string text, IReadOnlyDictionary<string, string> placeholders)
+    {
+        string resolved = text;
+
+        foreach (var placeholder in placeholders)
+        {
+            resolved = resolved.Replace(placeholder.Key, placeholder.Value, StringComparison.Ordinal);
+        }
+
+        return resolved;
+    }
+
+    /// <summary>What the host actually answered, in the same vocabulary the case files use.</summary>
+    private sealed record Observation(
+        int Status,
+        IReadOnlyList<string>? Errors,
+        IReadOnlyDictionary<string, JsonNode?> Expectations
+    );
+}

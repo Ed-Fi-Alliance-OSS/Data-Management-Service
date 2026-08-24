@@ -44,5 +44,12 @@
         <None Include="appsettings.Test.json" Condition="Exists('appsettings.Test.json')">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>
+        <!--
+            The ODS comparison definitions are resolved from the repository directory rather than from
+            the output directory, the same way the ApiSchema fixtures are, so they are declared here for
+            visibility rather than copied. Editing one changes what the next run executes without a
+            rebuild.
+        -->
+        <None Update="OdsParity\CursorPartition\*.json" />
     </ItemGroup>
 </Project>

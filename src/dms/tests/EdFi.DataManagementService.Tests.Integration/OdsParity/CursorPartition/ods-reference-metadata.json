@@ -1,0 +1,39 @@
+{
+  "odsVersion": "7.3.2",
+  "dataStandardVersion": "5.0.0",
+  "live": false,
+  "liveReason": "No ODS 7.3.2 API instance is stood up or automated for this comparison, and doing so is explicitly out of scope for DMS-1390. The recorded ODS outcomes below were established by reading the pinned ODS 7.3.2 sources listed in odsSourceAuthorities, as recorded in the epic named by derivedFrom. Only the DMS half of every case is executed; the ODS half is static expected data.",
+  "derivedFrom": "reference/design/backend-redesign/epics/20-partitioned-cursor-paging/EPIC.md",
+  "derivedFromSections": [
+    "ODS Precedence Comparison",
+    "Approved Intentional ODS Differences",
+    "Approved Behavior Changes to Existing Endpoints"
+  ],
+  "odsSourceAuthorities": [
+    "Application/EdFi.Ods.Common/Infrastructure/Repositories/PagingHelpers.cs",
+    "Application/EdFi.Ods.Common/Models/Queries/QueryParameters.cs",
+    "Application/EdFi.Ods.Common/Models/Queries/QueryParametersValidator.cs",
+    "Application/EdFi.Ods.Api/Controllers/DataManagementControllerBase.cs",
+    "Application/EdFi.Ods.Common/Providers/Queries/Paging/KeySetPagingStrategy.cs",
+    "Application/EdFi.Ods.Api/Controllers/Partitions/Controllers/PartitionsController.cs"
+  ],
+  "sentinelConvention": {
+    "prefix": "ods:",
+    "meaning": "An ODS outcome whose body this comparison does not reproduce verbatim, recorded as a stable marker rather than as prose so the observed DMS response can still be compared structurally against it. A marker never equals a real DMS message, so a case carrying one is always a difference and must name an approved difference.",
+    "markers": {
+      "ods:model-binding-shell": "ODS answers from automatic model-state validation before its controller body runs, producing an ErrorTranslator ProblemDetails shell built from ModelState rather than the message DMS returns.",
+      "ods:repository-count-template-rejection": "ODS accepts the combination during parameter validation and rejects it later, when its repository builds the count template and finds a MinAggregateId parameter in it.",
+      "ods:accepted-and-discarded": "ODS binds the parameter into its request model and then ignores it, so the request succeeds and the parameter has no effect.",
+      "ods:unrepresentable-in-int32": "The range the token names cannot be carried by ODS, whose paging bounds are Int32 AggregateId values."
+    }
+  },
+  "placeholders": {
+    "{validToken}": "A page token produced by this host's own codec, so it decodes by construction.",
+    "{invalidToken}": "A token that cannot decode.",
+    "{maximumPageSize}": "The maximum page size the host under test is configured with, substituted at execution time so a message quoting it cannot drift from the running configuration.",
+    "{defaultPartitionCount}": "The default partition count the host under test is configured with.",
+    "{leadingPlusDecimalToken}": "A token whose lower bound carries a leading plus sign.",
+    "{whitespaceDecimalToken}": "A token whose upper bound is preceded by a space.",
+    "{beyondInt32Token}": "A token whose bounds both exceed Int32.MaxValue."
+  }
+}

@@ -1,0 +1,166 @@
+{
+  "description": "Every row of the epic's 'ODS Precedence Comparison' table, in the order the table states them. Each is executed as a real DMS collection GET; the ods block records how ODS 7.3.2 answers the same request.",
+  "cases": [
+    {
+      "id": "cursor-precedence-01",
+      "group": "validation",
+      "executor": "collection-get",
+      "query": "?pageToken={validToken}&offset=-1",
+      "dms": {
+        "status": 400,
+        "errors": [
+          "Both offset and pageToken parameters were provided, but they support alternative paging approaches and cannot be used together."
+        ]
+      },
+      "ods": {
+        "status": 400,
+        "errors": [
+          "Both offset and pageToken parameters were provided, but they support alternative paging approaches and cannot be used together."
+        ]
+      },
+      "outcome": "parity"
+    },
+    {
+      "id": "cursor-precedence-02",
+      "group": "validation",
+      "executor": "collection-get",
+      "query": "?pageToken={validToken}&limit=99999",
+      "dms": {
+        "status": 400,
+        "errors": ["Use pageSize instead of limit when using cursor paging with pageToken."]
+      },
+      "ods": {
+        "status": 400,
+        "errors": ["Use pageSize instead of limit when using cursor paging with pageToken."]
+      },
+      "outcome": "parity"
+    },
+    {
+      "id": "cursor-precedence-03",
+      "group": "validation",
+      "executor": "collection-get",
+      "query": "?pageSize=99999",
+      "dms": { "status": 400, "errors": ["PageToken is required when pageSize is specified."] },
+      "ods": { "status": 400, "errors": ["PageToken is required when pageSize is specified."] },
+      "outcome": "parity"
+    },
+    {
+      "id": "cursor-precedence-04",
+      "group": "validation",
+      "executor": "collection-get",
+      "query": "?pageSize=",
+      "dms": { "status": 400, "errors": ["PageToken is required when pageSize is specified."] },
+      "ods": { "status": 200, "errors": ["ods:accepted-and-discarded"] },
+      "outcome": "difference",
+      "approvedDifference": "cursor-key-presence-is-significant",
+      "note": "ODS model-binds the blank value to null, treats the parameter as absent, and returns 200."
+    },
+    {
+      "id": "cursor-precedence-05",
+      "group": "validation",
+      "executor": "collection-get",
+      "query": "?pageToken={invalidToken}&offset=5",
+      "dms": { "status": 400, "errors": ["The page token provided was invalid."] },
+      "ods": { "status": 400, "errors": ["The page token provided was invalid."] },
+      "outcome": "parity"
+    },
+    {
+      "id": "cursor-precedence-06",
+      "group": "validation",
+      "executor": "collection-get",
+      "query": "?pageToken={invalidToken}&limit=10",
+      "dms": { "status": 400, "errors": ["The page token provided was invalid."] },
+      "ods": { "status": 400, "errors": ["The page token provided was invalid."] },
+      "outcome": "parity"
+    },
+    {
+      "id": "cursor-precedence-07",
+      "group": "validation",
+      "executor": "collection-get",
+      "query": "?pageSize=5&limit=10",
+      "dms": { "status": 400, "errors": ["PageToken is required when pageSize is specified."] },
+      "ods": { "status": 200, "errors": ["ods:accepted-and-discarded"] },
+      "outcome": "difference",
+      "approvedDifference": "reject-limit-with-cursor-parameters",
+      "note": "ODS returns 200; this is an approved stricter DMS rejection."
+    },
+    {
+      "id": "cursor-precedence-08",
+      "group": "validation",
+      "executor": "collection-get",
+      "query": "?pageSize=5&totalCount=true",
+      "dms": { "status": 400, "errors": ["PageToken is required when pageSize is specified."] },
+      "ods": { "status": 400, "errors": ["PageToken is required when pageSize is specified."] },
+      "outcome": "parity",
+      "note": "ODS returns the same message from its limit/offset branch."
+    },
+    {
+      "id": "cursor-precedence-09",
+      "group": "validation",
+      "executor": "collection-get",
+      "query": "?pageSize=5&offset=3&totalCount=true",
+      "dms": { "status": 400, "errors": ["Use limit instead of pageSize when using limit/offset paging."] },
+      "ods": { "status": 400, "errors": ["Use limit instead of pageSize when using limit/offset paging."] },
+      "outcome": "parity"
+    },
+    {
+      "id": "cursor-precedence-10",
+      "group": "validation",
+      "executor": "collection-get",
+      "query": "?pageToken={validToken}&pageSize=-1",
+      "dms": {
+        "status": 400,
+        "errors": ["PageSize must be a value between 0 and {maximumPageSize}."]
+      },
+      "ods": {
+        "status": 400,
+        "errors": ["PageSize must be a value between 0 and {maximumPageSize}."]
+      },
+      "outcome": "parity"
+    },
+    {
+      "id": "cursor-precedence-11",
+      "group": "validation",
+      "executor": "collection-get",
+      "query": "?pageToken={validToken}&pageSize=abc",
+      "dms": {
+        "status": 400,
+        "errors": ["PageSize must be a value between 0 and {maximumPageSize}."]
+      },
+      "ods": { "status": 400, "errors": ["ods:model-binding-shell"] },
+      "outcome": "difference",
+      "approvedDifference": "cursor-key-presence-is-significant",
+      "note": "ODS's int? model binding fails before its validator runs, so it answers with a model-binding response shell instead of this range message."
+    },
+    {
+      "id": "cursor-precedence-12",
+      "group": "validation",
+      "executor": "collection-get",
+      "query": "?pageToken={validToken}&limit=10&pageSize=5",
+      "dms": {
+        "status": 400,
+        "errors": ["Use pageSize instead of limit when using cursor paging with pageToken."]
+      },
+      "ods": { "status": 200, "errors": ["ods:accepted-and-discarded"] },
+      "outcome": "difference",
+      "approvedDifference": "reject-limit-with-cursor-parameters",
+      "note": "ODS returns 200; this is an approved stricter DMS rejection."
+    },
+    {
+      "id": "cursor-precedence-13",
+      "group": "validation",
+      "executor": "collection-get",
+      "query": "?pageToken={validToken}&totalCount=true",
+      "dms": {
+        "status": 400,
+        "errors": [
+          "The totalCount parameter cannot be set to true when using cursor paging with pageToken."
+        ]
+      },
+      "ods": { "status": 400, "errors": ["ods:repository-count-template-rejection"] },
+      "outcome": "difference",
+      "approvedDifference": "totalcount-rejected-at-validation",
+      "note": "Both reject with 400, but ODS rejects later and reports 'Total count cannot be determined while using cursor paging (when pageToken is specified).'"
+    }
+  ]
+}

@@ -1,0 +1,99 @@
+{
+  "description": "Approved differences observable in the documents this host serves rather than in a data-plane response. Each is executed by fetching a served document and reading exact JSON pointers out of it; a pointer whose recorded value is null must be absent from the document.",
+  "cases": [
+    {
+      "id": "openapi-publishes-runtime-page-size-bounds",
+      "group": "metadata",
+      "executor": "served-document",
+      "document": "/metadata/specifications/resources-spec.json",
+      "dms": {
+        "status": 200,
+        "expect": {
+          "jsonValues": {
+            "/components/parameters/limit/schema/default": "{maximumPageSize}",
+            "/components/parameters/limit/schema/maximum": "{maximumPageSize}",
+            "/components/parameters/pageSize/schema/default": "{maximumPageSize}",
+            "/components/parameters/pageSize/schema/maximum": "{maximumPageSize}"
+          }
+        }
+      },
+      "ods": {
+        "status": 200,
+        "expect": {
+          "jsonValues": {
+            "/components/parameters/limit/schema/default": 25,
+            "/components/parameters/limit/schema/maximum": 500,
+            "/components/parameters/pageSize/schema/default": 25,
+            "/components/parameters/pageSize/schema/maximum": null
+          }
+        }
+      },
+      "outcome": "difference",
+      "approvedDifference": "openapi-publishes-runtime-page-size-bounds",
+      "note": "The recorded values are what the authoritative Ed-Fi fixture publishes: limit defaults to 25 with a maximum of 500, and pageSize defaults to 25 with no maximum. DMS replaces both with the runtime MaximumPageSize, so the published metadata tracks the deployment rather than a hardcoded pair. ODS's runtime maximum for both parameters is likewise a configurable setting already defaulting to 500, so this difference is confined to published metadata rather than runtime enforcement."
+    },
+    {
+      "id": "openapi-publishes-runtime-default-partition-count",
+      "group": "metadata",
+      "executor": "served-document",
+      "document": "/metadata/specifications/resources-spec.json",
+      "dms": {
+        "status": 200,
+        "expect": {
+          "jsonValues": {
+            "/components/parameters/numberOfPartitions/schema/default": "{defaultPartitionCount}",
+            "/components/parameters/numberOfPartitions/schema/minimum": 1,
+            "/components/parameters/numberOfPartitions/schema/maximum": 200
+          }
+        }
+      },
+      "ods": {
+        "status": 200,
+        "expect": {
+          "jsonValues": {
+            "/components/parameters/numberOfPartitions/schema/default": null,
+            "/components/parameters/numberOfPartitions/schema/minimum": 1,
+            "/components/parameters/numberOfPartitions/schema/maximum": 200
+          }
+        }
+      },
+      "outcome": "difference",
+      "approvedDifference": "openapi-publishes-runtime-default-partition-count",
+      "note": "Ed-Fi's published metadata omits the numberOfPartitions default entirely, which is what the null records. ODS's default partition count is likewise a configurable setting defaulting to 10, so DMS matches ODS runtime behavior here and differs only in the published metadata."
+    },
+    {
+      "id": "write-only-profile-omits-partitions-path",
+      "group": "profile-metadata",
+      "executor": "profile-document-partitions-omission",
+      "dms": {
+        "status": 200,
+        "expect": {
+          "coreDocumentHasPaths": true,
+          "coreCollectionPathPresent": true,
+          "corePartitionsPathPresent": true,
+          "profileDocumentHasPaths": true,
+          "profileCollectionPathPresent": true,
+          "profileCollectionHasWriteOperation": true,
+          "profileCollectionHasReadOperation": false,
+          "profilePartitionsPathPresent": false
+        }
+      },
+      "ods": {
+        "status": 200,
+        "expect": {
+          "coreDocumentHasPaths": true,
+          "coreCollectionPathPresent": true,
+          "corePartitionsPathPresent": true,
+          "profileDocumentHasPaths": true,
+          "profileCollectionPathPresent": true,
+          "profileCollectionHasWriteOperation": true,
+          "profileCollectionHasReadOperation": false,
+          "profilePartitionsPathPresent": true
+        }
+      },
+      "outcome": "difference",
+      "approvedDifference": "write-only-profile-omits-partitions-path",
+      "note": "ODS 7.3.2's paths factory keeps every resource that is readable or writable and then adds the partition path for each non-composite resource through a path method that carries no Readable guard, unlike the sibling collection and by-id path methods, which gate their read operations on it. Every observation but the last is identical on both sides, so the difference is exactly the sibling path's presence."
+    }
+  ]
+}

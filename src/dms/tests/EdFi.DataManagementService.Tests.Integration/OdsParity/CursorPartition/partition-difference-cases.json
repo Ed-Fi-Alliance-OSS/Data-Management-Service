@@ -1,0 +1,275 @@
+{
+  "description": "The approved-difference cases that are not rows of the precedence table and are not served-document metadata. Despite the file name these cover both the partition operation and the collection-side differences the precedence table does not reach: change-query scoping, the retained traditional messages, the omitted-limit default, sizing, the header gating, the identity bound, and the decoder contract.",
+  "cases": [
+    {
+      "id": "partition-number-non-numeric",
+      "group": "validation",
+      "executor": "partitions-get",
+      "query": "?number=abc",
+      "shell": "parameterValidation",
+      "dms": { "status": 400, "errors": ["Number of partitions must be between 1 and 200."] },
+      "ods": { "status": 400, "errors": ["ods:model-binding-shell"] },
+      "outcome": "difference",
+      "approvedDifference": "number-non-numeric-range-message",
+      "note": "ODS's [FromQuery] int? number binding fails before its controller body runs, so automatic model-state validation answers instead and the controller's own range check never executes."
+    },
+    {
+      "id": "partition-number-blank",
+      "group": "validation",
+      "executor": "partitions-get",
+      "query": "?number=",
+      "shell": "parameterValidation",
+      "dms": { "status": 400, "errors": ["Number of partitions must be between 1 and 200."] },
+      "ods": { "status": 200, "errors": ["ods:accepted-and-discarded"] },
+      "outcome": "difference",
+      "approvedDifference": "number-blank-range-message",
+      "note": "ODS's nullable-int binding reads the empty value as absent, so number arrives null, its range check does not trigger, and the request succeeds with the configured default partition count."
+    },
+    {
+      "id": "partition-number-below-range",
+      "group": "validation",
+      "executor": "partitions-get",
+      "query": "?number=0",
+      "shell": "parameterValidation",
+      "dms": { "status": 400, "errors": ["Number of partitions must be between 1 and 200."] },
+      "ods": { "status": 400, "errors": ["Number of partitions must be between 1 and 200."] },
+      "outcome": "parity",
+      "note": "A numeric out-of-range count reaches ODS's controller body, where its own range check produces the same text."
+    },
+    {
+      "id": "partition-number-above-range",
+      "group": "validation",
+      "executor": "partitions-get",
+      "query": "?number=201",
+      "shell": "parameterValidation",
+      "dms": { "status": 400, "errors": ["Number of partitions must be between 1 and 200."] },
+      "ods": { "status": 400, "errors": ["Number of partitions must be between 1 and 200."] },
+      "outcome": "parity"
+    },
+    {
+      "id": "partition-reserved-parameters",
+      "group": "validation",
+      "executor": "partitions-get",
+      "query": "?pageToken={validToken}&pageSize=5&limit=5&offset=5&totalCount=true",
+      "shell": "parameterValidation",
+      "dms": {
+        "status": 400,
+        "errors": [
+          "The 'pageToken' parameter is not supported by the partitions endpoint.",
+          "The 'pageSize' parameter is not supported by the partitions endpoint.",
+          "The 'limit' parameter is not supported by the partitions endpoint.",
+          "The 'offset' parameter is not supported by the partitions endpoint.",
+          "The 'totalCount' parameter is not supported by the partitions endpoint."
+        ]
+      },
+      "ods": { "status": 200, "errors": ["ods:accepted-and-discarded"] },
+      "outcome": "difference",
+      "approvedDifference": "partition-reserved-parameters-unsupported",
+      "note": "ODS binds these reserved names into the request model its partitions action declares, range-checks only number, and never carries them into its partition query. It decodes a supplied pageToken and then discards the decoded range."
+    },
+    {
+      "id": "partition-ods-only-allow-small-partitions",
+      "group": "validation",
+      "executor": "partitions-get",
+      "query": "?allowSmallPartitions=true",
+      "shell": "badRequest",
+      "dms": {
+        "status": 400,
+        "errors": ["The query field 'allowSmallPartitions' is not valid for this resource."]
+      },
+      "ods": { "status": 200, "errors": ["ods:accepted-and-discarded"] },
+      "outcome": "difference",
+      "approvedDifference": "ods-only-partition-parameters-rejected",
+      "note": "ODS reads this from the separate additional-parameters dictionary that collects query parameters its request model does not define."
+    },
+    {
+      "id": "partition-ods-only-use-join-auth",
+      "group": "validation",
+      "executor": "partitions-get",
+      "query": "?useJoinAuth=true",
+      "shell": "badRequest",
+      "dms": {
+        "status": 400,
+        "errors": ["The query field 'useJoinAuth' is not valid for this resource."]
+      },
+      "ods": { "status": 200, "errors": ["ods:accepted-and-discarded"] },
+      "outcome": "difference",
+      "approvedDifference": "ods-only-partition-parameters-rejected"
+    },
+    {
+      "id": "change-query-rejects-page-token",
+      "group": "validation",
+      "executor": "change-query-get",
+      "path": "/deletes",
+      "query": "?pageToken={validToken}",
+      "shell": "badRequest",
+      "dms": {
+        "status": 400,
+        "errors": ["The query field 'pageToken' is not valid for this Change Query endpoint."]
+      },
+      "ods": { "status": 200, "errors": ["ods:accepted-and-discarded"] },
+      "outcome": "difference",
+      "approvedDifference": "cursor-parameters-rejected-on-change-queries",
+      "note": "ODS binds the same request model on these endpoints and accepts a valid token; it answers a malformed one with 'The page token provided was invalid.'"
+    },
+    {
+      "id": "change-query-rejects-page-size",
+      "group": "validation",
+      "executor": "change-query-get",
+      "path": "/keyChanges",
+      "query": "?pageSize=5",
+      "shell": "badRequest",
+      "dms": {
+        "status": 400,
+        "errors": ["The query field 'pageSize' is not valid for this Change Query endpoint."]
+      },
+      "ods": { "status": 200, "errors": ["ods:accepted-and-discarded"] },
+      "outcome": "difference",
+      "approvedDifference": "cursor-parameters-rejected-on-change-queries"
+    },
+    {
+      "id": "traditional-offset-message-retained",
+      "group": "validation",
+      "executor": "collection-get",
+      "query": "?offset=-1",
+      "shell": "parameterValidation",
+      "dms": {
+        "status": 400,
+        "errors": ["Offset must be a numeric value greater than or equal to 0."]
+      },
+      "ods": { "status": 400, "errors": ["Offset cannot be a negative value."] },
+      "outcome": "difference",
+      "approvedDifference": "offset-message-text-retained"
+    },
+    {
+      "id": "traditional-limit-message-retained",
+      "group": "validation",
+      "executor": "collection-get",
+      "query": "?limit=99999",
+      "shell": "parameterValidation",
+      "dms": {
+        "status": 400,
+        "errors": [
+          "Limit must be omitted or set to a numeric value between 0 and {maximumPageSize}."
+        ]
+      },
+      "ods": { "status": 400, "errors": ["Limit must be a value between 0 and {maximumPageSize}."] },
+      "outcome": "difference",
+      "approvedDifference": "limit-message-text-retained"
+    },
+    {
+      "id": "strict-decoder-leading-sign-decimal",
+      "group": "validation",
+      "executor": "collection-get",
+      "query": "?pageToken={leadingPlusDecimalToken}",
+      "shell": "parameterValidation",
+      "dms": { "status": 400, "errors": ["The page token provided was invalid."] },
+      "ods": { "status": 200, "errors": ["ods:accepted-and-discarded"] },
+      "outcome": "difference",
+      "approvedDifference": "strict-base64url-and-decimal-decoder",
+      "note": "The approved decimal grammar accepts an optional leading minus and digits only, so a leading plus is rejected. ODS parses its bounds with the framework's default integer styles, which allow a leading sign."
+    },
+    {
+      "id": "strict-decoder-whitespace-decimal",
+      "group": "validation",
+      "executor": "collection-get",
+      "query": "?pageToken={whitespaceDecimalToken}",
+      "shell": "parameterValidation",
+      "dms": { "status": 400, "errors": ["The page token provided was invalid."] },
+      "ods": { "status": 200, "errors": ["ods:accepted-and-discarded"] },
+      "outcome": "difference",
+      "approvedDifference": "strict-base64url-and-decimal-decoder",
+      "note": "The approved decimal grammar rejects whitespace inside a bound. ODS's default integer styles allow leading and trailing white space, so the same payload parses there."
+    },
+    {
+      "id": "omitted-limit-uses-configured-maximum",
+      "group": "omitted-limit-default",
+      "executor": "collection-get",
+      "query": "",
+      "seed": 5,
+      "dms": { "status": 200, "expect": { "documentCount": "{maximumPageSize}" } },
+      "ods": { "status": 200, "expect": { "documentCount": 5 } },
+      "outcome": "difference",
+      "approvedDifference": "maximum-page-size-is-the-omitted-default",
+      "note": "Ed-Fi's published default page size is 25, which would return the whole five-document seed. DMS applies its configured MaximumPageSize instead, so the page is truncated to that value."
+    },
+    {
+      "id": "partition-sizing-true-ceiling",
+      "group": "sizing",
+      "executor": "sizing-true-ceiling",
+      "query": "?number=2",
+      "seed": 25,
+      "dms": {
+        "status": 200,
+        "expect": { "tokenCount": 2, "firstPartitionDocumentCount": 13, "finalPartitionDocumentCount": 12 }
+      },
+      "ods": {
+        "status": 200,
+        "expect": { "tokenCount": 2, "firstPartitionDocumentCount": 12, "finalPartitionDocumentCount": 13 }
+      },
+      "outcome": "difference",
+      "approvedDifference": "true-ceiling-at-most-requested-count",
+      "note": "Twenty-five candidates over two requested partitions: a true ceiling sizes the partition at 13, so the second starts at candidate row 14. ODS spells the size as CEILING over two integer operands, so its CEILING receives an already-truncated quotient of 12 and its second partition starts at row 13, absorbing the surplus into a wider final range."
+    },
+    {
+      "id": "partition-number-consumed-as-count-not-filter",
+      "group": "number-collision",
+      "executor": "number-collision",
+      "seed": 25,
+      "dms": {
+        "status": 200,
+        "expect": { "collectionFilteredCount": 1, "partitionsCoverWholeCollection": true }
+      },
+      "ods": {
+        "status": 200,
+        "expect": { "collectionFilteredCount": 1, "partitionsCoverWholeCollection": false }
+      },
+      "outcome": "difference",
+      "approvedDifference": "number-reserved-from-filter-matching",
+      "note": "ODS's PartitionsController takes [FromQuery] int? number and then binds the same request against the generated {Resource}GetByExample with an empty prefix, so a case-insensitive match carries the same value into the filter specification and into the partition count. DMS removes the partition control from filter matching before the query-field lookup runs and answers with one meaning."
+    },
+    {
+      "id": "cursor-range-beyond-int32",
+      "group": "int64-bounds",
+      "executor": "collection-get",
+      "query": "?pageToken={beyondInt32Token}",
+      "seed": 5,
+      "dms": { "status": 200, "expect": { "documentCount": 0 } },
+      "ods": { "status": 400, "errors": ["ods:unrepresentable-in-int32"] },
+      "outcome": "difference",
+      "approvedDifference": "int64-document-id-bounds",
+      "note": "The token names a range whose bounds exceed Int32, which DMS accepts and answers with an empty page because no document has an identity that high. ODS's AggregateId bounds are Int32, so the same range is not one its token can carry."
+    },
+    {
+      "id": "no-header-at-identity-maximum",
+      "group": "identity-maximum",
+      "executor": "identity-maximum",
+      "dms": { "status": 200, "expect": { "documentCount": 1, "headerPresent": false } },
+      "ods": { "status": 200, "expect": { "documentCount": 1, "headerPresent": true } },
+      "outcome": "difference",
+      "approvedDifference": "no-header-overflow-at-int64-max",
+      "note": "The document identity sequence is reseeded so a single created document lands on Int64.MaxValue. DMS omits the header because advancing past that value would overflow. ODS gates its header on hydrated body count, so a non-empty body still carries one."
+    },
+    {
+      "id": "header-survives-empty-hydration",
+      "group": "empty-hydration",
+      "executor": "empty-hydration",
+      "seed": 8,
+      "dms": { "status": 200, "expect": { "documentCount": 0, "headerPresent": true } },
+      "ods": { "status": 200, "expect": { "documentCount": 0, "headerPresent": false } },
+      "outcome": "difference",
+      "approvedDifference": "header-gated-on-selected-keyset-maximum",
+      "note": "The rows are removed at the hydration boundary by a test-only decorator after real page selection produced a real non-null selected maximum; the header rule that answers is production code. ODS gates the header on hydrated body count, so an empty body ends its walk."
+    },
+    {
+      "id": "partitions-enforce-profile-method-usage",
+      "group": "profile",
+      "executor": "profile-partitions-get",
+      "dms": { "status": 405 },
+      "ods": { "status": 200 },
+      "outcome": "difference",
+      "approvedDifference": "partitions-enforce-profile-method-usage",
+      "note": "ODS 7.3.2's partitions controller carries no assigned-profile-usage enforcement filter, unlike its data-management controller base."
+    }
+  ]
+}
