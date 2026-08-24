@@ -59,9 +59,11 @@ ad hoc DMS web process or duplicating provider-specific rebuild logic.
 - Support the existing administrative commands: guarded new-empty activation, offline
   activation, offline deactivation, online cache rebuild, explicit integrity scrub, and
   internal-only cache-ahead recovery.
-- Preserve the existing request/result DTOs and lower-camel JSON enum values for JSON
-  request input and `--json` output. Human-readable output may be added, but automation
-  must be able to consume stable JSON without parsing prose.
+- Reuse and, where needed for CLI-required acknowledgement, extend the shared
+  administrative request DTOs and result DTOs rather than creating CLI-only request/result
+  wrappers. Preserve lower-camel JSON enum values for JSON request input and `--json`
+  output. Human-readable output may be added, but automation must be able to consume stable
+  JSON without parsing prose.
 - Require explicit non-interactive acknowledgement for destructive or writer-fenced
   commands, including exact `offlineWriterAdmission` confirmation tokens where the existing
   command contracts require them.
@@ -162,6 +164,14 @@ ad hoc DMS web process or duplicating provider-specific rebuild logic.
   fields are process-local and not durable, the CLI must not fabricate command activity
   from another DMS replica or another CLI process. If no current-process observation exists,
   emit the documented `notObserved`/`null` fields from the 18-06 contract.
+- Standalone status mode is a CLI-specific exception to the 18-06 endpoint composition rule
+  that skips durable observation when runtime is `notObserved`. After target resolution,
+  inventory, provider metadata, physical-source fingerprint, and provider prerequisites
+  succeed, the CLI still runs the provider current-source observation and populates
+  lifecycle, cache-ahead, queue presence, oldest-work fields, and `durableObservedAt` from
+  that read-only statement. This direct durable observation is inspection data only: when no
+  current 18-04 runtime observation exists, `operationalHealth` and `caughtUp` remain
+  `unknown` with reason `runtimeNotObserved`.
 - Mutating commands invoke the shared 18-04 administrative command runner and return the
   shared command result DTO. The CLI may add human summaries, but JSON output must not be a
   CLI-only wrapper that forces automation to parse different fields than runtime or
@@ -287,3 +297,41 @@ ad hoc DMS web process or duplicating provider-specific rebuild logic.
   management, or CDC bootstrap orchestration. Those are E19 responsibilities.
 - The representation restamp utility, which remains owned by 18-08.
 - HTTP administration endpoints, dashboards, or cloud-provider-specific automation.
+
+## Clarifying Questions and Answers
+
+### Questions 1
+
+1. For the `status` command, should target-level durable/provider observation failures that serialize as 18-06 `unknown` status still return exit code `0`, leaving exit code `11` only for failures that prevent a status DTO from being produced, or should specific serialized status reasons also map to exit code `11`?
+2. Which timeout overrides are part of the stable v1 CLI surface, including option names, units, defaults, and mapping to command timeout, provider command timeout, mutex acquisition, status observation, and overall process/endpoint budgets?
+3. Before E19 supplies durable downstream-publication history, should CLI integration tests for internal-only activation/deactivation and cache-ahead recovery admission invoke the CLI host in-process with a fake trusted history provider, or must the packaged command support a non-production registration/configuration mechanism for that proof?
+
+### Answers 1
+
+1. `status` should return exit code `0` whenever the CLI can produce and serialize the 18-06 status DTO, including a single target whose durable facts are serialized as `unknown` for `statusObservationTimeout`, `providerObservationFailed`, or `statusEndpointTimeout`. Do not map any serialized target-level status reason to exit code `11`; automation must inspect the JSON status fields for target health. Use exit code `11` only when the status command itself cannot produce the DTO after arguments and process configuration are valid, such as a failure in the shared status pipeline or serialization before a complete status document is available. Argument errors remain `64`, process-wide configuration errors remain `78`, and unexpected unclassified failures remain `1`.
+2. Use positive numeric seconds for all stable CLI timeout overrides, accepting fractional seconds where the underlying `TimeSpan` accepts them and rejecting zero, negative, malformed, or overflow values with exit code `64`. Mutating commands expose one stable option, `--command-timeout-seconds`, default `86400`, mapped to `DataManagement:DocumentCache:Administration:WorkflowTimeout` and also used as the CLI's outer cancellation budget from target resolution through mutex acquisition and command completion. There is no separate v1 mutex-acquisition timeout option: waiting for the provider mutex is bounded by that outer command budget and a timeout before mutation returns the shared no-mutation mutex/cancellation classification. There is no separate v1 provider-command-timeout option: provider command timeouts are classified by the shared provider adapters and remain derived from the operation's active bounded budget. The `status` command exposes `--status-observation-timeout-seconds`, default `5`, mapped to `DataManagement:DocumentCache:Status:StatusObservationTimeout` and the provider current-source command timeout, plus `--status-timeout-seconds`, default `30`, mapped to `DataManagement:DocumentCache:Status:EndpointTimeout` as the total CLI status evaluation budget. Do not add additional v1 timeout aliases such as `--timeout`, `--provider-command-timeout`, `--mutex-timeout`, or per-phase rebuild/scrub timeouts.
+3. CLI admission-path integration tests before E19 should invoke the CLI host in-process with an explicit fake implementation of the trusted 18-01 downstream-publication-history abstraction. The packaged command must not ship a non-production command-line switch, appsettings flag, environment variable, or plug-in proof mechanism that can make a target appear `internalOnly`. Packaged-command coverage should prove the production default `unknown` rejection path; admitted offline activation/deactivation and cache-ahead recovery paths may be covered through the in-process test host using the same parser, DTOs, command runner, provider adapters, and fake trusted history provider.
+
+### Questions 2
+
+1. Should `status` support `--request-json <path|->`, and if so what stable JSON request shape should it accept given that 18-06 defines a response contract but no request body: only `{ "targetKey": { "tenantKey": "", "dataStoreId": 1 } }`, target plus status timeout fields, or should `--request-json` be limited to mutating administrative command DTOs?
+2. Does this story own adding DocumentCacheAdmin to package/release and PR verification workflows alongside SchemaTools, including pack, SBOM, provenance, publish, release attachment, package promotion, and installed-tool smoke verification, or is scope intentionally limited to `build-dms.ps1 Package/Push` plus local package-build tests?
+
+### Answers 2
+
+1. `status` should support `--request-json <path|->`, but the accepted v1 JSON request shape is only the invocation target: `{ "targetKey": { "tenantKey": "", "dataStoreId": 1 } }`. This is a CLI input convenience for target selection, not an 18-06 HTTP request body and not a second status contract. Do not include status timeout fields in the JSON shape; `--status-observation-timeout-seconds` and `--status-timeout-seconds` remain CLI timeout overrides that may accompany `--request-json` under the existing global/logging/timeout/output option allowance. Reject missing `targetKey`, malformed tenant/data-store values, unknown fields, or duplicate target fields supplied by options with exit code `64`.
+2. Scope this story to the tool project/package metadata, `build-dms.ps1 Package` and `Push` plumbing, `PackageTarget=DocumentCacheAdmin` and `PackageTarget=All`, local build-script/package tests, and a local generated-package install/help smoke that verifies `EdFi.Api.DocumentCacheAdmin` and `dms-document-cache`. Do not make this story add DocumentCacheAdmin to GitHub package/release or PR verification workflows for SBOM, provenance, publish, release attachment, feed-view promotion, signing, or workflow-orchestrated installed-tool smoke. Those remain owned by the existing package-release and CI pipeline work; this story should leave the package ready for that pipeline to consume.
+
+### Questions 3
+
+1. When a mutating command uses `--request-json <path|->`, should the destructive confirmation token and any required `offlineWriterAdmission` value be fields in the shared JSON request DTO, or should `--confirm` and `--offline-writer-admission` remain required command-line options even though command-specific DTO options are otherwise rejected with `--request-json`?
+2. Should standalone CLI `status` run the provider current-source observation and populate lifecycle, cache-ahead, queue, oldest-work, and `durableObservedAt` fields even when no 18-04 runtime observation exists in the CLI process, or should it follow the 18-06 endpoint composition rule that treats `runtimeNotObserved` as process-ineligible and leaves durable fields unavailable?
+3. For option-based target selection, is `--tenant-key` optional with an implicit empty-string default when `--data-store-id` is supplied, or must operators pass `--tenant-key ""` explicitly for the default tenant?
+4. What is the default stdout mode when `--json` is omitted for `status` and mutating commands: human-readable output for every command, JSON for every command, or command-specific defaults; and should every command support `--json` with stdout containing exactly the shared DTO document?
+
+### Answers 3
+
+1. With `--request-json`, the JSON document is the only source for command-specific DTO fields. Extend the shared administrative request DTOs with a `confirmation` field for the destructive acknowledgement, using the same lower-camel token values accepted by `--confirm`, and put offline writer proof in `offlineWriterAdmission` when the command requires it. Reject `--confirm`, `--offline-writer-admission`, target options, and any other command DTO option when `--request-json` is present, because they duplicate request fields. Option-based invocation still uses `--confirm` and, where required, `--offline-writer-admission` as typed projections into those same DTO fields.
+2. Standalone CLI `status` should run the provider current-source observation after target resolution, inventory, provider metadata, fingerprint, and prerequisite checks succeed, even when the CLI process has no 18-04 runtime worker observation. Populate lifecycle, cache-ahead, queue presence, oldest-work fields, and `durableObservedAt` from that direct read-only observation. Still serialize `executionState.status` as `notObserved`, `executionState.observedAt` as `null`, `activeCommand` as `null`, and `lastEndedDiagnostic` as `null` when no current-process observation exists. Do not claim runtime operational health from that durable read; `operationalHealth` and `caughtUp` should remain `unknown` with `runtimeNotObserved` unless the status call is running inside a process that has a current 18-04 runtime observation. This CLI-only exception to the 18-06 endpoint's skip-durable-observation composition rule is now part of this story's canonical scope.
+3. For option-based target selection, `--data-store-id <positive integer>` is required and `--tenant-key` is optional. When omitted, `--tenant-key` defaults to the normalized default-tenant wire value, the empty string. Operators may still pass `--tenant-key ""`, but scripts should not be required to do so for the default tenant. Reject a missing or malformed `--data-store-id`, and apply the same 18-01 tenant-key normalization and validation to an explicitly supplied tenant key.
+4. When `--json` is omitted, every command defaults to human-readable stdout derived from the same DTO that would be serialized as JSON. Every command, including `status` and all mutating commands, must support `--json`; in that mode stdout contains exactly one shared contract document with no CLI wrapper and no prose: the 18-06 v1 status response for `status`, and the shared administrative command result DTO for mutating commands. Logs, progress, warnings, and diagnostics remain on stderr or the configured log sink in both modes.
