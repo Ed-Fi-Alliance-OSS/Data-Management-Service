@@ -366,13 +366,27 @@ docker start ed-fi-api-config-service
 until [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8081/health)" = "200" ]; do sleep 3; done
 
 CMS=http://localhost:8081
+
+#    `restore-admin` is registered against YOUR CMS, so its secret has to satisfy that instance's
+#    IdentitySettings:ClientSecretValidation bounds -- which are configurable, so no literal secret
+#    written here can be known to fit. Reuse the CMS identity client secret instead: CMS validates
+#    that secret against those same bounds itself, so whatever they are, it is in range. The bounds
+#    are read here as well; step 10 hands them to setup-openiddict.ps1, which otherwise falls back to
+#    its own 32/128 defaults and would reject a secret a differently configured stack accepts.
+CMSENV=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' ed-fi-api-config-service)
+ADMIN_SECRET=$(echo "$CMSENV" | sed -n 's/^IdentitySettings__ClientSecret=//p')
+CLIENT_SECRET_MIN=$(echo "$CMSENV" | sed -n 's/^IdentitySettings__ClientSecretValidation__MinimumLength=//p')
+CLIENT_SECRET_MAX=$(echo "$CMSENV" | sed -n 's/^IdentitySettings__ClientSecretValidation__MaximumLength=//p')
+test -n "$ADMIN_SECRET" -a -n "$CLIENT_SECRET_MIN" -a -n "$CLIENT_SECRET_MAX" || \
+  { echo "could not read the CMS client secret and its validation bounds from ed-fi-api-config-service"; exit 1; }
+
 curl -s -X POST "$CMS/connect/register" -H "Content-Type: application/x-www-form-urlencoded" \
   --data-urlencode "ClientId=restore-admin" \
-  --data-urlencode "ClientSecret=ValidClientSecret1234567890!Abcd" \
+  --data-urlencode "ClientSecret=$ADMIN_SECRET" \
   --data-urlencode "DisplayName=Restore Admin" > /dev/null
 T=$(curl -s -X POST "$CMS/connect/token" -H "Content-Type: application/x-www-form-urlencoded" \
   --data-urlencode "client_id=restore-admin" \
-  --data-urlencode "client_secret=ValidClientSecret1234567890!Abcd" \
+  --data-urlencode "client_secret=$ADMIN_SECRET" \
   --data-urlencode "grant_type=client_credentials" \
   --data-urlencode "scope=edfi_admin_api/full_access" \
   | sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
@@ -451,15 +465,37 @@ CSCOPE=$(ENVOF ed-fi-api | sed -n 's/^ConfigurationServiceSettings__Scope=//p')
 test -n "$CID" -a -n "$CSEC" -a -n "$CSCOPE" || \
   { echo "could not read the DMS-to-CMS client id, secret and scope from ed-fi-api"; exit 1; }
 
+#     The two role names are read as well, and from CMS rather than from DMS, because CMS is the side
+#     that enforces them: its service policy requires the presented token to carry
+#     IdentitySettings:ConfigServiceRole. Both are supported overrides -- local-config.yml sets them
+#     from DMS_CONFIG_IDENTITY_SERVICE_ROLE and DMS_CONFIG_IDENTITY_CLIENT_ROLE -- and left unpassed,
+#     setup-openiddict.ps1 falls back to its own cms-client/dms-client defaults and grants a role your
+#     CMS does not require. The token check below would still pass, because minting a token does not
+#     exercise the role; the failure would surface in step 11 as DMS unable to read claim sets.
+CMSROLE=$(ENVOF ed-fi-api-config-service | sed -n 's/^IdentitySettings__ConfigServiceRole=//p')
+DMSROLE=$(ENVOF ed-fi-api-config-service | sed -n 's/^IdentitySettings__ClientRole=//p')
+test -n "$CMSROLE" -a -n "$DMSROLE" || \
+  { echo "could not read the identity role names from ed-fi-api-config-service"; exit 1; }
+
 #     Delete before recreating. setup-openiddict.ps1 inserts ON CONFLICT DO NOTHING, so on its own it
 #     leaves the producer's secret hash exactly where it is and reports success. The two dependent
 #     tables, OpenIddictApplicationScope and OpenIddictClientRole, are ON DELETE CASCADE.
-docker exec dms-postgresql psql -U "$DBUSER" -d "$DB" -v ON_ERROR_STOP=1 \
-  -c "DELETE FROM dmscs.\"OpenIddictApplication\" WHERE \"ClientId\" = '$CID';"
+#     The client id is a configured value as well, so it reaches psql as a variable and the
+#     statement quotes it with :'cid' rather than having it pasted into the SQL text.
+docker exec -i dms-postgresql psql -U "$DBUSER" -d "$DB" -v ON_ERROR_STOP=1 -v cid="$CID" -f - <<'SQL'
+DELETE FROM dmscs."OpenIddictApplication" WHERE "ClientId" = :'cid';
+SQL
+#     Nothing below has to be escaped for SQL. Every value passed here is a configured one, and
+#     setup-openiddict.ps1 builds each PostgreSQL literal with the shared quoting helper, so a client
+#     id, scope or role name containing a single quote is inserted as data rather than ending the
+#     statement -- the same property the DELETE above gets from :'cid'.
 pwsh -NoProfile -File ./setup-openiddict.ps1 -InsertData \
   -NewClientId "$CID" -NewClientName "CMS ReadOnly Access" -ClientScopeName "$CSCOPE" \
-  -NewClientSecret "$CSEC" -EnvironmentFile ./.env -DbName ENV:DMS_CONFIG_DATABASE_NAME -DbUser "$DBUSER"
-#     Those are the arguments the bootstrap uses for this client, so the roles, scope, permissions and
+  -NewClientSecret "$CSEC" -ConfigServiceRole "$CMSROLE" -DmsClientRole "$DMSROLE" \
+  -EnvironmentFile ./.env -DbName ENV:DMS_CONFIG_DATABASE_NAME -DbUser "$DBUSER" \
+  -ClientSecretMinimumLength "$CLIENT_SECRET_MIN" -ClientSecretMaximumLength "$CLIENT_SECRET_MAX"
+#     Those are the arguments the bootstrap uses for this client, with the role names taken from the
+#     running Configuration Service rather than left to defaults, so the roles, scope, permissions and
 #     namespace claim come back identical rather than approximately.
 
 #     Prove it before starting DMS: the credentials DMS will present must actually mint a token.

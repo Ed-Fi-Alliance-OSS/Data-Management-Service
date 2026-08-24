@@ -109,13 +109,20 @@ function New-OpenIddictRole {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper is invoked non-interactively against a local setup database.')]
     param([string]$RoleName)
     $roleId = [guid]::NewGuid().ToString()
+    # Every PostgreSQL string literal below is built by ConvertTo-PostgresSqlLiteral rather than
+    # pasted between bare quotes. The role name is a configured value - local-config.yml exposes it
+    # as DMS_CONFIG_IDENTITY_CLIENT_ROLE / DMS_CONFIG_IDENTITY_SERVICE_ROLE - and one carrying a
+    # single quote would close its literal, leaving psql to reject the whole statement. The helper
+    # returns the surrounding quotes as part of its result, so the templates embed it bare.
+    $roleIdLiteral = ConvertTo-PostgresSqlLiteral -Value $roleId
+    $roleNameLiteral = ConvertTo-PostgresSqlLiteral -Value $RoleName
     if ($DbType -eq "MSSQL") {
         $sqlInsert = "IF NOT EXISTS (SELECT 1 FROM dmscs.OpenIddictRole WHERE Name = '$RoleName') INSERT INTO dmscs.OpenIddictRole (Id, Name) VALUES ('$roleId', '$RoleName');"
     }
     else {
         $sqlInsert = @"
 INSERT INTO "dmscs"."OpenIddictRole" ("Id", "Name")
-VALUES ('$roleId', '$RoleName')
+VALUES ($roleIdLiteral, $roleNameLiteral)
 ON CONFLICT ON CONSTRAINT "UX_OpenIddictRole_Name" DO NOTHING
 RETURNING "Id";
 "@
@@ -127,7 +134,7 @@ RETURNING "Id";
     }
     else {
         $sqlSelect = @"
-SELECT "Id" FROM "dmscs"."OpenIddictRole" WHERE "Name" = '$RoleName';
+SELECT "Id" FROM "dmscs"."OpenIddictRole" WHERE "Name" = $roleNameLiteral;
 "@
     }
     $existing = Invoke-DbQuery $sqlSelect
@@ -138,13 +145,18 @@ function New-OpenIddictScope {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper is invoked non-interactively against a local setup database.')]
     param([string]$ScopeName, [string]$Description)
     $scopeId = [guid]::NewGuid().ToString()
+    # The scope name is the configured CONFIG_SERVICE_CLIENT_SCOPE, quoted here for the reason given
+    # in New-OpenIddictRole.
+    $scopeIdLiteral = ConvertTo-PostgresSqlLiteral -Value $scopeId
+    $scopeNameLiteral = ConvertTo-PostgresSqlLiteral -Value $ScopeName
+    $descriptionLiteral = ConvertTo-PostgresSqlLiteral -Value $Description
     if ($DbType -eq "MSSQL") {
         $sqlInsert = "IF NOT EXISTS (SELECT 1 FROM dmscs.OpenIddictScope WHERE Name = '$ScopeName') INSERT INTO dmscs.OpenIddictScope (Id, Name, Description) VALUES ('$scopeId', '$ScopeName', '$Description');"
     }
     else {
         $sqlInsert = @"
 INSERT INTO "dmscs"."OpenIddictScope" ("Id", "Name", "Description")
-VALUES ('$scopeId', '$ScopeName', '$Description')
+VALUES ($scopeIdLiteral, $scopeNameLiteral, $descriptionLiteral)
 ON CONFLICT ON CONSTRAINT "UX_OpenIddictScope_Name" DO NOTHING
 RETURNING "Id";
 "@
@@ -155,7 +167,7 @@ RETURNING "Id";
     }
     else {
         $sqlSelect = @"
-SELECT "Id" FROM "dmscs"."OpenIddictScope" WHERE "Name" = '$ScopeName';
+SELECT "Id" FROM "dmscs"."OpenIddictScope" WHERE "Name" = $scopeNameLiteral;
 "@
     }
     $existing = Invoke-DbQuery $sqlSelect
@@ -169,13 +181,20 @@ function New-OpenIddictApplication {
     $iterations = [int32](Resolve-EnvValue $script:HashIterations)
     # Hash the client secret using ASP.NET password hashing
     $hashedSecret = New-AspNetPasswordHash -PlainTextSecret $ClientSecret -Iterations $iterations
+    # The client id is the configured CONFIG_SERVICE_CLIENT_ID, quoted here for the reason given in
+    # New-OpenIddictRole. The hash is base64 and cannot contain a quote, but it goes through the same
+    # helper so no value in this statement is a bare-quoted exception someone has to reason about.
+    $appIdLiteral = ConvertTo-PostgresSqlLiteral -Value $appId
+    $clientIdLiteral = ConvertTo-PostgresSqlLiteral -Value $ClientId
+    $hashedSecretLiteral = ConvertTo-PostgresSqlLiteral -Value $hashedSecret
+    $clientNameLiteral = ConvertTo-PostgresSqlLiteral -Value $ClientName
     if ($DbType -eq "MSSQL") {
         $sqlInsert = "IF NOT EXISTS (SELECT 1 FROM dmscs.OpenIddictApplication WHERE ClientId = '$ClientId') INSERT INTO dmscs.OpenIddictApplication (Id, ClientId, ClientSecret, DisplayName, Type) VALUES ('$appId', '$ClientId', '$hashedSecret', '$ClientName', 'confidential');"
     }
     else {
         $sqlInsert = @"
 INSERT INTO "dmscs"."OpenIddictApplication" ("Id", "ClientId", "ClientSecret", "DisplayName", "Type")
-VALUES ('$appId', '$ClientId', '$hashedSecret', '$ClientName', 'confidential')
+VALUES ($appIdLiteral, $clientIdLiteral, $hashedSecretLiteral, $clientNameLiteral, 'confidential')
 ON CONFLICT ON CONSTRAINT "UX_OpenIddictApplication_ClientId" DO NOTHING
 RETURNING "Id";
 "@
@@ -187,7 +206,7 @@ RETURNING "Id";
     }
     else {
         $sqlSelect = @"
-SELECT "Id" FROM "dmscs"."OpenIddictApplication" WHERE "ClientId" = '$ClientId';
+SELECT "Id" FROM "dmscs"."OpenIddictApplication" WHERE "ClientId" = $clientIdLiteral;
 "@
     }
     $existing = Invoke-DbQuery $sqlSelect
@@ -214,13 +233,19 @@ function Test-ClientSecretComplexity {
 
 function Add-OpenIddictClientRole {
     param([string]$AppId, [string]$RoleId)
+    # Quoted by the shared helper for the reason given in New-OpenIddictRole. These two are generated
+    # identifiers rather than configured values, so they go through it for uniformity: the rule in
+    # this script is that no PostgreSQL literal is assembled with bare quotes, which is what stops a
+    # later edit from reintroducing the pattern next to values that are configurable.
+    $appIdLiteral = ConvertTo-PostgresSqlLiteral -Value $AppId
+    $roleIdLiteral = ConvertTo-PostgresSqlLiteral -Value $RoleId
     if ($DbType -eq "MSSQL") {
         $sql = "IF NOT EXISTS (SELECT 1 FROM dmscs.OpenIddictClientRole WHERE ClientId = '$AppId' AND RoleId = '$RoleId') INSERT INTO dmscs.OpenIddictClientRole (ClientId, RoleId) VALUES ('$AppId', '$RoleId');"
     }
     else {
         $sql = @"
 INSERT INTO "dmscs"."OpenIddictClientRole" ("ClientId", "RoleId")
-VALUES ('$AppId', '$RoleId')
+VALUES ($appIdLiteral, $roleIdLiteral)
 ON CONFLICT ON CONSTRAINT "PK_OpenIddictClientRole" DO NOTHING;
 "@
     }
@@ -229,13 +254,16 @@ ON CONFLICT ON CONSTRAINT "PK_OpenIddictClientRole" DO NOTHING;
 
 function Add-OpenIddictApplicationScope {
     param([string]$AppId, [string]$ScopeId)
+    # Quoted by the shared helper; see Add-OpenIddictClientRole.
+    $appIdLiteral = ConvertTo-PostgresSqlLiteral -Value $AppId
+    $scopeIdLiteral = ConvertTo-PostgresSqlLiteral -Value $ScopeId
     if ($DbType -eq "MSSQL") {
         $sql = "IF NOT EXISTS (SELECT 1 FROM dmscs.OpenIddictApplicationScope WHERE ApplicationId = '$AppId' AND ScopeId = '$ScopeId') INSERT INTO dmscs.OpenIddictApplicationScope (ApplicationId, ScopeId) VALUES ('$AppId', '$ScopeId');"
     }
     else {
         $sql = @"
 INSERT INTO "dmscs"."OpenIddictApplicationScope" ("ApplicationId", "ScopeId")
-VALUES ('$AppId', '$ScopeId')
+VALUES ($appIdLiteral, $scopeIdLiteral)
 ON CONFLICT ON CONSTRAINT "PK_OpenIddictApplicationScope" DO NOTHING;
 "@
     }
@@ -263,19 +291,25 @@ WHERE Id = '$AppId';
         return
     }
 
-    # Use PostgreSQL jsonb_build functions to avoid shell escaping issues entirely
-    # This builds the equivalent of [{"claim.name": "...", "claim.value": "...", "jsonType.label": "String"}]
+    # Use PostgreSQL jsonb_build functions rather than assembling JSON text, so the value is typed
+    # by PostgreSQL instead of having to be JSON-escaped here. That handles the JSON layer only: the
+    # arguments are still SQL string literals, so they are quoted by the shared helper for the reason
+    # given in New-OpenIddictRole. This builds the equivalent of
+    # [{"claim.name": "...", "claim.value": "...", "jsonType.label": "String"}]
+    $claimNameLiteral = ConvertTo-PostgresSqlLiteral -Value $ClaimName
+    $claimValueLiteral = ConvertTo-PostgresSqlLiteral -Value $ClaimValue
+    $appIdLiteral = ConvertTo-PostgresSqlLiteral -Value $AppId
     $sql = @"
 UPDATE "dmscs"."OpenIddictApplication"
 SET "ProtocolMappers" = COALESCE("ProtocolMappers", '[]'::jsonb) ||
     jsonb_build_array(
         jsonb_build_object(
-            'claim.name', '$ClaimName',
-            'claim.value', '$ClaimValue',
+            'claim.name', $claimNameLiteral,
+            'claim.value', $claimValueLiteral,
             'jsonType.label', 'String'
         )
     )
-WHERE "Id" = '$AppId';
+WHERE "Id" = $appIdLiteral;
 "@
     Invoke-DbQuery -Sql $sql
 }
@@ -294,11 +328,18 @@ WHERE Id = '$AppId';
         return
     }
 
-    $permissionsString = "{$Scope}" -replace "'", "''"
+    # "Permissions" is varchar(100)[]. Building the array as text - '{...}' - would make the scope
+    # subject to array-literal syntax on top of SQL literal syntax: a configured
+    # CONFIG_SERVICE_CLIENT_SCOPE containing a comma splits into two permissions, and one containing
+    # a brace, a double quote or a backslash is stored altered, in both cases silently rather than as
+    # an error. An ARRAY constructor takes exactly one element whatever it contains, and the shared
+    # helper handles the SQL literal layer as it does everywhere else in this script.
+    $scopeLiteral = ConvertTo-PostgresSqlLiteral -Value $Scope
+    $appIdLiteral = ConvertTo-PostgresSqlLiteral -Value $AppId
     $sql = @"
 UPDATE "dmscs"."OpenIddictApplication"
-SET "Permissions" = '$permissionsString'
-WHERE "Id" = '$AppId';
+SET "Permissions" = ARRAY[$scopeLiteral]::varchar[]
+WHERE "Id" = $appIdLiteral;
 "@
     Invoke-DbQuery $sql
 }
