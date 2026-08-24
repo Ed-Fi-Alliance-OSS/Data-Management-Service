@@ -20,6 +20,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using Polly;
+using Polly.CircuitBreaker;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
@@ -513,6 +514,52 @@ public class PartitionRequestHandlerTests
             telemetry.Single.Outcome.Should().Be("execution_exception");
             telemetry.Single.CommandCategory.Should().Be("none");
             telemetry.Single.Returned.Should().BeNull();
+        }
+
+        // The GET-many twin of this runs in QueryRequestHandlerTests. Both are pinned because the
+        // breaker is one shared pipeline instance: when it opens, /partitions is refused alongside
+        // GET-many, and each handler classifies that refusal in its own catch.
+        [Test]
+        public async Task It_records_an_execution_exception_when_the_circuit_is_open()
+        {
+            RecordingCollectionPagingTelemetry telemetry = new();
+            CircuitBreakerManualControl manualControl = new();
+            ResiliencePipeline openCircuit = new ResiliencePipelineBuilder()
+                .AddCircuitBreaker(new CircuitBreakerStrategyOptions { ManualControl = manualControl })
+                .Build();
+
+            await manualControl.IsolateAsync();
+
+            var serviceProvider = A.Fake<IServiceProvider>();
+            A.CallTo(() => serviceProvider.GetService(typeof(IPartitionQueryHandler)))
+                .Returns(
+                    new ThrowingHandler(
+                        new InvalidOperationException("The partition handler must not be reached.")
+                    )
+                );
+
+            RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            requestInfo.RequestedPartitionCount = RequestedPartitionCount;
+
+            var execute = async () =>
+                await new PartitionRequestHandler(
+                    NullLogger.Instance,
+                    openCircuit,
+                    MaximumPageSize,
+                    telemetry
+                ).Execute(requestInfo, NullNext);
+
+            // The breaker's own exception rather than the backend's: the boundary command was refused
+            // before it reached the database.
+            await execute.Should().ThrowAsync<BrokenCircuitException>();
+
+            CollectionPagingMeasurement measurement = telemetry.Single;
+
+            measurement.Outcome.Should().Be("execution_exception");
+            measurement.CommandCategory.Should().Be("none");
+            measurement.Returned.Should().BeNull();
+            measurement.Requested.Should().Be(RequestedPartitionCount);
         }
 
         [Test]

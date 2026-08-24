@@ -25,6 +25,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using Polly;
+using Polly.CircuitBreaker;
 using static EdFi.DataManagementService.Core.Handler.Utility;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
@@ -1630,6 +1631,55 @@ public class QueryRequestHandlerTests
             telemetry.Single.Outcome.Should().Be("execution_exception");
             telemetry.Single.CommandCategory.Should().Be("none");
             telemetry.Single.Returned.Should().BeNull();
+        }
+
+        // While the circuit is open every collection read lands here, so this is the outcome's dominant
+        // population in production rather than an edge of it - which is what the operator documentation
+        // now says, and what this pins. The breaker is the outermost strategy on the pipeline these
+        // handlers share, so the refusal comes from the pipeline itself and the repository is never
+        // reached; a fault handed to the throwing repository would exercise the same catch but not that
+        // shape, so the pipeline here is a real breaker held open. Narrowing the handler to let a broken
+        // circuit past the general catch would stop counting the outage-dominant population, and this is
+        // what fails when it does.
+        [Test]
+        public async Task It_records_an_execution_exception_when_the_circuit_is_open()
+        {
+            RecordingCollectionPagingTelemetry telemetry = new();
+            CircuitBreakerManualControl manualControl = new();
+            ResiliencePipeline openCircuit = new ResiliencePipelineBuilder()
+                .AddCircuitBreaker(new CircuitBreakerStrategyOptions { ManualControl = manualControl })
+                .Build();
+
+            await manualControl.IsolateAsync();
+
+            RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
+            requestInfo.CollectionPaging = _traditionalPaging;
+
+            var serviceProvider = A.Fake<IServiceProvider>();
+            A.CallTo(() => serviceProvider.GetService(typeof(IQueryHandler)))
+                .Returns(
+                    new ThrowingRepository(
+                        new InvalidOperationException("The repository must not be reached.")
+                    )
+                );
+            requestInfo.ScopedServiceProvider = serviceProvider;
+
+            var execute = async () =>
+                await new QueryRequestHandler(NullLogger.Instance, openCircuit, telemetry).Execute(
+                    requestInfo,
+                    NullNext
+                );
+
+            // The breaker's own exception rather than the repository's, which is the "refused before it
+            // reached the database" half of what this outcome is documented to cover. Reaching the
+            // repository would surface as its InvalidOperationException here instead.
+            await execute.Should().ThrowAsync<BrokenCircuitException>();
+
+            CollectionPagingMeasurement measurement = telemetry.Single;
+
+            measurement.Outcome.Should().Be("execution_exception");
+            measurement.CommandCategory.Should().Be("none");
+            measurement.Returned.Should().BeNull();
         }
 
         // A disconnected client is the absence of a completed read, not a kind of one, and its duration
