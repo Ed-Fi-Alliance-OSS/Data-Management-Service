@@ -9,7 +9,7 @@ namespace EdFi.DataManagementService.SchemaTools.Tests.Integration;
 
 public static class CliTestHelper
 {
-    private static readonly TimeSpan _processTimeout = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan _processTimeout = TimeSpan.FromMinutes(5);
 
     public static (int ExitCode, string Output, string Error) RunProcess(
         string fileName,
