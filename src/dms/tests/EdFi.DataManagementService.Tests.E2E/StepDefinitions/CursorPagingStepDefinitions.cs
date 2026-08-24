@@ -188,6 +188,106 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             }
         }
 
+        /// <summary>
+        /// Walks every returned partition at the same time, each worker keeping its own state.
+        /// </summary>
+        /// <remarks>
+        /// Parallel consumption is what a client actually does with a partition set, and it is not
+        /// merely a faster spelling of the sequential walk: the ranges are consumed concurrently against
+        /// one deployment, so a boundary that depended on request order would show up here and nowhere
+        /// else.
+        /// <para>
+        /// Each worker issues its own requests and accumulates its own documents. Nothing here touches
+        /// the shared current-response field, because concurrent writes to it would make every
+        /// response-scoped assertion race; the shared accumulators are populated only after every worker
+        /// has finished.
+        /// </para>
+        /// </remarks>
+        [When("every returned partition is walked concurrently with page size {int}")]
+        public async Task WhenEveryReturnedPartitionIsWalkedConcurrently(int pageSize)
+        {
+            _walkedDocumentIds.Clear();
+            _walkedDocuments.Clear();
+
+            List<JsonNode>[] perPartition = await Task.WhenAll(
+                _partitionTokens.Select(partitionToken =>
+                    WalkOnePartitionConcurrentlyAsync(partitionToken, pageSize)
+                )
+            );
+
+            for (var partition = 0; partition < perPartition.Length; partition++)
+            {
+                List<string> partitionIds = [.. perPartition[partition].Select(DocumentId)];
+
+                partitionIds
+                    .Should()
+                    .OnlyHaveUniqueItems($"partition {partition} must not return a document twice");
+
+                for (var other = partition + 1; other < perPartition.Length; other++)
+                {
+                    partitionIds
+                        .Should()
+                        .NotIntersectWith(
+                            perPartition[other].Select(DocumentId),
+                            $"partitions {partition} and {other} must cover disjoint ranges"
+                        );
+                }
+
+                _walkedDocuments.AddRange(perPartition[partition]);
+                _walkedDocumentIds.AddRange(partitionIds);
+            }
+        }
+
+        /// <summary>
+        /// One concurrent worker: walks a single range to its terminal empty page using its own request
+        /// calls and its own accumulator.
+        /// </summary>
+        private async Task<List<JsonNode>> WalkOnePartitionConcurrentlyAsync(
+            string partitionToken,
+            int pageSize
+        )
+        {
+            List<JsonNode> documents = [];
+            string? continuation = partitionToken;
+            var pages = 0;
+
+            while (continuation is not null && pages < MaximumWalkedPages)
+            {
+                IAPIResponse page = await _playwrightContext.ApiRequestContext?.GetAsync(
+                    $"{_partitionsCollectionUrl}?pageToken={Uri.EscapeDataString(continuation)}"
+                        + $"&pageSize={pageSize}",
+                    new() { Headers = GetHeaders() }
+                )!;
+
+                (List<JsonNode> pageDocuments, continuation) = await ReadPageAsync(page, pageSize);
+
+                pages++;
+                documents.AddRange(pageDocuments);
+
+                if (continuation is null)
+                {
+                    pageDocuments
+                        .Should()
+                        .BeEmpty(
+                            "each concurrent worker must reach its own terminal request, the one that "
+                                + "selected nothing and offered no continuation"
+                        );
+                }
+            }
+
+            pages
+                .Should()
+                .BeLessThan(
+                    MaximumWalkedPages,
+                    "a worker whose continuation failed to advance would otherwise loop until the run "
+                        + "is killed"
+                );
+
+            return documents;
+        }
+
+        private static string DocumentId(JsonNode document) => document["id"]!.GetValue<string>();
+
         [Then("the walk returned {int} documents with no duplicates")]
         public void ThenTheWalkReturnedDocumentsWithNoDuplicates(int expectedCount)
         {
@@ -251,6 +351,17 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 .HaveCountLessThanOrEqualTo(
                     maximum,
                     "the requested count is an upper bound the response never exceeds"
+                );
+
+        [Then("at least {int} partition tokens were returned")]
+        public void ThenAtLeastPartitionTokensWereReturned(int minimum) =>
+            _partitionTokens
+                .Should()
+                .HaveCountGreaterThanOrEqualTo(
+                    minimum,
+                    "the candidate set and the configured page size must really produce this many "
+                        + "ranges; a smaller count means the request reached a differently configured "
+                        + "deployment than the one this scenario needs"
                 );
 
         [Then("at least one partition token was returned")]

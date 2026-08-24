@@ -1770,6 +1770,177 @@ jobs:
   # both identity providers. That filter carries no shard, so RunE2E writes the filtered TRX
   # (EdFi.DataManagementService.Tests.E2E.filtered.trx). An always()-guarded engine-correct teardown
   # runs regardless of outcome, and diagnostic artifacts are sanitized before any upload or report.
+  # Dedicated per-PR partition-sizing lane. The mandatory minimum partition size is five
+  # maximum-sized pages, so at the shipped MAXIMUM_PAGE_SIZE of 500 no collection an E2E scenario can
+  # seed over HTTP is ever cut into more than one partition, and every multi-partition assertion in the
+  # sharded lanes would hold vacuously. This job runs only the @CursorPartitionSizing scenarios against
+  # .env.cursorpartitions.e2e, whose MAXIMUM_PAGE_SIZE is 2 and whose minimum partition size is
+  # therefore 10. Those scenarios carry no shard tag, so the DS 5.2 shard lanes never pick them up, and
+  # a feature-file guardrail enforces both halves of that rule. The filter has no shard, so RunE2E
+  # writes the filtered TRX (EdFi.DataManagementService.Tests.E2E.filtered.trx).
+  run-e2e-tests-partition-sizing:
+    name: Run PostgreSQL DMS E2E (partition sizing, isolated page size)
+    needs: build-ci-docker-images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
+      DMS_CONFIG_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Login to GitHub Container Registry
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images == 'true'
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Pull CI Docker images
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images == 'true'
+        run: |
+          docker pull "${{ needs.build-ci-docker-images.outputs.dms_image }}"
+          docker pull "${{ needs.build-ci-docker-images.outputs.config_image }}"
+
+      - name: Set up Docker Buildx
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
+        uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
+
+      - name: Cache Docker layers
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ hashFiles('src/Directory.Packages.props', 'src/nuget.config', 'src/dms/Dockerfile', 'src/dms/**', 'src/config/Dockerfile', 'src/config/**') }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Build DMS Docker image
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
+        uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc # v6.11.0
+        with:
+          load: true
+          context: ./src/dms
+          file: ./src/dms/Dockerfile
+          build-contexts: |
+            parentdir=./src
+          push: false
+          tags: ed-fi-api-local:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache
+
+      - name: Build Config Docker image
+        if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
+        uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc # v6.11.0
+        with:
+          load: true
+          context: ./src/config
+          file: ./src/config/Dockerfile
+          build-contexts: |
+            parentdir=./src
+          push: false
+          tags: ed-fi-api-config-local:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache
+
+      - name: Cache Nuget packages
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build
+        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }} -IdentityProvider self-contained
+
+      - name: Run DMS E2E (partition sizing)
+        id: e2e_partition_sizing
+        if: success()
+        env:
+          KAFKA_BOOTSTRAP_SERVERS: dms-kafka1:9092
+        run: |
+          ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.cursorpartitions.e2e' -TestFilter 'Category=@CursorPartitionSizing'
+
+      - name: Export DMS E2E Docker Logs
+        if: always() && steps.e2e_partition_sizing.outcome == 'failure'
+        run: |
+          $logDir = "${{ github.workspace }}/logs/e2e-partition-sizing"
+          Remove-Item -Path $logDir -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+
+          $containers = @(docker ps -a --format "{{.Names}}" | Sort-Object)
+
+          if ($containers.Count -eq 0) {
+              Write-Host "No Docker containers found for log export."
+              exit 0
+          }
+
+          foreach ($container in $containers) {
+              $logPath = Join-Path $logDir "$container.log"
+              docker logs $container > $logPath 2>&1
+
+              if ($container -eq "dms-postgresql") {
+                  $postgresDiagnosticsPath = Join-Path $logDir "$container.storage.txt"
+                  docker stats $container --no-stream > $postgresDiagnosticsPath 2>&1
+                  docker exec $container df -h /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+                  docker exec $container du -sh /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+              }
+          }
+        shell: pwsh
+
+      - name: Upload DMS E2E Logs
+        if: always() && steps.e2e_partition_sizing.outcome == 'failure'
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        with:
+          name: postgresql-self-contained-e2e-partition-sizing-test-logs
+          path: |
+            ${{ github.workspace }}/logs/e2e-partition-sizing
+          retention-days: 10
+
+      - name: Upload DMS E2E Test Results
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        if: always() && hashFiles('TestResults/EdFi.DataManagementService.Tests.E2E.filtered.trx') != ''
+        with:
+          name: DMS E2E Test Results (self-contained, partition sizing)
+          path: TestResults/EdFi.DataManagementService.Tests.E2E.filtered.trx
+          path-replace-backslashes: "true"
+          reporter: dotnet-trx
+          list-tests: failed
+          use-actions-summary: "true"
+
+      - name: Summarize DMS E2E Test Timings
+        if: always()
+        run: |
+          ./eng/ci/summarize-test-timings.ps1 `
+            -Path "./TestResults/EdFi.DataManagementService.Tests.E2E.filtered.trx" `
+            -OutputDirectory "./TestResults/test-timings/e2e-self-contained-partition-sizing" `
+            -SuiteName "DMS E2E (partition sizing, isolated page size)" `
+            -AppendToGitHubStepSummary
+
+      - name: Upload DMS E2E Timing Artifacts
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        if: always()
+        with:
+          name: test-timings-e2e-self-contained-partition-sizing
+          path: |
+            TestResults/EdFi.DataManagementService.Tests.E2E.filtered.trx
+            TestResults/test-timings/e2e-self-contained-partition-sizing/**
+          if-no-files-found: ignore
+          retention-days: 30
+
   run-e2e-tests-mssql:
     name: Run SQL Server DMS E2E (${{ matrix.identityprovider }}, representative)
     needs: build-ci-docker-images
