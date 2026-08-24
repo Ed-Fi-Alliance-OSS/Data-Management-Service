@@ -341,6 +341,12 @@ watermark now equals the latest document `ContentVersion` rather than appearing 
 aligning this case with ODS change-version behavior. Database sequences can still have ordinary gaps,
 for example from rolled-back transactions.
 
+Compatibility note: change-version filters use inclusive bounds. A client that stores the previous
+`newestChangeVersion` and later resumes by passing it as `minChangeVersion` can receive the boundary
+item again. Incremental extraction clients should treat change-query windows as idempotent and
+deduplicate by the appropriate resource identity and change version, or advance their lower bound
+according to their own resume policy.
+
 ## 5. Mapping packs (optional)
 
 A "mapping pack" (`.mpack`) is a planned ahead-of-time-compiled artifact that would let DMS load
