@@ -63,42 +63,6 @@ internal sealed record CollectionPagingMeasurement(
 /// </remarks>
 internal sealed class CollectionPagingMetricCollector : IDisposable
 {
-    private static readonly string[] AllowedPagingModes =
-    [
-        CollectionPagingTelemetryLabel.TraditionalPagingMode,
-        CollectionPagingTelemetryLabel.CursorPagingMode,
-        CollectionPagingTelemetryLabel.PartitionPagingMode,
-    ];
-
-    private static readonly string[] AllowedCommandCategories =
-    [
-        CollectionPagingTelemetryLabel.PageCommandCategory,
-        CollectionPagingTelemetryLabel.PageWithCountCommandCategory,
-        CollectionPagingTelemetryLabel.BoundaryCommandCategory,
-        CollectionPagingTelemetryLabel.NoCommandCategory,
-    ];
-
-    private static readonly string[] AllowedProviders =
-    [
-        CollectionPagingTelemetryLabel.PostgresqlProvider,
-        CollectionPagingTelemetryLabel.SqlServerProvider,
-        CollectionPagingTelemetryLabel.UnknownProvider,
-    ];
-
-    private static readonly string[] AllowedOutcomes =
-    [
-        CollectionPagingTelemetryLabel.SuccessOutcome,
-        CollectionPagingTelemetryLabel.TerminalPageOutcome,
-        CollectionPagingTelemetryLabel.EarlyEmptyOutcome,
-        CollectionPagingTelemetryLabel.ValidationRejectedOutcome,
-        CollectionPagingTelemetryLabel.NotAuthorizedOutcome,
-        CollectionPagingTelemetryLabel.NotImplementedOutcome,
-        CollectionPagingTelemetryLabel.SecurityConfigurationOutcome,
-        CollectionPagingTelemetryLabel.RetryExhaustedOutcome,
-        CollectionPagingTelemetryLabel.UnknownFailureOutcome,
-        CollectionPagingTelemetryLabel.ExecutionExceptionOutcome,
-    ];
-
     private readonly object _sync = new();
     private readonly List<CollectionPagingMeasurement> _measurements = [];
     private readonly MeterListener _listener;
@@ -248,6 +212,13 @@ internal sealed class CollectionPagingMetricCollector : IDisposable
     /// outside its allowed set. This is what keeps request data — resource names, tenant keys,
     /// namespaces, client identity, filter values, page tokens — out of the metric end to end.
     /// </summary>
+    /// <remarks>
+    /// The allowed values are read from the component rather than restated here. These are the same
+    /// per-dimension sets the emission path checks membership against, so a value arriving on this
+    /// collector that they do not contain is a breach of the published contract rather than a local copy
+    /// that fell out of step — and their contents are pinned against the operator documentation by the
+    /// component's own tests, which is where that job belongs.
+    /// </remarks>
     private void AssertDimensionsBounded()
     {
         foreach (var measurement in Measurements)
@@ -258,10 +229,10 @@ internal sealed class CollectionPagingMetricCollector : IDisposable
                     new[] { "paging_mode", "command_category", "provider", "outcome" },
                     $"'{measurement.InstrumentName}' must carry exactly the four defined dimensions"
                 );
-            measurement.PagingMode.Should().BeOneOf(AllowedPagingModes);
-            measurement.CommandCategory.Should().BeOneOf(AllowedCommandCategories);
-            measurement.Provider.Should().BeOneOf(AllowedProviders);
-            measurement.Outcome.Should().BeOneOf(AllowedOutcomes);
+            measurement.PagingMode.Should().BeOneOf(CollectionPagingTelemetryLabel.PagingModes);
+            measurement.CommandCategory.Should().BeOneOf(CollectionPagingTelemetryLabel.CommandCategories);
+            measurement.Provider.Should().BeOneOf(CollectionPagingTelemetryLabel.Providers);
+            measurement.Outcome.Should().BeOneOf(CollectionPagingTelemetryLabel.Outcomes);
         }
     }
 

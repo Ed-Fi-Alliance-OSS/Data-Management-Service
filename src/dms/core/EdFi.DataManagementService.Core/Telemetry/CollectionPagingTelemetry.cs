@@ -312,6 +312,13 @@ internal interface ICollectionPagingTelemetry
 /// Wired explicitly at the Change Query construction of the shared query-validation middleware, whose
 /// endpoints do not page by cursor and are therefore not collection-paging events. Validating
 /// identically is what keeps that wiring from hiding an argument fault that would surface in production.
+/// <para>
+/// The two measurement methods repeat their checks rather than sharing a helper between them. A shared
+/// one has to name its parameters something neither caller uses, and the resulting
+/// <see cref="ArgumentException.ParamName" /> would then differ from the one the recording
+/// implementation reports for the very same bad argument — which is exactly the parity this type
+/// exists to hold. The tests assert that name on both implementations through one shared assertion.
+/// </para>
 /// </remarks>
 internal sealed class NoOpCollectionPagingTelemetry : ICollectionPagingTelemetry
 {
@@ -324,30 +331,35 @@ internal sealed class NoOpCollectionPagingTelemetry : ICollectionPagingTelemetry
         TimeSpan duration,
         int requestedPageSize,
         int? returnedPageSize
-    ) => ValidateMeasurement(context, duration, requestedPageSize, returnedPageSize);
+    )
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        CollectionPagingTelemetry.RequireNonNegativeMilliseconds(duration);
+        CollectionPagingTelemetry.RequireNonNegativeCount(requestedPageSize, nameof(requestedPageSize));
+        CollectionPagingTelemetry.RequireNonNegativeCount(returnedPageSize, nameof(returnedPageSize));
+    }
 
     public void RecordPartitions(
         CollectionPagingTelemetryContext context,
         TimeSpan duration,
         int requestedPartitionCount,
         int? returnedPartitionCount
-    ) => ValidateMeasurement(context, duration, requestedPartitionCount, returnedPartitionCount);
-
-    public void RecordValidationRejected(CollectionPagingTelemetryContext context) =>
-        ArgumentNullException.ThrowIfNull(context);
-
-    private static void ValidateMeasurement(
-        CollectionPagingTelemetryContext context,
-        TimeSpan duration,
-        int requested,
-        int? returned
     )
     {
         ArgumentNullException.ThrowIfNull(context);
         CollectionPagingTelemetry.RequireNonNegativeMilliseconds(duration);
-        CollectionPagingTelemetry.RequireNonNegativeCount(requested, nameof(requested));
-        CollectionPagingTelemetry.RequireNonNegativeCount(returned, nameof(returned));
+        CollectionPagingTelemetry.RequireNonNegativeCount(
+            requestedPartitionCount,
+            nameof(requestedPartitionCount)
+        );
+        CollectionPagingTelemetry.RequireNonNegativeCount(
+            returnedPartitionCount,
+            nameof(returnedPartitionCount)
+        );
     }
+
+    public void RecordValidationRejected(CollectionPagingTelemetryContext context) =>
+        ArgumentNullException.ThrowIfNull(context);
 }
 
 internal sealed class CollectionPagingTelemetry : ICollectionPagingTelemetry

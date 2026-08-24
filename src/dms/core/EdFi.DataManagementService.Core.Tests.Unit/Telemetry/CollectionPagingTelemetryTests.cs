@@ -598,16 +598,24 @@ public class Given_CollectionPagingTelemetry
         var nullPartitionContext = () => telemetry.RecordPartitions(null!, TimeSpan.Zero, 4, 4);
         var nullRejectionContext = () => telemetry.RecordValidationRejected(null!);
 
-        negativeDuration.Should().Throw<ArgumentOutOfRangeException>();
-        negativeRequestedPageSize.Should().Throw<ArgumentOutOfRangeException>();
-        negativeReturnedPageSize.Should().Throw<ArgumentOutOfRangeException>();
-        negativePartitionDuration.Should().Throw<ArgumentOutOfRangeException>();
-        negativeRequestedPartitionCount.Should().Throw<ArgumentOutOfRangeException>();
-        negativeReturnedPartitionCount.Should().Throw<ArgumentOutOfRangeException>();
-        nullPageContext.Should().Throw<ArgumentNullException>();
-        nullPartitionContext.Should().Throw<ArgumentNullException>();
-        nullRejectionContext.Should().Throw<ArgumentNullException>();
+        // The parameter each fault names, not merely that one was raised. This helper runs against both
+        // the recording implementation and the no-op, so asserting the name here is what makes "the
+        // no-op validates exactly as the recording implementation does" a checked claim rather than a
+        // comment — and a shared validation helper inside either one, which would have to name its
+        // parameters something neither caller uses, fails this.
+        AssertParamName(negativeDuration, "duration");
+        AssertParamName(negativeRequestedPageSize, "requestedPageSize");
+        AssertParamName(negativeReturnedPageSize, "returnedPageSize");
+        AssertParamName(negativePartitionDuration, "duration");
+        AssertParamName(negativeRequestedPartitionCount, "requestedPartitionCount");
+        AssertParamName(negativeReturnedPartitionCount, "returnedPartitionCount");
+        nullPageContext.Should().Throw<ArgumentNullException>().And.ParamName.Should().Be("context");
+        nullPartitionContext.Should().Throw<ArgumentNullException>().And.ParamName.Should().Be("context");
+        nullRejectionContext.Should().Throw<ArgumentNullException>().And.ParamName.Should().Be("context");
     }
+
+    private static void AssertParamName(Action act, string expectedParameterName) =>
+        act.Should().Throw<ArgumentOutOfRangeException>().And.ParamName.Should().Be(expectedParameterName);
 
     private static CollectionPagingTelemetryContext FailureContext(string pagingMode) =>
         CollectionPagingTelemetryContext.ForPagingMode(
