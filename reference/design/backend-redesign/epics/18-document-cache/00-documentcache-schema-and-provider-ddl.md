@@ -33,7 +33,7 @@ transactional enqueue schema consumed by DocumentCache runtime and CDC work.
 
 - Update fixed core definitions and both provider DDL emitters for the owned data-model
   sections. Keep fixed `dms` inventory outside `DerivedRelationalModelSet` and keep
-  `RelationalMappingVersion` at `v2`.
+  `RelationalMappingVersion` aligned to the current DMS-owned mapping constant.
 - Add always-provisioned `DataStoreIdentity`, `DocumentCache`,
   `DocumentProjectionWork`, and `DocumentCacheState` objects, their owned constraints and
   access paths, and insert-if-absent singleton initialization.

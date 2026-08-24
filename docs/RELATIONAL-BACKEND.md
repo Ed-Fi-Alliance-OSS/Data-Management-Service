@@ -335,11 +335,11 @@ endpoints, which are still a placeholder shim (see the note below).
 
 `newestChangeVersion` is the current value reported by the provider's change-version sequence, not
 `MAX(ContentVersion)` over `dms.Document`. After identity stamp columns were removed from
-`dms.Document`, regular writes allocate one sequence value for the content stamp instead of allocating
-a second unused identity stamp. This removes a DMS-only extra sequence allocation: the reported
-watermark now equals the latest document `ContentVersion` rather than appearing one value ahead,
-aligning this case with ODS change-version behavior. Database sequences can still have ordinary gaps,
-for example from rolled-back transactions.
+`dms.Document`, each root or child-scope content stamp allocates one sequence value instead of also
+allocating a second unused identity stamp. This removes a DMS-only extra sequence allocation from
+each stamped scope: the reported watermark now equals the latest stored `ContentVersion` rather than
+appearing one value ahead, aligning this case with ODS change-version behavior. Database sequences
+can still have ordinary gaps, for example from rolled-back transactions.
 
 Compatibility note: change-version filters use inclusive bounds. A client that stores the previous
 `newestChangeVersion` and later resumes by passing it as `minChangeVersion` can receive the boundary

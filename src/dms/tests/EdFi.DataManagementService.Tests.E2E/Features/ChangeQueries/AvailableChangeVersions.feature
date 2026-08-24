@@ -44,7 +44,7 @@ Feature: The Change Queries availableChangeVersions endpoint reports the oldest 
              Then it should respond with 200
               And the response body path "newestChangeVersion" should be greater than variable "previousChangeVersion"
 
-        @API-263
+        @API-266
         @e2e-ci-shard-4
         Scenario: 03 newestChangeVersion increases after a descriptor is created
             Given the claimSet "EdFiSandbox" is authorized with namespacePrefixes "uri://ed-fi.org"
@@ -64,14 +64,14 @@ Feature: The Change Queries availableChangeVersions endpoint reports the oldest 
              Then it should respond with 200
               And the response body path "newestChangeVersion" should be greater than variable "previousChangeVersion"
 
-        @API-264
+        @API-263
         @e2e-ci-shard-4
         Scenario: 04 GET availableChangeVersions requires authentication
             Given there is no Authorization header
              When a GET request is made to "/changeQueries/v1/availableChangeVersions"
              Then it should respond with 401
 
-        @API-265
+        @API-264
         @e2e-ci-shard-4
         Scenario: 05 GET availableChangeVersions ignores query string parameters
             Given the claimSet "EdFiSandbox" is authorized with namespacePrefixes "uri://ed-fi.org"

@@ -1254,16 +1254,15 @@ its trigger topology except for concrete `ResourceKeyId` column population, the 
 document/resource FK, and explicit SQL Server identity collation; the DocumentCache table family;
 tracked-change tables and triggers; `auth.*`;
 `dms.ResourceKey` / `dms.EffectiveSchema` / `dms.SchemaComponent`; the read/reconstitution pipeline;
-`RelationalMappingVersion` remains `v2` because release review confirmed it is still an unreleased
-aggregate mapping shape.
+`RelationalMappingVersion` is `v3` because these physical mapping changes must reject earlier
+prerelease aggregate database shapes.
 
 ## Release compatibility and rollback
 
 Release review confirmed that `v2` has not been published as a supported database shape. This
-design therefore remains within the unreleased, re-provision-only `v2` aggregate and does not
-introduce a `v2 → v3` bump. Current schema-hash expectations will be re-blessed as the physical
-changes land. Environments using an earlier prerelease `v2` shape must re-provision rather than rely on an
-in-place upgrade or version-mismatch failure.
+design therefore moves to the unreleased, re-provision-only `v3` aggregate. Current schema-hash
+expectations will be re-blessed as the physical changes land. Environments using an earlier
+prerelease `v2` shape must re-provision rather than rely on an in-place upgrade.
 
 Rollback is a commit revert while `dms.ReferentialIdentity` remains fully maintained. Once
 descriptor writes stop maintaining RI rows, rollback to the RI resolver requires re-provisioning

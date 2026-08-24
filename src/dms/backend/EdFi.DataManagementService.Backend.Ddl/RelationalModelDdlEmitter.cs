@@ -1896,11 +1896,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             // ContentVersion/ContentLastModifiedAt: deleted is non-empty there, so EXISTS alone
             // cannot exclude it, but no stored column appears in that SET clause.
             //
-            // UPDATE(col) is a performance pre-filter only, exactly as in the identity-change workset
-            // below: it reports that a column appeared in a SET clause, not that its value changed.
-            // The null-safe value diff inside affectedDocs stays authoritative, so the guard can
-            // only skip statements whose workset would have been empty. The disjunction covers
-            // exactly the stored columns that diff already uses, so the two cannot disagree.
+            // UPDATE(col) is a performance pre-filter only: it reports that a column appeared in
+            // a SET clause, not that its value changed. The null-safe value diff inside
+            // affectedDocs stays authoritative, so the guard can only skip statements whose
+            // workset would have been empty. The disjunction covers exactly the stored columns
+            // that diff already uses, so the two cannot disagree.
             //
             // The case this has to survive is a stored column written by an FK cascade rather than by
             // a client statement, because UPDATE(col) is documented to report an INSERT or UPDATE
@@ -2731,12 +2731,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// (null-safe value diff between <c>inserted</c> and <c>deleted</c>).
     /// </summary>
     /// <remarks>
-    /// A table variable is used instead of a CTE because T-SQL CTEs scope to the single
-    /// immediately-following DML statement, while triggers need the workset across multiple
-    /// statements (DELETE + INSERT or MERGE). The table variable persists for the entire
-    /// BEGIN...END block. This is the authoritative workset for UPDATE triggers and is
-    /// correct under key unification where <c>UPDATE(aliasColumn)</c> returns false for
-    /// CASCADE-driven canonical column changes.
+    /// A table variable is used instead of a CTE so the materialized workset can be reused by
+    /// multi-consumer trigger shapes and joined consistently by single-consumer shapes. This is
+    /// the authoritative workset for UPDATE triggers and is correct under key unification where
+    /// <c>UPDATE(aliasColumn)</c> returns false for CASCADE-driven canonical column changes.
     /// </remarks>
     private void EmitMssqlValueDiffWorkset(
         SqlWriter writer,
