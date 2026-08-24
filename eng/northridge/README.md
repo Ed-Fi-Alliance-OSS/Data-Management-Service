@@ -458,7 +458,7 @@ docker exec dms-postgresql psql -U "$DBUSER" -d "$DB" -v ON_ERROR_STOP=1 \
   -c "DELETE FROM dmscs.\"OpenIddictApplication\" WHERE \"ClientId\" = '$CID';"
 pwsh -NoProfile -File ./setup-openiddict.ps1 -InsertData \
   -NewClientId "$CID" -NewClientName "CMS ReadOnly Access" -ClientScopeName "$CSCOPE" \
-  -NewClientSecret "$CSEC" -EnvironmentFile ./.env -DbName ENV:DMS_CONFIG_DATABASE_NAME
+  -NewClientSecret "$CSEC" -EnvironmentFile ./.env -DbName ENV:DMS_CONFIG_DATABASE_NAME -DbUser "$DBUSER"
 #     Those are the arguments the bootstrap uses for this client, so the roles, scope, permissions and
 #     namespace claim come back identical rather than approximately.
 
