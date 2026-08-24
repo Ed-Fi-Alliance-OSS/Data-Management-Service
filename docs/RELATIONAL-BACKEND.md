@@ -219,22 +219,6 @@ Bumping `HashVersion` or `RelationalMappingVersion` deliberately forces a new
 forces a new `ResourceKeySeedHash` (the separate resource-key seed hash), not the
 `EffectiveSchemaHash`.
 
-### Relational mapping version history
-
-`RelationalMappingVersion` is release-scoped: one bump covers every mapping-rule and physical
-`dms.*` DDL change in that release. The authoritative release number is assigned by release
-management and is intentionally not inferred from pre-release tags in this repository.
-
-| Version | Changes covered |
-|---|---|
-| `v1` | Initial relational mapping conventions. |
-| `v2` | `dms.Descriptor` gained `ResourceKeyId` and descriptor paging was re-rooted (DMS-1258); `dms.Document` dropped `IdentityVersion` and `IdentityLastModifiedAt` (DMS-1408). |
-
-Because the version is release-scoped, an earlier pre-release database can have different physical
-DDL while retaining the same effective-schema fingerprint. Reprovision databases from fresh
-generated DDL when moving between such pre-release builds; the fingerprint cannot detect that
-intra-release physical drift.
-
 ### Guards baked into the DDL (provision time)
 
 The generated DDL ([`SeedDmlEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/SeedDmlEmitter.cs),

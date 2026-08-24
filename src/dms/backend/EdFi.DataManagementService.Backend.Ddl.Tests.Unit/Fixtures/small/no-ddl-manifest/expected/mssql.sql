@@ -9,9 +9,9 @@ IF OBJECT_ID(N'dms.EffectiveSchema', N'U') IS NOT NULL
 BEGIN
     SELECT @preflight_stored_hash = [EffectiveSchemaHash] FROM [dms].[EffectiveSchema]
     WHERE [EffectiveSchemaSingletonId] = 1;
-    IF @preflight_stored_hash IS NOT NULL AND @preflight_stored_hash <> N'6010fd2a68c6613d817d06941469cb1f7cb8a38776512e3944ceeedcfe2df09e'
+    IF @preflight_stored_hash IS NOT NULL AND @preflight_stored_hash <> N'806e8b17fd93a87e0ad9874dfebabb40cef6681bc128fb75a61784283629e7d4'
     BEGIN
-        DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database has ''', @preflight_stored_hash, N''' but expected ''', N'6010fd2a68c6613d817d06941469cb1f7cb8a38776512e3944ceeedcfe2df09e', N'''');
+        DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database has ''', @preflight_stored_hash, N''' but expected ''', N'806e8b17fd93a87e0ad9874dfebabb40cef6681bc128fb75a61784283629e7d4', N'''');
         THROW 50000, @preflight_msg, 1;
     END
 END
@@ -23,7 +23,7 @@ IF OBJECT_ID(N'dms.EffectiveSchema', N'U') IS NOT NULL
 BEGIN
     SELECT @preflight_completed_hash = [EffectiveSchemaHash] FROM [dms].[EffectiveSchema]
     WHERE [EffectiveSchemaSingletonId] = 1;
-    IF @preflight_completed_hash = N'6010fd2a68c6613d817d06941469cb1f7cb8a38776512e3944ceeedcfe2df09e'
+    IF @preflight_completed_hash = N'806e8b17fd93a87e0ad9874dfebabb40cef6681bc128fb75a61784283629e7d4'
     BEGIN
         IF OBJECT_ID(N'dms.DataStoreIdentity', N'U') IS NULL
         BEGIN
@@ -886,7 +886,7 @@ END
 -- EffectiveSchema singleton insert-if-missing
 IF NOT EXISTS (SELECT 1 FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1)
     INSERT INTO [dms].[EffectiveSchema] ([EffectiveSchemaSingletonId], [ApiSchemaFormatVersion], [EffectiveSchemaHash], [ResourceKeyCount], [ResourceKeySeedHash])
-    VALUES (1, N'1.0.0', N'6010fd2a68c6613d817d06941469cb1f7cb8a38776512e3944ceeedcfe2df09e', 1, 0xCBA2C51987BF6B657F9C898F28F22A073C0EDA05B26EB5A33497AF52CE1DD492);
+    VALUES (1, N'1.0.0', N'806e8b17fd93a87e0ad9874dfebabb40cef6681bc128fb75a61784283629e7d4', 1, 0xCBA2C51987BF6B657F9C898F28F22A073C0EDA05B26EB5A33497AF52CE1DD492);
 
 -- EffectiveSchema validation (ApiSchemaFormatVersion + ResourceKeyCount + ResourceKeySeedHash)
 DECLARE @es_stored_api_schema_format_version nvarchar(255);
@@ -915,16 +915,16 @@ BEGIN
 END
 
 -- SchemaComponent seed inserts (insert-if-missing)
-IF NOT EXISTS (SELECT 1 FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'6010fd2a68c6613d817d06941469cb1f7cb8a38776512e3944ceeedcfe2df09e' AND [ProjectEndpointName] = N'ed-fi')
+IF NOT EXISTS (SELECT 1 FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'806e8b17fd93a87e0ad9874dfebabb40cef6681bc128fb75a61784283629e7d4' AND [ProjectEndpointName] = N'ed-fi')
     INSERT INTO [dms].[SchemaComponent] ([EffectiveSchemaHash], [ProjectEndpointName], [ProjectName], [ProjectVersion], [IsExtensionProject])
-    VALUES (N'6010fd2a68c6613d817d06941469cb1f7cb8a38776512e3944ceeedcfe2df09e', N'ed-fi', N'Ed-Fi', N'5.0.0', 0);
+    VALUES (N'806e8b17fd93a87e0ad9874dfebabb40cef6681bc128fb75a61784283629e7d4', N'ed-fi', N'Ed-Fi', N'5.0.0', 0);
 
 -- SchemaComponent exact-match validation (count + content)
 DECLARE @sc_actual_count integer;
 DECLARE @sc_mismatched_count integer;
 DECLARE @sc_mismatched_names nvarchar(max);
 
-SELECT @sc_actual_count = COUNT(*) FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'6010fd2a68c6613d817d06941469cb1f7cb8a38776512e3944ceeedcfe2df09e';
+SELECT @sc_actual_count = COUNT(*) FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'806e8b17fd93a87e0ad9874dfebabb40cef6681bc128fb75a61784283629e7d4';
 IF @sc_actual_count <> 1
 BEGIN
     DECLARE @sc_count_msg nvarchar(200) = CONCAT(N'dms.SchemaComponent count mismatch: expected 1, found ', CAST(@sc_actual_count AS nvarchar(10)));
@@ -933,7 +933,7 @@ END
 
 SELECT @sc_mismatched_count = COUNT(*)
 FROM [dms].[SchemaComponent] sc
-WHERE sc.[EffectiveSchemaHash] = N'6010fd2a68c6613d817d06941469cb1f7cb8a38776512e3944ceeedcfe2df09e'
+WHERE sc.[EffectiveSchemaHash] = N'806e8b17fd93a87e0ad9874dfebabb40cef6681bc128fb75a61784283629e7d4'
 AND NOT EXISTS (
     SELECT 1 FROM (VALUES
         (N'ed-fi', N'Ed-Fi', N'5.0.0', 0)
@@ -949,7 +949,7 @@ BEGIN
     FROM (
         SELECT TOP 10 sc.[ProjectEndpointName]
         FROM [dms].[SchemaComponent] sc
-        WHERE sc.[EffectiveSchemaHash] = N'6010fd2a68c6613d817d06941469cb1f7cb8a38776512e3944ceeedcfe2df09e'
+        WHERE sc.[EffectiveSchemaHash] = N'806e8b17fd93a87e0ad9874dfebabb40cef6681bc128fb75a61784283629e7d4'
         AND NOT EXISTS (
             SELECT 1 FROM (VALUES
                 (N'ed-fi', N'Ed-Fi', N'5.0.0', 0)

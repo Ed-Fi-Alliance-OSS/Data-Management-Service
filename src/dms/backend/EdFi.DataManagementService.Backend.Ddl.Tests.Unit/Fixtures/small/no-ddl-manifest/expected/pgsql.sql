@@ -10,8 +10,8 @@ BEGIN
     IF to_regclass('"dms"."EffectiveSchema"') IS NOT NULL THEN
         SELECT "EffectiveSchemaHash" INTO _stored_hash FROM "dms"."EffectiveSchema"
         WHERE "EffectiveSchemaSingletonId" = 1;
-        IF _stored_hash IS NOT NULL AND _stored_hash <> '6010fd2a68c6613d817d06941469cb1f7cb8a38776512e3944ceeedcfe2df09e' THEN
-            RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, '6010fd2a68c6613d817d06941469cb1f7cb8a38776512e3944ceeedcfe2df09e';
+        IF _stored_hash IS NOT NULL AND _stored_hash <> '806e8b17fd93a87e0ad9874dfebabb40cef6681bc128fb75a61784283629e7d4' THEN
+            RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, '806e8b17fd93a87e0ad9874dfebabb40cef6681bc128fb75a61784283629e7d4';
         END IF;
     END IF;
 END $$;
@@ -27,7 +27,7 @@ BEGIN
     IF to_regclass('"dms"."EffectiveSchema"') IS NOT NULL THEN
         SELECT "EffectiveSchemaHash" INTO _stored_hash FROM "dms"."EffectiveSchema"
         WHERE "EffectiveSchemaSingletonId" = 1;
-        IF _stored_hash = '6010fd2a68c6613d817d06941469cb1f7cb8a38776512e3944ceeedcfe2df09e' THEN
+        IF _stored_hash = '806e8b17fd93a87e0ad9874dfebabb40cef6681bc128fb75a61784283629e7d4' THEN
             IF to_regclass('"dms"."DataStoreIdentity"') IS NULL THEN
                 RAISE EXCEPTION 'Completed dms.EffectiveSchema hash matches this DDL, but dms.DataStoreIdentity is missing. Drop and recreate the database before re-provisioning.';
             END IF;
@@ -1146,7 +1146,7 @@ END $$;
 
 -- EffectiveSchema singleton insert-if-missing
 INSERT INTO "dms"."EffectiveSchema" ("EffectiveSchemaSingletonId", "ApiSchemaFormatVersion", "EffectiveSchemaHash", "ResourceKeyCount", "ResourceKeySeedHash")
-VALUES (1, '1.0.0', '6010fd2a68c6613d817d06941469cb1f7cb8a38776512e3944ceeedcfe2df09e', 1, '\xCBA2C51987BF6B657F9C898F28F22A073C0EDA05B26EB5A33497AF52CE1DD492'::bytea)
+VALUES (1, '1.0.0', '806e8b17fd93a87e0ad9874dfebabb40cef6681bc128fb75a61784283629e7d4', 1, '\xCBA2C51987BF6B657F9C898F28F22A073C0EDA05B26EB5A33497AF52CE1DD492'::bytea)
 ON CONFLICT ("EffectiveSchemaSingletonId") DO NOTHING;
 
 -- EffectiveSchema validation (ApiSchemaFormatVersion + ResourceKeyCount + ResourceKeySeedHash)
@@ -1174,7 +1174,7 @@ END $$;
 
 -- SchemaComponent seed inserts (insert-if-missing)
 INSERT INTO "dms"."SchemaComponent" ("EffectiveSchemaHash", "ProjectEndpointName", "ProjectName", "ProjectVersion", "IsExtensionProject")
-VALUES ('6010fd2a68c6613d817d06941469cb1f7cb8a38776512e3944ceeedcfe2df09e', 'ed-fi', 'Ed-Fi', '5.0.0', false)
+VALUES ('806e8b17fd93a87e0ad9874dfebabb40cef6681bc128fb75a61784283629e7d4', 'ed-fi', 'Ed-Fi', '5.0.0', false)
 ON CONFLICT ("EffectiveSchemaHash", "ProjectEndpointName") DO NOTHING;
 
 -- SchemaComponent exact-match validation (count + content)
@@ -1184,14 +1184,14 @@ DECLARE
     _mismatched_count integer;
     _mismatched_names text;
 BEGIN
-    SELECT COUNT(*) INTO _actual_count FROM "dms"."SchemaComponent" WHERE "EffectiveSchemaHash" = '6010fd2a68c6613d817d06941469cb1f7cb8a38776512e3944ceeedcfe2df09e';
+    SELECT COUNT(*) INTO _actual_count FROM "dms"."SchemaComponent" WHERE "EffectiveSchemaHash" = '806e8b17fd93a87e0ad9874dfebabb40cef6681bc128fb75a61784283629e7d4';
     IF _actual_count <> 1 THEN
         RAISE EXCEPTION 'dms.SchemaComponent count mismatch: expected 1, found %', _actual_count;
     END IF;
 
     SELECT COUNT(*) INTO _mismatched_count
     FROM "dms"."SchemaComponent" sc
-    WHERE sc."EffectiveSchemaHash" = '6010fd2a68c6613d817d06941469cb1f7cb8a38776512e3944ceeedcfe2df09e'
+    WHERE sc."EffectiveSchemaHash" = '806e8b17fd93a87e0ad9874dfebabb40cef6681bc128fb75a61784283629e7d4'
     AND NOT EXISTS (
         SELECT 1 FROM (VALUES
             ('ed-fi', 'Ed-Fi', '5.0.0', false)
@@ -1206,7 +1206,7 @@ BEGIN
         FROM (
             SELECT sc."ProjectEndpointName" AS name
             FROM "dms"."SchemaComponent" sc
-            WHERE sc."EffectiveSchemaHash" = '6010fd2a68c6613d817d06941469cb1f7cb8a38776512e3944ceeedcfe2df09e'
+            WHERE sc."EffectiveSchemaHash" = '806e8b17fd93a87e0ad9874dfebabb40cef6681bc128fb75a61784283629e7d4'
             AND NOT EXISTS (
                 SELECT 1 FROM (VALUES
                     ('ed-fi', 'Ed-Fi', '5.0.0', false)

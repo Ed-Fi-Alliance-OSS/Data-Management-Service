@@ -978,7 +978,7 @@ Pack producers and consumers MUST validate the following invariants at build/loa
 Adding proto fields is wire-compatible and does not require bumping `PackFormatVersion`. However, key unification is a
 semantic change to mapping behavior and MUST be gated by `RelationalMappingVersion`:
 
-- The release that enables key unification semantics in emitted artifacts MUST carry a `RelationalMappingVersion` bump.
+- Producers MUST bump `RelationalMappingVersion` when key unification semantics are enabled in emitted artifacts.
 - Consumers MUST reject mapping packs whose `relational_mapping_version` does not match the runtime’s expected value,
   including older artifacts that omit storage/unification metadata.
 - If backward compatibility for older artifacts is required, it MUST be explicit:

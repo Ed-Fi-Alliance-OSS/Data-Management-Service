@@ -1,7 +1,7 @@
 {
   "dialect": "mssql",
-  "effective_schema_hash": "32446b6cba114eba4b9ee52124023a795db9ac777e6621fde9599a0310f1759d",
-  "relational_mapping_version": "v2",
+  "effective_schema_hash": "ad8733c70c0e1615596505baa9d293f2b14a577e75baae475db3689f92502b5b",
+  "relational_mapping_version": "v3",
   "projects": [
     {
       "project_endpoint_name": "aligned",
