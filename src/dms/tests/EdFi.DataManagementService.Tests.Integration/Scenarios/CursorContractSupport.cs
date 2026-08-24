@@ -18,15 +18,27 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 /// are served from, and what one page response carries.
 /// </summary>
 /// <remarks>
-/// The collections belong to the descriptor-runtime fixture, whose ApiSchema declares both a regular
-/// resource and a descriptor. Every document is created over HTTP rather than inserted, so a page can
-/// only return what the write path really stored.
+/// The regular and descriptor collections come from the descriptor-runtime core ApiSchema, which the
+/// descriptor-runtime and cursor-partition-contract fixtures both load; the extension collection exists
+/// only in the latter, so a scenario reaching for it must bind that fixture. Every document is created
+/// over HTTP rather than inserted, so a page can only return what the write path really stored.
 /// </remarks>
 internal static class CursorContractSupport
 {
     internal const string MergeItemsEndpoint = "/data/ed-fi/profileRootOnlyMergeItems";
     internal const string MergeItemsPartitionsEndpoint = $"{MergeItemsEndpoint}/partitions";
     internal const string DescriptorEndpoint = "/data/ed-fi/schoolTypeDescriptors";
+    internal const string DescriptorPartitionsEndpoint = $"{DescriptorEndpoint}/partitions";
+
+    /// <summary>
+    /// The standalone extension resource the <c>CursorPartitionContract</c> fixture declares. Reachable
+    /// only from that fixture; the descriptor-runtime fixture does not load the extension project.
+    /// </summary>
+    internal const string ExtensionItemsEndpoint = "/data/cursorpartitionext/partitionContractItems";
+    internal const string ExtensionItemsPartitionsEndpoint = $"{ExtensionItemsEndpoint}/partitions";
+
+    internal const string AvailableChangeVersionsEndpoint = "/changeQueries/v1/availableChangeVersions";
+
     internal const string NextPageTokenHeaderName = "Next-Page-Token";
     internal const string TotalCountHeaderName = "Total-Count";
 
@@ -37,6 +49,12 @@ internal static class CursorContractSupport
     /// merge item's integer identity, which would answer 200 on an update instead of 201.
     /// </summary>
     private static int _nextMergeItemIdentity = 1_390_000;
+
+    /// <summary>
+    /// The same counter discipline for the extension resource's integer identity, kept separate so the
+    /// two collections cannot interfere with each other's identities.
+    /// </summary>
+    private static int _nextExtensionItemIdentity = 1_390_000;
 
     /// <summary>
     /// A token covering every identity a fixture can reach, encoded by the codec that decodes it, so a
@@ -130,17 +148,30 @@ internal static class CursorContractSupport
     /// The walk only ever follows a continuation the host handed it, so a partition token the handler,
     /// the codec, request validation, and page selection did not agree on would yield nothing here
     /// rather than quietly resolving to a different range.
+    /// <para>
+    /// The walk ends only on a request that both offered no continuation and returned nothing. A
+    /// non-empty page without a continuation is a failure rather than a terminus: the contract emits a
+    /// continuation whenever page selection returned a non-empty keyset, so a walk that stopped on a
+    /// page still holding documents would have silently truncated the range it was asked to cover.
+    /// </para>
+    /// <para>
+    /// <paramref name="querySuffix"/> is appended to every page request, which is how a filtered or
+    /// change-version-bounded walk repeats the identical query on each page. The token stores neither,
+    /// so a walk that dropped the suffix after its first request would widen its own candidate set.
+    /// </para>
     /// </remarks>
     internal static async Task<IReadOnlyList<string>> WalkFromTokenAsync(
         ApiIntegrationHarness harness,
         string endpoint,
         string pageToken,
         int pageSize,
+        string querySuffix = "",
         int maximumWalkedPages = 200
     )
     {
         ArgumentNullException.ThrowIfNull(harness);
         ArgumentNullException.ThrowIfNull(pageToken);
+        ArgumentNullException.ThrowIfNull(querySuffix);
 
         List<string> documentIds = [];
         string? nextPageToken = pageToken;
@@ -149,13 +180,19 @@ internal static class CursorContractSupport
         {
             var pageResponse = await ReadPageAsync(
                 harness,
-                $"{endpoint}?pageToken={Uri.EscapeDataString(nextPageToken!)}&pageSize={pageSize}"
+                $"{endpoint}?pageToken={Uri.EscapeDataString(nextPageToken!)}&pageSize={pageSize}{querySuffix}"
             );
 
             documentIds.AddRange(pageResponse.DocumentIds);
 
             if (pageResponse.NextPageToken is null)
             {
+                pageResponse
+                    .DocumentIds.Should()
+                    .BeEmpty(
+                        "a walk ends on the request that selected nothing, so a page that still "
+                            + "returned documents must have offered a continuation"
+                    );
                 return documentIds;
             }
 
@@ -165,6 +202,27 @@ internal static class CursorContractSupport
         throw new InvalidOperationException(
             $"A walk of '{endpoint}' did not terminate within {maximumWalkedPages} pages."
         );
+    }
+
+    /// <summary>
+    /// Reads the newest live change version the host reports, for use as a change-version window bound.
+    /// </summary>
+    /// <remarks>
+    /// Read from the published change-queries endpoint rather than from the leased database, so the
+    /// bound a walk repeats is a value a client could have obtained for itself.
+    /// </remarks>
+    internal static async Task<long> ReadNewestChangeVersionAsync(ApiIntegrationHarness harness)
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+
+        using HttpResponseMessage response = await harness.HttpClient.GetAsync(
+            AvailableChangeVersionsEndpoint
+        );
+        string body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+
+        return JsonNode.Parse(body)!["newestChangeVersion"]!.GetValue<long>();
     }
 
     /// <summary>
@@ -208,6 +266,90 @@ internal static class CursorContractSupport
             };
 
             seededIds.Add(await CreateAsync(harness, MergeItemsEndpoint, payload));
+        }
+
+        return seededIds;
+    }
+
+    /// <summary>
+    /// Seeds <paramref name="count"/> descriptors under one per-run namespace and returns their ids in
+    /// creation order together with the code values that identify them.
+    /// </summary>
+    internal static async Task<SeededDescriptors> SeedDescriptorsAsync(
+        ApiIntegrationHarness harness,
+        string scenario,
+        int count
+    )
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+
+        string suffix = Guid.NewGuid().ToString("N")[..8];
+        string descriptorNamespace = $"uri://ed-fi.org/SchoolTypeDescriptor/Contract/{scenario}/{suffix}";
+
+        List<string> seededIds = [];
+        List<string> codeValues = [];
+
+        for (var index = 0; index < count; index++)
+        {
+            string codeValue = $"Contract-{scenario}-{suffix}-{index}";
+            codeValues.Add(codeValue);
+
+            seededIds.Add(
+                await CreateAsync(
+                    harness,
+                    DescriptorEndpoint,
+                    new JsonObject
+                    {
+                        ["namespace"] = descriptorNamespace,
+                        ["codeValue"] = codeValue,
+                        ["shortDescription"] = $"Contract {scenario} {suffix} {index}",
+                    }
+                )
+            );
+        }
+
+        return new SeededDescriptors(seededIds, codeValues, descriptorNamespace);
+    }
+
+    /// <summary>Descriptors a seed created, and the values a filter can select them by.</summary>
+    internal sealed record SeededDescriptors(
+        IReadOnlyList<string> Ids,
+        IReadOnlyList<string> CodeValues,
+        string Namespace
+    );
+
+    /// <summary>
+    /// Seeds <paramref name="count"/> extension-resource documents, giving each the label and number the
+    /// callbacks return for its index, and returns their ids in creation order.
+    /// </summary>
+    /// <remarks>
+    /// The label and number are supplied per document rather than fixed, because the filtered walks
+    /// need a seed whose matching and non-matching members are interleaved: a filter dropped partway
+    /// through a walk must pull in a non-matching document rather than land in an untouched tail.
+    /// </remarks>
+    internal static async Task<IReadOnlyList<string>> SeedExtensionItemsAsync(
+        ApiIntegrationHarness harness,
+        int count,
+        Func<int, string> labelFor,
+        Func<int, int> numberFor
+    )
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+        ArgumentNullException.ThrowIfNull(labelFor);
+        ArgumentNullException.ThrowIfNull(numberFor);
+
+        List<string> seededIds = [];
+
+        for (var index = 0; index < count; index++)
+        {
+            var payload = new JsonObject
+            {
+                ["partitionContractItemId"] = Interlocked.Increment(ref _nextExtensionItemIdentity),
+                ["label"] = labelFor(index),
+                ["number"] = numberFor(index),
+            };
+
+            seededIds.Add(await CreateAsync(harness, ExtensionItemsEndpoint, payload));
         }
 
         return seededIds;
