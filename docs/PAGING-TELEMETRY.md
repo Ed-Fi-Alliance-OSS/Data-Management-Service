@@ -43,7 +43,7 @@ receives nothing from these instruments no matter how it is configured.
 
 | Instrument | Type | Unit | Recorded for |
 |---|---|---|---|
-| `edfi.dms.collection_paging.requests` | Counter | `{request}` | Every collection read paging validation refused, plus every one that reached backend execution. Clearing paging validation is not on its own enough — see [Aggregation Intent](#aggregation-intent) |
+| `edfi.dms.collection_paging.requests` | Counter | `{request}` | Every collection read paging validation refused, plus every one that reached its handler. Clearing paging validation is not on its own enough — see [Aggregation Intent](#aggregation-intent) |
 | `edfi.dms.collection_paging.duration` | Histogram | `ms` | Every request where backend execution was attempted, so a request refused by parameter validation never contributes a microsecond-scale sample |
 | `edfi.dms.collection_paging.page_size.requested` | Histogram | `{item}` | Collection `GET` requests that reached execution |
 | `edfi.dms.collection_paging.page_size.returned` | Histogram | `{item}` | Collection `GET` requests that produced a page, an empty one included |
@@ -121,9 +121,9 @@ Investigate it as a deployment problem; it is not a routine bucket to chart.
 | `security_configuration` | The security configuration metadata for the request is invalid. |
 | `retry_exhausted` | A retryable condition survived the retry pipeline. |
 | `unknown_failure` | A backend failure with no outcome value of its own. Includes a backend-reported query-term error, which is answered with a 400, so a rising rate here can mean client misuse rather than an unhealthy backend. |
-| `execution_exception` | An exception escaped execution. The exception itself still propagates and is reported unchanged. |
+| `execution_exception` | An exception escaped execution. The exception itself still propagates and is reported unchanged. Also covers a request the circuit breaker refused, which never reached the database and is answered `503` — while the breaker is open that is expected to be the whole of this outcome, so see the third note below before reading a rise here as a code fault. |
 
-Two distinctions are worth knowing when reading these values.
+Three distinctions are worth knowing when reading these values.
 
 **`success` is not the same as "a continuation was offered."** A traditional
 page inside a bounded change-version window is ordered so that it cannot anchor
@@ -137,6 +137,17 @@ is the absence of a completed collection read rather than a kind of one, and
 counting it would report client behavior as backend failure with a duration
 measuring how long the client waited before giving up.
 
+**An open circuit breaker moves the failure rate into `execution_exception`.**
+The breaker opens on the same backend results that produce `unknown_failure`.
+While it is open, every collection read is refused before it reaches the
+database and is recorded as `execution_exception` with a near-zero duration. So
+`unknown_failure` rising and then dropping to zero is not recovery — it is the
+point at which the refusal became total, and the two outcomes have to be read
+together. The breaker is shared with the write pipelines, so write traffic alone
+can open it and place reads that never failed into this outcome. A `503` carrying
+`Retry-After`, and the single breaker-opened entry in the API's logs, are what
+confirm it.
+
 ## Aggregation Intent
 
 - **`requests`** — rate, sliced by `outcome`. This is the primary health view:
@@ -145,7 +156,9 @@ measuring how long the client waited before giving up.
   client is sending parameters the API refuses, not that the API is unhealthy.
   Read that denominator as counted traffic rather than as every request the
   route received. Exactly two classes are counted: a request paging validation
-  refused, and a request that reached backend execution. A request the API
+  refused, and a request that reached its handler. The second is stated as the
+  handler rather than the database on purpose: a request the circuit breaker
+  refused is counted, and it never reached the database. A request the API
   answers anywhere else is not counted on any of these instruments, and that
   class straddles paging validation rather than sitting in front of it. Part of
   it is settled first — an unknown resource, a rejected profile or media type.
@@ -160,17 +173,19 @@ measuring how long the client waited before giving up.
   `command_category`. Keep `page_with_count` in its own bucket: requesting a
   total count is expected to be the slow shape, and averaging it together with
   plain pages hides both. Exclude `command_category=none` from read-latency
-  objectives, and watch it as a series of its own rather than as a fast
-  remainder. That bucket holds two unlike populations: a skipped selection,
-  which issued no selection command — it may still have issued a reference
-  lookup to establish that it had nothing to select, so it is cheaper than a
-  served page rather than free — and every failure, whose command may or may
-  not have run. `retry_exhausted` is the
-  extreme — a retryable condition that survived the whole retry pipeline — and
-  it carries the slowest samples this instrument records. Mixed into the `page`,
-  `page_with_count`, and `boundary` shapes, the two pull the percentiles in
-  opposite directions, and neither movement describes the cost of serving a
-  page.
+  objectives, and watch it as a series of its own — sliced by `outcome`, because
+  it holds unlike populations. A skipped selection issued no selection command;
+  it may still have issued a reference lookup to establish that it had nothing
+  to select, so it is cheaper than a served page rather than free. Every failure
+  is here too, and its command may or may not have run. The two extremes both
+  arrive in bulk and sit at opposite ends: `retry_exhausted` is a retryable
+  condition that survived the whole retry pipeline and carries the slowest
+  samples this instrument records, while `execution_exception` under an open
+  circuit breaker is refused before reaching the database and carries the
+  fastest, for every request over the whole break duration. Mixed into the
+  `page`, `page_with_count`, and `boundary` shapes, these pull the percentiles
+  in opposing directions, and no movement among them describes the cost of
+  serving a page.
 - **`page_size.requested` vs `page_size.returned`** — compare the two
   distributions, excluding `command_category=none` from both sides as the
   latency objectives do. A persistent gap in what remains means pages are being

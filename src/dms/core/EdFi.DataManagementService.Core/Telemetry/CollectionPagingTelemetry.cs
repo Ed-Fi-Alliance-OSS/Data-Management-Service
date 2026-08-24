@@ -430,9 +430,8 @@ internal sealed class CollectionPagingTelemetry : ICollectionPagingTelemetry
         int? returnedPageSize
     )
     {
-        // Every argument is validated before the first instrument is touched: a fault discovered halfway
-        // through would leave the request counter incremented for a measurement set that was never
-        // completed, which is worse than the bad call it reports.
+        // Every argument is validated before the first instrument is touched, so a bad call emits
+        // nothing at all rather than the leading part of a measurement set.
         ArgumentNullException.ThrowIfNull(context);
 
         double milliseconds = RequireNonNegativeMilliseconds(duration);
@@ -441,7 +440,6 @@ internal sealed class CollectionPagingTelemetry : ICollectionPagingTelemetry
 
         TagList tags = context.ToTags();
 
-        _requestCounter.Add(1, tags);
         _duration.Record(milliseconds, tags);
         _requestedPageSize.Record(requestedPageSize, tags);
 
@@ -449,6 +447,16 @@ internal sealed class CollectionPagingTelemetry : ICollectionPagingTelemetry
         {
             _returnedPageSize.Record(returned, tags);
         }
+
+        // Counted last, after every measurement it accounts for. Validating up front closes the
+        // partial-set hole for an argument fault but not for the other way a call can stop halfway: an
+        // instrument invokes whatever measurement callbacks the host has subscribed, synchronously on
+        // this thread, and the operator guidance for these metrics asks for exactly such a subscriber.
+        // Counting first would let one of those throw after the counter had already moved, leaving a
+        // counted request carrying no duration - and the published aggregation intent reads `requests`
+        // as the validation rejections plus the duration samples. Counting last inverts which side the
+        // loss falls on: a request may go uncounted, but a counted one was measured.
+        _requestCounter.Add(1, tags);
 
         LogDebug("page", context);
     }
@@ -468,7 +476,6 @@ internal sealed class CollectionPagingTelemetry : ICollectionPagingTelemetry
 
         TagList tags = context.ToTags();
 
-        _requestCounter.Add(1, tags);
         _duration.Record(milliseconds, tags);
         _requestedPartitionCount.Record(requestedPartitionCount, tags);
 
@@ -476,6 +483,9 @@ internal sealed class CollectionPagingTelemetry : ICollectionPagingTelemetry
         {
             _returnedPartitionCount.Record(returned, tags);
         }
+
+        // Counted last, for the reason given in RecordPage.
+        _requestCounter.Add(1, tags);
 
         LogDebug("partitions", context);
     }

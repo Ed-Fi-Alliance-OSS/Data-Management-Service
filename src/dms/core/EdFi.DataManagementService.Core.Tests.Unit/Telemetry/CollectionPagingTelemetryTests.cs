@@ -138,6 +138,69 @@ public class Given_CollectionPagingTelemetry
         collector.AllMeasurements.Should().OnlyContain(measurement => HasExactlyTheAllowedTags(measurement));
     }
 
+    // The request counter is emitted after every measurement it accounts for. A .NET instrument invokes
+    // its subscribers synchronously on the recording thread, and the operator guidance for these metrics
+    // asks the host to register exactly such a subscriber, so one that throws is reachable. Counting
+    // first would leave a counted request carrying no duration, and the published aggregation intent
+    // reads `requests` as the validation rejections plus the duration samples. Counting last inverts
+    // which side the loss falls on: a request may go uncounted, but a counted one was measured.
+    [Test]
+    public void It_counts_a_page_only_after_the_measurements_it_accounts_for()
+    {
+        using MetricCollector collector = new(failOnRequestCounter: true);
+        CollectionPagingTelemetry telemetry = collector.CreateTelemetry();
+
+        var record = () =>
+            telemetry.RecordPage(
+                CollectionPagingTelemetryContext.ForPaging(
+                    TraditionalPaging,
+                    CollectionPagingTelemetryLabel.PageCommandCategory,
+                    SqlDialect.Pgsql,
+                    CollectionPagingTelemetryLabel.SuccessOutcome
+                ),
+                TimeSpan.FromMilliseconds(37),
+                requestedPageSize: 25,
+                returnedPageSize: 25
+            );
+
+        // Swallowing a subscriber fault is the emission site's job, not this component's.
+        record.Should().Throw<InvalidOperationException>();
+
+        collector.Single(CollectionPagingTelemetry.DurationName).DoubleValue.Should().Be(37);
+        collector.Single(CollectionPagingTelemetry.RequestedPageSizeName).IntValue.Should().Be(25);
+        collector.Single(CollectionPagingTelemetry.ReturnedPageSizeName).IntValue.Should().Be(25);
+        collector.MeasurementsFor(CollectionPagingTelemetry.RequestCounterName).Should().BeEmpty();
+    }
+
+    // The partition twin, pinned separately because the ordering lives in each method rather than in
+    // anything shared between them, so one can be reordered without the other.
+    [Test]
+    public void It_counts_partitions_only_after_the_measurements_it_accounts_for()
+    {
+        using MetricCollector collector = new(failOnRequestCounter: true);
+        CollectionPagingTelemetry telemetry = collector.CreateTelemetry();
+
+        var record = () =>
+            telemetry.RecordPartitions(
+                CollectionPagingTelemetryContext.ForPagingMode(
+                    CollectionPagingTelemetryLabel.PartitionPagingMode,
+                    CollectionPagingTelemetryLabel.BoundaryCommandCategory,
+                    SqlDialect.Mssql,
+                    CollectionPagingTelemetryLabel.SuccessOutcome
+                ),
+                TimeSpan.FromMilliseconds(12),
+                requestedPartitionCount: 8,
+                returnedPartitionCount: 3
+            );
+
+        record.Should().Throw<InvalidOperationException>();
+
+        collector.Single(CollectionPagingTelemetry.DurationName).DoubleValue.Should().Be(12);
+        collector.Single(CollectionPagingTelemetry.RequestedPartitionCountName).IntValue.Should().Be(8);
+        collector.Single(CollectionPagingTelemetry.ReturnedPartitionCountName).IntValue.Should().Be(3);
+        collector.MeasurementsFor(CollectionPagingTelemetry.RequestCounterName).Should().BeEmpty();
+    }
+
     // A rejection did no backend work, so a duration sample from it would report microseconds as a read
     // latency and drag every percentile down.
     [Test]
@@ -638,13 +701,19 @@ public class Given_CollectionPagingTelemetry
     /// invisible and every assertion about them would pass vacuously. The unit is captured from the
     /// instrument so a unit change is a test failure rather than a dashboard that silently rescales.
     /// </remarks>
+    /// <param name="failOnRequestCounter">
+    /// Stands in for a subscriber the host registered that throws. The request counter is the only
+    /// <c>long</c> instrument the contract publishes, so failing the long callback fails on exactly it
+    /// and leaves the duration and size callbacks working — which is what makes the emission order
+    /// observable from outside the component.
+    /// </param>
     private sealed class MetricCollector : IDisposable
     {
         private readonly Meter _meter = new($"CollectionPagingTelemetryTests.{Guid.NewGuid()}");
         private readonly MeterListener _listener = new();
         private readonly List<MetricMeasurement> _measurements = [];
 
-        public MetricCollector()
+        public MetricCollector(bool failOnRequestCounter = false)
         {
             _listener.InstrumentPublished = (instrument, listener) =>
             {
@@ -655,6 +724,12 @@ public class Given_CollectionPagingTelemetry
             };
             _listener.SetMeasurementEventCallback<long>(
                 (instrument, measurement, tags, _) =>
+                {
+                    if (failOnRequestCounter)
+                    {
+                        throw new InvalidOperationException("A subscribed measurement callback failed.");
+                    }
+
                     _measurements.Add(
                         new MetricMeasurement(
                             instrument.Name,
@@ -664,7 +739,8 @@ public class Given_CollectionPagingTelemetry
                             IntValue: null,
                             Tags: CopyTags(tags)
                         )
-                    )
+                    );
+                }
             );
             _listener.SetMeasurementEventCallback<double>(
                 (instrument, measurement, tags, _) =>
