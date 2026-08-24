@@ -48,12 +48,16 @@
     fingerprint, document count and singleton state, against a freshly provisioned reference database or
     explicit expected values.
 
-    Checkpoint mode re-measures and re-asserts the same invariants later: DMS then starts, serves reads,
-    and accepts writes, all of which can touch the objects the post-copy assertions just checked.
+    Checkpoint mode re-measures and re-asserts the Northridge-wide checkpoint invariants later:
+    fingerprint and singleton state, document count, cache/projection emptiness, source identity,
+    staging cleanup, and sequence positions. Copy-specific checks that need the source database
+    -- row-count reconciliation, referential-integrity sweep, and stamp distribution comparison --
+    remain part of copy mode and the clean-slate restore validation.
 
 .PARAMETER Mode
-    'Copy' loads the dataset and runs the post-copy assertions. 'Checkpoint' only measures and reports
-    the invariants, for use after smoke, after writes, before the dump, and after a restore test.
+    'Copy' loads the dataset and runs the post-copy assertions. 'Checkpoint' measures, asserts and
+    records the checkpoint invariants, for use after smoke, after writes, before the dump, and after
+    a restore test.
 
 .PARAMETER DumpPath
     Copy mode: path to the extracted custom-format dump, reachable from this host.
@@ -290,7 +294,7 @@ ORDER BY table_schema, table_name;
 
 function Get-RowCountMap {
     [CmdletBinding()]
-    [OutputType([hashtable])]
+    [OutputType([System.Collections.Generic.Dictionary[string, long]])]
     param(
         [Parameter(Mandatory)] [string] $DatabaseName,
         [Parameter(Mandatory)] [string[]] $QualifiedTable
@@ -308,7 +312,7 @@ function Get-RowCountMap {
     $rows = Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser `
         -DatabaseName $DatabaseName -Sql $sql
 
-    $map = @{}
+    $map = [System.Collections.Generic.Dictionary[string, long]]::new([System.StringComparer]::Ordinal)
     foreach ($row in $rows) {
         $text = ([string]$row).Trim()
         if ($text -match '^(?<name>\S+)\|(?<count>\d+)$') {
@@ -1012,6 +1016,88 @@ function Save-Record {
     [System.IO.File]::WriteAllText($Path, $Content, [System.Text.UTF8Encoding]::new($false))
 }
 
+function Get-OrdinalSortedUnique {
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param([Parameter(Mandatory)] [System.Collections.IEnumerable] $Value)
+
+    $set = [System.Collections.Generic.SortedSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($item in $Value) {
+        if ($null -ne $item) {
+            [void]$set.Add([string]$item)
+        }
+    }
+
+    return [string[]]@($set)
+}
+
+function Get-CheckpointExpectedValue {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)] [string] $Key,
+        [Parameter(Mandatory)] [System.Collections.Specialized.OrderedDictionary] $Expected,
+        [Parameter(Mandatory)] [long] $ExpectedDocumentRow,
+        [string] $ExpectedIdentity
+    )
+
+    switch ($Key) {
+        "OwnershipTokenNotNull" { return "0" }
+        "ProjectionWorkRow" { return "0" }
+        "DocumentCacheRow" { return "0" }
+        "CacheStateLifecycle" { return [string]$Expected.CacheStateLifecycle }
+        "CacheAheadRecovery" { return [string]$Expected.CacheAheadRecovery }
+        "EffectiveSchemaHash" { return [string]$Expected.EffectiveSchemaHash }
+        "ResourceKeyCount" { return [string]$Expected.ResourceKeyCount }
+        "ResourceKeySeedHash" { return [string]$Expected.ResourceKeySeedHash }
+        "SourceIdentity" {
+            if (-not [string]::IsNullOrWhiteSpace($ExpectedIdentity)) {
+                return $ExpectedIdentity
+            }
+            return "non-zero UUID"
+        }
+        "StagingSchemaPresent" { return "0" }
+        "DocumentRow" { return [string]$ExpectedDocumentRow }
+        default { return "" }
+    }
+}
+
+function Format-CheckpointRecord {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)] [string] $CheckpointName,
+        [Parameter(Mandatory)] [string] $DatabaseName,
+        [Parameter(Mandatory)] [System.Collections.Specialized.OrderedDictionary] $Measurement,
+        [Parameter(Mandatory)] [System.Collections.Specialized.OrderedDictionary] $Expected,
+        [Parameter(Mandatory)] [long] $ExpectedDocumentRow,
+        [string] $ExpectedIdentity,
+        [Parameter(Mandatory)] [System.Collections.Generic.List[string]] $Failure
+    )
+
+    $line = [System.Collections.Generic.List[string]]::new()
+    $result = if ($Failure.Count -eq 0) { "PASS" } else { "FAIL" }
+    $line.Add("Checkpoint=$CheckpointName")
+    $line.Add("Database=$DatabaseName")
+    $line.Add("Result=$result")
+    $line.Add("FailureCount=$($Failure.Count)")
+    $line.Add("ExpectedSource=$($Expected.Source)")
+
+    foreach ($key in $Measurement.Keys) {
+        $expectedValue = Get-CheckpointExpectedValue -Key $key -Expected $Expected `
+            -ExpectedDocumentRow $ExpectedDocumentRow -ExpectedIdentity $ExpectedIdentity
+        $line.Add("$key=$($Measurement[$key]) expected=$expectedValue")
+    }
+
+    if ($Failure.Count -eq 0) {
+        $line.Add("Assertion=recorded checks passed")
+    } else {
+        foreach ($item in $Failure) { $line.Add("Failure=$item") }
+    }
+
+    return (($line) -join "`n") + "`n"
+}
+
 # ---------------- Checkpoint mode ----------------
 
 if ($Mode -eq "Checkpoint") {
@@ -1039,10 +1125,6 @@ if ($Mode -eq "Checkpoint") {
     Write-Output ""
     $sequenceFailure = Test-SequencePosition -DatabaseName $TargetDatabase
 
-    $line = foreach ($key in $measurement.Keys) { "$key=$($measurement[$key])" }
-    Save-Record -Path (Join-Path $OutputDirectory "checkpoint.$CheckpointName.$TargetDatabase.txt") `
-        -Content ((($line) -join "`n") + "`n")
-
     # Built as a List rather than reassigned from a function result, so an empty return cannot turn
     # this into $null before .Count is read.
     $failure = [System.Collections.Generic.List[string]]::new()
@@ -1052,9 +1134,14 @@ if ($Mode -eq "Checkpoint") {
     }
     foreach ($item in $sequenceFailure) { $failure.Add($item) }
 
+    Save-Record -Path (Join-Path $OutputDirectory "checkpoint.$CheckpointName.$TargetDatabase.txt") `
+        -Content (Format-CheckpointRecord -CheckpointName $CheckpointName -DatabaseName $TargetDatabase `
+            -Measurement $measurement -Expected $expected -ExpectedDocumentRow $ExpectedDocumentCount `
+            -ExpectedIdentity $ExpectedSourceIdentity -Failure $failure)
+
     Write-Output ""
     if ($failure.Count -eq 0) {
-        Write-Output "PASS: checkpoint $CheckpointName -- every invariant at its expected value."
+        Write-Output "PASS: checkpoint $CheckpointName -- every checkpoint invariant at its expected value."
         return
     }
 
@@ -1109,9 +1196,13 @@ if ($targetDocumentRow -ne 0) {
 # Guard: the resource-key seed must be identical, or every copied ResourceKeyId means something
 # different in the target than it did in the source.
 $sourceSeed = Get-ScalarValue -DatabaseName $SourceDatabase -Sql `
-    'SELECT "ResourceKeyCount"::text || ''|'' || encode("ResourceKeySeedHash", ''hex'') FROM dms."EffectiveSchema";'
+    'SELECT "ResourceKeyCount"::text || ''|'' || encode("ResourceKeySeedHash", ''hex'') FROM dms."EffectiveSchema" WHERE "EffectiveSchemaSingletonId" = 1;'
 $targetSeed = Get-ScalarValue -DatabaseName $TargetDatabase -Sql `
-    'SELECT "ResourceKeyCount"::text || ''|'' || encode("ResourceKeySeedHash", ''hex'') FROM dms."EffectiveSchema";'
+    'SELECT "ResourceKeyCount"::text || ''|'' || encode("ResourceKeySeedHash", ''hex'') FROM dms."EffectiveSchema" WHERE "EffectiveSchemaSingletonId" = 1;'
+
+if ([string]::IsNullOrWhiteSpace($sourceSeed) -or [string]::IsNullOrWhiteSpace($targetSeed)) {
+    throw "Resource-key seed cannot be read. Source '$sourceSeed' target '$targetSeed'. A blank seed check would prove nothing."
+}
 
 if ($sourceSeed -ne $targetSeed) {
     throw "Resource-key seed differs. Source '$sourceSeed' target '$targetSeed'. ResourceKeyId values are ordinal, so copying across a changed seed would mis-attribute every document."
@@ -1292,7 +1383,7 @@ $sourceCount = Get-RowCountMap -DatabaseName $SourceDatabase -QualifiedTable $al
 $targetCount = Get-RowCountMap -DatabaseName $TargetDatabase -QualifiedTable $allTable
 
 $countFailure = [System.Collections.Generic.List[string]]::new()
-foreach ($table in ($sourceCount.Keys + $targetCount.Keys | Sort-Object -Unique)) {
+foreach ($table in (Get-OrdinalSortedUnique -Value (@($sourceCount.Keys) + @($targetCount.Keys)))) {
     $inSource = $sourceCount.ContainsKey($table)
     $inTarget = $targetCount.ContainsKey($table)
 
@@ -1356,7 +1447,7 @@ $sourceStamp = Get-StampDistribution -DatabaseName $SourceDatabase -SampleTable 
 $targetStamp = Get-StampDistribution -DatabaseName $TargetDatabase -SampleTable $sampleTable
 
 $stampFailure = [System.Collections.Generic.List[string]]::new()
-foreach ($name in ($sourceStamp.Keys + $targetStamp.Keys | Sort-Object -Unique)) {
+foreach ($name in (Get-OrdinalSortedUnique -Value (@($sourceStamp.Keys) + @($targetStamp.Keys)))) {
     $sourceValue = if ($sourceStamp.ContainsKey($name)) { $sourceStamp[$name] } else { "absent" }
     $targetValue = if ($targetStamp.ContainsKey($name)) { $targetStamp[$name] } else { "absent" }
 
@@ -1364,7 +1455,7 @@ foreach ($name in ($sourceStamp.Keys + $targetStamp.Keys | Sort-Object -Unique))
         $stampFailure.Add("$name stamp distribution differs: source=$sourceValue target=$targetValue")
     }
 }
-Write-Output "  stamp distributions compared: $(($sourceStamp.Keys + $targetStamp.Keys | Sort-Object -Unique).Count), differing: $($stampFailure.Count)"
+Write-Output "  stamp distributions compared: $((Get-OrdinalSortedUnique -Value (@($sourceStamp.Keys) + @($targetStamp.Keys))).Count), differing: $($stampFailure.Count)"
 
 $record = [System.Collections.Generic.List[string]]::new()
 foreach ($table in ($allTable | Sort-Object)) {
@@ -1384,10 +1475,6 @@ foreach ($key in $measurement.Keys) {
     Write-Output ("  {0,-22}: {1}" -f $key, $measurement[$key])
 }
 
-$line = foreach ($key in $measurement.Keys) { "$key=$($measurement[$key])" }
-Save-Record -Path (Join-Path $OutputDirectory "checkpoint.C1.$TargetDatabase.txt") `
-    -Content ((($line) -join "`n") + "`n")
-
 # Every failure from every check is collected before anything throws, so one run reports the whole
 # picture instead of stopping at the first problem and hiding the rest.
 $invariantFailure = Test-Invariant -Measurement $measurement -Expected $expected `
@@ -1399,6 +1486,11 @@ foreach ($item in $sequenceFailure) { $allFailure.Add("sequence: $item") }
 foreach ($item in $integrityFailure) { $allFailure.Add("integrity: $item") }
 foreach ($item in $stampFailure) { $allFailure.Add("stamp: $item") }
 foreach ($item in $invariantFailure) { $allFailure.Add("invariant: $item") }
+
+Save-Record -Path (Join-Path $OutputDirectory "checkpoint.C1.$TargetDatabase.txt") `
+    -Content (Format-CheckpointRecord -CheckpointName "C1" -DatabaseName $TargetDatabase `
+        -Measurement $measurement -Expected $expected -ExpectedDocumentRow $ExpectedDocumentCount `
+        -Failure $allFailure)
 
 Write-Output ""
 if ($allFailure.Count -gt 0) {

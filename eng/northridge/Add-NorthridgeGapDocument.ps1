@@ -104,13 +104,15 @@ function Get-GapDocumentManifest {
 
     $manifest = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
 
-    if ($null -eq $manifest.documents -or $manifest.documents.Count -eq 0) {
+    if ($null -eq $manifest -or
+        -not ($manifest.PSObject.Properties.Name -ccontains "documents") -or
+        $null -eq $manifest.documents -or $manifest.documents.Count -eq 0) {
         throw "Manifest '$Path' declares no documents."
     }
 
     foreach ($document in $manifest.documents) {
         foreach ($required in @("order", "label", "endpoint", "body")) {
-            if (-not $document.PSObject.Properties.Name.Contains($required)) {
+            if (-not ($document.PSObject.Properties.Name -ccontains $required)) {
                 throw "Manifest entry is missing required property '$required'."
             }
         }
@@ -163,7 +165,7 @@ function Compare-SentField {
     foreach ($property in $Sent.PSObject.Properties) {
         $name = $property.Name
 
-        if (-not $Fetched.PSObject.Properties.Name.Contains($name)) {
+        if (-not ($Fetched.PSObject.Properties.Name -ccontains $name)) {
             $mismatch.Add("$name absent from the fetched document")
             continue
         }
@@ -186,8 +188,13 @@ function Compare-SentField {
             @($sentValue.PSObject.Properties).Count -gt 0) {
             foreach ($member in $sentValue.PSObject.Properties) {
                 $sentMember = ConvertTo-Json -InputObject $member.Value -Depth 32 -Compress
+                if (-not ($fetchedValue.PSObject.Properties.Name -ccontains $member.Name)) {
+                    $mismatch.Add("$name.$($member.Name) sent=$sentMember fetched=<missing>")
+                    continue
+                }
+
                 $fetchedMember = ConvertTo-Json -InputObject $fetchedValue.($member.Name) -Depth 32 -Compress
-                if ($sentMember -ne $fetchedMember) {
+                if ($sentMember -cne $fetchedMember) {
                     $mismatch.Add("$name.$($member.Name) sent=$sentMember fetched=$fetchedMember")
                 }
             }
@@ -197,7 +204,7 @@ function Compare-SentField {
         $sentJson = ConvertTo-Json -InputObject $sentValue -Depth 32 -Compress
         $fetchedJson = ConvertTo-Json -InputObject $fetchedValue -Depth 32 -Compress
 
-        if ($sentJson -ne $fetchedJson) {
+        if ($sentJson -cne $fetchedJson) {
             $mismatch.Add("$name sent=$sentJson fetched=$fetchedJson")
         }
     }

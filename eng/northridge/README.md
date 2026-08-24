@@ -62,19 +62,20 @@ fails for its reader, so the scripts and the recipe below use the same container
 
 ## Restore recipe -- PostgreSQL
 
-Verified by executing this exact text from a clean slate on 2026-08-19, on a stack deliberately
-configured with a non-default PostgreSQL password, a non-default `DMS_CONFIG_DATABASE_ENCRYPTION_KEY`
-and a non-default `DMS_CONFIG_IDENTITY_ENCRYPTION_KEY`, so that nothing could pass by sharing a
-default with the machine that produced the artifact.
+Verified from a clean slate on 2026-08-19, on a stack deliberately configured with a non-default
+PostgreSQL password, a non-default `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` and a non-default
+`DMS_CONFIG_IDENTITY_ENCRYPTION_KEY`, so that nothing could pass by sharing a default with the
+machine that produced the artifact.
 
-Four steps are **mandatory for every consumer**, not conditional on your configuration differing
-from the producer's. Each one is explained where it appears, and skipping any of them leaves a stack
-that cannot serve the dataset:
+The three producer-identity and data-model steps called out on DMS-1406 are mandatory rather than
+conditional on your configuration differing from the producer's:
 
 1. pinning the schema set to core only (step 3),
 2. installing your own OpenIddict signing key (step 7),
-3. rotating `dms.DataStoreIdentity.SourceIdentity` (step 8),
-4. recreating the client DMS uses to reach the Configuration Service (step 10).
+3. rotating `dms.DataStoreIdentity.SourceIdentity` for a new writable restore (step 8).
+
+The checklist below includes the other required restore gates, including the producer-local
+Configuration Service rows that must be recreated before DMS can serve the restored database.
 
 ```shell
 DC=~/src/Data-Management-Service/eng/docker-compose   # your checkout
@@ -106,13 +107,17 @@ APISCHEMA_VER=1.0.333       # the version THIS artifact was provisioned from
 #    global-packages folder at a path you can compute.
 dotnet restore ../../src/dms/core/EdFi.DataManagementService.Core.Tests.Unit
 PKGROOT=$(dotnet nuget locals global-packages --list | sed 's/^[^:]*: *//' | tr -d '\r')
-CORE="${PKGROOT}/edfi.datastandard52.apischema/${APISCHEMA_VER}/contentFiles/any/any/ApiSchema/ApiSchema.json"
-test -f "$CORE" || { echo "core ApiSchema ${APISCHEMA_VER} is not in the package cache -- check out the
+CORE_DIR="${PKGROOT}/edfi.datastandard52.apischema/${APISCHEMA_VER}/contentFiles/any/any/ApiSchema"
+test -f "$CORE_DIR/ApiSchema.json" || { echo "core ApiSchema ${APISCHEMA_VER} is not in the package cache -- check out the
   DMS commit this artifact was produced from, whose src/Directory.Packages.props pins that version"; exit 1; }
+test -f "$CORE_DIR/discovery-spec.json" || { echo "core ApiSchema ${APISCHEMA_VER} is missing discovery-spec.json"; exit 1; }
+test -d "$CORE_DIR/xsd" || { echo "core ApiSchema ${APISCHEMA_VER} is missing xsd/"; exit 1; }
 
-#    That file, ALONE in its own directory, is what makes the staging core-only.
+#    Copy the whole core package ApiSchema asset directory, ALONE as the only project in the staging
+#    directory. ApiSchema.json determines the effective schema hash; discovery-spec.json and xsd/ are
+#    the metadata assets DMS serves from the same manifest-backed workspace.
 mkdir -p "$ART/apischema-core-only"
-cp "$CORE" "$ART/apischema-core-only/"
+cp -R "$CORE_DIR/." "$ART/apischema-core-only/"
 
 dotnet publish ../../src/dms/clis/EdFi.DataManagementService.SchemaTools \
   -c Release -p:UseAppHost=true -o .bootstrap/tools/api-schema-tools
@@ -312,13 +317,19 @@ docker exec -u 0 dms-postgresql rm -f /tmp/newkey.sql && rm -f "$ART/newkey.sql"
 #    If you are REPLACING an existing CDC-enabled source rather than standing up a new one, do NOT
 #    use this UPDATE. Rotate through the CDC recovery workflow instead, which also requires a new
 #    binding generation, topics and consumer state namespace.
-docker exec dms-postgresql psql -U postgres -d "$DB" -v ON_ERROR_STOP=1 -c \
+SHIPPED_SOURCE_ID=8b962de6-b979-49aa-bce0-ca59e0a1ad51
+NEW_SOURCE_ID=$(docker exec dms-postgresql psql -U postgres -d "$DB" -v ON_ERROR_STOP=1 -tAc \
   'UPDATE dms."DataStoreIdentity" SET "SourceIdentity" = gen_random_uuid()
-   WHERE "DataStoreIdentitySingletonId" = 1;'
-docker exec dms-postgresql psql -U postgres -d "$DB" -tAc \
-  'SELECT "SourceIdentity" FROM dms."DataStoreIdentity" WHERE "DataStoreIdentitySingletonId" = 1;'
-#    Expect a non-zero UUID that differs from 8b962de6-b979-49aa-bce0-ca59e0a1ad51, the value the
-#    artifact ships with. Sharing that value with the producer is what this step exists to prevent.
+   WHERE "DataStoreIdentitySingletonId" = 1
+   RETURNING "SourceIdentity";')
+ROTATE_STATUS=$?
+if [ "$ROTATE_STATUS" -ne 0 ] || [ -z "$NEW_SOURCE_ID" ] || \
+   [ "$NEW_SOURCE_ID" = "$SHIPPED_SOURCE_ID" ] || \
+   [ "$NEW_SOURCE_ID" = "00000000-0000-0000-0000-000000000000" ]; then
+  echo "SourceIdentity rotation failed; got '$NEW_SOURCE_ID'"
+  exit 1
+fi
+echo "SourceIdentity rotated to $NEW_SOURCE_ID"
 
 # 9. Start the Configuration Service ONLY, then re-save the data store.
 #    The local PostgreSQL stack is single-database, so the artifact carries dmscs.* alongside dms.*.
@@ -520,8 +531,8 @@ Every published artifact records the following, on its ticket and in this direct
 4. **Validation evidence** -- schema compare result, effective schema hash agreement, DMS smoke
    results, the full resource-by-resource reconciliation with both-direction diff counts, per-table
    row-count reconciliation, sequence-position assertions, and the invariant checkpoint table. The
-   reconciliation is recorded as the output files the scripts write, named individually, and not only
-   as a summary sentence: a summary cannot be re-read to find which resource moved.
+   reconciliation is recorded as named script outputs and captured transcripts, not only as a summary
+   sentence: a summary cannot be re-read to find which resource moved.
 5. **Known limitations** -- that the shipped CMS state is producer-local, and anything deferred.
 
 ### Record for `EdFi_DMS_Northridge_v80_20260819_PG`
@@ -539,7 +550,7 @@ Every published artifact records the following, on its ticket and in this direct
 | `ResourceKey` rows | 351 |
 | `dms."Descriptor"` rows | 2,968 |
 | `ChangeVersionSequence` | 21,553,810, equal to `MAX("IdentityVersion")` |
-| Reconciliation evidence | The full per-resource output is **not** summarised in this file, and is not committed (see **Never commit**). It is this named file set, one file per artefact the scripts write: the two per-resource count CSVs from `Get-DmsResourceCount.ps1` count mode, one per engine; the both-direction transcript from the same script's reconcile mode; `rowcount.<source>-vs-<target>.tsv`; `restore-list.<target>.txt`; `restore-output.<target>.txt`; the `checkpoint.<name>.<target>.txt` series; and `schema-snapshot.<database>.txt` with `schema-diff.<left>-vs-<right>.txt`. That set belongs with the ticket as attachments rather than in this repository. DMS-1406 carries the summary comment for this artifact; the file set named here is what has to accompany it, and a reader who cannot find these files has not been given the reconciliation |
+| Reconciliation evidence | The full per-resource output is **not** summarised in this file, and is not committed (see **Never commit**). The evidence set is the files written by the scripts plus the transcripts captured by the run: the two per-resource count CSVs from `Get-DmsResourceCount.ps1` count mode, one per engine; the captured transcript from that script's reconcile mode; the gap-document CSV passed to `Add-NorthridgeGapDocument.ps1 -OutputPath`; `rowcount.<source>-vs-<target>.tsv`; `restore-list.<target>.txt`; `restore-list.descriptor.txt`; `restore-output.<target>.txt`; the `checkpoint.<name>.<target>.txt` series; and `schema-snapshot.<database>.txt`. `schema-diff.<left>-vs-<right>.txt` exists only for a failing schema compare; a passing compare is represented by the PASS transcript and matching snapshots. That set belongs with the ticket as attachments rather than in this repository. DMS-1406 carries the summary comment for this artifact; the file set named here is what has to accompany it, and a reader who cannot find these files has not been given the reconciliation |
 
 Validation, all on the restored artifact rather than on the database that produced it: schema compare
 against a fresh deployment at the same revision reported no differences; the startup-computed
@@ -565,8 +576,9 @@ tier `Cool`; the blob was then re-downloaded from the public URL and hashed to
 `49129363581eab342146e8dd9a4da95dd6f7b035f0c39ee39c9691176cd856a0`, and `cmp` confirmed it
 byte-for-byte identical to the file that was uploaded rather than merely equal in digest. Finally,
 **step 1 of the recipe above was executed verbatim against the published URL** — `curl -O` followed by
-`sha256sum -c` — and reported `EdFi_DMS_Northridge_v80_20260819_PG.7z: OK`. Every step of the recipe
-has now been run end to end.
+`sha256sum -c` — and reported `EdFi_DMS_Northridge_v80_20260819_PG.7z: OK`. The clean-slate restore
+flow has been run end to end; the recipe above keeps those gates and adds the fail-closed checks
+called out during review.
 
 ## Never commit
 

@@ -272,11 +272,21 @@ if ($emptyInput.Count -gt 0) {
     throw "Nothing to reconcile: $($emptyInput -join '; '). An empty count set is a failure, not a pass -- regenerate it in Count mode."
 }
 
-$leftMap = @{}
-foreach ($row in $left) { $leftMap[$row.ResourceName] = [long]$row.DocumentCount }
+$leftMap = [System.Collections.Generic.Dictionary[string, long]]::new([System.StringComparer]::Ordinal)
+foreach ($row in $left) {
+    if ($leftMap.ContainsKey($row.ResourceName)) {
+        throw "Left count set '$LeftPath' repeats resource '$($row.ResourceName)'."
+    }
+    $leftMap[$row.ResourceName] = [long]$row.DocumentCount
+}
 
-$rightMap = @{}
-foreach ($row in $right) { $rightMap[$row.ResourceName] = [long]$row.DocumentCount }
+$rightMap = [System.Collections.Generic.Dictionary[string, long]]::new([System.StringComparer]::Ordinal)
+foreach ($row in $right) {
+    if ($rightMap.ContainsKey($row.ResourceName)) {
+        throw "Right count set '$RightPath' repeats resource '$($row.ResourceName)'."
+    }
+    $rightMap[$row.ResourceName] = [long]$row.DocumentCount
+}
 
 $leftTotal = ($leftMap.Values | Measure-Object -Sum).Sum
 $rightTotal = ($rightMap.Values | Measure-Object -Sum).Sum
@@ -286,7 +296,11 @@ $rightLabel = Split-Path -Path $RightPath -Leaf
 
 # A full outer join over the union of names: a resource missing from either side has to be visible,
 # which a per-side loop over one map cannot show.
-$allName = ($leftMap.Keys + $rightMap.Keys) | Sort-Object -Unique
+$allNameSet = [System.Collections.Generic.SortedSet[string]]::new([System.StringComparer]::Ordinal)
+foreach ($name in @($leftMap.Keys) + @($rightMap.Keys)) {
+    [void]$allNameSet.Add([string]$name)
+}
+$allName = [string[]]@($allNameSet)
 
 $leftOnly = [System.Collections.Generic.List[object]]::new()
 $rightOnly = [System.Collections.Generic.List[object]]::new()

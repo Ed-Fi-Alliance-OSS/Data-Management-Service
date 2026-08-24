@@ -78,6 +78,10 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
+if ($Database.Count -eq 2 -and [System.String]::Equals($Database[0], $Database[1], [System.StringComparison]::Ordinal)) {
+    throw "Pass two distinct database names when requesting a schema diff. '$($Database[0])' was supplied twice, which would compare a snapshot to itself."
+}
+
 # Intentionally duplicated across the scripts in this directory rather than extracted into a shared
 # module, to keep this directory to its reviewed file set. It is the whole of the database access
 # surface: everything else composes SQL text.
@@ -375,7 +379,7 @@ $leftName, $rightName = $Database
 $leftLine = Get-Content -LiteralPath $snapshotPath[$leftName]
 $rightLine = Get-Content -LiteralPath $snapshotPath[$rightName]
 
-$difference = Compare-Object -ReferenceObject $leftLine -DifferenceObject $rightLine
+$difference = Compare-Object -ReferenceObject $leftLine -DifferenceObject $rightLine -CaseSensitive
 
 if ($null -eq $difference) {
     Write-Output ""
