@@ -288,6 +288,8 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
     [Category("MssqlCdcAccessRetry")]
     public async Task MssqlCdcAccessRetry_should_report_missing_database_cdc_in_validate_only_without_creating_it()
     {
+        await EnableSnapshotIsolationAsync(_databaseName);
+
         await using var connection = new SqlConnection(_connectionString);
         await connection.OpenAsync();
 
@@ -429,6 +431,17 @@ public class Given_MssqlCdcHeartbeatDatabase_Provider_Setup
             END;
             """;
         command.ExecuteNonQuery();
+    }
+
+    private static async Task EnableSnapshotIsolationAsync(string databaseName)
+    {
+        await using var connection = new SqlConnection(DatabaseConfiguration.MssqlAdminConnectionString!);
+        await connection.OpenAsync();
+
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"ALTER DATABASE {QuoteIdentifier(databaseName)} SET ALLOW_SNAPSHOT_ISOLATION ON;";
+        await command.ExecuteNonQueryAsync();
     }
 
     private static void DropConnectorLoginIfExists(string connectorPrincipalName)

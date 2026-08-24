@@ -398,6 +398,8 @@ public class Given_MssqlCdcProviderAccessRetry
     [Test]
     public async Task It_should_report_missing_required_artifacts_in_validate_only_without_creating_them()
     {
+        await EnableSnapshotIsolationAsync(_database.DatabaseName);
+
         await using var connection = new SqlConnection(_database.ConnectionString);
         await connection.OpenAsync();
 
@@ -1855,6 +1857,19 @@ public class Given_MssqlCdcProviderAccessRetry
     {
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task EnableSnapshotIsolationAsync(string databaseName)
+    {
+        await using var connection = new SqlConnection(
+            BaselineDatabaseConfiguration.MssqlAdminConnectionString!
+        );
+        await connection.OpenAsync();
+
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            $"ALTER DATABASE {QuoteIdentifier(databaseName)} SET ALLOW_SNAPSHOT_ISOLATION ON;";
         await command.ExecuteNonQueryAsync();
     }
 
