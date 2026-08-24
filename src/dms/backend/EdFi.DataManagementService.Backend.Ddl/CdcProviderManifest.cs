@@ -132,7 +132,10 @@ internal static class CdcProviderManifestEmitter
         foreach (var table in sourceTableInventory)
         {
             writer.WriteStartObject();
-            writer.WriteString("table_kind", SourceTableKindToken(table.TableKind));
+            writer.WriteString(
+                "table_kind",
+                CdcSourceInventoryContract.SourceTableKindToken(table.TableKind)
+            );
             writer.WriteString("schema_name", table.TableName.Schema.Value);
             writer.WriteString("table_name", table.TableName.Name);
             writer.WriteString("emitted_quoted_table_name", table.EmittedQuotedTableName);
@@ -208,7 +211,7 @@ internal static class CdcProviderManifestEmitter
         foreach (var key in expectedMessageKeyColumns)
         {
             writer.WriteStartObject();
-            writer.WriteString("table_kind", SourceTableKindToken(key.TableKind));
+            writer.WriteString("table_kind", CdcSourceInventoryContract.SourceTableKindToken(key.TableKind));
             WriteStringArray(writer, "columns", key.KeyColumns.Select(column => column.Value));
             writer.WriteEndObject();
         }
@@ -376,7 +379,10 @@ internal static class CdcProviderManifestEmitter
     {
         return keyColumns
             .OrderBy(key => CdcSourceInventoryContract.RequiredSourceTableOrdinal(key.TableKind))
-            .ThenBy(key => SourceTableKindToken(key.TableKind), StringComparer.Ordinal)
+            .ThenBy(
+                key => CdcSourceInventoryContract.SourceTableKindToken(key.TableKind),
+                StringComparer.Ordinal
+            )
             .ToArray();
     }
 
@@ -431,19 +437,6 @@ internal static class CdcProviderManifestEmitter
                 nameof(outcome),
                 outcome,
                 "Unsupported CDC setup outcome."
-            ),
-        };
-
-    private static string SourceTableKindToken(CdcSourceTableKind kind) =>
-        kind switch
-        {
-            CdcSourceTableKind.Document => "document",
-            CdcSourceTableKind.DocumentCache => "document_cache",
-            CdcSourceTableKind.CdcHeartbeat => "cdc_heartbeat",
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(kind),
-                kind,
-                "Unsupported CDC source table kind."
             ),
         };
 

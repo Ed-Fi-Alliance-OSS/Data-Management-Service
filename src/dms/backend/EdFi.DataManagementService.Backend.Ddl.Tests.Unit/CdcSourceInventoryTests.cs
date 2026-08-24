@@ -26,7 +26,257 @@ public class Given_CdcSourceInventoryContract
             .RequiredSourceTableOrdinal((CdcSourceTableKind)999)
             .Should()
             .Be(int.MaxValue);
+        CdcSourceInventoryContract
+            .RequiredSourceTableName(CdcSourceTableKind.DocumentCache)
+            .Should()
+            .Be(new DbTableName(new DbSchemaName("dms"), "DocumentCache"));
+        CdcSourceInventoryContract
+            .RequiredSourceTableName(CdcSourceTableKind.Document)
+            .Should()
+            .Be(new DbTableName(new DbSchemaName("dms"), "Document"));
+        CdcSourceInventoryContract
+            .RequiredSourceTableName(CdcSourceTableKind.CdcHeartbeat)
+            .Should()
+            .Be(new DbTableName(new DbSchemaName("dms"), "CdcHeartbeat"));
     }
+
+    [Test]
+    public void It_should_name_the_fixed_cdc_message_key_contract()
+    {
+        CdcSourceInventoryContract
+            .RequiredMessageKeyTableKinds.Should()
+            .Equal(CdcSourceTableKind.DocumentCache, CdcSourceTableKind.Document);
+        CdcSourceInventoryContract
+            .RequiredMessageKeyColumns()
+            .Select(columns => (columns.TableKind, ColumnNames: ColumnNames(columns.KeyColumns)))
+            .Should()
+            .Equal(
+                (CdcSourceTableKind.DocumentCache, "DocumentUuid"),
+                (CdcSourceTableKind.Document, "DocumentUuid")
+            );
+
+        var expectedMessageKeyColumns = CdcSourceInventoryContract.RequiredMessageKeyColumns();
+
+        CdcSourceInventoryContract
+            .ValidateRequiredMessageKeyColumns(expectedMessageKeyColumns, nameof(expectedMessageKeyColumns))
+            .Should()
+            .BeSameAs(expectedMessageKeyColumns);
+    }
+
+    [Test]
+    public void It_should_parse_source_table_kind_tokens()
+    {
+        CdcSourceInventoryContract
+            .SourceTableKindToken(CdcSourceTableKind.DocumentCache)
+            .Should()
+            .Be("document_cache");
+        CdcSourceInventoryContract.SourceTableKindToken(CdcSourceTableKind.Document).Should().Be("document");
+        CdcSourceInventoryContract
+            .SourceTableKindToken(CdcSourceTableKind.CdcHeartbeat)
+            .Should()
+            .Be("cdc_heartbeat");
+
+        CdcSourceInventoryContract
+            .TryParseSourceTableKindToken("document_cache", out var documentCache)
+            .Should()
+            .BeTrue();
+        documentCache.Should().Be(CdcSourceTableKind.DocumentCache);
+        CdcSourceInventoryContract.TryParseSourceTableKindToken("unknown", out _).Should().BeFalse();
+    }
+
+    [Test]
+    public void It_should_reject_message_key_columns_that_drift_from_the_contract()
+    {
+        IReadOnlyList<CdcExpectedMessageKeyColumns> missingDocument =
+        [
+            new(CdcSourceTableKind.DocumentCache, [new DbColumnName("DocumentUuid")]),
+        ];
+        IReadOnlyList<CdcExpectedMessageKeyColumns> wrongColumn =
+        [
+            new(CdcSourceTableKind.DocumentCache, [new DbColumnName("DocumentId")]),
+            new(CdcSourceTableKind.Document, [new DbColumnName("DocumentUuid")]),
+        ];
+
+        Action missingDocumentAction = () =>
+            CdcSourceInventoryContract.ValidateRequiredMessageKeyColumns(
+                missingDocument,
+                nameof(missingDocument)
+            );
+        Action wrongColumnAction = () =>
+            CdcSourceInventoryContract.ValidateRequiredMessageKeyColumns(wrongColumn, nameof(wrongColumn));
+
+        missingDocumentAction
+            .Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*exactly dms.DocumentCache and dms.Document*");
+        wrongColumnAction
+            .Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*DocumentUuid keys for document sources*");
+    }
+
+    [Test]
+    public void It_should_accept_valid_required_source_inventory_in_emitted_column_order()
+    {
+        var inventory = CdcSourceInventoryTestEmission.EmitCoreCdcSourceInventory(SqlDialect.Pgsql);
+
+        var validated = CdcSourceInventoryContract.ValidateRequiredSourceInventory(
+            inventory,
+            nameof(inventory)
+        );
+
+        validated.Should().BeSameAs(inventory);
+    }
+
+    [Test]
+    public void It_should_reject_required_source_columns_when_contiguous_ordinals_are_out_of_list_order()
+    {
+        var inventory = ReplaceTable(
+            CdcSourceInventoryTestEmission.EmitCoreCdcSourceInventory(SqlDialect.Pgsql),
+            CdcSourceTableKind.DocumentCache,
+            table => ReplaceColumns(table, [table.Columns[1], table.Columns[0], .. table.Columns.Skip(2)])
+        );
+
+        Action action = () =>
+            CdcSourceInventoryContract.ValidateRequiredSourceInventory(inventory, nameof(inventory));
+
+        action.Should().Throw<ArgumentException>().WithMessage("*contiguous ordinal order starting at 1*");
+    }
+
+    [Test]
+    public void It_should_reject_required_source_columns_when_ordinals_are_not_contiguous()
+    {
+        var inventory = ReplaceTable(
+            CdcSourceInventoryTestEmission.EmitCoreCdcSourceInventory(SqlDialect.Pgsql),
+            CdcSourceTableKind.DocumentCache,
+            table =>
+                ReplaceColumns(
+                    table,
+                    table
+                        .Columns.Select(
+                            (column, index) =>
+                                index == 2 ? CopyColumn(column, ordinal: table.Columns.Count + 1) : column
+                        )
+                        .ToArray()
+                )
+        );
+
+        Action action = () =>
+            CdcSourceInventoryContract.ValidateRequiredSourceInventory(inventory, nameof(inventory));
+
+        action.Should().Throw<ArgumentException>().WithMessage("*contiguous ordinal order starting at 1*");
+    }
+
+    [Test]
+    public void It_should_reject_source_columns_with_duplicate_zero_or_negative_ordinals()
+    {
+        var table = CdcSourceInventoryTestEmission
+            .EmitCoreCdcSourceInventory(SqlDialect.Pgsql)
+            .Single(table => table.TableKind == CdcSourceTableKind.DocumentCache);
+
+        Action duplicateOrdinal = () =>
+            ReplaceColumns(table, [table.Columns[0], CopyColumn(table.Columns[1], ordinal: 1)]);
+        Action zeroOrdinal = () => CopyColumn(table.Columns[0], ordinal: 0);
+        Action negativeOrdinal = () => CopyColumn(table.Columns[0], ordinal: -1);
+
+        duplicateOrdinal.Should().Throw<ArgumentException>().WithMessage("*ordinals must be unique*");
+        zeroOrdinal.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*positive*");
+        negativeOrdinal.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*positive*");
+    }
+
+    [Test]
+    public void It_should_reject_duplicate_required_source_column_names()
+    {
+        IReadOnlyList<CdcSourceTableInventory> inventory = CdcSourceInventoryTestEmission
+            .EmitCoreCdcSourceInventory(SqlDialect.Pgsql)
+            .Select(table =>
+                table.TableKind == CdcSourceTableKind.CdcHeartbeat
+                    ? new CdcSourceTableInventory(
+                        table.TableKind,
+                        table.TableName,
+                        table.EmittedQuotedTableName,
+                        [
+                            .. table.Columns,
+                            new CdcSourceColumnInventory(
+                                new DbColumnName("HeartbeatId"),
+                                @"""HeartbeatId""",
+                                4,
+                                "integer",
+                                IsNullable: false
+                            ),
+                        ]
+                    )
+                    : table
+            )
+            .ToArray();
+
+        Action action = () =>
+            CdcSourceInventoryContract.ValidateRequiredSourceInventory(inventory, nameof(inventory));
+
+        action.Should().Throw<ArgumentException>().WithMessage("*duplicate contract columns*");
+    }
+
+    [Test]
+    public void It_should_reject_a_default_physical_column_name()
+    {
+        Action action = () => BuildColumn(default);
+
+        action.Should().Throw<ArgumentException>().WithParameterName("ColumnName");
+    }
+
+    [TestCase("")]
+    [TestCase(" ")]
+    [TestCase("Document\nUuid")]
+    public void It_should_reject_blank_or_control_character_physical_column_names(string columnName)
+    {
+        Action action = () => BuildColumn(new DbColumnName(columnName));
+
+        action.Should().Throw<ArgumentException>().WithParameterName("ColumnName");
+    }
+
+    [Test]
+    public void It_should_snapshot_source_columns()
+    {
+        var expectedColumn = BuildColumn(new DbColumnName("DocumentUuid"));
+        var callerOwnedColumns = new List<CdcSourceColumnInventory> { expectedColumn };
+        var inventory = new CdcSourceTableInventory(
+            CdcSourceTableKind.Document,
+            DmsTableNames.Document,
+            @"""dms"".""Document""",
+            callerOwnedColumns
+        );
+
+        callerOwnedColumns[0] = BuildColumn(new DbColumnName("ChangedColumn"));
+        callerOwnedColumns.Add(BuildColumn(new DbColumnName("AddedColumn"), ordinal: 2));
+
+        inventory.Columns.Should().Equal(expectedColumn);
+    }
+
+    private static IReadOnlyList<CdcSourceTableInventory> ReplaceTable(
+        IReadOnlyList<CdcSourceTableInventory> inventory,
+        CdcSourceTableKind tableKind,
+        Func<CdcSourceTableInventory, CdcSourceTableInventory> replace
+    ) => inventory.Select(table => table.TableKind == tableKind ? replace(table) : table).ToArray();
+
+    private static CdcSourceTableInventory ReplaceColumns(
+        CdcSourceTableInventory table,
+        IReadOnlyList<CdcSourceColumnInventory> columns
+    ) => new(table.TableKind, table.TableName, table.EmittedQuotedTableName, columns);
+
+    private static CdcSourceColumnInventory CopyColumn(CdcSourceColumnInventory column, int ordinal) =>
+        new(
+            column.ColumnName,
+            column.EmittedQuotedColumnName,
+            ordinal,
+            column.ProviderDataType,
+            column.IsNullable
+        );
+
+    private static CdcSourceColumnInventory BuildColumn(DbColumnName columnName, int ordinal = 1) =>
+        new(columnName, @"""DocumentUuid""", ordinal, "uuid", IsNullable: false);
+
+    private static string ColumnNames(IReadOnlyList<DbColumnName> columns) =>
+        string.Join(",", columns.Select(column => column.Value));
 }
 
 [TestFixture(SqlDialect.Pgsql)]

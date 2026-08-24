@@ -447,17 +447,7 @@ internal sealed class CdcPostgresqlHeartbeatPublicationProvider : ICdcProviderSe
                         publication.ObservedValues
                     ),
                 ],
-                expectedMessageKeyColumns:
-                [
-                    new CdcExpectedMessageKeyColumns(
-                        CdcSourceTableKind.Document,
-                        [new DbColumnName("DocumentUuid")]
-                    ),
-                    new CdcExpectedMessageKeyColumns(
-                        CdcSourceTableKind.DocumentCache,
-                        [new DbColumnName("DocumentUuid")]
-                    ),
-                ]
+                expectedMessageKeyColumns: CdcSourceInventoryContract.RequiredMessageKeyColumns()
             );
         }
         catch (DbException exception)

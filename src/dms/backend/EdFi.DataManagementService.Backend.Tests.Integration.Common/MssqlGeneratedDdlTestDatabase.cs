@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
@@ -37,6 +38,7 @@ internal sealed record MssqlProvisioningTimingContext(
 public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
 {
     private const int DefaultCommandTimeoutSeconds = 300;
+    private const int UtcClockAdvanceMaxPollAttempts = 500;
     private const string ProvisionMaxConcurrencyVariable = "MSSQL_GENERATED_DDL_PROVISION_MAX_CONCURRENCY";
     private static readonly (string Schema, string Table)[] _generatedDdlBaselineTables =
     [
@@ -624,6 +626,40 @@ public sealed partial class MssqlGeneratedDdlTestDatabase : IAsyncDisposable
         command.Parameters.AddRange(parameters);
 
         return await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task WaitForUtcClockToAdvanceAsync()
+    {
+        var timestamp = await ExecuteScalarAsync<DateTime>("SELECT SYSUTCDATETIME();");
+        await WaitForUtcClockToAdvancePastAsync(
+            new DateTimeOffset(DateTime.SpecifyKind(timestamp, DateTimeKind.Utc))
+        );
+    }
+
+    public async Task WaitForUtcClockToAdvancePastAsync(DateTimeOffset timestamp)
+    {
+        SqlParameter timestampParameter = new("@timestamp", SqlDbType.DateTime2)
+        {
+            Scale = 7,
+            Value = timestamp.UtcDateTime,
+        };
+
+        await ExecuteNonQueryAsync(
+            """
+            DECLARE @attempt int = 0;
+
+            WHILE SYSUTCDATETIME() <= @timestamp AND @attempt < @maxAttempts
+            BEGIN
+                WAITFOR DELAY '00:00:00.010';
+                SET @attempt += 1;
+            END;
+
+            IF SYSUTCDATETIME() <= @timestamp
+                THROW 51000, 'SQL Server UTC clock did not advance past the required timestamp.', 1;
+            """,
+            timestampParameter,
+            new SqlParameter("@maxAttempts", UtcClockAdvanceMaxPollAttempts)
+        );
     }
 
     public async Task<T> ExecuteScalarAsync<T>(string sql, params SqlParameter[] parameters)

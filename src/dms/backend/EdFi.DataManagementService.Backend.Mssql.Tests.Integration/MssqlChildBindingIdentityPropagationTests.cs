@@ -157,8 +157,14 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
             classPeriodDocumentUuid
         );
 
-        // A small delay so ContentLastModifiedAt (sysutcdatetime) advances to a distinct value.
-        await _database.ExecuteNonQueryAsync("WAITFOR DELAY '00:00:00.050';");
+        await _database.WaitForUtcClockToAdvancePastAsync(
+            new[]
+            {
+                beforeBellSchedule.ContentLastModifiedAt,
+                beforeClassPeriod.ContentLastModifiedAt,
+                beforeClassPeriod.IdentityLastModifiedAt,
+            }.Max()
+        );
 
         // Act — update the upstream ClassPeriod identity column.
         await _database.ExecuteNonQueryAsync(
@@ -347,10 +353,6 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
             CultureInfo.InvariantCulture
         );
 
-        // Small delay so any stamp comparison that checks ContentLastModifiedAt
-        // would see a distinct timestamp too.
-        await _database.ExecuteNonQueryAsync("WAITFOR DELAY '00:00:00.050';");
-
         // Act — update the upstream ClassPeriod identity column.
         await _database.ExecuteNonQueryAsync(
             """
@@ -468,8 +470,14 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
             bellScheduleDocumentUuid
         );
 
-        // Distinct-timestamp gap so the in-transaction sysutcdatetime() stamps are strictly later.
-        await _database.ExecuteNonQueryAsync("WAITFOR DELAY '00:00:00.050';");
+        await _database.WaitForUtcClockToAdvancePastAsync(
+            new[]
+            {
+                baselineClassPeriod.ContentLastModifiedAt,
+                baselineClassPeriod.IdentityLastModifiedAt,
+                baselineBellSchedule.ContentLastModifiedAt,
+            }.Max()
+        );
 
         await using var connection = new SqlConnection(_database.ConnectionString);
         await connection.OpenAsync();

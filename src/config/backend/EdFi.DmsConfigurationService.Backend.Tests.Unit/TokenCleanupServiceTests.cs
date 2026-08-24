@@ -181,6 +181,9 @@ public class TokenCleanupServiceTests
 
             _timeProvider = new FakeTimeProvider(StartTime);
             _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+            var startupSweepObserved = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
             A.CallTo(() => _tokenRepository.DeleteExpiredTokensAsync(A<DateTimeOffset>._))
                 .ReturnsLazily(
                     (DateTimeOffset _) =>
@@ -188,6 +191,7 @@ public class TokenCleanupServiceTests
                         int call = Interlocked.Increment(ref _callCount);
                         if (call == 1)
                         {
+                            startupSweepObserved.TrySetResult();
                             throw new InvalidOperationException("Simulated repository failure.");
                         }
                         _secondSweepObserved.TrySetResult();
@@ -201,6 +205,7 @@ public class TokenCleanupServiceTests
             // keep ticking, or StartAsync would fault and the next advance would produce
             // no second call.
             await _service.StartAsync(CancellationToken.None);
+            await startupSweepObserved.Task.WaitAsync(SignalTimeout);
 
             _timeProvider.Advance(TimeSpan.FromMinutes(30));
             await _secondSweepObserved.Task.WaitAsync(SignalTimeout);

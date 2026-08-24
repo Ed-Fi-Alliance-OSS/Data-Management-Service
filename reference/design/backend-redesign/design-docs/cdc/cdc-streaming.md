@@ -259,8 +259,10 @@ After successful validation, v1 does not continuously recheck these settings, an
 generated `*_Stamp` triggers do not query `sys.configurations`. Changing either RCSI or
 `nested triggers` after successful validation while the target is active, including its
 effects and recovery, is outside the supported v1 contract. `ALLOW_SNAPSHOT_ISOLATION`
-remains optional because v1 does not use an explicit SQL Server `SNAPSHOT` transaction for
-projection.
+remains optional for projection-only targets because v1 projection does not use an
+explicit SQL Server `SNAPSHOT` transaction. Kafka CDC targets that use the SQL Server
+connector template enable it because the connector runs its initial Debezium snapshot with
+`snapshot.isolation.mode=snapshot`.
 
 Deployment automation selects CDC targets separately and must configure every CDC target
 on at least one designated DMS projector host as a `DocumentCache:Targets` entry. Kafka
@@ -1059,10 +1061,17 @@ database-per-instance isolation model.
 - Configure `DocumentUuid` as the Debezium message key for both tables.
 - `DocumentCache.DocumentUuid` remains non-indexed; provider CDC captures the column and
   the configured custom key does not change the table's `DocumentId` clustered key.
+- Set `data.query.mode=function` explicitly. Debezium 3.6 defaults SQL Server to direct
+  change-table queries, while Ed-Fi's SQL Server v1 connector contract is qualified
+  against SQL Server's generated CDC function surface.
 - Set `time.precision.mode=isostring` explicitly. Debezium 3.6 then captures SQL Server
   `datetime2(7)` values, including `DocumentCache.LastModifiedAt`, as ISO-8601 `STRING`
   values with the `io.debezium.time.IsoTimestamp` logical type instead of signed
   nanoseconds.
+- Set `snapshot.isolation.mode=snapshot` explicitly and require
+  `ALLOW_SNAPSHOT_ISOLATION` on the captured database. This preserves a consistent initial
+  Debezium snapshot without letting snapshot read locks block the connector's own
+  `heartbeat.action.query` update to `dms.CdcHeartbeat`.
 - Require the Ed-Fi `DocumentState` SMT to parse and validate the `IsoTimestamp`, truncate
   fractional seconds rather than round, and emit the existing DMS whole-second UTC
   string that exactly matches `document._lastModifiedDate`.

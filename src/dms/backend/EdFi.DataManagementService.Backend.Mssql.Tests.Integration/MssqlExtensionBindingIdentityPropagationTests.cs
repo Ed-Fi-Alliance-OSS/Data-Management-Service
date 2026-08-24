@@ -109,10 +109,6 @@ public class Given_A_Provisioned_Mssql_Database_With_A_FavoriteProgram_Extension
         var bindingAnchorBefore = await QueryFavoriteProgramExtensionAnchorAsync(rootDocumentId);
         bindingRowsBefore.Should().Be(1);
 
-        // Small delay so a stamp comparison that also checks ContentLastModifiedAt sees a distinct
-        // timestamp.
-        await _database.ExecuteNonQueryAsync("WAITFOR DELAY '00:00:00.050';");
-
         // Act — rename the upstream Program identity column.
         await _database.ExecuteNonQueryAsync(
             """

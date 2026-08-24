@@ -57,6 +57,46 @@ public static class CdcSourceFingerprintMetadata
         return new CdcSourceFingerprint(Version, $"sha256:{Convert.ToHexString(hash).ToLowerInvariant()}");
     }
 
+    public static CdcSourceFingerprint Validate(CdcSourceFingerprint sourceFingerprint, string parameterName)
+    {
+        ArgumentNullException.ThrowIfNull(sourceFingerprint);
+
+        CdcBindingContractValidation.ValidateRequiredSafeText(
+            sourceFingerprint.Version,
+            $"{parameterName}.{nameof(sourceFingerprint.Version)}"
+        );
+        if (!string.Equals(sourceFingerprint.Version, Version, StringComparison.Ordinal))
+        {
+            throw new ArgumentException($"CDC source fingerprint version must be {Version}.", parameterName);
+        }
+
+        string value = CdcBindingContractValidation.ValidateRequiredSafeText(
+            sourceFingerprint.Value,
+            $"{parameterName}.{nameof(sourceFingerprint.Value)}"
+        );
+        const string prefix = "sha256:";
+        if (!value.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "CDC source fingerprint value must use sha256 prefix.",
+                parameterName
+            );
+        }
+
+        string hash = value[prefix.Length..];
+        if (hash.Length != 64 || hash.Any(character => !IsLowerHex(character)))
+        {
+            throw new ArgumentException(
+                "CDC source fingerprint value must contain a lowercase SHA-256 value.",
+                parameterName
+            );
+        }
+
+        return sourceFingerprint;
+    }
+
+    private static bool IsLowerHex(char character) => character is >= '0' and <= '9' or >= 'a' and <= 'f';
+
     private static CdcProviderSetupStepResult FromRows(
         IReadOnlyList<IReadOnlyDictionary<string, string?>> rows,
         CdcProvider provider

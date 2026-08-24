@@ -4491,7 +4491,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
     private async Task DelayForDistinctTimestampsAsync()
     {
-        await _database.ExecuteNonQueryAsync("""WAITFOR DELAY '00:00:00.050';""");
+        await _database.WaitForUtcClockToAdvanceAsync();
     }
 
     /// <summary>
