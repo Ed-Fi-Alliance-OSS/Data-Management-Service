@@ -438,6 +438,24 @@ public class PartitionRequestHandlerTests
             telemetry.Single.Returned.Should().Be(0);
         }
 
+        // The companion to the case above: both halves of what early_empty asserts are checked, not the
+        // flag alone. A success carrying ranges was calculated by a boundary command whatever the flag
+        // says, so it is reported as the boundary work it did rather than as a skipped selection.
+        [Test]
+        public async Task It_does_not_record_early_empty_for_a_skipped_selection_that_returned_ranges()
+        {
+            RecordingCollectionPagingTelemetry telemetry = await ExecuteAsync(
+                new PartitionResult.PartitionSuccess([new CursorRange(1, long.MaxValue)])
+                {
+                    SelectionSkipped = true,
+                }
+            );
+
+            telemetry.Single.Outcome.Should().Be("success");
+            telemetry.Single.CommandCategory.Should().Be("boundary");
+            telemetry.Single.Returned.Should().Be(1);
+        }
+
         private static readonly TestCaseData[] _failureOutcomes =
         [
             new TestCaseData(

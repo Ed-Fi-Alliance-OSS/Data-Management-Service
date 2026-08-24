@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Frozen;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using EdFi.DataManagementService.Backend.External;
@@ -20,7 +21,8 @@ namespace EdFi.DataManagementService.Core.Telemetry;
 /// Every tag value is one of these constants, which is what keeps tag-set cardinality bounded and keeps
 /// request data out of the metric. Nothing derived from a request — resource name, tenant key, namespace,
 /// client identity, filter names or values, page-token text, decoded cursor bounds, candidate
-/// identifiers, or exception text — may become a label.
+/// identifiers, or exception text — may become a label. The per-dimension sets at the foot of this class
+/// are how that is enforced rather than merely intended.
 /// </remarks>
 internal static class CollectionPagingTelemetryLabel
 {
@@ -51,6 +53,53 @@ internal static class CollectionPagingTelemetryLabel
     public const string RetryExhaustedOutcome = "retry_exhausted";
     public const string UnknownFailureOutcome = "unknown_failure";
     public const string ExecutionExceptionOutcome = "execution_exception";
+
+    /// <summary>
+    /// The values each dimension allows, which is the bound the metric contract actually rests on.
+    /// </summary>
+    /// <remarks>
+    /// Cardinality is bounded because these sets are closed, not because a label happens to be short or
+    /// free of control characters. Checking membership is therefore what makes the published claim — that
+    /// the number of distinct dimension combinations cannot grow with traffic, with the size of the data,
+    /// or with the number of clients — a property of this component rather than only of its call sites.
+    /// Each set is one dimension rather than one flat set of every constant, so a label that is bounded
+    /// but belongs to another dimension is refused too.
+    /// </remarks>
+    public static readonly FrozenSet<string> PagingModes = new[]
+    {
+        TraditionalPagingMode,
+        CursorPagingMode,
+        PartitionPagingMode,
+    }.ToFrozenSet(StringComparer.Ordinal);
+
+    public static readonly FrozenSet<string> CommandCategories = new[]
+    {
+        PageCommandCategory,
+        PageWithCountCommandCategory,
+        BoundaryCommandCategory,
+        NoCommandCategory,
+    }.ToFrozenSet(StringComparer.Ordinal);
+
+    public static readonly FrozenSet<string> Providers = new[]
+    {
+        PostgresqlProvider,
+        SqlServerProvider,
+        UnknownProvider,
+    }.ToFrozenSet(StringComparer.Ordinal);
+
+    public static readonly FrozenSet<string> Outcomes = new[]
+    {
+        SuccessOutcome,
+        TerminalPageOutcome,
+        EarlyEmptyOutcome,
+        ValidationRejectedOutcome,
+        NotAuthorizedOutcome,
+        NotImplementedOutcome,
+        SecurityConfigurationOutcome,
+        RetryExhaustedOutcome,
+        UnknownFailureOutcome,
+        ExecutionExceptionOutcome,
+    }.ToFrozenSet(StringComparer.Ordinal);
 }
 
 /// <summary>
@@ -62,7 +111,11 @@ internal static class CollectionPagingTelemetryLabel
 /// </remarks>
 internal sealed record CollectionPagingTelemetryContext
 {
-    private const int MaxLabelLength = 128;
+    /// <summary>
+    /// How much of a refused label reaches the exception message. A label no dimension set contains is by
+    /// definition not one of the constants, so it may be arbitrary caller data on its way into a log.
+    /// </summary>
+    private const int MaxRefusedLabelLength = 64;
 
     private CollectionPagingTelemetryContext(
         string pagingMode,
@@ -71,10 +124,18 @@ internal sealed record CollectionPagingTelemetryContext
         string outcome
     )
     {
-        PagingMode = BoundSanitizedLabel(pagingMode, nameof(pagingMode));
-        CommandCategory = BoundSanitizedLabel(commandCategory, nameof(commandCategory));
-        Provider = BoundSanitizedLabel(provider, nameof(provider));
-        Outcome = BoundSanitizedLabel(outcome, nameof(outcome));
+        PagingMode = RequireAllowedLabel(
+            pagingMode,
+            CollectionPagingTelemetryLabel.PagingModes,
+            nameof(pagingMode)
+        );
+        CommandCategory = RequireAllowedLabel(
+            commandCategory,
+            CollectionPagingTelemetryLabel.CommandCategories,
+            nameof(commandCategory)
+        );
+        Provider = RequireAllowedLabel(provider, CollectionPagingTelemetryLabel.Providers, nameof(provider));
+        Outcome = RequireAllowedLabel(outcome, CollectionPagingTelemetryLabel.Outcomes, nameof(outcome));
     }
 
     public string PagingMode { get; }
@@ -153,20 +214,50 @@ internal sealed record CollectionPagingTelemetryContext
             _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported SQL dialect."),
         };
 
-    private static string BoundSanitizedLabel(string value, string parameterName)
+    /// <summary>
+    /// The label, when it is one <paramref name="allowed" /> contains.
+    /// </summary>
+    /// <remarks>
+    /// Membership, not shape. A label outside the set is refused rather than reshaped into something
+    /// emittable, because sanitizing and truncating bound a label's length and that is not the property
+    /// this metric needs: a caller passing a resource name, a tenant key, or an exception category would
+    /// still add one tag set per distinct value, which is exactly the unbounded growth the bounded
+    /// dimension set exists to prevent. Refusing also removes the substitution that used to stand in for
+    /// an unusable label, which emitted the provider constant on whichever dimension was empty and could
+    /// therefore put <c>unknown</c> on a dimension that does not allow it.
+    /// <para>
+    /// Every emission site records inside a guard that logs and swallows, so a refused label costs one
+    /// measurement and a warning rather than a poisoned metric.
+    /// </para>
+    /// </remarks>
+    private static string RequireAllowedLabel(string value, FrozenSet<string> allowed, string parameterName)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
             throw new ArgumentException("Metric label must be present.", parameterName);
         }
 
-        string sanitized = LoggingSanitizer.SanitizeForLogging(value);
-        if (sanitized.Length == 0)
+        if (!allowed.Contains(value))
         {
-            sanitized = CollectionPagingTelemetryLabel.UnknownProvider;
+            throw new ArgumentException(
+                $"Metric label '{DescribeRefused(value)}' is not one of the bounded values this dimension "
+                    + "allows.",
+                parameterName
+            );
         }
 
-        return sanitized.Length <= MaxLabelLength ? sanitized : sanitized[..MaxLabelLength];
+        return value;
+    }
+
+    /// <summary>
+    /// A refused label rendered safe for the message it is about to appear in: sanitized against
+    /// structured-log template injection, then bounded so an arbitrarily long one cannot be echoed whole.
+    /// </summary>
+    private static string DescribeRefused(string value)
+    {
+        string sanitized = LoggingSanitizer.SanitizeForLogging(value);
+
+        return sanitized.Length <= MaxRefusedLabelLength ? sanitized : sanitized[..MaxRefusedLabelLength];
     }
 }
 

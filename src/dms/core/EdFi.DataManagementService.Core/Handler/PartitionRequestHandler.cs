@@ -175,7 +175,10 @@ internal class PartitionRequestHandler(
     {
         (string commandCategory, string outcome, int? returnedPartitionCount) = partitionResult switch
         {
-            PartitionSuccess { SelectionSkipped: true } skipped => (
+            // Both halves of what early_empty asserts, not the flag alone. A success carrying ranges was
+            // built by a boundary command whatever the flag says, so it falls through to the arm below
+            // and is reported as the boundary work it did.
+            PartitionSuccess { SelectionSkipped: true, Ranges.Count: 0 } skipped => (
                 CollectionPagingTelemetryLabel.NoCommandCategory,
                 CollectionPagingTelemetryLabel.EarlyEmptyOutcome,
                 (int?)skipped.Ranges.Count

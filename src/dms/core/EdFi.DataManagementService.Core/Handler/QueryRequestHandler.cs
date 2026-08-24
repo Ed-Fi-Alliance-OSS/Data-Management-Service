@@ -258,7 +258,12 @@ internal class QueryRequestHandler(
     {
         int returnedPageSize = success.EdfiDocs.Count;
 
-        if (success.SelectionSkipped)
+        // Both halves of what early_empty asserts, not the flag alone: the outcome names an empty result
+        // that no selection command produced. A success carrying documents was built from rows something
+        // selected, so it is classified by what was served however the flag is set. Nothing produces that
+        // combination today, and checking it is what keeps the one outcome whose name is a claim about
+        // database work from ever being attached to a request that plainly did some.
+        if (success is { SelectionSkipped: true, EdfiDocs.Count: 0 })
         {
             return (
                 CollectionPagingTelemetryLabel.NoCommandCategory,

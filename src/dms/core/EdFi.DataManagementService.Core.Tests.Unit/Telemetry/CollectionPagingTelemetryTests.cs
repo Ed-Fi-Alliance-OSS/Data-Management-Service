@@ -367,37 +367,90 @@ public class Given_CollectionPagingTelemetry
             .And.OnlyContain(measurement => HasExactlyTheAllowedTags(measurement));
     }
 
-    // The bound this layer guarantees: no control characters, no structured-log template syntax, and no
-    // label longer than 128 characters, whatever a caller passes. Keeping request-derived values out of
-    // labels entirely is a property of the emission sites, which pass only the constants above, and is
-    // asserted there against sentinel request data.
+    // The bound this layer guarantees: a label outside the dimension's allowed set never becomes a tag.
+    // Length and character class are not the property that matters — a caller passing request-derived
+    // text would add one tag set per distinct value however short and clean each one was — so the check
+    // is membership and the answer is refusal rather than a reshaped label.
     [Test]
-    public void It_sanitizes_and_bounds_a_label_whatever_a_caller_passes()
+    public void It_refuses_a_label_outside_the_bounded_set()
     {
-        using MetricCollector collector = new();
-        CollectionPagingTelemetry telemetry = collector.CreateTelemetry();
-        CollectionPagingTelemetryContext context = CollectionPagingTelemetryContext.ForPagingMode(
-            CollectionPagingTelemetryLabel.CursorPagingMode,
-            CollectionPagingTelemetryLabel.NoCommandCategory,
-            SqlDialect.Pgsql,
-            "Unsafe\r\n\t{template}" + new string('x', 200)
-        );
-
-        telemetry.RecordValidationRejected(context);
-
-        MetricMeasurement rejection = collector.Single(CollectionPagingTelemetry.RequestCounterName);
-        rejection
-            .Tags.Values.OfType<string>()
-            .Should()
-            .OnlyContain(label =>
-                label.Length <= 128
-                && !label.Contains('\n')
-                && !label.Contains('\r')
-                && !label.Contains('\t')
-                && !label.Contains('{')
-                && !label.Contains('}')
+        var act = () =>
+            CollectionPagingTelemetryContext.ForPagingMode(
+                CollectionPagingTelemetryLabel.CursorPagingMode,
+                CollectionPagingTelemetryLabel.NoCommandCategory,
+                SqlDialect.Pgsql,
+                "Unsafe\r\n\t{template}" + new string('x', 200)
             );
-        context.Outcome.Should().HaveLength(128);
+
+        act.Should().Throw<ArgumentException>().And.ParamName.Should().Be("outcome");
+    }
+
+    // The refused label reaches the message the emission sites log, so it carries neither structured-log
+    // template syntax nor the whole of an arbitrarily long value.
+    [Test]
+    public void It_sanitizes_and_bounds_a_refused_label_before_naming_it()
+    {
+        var act = () =>
+            CollectionPagingTelemetryContext.ForPagingMode(
+                CollectionPagingTelemetryLabel.CursorPagingMode,
+                CollectionPagingTelemetryLabel.NoCommandCategory,
+                SqlDialect.Pgsql,
+                "Unsafe\r\n\t{template}" + new string('x', 200)
+            );
+
+        string message = act.Should().Throw<ArgumentException>().Which.Message;
+
+        message.Should().NotContain("\n").And.NotContain("\r").And.NotContain("\t");
+        message.Should().NotContain("{").And.NotContain("}");
+        message.Should().NotContain(new string('x', 65));
+    }
+
+    // Each dimension carries its own set, so a value that is bounded but belongs to another dimension is
+    // refused too. Without this a reordered argument list would emit a tag set the contract never
+    // describes while every cardinality assertion still passed.
+    [Test]
+    public void It_refuses_a_bounded_label_belonging_to_another_dimension()
+    {
+        var act = () =>
+            CollectionPagingTelemetryContext.ForPagingMode(
+                CollectionPagingTelemetryLabel.SuccessOutcome,
+                CollectionPagingTelemetryLabel.NoCommandCategory,
+                SqlDialect.Pgsql,
+                CollectionPagingTelemetryLabel.ValidationRejectedOutcome
+            );
+
+        act.Should().Throw<ArgumentException>().And.ParamName.Should().Be("pagingMode");
+    }
+
+    // The sets are the contract's Dimensions table. A constant added to the label class but left out of
+    // its set would be refused at every emission site and lost as a swallowed warning, so the two are
+    // pinned to each other here rather than left to agree by inspection.
+    [Test]
+    public void It_allows_exactly_the_documented_dimension_values()
+    {
+        CollectionPagingTelemetryLabel
+            .PagingModes.Should()
+            .BeEquivalentTo("traditional", "cursor", "partition");
+        CollectionPagingTelemetryLabel
+            .CommandCategories.Should()
+            .BeEquivalentTo("page", "page_with_count", "boundary", "none");
+        CollectionPagingTelemetryLabel
+            .Providers.Should()
+            .BeEquivalentTo("postgresql", "sqlserver", "unknown");
+        CollectionPagingTelemetryLabel
+            .Outcomes.Should()
+            .BeEquivalentTo(
+                "success",
+                "terminal_page",
+                "early_empty",
+                "validation_rejected",
+                "not_authorized",
+                "not_implemented",
+                "security_configuration",
+                "retry_exhausted",
+                "unknown_failure",
+                "execution_exception"
+            );
     }
 
     [TestCase(null)]

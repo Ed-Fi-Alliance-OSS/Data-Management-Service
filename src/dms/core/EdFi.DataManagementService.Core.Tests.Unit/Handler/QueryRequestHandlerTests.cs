@@ -1553,6 +1553,23 @@ public class QueryRequestHandlerTests
             telemetry.Single.Returned.Should().Be(0);
         }
 
+        // early_empty names an empty result no selection command produced, so both halves are checked
+        // rather than the flag alone. A page carrying documents was built from rows something selected,
+        // and reporting it as the short-circuit would attach the one outcome whose name is a claim about
+        // database work to a request that plainly did some — and then hide it from the size-gap
+        // comparisons, which exclude command_category=none on both sides.
+        [Test]
+        public async Task It_does_not_record_early_empty_for_a_skipped_selection_that_served_documents()
+        {
+            var (_, telemetry) = await ExecuteAsync(
+                new QueryResult.QuerySuccess(Documents(3), null, 2509L) { SelectionSkipped = true }
+            );
+
+            telemetry.Single.Outcome.Should().Be("success");
+            telemetry.Single.CommandCategory.Should().Be("page");
+            telemetry.Single.Returned.Should().Be(3);
+        }
+
         private static readonly TestCaseData[] _failureOutcomes =
         [
             new TestCaseData(
