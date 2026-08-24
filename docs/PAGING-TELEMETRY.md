@@ -43,7 +43,7 @@ receives nothing from these instruments no matter how it is configured.
 
 | Instrument | Type | Unit | Recorded for |
 |---|---|---|---|
-| `edfi.dms.collection_paging.requests` | Counter | `{request}` | Every collection read that reached paging validation, including those refused by it |
+| `edfi.dms.collection_paging.requests` | Counter | `{request}` | Every collection read paging validation refused, plus every one that reached backend execution. Clearing paging validation is not on its own enough — see [Aggregation Intent](#aggregation-intent) |
 | `edfi.dms.collection_paging.duration` | Histogram | `ms` | Every request where backend execution was attempted, so a request refused by parameter validation never contributes a microsecond-scale sample |
 | `edfi.dms.collection_paging.page_size.requested` | Histogram | `{item}` | Collection `GET` requests that reached execution |
 | `edfi.dms.collection_paging.page_size.returned` | Histogram | `{item}` | Collection `GET` requests that produced a page, an empty one included |
@@ -108,7 +108,7 @@ is `unknown` only when the request was answered before the engine was resolved.
 | `terminal_page` | A collection `GET` that **ends a cursor walk**: a continuation was possible for this page and none could be produced, so nothing follows it. Never reported for `partitions`, which has no successor to offer. |
 | `early_empty` | An empty result the API answered without issuing any selection command. Selection is the work this skips; a request that also validates a custom view still issues that command first. |
 | `validation_rejected` | Parameter validation answered the request: a paging, partition-count, change-version, or resource-filter parameter was refused. |
-| `not_authorized` | Namespace authorization denied the request. A client whose claim set does not authorize reading the resource at all is refused earlier and is not counted; see the `requests` note under [Aggregation Intent](#aggregation-intent). |
+| `not_authorized` | Namespace authorization denied the request. A client whose claim set does not authorize reading the resource at all is refused before backend execution begins and is not counted at all; see the `requests` note under [Aggregation Intent](#aggregation-intent). |
 | `not_implemented` | The operation is intentionally unavailable for that resource. |
 | `security_configuration` | The security configuration metadata for the request is invalid. |
 | `retry_exhausted` | A retryable condition survived the retry pipeline. |
@@ -136,13 +136,18 @@ measuring how long the client waited before giving up.
   collection-read traffic. A rising `validation_rejected` share usually means a
   client is sending parameters the API refuses, not that the API is unhealthy.
   Read that denominator as counted traffic rather than as every request the
-  route received. A request the API answers before it validates paging
-  parameters is not counted on any of these instruments — an unknown resource,
-  a rejected profile or media type, a failed authentication, or a client whose
-  claim set does not authorize reading the resource at all. A collection-read
-  rate that falls with no matching rise in any failure outcome is the signature
-  of that class of refusal, and the API's request logs rather than these
-  metrics are where it is diagnosed.
+  route received. Exactly two classes are counted: a request paging validation
+  refused, and a request that reached backend execution. A request the API
+  answers anywhere else is not counted on any of these instruments, and that
+  class straddles paging validation rather than sitting in front of it. Part of
+  it is settled first — an unknown resource, a rejected profile or media type.
+  The rest is settled *after* paging validation has already passed the request:
+  a failed authentication, a client whose claim set does not authorize reading
+  the resource at all, or an error raised while authorizing. So neither
+  reaching paging validation nor clearing it is on its own enough to be
+  counted. A collection-read rate that falls with no matching rise in any
+  failure outcome is the signature of that whole class of refusal, and the
+  API's request logs rather than these metrics are where it is diagnosed.
 - **`duration`** — p50, p95, and p99, sliced by `paging_mode` and
   `command_category`. Keep `page_with_count` in its own bucket: requesting a
   total count is expected to be the slow shape, and averaging it together with
