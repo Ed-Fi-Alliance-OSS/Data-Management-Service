@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using EdFi.DataManagementService.Core.Configuration;
@@ -172,6 +173,125 @@ public enum DocumentCacheAdministrativeNoMutationScope
     LifecycleCacheWorkLatchAndProviderSettings,
 }
 
+public sealed record DocumentCacheAdministrativeCommandContract
+{
+    public DocumentCacheAdministrativeCommandContract(
+        DocumentCacheAdministrativeCommand command,
+        DocumentCacheAdministrativeCommandConfirmation expectedConfirmation,
+        DocumentCacheOfflineWriterAdmissionConfirmation? expectedOfflineWriterAdmissionConfirmation
+    )
+    {
+        Command = command;
+        ExpectedConfirmation = expectedConfirmation;
+        ExpectedOfflineWriterAdmissionConfirmation = expectedOfflineWriterAdmissionConfirmation;
+    }
+
+    public DocumentCacheAdministrativeCommand Command { get; }
+
+    public DocumentCacheAdministrativeCommandConfirmation ExpectedConfirmation { get; }
+
+    public DocumentCacheOfflineWriterAdmissionConfirmation? ExpectedOfflineWriterAdmissionConfirmation { get; }
+
+    public bool RequiresOfflineWriterAdmission => ExpectedOfflineWriterAdmissionConfirmation is not null;
+}
+
+public static class DocumentCacheAdministrativeCommandContracts
+{
+    private static readonly IReadOnlyDictionary<
+        DocumentCacheAdministrativeCommand,
+        DocumentCacheAdministrativeCommandContract
+    > _contracts = new Dictionary<
+        DocumentCacheAdministrativeCommand,
+        DocumentCacheAdministrativeCommandContract
+    >
+    {
+        [DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation] = new(
+            DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation,
+            DocumentCacheAdministrativeCommandConfirmation.NewEmptyActivation,
+            expectedOfflineWriterAdmissionConfirmation: null
+        ),
+        [DocumentCacheAdministrativeCommand.OfflineActivation] = new(
+            DocumentCacheAdministrativeCommand.OfflineActivation,
+            DocumentCacheAdministrativeCommandConfirmation.OfflineActivation,
+            DocumentCacheOfflineWriterAdmissionConfirmation.OfflineActivationWritersClosedAndDrained
+        ),
+        [DocumentCacheAdministrativeCommand.OfflineDeactivation] = new(
+            DocumentCacheAdministrativeCommand.OfflineDeactivation,
+            DocumentCacheAdministrativeCommandConfirmation.OfflineDeactivation,
+            DocumentCacheOfflineWriterAdmissionConfirmation.OfflineDeactivationWritersClosedAndDrained
+        ),
+        [DocumentCacheAdministrativeCommand.OnlineCacheRebuild] = new(
+            DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+            DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild,
+            expectedOfflineWriterAdmissionConfirmation: null
+        ),
+        [DocumentCacheAdministrativeCommand.ExplicitIntegrityScrub] = new(
+            DocumentCacheAdministrativeCommand.ExplicitIntegrityScrub,
+            DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub,
+            expectedOfflineWriterAdmissionConfirmation: null
+        ),
+        [DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery] = new(
+            DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery,
+            DocumentCacheAdministrativeCommandConfirmation.InternalCacheAheadRecovery,
+            DocumentCacheOfflineWriterAdmissionConfirmation.InternalOnlyCacheAheadRecoveryWritersClosedAndDrained
+        ),
+    };
+
+    public static IEnumerable<DocumentCacheAdministrativeCommandContract> All => _contracts.Values;
+
+    public static bool TryGet(
+        DocumentCacheAdministrativeCommand command,
+        [NotNullWhen(true)] out DocumentCacheAdministrativeCommandContract? contract
+    ) => _contracts.TryGetValue(command, out contract);
+
+    public static DocumentCacheAdministrativeCommandContract Get(DocumentCacheAdministrativeCommand command)
+    {
+        if (TryGet(command, out DocumentCacheAdministrativeCommandContract? contract))
+        {
+            return contract;
+        }
+
+        throw new ArgumentOutOfRangeException(nameof(command), command, "Unsupported command.");
+    }
+
+    public static DocumentCacheAdministrativeCommandConfirmation ExpectedCommandConfirmation(
+        DocumentCacheAdministrativeCommand command
+    ) => Get(command).ExpectedConfirmation;
+
+    public static bool RequiresOfflineWriterAdmission(DocumentCacheAdministrativeCommand command) =>
+        Get(command).RequiresOfflineWriterAdmission;
+
+    public static DocumentCacheOfflineWriterAdmissionConfirmation ExpectedOfflineWriterAdmissionConfirmation(
+        DocumentCacheAdministrativeCommand command
+    )
+    {
+        DocumentCacheAdministrativeCommandContract contract = Get(command);
+        if (contract.ExpectedOfflineWriterAdmissionConfirmation is { } confirmation)
+        {
+            return confirmation;
+        }
+
+        throw new ArgumentException(
+            "The command does not require offline writer admission.",
+            nameof(command)
+        );
+    }
+}
+
+public interface IDocumentCacheAdministrativeRequest
+{
+    DocumentCacheAdministrativeTargetKey TargetKey { get; }
+
+    DocumentCacheAdministrativeCommandConfirmation? Confirmation { get; }
+
+    DocumentCachePhysicalSourceFingerprint? ExpectedPhysicalSourceFingerprint { get; }
+}
+
+public interface IDocumentCacheOfflineWriterAdmissionRequest : IDocumentCacheAdministrativeRequest
+{
+    DocumentCacheOfflineWriterAdmission? OfflineWriterAdmission { get; }
+}
+
 public sealed record DocumentCacheAdministrativeTargetKey
 {
     [JsonConstructor]
@@ -265,7 +385,7 @@ public sealed record DocumentCacheOfflineWriterAdmission
     }
 }
 
-public sealed record DocumentCacheGuardedNewEmptyActivationRequest
+public sealed record DocumentCacheGuardedNewEmptyActivationRequest : IDocumentCacheAdministrativeRequest
 {
     [JsonConstructor]
     public DocumentCacheGuardedNewEmptyActivationRequest(
@@ -295,7 +415,7 @@ public sealed record DocumentCacheGuardedNewEmptyActivationRequest
     public DocumentCachePhysicalSourceFingerprint? ExpectedPhysicalSourceFingerprint { get; }
 }
 
-public sealed record DocumentCacheOfflineActivationRequest
+public sealed record DocumentCacheOfflineActivationRequest : IDocumentCacheOfflineWriterAdmissionRequest
 {
     [JsonConstructor]
     public DocumentCacheOfflineActivationRequest(
@@ -333,7 +453,7 @@ public sealed record DocumentCacheOfflineActivationRequest
     public DocumentCacheOfflineWriterAdmission? OfflineWriterAdmission { get; }
 }
 
-public sealed record DocumentCacheOfflineDeactivationRequest
+public sealed record DocumentCacheOfflineDeactivationRequest : IDocumentCacheOfflineWriterAdmissionRequest
 {
     [JsonConstructor]
     public DocumentCacheOfflineDeactivationRequest(
@@ -371,7 +491,7 @@ public sealed record DocumentCacheOfflineDeactivationRequest
     public DocumentCacheOfflineWriterAdmission? OfflineWriterAdmission { get; }
 }
 
-public sealed record DocumentCacheOnlineCacheRebuildRequest
+public sealed record DocumentCacheOnlineCacheRebuildRequest : IDocumentCacheAdministrativeRequest
 {
     [JsonConstructor]
     public DocumentCacheOnlineCacheRebuildRequest(
@@ -401,7 +521,7 @@ public sealed record DocumentCacheOnlineCacheRebuildRequest
     public DocumentCachePhysicalSourceFingerprint? ExpectedPhysicalSourceFingerprint { get; }
 }
 
-public sealed record DocumentCacheExplicitIntegrityScrubRequest
+public sealed record DocumentCacheExplicitIntegrityScrubRequest : IDocumentCacheAdministrativeRequest
 {
     [JsonConstructor]
     public DocumentCacheExplicitIntegrityScrubRequest(
@@ -432,6 +552,7 @@ public sealed record DocumentCacheExplicitIntegrityScrubRequest
 }
 
 public sealed record DocumentCacheInternalOnlyCacheAheadRecoveryRequest
+    : IDocumentCacheOfflineWriterAdmissionRequest
 {
     [JsonConstructor]
     public DocumentCacheInternalOnlyCacheAheadRecoveryRequest(

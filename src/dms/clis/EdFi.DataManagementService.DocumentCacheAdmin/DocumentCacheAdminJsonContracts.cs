@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 
@@ -31,6 +32,11 @@ internal static class DocumentCacheAdminJsonSerializer
 
 internal static class DocumentCacheAdminJsonRequestParser
 {
+    private static readonly JsonSerializerOptions _mutatingRequestJsonOptions = new()
+    {
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+    };
+
     public static bool TryParse(
         string commandName,
         string requestJson,
@@ -143,77 +149,38 @@ internal static class DocumentCacheAdminJsonRequestParser
             return false;
         }
 
-        string[] allowedProperties = contract.RequiresOfflineWriterAdmission
-            ? ["targetKey", "confirmation", "expectedPhysicalSourceFingerprint", "offlineWriterAdmission"]
-            : ["targetKey", "confirmation", "expectedPhysicalSourceFingerprint"];
-        string[] requiredProperties = contract.RequiresOfflineWriterAdmission
-            ? ["targetKey", "confirmation", "offlineWriterAdmission"]
-            : ["targetKey", "confirmation"];
-
-        if (
-            !TryReadProperties(
-                rootElement,
-                "request",
-                requiredProperties,
-                allowedProperties,
-                out Dictionary<string, JsonElement> rootProperties,
-                out failure
-            )
-        )
+        if (!TryRejectDuplicateProperties(rootElement, "request", out failure))
         {
             return false;
         }
 
-        if (
-            !TryReadTargetKey(rootProperties["targetKey"], out DocumentCacheTargetKey? targetKey, out failure)
-        )
+        object? sharedRequest;
+        try
+        {
+            sharedRequest = rootElement.Deserialize(contract.RequestType, _mutatingRequestJsonOptions);
+        }
+        catch (JsonException exception)
+        {
+            failure = $"Request JSON is not supported by '{commandName}': {exception.Message}";
+            return false;
+        }
+        catch (ArgumentException exception)
+        {
+            failure = $"Request JSON is not valid for '{commandName}': {exception.Message}";
+            return false;
+        }
+
+        if (sharedRequest is null)
+        {
+            failure = $"Request JSON could not be deserialized as '{contract.RequestType.Name}'.";
+            return false;
+        }
+
+        if (!TryValidateMutatingRequest(contract, sharedRequest, out failure))
         {
             return false;
         }
 
-        DocumentCacheTargetKey validTargetKey =
-            targetKey
-            ?? throw new InvalidOperationException("Target key validation succeeded without a target.");
-        if (
-            !TryReadExpectedConfirmation(
-                rootProperties["confirmation"],
-                contract.ExpectedConfirmation,
-                out failure
-            )
-        )
-        {
-            return false;
-        }
-
-        if (
-            !TryReadExpectedPhysicalSourceFingerprint(
-                rootProperties,
-                out DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint,
-                out failure
-            )
-        )
-        {
-            return false;
-        }
-
-        DocumentCacheOfflineWriterAdmission? offlineWriterAdmission = null;
-        if (
-            contract.RequiresOfflineWriterAdmission
-            && !TryReadOfflineWriterAdmission(
-                rootProperties["offlineWriterAdmission"],
-                out offlineWriterAdmission,
-                out failure
-            )
-        )
-        {
-            return false;
-        }
-
-        object sharedRequest = contract.CreateRequest(
-            validTargetKey,
-            expectedPhysicalSourceFingerprint,
-            offlineWriterAdmission
-        );
         request = new DocumentCacheAdminJsonRequest(
             commandName,
             contract.RequestType,
@@ -223,56 +190,51 @@ internal static class DocumentCacheAdminJsonRequestParser
         return true;
     }
 
-    private static bool TryReadExpectedConfirmation(
-        JsonElement confirmationElement,
-        DocumentCacheAdministrativeCommandConfirmation expectedConfirmation,
+    private static bool TryValidateMutatingRequest(
+        DocumentCacheAdminMutatingCommandContract contract,
+        object sharedRequest,
         out string? failure
     )
     {
         failure = null;
 
-        if (confirmationElement.ValueKind != JsonValueKind.String)
-        {
-            failure = "Request JSON property 'confirmation' must be a string.";
-            return false;
-        }
-
-        string expectedConfirmationName = JsonNamingPolicy.CamelCase.ConvertName(
-            expectedConfirmation.ToString()
+        DocumentCacheAdministrativeCommandConfirmation? confirmation = contract.ReadConfirmation(
+            sharedRequest
         );
-        string? suppliedConfirmationName = confirmationElement.GetString();
-        if (!string.Equals(suppliedConfirmationName, expectedConfirmationName, StringComparison.Ordinal))
+        if (confirmation is null)
         {
             failure =
-                $"Request JSON confirmation '{suppliedConfirmationName}' does not match command confirmation '{expectedConfirmationName}'.";
+                $"Request JSON property 'confirmation' is required in request and must be '{contract.ExpectedConfirmationJsonValue}'.";
             return false;
         }
 
-        return true;
-    }
-
-    private static bool TryReadOfflineWriterAdmission(
-        JsonElement offlineWriterAdmissionElement,
-        out DocumentCacheOfflineWriterAdmission? offlineWriterAdmission,
-        out string? failure
-    )
-    {
-        offlineWriterAdmission = null;
-        failure = null;
-
-        try
+        if (!Enum.IsDefined(confirmation.Value) || confirmation.Value != contract.ExpectedConfirmation)
         {
-            offlineWriterAdmission = JsonSerializer.Deserialize<DocumentCacheOfflineWriterAdmission>(
-                offlineWriterAdmissionElement.GetRawText()
-            );
-        }
-        catch (JsonException exception)
-        {
-            failure = $"Request JSON property 'offlineWriterAdmission' is invalid: {exception.Message}";
+            failure =
+                $"Request JSON confirmation '{JsonNamingPolicy.CamelCase.ConvertName(confirmation.Value.ToString())}' does not match command confirmation '{contract.ExpectedConfirmationJsonValue}'.";
             return false;
         }
 
+        if (!contract.RequiresOfflineWriterAdmission)
+        {
+            return true;
+        }
+
+        DocumentCacheOfflineWriterAdmission? offlineWriterAdmission = contract.ReadOfflineWriterAdmission(
+            sharedRequest
+        );
         if (offlineWriterAdmission is null)
+        {
+            failure =
+                $"Request JSON property 'offlineWriterAdmission' is required in request and must be '{DocumentCacheOfflineWriterAdmission.ClosedAndDrainedJsonValue}'.";
+            return false;
+        }
+
+        if (
+            !offlineWriterAdmission.Confirmed
+            || offlineWriterAdmission.HasUnrecognizedConfirmation
+            || offlineWriterAdmission.Confirmation != contract.ExpectedOfflineWriterAdmissionConfirmation
+        )
         {
             failure =
                 $"Request JSON property 'offlineWriterAdmission' must be '{DocumentCacheOfflineWriterAdmission.ClosedAndDrainedJsonValue}'.";
@@ -280,51 +242,6 @@ internal static class DocumentCacheAdminJsonRequestParser
         }
 
         return true;
-    }
-
-    private static bool TryReadExpectedPhysicalSourceFingerprint(
-        IReadOnlyDictionary<string, JsonElement> rootProperties,
-        out DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint,
-        out string? failure
-    )
-    {
-        expectedPhysicalSourceFingerprint = null;
-        failure = null;
-
-        if (
-            !rootProperties.TryGetValue(
-                "expectedPhysicalSourceFingerprint",
-                out JsonElement fingerprintElement
-            )
-        )
-        {
-            return true;
-        }
-
-        if (fingerprintElement.ValueKind == JsonValueKind.Null)
-        {
-            return true;
-        }
-
-        if (fingerprintElement.ValueKind != JsonValueKind.String)
-        {
-            failure = "Request JSON property 'expectedPhysicalSourceFingerprint' must be a string.";
-            return false;
-        }
-
-        try
-        {
-            expectedPhysicalSourceFingerprint = new DocumentCachePhysicalSourceFingerprint(
-                fingerprintElement.GetString() ?? string.Empty
-            );
-            return true;
-        }
-        catch (ArgumentException exception)
-        {
-            failure =
-                $"Request JSON property 'expectedPhysicalSourceFingerprint' is invalid: {exception.Message}";
-            return false;
-        }
     }
 
     private static bool TryReadTargetKey(
@@ -384,6 +301,51 @@ internal static class DocumentCacheAdminJsonRequestParser
         {
             failure = validationFailure;
             return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryRejectDuplicateProperties(
+        JsonElement element,
+        string objectName,
+        out string? failure
+    )
+    {
+        failure = null;
+
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            HashSet<string> propertyNames = new(StringComparer.Ordinal);
+            foreach (JsonProperty property in element.EnumerateObject())
+            {
+                if (!propertyNames.Add(property.Name))
+                {
+                    failure = $"Request JSON property '{property.Name}' is duplicated in {objectName}.";
+                    return false;
+                }
+
+                string childObjectName = string.Equals(objectName, "request", StringComparison.Ordinal)
+                    ? property.Name
+                    : $"{objectName}.{property.Name}";
+                if (!TryRejectDuplicateProperties(property.Value, childObjectName, out failure))
+                {
+                    return false;
+                }
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            int index = 0;
+            foreach (JsonElement item in element.EnumerateArray())
+            {
+                if (!TryRejectDuplicateProperties(item, $"{objectName}[{index}]", out failure))
+                {
+                    return false;
+                }
+
+                index++;
+            }
         }
 
         return true;

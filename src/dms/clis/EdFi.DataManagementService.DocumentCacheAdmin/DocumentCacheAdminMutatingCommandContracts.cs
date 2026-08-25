@@ -19,36 +19,29 @@ internal sealed class DocumentCacheAdminMutatingCommandContract
         DocumentCacheOfflineWriterAdmission?,
         object
     > _requestFactory;
-    private readonly Func<object, DocumentCacheAdministrativeTargetKey> _targetKeyAccessor;
 
     public DocumentCacheAdminMutatingCommandContract(
         string commandName,
         Type requestType,
         DocumentCacheAdministrativeCommand administrativeCommand,
-        DocumentCacheAdministrativeCommandConfirmation expectedConfirmation,
-        DocumentCacheOfflineWriterAdmissionConfirmation? expectedOfflineWriterAdmissionConfirmation,
         Func<
             DocumentCacheAdministrativeTargetKey,
             DocumentCachePhysicalSourceFingerprint?,
             DocumentCacheAdministrativeCommandConfirmation,
             DocumentCacheOfflineWriterAdmission?,
             object
-        > requestFactory,
-        Func<object, DocumentCacheAdministrativeTargetKey> targetKeyAccessor
+        > requestFactory
     )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
         ArgumentNullException.ThrowIfNull(requestType);
         ArgumentNullException.ThrowIfNull(requestFactory);
-        ArgumentNullException.ThrowIfNull(targetKeyAccessor);
 
         CommandName = commandName;
         RequestType = requestType;
         AdministrativeCommand = administrativeCommand;
-        ExpectedConfirmation = expectedConfirmation;
-        ExpectedOfflineWriterAdmissionConfirmation = expectedOfflineWriterAdmissionConfirmation;
+        SharedContract = DocumentCacheAdministrativeCommandContracts.Get(administrativeCommand);
         _requestFactory = requestFactory;
-        _targetKeyAccessor = targetKeyAccessor;
     }
 
     public string CommandName { get; }
@@ -57,11 +50,15 @@ internal sealed class DocumentCacheAdminMutatingCommandContract
 
     public DocumentCacheAdministrativeCommand AdministrativeCommand { get; }
 
-    public DocumentCacheAdministrativeCommandConfirmation ExpectedConfirmation { get; }
+    public DocumentCacheAdministrativeCommandContract SharedContract { get; }
 
-    public DocumentCacheOfflineWriterAdmissionConfirmation? ExpectedOfflineWriterAdmissionConfirmation { get; }
+    public DocumentCacheAdministrativeCommandConfirmation ExpectedConfirmation =>
+        SharedContract.ExpectedConfirmation;
 
-    public bool RequiresOfflineWriterAdmission => ExpectedOfflineWriterAdmissionConfirmation is not null;
+    public DocumentCacheOfflineWriterAdmissionConfirmation? ExpectedOfflineWriterAdmissionConfirmation =>
+        SharedContract.ExpectedOfflineWriterAdmissionConfirmation;
+
+    public bool RequiresOfflineWriterAdmission => SharedContract.RequiresOfflineWriterAdmission;
 
     public string ExpectedConfirmationJsonValue =>
         JsonNamingPolicy.CamelCase.ConvertName(ExpectedConfirmation.ToString());
@@ -96,8 +93,26 @@ internal sealed class DocumentCacheAdminMutatingCommandContract
 
     public DocumentCacheAdministrativeTargetKey ReadTargetKey(object request)
     {
-        ArgumentNullException.ThrowIfNull(request);
+        return ReadRequest(request).TargetKey;
+    }
 
+    public DocumentCacheAdministrativeCommandConfirmation? ReadConfirmation(object request)
+    {
+        return ReadRequest(request).Confirmation;
+    }
+
+    public DocumentCacheOfflineWriterAdmission? ReadOfflineWriterAdmission(object request)
+    {
+        IDocumentCacheAdministrativeRequest administrativeRequest = ReadRequest(request);
+        return
+            administrativeRequest is IDocumentCacheOfflineWriterAdmissionRequest offlineWriterAdmissionRequest
+            ? offlineWriterAdmissionRequest.OfflineWriterAdmission
+            : null;
+    }
+
+    private IDocumentCacheAdministrativeRequest ReadRequest(object request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
         if (!RequestType.IsInstanceOfType(request))
         {
             throw new ArgumentException(
@@ -106,7 +121,12 @@ internal sealed class DocumentCacheAdminMutatingCommandContract
             );
         }
 
-        return _targetKeyAccessor(request);
+        return request is IDocumentCacheAdministrativeRequest administrativeRequest
+            ? administrativeRequest
+            : throw new ArgumentException(
+                $"Request must implement '{typeof(IDocumentCacheAdministrativeRequest).FullName}'.",
+                nameof(request)
+            );
     }
 
     public DocumentCacheAdminMutatingCommandRequest CreateCommandRequest(
@@ -132,83 +152,65 @@ internal static class DocumentCacheAdminMutatingCommandContracts
         [DocumentCacheAdminCommandSurface.ActivateNewEmptyCommandName] = Create(
             DocumentCacheAdminCommandSurface.ActivateNewEmptyCommandName,
             DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation,
-            DocumentCacheAdministrativeCommandConfirmation.NewEmptyActivation,
-            expectedOfflineWriterAdmissionConfirmation: null,
             (targetKey, expectedPhysicalSourceFingerprint, confirmation, offlineWriterAdmission) =>
                 new DocumentCacheGuardedNewEmptyActivationRequest(
                     targetKey,
                     expectedPhysicalSourceFingerprint,
                     confirmation
-                ),
-            request => request.TargetKey
+                )
         ),
         [DocumentCacheAdminCommandSurface.ActivateOfflineCommandName] = Create(
             DocumentCacheAdminCommandSurface.ActivateOfflineCommandName,
             DocumentCacheAdministrativeCommand.OfflineActivation,
-            DocumentCacheAdministrativeCommandConfirmation.OfflineActivation,
-            DocumentCacheOfflineWriterAdmissionConfirmation.OfflineActivationWritersClosedAndDrained,
             (targetKey, expectedPhysicalSourceFingerprint, confirmation, offlineWriterAdmission) =>
                 new DocumentCacheOfflineActivationRequest(
                     targetKey,
                     offlineWriterAdmission,
                     expectedPhysicalSourceFingerprint,
                     confirmation
-                ),
-            request => request.TargetKey
+                )
         ),
         [DocumentCacheAdminCommandSurface.DeactivateOfflineCommandName] = Create(
             DocumentCacheAdminCommandSurface.DeactivateOfflineCommandName,
             DocumentCacheAdministrativeCommand.OfflineDeactivation,
-            DocumentCacheAdministrativeCommandConfirmation.OfflineDeactivation,
-            DocumentCacheOfflineWriterAdmissionConfirmation.OfflineDeactivationWritersClosedAndDrained,
             (targetKey, expectedPhysicalSourceFingerprint, confirmation, offlineWriterAdmission) =>
                 new DocumentCacheOfflineDeactivationRequest(
                     targetKey,
                     offlineWriterAdmission,
                     expectedPhysicalSourceFingerprint,
                     confirmation
-                ),
-            request => request.TargetKey
+                )
         ),
         [DocumentCacheAdminCommandSurface.RebuildOnlineCommandName] = Create(
             DocumentCacheAdminCommandSurface.RebuildOnlineCommandName,
             DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
-            DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild,
-            expectedOfflineWriterAdmissionConfirmation: null,
             (targetKey, expectedPhysicalSourceFingerprint, confirmation, offlineWriterAdmission) =>
                 new DocumentCacheOnlineCacheRebuildRequest(
                     targetKey,
                     expectedPhysicalSourceFingerprint,
                     confirmation
-                ),
-            request => request.TargetKey
+                )
         ),
         [DocumentCacheAdminCommandSurface.ScrubCommandName] = Create(
             DocumentCacheAdminCommandSurface.ScrubCommandName,
             DocumentCacheAdministrativeCommand.ExplicitIntegrityScrub,
-            DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub,
-            expectedOfflineWriterAdmissionConfirmation: null,
             (targetKey, expectedPhysicalSourceFingerprint, confirmation, offlineWriterAdmission) =>
                 new DocumentCacheExplicitIntegrityScrubRequest(
                     targetKey,
                     expectedPhysicalSourceFingerprint,
                     confirmation
-                ),
-            request => request.TargetKey
+                )
         ),
         [DocumentCacheAdminCommandSurface.RecoverCacheAheadCommandName] = Create(
             DocumentCacheAdminCommandSurface.RecoverCacheAheadCommandName,
             DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery,
-            DocumentCacheAdministrativeCommandConfirmation.InternalCacheAheadRecovery,
-            DocumentCacheOfflineWriterAdmissionConfirmation.InternalOnlyCacheAheadRecoveryWritersClosedAndDrained,
             (targetKey, expectedPhysicalSourceFingerprint, confirmation, offlineWriterAdmission) =>
                 new DocumentCacheInternalOnlyCacheAheadRecoveryRequest(
                     targetKey,
                     offlineWriterAdmission,
                     expectedPhysicalSourceFingerprint,
                     confirmation
-                ),
-            request => request.TargetKey
+                )
         ),
     };
 
@@ -222,33 +224,27 @@ internal static class DocumentCacheAdminMutatingCommandContracts
     private static DocumentCacheAdminMutatingCommandContract Create<TRequest>(
         string commandName,
         DocumentCacheAdministrativeCommand administrativeCommand,
-        DocumentCacheAdministrativeCommandConfirmation expectedConfirmation,
-        DocumentCacheOfflineWriterAdmissionConfirmation? expectedOfflineWriterAdmissionConfirmation,
         Func<
             DocumentCacheAdministrativeTargetKey,
             DocumentCachePhysicalSourceFingerprint?,
             DocumentCacheAdministrativeCommandConfirmation,
             DocumentCacheOfflineWriterAdmission?,
             TRequest
-        > requestFactory,
-        Func<TRequest, DocumentCacheAdministrativeTargetKey> targetKeyAccessor
+        > requestFactory
     )
-        where TRequest : notnull
+        where TRequest : notnull, IDocumentCacheAdministrativeRequest
     {
         return new(
             commandName,
             typeof(TRequest),
             administrativeCommand,
-            expectedConfirmation,
-            expectedOfflineWriterAdmissionConfirmation,
             (targetKey, expectedPhysicalSourceFingerprint, confirmation, offlineWriterAdmission) =>
                 requestFactory(
                     targetKey,
                     expectedPhysicalSourceFingerprint,
                     confirmation,
                     offlineWriterAdmission
-                ),
-            request => targetKeyAccessor((TRequest)request)
+                )
         );
     }
 }

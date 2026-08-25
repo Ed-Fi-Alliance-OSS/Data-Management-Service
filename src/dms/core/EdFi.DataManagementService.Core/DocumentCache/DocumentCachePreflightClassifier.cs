@@ -761,23 +761,7 @@ public static class DocumentCachePreflightClassifier
 
     public static DocumentCacheAdministrativeCommandConfirmation ExpectedCommandConfirmation(
         DocumentCacheAdministrativeCommand command
-    ) =>
-        command switch
-        {
-            DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation =>
-                DocumentCacheAdministrativeCommandConfirmation.NewEmptyActivation,
-            DocumentCacheAdministrativeCommand.OfflineActivation =>
-                DocumentCacheAdministrativeCommandConfirmation.OfflineActivation,
-            DocumentCacheAdministrativeCommand.OfflineDeactivation =>
-                DocumentCacheAdministrativeCommandConfirmation.OfflineDeactivation,
-            DocumentCacheAdministrativeCommand.OnlineCacheRebuild =>
-                DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild,
-            DocumentCacheAdministrativeCommand.ExplicitIntegrityScrub =>
-                DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub,
-            DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery =>
-                DocumentCacheAdministrativeCommandConfirmation.InternalCacheAheadRecovery,
-            _ => throw new ArgumentOutOfRangeException(nameof(command), command, "Unsupported command."),
-        };
+    ) => DocumentCacheAdministrativeCommandContracts.ExpectedCommandConfirmation(command);
 
     private static DocumentCacheAdministrativeCommandResult? ClassifyCommonTargetState(
         DocumentCacheAdministrativeCommand command,
@@ -866,27 +850,11 @@ public static class DocumentCachePreflightClassifier
     }
 
     private static bool RequiresOfflineWriterAdmission(DocumentCacheAdministrativeCommand command) =>
-        command
-            is DocumentCacheAdministrativeCommand.OfflineActivation
-                or DocumentCacheAdministrativeCommand.OfflineDeactivation
-                or DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery;
+        DocumentCacheAdministrativeCommandContracts.RequiresOfflineWriterAdmission(command);
 
     private static DocumentCacheOfflineWriterAdmissionConfirmation ExpectedOfflineWriterAdmissionConfirmation(
         DocumentCacheAdministrativeCommand command
-    ) =>
-        command switch
-        {
-            DocumentCacheAdministrativeCommand.OfflineActivation =>
-                DocumentCacheOfflineWriterAdmissionConfirmation.OfflineActivationWritersClosedAndDrained,
-            DocumentCacheAdministrativeCommand.OfflineDeactivation =>
-                DocumentCacheOfflineWriterAdmissionConfirmation.OfflineDeactivationWritersClosedAndDrained,
-            DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery =>
-                DocumentCacheOfflineWriterAdmissionConfirmation.InternalOnlyCacheAheadRecoveryWritersClosedAndDrained,
-            _ => throw new ArgumentException(
-                "The command does not require offline writer admission.",
-                nameof(command)
-            ),
-        };
+    ) => DocumentCacheAdministrativeCommandContracts.ExpectedOfflineWriterAdmissionConfirmation(command);
 
     private static DocumentCacheAdministrativeCommandResult? ClassifyTargetContextFailure(
         DocumentCacheAdministrativeCommand command,

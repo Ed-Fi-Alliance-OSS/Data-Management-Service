@@ -82,6 +82,30 @@ public class DocumentCacheAdministrativeContractsTests
             }
         }
 
+        [TestCaseSource(nameof(CommandContracts))]
+        public void It_should_expose_shared_command_confirmation_and_admission_requirements(
+            DocumentCacheAdministrativeCommand command,
+            DocumentCacheAdministrativeCommandConfirmation expectedConfirmation,
+            DocumentCacheOfflineWriterAdmissionConfirmation? expectedOfflineWriterAdmissionConfirmation
+        )
+        {
+            DocumentCacheAdministrativeCommandContract contract =
+                DocumentCacheAdministrativeCommandContracts.Get(command);
+
+            contract.Command.Should().Be(command);
+            contract.ExpectedConfirmation.Should().Be(expectedConfirmation);
+            contract
+                .ExpectedOfflineWriterAdmissionConfirmation.Should()
+                .Be(expectedOfflineWriterAdmissionConfirmation);
+            contract
+                .RequiresOfflineWriterAdmission.Should()
+                .Be(expectedOfflineWriterAdmissionConfirmation is not null);
+            DocumentCachePreflightClassifier
+                .ExpectedCommandConfirmation(command)
+                .Should()
+                .Be(expectedConfirmation);
+        }
+
         [Test]
         public void It_should_deserialize_the_default_tenant_key_shape()
         {
@@ -202,6 +226,40 @@ public class DocumentCacheAdministrativeContractsTests
                     DocumentCacheAdministrativeCommandConfirmation.InternalCacheAheadRecovery
                 ),
                 typeof(DocumentCacheInternalOnlyCacheAheadRecoveryRequest)
+            ).SetName("Internal-only cache-ahead recovery");
+        }
+
+        private static IEnumerable<TestCaseData> CommandContracts()
+        {
+            yield return new TestCaseData(
+                DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation,
+                DocumentCacheAdministrativeCommandConfirmation.NewEmptyActivation,
+                null
+            ).SetName("Guarded new-empty activation");
+            yield return new TestCaseData(
+                DocumentCacheAdministrativeCommand.OfflineActivation,
+                DocumentCacheAdministrativeCommandConfirmation.OfflineActivation,
+                DocumentCacheOfflineWriterAdmissionConfirmation.OfflineActivationWritersClosedAndDrained
+            ).SetName("Offline activation");
+            yield return new TestCaseData(
+                DocumentCacheAdministrativeCommand.OfflineDeactivation,
+                DocumentCacheAdministrativeCommandConfirmation.OfflineDeactivation,
+                DocumentCacheOfflineWriterAdmissionConfirmation.OfflineDeactivationWritersClosedAndDrained
+            ).SetName("Offline deactivation");
+            yield return new TestCaseData(
+                DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+                DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild,
+                null
+            ).SetName("Online cache rebuild");
+            yield return new TestCaseData(
+                DocumentCacheAdministrativeCommand.ExplicitIntegrityScrub,
+                DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub,
+                null
+            ).SetName("Explicit integrity scrub");
+            yield return new TestCaseData(
+                DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery,
+                DocumentCacheAdministrativeCommandConfirmation.InternalCacheAheadRecovery,
+                DocumentCacheOfflineWriterAdmissionConfirmation.InternalOnlyCacheAheadRecoveryWritersClosedAndDrained
             ).SetName("Internal-only cache-ahead recovery");
         }
 
