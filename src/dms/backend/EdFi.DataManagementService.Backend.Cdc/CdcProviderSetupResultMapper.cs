@@ -13,6 +13,15 @@ public sealed record CdcProviderSetupObservationMapping(
     CoreCdc.CdcProviderSourceHistoryEvidence ProviderHistory
 );
 
+internal sealed record CdcProviderSetupResultCorrelation(
+    CoreCdc.CdcProvider Provider,
+    string? ObservedPhysicalSourceFingerprint,
+    CoreCdc.CdcProviderSetupOutcome SetupOutcome,
+    CoreCdc.CdcProviderSetupState StateWhenUntrusted,
+    bool CanTrustResultEvidence,
+    IReadOnlyList<CoreCdc.CdcDiagnostic> Diagnostics
+);
+
 public static class CdcProviderSetupResultMapper
 {
     private const string PostgresqlReplicationSlotPath =
@@ -46,10 +55,21 @@ public static class CdcProviderSetupResultMapper
             result.Diagnostics,
             normalizedObservedAt
         );
+        CdcProviderSetupResultCorrelation correlation = CorrelateValidateOnlyResult(
+            binding,
+            result,
+            normalizedObservedAt
+        );
+        IReadOnlyList<CoreCdc.CdcDiagnostic> combinedDiagnostics =
+        [
+            .. diagnostics,
+            .. correlation.Diagnostics,
+        ];
         CoreCdc.CdcProviderSourceHistoryEvidence providerHistory = ToProviderSourceHistoryEvidence(
             binding,
             result,
-            diagnostics
+            combinedDiagnostics,
+            correlation
         );
 
         return new(
@@ -58,17 +78,25 @@ public static class CdcProviderSetupResultMapper
                 operationId,
                 normalizedObservedAt,
                 binding.ToTargetIdentity(),
-                binding.Provider,
-                binding.PhysicalSourceFingerprint,
+                correlation.Provider,
+                correlation.ObservedPhysicalSourceFingerprint,
                 MapSetupMode(result.Mode),
-                HasNonSourceHistoryError(result)
+                correlation.CanTrustResultEvidence && HasNonSourceHistoryError(result)
                     ? CoreCdc.CdcProviderSetupOutcome.Invalid
-                    : CoreCdc.CdcProviderSetupOutcome.Satisfied,
-                MapNonSourceHistoryArtifactState(result),
-                MapGrantInventoryState(result),
-                MapSourceInventoryState(result),
-                MapHeartbeatState(result),
-                diagnostics
+                    : correlation.SetupOutcome,
+                correlation.CanTrustResultEvidence
+                    ? MapNonSourceHistoryArtifactState(result)
+                    : correlation.StateWhenUntrusted,
+                correlation.CanTrustResultEvidence
+                    ? MapGrantInventoryState(result)
+                    : correlation.StateWhenUntrusted,
+                correlation.CanTrustResultEvidence
+                    ? MapSourceInventoryState(result)
+                    : correlation.StateWhenUntrusted,
+                correlation.CanTrustResultEvidence
+                    ? MapHeartbeatState(result)
+                    : correlation.StateWhenUntrusted,
+                combinedDiagnostics
             ),
             providerHistory
         );
@@ -84,17 +112,24 @@ public static class CdcProviderSetupResultMapper
         ArgumentNullException.ThrowIfNull(result);
 
         DateTimeOffset normalizedObservedAt = observedAt.ToUniversalTime();
+        CdcProviderSetupResultCorrelation correlation = CorrelateValidateOnlyResult(
+            binding,
+            result,
+            normalizedObservedAt
+        );
         return ToProviderSourceHistoryEvidence(
             binding,
             result,
-            MapDiagnostics(result.Diagnostics, normalizedObservedAt)
+            [.. MapDiagnostics(result.Diagnostics, normalizedObservedAt), .. correlation.Diagnostics],
+            correlation
         );
     }
 
     private static CoreCdc.CdcProviderSourceHistoryEvidence ToProviderSourceHistoryEvidence(
         CoreCdc.CdcBinding binding,
         CdcProviderSetupResult result,
-        IReadOnlyList<CoreCdc.CdcDiagnostic> diagnostics
+        IReadOnlyList<CoreCdc.CdcDiagnostic> diagnostics,
+        CdcProviderSetupResultCorrelation correlation
     )
     {
         CoreCdc.CdcArtifactNameResult artifactNames = CoreCdc.CdcArtifactNameGenerator.RecoverFromBinding(
@@ -111,18 +146,11 @@ public static class CdcProviderSetupResultMapper
             return UnknownProviderHistory(null, combinedDiagnostics, binding.Provider);
         }
 
-        if (MapProvider(result.Provider) != binding.Provider)
+        if (!correlation.CanTrustResultEvidence)
         {
             return UnknownProviderHistory(
                 DefaultProviderArtifactName(binding.Provider, artifactNames.Inventory),
-                [
-                    .. combinedDiagnostics,
-                    new CoreCdc.CdcDiagnostic(
-                        CoreCdc.CdcDiagnosticCategory.ProviderMismatch,
-                        "$.providerSetup.provider",
-                        "CDC provider setup result provider did not match the binding provider."
-                    ),
-                ],
+                combinedDiagnostics,
                 binding.Provider
             );
         }
@@ -131,6 +159,259 @@ public static class CdcProviderSetupResultMapper
             ? ToPostgresqlProviderHistory(result, artifactNames.Inventory, combinedDiagnostics)
             : ToSqlServerProviderHistory(result, artifactNames.Inventory, combinedDiagnostics);
     }
+
+    private static CdcProviderSetupResultCorrelation CorrelateValidateOnlyResult(
+        CoreCdc.CdcBinding binding,
+        CdcProviderSetupResult result,
+        DateTimeOffset observedAt
+    )
+    {
+        List<CoreCdc.CdcDiagnostic> diagnostics = [];
+        bool hasInvalidCorrelation = false;
+        bool hasUnknownCorrelation = false;
+        CoreCdc.CdcProvider? mappedProvider = MapProvider(result.Provider);
+        CoreCdc.CdcProvider provider = mappedProvider ?? binding.Provider;
+
+        if (mappedProvider is null)
+        {
+            hasInvalidCorrelation = true;
+            diagnostics.Add(
+                Diagnostic(
+                    CoreCdc.CdcDiagnosticCategory.InvalidEnumValue,
+                    "$.providerSetup.provider",
+                    observedAt,
+                    "CDC provider setup result provider is unsupported."
+                )
+            );
+        }
+        else if (mappedProvider != binding.Provider)
+        {
+            hasInvalidCorrelation = true;
+            diagnostics.Add(
+                Diagnostic(
+                    CoreCdc.CdcDiagnosticCategory.ProviderMismatch,
+                    "$.providerSetup.provider",
+                    observedAt,
+                    "CDC provider setup result provider did not match the binding provider.",
+                    binding.Provider.ToString(),
+                    mappedProvider.ToString()
+                )
+            );
+        }
+
+        if (result.Mode != CdcProviderSetupMode.ValidateOnly)
+        {
+            hasInvalidCorrelation = true;
+            diagnostics.Add(
+                Diagnostic(
+                    CoreCdc.CdcDiagnosticCategory.InvalidObservation,
+                    "$.providerSetup.mode",
+                    observedAt,
+                    "CDC provider setup result must be validate-only evidence.",
+                    CdcProviderSetupMode.ValidateOnly.ToString(),
+                    result.Mode.ToString()
+                )
+            );
+        }
+
+        if (result.Outcome == CdcProviderSetupOutcome.Failed)
+        {
+            hasUnknownCorrelation = true;
+            diagnostics.Add(
+                Diagnostic(
+                    CoreCdc.CdcDiagnosticCategory.StatusObservationUnavailable,
+                    "$.providerSetup.outcome",
+                    observedAt,
+                    "CDC provider setup validate-only result is unavailable.",
+                    CdcProviderSetupOutcome.ExactMatch.ToString(),
+                    result.Outcome.ToString()
+                )
+            );
+        }
+        else if (result.Outcome != CdcProviderSetupOutcome.ExactMatch)
+        {
+            hasInvalidCorrelation = true;
+            diagnostics.Add(
+                Diagnostic(
+                    CoreCdc.CdcDiagnosticCategory.InvalidObservation,
+                    "$.providerSetup.outcome",
+                    observedAt,
+                    "CDC provider setup validate-only result must be an exact match.",
+                    CdcProviderSetupOutcome.ExactMatch.ToString(),
+                    result.Outcome.ToString()
+                )
+            );
+        }
+
+        string? boundPhysicalSourceFingerprint = ValidateFingerprint(
+            result.BoundPhysicalSourceFingerprint,
+            "$.providerSetup.boundPhysicalSourceFingerprint",
+            observedAt,
+            diagnostics,
+            ref hasUnknownCorrelation
+        );
+        if (
+            boundPhysicalSourceFingerprint is not null
+            && !string.Equals(
+                boundPhysicalSourceFingerprint,
+                binding.PhysicalSourceFingerprint,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            hasInvalidCorrelation = true;
+            diagnostics.Add(
+                Diagnostic(
+                    CoreCdc.CdcDiagnosticCategory.SourceMismatch,
+                    "$.providerSetup.boundPhysicalSourceFingerprint",
+                    observedAt,
+                    "CDC provider setup result bound physical-source fingerprint did not match the binding.",
+                    binding.PhysicalSourceFingerprint,
+                    boundPhysicalSourceFingerprint
+                )
+            );
+        }
+
+        string? observedPhysicalSourceFingerprint = ValidateFingerprint(
+            result.ObservedSourceFingerprint,
+            "$.providerSetup.observedSourceFingerprint",
+            observedAt,
+            diagnostics,
+            ref hasUnknownCorrelation
+        );
+        if (
+            observedPhysicalSourceFingerprint is not null
+            && !string.Equals(
+                observedPhysicalSourceFingerprint,
+                binding.PhysicalSourceFingerprint,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            hasInvalidCorrelation = true;
+            diagnostics.Add(
+                Diagnostic(
+                    CoreCdc.CdcDiagnosticCategory.SourceMismatch,
+                    "$.providerSetup.observedSourceFingerprint",
+                    observedAt,
+                    "CDC provider setup result observed physical-source fingerprint did not match the binding.",
+                    binding.PhysicalSourceFingerprint,
+                    observedPhysicalSourceFingerprint
+                )
+            );
+        }
+
+        if (hasInvalidCorrelation)
+        {
+            return new(
+                provider,
+                observedPhysicalSourceFingerprint,
+                CoreCdc.CdcProviderSetupOutcome.Invalid,
+                CoreCdc.CdcProviderSetupState.Mismatched,
+                false,
+                diagnostics
+            );
+        }
+
+        if (hasUnknownCorrelation)
+        {
+            return new(
+                provider,
+                observedPhysicalSourceFingerprint,
+                CoreCdc.CdcProviderSetupOutcome.Unknown,
+                CoreCdc.CdcProviderSetupState.Unknown,
+                false,
+                diagnostics
+            );
+        }
+
+        return new(
+            provider,
+            observedPhysicalSourceFingerprint,
+            CoreCdc.CdcProviderSetupOutcome.Satisfied,
+            CoreCdc.CdcProviderSetupState.Matched,
+            true,
+            diagnostics
+        );
+    }
+
+    private static string? ValidateFingerprint(
+        CdcSourceFingerprint? fingerprint,
+        string path,
+        DateTimeOffset observedAt,
+        List<CoreCdc.CdcDiagnostic> diagnostics,
+        ref bool hasUnknownCorrelation
+    )
+    {
+        if (fingerprint is null)
+        {
+            hasUnknownCorrelation = true;
+            diagnostics.Add(
+                Diagnostic(
+                    CoreCdc.CdcDiagnosticCategory.StatusObservationUnavailable,
+                    path,
+                    observedAt,
+                    "CDC provider setup result physical-source fingerprint is unavailable."
+                )
+            );
+            return null;
+        }
+
+        if (
+            !string.Equals(
+                fingerprint.Version,
+                CdcSourceFingerprintMetadata.Version,
+                StringComparison.Ordinal
+            ) || !IsValidPhysicalSourceFingerprint(fingerprint.Value)
+        )
+        {
+            hasUnknownCorrelation = true;
+            diagnostics.Add(
+                Diagnostic(
+                    CoreCdc.CdcDiagnosticCategory.MalformedObservation,
+                    path,
+                    observedAt,
+                    "CDC provider setup result physical-source fingerprint is malformed."
+                )
+            );
+            return null;
+        }
+
+        return fingerprint.Value;
+    }
+
+    private static bool IsValidPhysicalSourceFingerprint(string? value)
+    {
+        const string prefix = "sha256:";
+        return value is not null
+            && value.Length == prefix.Length + 64
+            && value.StartsWith(prefix, StringComparison.Ordinal)
+            && value[prefix.Length..].All(IsLowerHex);
+    }
+
+    private static bool IsLowerHex(char character) => character is >= '0' and <= '9' or >= 'a' and <= 'f';
+
+    private static CoreCdc.CdcDiagnostic Diagnostic(
+        CoreCdc.CdcDiagnosticCategory category,
+        string path,
+        DateTimeOffset observedAt,
+        string message,
+        string? expected = null,
+        string? observed = null
+    ) =>
+        new CoreCdc.CdcDiagnostic(
+            $"providerSetup{category}",
+            category,
+            category == CoreCdc.CdcDiagnosticCategory.StatusObservationUnavailable
+                ? CoreCdc.CdcDiagnosticSeverity.Warning
+                : CoreCdc.CdcDiagnosticSeverity.Error,
+            CoreCdc.CdcDiagnosticComponent.ProviderSetup,
+            observedAt,
+            message,
+            category == CoreCdc.CdcDiagnosticCategory.StatusObservationUnavailable,
+            expected: expected,
+            observed: observed
+        ).WithPath(path);
 
     private static CoreCdc.CdcProviderSourceHistoryEvidence ToPostgresqlProviderHistory(
         CdcProviderSetupResult result,

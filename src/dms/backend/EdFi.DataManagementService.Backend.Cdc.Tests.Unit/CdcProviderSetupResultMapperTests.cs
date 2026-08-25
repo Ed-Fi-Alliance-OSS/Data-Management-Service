@@ -90,6 +90,143 @@ public class Given_CdcProviderSetupResultMapper
     }
 
     [Test]
+    public void It_rejects_non_validate_only_provider_setup_results()
+    {
+        CoreCdc.CdcBinding binding = BuildBinding(CoreCdc.CdcProvider.Postgresql);
+        CdcProviderSetupResult setupResult = BuildSetupResult(CdcProvider.Postgresql, binding, [], []) with
+        {
+            Mode = CdcProviderSetupMode.InitialCreateOrExactMatch,
+        };
+
+        CdcProviderSetupObservationMapping mapping = MapProviderSetup(binding, setupResult);
+
+        mapping.ProviderSetup.SetupMode.Should().Be(CoreCdc.CdcProviderSetupMode.InitialCreateOrExactMatch);
+        mapping.ProviderSetup.SetupOutcome.Should().Be(CoreCdc.CdcProviderSetupOutcome.Invalid);
+        mapping.ProviderSetup.ArtifactInventoryState.Should().Be(CoreCdc.CdcProviderSetupState.Mismatched);
+        mapping
+            .ProviderHistory.ProviderArtifactState.Should()
+            .Be(CoreCdc.CdcProviderArtifactContinuityState.Unknown);
+        mapping
+            .ProviderSetup.Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CoreCdc.CdcDiagnosticCategory.InvalidObservation
+                && diagnostic.Path == "$.providerSetup.mode"
+            );
+    }
+
+    [Test]
+    public void It_maps_failed_validate_only_provider_setup_results_to_unknown_evidence()
+    {
+        CoreCdc.CdcBinding binding = BuildBinding(CoreCdc.CdcProvider.Postgresql);
+        CdcProviderSetupResult setupResult = BuildSetupResult(CdcProvider.Postgresql, binding, [], []) with
+        {
+            Outcome = CdcProviderSetupOutcome.Failed,
+            ObservedSourceFingerprint = null,
+        };
+
+        CdcProviderSetupObservationMapping mapping = MapProviderSetup(binding, setupResult);
+
+        mapping.ProviderSetup.SetupOutcome.Should().Be(CoreCdc.CdcProviderSetupOutcome.Unknown);
+        mapping.ProviderSetup.ArtifactInventoryState.Should().Be(CoreCdc.CdcProviderSetupState.Unknown);
+        mapping.ProviderSetup.PhysicalSourceFingerprint.Should().BeNull();
+        mapping
+            .ProviderHistory.ProviderArtifactState.Should()
+            .Be(CoreCdc.CdcProviderArtifactContinuityState.Unknown);
+        mapping
+            .ProviderSetup.Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CoreCdc.CdcDiagnosticCategory.StatusObservationUnavailable
+                && diagnostic.Path == "$.providerSetup.outcome"
+            );
+    }
+
+    [Test]
+    public void It_preserves_wrong_provider_evidence_as_a_provider_mismatch()
+    {
+        CoreCdc.CdcBinding binding = BuildBinding(CoreCdc.CdcProvider.Postgresql);
+        CdcProviderSetupResult setupResult = BuildSetupResult(CdcProvider.SqlServer, binding, [], []);
+
+        CdcProviderSetupObservationMapping mapping = MapProviderSetup(binding, setupResult);
+
+        mapping.ProviderSetup.Provider.Should().Be(CoreCdc.CdcProvider.SqlServer);
+        mapping.ProviderSetup.SetupOutcome.Should().Be(CoreCdc.CdcProviderSetupOutcome.Invalid);
+        mapping
+            .ProviderHistory.ProviderArtifactState.Should()
+            .Be(CoreCdc.CdcProviderArtifactContinuityState.Unknown);
+        Validate(mapping.ProviderSetup, binding)
+            .Diagnostics.Should()
+            .Contain(diagnostic => diagnostic.Category == CoreCdc.CdcDiagnosticCategory.ProviderMismatch);
+    }
+
+    [Test]
+    public void It_rejects_wrong_bound_physical_source_fingerprint()
+    {
+        CoreCdc.CdcBinding binding = BuildBinding(CoreCdc.CdcProvider.Postgresql);
+        string otherFingerprint = OtherSourceFingerprint(CdcProvider.Postgresql);
+        CdcProviderSetupResult setupResult = BuildSetupResult(CdcProvider.Postgresql, binding, [], []) with
+        {
+            BoundPhysicalSourceFingerprint = new(CdcSourceFingerprintMetadata.Version, otherFingerprint),
+        };
+
+        CdcProviderSetupObservationMapping mapping = MapProviderSetup(binding, setupResult);
+
+        mapping.ProviderSetup.SetupOutcome.Should().Be(CoreCdc.CdcProviderSetupOutcome.Invalid);
+        mapping.ProviderSetup.PhysicalSourceFingerprint.Should().Be(binding.PhysicalSourceFingerprint);
+        mapping
+            .ProviderHistory.ProviderArtifactState.Should()
+            .Be(CoreCdc.CdcProviderArtifactContinuityState.Unknown);
+        mapping
+            .ProviderSetup.Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CoreCdc.CdcDiagnosticCategory.SourceMismatch
+                && diagnostic.Path == "$.providerSetup.boundPhysicalSourceFingerprint"
+                && diagnostic.Expected == binding.PhysicalSourceFingerprint
+                && diagnostic.Observed == otherFingerprint
+            );
+    }
+
+    [Test]
+    public void It_maps_missing_observed_physical_source_fingerprint_to_unknown_evidence()
+    {
+        CoreCdc.CdcBinding binding = BuildBinding(CoreCdc.CdcProvider.Postgresql);
+        CdcProviderSetupResult setupResult = BuildSetupResult(CdcProvider.Postgresql, binding, [], []) with
+        {
+            ObservedSourceFingerprint = null,
+        };
+
+        CdcProviderSetupObservationMapping mapping = MapProviderSetup(binding, setupResult);
+
+        mapping.ProviderSetup.SetupOutcome.Should().Be(CoreCdc.CdcProviderSetupOutcome.Unknown);
+        mapping.ProviderSetup.PhysicalSourceFingerprint.Should().BeNull();
+        mapping.ProviderSetup.ArtifactInventoryState.Should().Be(CoreCdc.CdcProviderSetupState.Unknown);
+        mapping
+            .ProviderHistory.ProviderArtifactState.Should()
+            .Be(CoreCdc.CdcProviderArtifactContinuityState.Unknown);
+    }
+
+    [Test]
+    public void It_preserves_wrong_observed_physical_source_fingerprint_as_a_source_mismatch()
+    {
+        CoreCdc.CdcBinding binding = BuildBinding(CoreCdc.CdcProvider.Postgresql);
+        string otherFingerprint = OtherSourceFingerprint(CdcProvider.Postgresql);
+        CdcProviderSetupResult setupResult = BuildSetupResult(CdcProvider.Postgresql, binding, [], []) with
+        {
+            ObservedSourceFingerprint = new(CdcSourceFingerprintMetadata.Version, otherFingerprint),
+        };
+
+        CdcProviderSetupObservationMapping mapping = MapProviderSetup(binding, setupResult);
+
+        mapping.ProviderSetup.SetupOutcome.Should().Be(CoreCdc.CdcProviderSetupOutcome.Invalid);
+        mapping.ProviderSetup.PhysicalSourceFingerprint.Should().Be(otherFingerprint);
+        mapping
+            .ProviderHistory.ProviderArtifactState.Should()
+            .Be(CoreCdc.CdcProviderArtifactContinuityState.Unknown);
+        Validate(mapping.ProviderSetup, binding)
+            .Diagnostics.Should()
+            .Contain(diagnostic => diagnostic.Category == CoreCdc.CdcDiagnosticCategory.SourceMismatch);
+    }
+
+    [Test]
     public void It_maps_enabled_sql_server_capture_job_not_running_to_stopped_unknown_continuity()
     {
         CoreCdc.CdcBinding binding = BuildBinding(CoreCdc.CdcProvider.SqlServer);
@@ -197,6 +334,28 @@ public class Given_CdcProviderSetupResultMapper
             setupResult
         );
     }
+
+    private static CdcProviderSetupObservationMapping MapProviderSetup(
+        CoreCdc.CdcBinding binding,
+        CdcProviderSetupResult setupResult
+    ) => CdcProviderSetupResultMapper.MapValidateOnlyResult("operation-id", ObservedAt, binding, setupResult);
+
+    private static CoreCdc.CdcContractValidationResult Validate(
+        CoreCdc.CdcProviderSetupObservation observation,
+        CoreCdc.CdcBinding binding
+    ) =>
+        CoreCdc.CdcProviderSetupObservationValidator.Validate(
+            observation,
+            new(
+                observation.OperationId,
+                binding.ToTargetIdentity(),
+                binding.PhysicalSourceFingerprint,
+                ObservedAt
+            )
+        );
+
+    private static string OtherSourceFingerprint(CdcProvider provider) =>
+        CdcSourceFingerprintMetadata.Compute(provider, "11111111-1111-1111-1111-111111111111").Value;
 
     private static CdcProviderSetupResult BuildSetupResult(
         CdcProvider provider,
