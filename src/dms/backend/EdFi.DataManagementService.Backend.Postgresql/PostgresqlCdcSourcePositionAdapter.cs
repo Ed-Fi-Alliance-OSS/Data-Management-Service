@@ -86,7 +86,7 @@ internal sealed class PostgresqlCdcSourcePositionAdapter(
     IDocumentCacheProviderCommandTimeoutClassifier timeoutClassifier,
     TimeProvider timeProvider,
     ILogger<PostgresqlCdcSourcePositionAdapter> logger
-)
+) : ICdcProviderSourcePositionAdapter
 {
     private const string CurrentWalLsnPath = "$.postgresqlBarrierLsn";
     private const string ProviderHistoryPath = "$.providerHistory";
@@ -110,6 +110,75 @@ internal sealed class PostgresqlCdcSourcePositionAdapter(
         timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
     private readonly ILogger<PostgresqlCdcSourcePositionAdapter> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
+
+    CdcProvider ICdcProviderSourcePositionAdapter.Provider => CdcProvider.Postgresql;
+
+    async Task<CdcProviderBarrierCaptureResult> ICdcProviderSourcePositionAdapter.CaptureBarrierAsync(
+        CdcProviderBarrierCaptureRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        PostgresqlCdcProviderBarrierCaptureResult result = await CaptureBarrierAsync(
+                new(request.ConnectionString, request.Binding) { CommandTimeout = request.CommandTimeout },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return result.Succeeded
+            ? CdcProviderBarrierCaptureResult.PostgresqlSuccess(
+                result.PostgresqlBarrierLsn!,
+                result.BarrierCapturedAt
+            )
+            : CdcProviderBarrierCaptureResult.Failure(
+                CdcProvider.Postgresql,
+                result.BarrierCapturedAt,
+                result.Diagnostics
+            );
+    }
+
+    CdcProviderBarrierObservation ICdcProviderSourcePositionAdapter.ObserveProviderBarrier(
+        CdcProviderBarrierObservationRequest request
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        return ObserveProviderBarrier(
+            new(
+                request.OperationId,
+                request.Binding,
+                request.ProjectionCaughtUpObservedAt,
+                ToPostgresqlCaptureResult(request.CapturedBarrier),
+                request.ConnectorOffset,
+                request.ExpectedConnectSourcePartitionHash
+            )
+        );
+    }
+
+    Task<CdcSourceHistoryClassificationResult> ICdcProviderSourcePositionAdapter.ObserveSourceHistoryAsync(
+        CdcSourceHistoryObservationRequest request,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        return ObserveSourceHistoryAsync(
+            new(
+                request.ConnectionString,
+                request.OperationId,
+                request.Binding,
+                request.ProviderSetup,
+                request.ConnectorOffset
+            )
+            {
+                LatchedIncident = request.LatchedIncident,
+                ExpectedConnectSourcePartitionHash = request.ExpectedConnectSourcePartitionHash,
+                CommandTimeout = request.CommandTimeout,
+            },
+            cancellationToken
+        );
+    }
 
     public async Task<PostgresqlCdcProviderBarrierCaptureResult> CaptureBarrierAsync(
         PostgresqlCdcProviderBarrierCaptureRequest request,
@@ -301,6 +370,40 @@ internal sealed class PostgresqlCdcSourcePositionAdapter(
                 ExpectedConnectSourcePartitionHash = request.ExpectedConnectSourcePartitionHash,
                 Diagnostics = [.. diagnostics.Diagnostics],
             }
+        );
+    }
+
+    private static PostgresqlCdcProviderBarrierCaptureResult ToPostgresqlCaptureResult(
+        CdcProviderBarrierCaptureResult captureResult
+    )
+    {
+        ArgumentNullException.ThrowIfNull(captureResult);
+
+        if (
+            captureResult.Provider == CdcProvider.Postgresql
+            && captureResult.PostgresqlBarrierLsn is not null
+            && captureResult.Diagnostics.Count == 0
+        )
+        {
+            return PostgresqlCdcProviderBarrierCaptureResult.Success(
+                captureResult.PostgresqlBarrierLsn,
+                captureResult.BarrierCapturedAt
+            );
+        }
+
+        return PostgresqlCdcProviderBarrierCaptureResult.Failure(
+            captureResult.BarrierCapturedAt,
+            captureResult.Provider == CdcProvider.Postgresql
+                ? captureResult.Diagnostics
+                :
+                [
+                    .. captureResult.Diagnostics,
+                    new(
+                        CdcDiagnosticCategory.ProviderMismatch,
+                        "$.capturedBarrier.provider",
+                        "CDC provider barrier capture result provider did not match PostgreSQL."
+                    ),
+                ]
         );
     }
 

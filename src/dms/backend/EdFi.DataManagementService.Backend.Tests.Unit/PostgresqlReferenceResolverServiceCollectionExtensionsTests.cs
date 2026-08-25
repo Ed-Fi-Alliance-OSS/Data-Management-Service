@@ -77,8 +77,6 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IDocumentCacheAdministrativePrimitives>();
         var providerCommandTimeoutClassifier =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheProviderCommandTimeoutClassifier>();
-        var cdcSourcePositionAdapter =
-            scope.ServiceProvider.GetRequiredService<PostgresqlCdcSourcePositionAdapter>();
         var documentCacheBaselineSeeder =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheBaselineSeeder>();
         var documentCacheOfflineActivationCommand =
@@ -136,7 +134,6 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         providerCommandTimeoutClassifier
             .Should()
             .BeOfType<PostgresqlDocumentCacheProviderCommandTimeoutClassifier>();
-        cdcSourcePositionAdapter.Should().BeOfType<PostgresqlCdcSourcePositionAdapter>();
         documentCacheBaselineSeeder.Should().BeOfType<DocumentCacheBaselineSeeder>();
         documentCacheOfflineActivationCommand.Should().BeOfType<DocumentCacheOfflineActivationCommand>();
         documentCacheOfflineDeactivationCommand.Should().BeOfType<DocumentCacheOfflineDeactivationCommand>();
@@ -315,7 +312,7 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
     }
 
     [Test]
-    public void It_registers_the_postgresql_Cdc_source_position_adapter()
+    public void It_does_not_register_the_postgresql_Cdc_source_position_adapter_by_default()
     {
         var services = new ServiceCollection();
 
@@ -324,12 +321,7 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         services
             .Where(descriptor => descriptor.ServiceType == typeof(PostgresqlCdcSourcePositionAdapter))
             .Should()
-            .ContainSingle()
-            .Which.Should()
-            .Match<ServiceDescriptor>(descriptor =>
-                descriptor.Lifetime == ServiceLifetime.Singleton
-                && descriptor.ImplementationType == typeof(PostgresqlCdcSourcePositionAdapter)
-            );
+            .BeEmpty();
     }
 
     [Test]

@@ -25,6 +25,10 @@ public class Given_CdcServiceCollectionExtensions
 
         services.AddDmsCdcControlPlane();
 
+        ServiceDescriptor lifecycleDescriptor = services
+            .Should()
+            .ContainSingle(descriptor => descriptor.ServiceType == typeof(ICdcBindingLifecycleService))
+            .Subject;
         ServiceDescriptor stateStoreDescriptor = services
             .Should()
             .ContainSingle(descriptor => descriptor.ServiceType == typeof(ICdcBindingStateStore))
@@ -34,6 +38,8 @@ public class Given_CdcServiceCollectionExtensions
             .ContainSingle(descriptor => descriptor.ServiceType == typeof(ICdcLocalStateStorePermissions))
             .Subject;
 
+        lifecycleDescriptor.Lifetime.Should().Be(ServiceLifetime.Singleton);
+        lifecycleDescriptor.ImplementationType.Should().Be(typeof(CdcBindingLifecycleService));
         stateStoreDescriptor.Lifetime.Should().Be(ServiceLifetime.Singleton);
         stateStoreDescriptor.ImplementationFactory.Should().NotBeNull();
         stateStoreDescriptor.ImplementationType.Should().BeNull();
@@ -64,18 +70,20 @@ public class Given_CdcServiceCollectionExtensions
 
             Directory.Exists(rootPath).Should().BeFalse();
 
-            ICdcBindingStateStore store = serviceProvider.GetRequiredService<ICdcBindingStateStore>();
+            ICdcBindingLifecycleService lifecycle =
+                serviceProvider.GetRequiredService<ICdcBindingLifecycleService>();
 
-            store.Should().BeOfType<LocalCdcBindingStateStore>();
             Directory.Exists(rootPath).Should().BeFalse();
 
             CdcBinding binding = CdcTargetStatusFixture.CreateBinding();
-            CdcCreateBindingStateStoreResult result = await store.CreateBindingIfAbsentAsync(
+            CdcBindingLifecycleResult result = await lifecycle.CreateBindingIfAbsentAsync(
                 binding,
                 CancellationToken.None
             );
 
-            result.Should().BeOfType<CdcCreateBindingStateStoreResult.Created>();
+            result.Status.Should().Be(CdcControlPlaneOperationStatus.Succeeded);
+            result.State.Should().NotBeNull();
+            result.State!.State.Should().Be(CdcBindingState.BindingPresent);
             File.Exists(
                     Path.Combine(
                         rootPath,
@@ -98,7 +106,7 @@ public class Given_CdcServiceCollectionExtensions
     }
 
     [Test]
-    public void It_adds_cdc_control_plane_services_to_the_default_core_configuration_without_startup_work()
+    public void It_keeps_cdc_control_plane_services_out_of_the_default_core_configuration()
     {
         IConfigurationRoot configuration = new ConfigurationBuilder().AddInMemoryCollection([]).Build();
         IServiceCollection services = new ServiceCollection();
@@ -112,11 +120,19 @@ public class Given_CdcServiceCollectionExtensions
 
         services
             .Should()
-            .ContainSingle(descriptor => descriptor.ServiceType == typeof(ICdcBindingStateStore));
+            .NotContain(descriptor => descriptor.ServiceType == typeof(ICdcBindingLifecycleService));
+        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(ICdcBindingStateStore));
         services
             .Where(descriptor => descriptor.ServiceType == typeof(IDmsStartupTask))
             .Should()
             .NotContain(descriptor => IsCdcStartupTask(descriptor));
+    }
+
+    [Test]
+    public void It_exposes_only_public_types_on_the_cdc_controller_boundaries()
+    {
+        AssertPublicSurface(typeof(ICdcBindingLifecycleService));
+        AssertPublicSurface(typeof(ICdcProviderSourcePositionAdapter));
     }
 
     private static bool IsCdcStartupTask(ServiceDescriptor descriptor)
@@ -124,5 +140,24 @@ public class Given_CdcServiceCollectionExtensions
         string? fullName = descriptor.ImplementationType?.FullName;
 
         return fullName is not null && fullName.Contains(".DocumentCache.Cdc.", StringComparison.Ordinal);
+    }
+
+    private static void AssertPublicSurface(Type serviceType)
+    {
+        serviceType.IsPublic.Should().BeTrue();
+
+        foreach (var method in serviceType.GetMethods())
+        {
+            method.ReturnType.IsVisible.Should().BeTrue(method.Name);
+            foreach (var parameter in method.GetParameters())
+            {
+                parameter.ParameterType.IsVisible.Should().BeTrue($"{method.Name}.{parameter.Name}");
+            }
+        }
+
+        foreach (var property in serviceType.GetProperties())
+        {
+            property.PropertyType.IsVisible.Should().BeTrue(property.Name);
+        }
     }
 }

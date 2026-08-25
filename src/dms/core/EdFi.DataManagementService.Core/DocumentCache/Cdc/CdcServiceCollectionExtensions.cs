@@ -22,6 +22,7 @@ public static class CdcServiceCollectionExtensions
 
         services.AddOptions<CdcBindingStateStoreOptions>();
         services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<ICdcBindingLifecycleService, CdcBindingLifecycleService>();
         services.TryAdd(
             ServiceDescriptor.Singleton<ICdcLocalStateStorePermissions>(CdcLocalStateStorePermissions.Current)
         );

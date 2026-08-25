@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Postgresql;
+using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -78,13 +79,6 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
                 )
             )
         );
-        services.TryAdd(
-            ServiceDescriptor.Singleton<
-                PostgresqlCdcSourcePositionAdapter,
-                PostgresqlCdcSourcePositionAdapter
-            >()
-        );
-
         services.AddReferenceResolver<
             PostgresqlReferenceResolverAdapterFactory,
             PostgresqlRelationalCommandExecutor,
@@ -99,6 +93,28 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
             >()
         );
         services.AddDocumentCacheReadAccelerationCoordinator();
+        return services;
+    }
+
+    public static IServiceCollection AddPostgresqlDmsCdcControlPlane(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddDmsCdcControlPlane();
+        services.TryAddSingleton<NpgsqlDataSourceCache>();
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheProviderCommandTimeoutClassifier,
+                PostgresqlDocumentCacheProviderCommandTimeoutClassifier
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                ICdcProviderSourcePositionAdapter,
+                PostgresqlCdcSourcePositionAdapter
+            >()
+        );
+
         return services;
     }
 
