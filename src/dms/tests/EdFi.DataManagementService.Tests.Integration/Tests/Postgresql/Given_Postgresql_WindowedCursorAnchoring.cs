@@ -41,6 +41,16 @@ public sealed class Given_Postgresql_WindowedCursorAnchoring : PostgresqlApiInte
         WindowedCursorAnchoringScenario.It_continues_past_a_page_whose_documents_were_deleted_mid_walk(
             Harness
         );
+
+    [Test]
+    public Task It_keeps_the_document_id_anchor_for_a_min_only_walk() =>
+        WindowedCursorAnchoringScenario.It_keeps_the_document_id_anchor_for_a_min_only_walk(Harness);
+
+    [Test]
+    public Task It_rejects_a_windowed_partition_token_replayed_without_the_window() =>
+        WindowedCursorAnchoringScenario.It_rejects_a_windowed_partition_token_replayed_without_the_window(
+            Harness
+        );
 }
 
 /// <summary>

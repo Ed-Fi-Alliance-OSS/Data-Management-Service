@@ -32,7 +32,9 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 /// A max-bearing window is a monotonic-escape window: an update pushes a row past the maximum and out
 /// of the window entirely, rather than moving it past the anchor while it remains eligible. That is the
 /// property the anchor rests on, and the mid-walk mutation cases below are what exercise it against a
-/// real database rather than against a described one.
+/// real database rather than against a described one. The min-only case is its counterpart: an
+/// open-ended window has no escape, so it keeps the <c>DocumentId</c> anchor, and the same mid-walk
+/// update that is safe here would return a row twice there.
 /// </para>
 /// </summary>
 internal static class WindowedCursorAnchoringScenario
@@ -190,6 +192,144 @@ internal static class WindowedCursorAnchoringScenario
     }
 
     /// <summary>
+    /// A min-only window keeps the <c>DocumentId</c> anchor, and that is what makes a mid-walk update
+    /// safe there. The window is open above, so an update leaves the row eligible; anchored on
+    /// <c>ContentVersion</c> the row would move from behind the walk to ahead of it and be returned a
+    /// second time, while its <c>DocumentId</c> does not move at all.
+    /// </summary>
+    /// <remarks>
+    /// The updated document is the first one seeded, so the walk has already returned it when the update
+    /// lands. That is the arrangement the duplicate hazard needs: a row behind the anchor acquiring the
+    /// highest change version in the window. Updating a row the walk had not reached yet would prove
+    /// nothing, because such a row is ahead of either anchor before and after the write. Every
+    /// continuation is checked for the <c>d</c> marker, which is what proves the anchor rather than
+    /// inferring it from the walk having worked.
+    /// </remarks>
+    public static async Task It_keeps_the_document_id_anchor_for_a_min_only_walk(
+        ApiIntegrationHarness harness
+    )
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+
+        var seeded = await SeedWindowedMergeItemsAsync(harness, "min-only");
+        string updatedId = seeded.Ids[0];
+
+        var walk = await WalkWindowAsync(
+            harness,
+            MergeItemsEndpoint,
+            seeded.MinOnlyWindow,
+            pageSize: 2,
+            afterFirstPage: () => UpdateMergeItemAsync(harness, seeded, updatedId),
+            anchor: PageOrderingMode.DocumentId
+        );
+
+        walk.ReturnedIds.Should()
+            .BeEquivalentTo(
+                seeded.Ids,
+                "an update inside an open-ended window leaves the row eligible, and a DocumentId anchor "
+                    + "does not let it move from behind the walk to ahead of it"
+            );
+    }
+
+    /// <summary>
+    /// A partition token is walked by the same cursor path a page token is, so it carries the same
+    /// anchor marker and the same replay rule: a windowed token replayed without its window is answered
+    /// with the standard invalid-token response rather than with bounds read against the wrong column.
+    /// </summary>
+    public static async Task It_rejects_a_windowed_partition_token_replayed_without_the_window(
+        ApiIntegrationHarness harness
+    )
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+
+        var seeded = await SeedWindowedMergeItemsAsync(harness, "partition-marker");
+
+        var pageTokens = await ReadPageTokensAsync(
+            harness,
+            $"{MergeItemsEndpoint}/partitions?number=2&{seeded.Window}"
+        );
+
+        pageTokens.Should().NotBeEmpty("the seeded window holds candidates to partition");
+
+        foreach (string pageToken in pageTokens)
+        {
+            PageTokenCodec
+                .TryDecode(pageToken, out _, out PageOrderingMode orderingMode)
+                .Should()
+                .BeTrue("an emitted partition token must decode through the codec that produced it");
+            orderingMode
+                .Should()
+                .Be(
+                    PageOrderingMode.ContentVersion,
+                    "a windowed partition's boundaries are calculated over ContentVersion"
+                );
+        }
+
+        string windowedToken = pageTokens[0];
+
+        // The control first: the same token, replayed under the window it was issued for, is served.
+        // Without it the rejection below could come from anything about the token rather than from the
+        // window the request dropped.
+        using (
+            HttpResponseMessage accepted = await harness.HttpClient.GetAsync(
+                $"{MergeItemsEndpoint}?pageToken={Uri.EscapeDataString(windowedToken)}&pageSize=2&{seeded.Window}"
+            )
+        )
+        {
+            accepted.StatusCode.Should().Be(HttpStatusCode.OK, await accepted.Content.ReadAsStringAsync());
+        }
+
+        using HttpResponseMessage rejected = await harness.HttpClient.GetAsync(
+            $"{MergeItemsEndpoint}?pageToken={Uri.EscapeDataString(windowedToken)}&pageSize=2"
+        );
+
+        await AssertInvalidPageTokenAsync(rejected);
+    }
+
+    /// <summary>
+    /// The standard invalid-token answer, asserted whole: a marker that disagrees with the request's
+    /// window is reported exactly as a malformed token is, and tells the client nothing more than that
+    /// the token cannot be replayed.
+    /// </summary>
+    private static async Task AssertInvalidPageTokenAsync(HttpResponseMessage response)
+    {
+        string content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+
+        JsonNode body = JsonNode.Parse(content)!;
+
+        body["detail"]!.GetValue<string>().Should().Be("Parameters supplied to the request were invalid.");
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:parameter-validation-failed");
+        body["title"]!.GetValue<string>().Should().Be("Parameter Validation Failed");
+        body["status"]!.GetValue<int>().Should().Be(400);
+        body["validationErrors"]!.AsObject().Should().BeEmpty();
+        body["errors"]!
+            .AsArray()
+            .Select(static error => error!.GetValue<string>())
+            .Should()
+            .Equal("The page token provided was invalid.");
+    }
+
+    private static async Task<IReadOnlyList<string>> ReadPageTokensAsync(
+        ApiIntegrationHarness harness,
+        string requestUri
+    )
+    {
+        using HttpResponseMessage response = await harness.HttpClient.GetAsync(requestUri);
+        string body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+
+        return
+        [
+            .. JsonNode.Parse(body)!["pageTokens"]!
+                .AsArray()
+                .Select(static pageToken => pageToken!.GetValue<string>()),
+        ];
+    }
+
+    /// <summary>
     /// Walks a window from an entry token to exhaustion, following only the continuations the host hands
     /// back.
     /// </summary>
@@ -198,17 +338,23 @@ internal static class WindowedCursorAnchoringScenario
     /// before its continuation is replayed — which is the only place a mid-walk write can be observed
     /// from outside the host.
     /// </param>
+    /// <param name="anchor">
+    /// The anchor <paramref name="window" /> resolves. Stated by the caller rather than derived here,
+    /// because it is what the walk is asserting: a window that resolved the other anchor would reject
+    /// this walk's entry token instead of silently walking the wrong column.
+    /// </param>
     private static async Task<WindowedWalk> WalkWindowAsync(
         ApiIntegrationHarness harness,
         string endpoint,
         string window,
         int pageSize,
-        Func<Task>? afterFirstPage = null
+        Func<Task>? afterFirstPage = null,
+        PageOrderingMode anchor = PageOrderingMode.ContentVersion
     )
     {
         // Encoded by the codec that decodes it, and stamped with the anchor this window resolves, so the
         // entry token is one the host accepts by construction rather than by transcription.
-        string pageToken = PageTokenCodec.Encode(CursorRange.From(1), PageOrderingMode.ContentVersion);
+        string pageToken = PageTokenCodec.Encode(CursorRange.From(1), anchor);
 
         HashSet<string> returnedIds = [];
         var pages = 0;
@@ -217,7 +363,8 @@ internal static class WindowedCursorAnchoringScenario
         {
             var (pageIds, nextPageToken) = await ReadWindowedPageAsync(
                 harness,
-                $"{endpoint}?pageToken={Uri.EscapeDataString(pageToken)}&pageSize={pageSize}&{window}"
+                $"{endpoint}?pageToken={Uri.EscapeDataString(pageToken)}&pageSize={pageSize}&{window}",
+                anchor
             );
 
             pages++;
@@ -248,13 +395,14 @@ internal static class WindowedCursorAnchoringScenario
     }
 
     /// <summary>
-    /// Reads one page of a windowed walk, asserting that any continuation it carries is anchored on
-    /// <c>ContentVersion</c>. A token marked otherwise would be rejected on replay, so checking every
-    /// page names the page that stopped marking rather than reporting the walk as stalled.
+    /// Reads one page of a windowed walk, asserting that any continuation it carries is anchored the way
+    /// the request's window resolves. A token marked otherwise would be rejected on replay, so checking
+    /// every page names the page that stopped marking rather than reporting the walk as stalled.
     /// </summary>
     private static async Task<(List<string> PageIds, string? NextPageToken)> ReadWindowedPageAsync(
         ApiIntegrationHarness harness,
-        string requestUri
+        string requestUri,
+        PageOrderingMode anchor
     )
     {
         using HttpResponseMessage response = await harness.HttpClient.GetAsync(requestUri);
@@ -279,10 +427,7 @@ internal static class WindowedCursorAnchoringScenario
             .BeTrue("an emitted continuation must decode through the codec that produced it");
         orderingMode
             .Should()
-            .Be(
-                PageOrderingMode.ContentVersion,
-                "a windowed page is selected by ContentVersion, so its continuation is expressed in it"
-            );
+            .Be(anchor, "a page's continuation is expressed in the column the page was selected by");
 
         return (pageIds, nextPageToken);
     }
@@ -368,7 +513,7 @@ internal static class WindowedCursorAnchoringScenario
             payloadsById.Add(documentId, payload);
         }
 
-        return new SeededWindow(seededIds, payloadsById, await WindowSinceAsync(harness, floor));
+        return new SeededWindow(seededIds, payloadsById, floor, await WindowSinceAsync(harness, floor));
     }
 
     private static async Task<SeededWindow> SeedWindowedDescriptorsAsync(
@@ -411,7 +556,7 @@ internal static class WindowedCursorAnchoringScenario
             payloadsById.Add(documentId, payload);
         }
 
-        return new SeededWindow(seededIds, payloadsById, await WindowSinceAsync(harness, floor));
+        return new SeededWindow(seededIds, payloadsById, floor, await WindowSinceAsync(harness, floor));
     }
 
     /// <summary>
@@ -489,9 +634,18 @@ internal static class WindowedCursorAnchoringScenario
     private sealed record SeededWindow(
         IReadOnlyList<string> Ids,
         IReadOnlyDictionary<string, JsonObject> PayloadsById,
+        long Floor,
         string Window
     )
     {
+        /// <summary>
+        /// The same seed bounded only from below. Nothing is written after the seed except by the walk's
+        /// own mutations, so this holds the same documents the two-sided window does — while resolving
+        /// the other anchor, which is the whole point of reading it.
+        /// </summary>
+        public string MinOnlyWindow =>
+            string.Create(CultureInfo.InvariantCulture, $"minChangeVersion={Floor + 1}");
+
         public JsonObject PayloadOf(string documentId) => PayloadsById[documentId];
     }
 
