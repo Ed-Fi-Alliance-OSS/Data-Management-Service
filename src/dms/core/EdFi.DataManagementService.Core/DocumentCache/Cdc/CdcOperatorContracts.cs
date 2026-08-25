@@ -181,7 +181,14 @@ public sealed record CdcCompleteBindingIdentity(
     [property: JsonRequired] string PhysicalSourceFingerprint,
     [property: JsonRequired] string ConnectorName,
     [property: JsonRequired] string TopicName
-);
+)
+{
+    public CdcTargetIdentity ToTargetIdentity() =>
+        new(DeploymentKey, TenantKey, DataStoreId, InstanceKey, Generation, Provider);
+
+    public CdcBindingIdentity ToBindingIdentity() =>
+        new(DeploymentKey, TenantKey, DataStoreId, InstanceKey, Generation);
+}
 
 public sealed record CdcBindingStateContract(
     [property: JsonRequired] int ContractVersion,

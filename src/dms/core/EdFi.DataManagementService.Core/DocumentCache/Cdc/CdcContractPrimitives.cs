@@ -72,6 +72,7 @@ public enum CdcDiagnosticCategory
     MalformedPayload,
     InvalidContractVersion,
     FutureUtcTimestamp,
+    LocalStateUnavailable,
 }
 
 public sealed record CdcTargetIdentity(
@@ -289,6 +290,9 @@ public sealed class CdcDiagnosticCollector
             path,
             $"UTC timestamp `{value:O}` must not be later than `{now:O}`."
         );
+
+    public void LocalStateUnavailable(string path, string message) =>
+        Add(CdcDiagnosticCategory.LocalStateUnavailable, path, message);
 
     public CdcContractValidationResult ToValidationResult() =>
         HasDiagnostics
