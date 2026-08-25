@@ -96,6 +96,47 @@ public enum CdcProviderRetainedRangeState
     Unknown,
 }
 
+[JsonConverter(typeof(CdcLowerCamelJsonStringEnumConverter<CdcSqlServerCdcJobState>))]
+public enum CdcSqlServerCdcJobState
+{
+    Healthy,
+    Missing,
+    Stopped,
+    Failed,
+    Unknown,
+}
+
+public sealed record CdcSqlServerCdcJobEvidence(
+    [property: JsonRequired] CdcSqlServerCdcJobState CaptureJobState,
+    [property: JsonRequired] CdcSqlServerCdcJobState CleanupJobState
+)
+{
+    public static CdcSqlServerCdcJobEvidence Healthy =>
+        new(CdcSqlServerCdcJobState.Healthy, CdcSqlServerCdcJobState.Healthy);
+
+    public static CdcSqlServerCdcJobEvidence Missing =>
+        new(CdcSqlServerCdcJobState.Missing, CdcSqlServerCdcJobState.Missing);
+
+    public static CdcSqlServerCdcJobEvidence Unknown =>
+        new(CdcSqlServerCdcJobState.Unknown, CdcSqlServerCdcJobState.Unknown);
+
+    public bool HasMissingJob =>
+        CaptureJobState == CdcSqlServerCdcJobState.Missing
+        || CleanupJobState == CdcSqlServerCdcJobState.Missing;
+
+    public bool HasUnknownJob =>
+        CaptureJobState == CdcSqlServerCdcJobState.Unknown
+        || CleanupJobState == CdcSqlServerCdcJobState.Unknown;
+
+    public bool HasStoppedOrFailedJob =>
+        CaptureJobState is CdcSqlServerCdcJobState.Stopped or CdcSqlServerCdcJobState.Failed
+        || CleanupJobState is CdcSqlServerCdcJobState.Stopped or CdcSqlServerCdcJobState.Failed;
+
+    public bool IsHealthy =>
+        CaptureJobState == CdcSqlServerCdcJobState.Healthy
+        && CleanupJobState == CdcSqlServerCdcJobState.Healthy;
+}
+
 [JsonConverter(typeof(CdcLowerCamelJsonStringEnumConverter<CdcSqlServerSchemaHistoryEnablementPhase>))]
 public enum CdcSqlServerSchemaHistoryEnablementPhase
 {
@@ -496,7 +537,11 @@ public sealed record CdcSourceHistoryObservation(
     [property: JsonRequired] CdcSqlServerSchemaHistoryEnablementPhase? SchemaHistoryEnablementPhase,
     [property: JsonRequired] CdcSqlServerSchemaHistoryState SchemaHistoryState,
     [property: JsonRequired] IReadOnlyList<CdcDiagnostic> Diagnostics
-) : ICdcObservationContract;
+) : ICdcObservationContract
+{
+    [JsonRequired]
+    public CdcSqlServerCdcJobEvidence? SqlServerJobs { get; init; }
+}
 
 public sealed record CdcKafkaTopicPolicy(
     [property: JsonRequired] string TopicName,
@@ -3114,6 +3159,7 @@ public static class CdcSourceHistoryObservationValidator
         ValidateContinuity(observation.Continuity, diagnostics);
         ValidateProviderArtifactState(observation.ProviderArtifactState, diagnostics);
         ValidateRetainedRangeState(observation.RetainedRangeState, diagnostics);
+        ValidateSqlServerJobs(observation, diagnostics);
         ValidateSchemaHistory(observation, diagnostics);
         ValidateIncidentCandidate(observation, binding, context.NowUtc, diagnostics);
         ValidateContinuityStateConsistency(observation, diagnostics);
@@ -3159,6 +3205,63 @@ public static class CdcSourceHistoryObservationValidator
                 "$.retainedRangeState",
                 "CDC source-history observation retainedRangeState is unsupported."
             );
+        }
+    }
+
+    private static void ValidateSqlServerJobs(
+        CdcSourceHistoryObservation observation,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (observation.Provider == CdcProvider.Postgresql)
+        {
+            if (observation.SqlServerJobs is not null)
+            {
+                diagnostics.Add(
+                    CdcDiagnosticCategory.InvalidObservation,
+                    "$.sqlServerJobs",
+                    "CDC source-history sqlServerJobs is SQL Server-only evidence."
+                );
+            }
+
+            return;
+        }
+
+        if (observation.Provider != CdcProvider.SqlServer)
+        {
+            return;
+        }
+
+        if (observation.SqlServerJobs is null)
+        {
+            diagnostics.MissingRequiredField("$.sqlServerJobs", "sqlServerJobs");
+            return;
+        }
+
+        ValidateSqlServerJobState(
+            observation.SqlServerJobs.CaptureJobState,
+            "$.sqlServerJobs.captureJobState",
+            "captureJobState",
+            diagnostics
+        );
+        ValidateSqlServerJobState(
+            observation.SqlServerJobs.CleanupJobState,
+            "$.sqlServerJobs.cleanupJobState",
+            "cleanupJobState",
+            diagnostics
+        );
+    }
+
+    private static void ValidateSqlServerJobState(
+        CdcSqlServerCdcJobState state,
+        string path,
+        string fieldName,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (!Enum.IsDefined(state))
+        {
+            diagnostics.InvalidEnumValue(path, $"CDC source-history observation {fieldName} is unsupported.");
         }
     }
 
@@ -3329,6 +3432,7 @@ public static class CdcSourceHistoryObservationValidator
         }
 
         ValidateSqlServerSchemaHistoryConsistency(observation, diagnostics);
+        ValidateSqlServerJobConsistency(observation, diagnostics);
     }
 
     private static void ValidateHealthyState(
@@ -3374,6 +3478,19 @@ public static class CdcSourceHistoryObservationValidator
                 "CDC source-history healthy SQL Server continuity requires valid schema history."
             );
         }
+
+        if (
+            observation.Provider == CdcProvider.SqlServer
+            && observation.SqlServerJobs is not null
+            && !observation.SqlServerJobs.IsHealthy
+        )
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                "$.sqlServerJobs",
+                "CDC source-history healthy SQL Server continuity requires healthy capture and cleanup jobs."
+            );
+        }
     }
 
     private static void ValidateSqlServerSchemaHistoryConsistency(
@@ -3417,6 +3534,35 @@ public static class CdcSourceHistoryObservationValidator
                 CdcDiagnosticCategory.InvalidObservation,
                 "$.schemaHistoryState",
                 "CDC source-history terminal SQL Server schema-history loss after admission must report lost continuity."
+            );
+        }
+    }
+
+    private static void ValidateSqlServerJobConsistency(
+        CdcSourceHistoryObservation observation,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (observation.Provider != CdcProvider.SqlServer || observation.SqlServerJobs is null)
+        {
+            return;
+        }
+
+        if (!observation.SqlServerJobs.HasMissingJob)
+        {
+            return;
+        }
+
+        if (
+            observation.Continuity != CdcSourceHistoryContinuity.Lost
+            || observation.ProviderArtifactState != CdcProviderArtifactContinuityState.Missing
+            || observation.IncidentFailureCategory != CdcIncidentFailureCategory.ProviderArtifactMissing
+        )
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                "$.sqlServerJobs",
+                "CDC source-history missing SQL Server capture or cleanup jobs must report provider artifact loss."
             );
         }
     }

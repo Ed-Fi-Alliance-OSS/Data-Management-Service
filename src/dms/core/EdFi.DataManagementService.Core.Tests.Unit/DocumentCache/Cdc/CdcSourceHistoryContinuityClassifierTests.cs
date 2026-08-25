@@ -57,6 +57,114 @@ public class Given_CdcSourceHistoryContinuityClassifier
         ValidateObservation(result.Observation, binding).Succeeded.Should().BeTrue();
     }
 
+    [Test]
+    public void It_requires_healthy_sql_server_jobs_for_healthy_continuity()
+    {
+        CdcBinding binding = CdcContinuityFixture.CreateBinding(CdcProvider.SqlServer);
+        CdcSourceHistoryClassificationResult result = CdcSourceHistoryContinuityClassifier.Evaluate(
+            CdcContinuityFixture.CreateInput(binding)
+        );
+
+        result.Observation.Continuity.Should().Be(CdcSourceHistoryContinuity.Healthy);
+        result.Observation.SqlServerJobs.Should().Be(CdcSqlServerCdcJobEvidence.Healthy);
+        result.IncidentCandidate.Should().BeNull();
+        ValidateObservation(result.Observation, binding).Succeeded.Should().BeTrue();
+    }
+
+    [Test]
+    public void It_latches_terminal_provider_artifact_loss_when_sql_server_capture_job_is_missing()
+    {
+        CdcBinding binding = CdcContinuityFixture.CreateBinding(CdcProvider.SqlServer);
+        CdcSourceHistoryClassificationInput input = CdcContinuityFixture.CreateInput(binding);
+
+        CdcSourceHistoryClassificationResult result = CdcSourceHistoryContinuityClassifier.Evaluate(
+            input with
+            {
+                ProviderHistory = input.ProviderHistory! with
+                {
+                    SqlServerJobs = new(CdcSqlServerCdcJobState.Missing, CdcSqlServerCdcJobState.Healthy),
+                },
+            }
+        );
+
+        result.Observation.Continuity.Should().Be(CdcSourceHistoryContinuity.Lost);
+        result.Observation.ProviderArtifactState.Should().Be(CdcProviderArtifactContinuityState.Missing);
+        result
+            .Observation.IncidentFailureCategory.Should()
+            .Be(CdcIncidentFailureCategory.ProviderArtifactMissing);
+        result.Observation.SqlServerJobs!.CaptureJobState.Should().Be(CdcSqlServerCdcJobState.Missing);
+        result.IncidentCandidate.Should().NotBeNull();
+        ValidateObservation(result.Observation, binding).Succeeded.Should().BeTrue();
+    }
+
+    [Test]
+    public void It_reports_unknown_without_incident_when_sql_server_capture_job_is_stopped()
+    {
+        CdcBinding binding = CdcContinuityFixture.CreateBinding(CdcProvider.SqlServer);
+        CdcSourceHistoryClassificationInput input = CdcContinuityFixture.CreateInput(binding);
+
+        CdcSourceHistoryClassificationResult result = CdcSourceHistoryContinuityClassifier.Evaluate(
+            input with
+            {
+                ProviderHistory = input.ProviderHistory! with
+                {
+                    SqlServerJobs = new(CdcSqlServerCdcJobState.Stopped, CdcSqlServerCdcJobState.Healthy),
+                },
+            }
+        );
+
+        result.Observation.Continuity.Should().Be(CdcSourceHistoryContinuity.Unknown);
+        result.Observation.ProviderArtifactState.Should().Be(CdcProviderArtifactContinuityState.ExactMatch);
+        result
+            .Observation.RetainedRangeState.Should()
+            .Be(CdcProviderRetainedRangeState.CoversCommittedOffset);
+        result.Observation.SqlServerJobs!.CaptureJobState.Should().Be(CdcSqlServerCdcJobState.Stopped);
+        result
+            .Observation.Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CdcDiagnosticCategory.InvalidObservation
+                && diagnostic.Path == "$.providerHistory.sqlServerJobs"
+            );
+        result.IncidentCandidate.Should().BeNull();
+        ValidateObservation(result.Observation, binding).Succeeded.Should().BeTrue();
+    }
+
+    [Test]
+    public void It_reports_unknown_without_incident_when_sql_server_job_health_is_unavailable()
+    {
+        CdcBinding binding = CdcContinuityFixture.CreateBinding(CdcProvider.SqlServer);
+        CdcSourceHistoryClassificationInput input = CdcContinuityFixture.CreateInput(binding);
+
+        CdcSourceHistoryClassificationResult result = CdcSourceHistoryContinuityClassifier.Evaluate(
+            input with
+            {
+                ProviderHistory = input.ProviderHistory! with
+                {
+                    SqlServerJobs = CdcSqlServerCdcJobEvidence.Unknown,
+                    Diagnostics =
+                    [
+                        new(
+                            CdcDiagnosticCategory.LocalStateUnavailable,
+                            "$.providerHistory.sqlServerJobs",
+                            "CDC SQL Server capture and cleanup job health observation failed."
+                        ),
+                    ],
+                },
+            }
+        );
+
+        result.Observation.Continuity.Should().Be(CdcSourceHistoryContinuity.Unknown);
+        result.Observation.SqlServerJobs.Should().Be(CdcSqlServerCdcJobEvidence.Unknown);
+        result
+            .Observation.Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CdcDiagnosticCategory.LocalStateUnavailable
+                && diagnostic.Path == "$.providerHistory.sqlServerJobs"
+            );
+        result.IncidentCandidate.Should().BeNull();
+        ValidateObservation(result.Observation, binding).Succeeded.Should().BeTrue();
+    }
+
     [TestCase(CdcProviderSetupState.Unknown)]
     [TestCase(CdcProviderSetupState.Missing)]
     [TestCase(CdcProviderSetupState.Mismatched)]
@@ -580,7 +688,11 @@ internal static class CdcContinuityFixture
             binding.Provider == CdcProvider.Postgresql ? "0/16B6C50" : "00000023:00000138:0000",
             binding.Provider == CdcProvider.Postgresql ? "0/16B6C52" : "00000023:00000140:0000",
             []
-        );
+        )
+        {
+            SqlServerJobs =
+                binding.Provider == CdcProvider.SqlServer ? CdcSqlServerCdcJobEvidence.Healthy : null,
+        };
     }
 
     private static CdcArtifactInventory Inventory(CdcProvider provider) =>

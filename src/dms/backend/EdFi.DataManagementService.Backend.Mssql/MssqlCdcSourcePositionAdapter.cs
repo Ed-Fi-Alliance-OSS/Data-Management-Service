@@ -600,6 +600,26 @@ internal sealed class MssqlCdcSourcePositionAdapter(
             )
             {
                 Diagnostics = [.. diagnostics.Diagnostics],
+                SqlServerJobs = metadata.CdcJobs,
+            };
+        }
+
+        if (!metadata.CaptureMetadataAvailable)
+        {
+            return new(
+                CdcProviderArtifactContinuityState.Unknown,
+                CdcProviderRetainedRangeState.Unknown,
+                heartbeatCaptureName,
+                null,
+                null,
+                [
+                    CdcIncidentUnavailableFact.ProviderArtifact,
+                    CdcIncidentUnavailableFact.ProviderRetainedRange,
+                ]
+            )
+            {
+                Diagnostics = [.. diagnostics.Diagnostics],
+                SqlServerJobs = metadata.CdcJobs,
             };
         }
 
@@ -623,6 +643,7 @@ internal sealed class MssqlCdcSourcePositionAdapter(
             )
             {
                 Diagnostics = [.. diagnostics.Diagnostics],
+                SqlServerJobs = metadata.CdcJobs,
             };
         }
 
@@ -641,18 +662,39 @@ internal sealed class MssqlCdcSourcePositionAdapter(
             )
             {
                 Diagnostics = [.. diagnostics.Diagnostics],
+                SqlServerJobs = metadata.CdcJobs,
             };
         }
 
         CdcProviderRetainedRangeState retainedRangeState = ValidateRetainedRange(metadata, diagnostics);
-        if (!metadata.CdcJobsExactMatch)
+        if (metadata.CdcJobs.HasMissingJob)
         {
             diagnostics.Add(
                 CdcDiagnosticCategory.InvalidObservation,
                 SqlServerJobsPath,
-                "CDC SQL Server capture and cleanup job metadata must both be available."
+                "CDC SQL Server capture and cleanup jobs must both exist."
             );
-            retainedRangeState = CdcProviderRetainedRangeState.Unknown;
+            return new(
+                CdcProviderArtifactContinuityState.Missing,
+                retainedRangeState,
+                heartbeatCaptureName,
+                metadata.RetainedRangeStart,
+                metadata.RetainedMaxLsn,
+                [CdcIncidentUnavailableFact.ProviderArtifact]
+            )
+            {
+                Diagnostics = [.. diagnostics.Diagnostics],
+                SqlServerJobs = metadata.CdcJobs,
+            };
+        }
+
+        if (metadata.CdcJobs.HasStoppedOrFailedJob)
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                SqlServerJobsPath,
+                "CDC SQL Server capture and cleanup jobs must both be healthy."
+            );
         }
 
         return new(
@@ -661,13 +703,31 @@ internal sealed class MssqlCdcSourcePositionAdapter(
             heartbeatCaptureName,
             metadata.RetainedRangeStart,
             metadata.RetainedMaxLsn,
-            retainedRangeState == CdcProviderRetainedRangeState.Unknown
-                ? [CdcIncidentUnavailableFact.ProviderRetainedRange]
-                : []
+            ProviderHistoryUnavailableFacts(retainedRangeState, metadata.CdcJobs)
         )
         {
             Diagnostics = [.. diagnostics.Diagnostics],
+            SqlServerJobs = metadata.CdcJobs,
         };
+    }
+
+    private static IReadOnlyList<CdcIncidentUnavailableFact> ProviderHistoryUnavailableFacts(
+        CdcProviderRetainedRangeState retainedRangeState,
+        CdcSqlServerCdcJobEvidence cdcJobs
+    )
+    {
+        List<CdcIncidentUnavailableFact> facts = [];
+        if (retainedRangeState == CdcProviderRetainedRangeState.Unknown)
+        {
+            facts.Add(CdcIncidentUnavailableFact.ProviderRetainedRange);
+        }
+
+        if (!cdcJobs.IsHealthy)
+        {
+            facts.Add(CdcIncidentUnavailableFact.ProviderArtifact);
+        }
+
+        return facts;
     }
 
     private static CdcProviderRetainedRangeState ValidateRetainedRange(
@@ -728,9 +788,10 @@ internal sealed class MssqlCdcSourcePositionAdapter(
         )
         {
             Diagnostics = diagnostics,
+            SqlServerJobs = CdcSqlServerCdcJobEvidence.Unknown,
         };
 
-    private static async Task<SqlServerProviderHistoryMetadata> ReadProviderHistoryMetadataAsync(
+    private async Task<SqlServerProviderHistoryMetadata> ReadProviderHistoryMetadataAsync(
         SqlConnection connection,
         CdcArtifactInventory inventory,
         TimeSpan commandTimeout,
@@ -743,30 +804,34 @@ internal sealed class MssqlCdcSourcePositionAdapter(
                 cancellationToken
             )
             .ConfigureAwait(false);
-        bool cdcJobsExactMatch =
-            databaseCdcEnabled
-            && await ReadCdcJobsExactMatchAsync(connection, commandTimeout, cancellationToken)
-                .ConfigureAwait(false);
-        IReadOnlyList<SqlServerCaptureInstanceMetadata> expectedCaptures = databaseCdcEnabled
-            ? await ReadExpectedCaptureInstancesAsync(
-                    connection,
-                    inventory,
-                    commandTimeout,
-                    cancellationToken
-                )
+        SqlServerCdcJobMetadata cdcJobs = databaseCdcEnabled
+            ? await ReadCdcJobMetadataAsync(connection, commandTimeout, cancellationToken)
                 .ConfigureAwait(false)
-            : ExpectedMissingCaptures(inventory);
+            : new(CdcSqlServerCdcJobEvidence.Missing, []);
+        SqlServerCaptureMetadata expectedCaptures = databaseCdcEnabled
+            ? await ReadExpectedCaptureMetadataAsync(connection, inventory, commandTimeout, cancellationToken)
+                .ConfigureAwait(false)
+            : new(ExpectedMissingCaptures(inventory), [], true);
 
-        return CreateProviderHistoryMetadata(databaseCdcEnabled, cdcJobsExactMatch, expectedCaptures);
+        return CreateProviderHistoryMetadata(
+            databaseCdcEnabled,
+            cdcJobs.Jobs,
+            expectedCaptures.Succeeded,
+            expectedCaptures.Captures,
+            [.. cdcJobs.Diagnostics, .. expectedCaptures.Diagnostics]
+        );
     }
 
     private static SqlServerProviderHistoryMetadata CreateProviderHistoryMetadata(
         bool databaseCdcEnabled,
-        bool cdcJobsExactMatch,
-        IReadOnlyList<SqlServerCaptureInstanceMetadata> expectedCaptures
+        CdcSqlServerCdcJobEvidence cdcJobs,
+        bool captureMetadataAvailable,
+        IReadOnlyList<SqlServerCaptureInstanceMetadata> expectedCaptures,
+        IReadOnlyList<CdcDiagnostic> existingDiagnostics
     )
     {
         CdcDiagnosticCollector diagnostics = new();
+        AddDiagnostics(diagnostics, existingDiagnostics);
         foreach (
             SqlServerCaptureInstanceMetadata capture in expectedCaptures.Where(capture =>
                 capture.Exists && !capture.IsExactMatch
@@ -822,7 +887,8 @@ internal sealed class MssqlCdcSourcePositionAdapter(
 
         return new(
             databaseCdcEnabled,
-            cdcJobsExactMatch,
+            cdcJobs,
+            captureMetadataAvailable,
             expectedCaptures,
             retainedRangeStart,
             retainedMaxLsn,
@@ -849,7 +915,107 @@ internal sealed class MssqlCdcSourcePositionAdapter(
         return value is not null && value != DBNull.Value && Convert.ToBoolean(value);
     }
 
-    private static async Task<bool> ReadCdcJobsExactMatchAsync(
+    private async Task<SqlServerCdcJobMetadata> ReadCdcJobMetadataAsync(
+        SqlConnection connection,
+        TimeSpan commandTimeout,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            IReadOnlySet<string> cdcJobTypes = await ReadCdcHelpJobTypesAsync(
+                    connection,
+                    commandTimeout,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+            CdcSqlServerCdcJobState captureJobState = cdcJobTypes.Contains("capture")
+                ? CdcSqlServerCdcJobState.Unknown
+                : CdcSqlServerCdcJobState.Missing;
+            CdcSqlServerCdcJobState cleanupJobState = cdcJobTypes.Contains("cleanup")
+                ? CdcSqlServerCdcJobState.Unknown
+                : CdcSqlServerCdcJobState.Missing;
+
+            if (
+                captureJobState == CdcSqlServerCdcJobState.Missing
+                || cleanupJobState == CdcSqlServerCdcJobState.Missing
+            )
+            {
+                return new(new(captureJobState, cleanupJobState), []);
+            }
+
+            IReadOnlyDictionary<string, SqlServerAgentCdcJobMetadata> agentJobs =
+                await ReadSqlAgentCdcJobMetadataAsync(connection, commandTimeout, cancellationToken)
+                    .ConfigureAwait(false);
+
+            return new(
+                new(
+                    ResolveSqlServerCdcJobState(agentJobs.GetValueOrDefault("capture")),
+                    ResolveSqlServerCdcJobState(agentJobs.GetValueOrDefault("cleanup"))
+                ),
+                []
+            );
+        }
+        catch (OperationCanceledException)
+        {
+            return UnknownCdcJobMetadata(
+                new(
+                    CdcDiagnosticCategory.LocalStateUnavailable,
+                    SqlServerJobsPath,
+                    "CDC SQL Server capture and cleanup job health observation was cancelled."
+                )
+            );
+        }
+        catch (Exception exception) when (_timeoutClassifier.IsProviderCommandTimeout(exception))
+        {
+            LogProviderObservationFailure(exception, "provider-history-jobs-timeout");
+            return UnknownCdcJobMetadata(
+                new(
+                    CdcDiagnosticCategory.LocalStateUnavailable,
+                    SqlServerJobsPath,
+                    "CDC SQL Server capture and cleanup job health observation timed out."
+                )
+            );
+        }
+        catch (Exception exception)
+        {
+            LogProviderObservationFailure(exception, "provider-history-jobs-failed");
+            return UnknownCdcJobMetadata(
+                new(
+                    CdcDiagnosticCategory.LocalStateUnavailable,
+                    SqlServerJobsPath,
+                    "CDC SQL Server capture and cleanup job health observation failed."
+                )
+            );
+        }
+    }
+
+    private static SqlServerCdcJobMetadata UnknownCdcJobMetadata(CdcDiagnostic diagnostic) =>
+        new(CdcSqlServerCdcJobEvidence.Unknown, [diagnostic]);
+
+    private static CdcSqlServerCdcJobState ResolveSqlServerCdcJobState(SqlServerAgentCdcJobMetadata? metadata)
+    {
+        if (metadata is null || !metadata.Exists)
+        {
+            return CdcSqlServerCdcJobState.Missing;
+        }
+
+        if (!metadata.Enabled)
+        {
+            return CdcSqlServerCdcJobState.Stopped;
+        }
+
+        if (metadata.Running)
+        {
+            return CdcSqlServerCdcJobState.Healthy;
+        }
+
+        return metadata.LastRunStatus is 0 or 2 or 3
+            ? CdcSqlServerCdcJobState.Failed
+            : CdcSqlServerCdcJobState.Healthy;
+    }
+
+    private static async Task<IReadOnlySet<string>> ReadCdcHelpJobTypesAsync(
         SqlConnection connection,
         TimeSpan commandTimeout,
         CancellationToken cancellationToken
@@ -874,8 +1040,139 @@ internal sealed class MssqlCdcSourcePositionAdapter(
             }
         }
 
-        return jobTypes.SetEquals(["capture", "cleanup"]);
+        return jobTypes;
     }
+
+    private static async Task<
+        IReadOnlyDictionary<string, SqlServerAgentCdcJobMetadata>
+    > ReadSqlAgentCdcJobMetadataAsync(
+        SqlConnection connection,
+        TimeSpan commandTimeout,
+        CancellationToken cancellationToken
+    )
+    {
+        await using SqlCommand command = connection.CreateCommand();
+        command.CommandText = """
+            DECLARE @databaseName sysname = DB_NAME();
+
+            WITH expected_jobs AS (
+                SELECT
+                    CONVERT(nvarchar(16), N'capture') AS job_type,
+                    CONVERT(nvarchar(128), N'cdc.' + @databaseName + N'_capture') AS job_name
+                UNION ALL
+                SELECT
+                    CONVERT(nvarchar(16), N'cleanup') AS job_type,
+                    CONVERT(nvarchar(128), N'cdc.' + @databaseName + N'_cleanup') AS job_name
+            )
+            SELECT
+                expected_jobs.job_type,
+                CONVERT(bit, CASE WHEN job.job_id IS NULL THEN 0 ELSE 1 END) AS job_exists,
+                CONVERT(bit, COALESCE(job.enabled, 0)) AS job_enabled,
+                CONVERT(bit, CASE
+                    WHEN activity.start_execution_date IS NOT NULL
+                        AND activity.stop_execution_date IS NULL
+                        THEN 1
+                    ELSE 0
+                END) AS job_running,
+                CONVERT(int, history.run_status) AS last_run_status
+            FROM expected_jobs
+            LEFT JOIN msdb.dbo.sysjobs job
+                ON job.[name] = expected_jobs.job_name
+            OUTER APPLY (
+                SELECT TOP (1)
+                    job_activity.start_execution_date,
+                    job_activity.stop_execution_date
+                FROM msdb.dbo.sysjobactivity job_activity
+                WHERE job_activity.job_id = job.job_id
+                ORDER BY job_activity.session_id DESC, job_activity.start_execution_date DESC
+            ) activity
+            OUTER APPLY (
+                SELECT TOP (1)
+                    job_history.run_status
+                FROM msdb.dbo.sysjobhistory job_history
+                WHERE job_history.job_id = job.job_id
+                  AND job_history.step_id = 0
+                ORDER BY job_history.instance_id DESC
+            ) history;
+            """;
+        command.CommandTimeout = GetCommandTimeoutSeconds(commandTimeout);
+
+        Dictionary<string, SqlServerAgentCdcJobMetadata> jobsByType = new(StringComparer.OrdinalIgnoreCase);
+        await using SqlDataReader reader = await command
+            .ExecuteReaderAsync(cancellationToken)
+            .ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            string jobType = ReadRequiredString(reader, "job_type");
+            jobsByType[jobType] = new(
+                jobType,
+                ReadRequiredBoolean(reader, "job_exists"),
+                ReadRequiredBoolean(reader, "job_enabled"),
+                ReadRequiredBoolean(reader, "job_running"),
+                ReadNullableInt32(reader, "last_run_status")
+            );
+        }
+
+        return jobsByType;
+    }
+
+    private async Task<SqlServerCaptureMetadata> ReadExpectedCaptureMetadataAsync(
+        SqlConnection connection,
+        CdcArtifactInventory inventory,
+        TimeSpan commandTimeout,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            return new(
+                await ReadExpectedCaptureInstancesAsync(
+                        connection,
+                        inventory,
+                        commandTimeout,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false),
+                [],
+                true
+            );
+        }
+        catch (OperationCanceledException)
+        {
+            return UnavailableCaptureMetadata(
+                new(
+                    CdcDiagnosticCategory.LocalStateUnavailable,
+                    SqlServerCaptureInstancesPath,
+                    "CDC SQL Server capture instance metadata observation was cancelled."
+                )
+            );
+        }
+        catch (Exception exception) when (_timeoutClassifier.IsProviderCommandTimeout(exception))
+        {
+            LogProviderObservationFailure(exception, "provider-history-captures-timeout");
+            return UnavailableCaptureMetadata(
+                new(
+                    CdcDiagnosticCategory.LocalStateUnavailable,
+                    SqlServerCaptureInstancesPath,
+                    "CDC SQL Server capture instance metadata observation timed out."
+                )
+            );
+        }
+        catch (Exception exception)
+        {
+            LogProviderObservationFailure(exception, "provider-history-captures-failed");
+            return UnavailableCaptureMetadata(
+                new(
+                    CdcDiagnosticCategory.LocalStateUnavailable,
+                    SqlServerCaptureInstancesPath,
+                    "CDC SQL Server capture instance metadata observation failed."
+                )
+            );
+        }
+    }
+
+    private static SqlServerCaptureMetadata UnavailableCaptureMetadata(CdcDiagnostic diagnostic) =>
+        new([], [diagnostic], false);
 
     private static async Task<
         IReadOnlyList<SqlServerCaptureInstanceMetadata>
@@ -1215,6 +1512,13 @@ internal sealed class MssqlCdcSourcePositionAdapter(
         return reader.GetInt32(ordinal);
     }
 
+    private static int? ReadNullableInt32(SqlDataReader reader, string columnName)
+    {
+        int ordinal = reader.GetOrdinal(columnName);
+
+        return reader.IsDBNull(ordinal) ? null : reader.GetInt32(ordinal);
+    }
+
     private static void AddDiagnostics(
         CdcDiagnosticCollector collector,
         IReadOnlyList<CdcDiagnostic>? diagnostics
@@ -1239,11 +1543,31 @@ internal sealed class MssqlCdcSourcePositionAdapter(
 
     private sealed record SqlServerProviderHistoryMetadata(
         bool DatabaseCdcEnabled,
-        bool CdcJobsExactMatch,
+        CdcSqlServerCdcJobEvidence CdcJobs,
+        bool CaptureMetadataAvailable,
         IReadOnlyList<SqlServerCaptureInstanceMetadata> ExpectedCaptures,
         string? RetainedRangeStart,
         string? RetainedMaxLsn,
         IReadOnlyList<CdcDiagnostic> Diagnostics
+    );
+
+    private sealed record SqlServerCdcJobMetadata(
+        CdcSqlServerCdcJobEvidence Jobs,
+        IReadOnlyList<CdcDiagnostic> Diagnostics
+    );
+
+    private sealed record SqlServerAgentCdcJobMetadata(
+        string JobType,
+        bool Exists,
+        bool Enabled,
+        bool Running,
+        int? LastRunStatus
+    );
+
+    private sealed record SqlServerCaptureMetadata(
+        IReadOnlyList<SqlServerCaptureInstanceMetadata> Captures,
+        IReadOnlyList<CdcDiagnostic> Diagnostics,
+        bool Succeeded
     );
 
     private sealed record SqlServerCaptureInstanceMetadata(

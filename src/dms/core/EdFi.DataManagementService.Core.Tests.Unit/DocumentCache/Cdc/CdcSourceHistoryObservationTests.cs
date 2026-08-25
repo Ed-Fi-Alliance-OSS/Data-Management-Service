@@ -119,7 +119,10 @@ public class Given_CdcSourceHistoryObservation
             CdcSqlServerSchemaHistoryEnablementPhase.AfterInitialAdmission,
             CdcSqlServerSchemaHistoryState.Missing,
             []
-        );
+        )
+        {
+            SqlServerJobs = CdcSqlServerCdcJobEvidence.Healthy,
+        };
 
         string json = CdcJsonContract.Serialize(observation);
 
@@ -136,6 +139,33 @@ public class Given_CdcSourceHistoryObservation
             );
 
         validationResult.Succeeded.Should().BeTrue();
+    }
+
+    [Test]
+    public void It_rejects_healthy_sql_server_continuity_without_healthy_jobs()
+    {
+        CdcBinding binding = CreateBinding(CdcProvider.SqlServer);
+        CdcSourceHistoryObservation observation = SqlServerSchemaHistoryLossObservation(binding) with
+        {
+            Continuity = CdcSourceHistoryContinuity.Healthy,
+            IncidentFailureCategory = null,
+            SchemaHistoryState = CdcSqlServerSchemaHistoryState.Valid,
+            SqlServerJobs = new(CdcSqlServerCdcJobState.Failed, CdcSqlServerCdcJobState.Healthy),
+        };
+
+        CdcContractValidationResult result = CdcSourceHistoryObservationValidator.ValidateForBinding(
+            observation,
+            binding,
+            new(OperationId, binding.ToTargetIdentity(), SourceFingerprint, Now)
+        );
+
+        result.Succeeded.Should().BeFalse();
+        result
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CdcDiagnosticCategory.InvalidObservation
+                && diagnostic.Path == "$.sqlServerJobs"
+            );
     }
 
     [Test]
@@ -202,7 +232,10 @@ public class Given_CdcSourceHistoryObservation
             CdcSqlServerSchemaHistoryEnablementPhase.AfterInitialAdmission,
             CdcSqlServerSchemaHistoryState.Valid,
             []
-        );
+        )
+        {
+            SqlServerJobs = CdcSqlServerCdcJobEvidence.Healthy,
+        };
 
         CdcContractValidationResult result = CdcSourceHistoryObservationValidator.ValidateForBinding(
             observation,
@@ -275,7 +308,10 @@ public class Given_CdcSourceHistoryObservation
             CdcSqlServerSchemaHistoryEnablementPhase.AfterInitialAdmission,
             CdcSqlServerSchemaHistoryState.Missing,
             []
-        );
+        )
+        {
+            SqlServerJobs = CdcSqlServerCdcJobEvidence.Healthy,
+        };
     }
 
     private static CdcBinding CreateBinding(CdcProvider provider)

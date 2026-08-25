@@ -15,6 +15,8 @@ public sealed record CdcProviderSourceHistoryEvidence(
 )
 {
     public IReadOnlyList<CdcDiagnostic> Diagnostics { get; init; } = [];
+
+    public CdcSqlServerCdcJobEvidence? SqlServerJobs { get; init; }
 }
 
 public sealed record CdcSqlServerSchemaHistoryEvidence(
@@ -548,6 +550,21 @@ public static class CdcSourceHistoryContinuityClassifier
             );
         }
 
+        if (
+            TryEvaluateMissingSqlServerJob(
+                input,
+                inventory,
+                expectedSourcePartitionHash,
+                position,
+                observedAt,
+                diagnostics
+            ) is
+            { } missingJobResult
+        )
+        {
+            return missingJobResult;
+        }
+
         CdcRetainedRangeEvaluation retainedRange = EvaluateRetainedRange(
             input.Binding.Provider,
             input.ProviderHistory,
@@ -555,35 +572,223 @@ public static class CdcSourceHistoryContinuityClassifier
         );
         AddDiagnostics(diagnostics, retainedRange.Diagnostics);
 
-        return retainedRange.State switch
+        switch (retainedRange.State)
         {
-            CdcRetainedRangeEvaluationState.Covers => null,
-            CdcRetainedRangeEvaluationState.Gap => Lost(
-                input,
-                observedAt,
-                diagnostics,
-                CdcIncidentFailureCategory.RetainedHistoryGap,
-                BuildPositionMetadata(
+            case CdcRetainedRangeEvaluationState.Covers:
+                break;
+            case CdcRetainedRangeEvaluationState.Gap:
+                return Lost(
+                    input,
+                    observedAt,
+                    diagnostics,
+                    CdcIncidentFailureCategory.RetainedHistoryGap,
+                    BuildPositionMetadata(
+                        input.Binding.Provider,
+                        inventory,
+                        expectedSourcePartitionHash,
+                        position,
+                        input.ProviderHistory,
+                        []
+                    )
+                );
+            default:
+                return UnknownWithMetadata(
+                    input,
+                    observedAt,
+                    diagnostics,
                     input.Binding.Provider,
                     inventory,
                     expectedSourcePartitionHash,
                     position,
                     input.ProviderHistory,
-                    []
-                )
-            ),
-            _ => UnknownWithMetadata(
+                    [CdcIncidentUnavailableFact.ProviderRetainedRange]
+                );
+        }
+
+        if (
+            TryEvaluateUnavailableSqlServerJob(
                 input,
+                inventory,
+                expectedSourcePartitionHash,
+                position,
                 observedAt,
-                diagnostics,
-                input.Binding.Provider,
+                diagnostics
+            ) is
+            { } unavailableJobResult
+        )
+        {
+            return unavailableJobResult;
+        }
+
+        return null;
+    }
+
+    private static CdcSourceHistoryClassificationResult? TryEvaluateMissingSqlServerJob(
+        CdcSourceHistoryClassificationInput input,
+        CdcArtifactInventory inventory,
+        string? expectedSourcePartitionHash,
+        CdcCommittedSourcePosition position,
+        DateTimeOffset observedAt,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (input.Binding.Provider != CdcProvider.SqlServer)
+        {
+            return null;
+        }
+
+        CdcSqlServerCdcJobEvidence? sqlServerJobs = input.ProviderHistory?.SqlServerJobs;
+        if (
+            TryValidateSqlServerJobEvidence(
+                sqlServerJobs,
+                input,
+                inventory,
+                expectedSourcePartitionHash,
+                position,
+                observedAt,
+                diagnostics
+            ) is
+            { } validationResult
+        )
+        {
+            return validationResult;
+        }
+
+        if (!sqlServerJobs!.HasMissingJob)
+        {
+            return null;
+        }
+
+        diagnostics.Add(
+            CdcDiagnosticCategory.InvalidObservation,
+            "$.providerHistory.sqlServerJobs",
+            "CDC SQL Server capture and cleanup jobs must both exist."
+        );
+        return Lost(
+            input,
+            observedAt,
+            diagnostics,
+            CdcIncidentFailureCategory.ProviderArtifactMissing,
+            BuildPositionMetadata(
+                CdcProvider.SqlServer,
                 inventory,
                 expectedSourcePartitionHash,
                 position,
                 input.ProviderHistory,
-                [CdcIncidentUnavailableFact.ProviderRetainedRange]
-            ),
-        };
+                [CdcIncidentUnavailableFact.ProviderArtifact]
+            )
+        );
+    }
+
+    private static CdcSourceHistoryClassificationResult? TryValidateSqlServerJobEvidence(
+        CdcSqlServerCdcJobEvidence? sqlServerJobs,
+        CdcSourceHistoryClassificationInput input,
+        CdcArtifactInventory inventory,
+        string? expectedSourcePartitionHash,
+        CdcCommittedSourcePosition position,
+        DateTimeOffset observedAt,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (sqlServerJobs is null)
+        {
+            diagnostics.MissingRequiredField("$.providerHistory.sqlServerJobs", "sqlServerJobs");
+            return UnknownWithMetadata(
+                input,
+                observedAt,
+                diagnostics,
+                CdcProvider.SqlServer,
+                inventory,
+                expectedSourcePartitionHash,
+                position,
+                input.ProviderHistory,
+                [CdcIncidentUnavailableFact.ProviderArtifact]
+            );
+        }
+
+        bool captureJobStateDefined = Enum.IsDefined(sqlServerJobs.CaptureJobState);
+        if (!captureJobStateDefined)
+        {
+            diagnostics.InvalidEnumValue(
+                "$.providerHistory.sqlServerJobs.captureJobState",
+                "CDC SQL Server capture job state is unsupported."
+            );
+        }
+
+        bool cleanupJobStateDefined = Enum.IsDefined(sqlServerJobs.CleanupJobState);
+        if (!cleanupJobStateDefined)
+        {
+            diagnostics.InvalidEnumValue(
+                "$.providerHistory.sqlServerJobs.cleanupJobState",
+                "CDC SQL Server cleanup job state is unsupported."
+            );
+        }
+
+        return captureJobStateDefined && cleanupJobStateDefined
+            ? null
+            : UnknownWithMetadata(
+                input,
+                observedAt,
+                diagnostics,
+                CdcProvider.SqlServer,
+                inventory,
+                expectedSourcePartitionHash,
+                position,
+                input.ProviderHistory,
+                [CdcIncidentUnavailableFact.ProviderArtifact]
+            );
+    }
+
+    private static CdcSourceHistoryClassificationResult? TryEvaluateUnavailableSqlServerJob(
+        CdcSourceHistoryClassificationInput input,
+        CdcArtifactInventory inventory,
+        string? expectedSourcePartitionHash,
+        CdcCommittedSourcePosition position,
+        DateTimeOffset observedAt,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (input.Binding.Provider != CdcProvider.SqlServer)
+        {
+            return null;
+        }
+
+        CdcSqlServerCdcJobEvidence sqlServerJobs =
+            input.ProviderHistory?.SqlServerJobs
+            ?? throw new InvalidOperationException("SQL Server job evidence must be validated first.");
+
+        if (sqlServerJobs.IsHealthy)
+        {
+            return null;
+        }
+
+        if (sqlServerJobs.HasStoppedOrFailedJob)
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                "$.providerHistory.sqlServerJobs",
+                "CDC SQL Server capture and cleanup jobs must both be healthy."
+            );
+        }
+        else if (sqlServerJobs.HasUnknownJob && input.ProviderHistory!.Diagnostics.Count == 0)
+        {
+            diagnostics.LocalStateUnavailable(
+                "$.providerHistory.sqlServerJobs",
+                "CDC SQL Server capture and cleanup job health is unavailable."
+            );
+        }
+
+        return UnknownWithMetadata(
+            input,
+            observedAt,
+            diagnostics,
+            CdcProvider.SqlServer,
+            inventory,
+            expectedSourcePartitionHash,
+            position,
+            input.ProviderHistory,
+            [CdcIncidentUnavailableFact.ProviderArtifact]
+        );
     }
 
     private static CdcSourceHistoryClassificationResult? TryEvaluateSqlServerSchemaHistory(
@@ -1234,7 +1439,15 @@ public static class CdcSourceHistoryContinuityClassifier
             schemaHistoryEnablementPhase,
             schemaHistoryState,
             [.. diagnostics]
-        );
+        )
+        {
+            SqlServerJobs = SqlServerJobs(input),
+        };
+
+    private static CdcSqlServerCdcJobEvidence? SqlServerJobs(CdcSourceHistoryClassificationInput input) =>
+        input.Binding.Provider == CdcProvider.SqlServer
+            ? input.ProviderHistory?.SqlServerJobs ?? CdcSqlServerCdcJobEvidence.Unknown
+            : null;
 
     private static CdcProviderArtifactContinuityState LostProviderArtifactState(
         CdcIncidentFailureCategory failureCategory,

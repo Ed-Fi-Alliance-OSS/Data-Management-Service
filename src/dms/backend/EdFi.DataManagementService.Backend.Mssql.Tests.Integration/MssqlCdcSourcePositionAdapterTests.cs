@@ -233,9 +233,157 @@ public class Given_MssqlCdcSourcePositionAdapter
         result
             .Observation.PositionEvidence!.ProviderArtifactName.Should()
             .Be(inventory.SqlServerCaptureInstanceCdcHeartbeatName);
+        result.Observation.SqlServerJobs.Should().Be(CoreCdc.CdcSqlServerCdcJobEvidence.Healthy);
         result.Observation.PositionEvidence.RetainedRangeStart.Should().NotBeNullOrWhiteSpace();
         result.Observation.PositionEvidence.RetainedRangeEnd.Should().NotBeNullOrWhiteSpace();
         result.Observation.Diagnostics.Should().BeEmpty();
+        result.IncidentCandidate.Should().BeNull();
+        ValidateSourceHistoryObservation(result.Observation, binding).Succeeded.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task It_latches_terminal_provider_artifact_loss_when_the_capture_job_is_missing()
+    {
+        CoreCdc.CdcBinding binding = await BuildBindingAsync();
+        CoreCdc.CdcArtifactInventory inventory = BuildInventory();
+        CdcProviderSetupResult setup = await CreateProviderArtifactsAsync(binding, inventory);
+        MssqlCdcProviderBarrierCaptureResult capture = await CaptureBarrierWithHeartbeatAsync(
+            binding,
+            setup.HeartbeatActionQuery!.Sql
+        );
+
+        await DropCdcJobAsync("capture");
+
+        _timeProvider.Set(ProjectionCaughtUpObservedAt.AddSeconds(30));
+        CoreCdc.CdcSourceHistoryClassificationResult result = await _adapter.ObserveSourceHistoryAsync(
+            new(
+                _database.ConnectionString,
+                OperationId(),
+                binding,
+                BuildSatisfiedProviderSetup(binding),
+                BuildConnectorOffset(
+                    binding,
+                    inventory,
+                    capture.SqlServerCommitLsn!,
+                    capture.SqlServerChangeLsn!,
+                    capture.SqlServerEventSerialNo!.Value
+                ),
+                BuildValidSchemaHistory()
+            )
+            {
+                ExpectedConnectSourcePartitionHash = ExpectedSourcePartitionHash(inventory),
+            }
+        );
+
+        result.Observation.Continuity.Should().Be(CoreCdc.CdcSourceHistoryContinuity.Lost);
+        result
+            .Observation.ProviderArtifactState.Should()
+            .Be(CoreCdc.CdcProviderArtifactContinuityState.Missing);
+        result
+            .Observation.IncidentFailureCategory.Should()
+            .Be(CoreCdc.CdcIncidentFailureCategory.ProviderArtifactMissing);
+        result
+            .Observation.SqlServerJobs!.CaptureJobState.Should()
+            .Be(CoreCdc.CdcSqlServerCdcJobState.Missing);
+        result.IncidentCandidate.Should().NotBeNull();
+        CoreCdc.CdcJsonContract.Serialize(result.Observation).Should().NotContain(_database.DatabaseName);
+        ValidateSourceHistoryObservation(result.Observation, binding).Succeeded.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task It_reports_unknown_without_latch_when_the_capture_job_is_disabled()
+    {
+        CoreCdc.CdcBinding binding = await BuildBindingAsync();
+        CoreCdc.CdcArtifactInventory inventory = BuildInventory();
+        CdcProviderSetupResult setup = await CreateProviderArtifactsAsync(binding, inventory);
+        MssqlCdcProviderBarrierCaptureResult capture = await CaptureBarrierWithHeartbeatAsync(
+            binding,
+            setup.HeartbeatActionQuery!.Sql
+        );
+
+        await DisableCdcJobAsync("capture");
+
+        _timeProvider.Set(ProjectionCaughtUpObservedAt.AddSeconds(30));
+        CoreCdc.CdcSourceHistoryClassificationResult result = await _adapter.ObserveSourceHistoryAsync(
+            new(
+                _database.ConnectionString,
+                OperationId(),
+                binding,
+                BuildSatisfiedProviderSetup(binding),
+                BuildConnectorOffset(
+                    binding,
+                    inventory,
+                    capture.SqlServerCommitLsn!,
+                    capture.SqlServerChangeLsn!,
+                    capture.SqlServerEventSerialNo!.Value
+                ),
+                BuildValidSchemaHistory()
+            )
+            {
+                ExpectedConnectSourcePartitionHash = ExpectedSourcePartitionHash(inventory),
+            }
+        );
+
+        result.Observation.Continuity.Should().Be(CoreCdc.CdcSourceHistoryContinuity.Unknown);
+        result
+            .Observation.ProviderArtifactState.Should()
+            .Be(CoreCdc.CdcProviderArtifactContinuityState.ExactMatch);
+        result
+            .Observation.RetainedRangeState.Should()
+            .Be(CoreCdc.CdcProviderRetainedRangeState.CoversCommittedOffset);
+        result
+            .Observation.SqlServerJobs!.CaptureJobState.Should()
+            .Be(CoreCdc.CdcSqlServerCdcJobState.Stopped);
+        result
+            .Observation.Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CoreCdc.CdcDiagnosticCategory.InvalidObservation
+                && diagnostic.Path == "$.providerHistory.sqlServerJobs"
+            );
+        result.IncidentCandidate.Should().BeNull();
+        ValidateSourceHistoryObservation(result.Observation, binding).Succeeded.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task It_reports_unknown_when_job_health_query_is_unavailable()
+    {
+        CoreCdc.CdcBinding binding = await BuildBindingAsync();
+        CoreCdc.CdcArtifactInventory inventory = BuildInventory();
+        CdcProviderSetupResult setup = await CreateProviderArtifactsAsync(binding, inventory);
+        MssqlCdcProviderBarrierCaptureResult capture = await CaptureBarrierWithHeartbeatAsync(
+            binding,
+            setup.HeartbeatActionQuery!.Sql
+        );
+
+        _timeProvider.Set(ProjectionCaughtUpObservedAt.AddSeconds(30));
+        CoreCdc.CdcSourceHistoryClassificationResult result = await _adapter.ObserveSourceHistoryAsync(
+            new(
+                ConnectorConnectionString(),
+                OperationId(),
+                binding,
+                BuildSatisfiedProviderSetup(binding),
+                BuildConnectorOffset(
+                    binding,
+                    inventory,
+                    capture.SqlServerCommitLsn!,
+                    capture.SqlServerChangeLsn!,
+                    capture.SqlServerEventSerialNo!.Value
+                ),
+                BuildValidSchemaHistory()
+            )
+            {
+                ExpectedConnectSourcePartitionHash = ExpectedSourcePartitionHash(inventory),
+            }
+        );
+
+        result.Observation.Continuity.Should().Be(CoreCdc.CdcSourceHistoryContinuity.Unknown);
+        result.Observation.SqlServerJobs.Should().Be(CoreCdc.CdcSqlServerCdcJobEvidence.Unknown);
+        result
+            .Observation.Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CoreCdc.CdcDiagnosticCategory.LocalStateUnavailable
+                && diagnostic.Path == "$.providerHistory.sqlServerJobs"
+            );
         result.IncidentCandidate.Should().BeNull();
         ValidateSourceHistoryObservation(result.Observation, binding).Succeeded.Should().BeTrue();
     }
@@ -573,6 +721,32 @@ public class Given_MssqlCdcSourcePositionAdapter
         await command.ExecuteNonQueryAsync();
     }
 
+    private async Task DropCdcJobAsync(string jobType)
+    {
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            EXEC sys.sp_cdc_drop_job @job_type = @jobType;
+            """;
+        command.Parameters.AddWithValue("@jobType", jobType);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    private async Task DisableCdcJobAsync(string jobType)
+    {
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            EXEC msdb.dbo.sp_update_job
+                @job_name = @jobName,
+                @enabled = 0;
+            """;
+        command.Parameters.AddWithValue("@jobName", $"cdc.{_database.DatabaseName}_{jobType}");
+        await command.ExecuteNonQueryAsync();
+    }
+
     private async Task<bool> CaptureInstanceExistsAsync(string captureInstanceName)
     {
         await using var connection = new SqlConnection(_database.ConnectionString);
@@ -742,6 +916,18 @@ public class Given_MssqlCdcSourcePositionAdapter
             """;
 
         return (await command.ExecuteScalarAsync())!.ToString()!;
+    }
+
+    private string ConnectorConnectionString()
+    {
+        SqlConnectionStringBuilder builder = new(_database.ConnectionString)
+        {
+            UserID = _connectorPrincipalName,
+            Password = ConnectorPassword,
+            IntegratedSecurity = false,
+        };
+
+        return builder.ConnectionString;
     }
 
     private static CoreCdc.CdcSqlServerLsn ParseSqlServerLsn(string value)
