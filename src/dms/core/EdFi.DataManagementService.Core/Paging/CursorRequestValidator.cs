@@ -96,9 +96,17 @@ internal static class CursorRequestValidator
     /// the boundary's job and hide a canonicalization regression rather than fail a test.
     /// </param>
     /// <param name="maximumPageSize">The configured maximum page size.</param>
+    /// <param name="orderingMode">
+    /// The anchor this request resolved from its change-version window. A token carries the anchor it
+    /// was issued for, and replaying it under a request that resolves a different one would read its
+    /// bounds against the wrong column, so the two have to agree. The resolved value already accounts
+    /// for the legacy ordering kill switch, which is what keeps tokens issued under that setting
+    /// replayable instead of failing mid-walk.
+    /// </param>
     internal static CursorValidationResult Validate(
         IReadOnlyDictionary<string, string> queryParameters,
-        int maximumPageSize
+        int maximumPageSize,
+        PageOrderingMode orderingMode
     )
     {
         ArgumentNullException.ThrowIfNull(queryParameters);
@@ -130,12 +138,29 @@ internal static class CursorRequestValidator
         // Phase 0, token decode. An undecodable token makes every rule that reasons about a valid
         // token meaningless.
         if (
-            !PageTokenCodec.TryDecode(queryParameters[PageTokenParameter], out CursorRange? range, out _)
-            || range is null
+            !PageTokenCodec.TryDecode(
+                queryParameters[PageTokenParameter],
+                out CursorRange? range,
+                out PageOrderingMode tokenOrderingMode
+            ) || range is null
         )
         {
             return new CursorValidationResult.Invalid(InvalidPageToken);
         }
+
+        // Still phase 0: a token whose anchor disagrees with this request's window decodes cleanly but
+        // names bounds in the wrong units, which makes it no more replayable than a malformed one. The
+        // same answer in both directions - a windowed token replayed without the window, and an
+        // unwindowed token replayed with one - because a token is opaque and neither direction tells
+        // the client anything it could act on beyond "start over".
+        if (tokenOrderingMode != orderingMode)
+        {
+            return new CursorValidationResult.Invalid(InvalidPageToken);
+        }
+
+        // The decoded anchor is deliberately not carried past here. Once the check above passes it
+        // equals the request-level anchor by construction, and that is what the SQL compiler and the
+        // token emitter read; a second copy on the paging record would be one more defaultable value.
 
         // Phase 1, mixed-mode conflicts. A parameter that should not have been sent at all makes the
         // individual parameters' ranges irrelevant.

@@ -175,7 +175,11 @@ internal class ValidateQueryMiddleware(
         // Everything else keeps the traditional parsing and its existing messages. Both paths answer
         // a pagination fault with the parameter-validation shell, matching ODS/API.
         CursorValidationResult cursorResult = _cursorParametersRecognized
-            ? CursorRequestValidator.Validate(requestInfo.FrontendRequest.QueryParameters, _maximumPageSize)
+            ? CursorRequestValidator.Validate(
+                requestInfo.FrontendRequest.QueryParameters,
+                _maximumPageSize,
+                pageOrderingMode
+            )
             : CursorValidationResult.NotCursorRequest.Instance;
 
         if (cursorResult is CursorValidationResult.Invalid invalidCursorRequest)

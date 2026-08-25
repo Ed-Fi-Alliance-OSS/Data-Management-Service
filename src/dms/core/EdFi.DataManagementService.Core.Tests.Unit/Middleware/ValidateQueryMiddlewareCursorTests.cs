@@ -36,6 +36,15 @@ public class ValidateQueryMiddlewareCursorTests
     );
 
     /// <summary>
+    /// The token a max-bearing windowed page hands out. Same bounds as <see cref="ValidToken"/>, so the
+    /// only difference between the two is the anchor each was issued for.
+    /// </summary>
+    private static readonly string WindowedToken = PageTokenCodec.Encode(
+        new CursorRange(7, 42),
+        PageOrderingMode.ContentVersion
+    );
+
+    /// <summary>
     /// A resource with one query field, so the unknown-query-field loop runs for real and can prove
     /// which parameters reached it.
     /// </summary>
@@ -87,16 +96,27 @@ public class ValidateQueryMiddlewareCursorTests
         return requestInfo;
     }
 
-    private static async Task<RequestInfo> Execute(
+    private static Task<RequestInfo> Execute(
         bool cursorParametersRecognized,
+        params (string Key, string Value)[] queryParameters
+    ) =>
+        Execute(
+            cursorParametersRecognized
+                ? ValidateQueryMiddlewareTests.Middleware()
+                : ValidateQueryMiddlewareTests.MiddlewareWithoutCursorRecognition(),
+            queryParameters
+        );
+
+    /// <summary>
+    /// The composition under test is supplied directly by the fixtures that need one this file does not
+    /// otherwise build — the deployment running with the page-ordering kill switch on.
+    /// </summary>
+    private static async Task<RequestInfo> Execute(
+        IPipelineStep middleware,
         params (string Key, string Value)[] queryParameters
     )
     {
         RequestInfo requestInfo = RequestInfoFor(queryParameters);
-
-        IPipelineStep middleware = cursorParametersRecognized
-            ? ValidateQueryMiddlewareTests.Middleware()
-            : ValidateQueryMiddlewareTests.MiddlewareWithoutCursorRecognition();
 
         await middleware.Execute(requestInfo, NullNext);
 
@@ -398,7 +418,7 @@ public class ValidateQueryMiddlewareCursorTests
         {
             RequestInfo requestInfo = await Execute(
                 true,
-                ("pageToken", ValidToken),
+                ("pageToken", WindowedToken),
                 ("maxChangeVersion", "200")
             );
 
@@ -433,6 +453,154 @@ public class ValidateQueryMiddlewareCursorTests
                 .QueryElements.Select(static queryElement => queryElement.QueryFieldName)
                 .Should()
                 .Equal("schoolId");
+        }
+    }
+
+    /// <summary>
+    /// The anchor the request resolves and the anchor its token was issued for, compared through the
+    /// real pipeline: the window is parsed here, the anchor is resolved from it here, and a
+    /// disagreement is answered with the standard invalid-token response rather than by serving bounds
+    /// read against the wrong column.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Page_Token_Replayed_Under_A_Different_Window : ValidateQueryMiddlewareCursorTests
+    {
+        [Test]
+        public async Task It_rejects_a_windowed_token_replayed_without_the_window()
+        {
+            AssertParameterValidationShell(
+                await Execute(true, ("pageToken", WindowedToken)),
+                CursorRequestValidator.InvalidPageToken
+            );
+        }
+
+        [Test]
+        public async Task It_rejects_an_unwindowed_token_replayed_with_a_window()
+        {
+            AssertParameterValidationShell(
+                await Execute(true, ("pageToken", ValidToken), ("maxChangeVersion", "200")),
+                CursorRequestValidator.InvalidPageToken
+            );
+        }
+
+        [Test]
+        public async Task It_accepts_a_windowed_token_replayed_with_its_window()
+        {
+            RequestInfo requestInfo = await Execute(
+                true,
+                ("pageToken", WindowedToken),
+                ("minChangeVersion", "100"),
+                ("maxChangeVersion", "200")
+            );
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo
+                .CollectionPaging.Should()
+                .Be(new CollectionPaging.Cursor(new CursorRange(7, 42), new PageSize(MaximumPageSize)));
+        }
+
+        /// <summary>
+        /// A min-only window keeps the <c>DocumentId</c> anchor, because an update inside a window that
+        /// is open above moves a row past a <c>ContentVersion</c> anchor while it remains eligible.
+        /// </summary>
+        [Test]
+        public async Task It_accepts_an_unwindowed_token_for_a_min_only_request()
+        {
+            RequestInfo requestInfo = await Execute(
+                true,
+                ("pageToken", ValidToken),
+                ("minChangeVersion", "100")
+            );
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+        }
+
+        /// <summary>
+        /// '?maxChangeVersion=' parses to null, so it is not a max-bearing window and does not move the
+        /// anchor. The token the request must carry is therefore the unwindowed one.
+        /// </summary>
+        [Test]
+        public async Task It_treats_an_empty_maximum_as_no_window()
+        {
+            RequestInfo accepted = await Execute(true, ("pageToken", ValidToken), ("maxChangeVersion", ""));
+
+            accepted.FrontendResponse.Should().Be(No.FrontendResponse);
+            accepted.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+
+            AssertParameterValidationShell(
+                await Execute(true, ("pageToken", WindowedToken), ("maxChangeVersion", "")),
+                CursorRequestValidator.InvalidPageToken
+            );
+        }
+
+        /// <summary>
+        /// An unparseable maximum parses to null for the same reason an empty one does, which is what
+        /// makes the anchor of a request the window is about to reject deterministic. The cursor phase
+        /// runs first, so a token that disagrees with that anchor is what the client is told about.
+        /// </summary>
+        [Test]
+        public async Task It_compares_against_the_document_id_anchor_of_an_unparseable_maximum()
+        {
+            AssertParameterValidationShell(
+                await Execute(true, ("pageToken", WindowedToken), ("maxChangeVersion", "abc")),
+                CursorRequestValidator.InvalidPageToken
+            );
+        }
+
+        /// <summary>
+        /// The same request with the matching token reaches the window's own fault, so the test above
+        /// cannot pass because an unparseable maximum rejects every token that accompanies it.
+        /// </summary>
+        [Test]
+        public async Task It_reports_the_window_fault_once_the_anchors_agree()
+        {
+            AssertParameterValidationShell(
+                await Execute(true, ("pageToken", ValidToken), ("maxChangeVersion", "abc")),
+                "MaxChangeVersion must be a numeric value greater than or equal to 0."
+            );
+        }
+
+        /// <summary>
+        /// A deployment running with the page-ordering kill switch on resolves <c>DocumentId</c> for
+        /// every window, so it keeps issuing and accepting the <c>d</c>-marked tokens its own pages
+        /// hand out instead of breaking a walk the moment the switch is turned on.
+        /// </summary>
+        [Test]
+        public async Task It_accepts_an_unwindowed_token_with_a_window_under_legacy_ordering()
+        {
+            RequestInfo requestInfo = await Execute(
+                ValidateQueryMiddlewareTests.MiddlewareWithLegacyDocumentIdOrdering(),
+                ("pageToken", ValidToken),
+                ("maxChangeVersion", "200")
+            );
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+        }
+
+        [Test]
+        public async Task It_rejects_a_windowed_token_under_legacy_ordering()
+        {
+            AssertParameterValidationShell(
+                await Execute(
+                    ValidateQueryMiddlewareTests.MiddlewareWithLegacyDocumentIdOrdering(),
+                    ("pageToken", WindowedToken),
+                    ("maxChangeVersion", "200")
+                ),
+                CursorRequestValidator.InvalidPageToken
+            );
+        }
+
+        [Test]
+        public async Task It_leaves_collection_paging_unapplied_for_a_mismatched_token()
+        {
+            RequestInfo requestInfo = await Execute(true, ("pageToken", WindowedToken));
+
+            requestInfo
+                .CollectionPaging.Should()
+                .Be(No.CollectionPaging, "a rejected request must not leave partially applied paging behind");
         }
     }
 
