@@ -15,16 +15,26 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
 
     private readonly CdcStateStorePathResolver _pathResolver;
     private readonly ICdcLocalStateStorePermissions _permissions;
+    private readonly ICdcLocalStateStoreFileSystem _fileSystem;
 
     public LocalCdcBindingStateStore(string rootPath = DefaultRootPath)
         : this(rootPath, CdcLocalStateStorePermissions.Current) { }
 
     internal LocalCdcBindingStateStore(string rootPath, ICdcLocalStateStorePermissions permissions)
+        : this(rootPath, permissions, CdcLocalStateStoreFileSystem.Current) { }
+
+    internal LocalCdcBindingStateStore(
+        string rootPath,
+        ICdcLocalStateStorePermissions permissions,
+        ICdcLocalStateStoreFileSystem fileSystem
+    )
     {
         ArgumentNullException.ThrowIfNull(permissions);
+        ArgumentNullException.ThrowIfNull(fileSystem);
 
         _pathResolver = new(rootPath);
         _permissions = permissions;
+        _fileSystem = fileSystem;
     }
 
     public async Task<CdcCreateBindingStateStoreResult> CreateBindingIfAbsentAsync(
@@ -381,19 +391,22 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             return new CdcDeleteBindingStateStoreResult.StateStoreFailure(incidentPath.ToFailure());
         }
 
-        try
+        CdcStateStoreFailure? incidentDeleteFailure = DeleteStateFileIfPresent(
+            incidentPath.FilePath!,
+            "delete incident state"
+        );
+        if (incidentDeleteFailure is not null)
         {
-            File.Delete(bindingPath.FilePath!);
-            if (File.Exists(incidentPath.FilePath!))
-            {
-                File.Delete(incidentPath.FilePath!);
-            }
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(incidentDeleteFailure);
         }
-        catch (Exception exception) when (IsFileSystemException(exception))
+
+        CdcStateStoreFailure? bindingDeleteFailure = DeleteStateFile(
+            bindingPath.FilePath!,
+            "delete binding state"
+        );
+        if (bindingDeleteFailure is not null)
         {
-            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(
-                FileSystemFailure(bindingPath.FilePath!, "delete binding state")
-            );
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(bindingDeleteFailure);
         }
 
         return new CdcDeleteBindingStateStoreResult.Deleted(completeIdentity);
@@ -459,7 +472,8 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         CdcStateStoreFailure? permissionFailure = ApplyOwnerOnlyFilePermissions(bindingPath.FilePath!);
         if (permissionFailure is not null)
         {
-            return LocalCreateBindingResult.Failed(permissionFailure);
+            CdcStateStoreFailure? deleteFailure = DeleteIncompleteBindingFile(bindingPath.FilePath!);
+            return LocalCreateBindingResult.Failed(deleteFailure ?? permissionFailure);
         }
 
         LocalBindingReadResult readBack = await ReadBindingStateAsync(
@@ -566,6 +580,12 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
                 if (regularFileFailure is not null)
                 {
                     return regularFileFailure;
+                }
+
+                CdcStateStoreFailure? permissionFailure = ValidateOwnerOnlyFilePermissions(bindingFile);
+                if (permissionFailure is not null)
+                {
+                    return permissionFailure;
                 }
 
                 if (!TryParseGenerationFileName(bindingFile, out long generation))
@@ -757,6 +777,12 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         if (regularFileFailure is not null)
         {
             return LocalBindingReadResult.Failed(regularFileFailure);
+        }
+
+        CdcStateStoreFailure? permissionFailure = ValidateOwnerOnlyFilePermissions(bindingPath.FilePath!);
+        if (permissionFailure is not null)
+        {
+            return LocalBindingReadResult.Failed(permissionFailure);
         }
 
         LocalBindingFileReadResult bindingRead = await ReadBindingFileAsync(
@@ -1167,6 +1193,17 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             );
     }
 
+    private CdcStateStoreFailure? ValidateOwnerOnlyFilePermissions(string path)
+    {
+        CdcLocalStateStorePermissionResult result = _permissions.ValidateOwnerOnlyFile(path);
+        return result.Succeeded || result.Unsupported
+            ? null
+            : CdcStateStoreFailure.LocalStateUnavailable(
+                path,
+                result.Message ?? "CDC local state file permissions are not owner-only."
+            );
+    }
+
     private static async Task WriteContractFileCreateNewAsync(
         string filePath,
         string payload,
@@ -1328,20 +1365,39 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             : CdcStateStoreFailure.InvalidOperation(validationResult.Diagnostics);
     }
 
-    private static CdcStateStoreFailure? DeleteIncompleteIncidentFile(string filePath)
+    private CdcStateStoreFailure? DeleteIncompleteBindingFile(string filePath) =>
+        DeleteStateFileIfPresent(filePath, "remove incomplete binding state");
+
+    private CdcStateStoreFailure? DeleteIncompleteIncidentFile(string filePath) =>
+        DeleteStateFileIfPresent(filePath, "remove incomplete incident state");
+
+    private CdcStateStoreFailure? DeleteStateFileIfPresent(string filePath, string action)
     {
         try
         {
-            if (File.Exists(filePath))
+            if (_fileSystem.FileExists(filePath))
             {
-                File.Delete(filePath);
+                _fileSystem.DeleteFile(filePath);
             }
 
             return null;
         }
         catch (Exception exception) when (IsFileSystemException(exception))
         {
-            return FileSystemFailure(filePath, "remove incomplete incident state");
+            return FileSystemFailure(filePath, action);
+        }
+    }
+
+    private CdcStateStoreFailure? DeleteStateFile(string filePath, string action)
+    {
+        try
+        {
+            _fileSystem.DeleteFile(filePath);
+            return null;
+        }
+        catch (Exception exception) when (IsFileSystemException(exception))
+        {
+            return FileSystemFailure(filePath, action);
         }
     }
 
@@ -1603,6 +1659,8 @@ internal interface ICdcLocalStateStorePermissions
     CdcLocalStateStorePermissionResult ApplyOwnerOnlyDirectory(string path);
 
     CdcLocalStateStorePermissionResult ApplyOwnerOnlyFile(string path);
+
+    CdcLocalStateStorePermissionResult ValidateOwnerOnlyFile(string path);
 }
 
 internal sealed record CdcLocalStateStorePermissionResult(bool Succeeded, bool Unsupported, string? Message)
@@ -1628,6 +1686,37 @@ internal sealed class CdcLocalStateStorePermissions : ICdcLocalStateStorePermiss
 
     public CdcLocalStateStorePermissionResult ApplyOwnerOnlyFile(string path) =>
         ApplyOwnerOnlyMode(path, OwnerOnlyFileMode);
+
+    public CdcLocalStateStorePermissionResult ValidateOwnerOnlyFile(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return CdcLocalStateStorePermissionResult.UnsupportedPlatform;
+        }
+
+        try
+        {
+#pragma warning disable CA1416
+            UnixFileMode mode = File.GetUnixFileMode(path);
+#pragma warning restore CA1416
+            return mode == OwnerOnlyFileMode
+                ? CdcLocalStateStorePermissionResult.Success
+                : CdcLocalStateStorePermissionResult.Failure(
+                    "CDC local state file permissions are not owner-only."
+                );
+        }
+        catch (PlatformNotSupportedException)
+        {
+            return CdcLocalStateStorePermissionResult.UnsupportedPlatform;
+        }
+        catch (Exception exception)
+            when (exception is IOException or UnauthorizedAccessException or SecurityException)
+        {
+            return CdcLocalStateStorePermissionResult.Failure(
+                "CDC local state owner-only permissions could not be validated."
+            );
+        }
+    }
 
     private static CdcLocalStateStorePermissionResult ApplyOwnerOnlyMode(string path, UnixFileMode mode)
     {
@@ -1655,4 +1744,20 @@ internal sealed class CdcLocalStateStorePermissions : ICdcLocalStateStorePermiss
             );
         }
     }
+}
+
+internal interface ICdcLocalStateStoreFileSystem
+{
+    bool FileExists(string path);
+
+    void DeleteFile(string path);
+}
+
+internal sealed class CdcLocalStateStoreFileSystem : ICdcLocalStateStoreFileSystem
+{
+    public static CdcLocalStateStoreFileSystem Current { get; } = new();
+
+    public bool FileExists(string path) => File.Exists(path);
+
+    public void DeleteFile(string path) => File.Delete(path);
 }

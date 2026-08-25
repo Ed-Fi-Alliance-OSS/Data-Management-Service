@@ -283,5 +283,8 @@ public class Given_CdcIncidentLatch
             CdcLocalStateStorePermissionResult.Failure(
                 "CDC local state owner-only permissions could not be applied."
             );
+
+        public CdcLocalStateStorePermissionResult ValidateOwnerOnlyFile(string path) =>
+            CdcLocalStateStorePermissionResult.Success;
     }
 }
