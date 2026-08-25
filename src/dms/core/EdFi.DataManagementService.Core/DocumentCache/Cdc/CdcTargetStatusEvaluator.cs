@@ -1021,8 +1021,7 @@ public static class CdcTargetStatusEvaluator
         observation.ArtifactInventoryState == state
         || observation.GrantInventoryState == state
         || observation.SourceInventoryState == state
-        || observation.HeartbeatState == state
-        || observation.ProviderHistoryState == state;
+        || observation.HeartbeatState == state;
 
     private static bool HasInvalidKafkaItem(CdcKafkaPolicyObservation observation) =>
         KafkaItemStates(observation).Any(state => state == CdcKafkaPolicyItemState.Invalid);

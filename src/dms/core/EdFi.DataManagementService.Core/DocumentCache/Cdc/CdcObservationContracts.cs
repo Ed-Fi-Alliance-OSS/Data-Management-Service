@@ -1113,7 +1113,6 @@ public static class CdcProviderSetupObservationValidator
             observation.GrantInventoryState,
             observation.SourceInventoryState,
             observation.HeartbeatState,
-            observation.ProviderHistoryState,
         ];
 
         bool allStatesDefined = Array.TrueForAll(states, Enum.IsDefined);

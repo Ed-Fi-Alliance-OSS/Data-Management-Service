@@ -81,6 +81,38 @@ public class Given_CdcObservationEnvelope
         validationResult.Succeeded.Should().BeTrue();
     }
 
+    [TestCase(CdcProviderSetupState.Unknown)]
+    [TestCase(CdcProviderSetupState.Missing)]
+    [TestCase(CdcProviderSetupState.Mismatched)]
+    public void It_validates_satisfied_provider_setup_when_only_provider_history_is_unavailable(
+        CdcProviderSetupState providerHistoryState
+    )
+    {
+        CdcProviderSetupObservation observation = new(
+            CdcJsonContract.CurrentContractVersion,
+            OperationId,
+            ObservedAt,
+            TargetIdentity,
+            CdcProvider.Postgresql,
+            SourceFingerprint,
+            CdcProviderSetupMode.ValidateOnly,
+            CdcProviderSetupOutcome.Satisfied,
+            CdcProviderSetupState.Matched,
+            CdcProviderSetupState.Matched,
+            CdcProviderSetupState.Matched,
+            CdcProviderSetupState.Matched,
+            providerHistoryState,
+            []
+        );
+
+        CdcContractValidationResult validationResult = CdcProviderSetupObservationValidator.Validate(
+            observation,
+            Context
+        );
+
+        validationResult.Succeeded.Should().BeTrue();
+    }
+
     [Test]
     public void It_rejects_envelope_operation_target_provider_source_and_future_timestamp_mismatches()
     {

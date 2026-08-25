@@ -30,7 +30,7 @@ public class Given_CdcSourcePartitionHash
     [TestCase("EdFi_DMS_CDC", "sha256:678792175a93a7e810f3904d8d8e42e654289b147c3313a5c6d6a5c6593beab2")]
     [TestCase("EdFi \"DMS\"\\CDC", "sha256:d4391b11394929abaabadbf53d9a8c3a9c420f91302573966ceeaf12b591fa2a")]
     [TestCase("EdFi <DMS>&CDC", "sha256:d03b5c40e72c216f2eb0f51fb86fea6e7589041ea176b6e5a11f3f53230ad2b6")]
-    public void It_computes_the_pinned_sql_server_source_partition_hash_vectors(
+    public void It_computes_the_design_sql_server_source_partition_hash_vectors(
         string rawCatalogName,
         string expectedHash
     )

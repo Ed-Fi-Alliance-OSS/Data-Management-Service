@@ -1286,8 +1286,7 @@ public static class CdcSourceHistoryContinuityClassifier
         observation.ArtifactInventoryState == state
         || observation.GrantInventoryState == state
         || observation.SourceInventoryState == state
-        || observation.HeartbeatState == state
-        || observation.ProviderHistoryState == state;
+        || observation.HeartbeatState == state;
 
     private static void AddDiagnostics(
         CdcDiagnosticCollector collector,

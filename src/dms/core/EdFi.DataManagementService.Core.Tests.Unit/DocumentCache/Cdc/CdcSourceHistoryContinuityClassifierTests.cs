@@ -57,6 +57,30 @@ public class Given_CdcSourceHistoryContinuityClassifier
         ValidateObservation(result.Observation, binding).Succeeded.Should().BeTrue();
     }
 
+    [TestCase(CdcProviderSetupState.Unknown)]
+    [TestCase(CdcProviderSetupState.Missing)]
+    [TestCase(CdcProviderSetupState.Mismatched)]
+    public void It_uses_provider_history_evidence_instead_of_provider_setup_provider_history_state(
+        CdcProviderSetupState providerHistoryState
+    )
+    {
+        CdcBinding binding = CdcContinuityFixture.CreateBinding(CdcProvider.Postgresql);
+        CdcSourceHistoryClassificationInput input = CdcContinuityFixture.CreateInput(binding);
+
+        CdcSourceHistoryClassificationResult result = CdcSourceHistoryContinuityClassifier.Evaluate(
+            input with
+            {
+                ProviderSetup = input.ProviderSetup! with { ProviderHistoryState = providerHistoryState },
+            }
+        );
+
+        result.Observation.Continuity.Should().Be(CdcSourceHistoryContinuity.Healthy);
+        result.Observation.IncidentLatched.Should().BeFalse();
+        result.IncidentCandidate.Should().BeNull();
+        result.Observation.Diagnostics.Should().BeEmpty();
+        ValidateObservation(result.Observation, binding).Succeeded.Should().BeTrue();
+    }
+
     [Test]
     public void It_keeps_sql_server_pre_admission_schema_history_loss_non_latching()
     {

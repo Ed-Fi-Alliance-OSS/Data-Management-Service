@@ -93,6 +93,40 @@ public class Given_CdcAdmissionEvaluator
         admission.Steps.Lag.State.Should().Be(CdcComponentState.Satisfied);
     }
 
+    [TestCase(CdcProviderSetupState.Unknown)]
+    [TestCase(CdcProviderSetupState.Missing)]
+    [TestCase(CdcProviderSetupState.Mismatched)]
+    public void It_assigns_provider_history_availability_to_source_history_not_provider_setup(
+        CdcProviderSetupState providerHistoryState
+    )
+    {
+        CdcBinding binding = CdcTargetStatusFixture.CreateBinding();
+
+        CdcAdmission admission = CdcInitialAdmissionEvaluator.Evaluate(
+            CdcAdmissionFixture.ValidInput(binding) with
+            {
+                ProviderSetup = CdcTargetStatusFixture.ProviderSetup(binding) with
+                {
+                    ProviderHistoryState = providerHistoryState,
+                },
+                SourceHistory = CdcTargetStatusFixture.SourceHistoryProviderHistoryUnknown(binding),
+            }
+        );
+
+        admission.AdmissionState.Should().Be(CdcAdmissionState.Unknown);
+        admission.PrimaryBlockingCategory.Should().Be(CdcBlockingCategory.ProviderHistoryUnknown);
+        admission.Steps.ProviderSetup.State.Should().Be(CdcComponentState.Satisfied);
+        admission.Steps.ProviderSetup.Category.Should().Be(CdcBlockingCategory.None);
+        admission.Steps.SourceHistory.State.Should().Be(CdcComponentState.Unknown);
+        admission.Steps.SourceHistory.Category.Should().Be(CdcBlockingCategory.ProviderHistoryUnknown);
+        admission
+            .Diagnostics.Select(diagnostic => diagnostic.Category)
+            .Should()
+            .Contain(CdcDiagnosticCategory.ProviderHistoryUnknown)
+            .And.NotContain(CdcDiagnosticCategory.ProviderSetupInvalid)
+            .And.NotContain(CdcDiagnosticCategory.InvalidObservation);
+    }
+
     [Test]
     public void It_does_not_admit_when_guarded_tracking_activation_is_still_pending()
     {
