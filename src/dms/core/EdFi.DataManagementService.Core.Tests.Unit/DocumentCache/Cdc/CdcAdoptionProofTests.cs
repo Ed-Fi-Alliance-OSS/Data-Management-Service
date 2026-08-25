@@ -83,6 +83,39 @@ public class Given_CdcAdoptionProof
     }
 
     [Test]
+    public void It_rejects_and_redacts_sensitive_evidence_summary_text()
+    {
+        CdcAdoptionVerificationResult[] verificationResults = [.. CompleteVerificationResults()];
+        verificationResults[0] = new(
+            CdcAdoptionVerificationKind.PhysicalSource,
+            CdcAdoptionVerificationState.ExactMatch,
+            "database.password: hidden"
+        );
+        verificationResults[1] = new(
+            CdcAdoptionVerificationKind.ProviderArtifacts,
+            CdcAdoptionVerificationState.ExactMatch,
+            "p@w@d=secret"
+        );
+        CdcAdoptionProof proof = new(
+            CdcJsonContract.CurrentContractVersion,
+            "operation-1",
+            SampleObservedAt,
+            SampleBinding,
+            verificationResults
+        );
+
+        string json = CdcJsonContract.Serialize(proof);
+        CdcContractValidationResult result = CdcAdoptionProofValidator.Validate(proof, SampleNow);
+
+        result.Succeeded.Should().BeFalse();
+        result
+            .Diagnostics.Select(diagnostic => diagnostic.Category)
+            .Should()
+            .Contain(CdcDiagnosticCategory.UnsafeEvidence);
+        json.Should().NotContain("database.password").And.NotContain("pwd").And.NotContain("secret");
+    }
+
+    [Test]
     public void It_rejects_wrong_version_operation_timestamp_and_binding_artifact_mismatch()
     {
         CdcAdoptionProof proof = new(

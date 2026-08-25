@@ -79,6 +79,34 @@ public class Given_CdcDiagnostic
     }
 
     [Test]
+    public void It_redacts_sensitive_fragments_that_only_match_after_whitelist_sanitization()
+    {
+        CdcDiagnostic diagnostic = new(
+            "unsafeEvidence",
+            CdcDiagnosticCategory.UnsafeEvidence,
+            CdcDiagnosticSeverity.Error,
+            CdcDiagnosticComponent.ProofValidation,
+            SampleObservedAt,
+            "s@e@r@v@e@r=prod-db",
+            false,
+            observed: "p@w@d=hidden"
+        );
+
+        string json = CdcJsonContract.Serialize(
+            new CdcDiagnosticContract(CdcJsonContract.CurrentContractVersion, [diagnostic])
+        );
+        JsonObject root = JsonNode.Parse(json)!.AsObject();
+
+        root["diagnostics"]![0]!["message"]!.GetValue<string>().Should().Be("redacted");
+        root["diagnostics"]![0]!["observed"]!.GetValue<string>().Should().Be("redacted");
+        json.Should()
+            .NotContain("server")
+            .And.NotContain("prod-db")
+            .And.NotContain("pwd")
+            .And.NotContain("hidden");
+    }
+
+    [Test]
     public void It_orders_caps_and_appends_a_truncation_diagnostic()
     {
         CdcDiagnostic[] diagnostics =

@@ -509,15 +509,7 @@ internal static class CdcProofValidationRules
         CdcDiagnosticCollector diagnostics
     )
     {
-        if (
-            string.IsNullOrWhiteSpace(evidenceSummary)
-            || evidenceSummary == CdcContractText.EvidenceUnavailable
-            || !string.Equals(
-                evidenceSummary,
-                CdcContractText.SanitizeRequired(evidenceSummary),
-                StringComparison.Ordinal
-            )
-        )
+        if (!CdcContractText.IsValidEvidenceText(evidenceSummary))
         {
             diagnostics.Add(
                 CdcDiagnosticCategory.UnsafeEvidence,

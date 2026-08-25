@@ -228,25 +228,105 @@ public sealed record InitialCdcProvisioningProof(
     [property: JsonRequired] DateTimeOffset IssuedAt
 ) : ICdcJsonContract;
 
-public sealed record InitialCdcEligibilityObservation(
-    [property: JsonRequired] int ContractVersion,
-    [property: JsonRequired] string OperationId,
-    [property: JsonRequired] DateTimeOffset ObservedAt,
-    [property: JsonRequired] DateTimeOffset DurableObservedAt,
-    [property: JsonRequired] CdcTargetIdentity TargetIdentity,
-    [property: JsonRequired] CdcProvider Provider,
-    [property: JsonRequired] string? PhysicalSourceFingerprint,
-    [property: JsonRequired] string SetupControllerRunId,
-    [property: JsonRequired] string WriteAdmissionProofId,
-    [property: JsonRequired] CdcConsistencyScope ConsistencyScope,
-    [property: JsonRequired] CdcLifecycleState LifecycleState,
-    [property: JsonRequired] CdcCacheAheadState CacheAheadState,
-    [property: JsonRequired] bool CanonicalRowsPresent,
-    [property: JsonRequired] bool CacheRowsPresent,
-    [property: JsonRequired] bool WorkRowsPresent,
-    [property: JsonRequired] string ProviderConsistencyToken,
-    [property: JsonRequired] IReadOnlyList<CdcDiagnostic> Diagnostics
-) : ICdcObservationContract;
+public sealed record InitialCdcEligibilityObservation : ICdcObservationContract
+{
+    [JsonConstructor]
+    public InitialCdcEligibilityObservation(
+        int contractVersion,
+        string operationId,
+        DateTimeOffset observedAt,
+        DateTimeOffset durableObservedAt,
+        CdcTargetIdentity targetIdentity,
+        CdcProvider provider,
+        string? physicalSourceFingerprint,
+        string setupControllerRunId,
+        string writeAdmissionProofId,
+        CdcConsistencyScope consistencyScope,
+        CdcLifecycleState lifecycleState,
+        CdcCacheAheadState cacheAheadState,
+        bool canonicalRowsPresent,
+        bool cacheRowsPresent,
+        bool workRowsPresent,
+        string providerConsistencyToken,
+        IReadOnlyList<CdcDiagnostic> diagnostics
+    )
+    {
+        ContractVersion = contractVersion;
+        OperationId = operationId;
+        ObservedAt = observedAt;
+        DurableObservedAt = durableObservedAt;
+        TargetIdentity = targetIdentity;
+        Provider = provider;
+        PhysicalSourceFingerprint = physicalSourceFingerprint;
+        SetupControllerRunId = setupControllerRunId;
+        WriteAdmissionProofId = writeAdmissionProofId;
+        ConsistencyScope = consistencyScope;
+        LifecycleState = lifecycleState;
+        CacheAheadState = cacheAheadState;
+        CanonicalRowsPresent = canonicalRowsPresent;
+        CacheRowsPresent = cacheRowsPresent;
+        WorkRowsPresent = workRowsPresent;
+        ProviderConsistencyToken = providerConsistencyToken;
+        Diagnostics = diagnostics;
+    }
+
+    private readonly string _providerConsistencyToken = CdcContractText.EvidenceUnavailable;
+
+    [JsonRequired]
+    public int ContractVersion { get; init; }
+
+    [JsonRequired]
+    public string OperationId { get; init; }
+
+    [JsonRequired]
+    public DateTimeOffset ObservedAt { get; init; }
+
+    [JsonRequired]
+    public DateTimeOffset DurableObservedAt { get; init; }
+
+    [JsonRequired]
+    public CdcTargetIdentity TargetIdentity { get; init; }
+
+    [JsonRequired]
+    public CdcProvider Provider { get; init; }
+
+    [JsonRequired]
+    public string? PhysicalSourceFingerprint { get; init; }
+
+    [JsonRequired]
+    public string SetupControllerRunId { get; init; }
+
+    [JsonRequired]
+    public string WriteAdmissionProofId { get; init; }
+
+    [JsonRequired]
+    public CdcConsistencyScope ConsistencyScope { get; init; }
+
+    [JsonRequired]
+    public CdcLifecycleState LifecycleState { get; init; }
+
+    [JsonRequired]
+    public CdcCacheAheadState CacheAheadState { get; init; }
+
+    [JsonRequired]
+    public bool CanonicalRowsPresent { get; init; }
+
+    [JsonRequired]
+    public bool CacheRowsPresent { get; init; }
+
+    [JsonRequired]
+    public bool WorkRowsPresent { get; init; }
+
+    [JsonRequired]
+    public string ProviderConsistencyToken
+    {
+        get => _providerConsistencyToken;
+        init => _providerConsistencyToken = CdcContractText.SanitizeRequiredEvidence(value);
+    }
+
+    [JsonRequired]
+    public IReadOnlyList<CdcDiagnostic> Diagnostics { get; init; }
+}
 
 public sealed record CdcProjectionCorrelationObservation(
     [property: JsonRequired] int ContractVersion,
@@ -285,24 +365,100 @@ public sealed record CdcProviderSetupObservation(
     [property: JsonRequired] IReadOnlyList<CdcDiagnostic> Diagnostics
 ) : ICdcObservationContract;
 
-public sealed record CdcProviderBarrierObservation(
-    [property: JsonRequired] int ContractVersion,
-    [property: JsonRequired] string OperationId,
-    [property: JsonRequired] DateTimeOffset ObservedAt,
-    [property: JsonRequired] CdcTargetIdentity TargetIdentity,
-    [property: JsonRequired] CdcProvider Provider,
-    [property: JsonRequired] string? PhysicalSourceFingerprint,
-    [property: JsonRequired] DateTimeOffset ProjectionCaughtUpObservedAt,
-    [property: JsonRequired] DateTimeOffset BarrierCapturedAt,
-    [property: JsonRequired] DateTimeOffset ConnectorOffsetObservedAt,
-    [property: JsonRequired] CdcProviderBarrierState BarrierState,
-    [property: JsonRequired] string? PostgresqlBarrierLsn,
-    [property: JsonRequired] string? SqlServerCommitLsn,
-    [property: JsonRequired] string? SqlServerChangeLsn,
-    [property: JsonRequired] long? SqlServerEventSerialNo,
-    [property: JsonRequired] string? CommittedPosition,
-    [property: JsonRequired] IReadOnlyList<CdcDiagnostic> Diagnostics
-) : ICdcObservationContract;
+public sealed record CdcProviderBarrierObservation : ICdcObservationContract
+{
+    [JsonConstructor]
+    public CdcProviderBarrierObservation(
+        int contractVersion,
+        string operationId,
+        DateTimeOffset observedAt,
+        CdcTargetIdentity targetIdentity,
+        CdcProvider provider,
+        string? physicalSourceFingerprint,
+        DateTimeOffset projectionCaughtUpObservedAt,
+        DateTimeOffset barrierCapturedAt,
+        DateTimeOffset connectorOffsetObservedAt,
+        CdcProviderBarrierState barrierState,
+        string? postgresqlBarrierLsn,
+        string? sqlServerCommitLsn,
+        string? sqlServerChangeLsn,
+        long? sqlServerEventSerialNo,
+        string? committedPosition,
+        IReadOnlyList<CdcDiagnostic> diagnostics
+    )
+    {
+        ContractVersion = contractVersion;
+        OperationId = operationId;
+        ObservedAt = observedAt;
+        TargetIdentity = targetIdentity;
+        Provider = provider;
+        PhysicalSourceFingerprint = physicalSourceFingerprint;
+        ProjectionCaughtUpObservedAt = projectionCaughtUpObservedAt;
+        BarrierCapturedAt = barrierCapturedAt;
+        ConnectorOffsetObservedAt = connectorOffsetObservedAt;
+        BarrierState = barrierState;
+        PostgresqlBarrierLsn = postgresqlBarrierLsn;
+        SqlServerCommitLsn = sqlServerCommitLsn;
+        SqlServerChangeLsn = sqlServerChangeLsn;
+        SqlServerEventSerialNo = sqlServerEventSerialNo;
+        CommittedPosition = committedPosition;
+        Diagnostics = diagnostics;
+    }
+
+    private readonly string? _committedPosition;
+
+    [JsonRequired]
+    public int ContractVersion { get; init; }
+
+    [JsonRequired]
+    public string OperationId { get; init; }
+
+    [JsonRequired]
+    public DateTimeOffset ObservedAt { get; init; }
+
+    [JsonRequired]
+    public CdcTargetIdentity TargetIdentity { get; init; }
+
+    [JsonRequired]
+    public CdcProvider Provider { get; init; }
+
+    [JsonRequired]
+    public string? PhysicalSourceFingerprint { get; init; }
+
+    [JsonRequired]
+    public DateTimeOffset ProjectionCaughtUpObservedAt { get; init; }
+
+    [JsonRequired]
+    public DateTimeOffset BarrierCapturedAt { get; init; }
+
+    [JsonRequired]
+    public DateTimeOffset ConnectorOffsetObservedAt { get; init; }
+
+    [JsonRequired]
+    public CdcProviderBarrierState BarrierState { get; init; }
+
+    [JsonRequired]
+    public string? PostgresqlBarrierLsn { get; init; }
+
+    [JsonRequired]
+    public string? SqlServerCommitLsn { get; init; }
+
+    [JsonRequired]
+    public string? SqlServerChangeLsn { get; init; }
+
+    [JsonRequired]
+    public long? SqlServerEventSerialNo { get; init; }
+
+    [JsonRequired]
+    public string? CommittedPosition
+    {
+        get => _committedPosition;
+        init => _committedPosition = CdcContractText.SanitizeOptionalEvidence(value);
+    }
+
+    [JsonRequired]
+    public IReadOnlyList<CdcDiagnostic> Diagnostics { get; init; }
+}
 
 public sealed record CdcConnectorOffsetObservation(
     [property: JsonRequired] int ContractVersion,
@@ -699,15 +855,7 @@ public static class InitialCdcEligibilityObservationValidator
         CdcDiagnosticCollector diagnostics
     )
     {
-        if (
-            string.IsNullOrWhiteSpace(providerConsistencyToken)
-            || providerConsistencyToken == CdcContractText.EvidenceUnavailable
-            || !string.Equals(
-                providerConsistencyToken,
-                CdcContractText.SanitizeRequired(providerConsistencyToken),
-                StringComparison.Ordinal
-            )
-        )
+        if (!CdcContractText.IsValidEvidenceText(providerConsistencyToken))
         {
             diagnostics.Add(
                 CdcDiagnosticCategory.UnsafeEvidence,
@@ -3799,8 +3947,6 @@ public static class CdcSourceHistoryObservationValidator
 
 internal static class CdcObservationValidationRules
 {
-    private const int MaximumEvidenceTextLength = 512;
-
     public static void ValidateEnvelope(
         ICdcObservationContract observation,
         CdcObservationValidationContext context,
@@ -4148,12 +4294,7 @@ internal static class CdcObservationValidationRules
             return;
         }
 
-        if (
-            string.IsNullOrWhiteSpace(value)
-            || value == CdcContractText.EvidenceUnavailable
-            || value.Length > MaximumEvidenceTextLength
-            || !string.Equals(value, CdcContractText.SanitizeRequired(value), StringComparison.Ordinal)
-        )
+        if (!CdcContractText.IsValidEvidenceText(value))
         {
             diagnostics.Add(
                 CdcDiagnosticCategory.UnsafeEvidence,

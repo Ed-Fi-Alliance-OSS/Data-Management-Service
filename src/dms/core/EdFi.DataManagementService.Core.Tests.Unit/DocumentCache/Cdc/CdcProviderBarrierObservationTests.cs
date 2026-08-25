@@ -113,6 +113,42 @@ public class Given_CdcProviderBarrierObservation
     }
 
     [Test]
+    public void It_rejects_and_redacts_sensitive_committed_position_evidence()
+    {
+        CdcProviderBarrierObservation observation = new(
+            CdcJsonContract.CurrentContractVersion,
+            OperationId,
+            ObservedAt,
+            PostgresqlTargetIdentity,
+            CdcProvider.Postgresql,
+            SourceFingerprint,
+            ProjectionObservedAt,
+            BarrierCapturedAt,
+            OffsetObservedAt,
+            CdcProviderBarrierState.Reached,
+            "0/16B6C50",
+            null,
+            null,
+            null,
+            "serverprod-db",
+            []
+        );
+
+        string json = CdcJsonContract.Serialize(observation);
+        CdcContractValidationResult result = CdcProviderBarrierObservationValidator.Validate(
+            observation,
+            new(OperationId, PostgresqlTargetIdentity, SourceFingerprint, Now)
+        );
+
+        result.Succeeded.Should().BeFalse();
+        result
+            .Diagnostics.Select(diagnostic => diagnostic.Category)
+            .Should()
+            .Contain(CdcDiagnosticCategory.UnsafeEvidence);
+        json.Should().NotContain("server").And.NotContain("prod-db");
+    }
+
+    [Test]
     public void It_rejects_future_out_of_order_malformed_and_provider_inapplicable_barrier_evidence()
     {
         CdcProviderBarrierObservation observation = new(

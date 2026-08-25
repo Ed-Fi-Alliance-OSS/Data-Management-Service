@@ -105,6 +105,43 @@ public class Given_CdcCleanupProof
     }
 
     [Test]
+    public void It_rejects_and_redacts_sensitive_governed_artifact_evidence_summary_text()
+    {
+        CdcBinding binding = CreateBinding(CdcProvider.Postgresql);
+        CdcArtifactInventory inventory = CdcArtifactNameGenerator.RecoverFromBinding(binding).Inventory!;
+        CdcGovernedArtifact[] governedArtifacts =
+        [
+            .. inventory.GovernedArtifacts.Select(
+                (artifact, index) =>
+                    new CdcGovernedArtifact(
+                        artifact.Kind,
+                        artifact.Name,
+                        CdcCleanupState.Deleted,
+                        index == 0 ? "server=prod-source" : "deleted"
+                    )
+            ),
+        ];
+        CdcCleanupProof proof = new(
+            CdcJsonContract.CurrentContractVersion,
+            "operation-1",
+            SampleObservedAt,
+            binding.ToCompleteBindingIdentity(),
+            CdcCleanupMode.RetireBindingGeneration,
+            governedArtifacts
+        );
+
+        string json = CdcJsonContract.Serialize(proof);
+        CdcContractValidationResult result = CdcCleanupProofValidator.Validate(proof, binding, SampleNow);
+
+        result.Succeeded.Should().BeFalse();
+        result
+            .Diagnostics.Select(diagnostic => diagnostic.Category)
+            .Should()
+            .Contain(CdcDiagnosticCategory.UnsafeEvidence);
+        json.Should().NotContain("server").And.NotContain("prod-source");
+    }
+
+    [Test]
     public void It_rejects_wrong_operation_timestamp_and_binding_identity_mismatch()
     {
         CdcBinding binding = CreateBinding(CdcProvider.SqlServer);

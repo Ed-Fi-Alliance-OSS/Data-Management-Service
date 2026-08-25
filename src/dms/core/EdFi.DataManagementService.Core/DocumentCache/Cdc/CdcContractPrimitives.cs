@@ -173,6 +173,138 @@ public sealed record CdcBindingIdentity(
     }
 }
 
+internal static class CdcSensitiveText
+{
+    private static readonly string[] DirectSensitiveFragments =
+    [
+        "password",
+        "pwd",
+        "secret",
+        "connection string",
+        "connectionstring",
+        "credential",
+        "tenantdisplay",
+        "source identity",
+        "sourceidentity",
+        "source uuid",
+        "sourceuuid",
+        "database=",
+        "database:",
+        "database.",
+        "database/",
+        "database\\",
+        "server=",
+        "server:",
+        "server.",
+        "server/",
+        "server\\",
+        "catalog=",
+        "catalog:",
+        "catalog.",
+        "catalog/",
+        "catalog\\",
+        "host=",
+        "host:",
+        "host.",
+        "data source=",
+        "initial catalog=",
+        "user id=",
+        "uid=",
+        "username=",
+        "security.protocol",
+        "sasl.",
+        "sasl_",
+        "ssl.",
+        "ssl_",
+        "kafka security",
+        "privatekey",
+        "private key",
+        "accesskey",
+        "access key",
+        "apikey",
+        "api key",
+        "bearer ",
+    ];
+
+    private static readonly string[] CompactSensitiveFragments =
+    [
+        "password",
+        "pwd",
+        "secret",
+        "connectionstring",
+        "credential",
+        "tenantdisplay",
+        "sourceidentity",
+        "sourceuuid",
+        "datasource",
+        "initialcatalog",
+        "userid",
+        "username",
+        "securityprotocol",
+        "sasl",
+        "kafkasecurity",
+        "privatekey",
+        "accesskey",
+        "apikey",
+        "bearer",
+    ];
+
+    private static readonly string[] CompactSensitivePrefixes = ["database", "server", "catalog", "host"];
+
+    public static bool ContainsSensitiveFragment(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        string sanitized = LoggingSanitizer.SanitizeForLogging(value);
+        bool allowCompactPrefixMatch = !IsJsonPath(value);
+        return ContainsDirectFragment(value)
+            || ContainsDirectFragment(sanitized)
+            || ContainsCompactFragment(value, allowCompactPrefixMatch)
+            || ContainsCompactFragment(sanitized, allowCompactPrefixMatch);
+    }
+
+    private static bool ContainsDirectFragment(string value)
+    {
+        string lower = value.ToLowerInvariant();
+        return Array.Exists(
+            DirectSensitiveFragments,
+            fragment => lower.Contains(fragment, StringComparison.Ordinal)
+        );
+    }
+
+    private static bool ContainsCompactFragment(string value, bool allowPrefixMatch)
+    {
+        string compact = Compact(value);
+        if (compact.Length == 0)
+        {
+            return false;
+        }
+
+        return Array.Exists(
+                CompactSensitiveFragments,
+                fragment => compact.Contains(fragment, StringComparison.Ordinal)
+            )
+            || (
+                allowPrefixMatch
+                && Array.Exists(
+                    CompactSensitivePrefixes,
+                    prefix => compact.StartsWith(prefix, StringComparison.Ordinal)
+                )
+            );
+    }
+
+    private static bool IsJsonPath(string value) =>
+        value.TrimStart().StartsWith("$.", StringComparison.Ordinal);
+
+    private static string Compact(string value)
+    {
+        return new string(value.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
+    }
+}
+
 public sealed record CdcComponent
 {
     private const int MaximumMessageLength = 512;
@@ -255,31 +387,6 @@ public sealed record CdcDiagnostic
             [CdcDiagnosticComponent.Admission] = 13,
             [CdcDiagnosticComponent.Retry] = 14,
         };
-
-    private static readonly string[] SensitiveFragments =
-    [
-        "password",
-        "pwd",
-        "secret",
-        "connection string",
-        "connectionstring",
-        "credential",
-        "tenantdisplay",
-        "sourceidentity",
-        "database=",
-        "server=",
-        "host=",
-        "user id=",
-        "username=",
-        "security.protocol",
-        "sasl.",
-        "ssl.",
-        "privatekey",
-        "accesskey",
-        "apikey",
-        "api key",
-        "bearer ",
-    ];
 
     [JsonConstructor]
     public CdcDiagnostic(
@@ -433,13 +540,13 @@ public sealed record CdcDiagnostic
 
     private static string SanitizeText(string? value, int maximumLength, string fallback, string fieldName)
     {
-        if (ContainsSensitiveFragment(value))
+        if (CdcSensitiveText.ContainsSensitiveFragment(value))
         {
             return "redacted";
         }
 
         string sanitized = LoggingSanitizer.SanitizeForLogging(value);
-        if (ContainsSensitiveFragment(sanitized))
+        if (CdcSensitiveText.ContainsSensitiveFragment(sanitized))
         {
             return "redacted";
         }
@@ -451,20 +558,6 @@ public sealed record CdcDiagnostic
 
         string bounded = sanitized.Length <= maximumLength ? sanitized : sanitized[..maximumLength];
         return string.IsNullOrWhiteSpace(bounded) ? fieldName : bounded;
-    }
-
-    private static bool ContainsSensitiveFragment(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return false;
-        }
-
-        string lower = value.ToLowerInvariant();
-        return Array.Exists(
-            SensitiveFragments,
-            fragment => lower.Contains(fragment, StringComparison.Ordinal)
-        );
     }
 
     private static int GetComponentPrecedence(CdcDiagnosticComponent component) =>

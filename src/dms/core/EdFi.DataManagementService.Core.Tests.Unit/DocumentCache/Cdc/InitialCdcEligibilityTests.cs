@@ -131,6 +131,29 @@ public class Given_InitialCdcEligibility
             .And.Contain(CdcDiagnosticCategory.UnsafeEvidence);
     }
 
+    [Test]
+    public void It_rejects_and_redacts_sensitive_provider_consistency_token()
+    {
+        InitialCdcEligibilityObservation observation = ValidEligibility() with
+        {
+            ProviderConsistencyToken = "sourceIdentity={9c4ed619-3106-4a9b-85fd-5fc0f8bbdc53}",
+        };
+
+        string json = CdcJsonContract.Serialize(observation);
+        CdcContractValidationResult result = InitialCdcEligibilityObservationValidator.Validate(
+            observation,
+            ValidProof(),
+            Context
+        );
+
+        result.Succeeded.Should().BeFalse();
+        result
+            .Diagnostics.Select(diagnostic => diagnostic.Category)
+            .Should()
+            .Contain(CdcDiagnosticCategory.UnsafeEvidence);
+        json.Should().NotContain("sourceIdentity").And.NotContain("9c4ed619");
+    }
+
     private static InitialCdcProvisioningProof ValidProof() =>
         new(
             CdcJsonContract.CurrentContractVersion,

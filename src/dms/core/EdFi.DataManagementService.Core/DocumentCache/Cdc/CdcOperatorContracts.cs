@@ -358,8 +358,10 @@ public sealed record CdcAdoptionVerificationResult
     {
         VerificationKind = verificationKind;
         State = state;
-        EvidenceSummary = CdcContractText.SanitizeRequired(evidenceSummary);
+        EvidenceSummary = evidenceSummary;
     }
+
+    private readonly string _evidenceSummary = CdcContractText.EvidenceUnavailable;
 
     [JsonRequired]
     public CdcAdoptionVerificationKind VerificationKind { get; init; }
@@ -368,7 +370,11 @@ public sealed record CdcAdoptionVerificationResult
     public CdcAdoptionVerificationState State { get; init; }
 
     [JsonRequired]
-    public string EvidenceSummary { get; init; }
+    public string EvidenceSummary
+    {
+        get => _evidenceSummary;
+        init => _evidenceSummary = CdcContractText.SanitizeRequiredEvidence(value);
+    }
 }
 
 public sealed record CdcCleanupProof(
@@ -393,8 +399,10 @@ public sealed record CdcGovernedArtifact
         ArtifactKind = artifactKind;
         ArtifactName = CdcContractText.SanitizeRequired(artifactName);
         CleanupState = cleanupState;
-        EvidenceSummary = CdcContractText.SanitizeRequired(evidenceSummary);
+        EvidenceSummary = evidenceSummary;
     }
+
+    private readonly string _evidenceSummary = CdcContractText.EvidenceUnavailable;
 
     [JsonRequired]
     public CdcGovernedArtifactKind ArtifactKind { get; init; }
@@ -406,7 +414,11 @@ public sealed record CdcGovernedArtifact
     public CdcCleanupState CleanupState { get; init; }
 
     [JsonRequired]
-    public string EvidenceSummary { get; init; }
+    public string EvidenceSummary
+    {
+        get => _evidenceSummary;
+        init => _evidenceSummary = CdcContractText.SanitizeRequiredEvidence(value);
+    }
 }
 
 internal static class CdcContractText
@@ -425,4 +437,28 @@ internal static class CdcContractText
 
         return sanitized.Length <= MaximumTextLength ? sanitized : sanitized[..MaximumTextLength];
     }
+
+    public static string SanitizeRequiredEvidence(string? value)
+    {
+        string sanitized = SanitizeRequired(value);
+        if (
+            CdcSensitiveText.ContainsSensitiveFragment(value)
+            || CdcSensitiveText.ContainsSensitiveFragment(sanitized)
+        )
+        {
+            return EvidenceUnavailable;
+        }
+
+        return sanitized;
+    }
+
+    public static string? SanitizeOptionalEvidence(string? value) =>
+        value is null ? null : SanitizeRequiredEvidence(value);
+
+    public static bool IsValidEvidenceText(string? value) =>
+        !string.IsNullOrWhiteSpace(value)
+        && value != EvidenceUnavailable
+        && value.Length <= MaximumTextLength
+        && string.Equals(value, SanitizeRequired(value), StringComparison.Ordinal)
+        && !CdcSensitiveText.ContainsSensitiveFragment(value);
 }

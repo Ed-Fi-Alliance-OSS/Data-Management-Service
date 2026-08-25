@@ -150,7 +150,7 @@ public class Given_CdcBindingContract
                 .Select(kind => new CdcAdoptionVerificationResult(
                     kind,
                     CdcAdoptionVerificationState.ExactMatch,
-                    "{verified}<secret>\r\n" + new string('x', 520)
+                    "{verified}<token>\r\n" + new string('x', 520)
                 ))
                 .ToArray()
         );
