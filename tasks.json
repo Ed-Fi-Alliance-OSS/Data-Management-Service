@@ -196,7 +196,7 @@
       "pwsh ./build-dms.ps1 Package -Configuration Release -PackageTarget All",
       "pwsh -NoProfile -Command \"Invoke-Pester -Path eng/ci/tests/DocumentCacheAdminPackageTarget.Tests.ps1\""
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "parser-and-contract-unit-tests",
