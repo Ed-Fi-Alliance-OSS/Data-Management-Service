@@ -38,7 +38,7 @@ public sealed class Given_DocumentCacheAdminStartupExitCodes
     }
 
     [Test]
-    public async Task It_returns_argument_error_before_configuration_when_command_line_is_invalid()
+    public async Task It_keeps_stdout_empty_for_json_argument_errors()
     {
         ProcessResult result = await RunDocumentCacheAdminAsync(
             DocumentCacheAdminCommandSurface.StatusCommandName,
@@ -48,7 +48,22 @@ public sealed class Given_DocumentCacheAdminStartupExitCodes
         );
 
         result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.ArgumentError);
+        result.StandardOutput.Should().BeEmpty();
+        result.StandardError.Should().Contain(DocumentCacheAdminCommandSurface.DataStoreIdOptionName);
+    }
+
+    [Test]
+    public async Task It_returns_argument_error_with_usage_when_human_command_line_is_invalid()
+    {
+        ProcessResult result = await RunDocumentCacheAdminAsync(
+            DocumentCacheAdminCommandSurface.StatusCommandName,
+            DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
+            "0"
+        );
+
+        result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.ArgumentError);
         result.StandardOutput.Should().Contain("Usage:");
+        result.StandardError.Should().Contain(DocumentCacheAdminCommandSurface.DataStoreIdOptionName);
     }
 
     private static async Task<ProcessResult> RunDocumentCacheAdminAsync(params string[] arguments)

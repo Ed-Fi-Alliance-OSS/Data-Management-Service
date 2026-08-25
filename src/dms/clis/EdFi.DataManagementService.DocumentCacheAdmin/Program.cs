@@ -32,6 +32,18 @@ try
 
     if (parseResult.Errors.Count > 0)
     {
+        if (IsJsonOutputRequested(args))
+        {
+            foreach (var parseError in parseResult.Errors)
+            {
+                await Console.Error.WriteLineAsync(
+                    DocumentCacheAdminOutput.SanitizeDiagnostic(parseError.Message)
+                );
+            }
+
+            return DocumentCacheAdminExitCodes.ArgumentError;
+        }
+
         await parseResult.InvokeAsync();
         return DocumentCacheAdminExitCodes.ArgumentError;
     }
@@ -232,4 +244,11 @@ static async Task InitializeRuntimeSchemaAsync(
 static Task WriteConfigurationFailureAsync(Exception exception) =>
     Console.Error.WriteLineAsync(
         $"DocumentCache configuration error: {DocumentCacheAdminOutput.SanitizeDiagnostic(exception.Message)}"
+    );
+
+static bool IsJsonOutputRequested(string[] arguments) =>
+    Array.Exists(
+        arguments,
+        argument =>
+            string.Equals(argument, DocumentCacheAdminCommandSurface.JsonOptionName, StringComparison.Ordinal)
     );
