@@ -356,17 +356,7 @@ public class Given_CdcSourceHistoryContinuityClassifier
     public void It_preserves_a_valid_latched_incident_without_creating_a_new_candidate()
     {
         CdcBinding binding = CdcContinuityFixture.CreateBinding(CdcProvider.Postgresql);
-        CdcSourceHistoryClassificationResult lostResult = CdcSourceHistoryContinuityClassifier.Evaluate(
-            CdcContinuityFixture.CreateInput(binding) with
-            {
-                ProviderHistory = CdcContinuityFixture.ProviderHistory(
-                    binding,
-                    CdcProviderArtifactContinuityState.Missing,
-                    CdcProviderRetainedRangeState.CoversCommittedOffset
-                ),
-            }
-        );
-        CdcIncident incident = lostResult.IncidentCandidate!.ToIncident();
+        CdcIncident incident = CreateValidLatchedIncident(binding);
 
         CdcSourceHistoryClassificationResult result = CdcSourceHistoryContinuityClassifier.Evaluate(
             CdcContinuityFixture.CreateInput(binding) with
@@ -382,6 +372,95 @@ public class Given_CdcSourceHistoryContinuityClassifier
             .Be(CdcIncidentFailureCategory.ProviderArtifactMissing);
         result.IncidentCandidate.Should().BeNull();
         ValidateObservation(result.Observation, binding).Succeeded.Should().BeTrue();
+    }
+
+    private static IEnumerable<TestCaseData> ValidLatchedIncidentAuthorityCases()
+    {
+        yield return new TestCaseData(
+            CdcProvider.Postgresql,
+            new Func<CdcSourceHistoryClassificationInput, CdcSourceHistoryClassificationInput>(input =>
+                input with
+                {
+                    Diagnostics =
+                    [
+                        new CdcDiagnostic(
+                            CdcDiagnosticCategory.LocalStateUnavailable,
+                            ObservedAt,
+                            "$.providerHistory",
+                            "CDC provider source-history evidence is unavailable."
+                        ),
+                    ],
+                }
+            )
+        ).SetName("current_diagnostics");
+        yield return new TestCaseData(
+            CdcProvider.SqlServer,
+            new Func<CdcSourceHistoryClassificationInput, CdcSourceHistoryClassificationInput>(input =>
+                input with
+                {
+                    ExpectedConnectSourcePartitionHash = "sha256:not-a-valid-hash",
+                }
+            )
+        ).SetName("invalid_expected_source_partition_hash");
+        yield return new TestCaseData(
+            CdcProvider.Postgresql,
+            new Func<CdcSourceHistoryClassificationInput, CdcSourceHistoryClassificationInput>(input =>
+                input with
+                {
+                    ProviderSetup = null,
+                }
+            )
+        ).SetName("missing_provider_setup");
+        yield return new TestCaseData(
+            CdcProvider.SqlServer,
+            new Func<CdcSourceHistoryClassificationInput, CdcSourceHistoryClassificationInput>(input =>
+                input with
+                {
+                    ConnectorOffset = input.ConnectorOffset! with { EventSerialNo = -1 },
+                }
+            )
+        ).SetName("malformed_connector_offset");
+    }
+
+    [TestCaseSource(nameof(ValidLatchedIncidentAuthorityCases))]
+    public void It_treats_valid_latched_incident_as_authoritative_before_current_evidence(
+        CdcProvider provider,
+        Func<CdcSourceHistoryClassificationInput, CdcSourceHistoryClassificationInput> customize
+    )
+    {
+        CdcBinding binding = CdcContinuityFixture.CreateBinding(provider);
+        CdcIncident incident = CreateValidLatchedIncident(binding);
+
+        CdcSourceHistoryClassificationResult result = CdcSourceHistoryContinuityClassifier.Evaluate(
+            customize(CdcContinuityFixture.CreateInput(binding)) with
+            {
+                LatchedIncident = incident,
+            }
+        );
+
+        result.Observation.Continuity.Should().Be(CdcSourceHistoryContinuity.Lost);
+        result.Observation.IncidentLatched.Should().BeTrue();
+        result.Observation.IncidentFailureCategory.Should().Be(incident.FailureCategory);
+        result.Observation.PositionEvidence.Should().Be(incident.PositionMetadata);
+        result.Observation.Diagnostics.Should().BeEmpty();
+        result.IncidentCandidate.Should().BeNull();
+        ValidateObservation(result.Observation, binding).Succeeded.Should().BeTrue();
+    }
+
+    private static CdcIncident CreateValidLatchedIncident(CdcBinding binding)
+    {
+        CdcSourceHistoryClassificationResult lostResult = CdcSourceHistoryContinuityClassifier.Evaluate(
+            CdcContinuityFixture.CreateInput(binding) with
+            {
+                ProviderHistory = CdcContinuityFixture.ProviderHistory(
+                    binding,
+                    CdcProviderArtifactContinuityState.Missing,
+                    CdcProviderRetainedRangeState.CoversCommittedOffset
+                ),
+            }
+        );
+
+        return lostResult.IncidentCandidate!.ToIncident();
     }
 
     private static CdcArtifactInventory PostgresqlInventory(CdcBinding binding) =>

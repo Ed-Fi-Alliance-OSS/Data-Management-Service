@@ -83,6 +83,12 @@ public static class CdcSourceHistoryContinuityClassifier
         DateTimeOffset observedAt = input.ObservedAt.ToUniversalTime();
         DateTimeOffset nowUtc = input.NowUtc.ToUniversalTime();
         CdcDiagnosticCollector diagnostics = new(observedAt);
+
+        if (TryUseValidLatchedIncident(input, binding, observedAt, nowUtc, diagnostics) is { } validLatch)
+        {
+            return validLatch;
+        }
+
         AddDiagnostics(diagnostics, input.Diagnostics);
 
         CdcArtifactNameResult artifactNameResult = CdcArtifactNameGenerator.RecoverFromBinding(binding);
@@ -207,6 +213,44 @@ public static class CdcSourceHistoryContinuityClassifier
         );
 
         return Healthy(input, observedAt, diagnostics, positionMetadata);
+    }
+
+    private static CdcSourceHistoryClassificationResult? TryUseValidLatchedIncident(
+        CdcSourceHistoryClassificationInput input,
+        CdcBinding binding,
+        DateTimeOffset observedAt,
+        DateTimeOffset nowUtc,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (input.LatchedIncident is null)
+        {
+            return null;
+        }
+
+        CdcContractValidationResult validation = CdcIncidentValidator.ValidateForBinding(
+            input.LatchedIncident,
+            binding,
+            nowUtc
+        );
+
+        CdcSourceHistoryClassificationInput latchedInput = input with
+        {
+            ProviderHistory = null,
+            SqlServerSchemaHistory = null,
+        };
+
+        return validation.Succeeded
+            ? Lost(
+                latchedInput,
+                observedAt,
+                diagnostics,
+                input.LatchedIncident.FailureCategory,
+                input.LatchedIncident.PositionMetadata,
+                incidentLatched: true,
+                createCandidate: false
+            )
+            : null;
     }
 
     private static CdcSourceHistoryClassificationResult? TryUseLatchedIncident(
