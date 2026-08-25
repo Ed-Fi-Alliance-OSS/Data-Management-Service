@@ -164,6 +164,12 @@ internal static class DocumentCacheAdminCommandExecutor
                 );
             }
 
+            DocumentCacheAdminMutatingCommandRequest mutatingCommandRequest =
+                commandRequest
+                ?? throw new InvalidOperationException(
+                    "DocumentCache mutating command request builder succeeded without a request."
+                );
+
             IDocumentCacheAdminMutatingCommandDispatcher? dispatcher =
                 serviceProvider.GetService<IDocumentCacheAdminMutatingCommandDispatcher>();
             if (dispatcher is null)
@@ -187,31 +193,87 @@ internal static class DocumentCacheAdminCommandExecutor
                 cancellationToken
             );
 
+            DocumentCacheAdministrativeCommandResult? targetResolutionResult;
             try
             {
-                DocumentCacheAdministrativeCommandResult? targetResolutionResult =
-                    await ResolveMutatingTargetAsync(commandRequest!, serviceProvider, commandTimeout.Token)
-                        .ConfigureAwait(false);
-                if (targetResolutionResult is not null)
-                {
-                    await WriteAdministrativeCommandResultAsync(
-                            targetResolutionResult,
-                            jsonOutput,
-                            standardOutput
-                        )
-                        .ConfigureAwait(false);
+                targetResolutionResult = await ResolveMutatingTargetAsync(
+                        mutatingCommandRequest,
+                        serviceProvider,
+                        commandTimeout.Token
+                    )
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (commandTimeout.IsTimeoutExpired)
+            {
+                DocumentCacheAdministrativeCommandResult timeoutResult =
+                    CreateWorkflowTimeoutBeforeSharedResult(mutatingCommandRequest);
+                await WriteAdministrativeCommandResultAsync(timeoutResult, jsonOutput, standardOutput)
+                    .ConfigureAwait(false);
 
-                    return CompleteCommand(
-                        DocumentCacheAdminExitCodeMapper.ForAdministrativeCommandResult(
-                            targetResolutionResult
-                        ),
-                        targetResolutionResult.Status.ToString(),
-                        targetResolutionResult.Classification.ToString()
-                    );
-                }
+                return CompleteCommand(
+                    DocumentCacheAdminExitCodeMapper.ForAdministrativeCommandResult(timeoutResult),
+                    timeoutResult.Status.ToString(),
+                    timeoutResult.Classification.ToString()
+                );
+            }
+            catch (OperationCanceledException)
+            {
+                DocumentCacheAdministrativeCommandResult cancellationResult = CreatePreDispatchFailureResult(
+                    mutatingCommandRequest,
+                    DocumentCacheAdministrativeCommandClassification.CancellationBeforeMutation,
+                    DocumentCacheAdministrativeDiagnosticCategory.Cancellation,
+                    "Administrative command was cancelled during target preparation before dispatch."
+                );
+                await WriteAdministrativeCommandResultAsync(cancellationResult, jsonOutput, standardOutput)
+                    .ConfigureAwait(false);
 
+                return CompleteCommand(
+                    DocumentCacheAdminExitCodeMapper.ForAdministrativeCommandResult(cancellationResult),
+                    cancellationResult.Status.ToString(),
+                    cancellationResult.Classification.ToString()
+                );
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                DocumentCacheAdministrativeCommandResult failureResult = CreatePreDispatchFailureResult(
+                    mutatingCommandRequest,
+                    DocumentCacheAdministrativeCommandClassification.UnexpectedProviderFailure,
+                    DocumentCacheAdministrativeDiagnosticCategory.UnexpectedProviderFailure,
+                    CreatePreDispatchFailureMessage(
+                        "Administrative command failed during target preparation before dispatch.",
+                        exception.Message
+                    )
+                );
+                await WriteAdministrativeCommandResultAsync(failureResult, jsonOutput, standardOutput)
+                    .ConfigureAwait(false);
+
+                return CompleteCommand(
+                    DocumentCacheAdminExitCodeMapper.ForAdministrativeCommandResult(failureResult),
+                    failureResult.Status.ToString(),
+                    failureResult.Classification.ToString()
+                );
+            }
+
+            if (targetResolutionResult is not null)
+            {
+                await WriteAdministrativeCommandResultAsync(
+                        targetResolutionResult,
+                        jsonOutput,
+                        standardOutput
+                    )
+                    .ConfigureAwait(false);
+
+                return CompleteCommand(
+                    DocumentCacheAdminExitCodeMapper.ForAdministrativeCommandResult(targetResolutionResult),
+                    targetResolutionResult.Status.ToString(),
+                    targetResolutionResult.Classification.ToString()
+                );
+            }
+
+            try
+            {
                 DocumentCacheAdministrativeCommandResult result = await dispatcher
-                    .ExecuteAsync(commandRequest!, commandTimeout.Token)
+                    .ExecuteAsync(mutatingCommandRequest, commandTimeout.Token)
                     .ConfigureAwait(false);
                 if (commandTimeout.IsTimeoutExpired)
                 {
@@ -227,19 +289,6 @@ internal static class DocumentCacheAdminCommandExecutor
                     result.Classification.ToString()
                 );
             }
-            catch (OperationCanceledException) when (commandTimeout.IsTimeoutExpired)
-            {
-                DocumentCacheAdministrativeCommandResult timeoutResult =
-                    CreateWorkflowTimeoutBeforeSharedResult(commandRequest!);
-                await WriteAdministrativeCommandResultAsync(timeoutResult, jsonOutput, standardOutput)
-                    .ConfigureAwait(false);
-
-                return CompleteCommand(
-                    DocumentCacheAdminExitCodeMapper.ForAdministrativeCommandResult(timeoutResult),
-                    timeoutResult.Status.ToString(),
-                    timeoutResult.Classification.ToString()
-                );
-            }
             catch (OperationCanceledException)
             {
                 await WriteErrorAsync(
@@ -249,9 +298,11 @@ internal static class DocumentCacheAdminCommandExecutor
                     .ConfigureAwait(false);
 
                 return CompleteCommand(
-                    DocumentCacheAdminExitCodes.FailedNoMutation,
-                    "failedNoMutation",
-                    "cancelled"
+                    DocumentCacheAdminExitCodes.UnexpectedFailure,
+                    "unexpectedFailure",
+                    commandTimeout.IsTimeoutExpired
+                        ? "dispatcherTimeoutWithoutResult"
+                        : "dispatcherCancellationWithoutResult"
                 );
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
@@ -372,6 +423,39 @@ internal static class DocumentCacheAdminCommandExecutor
                 ),
             ]
         );
+
+    private static DocumentCacheAdministrativeCommandResult CreatePreDispatchFailureResult(
+        DocumentCacheAdminMutatingCommandRequest commandRequest,
+        DocumentCacheAdministrativeCommandClassification classification,
+        DocumentCacheAdministrativeDiagnosticCategory diagnosticCategory,
+        string message
+    ) =>
+        new(
+            ToAdministrativeCommand(commandRequest.CommandName),
+            DocumentCacheAdministrativeTargetKey.FromTargetKey(commandRequest.TargetKey),
+            DocumentCacheAdministrativeCommandStatus.FailedNoMutation,
+            classification,
+            mutated: false,
+            phaseDiagnostics:
+            [
+                new DocumentCacheAdministrativePhaseDiagnostic(
+                    DocumentCacheAdministrativeCommandPhase.ResolveTarget,
+                    lastCompletedPhase: null,
+                    retryable: false,
+                    diagnosticCategory,
+                    affectedDocumentIds: [],
+                    message
+                ),
+            ]
+        );
+
+    private static string CreatePreDispatchFailureMessage(string messagePrefix, string? diagnostic)
+    {
+        string sanitizedDiagnostic = DocumentCacheAdminOutput.SanitizeDiagnostic(diagnostic);
+        return string.IsNullOrWhiteSpace(sanitizedDiagnostic)
+            ? messagePrefix
+            : $"{messagePrefix}: {sanitizedDiagnostic}";
+    }
 
     private static DocumentCacheAdministrativeCommandResult ConvertCancellationResultToWorkflowTimeout(
         DocumentCacheAdministrativeCommandResult result
