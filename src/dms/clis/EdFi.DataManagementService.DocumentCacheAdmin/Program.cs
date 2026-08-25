@@ -13,6 +13,14 @@ using Serilog.Events;
 
 var verbose = Array.Exists(args, a => a is "--verbose" or "-v");
 
+using var processCancellationSource = new CancellationTokenSource();
+ConsoleCancelEventHandler cancelKeyPressHandler = (_, eventArgs) =>
+{
+    eventArgs.Cancel = true;
+    processCancellationSource.Cancel();
+};
+Console.CancelKeyPress += cancelKeyPressHandler;
+
 try
 {
     RootCommand rootCommand = DocumentCacheAdminCommandSurface.CreateRootCommand();
@@ -46,13 +54,28 @@ try
         invocationTarget
         ?? throw new InvalidOperationException("Invocation target parser succeeded without a target.");
 
-    IConfigurationRoot configuration = DocumentCacheAdminConfiguration.Build(
-        parseResult,
-        validInvocationTarget.TargetKey
-    );
+    IConfigurationRoot configuration;
+    try
+    {
+        configuration = DocumentCacheAdminConfiguration.Build(parseResult, validInvocationTarget.TargetKey);
+    }
+    catch (Exception exception) when (IsConfigurationBuildFailure(exception))
+    {
+        await WriteConfigurationFailureAsync(exception);
+        return DocumentCacheAdminExitCodes.ConfigurationError;
+    }
 
     var serviceCollection = new ServiceCollection();
-    ConfigureServices(serviceCollection, configuration, verbose, validInvocationTarget.TargetKey);
+    try
+    {
+        ConfigureServices(serviceCollection, configuration, verbose, validInvocationTarget.TargetKey);
+    }
+    catch (Exception exception) when (IsServiceConfigurationFailure(exception))
+    {
+        await WriteConfigurationFailureAsync(exception);
+        return DocumentCacheAdminExitCodes.ConfigurationError;
+    }
+
     await using ServiceProvider serviceProvider = serviceCollection.BuildServiceProvider();
 
     int exitCode = await DocumentCacheAdminCommandExecutor.ExecuteAsync(
@@ -60,12 +83,28 @@ try
         validInvocationTarget,
         serviceProvider,
         Console.Out,
-        Console.Error
+        Console.Error,
+        processCancellationSource.Token
     );
     return exitCode;
 }
+catch (OperationCanceledException)
+{
+    await Console.Error.WriteLineAsync(
+        "DocumentCache administration was cancelled before a shared result could be produced."
+    );
+    return DocumentCacheAdminExitCodes.FailedNoMutation;
+}
+catch (Exception exception)
+{
+    await Console.Error.WriteLineAsync(
+        $"Unexpected DocumentCache administration CLI failure: {exception.Message}"
+    );
+    return DocumentCacheAdminExitCodes.UnexpectedFailure;
+}
 finally
 {
+    Console.CancelKeyPress -= cancelKeyPressHandler;
     await Log.CloseAndFlushAsync();
 }
 
@@ -121,3 +160,19 @@ void ConfigureServices(
         loggingBuilder.AddSerilog();
     });
 }
+
+static bool IsConfigurationBuildFailure(Exception exception) =>
+    exception
+        is FileNotFoundException
+            or DirectoryNotFoundException
+            or InvalidDataException
+            or IOException
+            or UnauthorizedAccessException
+            or FormatException
+            or ArgumentException;
+
+static bool IsServiceConfigurationFailure(Exception exception) =>
+    exception is InvalidOperationException or ArgumentException or FormatException;
+
+static Task WriteConfigurationFailureAsync(Exception exception) =>
+    Console.Error.WriteLineAsync($"DocumentCache configuration error: {exception.Message}");

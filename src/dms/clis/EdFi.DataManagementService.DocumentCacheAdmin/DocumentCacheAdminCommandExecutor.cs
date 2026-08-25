@@ -136,7 +136,7 @@ internal static class DocumentCacheAdminCommandExecutor
                         .ConfigureAwait(false);
                 }
 
-                return ExitCodeFor(result.Status);
+                return DocumentCacheAdminExitCodeMapper.ForAdministrativeCommandResult(result);
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
@@ -254,19 +254,6 @@ internal static class DocumentCacheAdminCommandExecutor
                 .ConfigureAwait(false);
         }
     }
-
-    private static int ExitCodeFor(DocumentCacheAdministrativeCommandStatus status) =>
-        status switch
-        {
-            DocumentCacheAdministrativeCommandStatus.Completed => DocumentCacheAdminExitCodes.Success,
-            DocumentCacheAdministrativeCommandStatus.RejectedNoMutation =>
-                DocumentCacheAdminExitCodes.RejectedNoMutation,
-            DocumentCacheAdministrativeCommandStatus.FailedNoMutation =>
-                DocumentCacheAdminExitCodes.FailedNoMutation,
-            DocumentCacheAdministrativeCommandStatus.IncompleteRetryable =>
-                DocumentCacheAdminExitCodes.IncompleteRetryable,
-            _ => DocumentCacheAdminExitCodes.UnexpectedFailure,
-        };
 
     private static string FormatTimestamp(DateTimeOffset timestamp) =>
         timestamp.UtcDateTime.ToString("O", CultureInfo.InvariantCulture);
