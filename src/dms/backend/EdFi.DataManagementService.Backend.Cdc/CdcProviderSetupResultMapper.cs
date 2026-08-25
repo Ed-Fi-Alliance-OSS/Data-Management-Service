@@ -71,6 +71,9 @@ public static class CdcProviderSetupResultMapper
             combinedDiagnostics,
             correlation
         );
+        bool canMapInventoryStates =
+            correlation.CanTrustResultEvidence
+            && correlation.SetupOutcome == CoreCdc.CdcProviderSetupOutcome.Satisfied;
 
         return new(
             new CoreCdc.CdcProviderSetupObservation(
@@ -84,18 +87,12 @@ public static class CdcProviderSetupResultMapper
                 correlation.CanTrustResultEvidence && HasNonSourceHistoryError(result)
                     ? CoreCdc.CdcProviderSetupOutcome.Invalid
                     : correlation.SetupOutcome,
-                correlation.CanTrustResultEvidence
+                canMapInventoryStates
                     ? MapNonSourceHistoryArtifactState(result)
                     : correlation.StateWhenUntrusted,
-                correlation.CanTrustResultEvidence
-                    ? MapGrantInventoryState(result)
-                    : correlation.StateWhenUntrusted,
-                correlation.CanTrustResultEvidence
-                    ? MapSourceInventoryState(result)
-                    : correlation.StateWhenUntrusted,
-                correlation.CanTrustResultEvidence
-                    ? MapHeartbeatState(result)
-                    : correlation.StateWhenUntrusted,
+                canMapInventoryStates ? MapGrantInventoryState(result) : correlation.StateWhenUntrusted,
+                canMapInventoryStates ? MapSourceInventoryState(result) : correlation.StateWhenUntrusted,
+                canMapInventoryStates ? MapHeartbeatState(result) : correlation.StateWhenUntrusted,
                 combinedDiagnostics
             ),
             providerHistory
@@ -169,6 +166,8 @@ public static class CdcProviderSetupResultMapper
         List<CoreCdc.CdcDiagnostic> diagnostics = [];
         bool hasInvalidCorrelation = false;
         bool hasUnknownCorrelation = false;
+        bool hasFailedOutcome = false;
+        bool hasTerminalSourceHistoryEvidence = HasTerminalSourceHistoryEvidence(result);
         CoreCdc.CdcProvider? mappedProvider = MapProvider(result.Provider);
         CoreCdc.CdcProvider provider = mappedProvider ?? binding.Provider;
 
@@ -216,7 +215,8 @@ public static class CdcProviderSetupResultMapper
 
         if (result.Outcome == CdcProviderSetupOutcome.Failed)
         {
-            hasUnknownCorrelation = true;
+            hasFailedOutcome = true;
+            hasUnknownCorrelation = !hasTerminalSourceHistoryEvidence;
             diagnostics.Add(
                 Diagnostic(
                     CoreCdc.CdcDiagnosticCategory.StatusObservationUnavailable,
@@ -328,8 +328,10 @@ public static class CdcProviderSetupResultMapper
         return new(
             provider,
             observedPhysicalSourceFingerprint,
-            CoreCdc.CdcProviderSetupOutcome.Satisfied,
-            CoreCdc.CdcProviderSetupState.Matched,
+            hasFailedOutcome
+                ? CoreCdc.CdcProviderSetupOutcome.Unknown
+                : CoreCdc.CdcProviderSetupOutcome.Satisfied,
+            hasFailedOutcome ? CoreCdc.CdcProviderSetupState.Unknown : CoreCdc.CdcProviderSetupState.Matched,
             true,
             diagnostics
         );
@@ -478,11 +480,6 @@ public static class CdcProviderSetupResultMapper
         bool retainedWalLost
     )
     {
-        if (HasProviderHistoryUnavailable(result))
-        {
-            return CoreCdc.CdcProviderArtifactContinuityState.Unknown;
-        }
-
         if (slotArtifact?.State == CdcProviderArtifactState.Missing)
         {
             return CoreCdc.CdcProviderArtifactContinuityState.Missing;
@@ -493,11 +490,6 @@ public static class CdcProviderSetupResultMapper
             return CoreCdc.CdcProviderArtifactContinuityState.Missing;
         }
 
-        if (retainedWalLost)
-        {
-            return CoreCdc.CdcProviderArtifactContinuityState.ExactMatch;
-        }
-
         if (slotArtifact?.State == CdcProviderArtifactState.Mismatched)
         {
             return CoreCdc.CdcProviderArtifactContinuityState.Recreated;
@@ -506,6 +498,16 @@ public static class CdcProviderSetupResultMapper
         if (publicationArtifact?.State == CdcProviderArtifactState.Mismatched)
         {
             return CoreCdc.CdcProviderArtifactContinuityState.Recreated;
+        }
+
+        if (retainedWalLost)
+        {
+            return CoreCdc.CdcProviderArtifactContinuityState.ExactMatch;
+        }
+
+        if (HasProviderHistoryUnavailable(result))
+        {
+            return CoreCdc.CdcProviderArtifactContinuityState.Unknown;
         }
 
         return CoreCdc.CdcProviderArtifactContinuityState.ExactMatch;
@@ -639,12 +641,11 @@ public static class CdcProviderSetupResultMapper
         CoreCdc.CdcSqlServerCdcJobEvidence jobs
     )
     {
-        if (databaseHistory is null || ObservedValue(databaseHistory, "history") == "unavailable")
-        {
-            return CoreCdc.CdcProviderArtifactContinuityState.Unknown;
-        }
-
-        if (!BoolValue(databaseHistory, "database_cdc_enabled"))
+        if (
+            databaseHistory is not null
+            && ObservedValue(databaseHistory, "history") != "unavailable"
+            && !BoolValue(databaseHistory, "database_cdc_enabled")
+        )
         {
             return CoreCdc.CdcProviderArtifactContinuityState.Missing;
         }
@@ -659,14 +660,19 @@ public static class CdcProviderSetupResultMapper
             return CoreCdc.CdcProviderArtifactContinuityState.Missing;
         }
 
-        if (captureArtifacts.Any(artifact => artifact.State == CdcProviderArtifactState.Unavailable))
+        if (captureArtifacts.Any(artifact => artifact.State == CdcProviderArtifactState.Mismatched))
+        {
+            return CoreCdc.CdcProviderArtifactContinuityState.Recreated;
+        }
+
+        if (databaseHistory is null || ObservedValue(databaseHistory, "history") == "unavailable")
         {
             return CoreCdc.CdcProviderArtifactContinuityState.Unknown;
         }
 
-        if (captureArtifacts.Any(artifact => artifact.State == CdcProviderArtifactState.Mismatched))
+        if (captureArtifacts.Any(artifact => artifact.State == CdcProviderArtifactState.Unavailable))
         {
-            return CoreCdc.CdcProviderArtifactContinuityState.Recreated;
+            return CoreCdc.CdcProviderArtifactContinuityState.Unknown;
         }
 
         return CoreCdc.CdcProviderArtifactContinuityState.ExactMatch;
@@ -871,6 +877,34 @@ public static class CdcProviderSetupResultMapper
         Diagnostics(result)
             .Any(diagnostic =>
                 diagnostic.Category == CdcProviderDiagnosticCategory.ProviderHistoryUnavailable
+            );
+
+    private static bool HasTerminalSourceHistoryEvidence(CdcProviderSetupResult result) =>
+        ArtifactInventory(result)
+            .Any(artifact =>
+                SourceHistoryArtifactKinds.Contains(artifact.ArtifactKind)
+                && artifact.State is CdcProviderArtifactState.Missing or CdcProviderArtifactState.Mismatched
+            )
+        || Diagnostics(result)
+            .Any(diagnostic =>
+                diagnostic.Category == CdcProviderDiagnosticCategory.ProviderHistoryLossEvidence
+            )
+        || ProviderHistoryObservations(result).Any(HasTerminalProviderHistoryObservation);
+
+    private static bool HasTerminalProviderHistoryObservation(CdcProviderHistoryObservation history) =>
+        history.ArtifactKind == CdcProviderArtifactKind.ProviderHistory
+            && (
+                IsFalseValue(history, "database_cdc_enabled")
+                || IsFalseValue(history, "capture_job_present")
+                || IsFalseValue(history, "cleanup_job_present")
+            )
+        || history.ArtifactKind == CdcProviderArtifactKind.PostgresqlReplicationSlot
+            && (
+                string.Equals(
+                    ObservedValue(history, "wal_status"),
+                    "lost",
+                    StringComparison.OrdinalIgnoreCase
+                ) || !string.IsNullOrWhiteSpace(ObservedValue(history, "invalidation_reason"))
             );
 
     private static bool HasErrorDiagnostic(

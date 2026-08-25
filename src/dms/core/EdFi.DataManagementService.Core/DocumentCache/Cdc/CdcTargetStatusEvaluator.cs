@@ -583,6 +583,21 @@ public static class CdcTargetStatusEvaluator
             return validationComponent;
         }
 
+        if (observation.BarrierState == CdcProviderBarrierState.Unknown && observation.Diagnostics.Count > 0)
+        {
+            return HasSourceMismatch(observation.Diagnostics)
+                ? CdcComponent.NotSatisfied(
+                    CdcBlockingCategory.SourceMismatch,
+                    observation.ObservedAt,
+                    "source mismatch"
+                )
+                : CdcComponent.Unknown(
+                    CdcBlockingCategory.StatusObservationUnavailable,
+                    observation.ObservedAt,
+                    "provider barrier unavailable"
+                );
+        }
+
         return observation.BarrierState switch
         {
             CdcProviderBarrierState.Reached => CdcComponent.Satisfied(observation.ObservedAt),

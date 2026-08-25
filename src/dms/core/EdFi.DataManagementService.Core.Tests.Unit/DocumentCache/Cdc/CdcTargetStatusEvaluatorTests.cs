@@ -219,6 +219,62 @@ public class Given_CdcTargetStatusEvaluator
             .Contain(CdcDiagnosticCategory.SourceMismatch);
     }
 
+    [TestCase(CdcDiagnosticCategory.SourceMismatch)]
+    [TestCase(CdcDiagnosticCategory.ProviderMismatch)]
+    public void It_maps_provider_barrier_source_or_provider_mismatch_diagnostics_to_source_mismatch(
+        CdcDiagnosticCategory diagnosticCategory
+    )
+    {
+        CdcBinding binding = CdcTargetStatusFixture.CreateBinding();
+
+        CdcTargetStatus status = CdcTargetStatusEvaluator.Evaluate(
+            CdcTargetStatusFixture.ValidInput(binding) with
+            {
+                ProviderBarrier = CdcTargetStatusFixture.ProviderBarrier(binding) with
+                {
+                    BarrierState = CdcProviderBarrierState.Unknown,
+                    CommittedPosition = null,
+                    Diagnostics = [new(diagnosticCategory, "$.providerBarrier", "source mismatch")],
+                },
+            }
+        );
+
+        status.Readiness.Should().Be(CdcReadiness.NotReady);
+        status.PrimaryBlockingCategory.Should().Be(CdcBlockingCategory.SourceMismatch);
+        status.ProviderBarrier.State.Should().Be(CdcComponentState.NotSatisfied);
+        status.ProviderBarrier.Category.Should().Be(CdcBlockingCategory.SourceMismatch);
+    }
+
+    [Test]
+    public void It_maps_other_provider_barrier_diagnostics_to_unavailable_status_evidence()
+    {
+        CdcBinding binding = CdcTargetStatusFixture.CreateBinding();
+
+        CdcTargetStatus status = CdcTargetStatusEvaluator.Evaluate(
+            CdcTargetStatusFixture.ValidInput(binding) with
+            {
+                ProviderBarrier = CdcTargetStatusFixture.ProviderBarrier(binding) with
+                {
+                    BarrierState = CdcProviderBarrierState.Unknown,
+                    CommittedPosition = null,
+                    Diagnostics =
+                    [
+                        new(
+                            CdcDiagnosticCategory.ArtifactNameMismatch,
+                            "$.connectorName",
+                            "connector mismatch"
+                        ),
+                    ],
+                },
+            }
+        );
+
+        status.Readiness.Should().Be(CdcReadiness.Unknown);
+        status.PrimaryBlockingCategory.Should().Be(CdcBlockingCategory.StatusObservationUnavailable);
+        status.ProviderBarrier.State.Should().Be(CdcComponentState.Unknown);
+        status.ProviderBarrier.Category.Should().Be(CdcBlockingCategory.StatusObservationUnavailable);
+    }
+
     [Test]
     public void It_maps_state_store_unavailability_to_unknown_status_observation_unavailable()
     {

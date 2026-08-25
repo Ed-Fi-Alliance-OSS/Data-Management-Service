@@ -268,10 +268,13 @@ public static class CdcSourceHistoryContinuityClassifier
         }
 
         if (
-            input.ProviderSetup.SetupOutcome != CdcProviderSetupOutcome.Satisfied
-            || HasProviderSetupState(input.ProviderSetup, CdcProviderSetupState.Unknown)
-            || HasProviderSetupState(input.ProviderSetup, CdcProviderSetupState.Missing)
-            || HasProviderSetupState(input.ProviderSetup, CdcProviderSetupState.Mismatched)
+            !HasTerminalProviderHistory(input.ProviderHistory)
+            && (
+                input.ProviderSetup.SetupOutcome != CdcProviderSetupOutcome.Satisfied
+                || HasProviderSetupState(input.ProviderSetup, CdcProviderSetupState.Unknown)
+                || HasProviderSetupState(input.ProviderSetup, CdcProviderSetupState.Missing)
+                || HasProviderSetupState(input.ProviderSetup, CdcProviderSetupState.Mismatched)
+            )
         )
         {
             return UnknownWithMetadata(
@@ -289,6 +292,13 @@ public static class CdcSourceHistoryContinuityClassifier
 
         return null;
     }
+
+    private static bool HasTerminalProviderHistory(CdcProviderSourceHistoryEvidence? providerHistory) =>
+        providerHistory?.ProviderArtifactState
+            is CdcProviderArtifactContinuityState.Missing
+                or CdcProviderArtifactContinuityState.Recreated
+        || providerHistory?.RetainedRangeState == CdcProviderRetainedRangeState.Gap
+        || providerHistory?.SqlServerJobs?.HasMissingJob == true;
 
     private static CdcConnectorOffsetEvaluation EvaluateConnectorOffset(
         CdcSourceHistoryClassificationInput input,

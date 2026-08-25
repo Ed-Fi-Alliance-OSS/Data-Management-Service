@@ -186,13 +186,13 @@ internal sealed class MssqlCdcSourcePositionAdapter(
             );
         AddDiagnostics(diagnostics, connectorOffsetValidation.Diagnostics);
 
-        CdcProviderBarrierState barrierState = request.CapturedBarrier.Succeeded
-            ? CdcProviderBarrierState.NotReached
-            : CdcProviderBarrierState.Unknown;
+        CdcProviderBarrierState barrierState = CdcProviderBarrierState.Unknown;
         string? committedPosition = null;
 
         if (
-            request.CapturedBarrier.SqlServerCommitLsn is not null
+            !diagnostics.HasDiagnostics
+            && request.CapturedBarrier.Succeeded
+            && request.CapturedBarrier.SqlServerCommitLsn is not null
             && request.CapturedBarrier.SqlServerChangeLsn is not null
         )
         {
@@ -207,7 +207,7 @@ internal sealed class MssqlCdcSourcePositionAdapter(
             AddDiagnostics(diagnostics, commitLsn.Diagnostics);
             AddDiagnostics(diagnostics, changeLsn.Diagnostics);
 
-            if (commitLsn.Lsn is not null && changeLsn.Lsn is not null && connectorOffsetValidation.Succeeded)
+            if (commitLsn.Lsn is not null && changeLsn.Lsn is not null && !diagnostics.HasDiagnostics)
             {
                 CdcProviderPositionComparisonResult comparison =
                     CdcSqlServerProviderPositionParser.CompareCommittedOffsetToBarrier(
@@ -230,6 +230,10 @@ internal sealed class MssqlCdcSourcePositionAdapter(
                 {
                     barrierState = CdcProviderBarrierState.Reached;
                     committedPosition = comparison.CommittedPosition;
+                }
+                else if (IsKnownNotReached(comparison))
+                {
+                    barrierState = CdcProviderBarrierState.NotReached;
                 }
             }
         }
@@ -393,6 +397,12 @@ internal sealed class MssqlCdcSourcePositionAdapter(
     }
 
     private DateTimeOffset UtcNow() => _timeProvider.GetUtcNow().ToUniversalTime();
+
+    private static bool IsKnownNotReached(CdcProviderPositionComparisonResult comparison) =>
+        comparison.Diagnostics.Count > 0
+        && comparison.Diagnostics.All(diagnostic =>
+            diagnostic.Category == CdcDiagnosticCategory.InvalidOrdering
+        );
 
     private static int GetCommandTimeoutSeconds(TimeSpan timeout)
     {

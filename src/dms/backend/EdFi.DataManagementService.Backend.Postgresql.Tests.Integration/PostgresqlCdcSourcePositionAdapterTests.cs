@@ -36,6 +36,8 @@ public class Given_PostgresqlCdcSourcePositionAdapter
         0,
         TimeSpan.Zero
     );
+    private const string OtherSourceFingerprint =
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     private PostgresqlGeneratedDdlFixture _fixture = null!;
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
@@ -191,6 +193,73 @@ public class Given_PostgresqlCdcSourcePositionAdapter
             .Diagnostics.Should()
             .Contain(diagnostic => diagnostic.Category == CoreCdc.CdcDiagnosticCategory.InvalidOrdering);
         ValidateBarrierObservation(observation, binding).Succeeded.Should().BeTrue();
+    }
+
+    [TestCase(InvalidBarrierInput.OperationId, CoreCdc.CdcDiagnosticCategory.OperationMismatch)]
+    [TestCase(InvalidBarrierInput.SourceFingerprint, CoreCdc.CdcDiagnosticCategory.SourceMismatch)]
+    [TestCase(InvalidBarrierInput.ConnectorName, CoreCdc.CdcDiagnosticCategory.ArtifactNameMismatch)]
+    [TestCase(InvalidBarrierInput.TopicPrefix, CoreCdc.CdcDiagnosticCategory.ArtifactNameMismatch)]
+    [TestCase(InvalidBarrierInput.CaptureProvider, CoreCdc.CdcDiagnosticCategory.ProviderMismatch)]
+    [TestCase(InvalidBarrierInput.SourcePartitionHash, CoreCdc.CdcDiagnosticCategory.SourceMismatch)]
+    public async Task It_returns_unknown_barrier_when_comparison_evidence_is_invalid(
+        InvalidBarrierInput invalidInput,
+        CoreCdc.CdcDiagnosticCategory expectedDiagnostic
+    )
+    {
+        CoreCdc.CdcBinding binding = await BuildBindingAsync();
+        CoreCdc.CdcArtifactInventory inventory = BuildInventory();
+        CoreCdc.CdcProviderBarrierCaptureResult capture =
+            CoreCdc.CdcProviderBarrierCaptureResult.PostgresqlSuccess(
+                "0/16B6C50",
+                ProjectionCaughtUpObservedAt.AddSeconds(1)
+            );
+
+        _timeProvider.Set(ProjectionCaughtUpObservedAt.AddSeconds(2));
+        CoreCdc.CdcConnectorOffsetObservation connectorOffset = BuildConnectorOffset(
+            binding,
+            inventory,
+            unchecked((long)ParsePostgresqlLsn(capture.PostgresqlBarrierLsn!).Value)
+        );
+        string operationId = OperationId();
+
+        switch (invalidInput)
+        {
+            case InvalidBarrierInput.OperationId:
+                operationId = "other-operation";
+                break;
+            case InvalidBarrierInput.SourceFingerprint:
+                connectorOffset = connectorOffset with { PhysicalSourceFingerprint = OtherSourceFingerprint };
+                break;
+            case InvalidBarrierInput.ConnectorName:
+                connectorOffset = connectorOffset with { ConnectorName = "edfi.dms.other.connector" };
+                break;
+            case InvalidBarrierInput.TopicPrefix:
+                connectorOffset = connectorOffset with { TopicPrefix = "edfi.dms.other" };
+                break;
+            case InvalidBarrierInput.CaptureProvider:
+                capture = CoreCdc.CdcProviderBarrierCaptureResult.SqlServerSuccess(
+                    "00000000:016b6c50:0001",
+                    "00000000:016b6c50:0002",
+                    2,
+                    ProjectionCaughtUpObservedAt.AddSeconds(1)
+                );
+                break;
+            case InvalidBarrierInput.SourcePartitionHash:
+                connectorOffset = connectorOffset with
+                {
+                    ConnectSourcePartitionHash = OtherSourceFingerprint,
+                };
+                break;
+        }
+
+        _timeProvider.Set(ProjectionCaughtUpObservedAt.AddSeconds(3));
+        CoreCdc.CdcProviderBarrierObservation observation = _adapter.ObserveProviderBarrier(
+            new(operationId, binding, ProjectionCaughtUpObservedAt, capture, connectorOffset)
+        );
+
+        observation.BarrierState.Should().Be(CoreCdc.CdcProviderBarrierState.Unknown);
+        observation.CommittedPosition.Should().BeNull();
+        observation.Diagnostics.Should().Contain(diagnostic => diagnostic.Category == expectedDiagnostic);
     }
 
     [Test]
@@ -625,6 +694,16 @@ public class Given_PostgresqlCdcSourcePositionAdapter
     private static string QuoteIdentifier(string identifier) => $"\"{identifier.Replace("\"", "\"\"")}\"";
 
     private static string OperationId() => "cdc-operation-postgresql-source-position";
+
+    public enum InvalidBarrierInput
+    {
+        OperationId,
+        SourceFingerprint,
+        ConnectorName,
+        TopicPrefix,
+        CaptureProvider,
+        SourcePartitionHash,
+    }
 
     private sealed class MutableTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {

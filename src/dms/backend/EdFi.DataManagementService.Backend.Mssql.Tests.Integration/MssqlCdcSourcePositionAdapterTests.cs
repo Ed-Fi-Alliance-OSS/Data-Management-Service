@@ -30,6 +30,8 @@ public class Given_MssqlCdcSourcePositionAdapter
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-extension-child-collections";
     private const string ConnectorPassword = "EdFi_Dms1!";
     private const string InstanceKey = "mssql-instance";
+    private const string OtherSourceFingerprint =
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     private static readonly DateTimeOffset ProjectionCaughtUpObservedAt = new(
         2026,
@@ -166,6 +168,83 @@ public class Given_MssqlCdcSourcePositionAdapter
             .Diagnostics.Should()
             .Contain(diagnostic => diagnostic.Category == CoreCdc.CdcDiagnosticCategory.InvalidOrdering);
         ValidateBarrierObservation(observation, binding).Succeeded.Should().BeTrue();
+    }
+
+    [TestCase(InvalidBarrierInput.OperationId, CoreCdc.CdcDiagnosticCategory.OperationMismatch)]
+    [TestCase(InvalidBarrierInput.SourceFingerprint, CoreCdc.CdcDiagnosticCategory.SourceMismatch)]
+    [TestCase(InvalidBarrierInput.ConnectorName, CoreCdc.CdcDiagnosticCategory.ArtifactNameMismatch)]
+    [TestCase(InvalidBarrierInput.TopicPrefix, CoreCdc.CdcDiagnosticCategory.ArtifactNameMismatch)]
+    [TestCase(InvalidBarrierInput.CaptureProvider, CoreCdc.CdcDiagnosticCategory.ProviderMismatch)]
+    [TestCase(InvalidBarrierInput.SourcePartitionHash, CoreCdc.CdcDiagnosticCategory.SourceMismatch)]
+    public async Task It_returns_unknown_barrier_when_comparison_evidence_is_invalid(
+        InvalidBarrierInput invalidInput,
+        CoreCdc.CdcDiagnosticCategory expectedDiagnostic
+    )
+    {
+        CoreCdc.CdcBinding binding = await BuildBindingAsync();
+        CoreCdc.CdcArtifactInventory inventory = BuildInventory();
+        CoreCdc.CdcProviderBarrierCaptureResult capture =
+            CoreCdc.CdcProviderBarrierCaptureResult.SqlServerSuccess(
+                "00000000:016b6c50:0001",
+                "00000000:016b6c50:0002",
+                2,
+                ProjectionCaughtUpObservedAt.AddSeconds(1)
+            );
+
+        _timeProvider.Set(ProjectionCaughtUpObservedAt.AddSeconds(2));
+        CoreCdc.CdcConnectorOffsetObservation connectorOffset = BuildConnectorOffset(
+            binding,
+            inventory,
+            capture.SqlServerCommitLsn!,
+            capture.SqlServerChangeLsn!,
+            capture.SqlServerEventSerialNo!.Value
+        );
+        string operationId = OperationId();
+        string expectedSourcePartitionHash = ExpectedSourcePartitionHash(inventory);
+
+        switch (invalidInput)
+        {
+            case InvalidBarrierInput.OperationId:
+                operationId = "other-operation";
+                break;
+            case InvalidBarrierInput.SourceFingerprint:
+                connectorOffset = connectorOffset with { PhysicalSourceFingerprint = OtherSourceFingerprint };
+                break;
+            case InvalidBarrierInput.ConnectorName:
+                connectorOffset = connectorOffset with { ConnectorName = "edfi.dms.other.connector" };
+                break;
+            case InvalidBarrierInput.TopicPrefix:
+                connectorOffset = connectorOffset with { TopicPrefix = "edfi.dms.other" };
+                break;
+            case InvalidBarrierInput.CaptureProvider:
+                capture = CoreCdc.CdcProviderBarrierCaptureResult.PostgresqlSuccess(
+                    "0/16B6C50",
+                    ProjectionCaughtUpObservedAt.AddSeconds(1)
+                );
+                break;
+            case InvalidBarrierInput.SourcePartitionHash:
+                connectorOffset = connectorOffset with
+                {
+                    ConnectSourcePartitionHash = OtherSourceFingerprint,
+                };
+                break;
+        }
+
+        _timeProvider.Set(ProjectionCaughtUpObservedAt.AddSeconds(3));
+        CoreCdc.CdcProviderBarrierObservation observation = _adapter.ObserveProviderBarrier(
+            new(
+                operationId,
+                binding,
+                ProjectionCaughtUpObservedAt,
+                capture,
+                connectorOffset,
+                expectedSourcePartitionHash
+            )
+        );
+
+        observation.BarrierState.Should().Be(CoreCdc.CdcProviderBarrierState.Unknown);
+        observation.CommittedPosition.Should().BeNull();
+        observation.Diagnostics.Should().Contain(diagnostic => diagnostic.Category == expectedDiagnostic);
     }
 
     [Test]
@@ -1014,6 +1093,16 @@ public class Given_MssqlCdcSourcePositionAdapter
         };
 
     private static string OperationId() => "cdc-operation-mssql-source-position";
+
+    public enum InvalidBarrierInput
+    {
+        OperationId,
+        SourceFingerprint,
+        ConnectorName,
+        TopicPrefix,
+        CaptureProvider,
+        SourcePartitionHash,
+    }
 
     private static string DescribeDiagnostics(IReadOnlyList<CdcProviderDiagnostic> diagnostics) =>
         string.Join(
