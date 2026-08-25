@@ -33,7 +33,12 @@ internal static class DocumentCacheAdminMutatingCommandRequestBuilder
         failure = null;
 
         string commandName = parseResult.CommandResult.Command.Name;
-        if (!DocumentCacheAdminCommandSurface.IsMutatingCommand(commandName))
+        if (
+            !DocumentCacheAdminMutatingCommandContracts.TryGet(
+                commandName,
+                out DocumentCacheAdminMutatingCommandContract? contract
+            )
+        )
         {
             failure = $"Command '{commandName}' is not a DocumentCache mutating command.";
             return false;
@@ -56,14 +61,7 @@ internal static class DocumentCacheAdminMutatingCommandRequestBuilder
             return true;
         }
 
-        if (
-            !TryReadExpectedConfirmation(
-                parseResult,
-                commandName,
-                out DocumentCacheAdministrativeCommandConfirmation confirmation,
-                out failure
-            )
-        )
+        if (!TryReadExpectedConfirmation(parseResult, contract, out failure))
         {
             return false;
         }
@@ -82,7 +80,7 @@ internal static class DocumentCacheAdminMutatingCommandRequestBuilder
         if (
             !TryReadOfflineWriterAdmission(
                 parseResult,
-                commandName,
+                contract,
                 out DocumentCacheOfflineWriterAdmission? offlineWriterAdmission,
                 out failure
             )
@@ -91,123 +89,29 @@ internal static class DocumentCacheAdminMutatingCommandRequestBuilder
             return false;
         }
 
-        DocumentCacheAdministrativeTargetKey targetKey = DocumentCacheAdministrativeTargetKey.FromTargetKey(
-            invocationTarget.TargetKey
+        commandRequest = contract.CreateCommandRequest(
+            invocationTarget.TargetKey,
+            expectedPhysicalSourceFingerprint,
+            offlineWriterAdmission
         );
-
-        commandRequest = commandName switch
-        {
-            DocumentCacheAdminCommandSurface.ActivateNewEmptyCommandName => Create(
-                commandName,
-                new DocumentCacheGuardedNewEmptyActivationRequest(
-                    targetKey,
-                    expectedPhysicalSourceFingerprint,
-                    confirmation
-                )
-            ),
-            DocumentCacheAdminCommandSurface.ActivateOfflineCommandName => Create(
-                commandName,
-                new DocumentCacheOfflineActivationRequest(
-                    targetKey,
-                    offlineWriterAdmission,
-                    expectedPhysicalSourceFingerprint,
-                    confirmation
-                )
-            ),
-            DocumentCacheAdminCommandSurface.DeactivateOfflineCommandName => Create(
-                commandName,
-                new DocumentCacheOfflineDeactivationRequest(
-                    targetKey,
-                    offlineWriterAdmission,
-                    expectedPhysicalSourceFingerprint,
-                    confirmation
-                )
-            ),
-            DocumentCacheAdminCommandSurface.RebuildOnlineCommandName => Create(
-                commandName,
-                new DocumentCacheOnlineCacheRebuildRequest(
-                    targetKey,
-                    expectedPhysicalSourceFingerprint,
-                    confirmation
-                )
-            ),
-            DocumentCacheAdminCommandSurface.ScrubCommandName => Create(
-                commandName,
-                new DocumentCacheExplicitIntegrityScrubRequest(
-                    targetKey,
-                    expectedPhysicalSourceFingerprint,
-                    confirmation
-                )
-            ),
-            DocumentCacheAdminCommandSurface.RecoverCacheAheadCommandName => Create(
-                commandName,
-                new DocumentCacheInternalOnlyCacheAheadRecoveryRequest(
-                    targetKey,
-                    offlineWriterAdmission,
-                    expectedPhysicalSourceFingerprint,
-                    confirmation
-                )
-            ),
-            _ => throw new InvalidOperationException($"Unsupported mutating command '{commandName}'."),
-        };
         return true;
     }
 
-    private static DocumentCacheAdminMutatingCommandRequest Create<TRequest>(
-        string commandName,
-        TRequest request
-    )
-        where TRequest : notnull
-    {
-        DocumentCacheAdministrativeTargetKey targetKey = RequestTargetKey(request);
-        return new(commandName, typeof(TRequest), request, targetKey.TargetKey);
-    }
-
-    private static DocumentCacheAdministrativeTargetKey RequestTargetKey<TRequest>(TRequest request) =>
-        request switch
-        {
-            DocumentCacheGuardedNewEmptyActivationRequest guardedNewEmptyActivationRequest =>
-                guardedNewEmptyActivationRequest.TargetKey,
-            DocumentCacheOfflineActivationRequest offlineActivationRequest =>
-                offlineActivationRequest.TargetKey,
-            DocumentCacheOfflineDeactivationRequest offlineDeactivationRequest =>
-                offlineDeactivationRequest.TargetKey,
-            DocumentCacheOnlineCacheRebuildRequest onlineCacheRebuildRequest =>
-                onlineCacheRebuildRequest.TargetKey,
-            DocumentCacheExplicitIntegrityScrubRequest explicitIntegrityScrubRequest =>
-                explicitIntegrityScrubRequest.TargetKey,
-            DocumentCacheInternalOnlyCacheAheadRecoveryRequest cacheAheadRecoveryRequest =>
-                cacheAheadRecoveryRequest.TargetKey,
-            _ => throw new ArgumentException(
-                $"Unsupported DocumentCache mutating request type '{typeof(TRequest)}'.",
-                nameof(request)
-            ),
-        };
-
     private static bool TryReadExpectedConfirmation(
         ParseResult parseResult,
-        string commandName,
-        out DocumentCacheAdministrativeCommandConfirmation confirmation,
+        DocumentCacheAdminMutatingCommandContract contract,
         out string? failure
     )
     {
-        confirmation = default;
         failure = null;
 
-        if (!DocumentCacheAdminCommandSurface.TryGetExpectedConfirmation(commandName, out confirmation))
-        {
-            failure = $"Command '{commandName}' does not have an expected confirmation.";
-            return false;
-        }
-
-        string expectedValue = DocumentCacheAdminCommandSurface.ExpectedConfirmationOptionValue(commandName);
         string? suppliedValue = parseResult.GetValue<string?>(
             DocumentCacheAdminCommandSurface.ConfirmOptionName
         );
-        if (!string.Equals(suppliedValue, expectedValue, StringComparison.Ordinal))
+        if (!string.Equals(suppliedValue, contract.ExpectedConfirmationJsonValue, StringComparison.Ordinal))
         {
             failure =
-                $"{DocumentCacheAdminCommandSurface.ConfirmOptionName} must be the exact confirmation token '{expectedValue}'.";
+                $"{DocumentCacheAdminCommandSurface.ConfirmOptionName} must be the exact confirmation token '{contract.ExpectedConfirmationJsonValue}'.";
             return false;
         }
 
@@ -250,7 +154,7 @@ internal static class DocumentCacheAdminMutatingCommandRequestBuilder
 
     private static bool TryReadOfflineWriterAdmission(
         ParseResult parseResult,
-        string commandName,
+        DocumentCacheAdminMutatingCommandContract contract,
         out DocumentCacheOfflineWriterAdmission? offlineWriterAdmission,
         out string? failure
     )
@@ -258,7 +162,7 @@ internal static class DocumentCacheAdminMutatingCommandRequestBuilder
         offlineWriterAdmission = null;
         failure = null;
 
-        if (!DocumentCacheAdminCommandSurface.RequiresOfflineWriterAdmission(commandName))
+        if (!contract.RequiresOfflineWriterAdmission)
         {
             return true;
         }
@@ -279,20 +183,7 @@ internal static class DocumentCacheAdminMutatingCommandRequestBuilder
             return false;
         }
 
-        if (
-            !DocumentCacheAdminCommandSurface.TryGetExpectedOfflineWriterAdmissionConfirmation(
-                commandName,
-                out DocumentCacheOfflineWriterAdmissionConfirmation confirmation
-            )
-        )
-        {
-            throw new ArgumentException(
-                $"Command '{commandName}' does not have an expected offline writer admission.",
-                nameof(commandName)
-            );
-        }
-
-        offlineWriterAdmission = new(confirmed: true, confirmation);
+        offlineWriterAdmission = contract.CreateOfflineWriterAdmission();
         return true;
     }
 }

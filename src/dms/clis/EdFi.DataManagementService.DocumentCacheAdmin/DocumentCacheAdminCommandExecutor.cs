@@ -379,26 +379,23 @@ internal static class DocumentCacheAdminCommandExecutor
         );
     }
 
-    private static DocumentCacheAdministrativeCommand ToAdministrativeCommand(string commandName) =>
-        commandName switch
+    private static DocumentCacheAdministrativeCommand ToAdministrativeCommand(string commandName)
+    {
+        if (
+            DocumentCacheAdminMutatingCommandContracts.TryGet(
+                commandName,
+                out DocumentCacheAdminMutatingCommandContract? contract
+            )
+        )
         {
-            DocumentCacheAdminCommandSurface.ActivateNewEmptyCommandName =>
-                DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation,
-            DocumentCacheAdminCommandSurface.ActivateOfflineCommandName =>
-                DocumentCacheAdministrativeCommand.OfflineActivation,
-            DocumentCacheAdminCommandSurface.DeactivateOfflineCommandName =>
-                DocumentCacheAdministrativeCommand.OfflineDeactivation,
-            DocumentCacheAdminCommandSurface.RebuildOnlineCommandName =>
-                DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
-            DocumentCacheAdminCommandSurface.ScrubCommandName =>
-                DocumentCacheAdministrativeCommand.ExplicitIntegrityScrub,
-            DocumentCacheAdminCommandSurface.RecoverCacheAheadCommandName =>
-                DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery,
-            _ => throw new ArgumentException(
-                $"Unsupported DocumentCache mutating command '{commandName}'.",
-                nameof(commandName)
-            ),
-        };
+            return contract.AdministrativeCommand;
+        }
+
+        throw new ArgumentException(
+            $"Unsupported DocumentCache mutating command '{commandName}'.",
+            nameof(commandName)
+        );
+    }
 
     private static async Task WriteHumanStatusAsync(
         DocumentCacheStatusResponse statusResponse,

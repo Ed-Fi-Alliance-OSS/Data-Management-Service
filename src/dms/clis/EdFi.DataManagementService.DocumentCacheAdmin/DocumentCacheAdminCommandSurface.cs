@@ -57,49 +57,8 @@ internal static class DocumentCacheAdminCommandSurface
     public const string DefaultCommandTimeoutSeconds = "86400";
     public const string DefaultStatusObservationTimeoutSeconds = "5";
     public const string DefaultStatusTimeoutSeconds = "30";
-    public const string OfflineWriterAdmissionClosedAndDrainedOptionValue = "closedAndDrained";
-
-    private static readonly HashSet<string> MutatingCommandNames =
-    [
-        ActivateNewEmptyCommandName,
-        ActivateOfflineCommandName,
-        DeactivateOfflineCommandName,
-        RebuildOnlineCommandName,
-        ScrubCommandName,
-        RecoverCacheAheadCommandName,
-    ];
-
-    private static readonly IReadOnlyDictionary<
-        string,
-        DocumentCacheAdministrativeCommandConfirmation
-    > ConfirmationByCommandName = new Dictionary<string, DocumentCacheAdministrativeCommandConfirmation>(
-        StringComparer.Ordinal
-    )
-    {
-        [ActivateNewEmptyCommandName] = DocumentCacheAdministrativeCommandConfirmation.NewEmptyActivation,
-        [ActivateOfflineCommandName] = DocumentCacheAdministrativeCommandConfirmation.OfflineActivation,
-        [DeactivateOfflineCommandName] = DocumentCacheAdministrativeCommandConfirmation.OfflineDeactivation,
-        [RebuildOnlineCommandName] = DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild,
-        [ScrubCommandName] = DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub,
-        [RecoverCacheAheadCommandName] =
-            DocumentCacheAdministrativeCommandConfirmation.InternalCacheAheadRecovery,
-    };
-
-    private static readonly IReadOnlyDictionary<
-        string,
-        DocumentCacheOfflineWriterAdmissionConfirmation
-    > OfflineWriterAdmissionConfirmationByCommandName = new Dictionary<
-        string,
-        DocumentCacheOfflineWriterAdmissionConfirmation
-    >(StringComparer.Ordinal)
-    {
-        [ActivateOfflineCommandName] =
-            DocumentCacheOfflineWriterAdmissionConfirmation.OfflineActivationWritersClosedAndDrained,
-        [DeactivateOfflineCommandName] =
-            DocumentCacheOfflineWriterAdmissionConfirmation.OfflineDeactivationWritersClosedAndDrained,
-        [RecoverCacheAheadCommandName] =
-            DocumentCacheOfflineWriterAdmissionConfirmation.InternalOnlyCacheAheadRecoveryWritersClosedAndDrained,
-    };
+    public const string OfflineWriterAdmissionClosedAndDrainedOptionValue =
+        DocumentCacheOfflineWriterAdmission.ClosedAndDrainedJsonValue;
 
     public static RootCommand CreateRootCommand()
     {
@@ -162,7 +121,7 @@ internal static class DocumentCacheAdminCommandSurface
                 parseResult.GetRequiredValue<string>(StatusTimeoutSecondsOptionName)
             );
         }
-        else if (MutatingCommandNames.Contains(commandName))
+        else if (IsMutatingCommand(commandName))
         {
             overrides[AdministrationWorkflowTimeoutConfigurationKey] = ToConfigurationTimeSpanValue(
                 parseResult.GetRequiredValue<string>(CommandTimeoutSecondsOptionName)
@@ -187,23 +146,54 @@ internal static class DocumentCacheAdminCommandSurface
         return parseResult.Action is HelpAction;
     }
 
-    public static bool IsMutatingCommand(string commandName) => MutatingCommandNames.Contains(commandName);
+    public static bool IsMutatingCommand(string commandName) =>
+        DocumentCacheAdminMutatingCommandContracts.TryGet(commandName, out _);
 
     public static bool RequiresOfflineWriterAdmission(string commandName) =>
-        commandName
-            is ActivateOfflineCommandName
-                or DeactivateOfflineCommandName
-                or RecoverCacheAheadCommandName;
+        DocumentCacheAdminMutatingCommandContracts.TryGet(
+            commandName,
+            out DocumentCacheAdminMutatingCommandContract? contract
+        ) && contract.RequiresOfflineWriterAdmission;
 
     public static bool TryGetExpectedConfirmation(
         string commandName,
         out DocumentCacheAdministrativeCommandConfirmation confirmation
-    ) => ConfirmationByCommandName.TryGetValue(commandName, out confirmation);
+    )
+    {
+        if (
+            DocumentCacheAdminMutatingCommandContracts.TryGet(
+                commandName,
+                out DocumentCacheAdminMutatingCommandContract? contract
+            )
+        )
+        {
+            confirmation = contract.ExpectedConfirmation;
+            return true;
+        }
+
+        confirmation = default;
+        return false;
+    }
 
     public static bool TryGetExpectedOfflineWriterAdmissionConfirmation(
         string commandName,
         out DocumentCacheOfflineWriterAdmissionConfirmation confirmation
-    ) => OfflineWriterAdmissionConfirmationByCommandName.TryGetValue(commandName, out confirmation);
+    )
+    {
+        if (
+            DocumentCacheAdminMutatingCommandContracts.TryGet(
+                commandName,
+                out DocumentCacheAdminMutatingCommandContract? contract
+            ) && contract.ExpectedOfflineWriterAdmissionConfirmation is { } expectedConfirmation
+        )
+        {
+            confirmation = expectedConfirmation;
+            return true;
+        }
+
+        confirmation = default;
+        return false;
+    }
 
     public static string ExpectedConfirmationOptionValue(string commandName)
     {
@@ -215,7 +205,9 @@ internal static class DocumentCacheAdminCommandSurface
             );
         }
 
-        return ToLowerCamelName(confirmation);
+        return DocumentCacheAdminMutatingCommandContracts.TryGet(commandName, out var contract)
+            ? contract.ExpectedConfirmationJsonValue
+            : ToLowerCamelName(confirmation);
     }
 
     public static bool TryParsePositiveSeconds(string? value, out TimeSpan timeSpan)

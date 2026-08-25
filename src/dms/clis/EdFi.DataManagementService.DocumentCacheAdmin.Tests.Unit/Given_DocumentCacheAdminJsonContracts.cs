@@ -17,7 +17,7 @@ namespace EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit;
 [Parallelizable]
 [Category("JsonRequest")]
 [Category("Serialization")]
-public sealed class Given_DocumentCacheAdminJsonRequestAndSerializationContracts
+public sealed class Given_DocumentCacheAdminJsonContracts
 {
     private const string Fingerprint =
         "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -242,7 +242,7 @@ public sealed class Given_DocumentCacheAdminJsonRequestAndSerializationContracts
               "offlineWriterAdmission": true
             }
             """,
-        "must be a string"
+        "closedAndDrained"
     )]
     [TestCase(
         """
@@ -275,7 +275,7 @@ public sealed class Given_DocumentCacheAdminJsonRequestAndSerializationContracts
               }
             }
             """,
-        "must be a string"
+        "closedAndDrained"
     )]
     [TestCase(
         """

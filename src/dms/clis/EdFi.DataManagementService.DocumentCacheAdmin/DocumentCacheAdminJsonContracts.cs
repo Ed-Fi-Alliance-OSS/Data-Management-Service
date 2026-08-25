@@ -31,50 +31,6 @@ internal static class DocumentCacheAdminJsonSerializer
 
 internal static class DocumentCacheAdminJsonRequestParser
 {
-    private sealed record MutatingCommandContract(
-        Type RequestType,
-        DocumentCacheAdministrativeCommandConfirmation ExpectedConfirmation,
-        DocumentCacheOfflineWriterAdmissionConfirmation? ExpectedOfflineWriterAdmissionConfirmation
-    )
-    {
-        public bool SupportsOfflineWriterAdmission => ExpectedOfflineWriterAdmissionConfirmation is not null;
-    }
-
-    private static readonly IReadOnlyDictionary<string, MutatingCommandContract> MutatingContracts =
-        new Dictionary<string, MutatingCommandContract>(StringComparer.Ordinal)
-        {
-            [DocumentCacheAdminCommandSurface.ActivateNewEmptyCommandName] = new(
-                typeof(DocumentCacheGuardedNewEmptyActivationRequest),
-                DocumentCacheAdministrativeCommandConfirmation.NewEmptyActivation,
-                ExpectedOfflineWriterAdmissionConfirmation: null
-            ),
-            [DocumentCacheAdminCommandSurface.ActivateOfflineCommandName] = new(
-                typeof(DocumentCacheOfflineActivationRequest),
-                DocumentCacheAdministrativeCommandConfirmation.OfflineActivation,
-                DocumentCacheOfflineWriterAdmissionConfirmation.OfflineActivationWritersClosedAndDrained
-            ),
-            [DocumentCacheAdminCommandSurface.DeactivateOfflineCommandName] = new(
-                typeof(DocumentCacheOfflineDeactivationRequest),
-                DocumentCacheAdministrativeCommandConfirmation.OfflineDeactivation,
-                DocumentCacheOfflineWriterAdmissionConfirmation.OfflineDeactivationWritersClosedAndDrained
-            ),
-            [DocumentCacheAdminCommandSurface.RebuildOnlineCommandName] = new(
-                typeof(DocumentCacheOnlineCacheRebuildRequest),
-                DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild,
-                ExpectedOfflineWriterAdmissionConfirmation: null
-            ),
-            [DocumentCacheAdminCommandSurface.ScrubCommandName] = new(
-                typeof(DocumentCacheExplicitIntegrityScrubRequest),
-                DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub,
-                ExpectedOfflineWriterAdmissionConfirmation: null
-            ),
-            [DocumentCacheAdminCommandSurface.RecoverCacheAheadCommandName] = new(
-                typeof(DocumentCacheInternalOnlyCacheAheadRecoveryRequest),
-                DocumentCacheAdministrativeCommandConfirmation.InternalCacheAheadRecovery,
-                DocumentCacheOfflineWriterAdmissionConfirmation.InternalOnlyCacheAheadRecoveryWritersClosedAndDrained
-            ),
-        };
-
     public static bool TryParse(
         string commandName,
         string requestJson,
@@ -176,16 +132,21 @@ internal static class DocumentCacheAdminJsonRequestParser
         request = null;
         failure = null;
 
-        if (!MutatingContracts.TryGetValue(commandName, out MutatingCommandContract? contract))
+        if (
+            !DocumentCacheAdminMutatingCommandContracts.TryGet(
+                commandName,
+                out DocumentCacheAdminMutatingCommandContract? contract
+            )
+        )
         {
             failure = $"Command '{commandName}' does not support JSON request input.";
             return false;
         }
 
-        string[] allowedProperties = contract.SupportsOfflineWriterAdmission
+        string[] allowedProperties = contract.RequiresOfflineWriterAdmission
             ? ["targetKey", "confirmation", "expectedPhysicalSourceFingerprint", "offlineWriterAdmission"]
             : ["targetKey", "confirmation", "expectedPhysicalSourceFingerprint"];
-        string[] requiredProperties = contract.SupportsOfflineWriterAdmission
+        string[] requiredProperties = contract.RequiresOfflineWriterAdmission
             ? ["targetKey", "confirmation", "offlineWriterAdmission"]
             : ["targetKey", "confirmation"];
 
@@ -236,31 +197,28 @@ internal static class DocumentCacheAdminJsonRequestParser
         }
 
         DocumentCacheOfflineWriterAdmission? offlineWriterAdmission = null;
-        if (contract.SupportsOfflineWriterAdmission)
+        if (
+            contract.RequiresOfflineWriterAdmission
+            && !TryReadOfflineWriterAdmission(
+                rootProperties["offlineWriterAdmission"],
+                out offlineWriterAdmission,
+                out failure
+            )
+        )
         {
-            if (!TryReadExpectedOfflineWriterAdmission(rootProperties["offlineWriterAdmission"], out failure))
-            {
-                return false;
-            }
-
-            offlineWriterAdmission = new(
-                confirmed: true,
-                contract.ExpectedOfflineWriterAdmissionConfirmation!.Value
-            );
+            return false;
         }
 
-        object sharedRequest = CreateSharedMutatingRequest(
-            commandName,
+        object sharedRequest = contract.CreateRequest(
             validTargetKey,
             expectedPhysicalSourceFingerprint,
-            contract.ExpectedConfirmation,
             offlineWriterAdmission
         );
         request = new DocumentCacheAdminJsonRequest(
             commandName,
             contract.RequestType,
             sharedRequest,
-            validTargetKey
+            contract.ReadTargetKey(sharedRequest).TargetKey
         );
         return true;
     }
@@ -293,30 +251,31 @@ internal static class DocumentCacheAdminJsonRequestParser
         return true;
     }
 
-    private static bool TryReadExpectedOfflineWriterAdmission(
+    private static bool TryReadOfflineWriterAdmission(
         JsonElement offlineWriterAdmissionElement,
+        out DocumentCacheOfflineWriterAdmission? offlineWriterAdmission,
         out string? failure
     )
     {
+        offlineWriterAdmission = null;
         failure = null;
 
-        if (offlineWriterAdmissionElement.ValueKind != JsonValueKind.String)
+        try
         {
-            failure = "Request JSON property 'offlineWriterAdmission' must be a string.";
+            offlineWriterAdmission = JsonSerializer.Deserialize<DocumentCacheOfflineWriterAdmission>(
+                offlineWriterAdmissionElement.GetRawText()
+            );
+        }
+        catch (JsonException exception)
+        {
+            failure = $"Request JSON property 'offlineWriterAdmission' is invalid: {exception.Message}";
             return false;
         }
 
-        string? suppliedAdmission = offlineWriterAdmissionElement.GetString();
-        if (
-            !string.Equals(
-                suppliedAdmission,
-                DocumentCacheAdminCommandSurface.OfflineWriterAdmissionClosedAndDrainedOptionValue,
-                StringComparison.Ordinal
-            )
-        )
+        if (offlineWriterAdmission is null)
         {
             failure =
-                $"Request JSON offlineWriterAdmission '{suppliedAdmission}' does not match required acknowledgement '{DocumentCacheAdminCommandSurface.OfflineWriterAdmissionClosedAndDrainedOptionValue}'.";
+                $"Request JSON property 'offlineWriterAdmission' must be '{DocumentCacheOfflineWriterAdmission.ClosedAndDrainedJsonValue}'.";
             return false;
         }
 
@@ -366,62 +325,6 @@ internal static class DocumentCacheAdminJsonRequestParser
                 $"Request JSON property 'expectedPhysicalSourceFingerprint' is invalid: {exception.Message}";
             return false;
         }
-    }
-
-    private static object CreateSharedMutatingRequest(
-        string commandName,
-        DocumentCacheTargetKey targetKey,
-        DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint,
-        DocumentCacheAdministrativeCommandConfirmation confirmation,
-        DocumentCacheOfflineWriterAdmission? offlineWriterAdmission
-    )
-    {
-        DocumentCacheAdministrativeTargetKey administrativeTargetKey =
-            DocumentCacheAdministrativeTargetKey.FromTargetKey(targetKey);
-
-        return commandName switch
-        {
-            DocumentCacheAdminCommandSurface.ActivateNewEmptyCommandName =>
-                new DocumentCacheGuardedNewEmptyActivationRequest(
-                    administrativeTargetKey,
-                    expectedPhysicalSourceFingerprint,
-                    confirmation
-                ),
-            DocumentCacheAdminCommandSurface.ActivateOfflineCommandName =>
-                new DocumentCacheOfflineActivationRequest(
-                    administrativeTargetKey,
-                    offlineWriterAdmission,
-                    expectedPhysicalSourceFingerprint,
-                    confirmation
-                ),
-            DocumentCacheAdminCommandSurface.DeactivateOfflineCommandName =>
-                new DocumentCacheOfflineDeactivationRequest(
-                    administrativeTargetKey,
-                    offlineWriterAdmission,
-                    expectedPhysicalSourceFingerprint,
-                    confirmation
-                ),
-            DocumentCacheAdminCommandSurface.RebuildOnlineCommandName =>
-                new DocumentCacheOnlineCacheRebuildRequest(
-                    administrativeTargetKey,
-                    expectedPhysicalSourceFingerprint,
-                    confirmation
-                ),
-            DocumentCacheAdminCommandSurface.ScrubCommandName =>
-                new DocumentCacheExplicitIntegrityScrubRequest(
-                    administrativeTargetKey,
-                    expectedPhysicalSourceFingerprint,
-                    confirmation
-                ),
-            DocumentCacheAdminCommandSurface.RecoverCacheAheadCommandName =>
-                new DocumentCacheInternalOnlyCacheAheadRecoveryRequest(
-                    administrativeTargetKey,
-                    offlineWriterAdmission,
-                    expectedPhysicalSourceFingerprint,
-                    confirmation
-                ),
-            _ => throw new InvalidOperationException($"Unsupported mutating command '{commandName}'."),
-        };
     }
 
     private static bool TryReadTargetKey(

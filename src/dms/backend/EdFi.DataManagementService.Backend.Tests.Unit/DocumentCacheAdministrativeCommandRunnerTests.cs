@@ -9,7 +9,6 @@ using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.CompilerServices;
-using System.Text.Json;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Mssql;
@@ -2387,13 +2386,6 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             DocumentCacheAdministrativeCommandClassification.MismatchedOfflineWriterAdmission,
             DocumentCacheAdministrativeDiagnosticCategory.MismatchedOfflineWriterAdmission
         ).SetName("Mismatched admission");
-
-        yield return new TestCaseData(
-            DocumentCacheAdministrativeCommand.OfflineActivation,
-            UnknownOfflineWriterAdmission(),
-            DocumentCacheAdministrativeCommandClassification.MismatchedOfflineWriterAdmission,
-            DocumentCacheAdministrativeDiagnosticCategory.MismatchedOfflineWriterAdmission
-        ).SetName("Unknown admission");
     }
 
     private static IEnumerable<TestCaseData> ProviderCommandTimeoutCases()
@@ -2456,16 +2448,6 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             new MssqlRelationalWriteExceptionClassifier()
         ).SetName("SQL Server deadlock victim 1205");
     }
-
-    private static DocumentCacheOfflineWriterAdmission UnknownOfflineWriterAdmission() =>
-        JsonSerializer.Deserialize<DocumentCacheOfflineWriterAdmission>(
-            """
-            {
-              "confirmed": true,
-              "confirmation": "unknownWritersClosedAndDrained"
-            }
-            """
-        )!;
 
     private static MutableTargetRegistry RegistryFor(DocumentCacheTargetExecutionContext executionContext) =>
         new(Snapshot([EligibleObservation(executionContext)]), RuntimeSnapshot([executionContext]));

@@ -196,16 +196,27 @@ public sealed record DocumentCacheAdministrativeTargetKey
 [JsonConverter(typeof(DocumentCacheOfflineWriterAdmissionJsonConverter))]
 public sealed record DocumentCacheOfflineWriterAdmission
 {
+    public const string ClosedAndDrainedJsonValue = "closedAndDrained";
+
     public DocumentCacheOfflineWriterAdmission(
         bool confirmed,
         DocumentCacheOfflineWriterAdmissionConfirmation? confirmation
     )
-        : this(confirmed, confirmation, unrecognizedConfirmation: null) { }
+        : this(confirmed, confirmation, unrecognizedConfirmation: null, acceptedClosedAndDrainedToken: false)
+    { }
 
     internal DocumentCacheOfflineWriterAdmission(
         bool confirmed,
         DocumentCacheOfflineWriterAdmissionConfirmation? confirmation,
         string? unrecognizedConfirmation
+    )
+        : this(confirmed, confirmation, unrecognizedConfirmation, acceptedClosedAndDrainedToken: false) { }
+
+    private DocumentCacheOfflineWriterAdmission(
+        bool confirmed,
+        DocumentCacheOfflineWriterAdmissionConfirmation? confirmation,
+        string? unrecognizedConfirmation,
+        bool acceptedClosedAndDrainedToken
     )
     {
         Confirmed = confirmed;
@@ -213,6 +224,7 @@ public sealed record DocumentCacheOfflineWriterAdmission
         UnrecognizedConfirmation = string.IsNullOrWhiteSpace(unrecognizedConfirmation)
             ? null
             : DocumentCacheDiagnosticText.Sanitize(unrecognizedConfirmation);
+        AcceptedClosedAndDrainedToken = acceptedClosedAndDrainedToken;
     }
 
     [JsonPropertyName("confirmed")]
@@ -226,6 +238,27 @@ public sealed record DocumentCacheOfflineWriterAdmission
 
     [JsonIgnore]
     public bool HasUnrecognizedConfirmation => UnrecognizedConfirmation is not null;
+
+    [JsonIgnore]
+    internal bool AcceptedClosedAndDrainedToken { get; }
+
+    internal static DocumentCacheOfflineWriterAdmission FromClosedAndDrainedJsonToken() =>
+        new(
+            confirmed: true,
+            confirmation: null,
+            unrecognizedConfirmation: null,
+            acceptedClosedAndDrainedToken: true
+        );
+
+    internal DocumentCacheOfflineWriterAdmission WithCommandSpecificConfirmation(
+        DocumentCacheOfflineWriterAdmissionConfirmation expectedConfirmation
+    )
+    {
+        return
+            AcceptedClosedAndDrainedToken && Confirmed && Confirmation is null && !HasUnrecognizedConfirmation
+            ? new(confirmed: true, expectedConfirmation)
+            : this;
+    }
 }
 
 public sealed record DocumentCacheGuardedNewEmptyActivationRequest
@@ -272,7 +305,9 @@ public sealed record DocumentCacheOfflineActivationRequest
 
         TargetKey = targetKey;
         ExpectedPhysicalSourceFingerprint = expectedPhysicalSourceFingerprint;
-        OfflineWriterAdmission = offlineWriterAdmission;
+        OfflineWriterAdmission = offlineWriterAdmission?.WithCommandSpecificConfirmation(
+            DocumentCacheOfflineWriterAdmissionConfirmation.OfflineActivationWritersClosedAndDrained
+        );
         Confirmation = confirmation;
     }
 
@@ -308,7 +343,9 @@ public sealed record DocumentCacheOfflineDeactivationRequest
 
         TargetKey = targetKey;
         ExpectedPhysicalSourceFingerprint = expectedPhysicalSourceFingerprint;
-        OfflineWriterAdmission = offlineWriterAdmission;
+        OfflineWriterAdmission = offlineWriterAdmission?.WithCommandSpecificConfirmation(
+            DocumentCacheOfflineWriterAdmissionConfirmation.OfflineDeactivationWritersClosedAndDrained
+        );
         Confirmation = confirmation;
     }
 
@@ -404,7 +441,9 @@ public sealed record DocumentCacheInternalOnlyCacheAheadRecoveryRequest
 
         TargetKey = targetKey;
         ExpectedPhysicalSourceFingerprint = expectedPhysicalSourceFingerprint;
-        OfflineWriterAdmission = offlineWriterAdmission;
+        OfflineWriterAdmission = offlineWriterAdmission?.WithCommandSpecificConfirmation(
+            DocumentCacheOfflineWriterAdmissionConfirmation.InternalOnlyCacheAheadRecoveryWritersClosedAndDrained
+        );
         Confirmation = confirmation;
     }
 
@@ -429,99 +468,33 @@ public sealed record DocumentCacheInternalOnlyCacheAheadRecoveryRequest
 public sealed class DocumentCacheOfflineWriterAdmissionJsonConverter
     : JsonConverter<DocumentCacheOfflineWriterAdmission>
 {
-    private static readonly IReadOnlyDictionary<
-        string,
-        DocumentCacheOfflineWriterAdmissionConfirmation
-    > ConfirmationsByJsonName = Enum.GetValues<DocumentCacheOfflineWriterAdmissionConfirmation>()
-        .ToDictionary(ToJsonName, value => value, StringComparer.Ordinal);
-
     public override DocumentCacheOfflineWriterAdmission Read(
         ref Utf8JsonReader reader,
         Type typeToConvert,
         JsonSerializerOptions options
     )
     {
-        if (reader.TokenType != JsonTokenType.StartObject)
+        if (reader.TokenType != JsonTokenType.String)
         {
-            throw new JsonException("Offline writer admission must be an object.");
+            throw new JsonException(
+                $"Offline writer admission must be the string value '{DocumentCacheOfflineWriterAdmission.ClosedAndDrainedJsonValue}'."
+            );
         }
 
-        bool confirmed = false;
-        DocumentCacheOfflineWriterAdmissionConfirmation? confirmation = null;
-        string? unrecognizedConfirmation = null;
-        HashSet<string> propertyNames = [];
-
-        while (reader.Read())
+        if (
+            !string.Equals(
+                reader.GetString(),
+                DocumentCacheOfflineWriterAdmission.ClosedAndDrainedJsonValue,
+                StringComparison.Ordinal
+            )
+        )
         {
-            if (reader.TokenType == JsonTokenType.EndObject)
-            {
-                return new(confirmed, confirmation, unrecognizedConfirmation);
-            }
-
-            if (reader.TokenType != JsonTokenType.PropertyName)
-            {
-                throw new JsonException("Offline writer admission contains an invalid token.");
-            }
-
-            string? propertyName = reader.GetString();
-            if (!reader.Read())
-            {
-                throw new JsonException("Offline writer admission contains an incomplete property.");
-            }
-
-            if (propertyName is null || !propertyNames.Add(propertyName))
-            {
-                throw new JsonException("Offline writer admission contains a duplicate property.");
-            }
-
-            switch (propertyName)
-            {
-                case "confirmed":
-                    confirmed = reader.TokenType switch
-                    {
-                        JsonTokenType.True => true,
-                        JsonTokenType.False => false,
-                        _ => throw new JsonException("Offline writer admission confirmed must be a boolean."),
-                    };
-                    break;
-
-                case "confirmation":
-                    if (reader.TokenType == JsonTokenType.Null)
-                    {
-                        confirmation = null;
-                        unrecognizedConfirmation = null;
-                        break;
-                    }
-
-                    if (reader.TokenType != JsonTokenType.String)
-                    {
-                        throw new JsonException("Offline writer admission confirmation must be a string.");
-                    }
-
-                    string? confirmationValue = reader.GetString();
-                    if (
-                        confirmationValue is not null
-                        && ConfirmationsByJsonName.TryGetValue(confirmationValue, out var parsed)
-                    )
-                    {
-                        confirmation = parsed;
-                        unrecognizedConfirmation = null;
-                    }
-                    else
-                    {
-                        confirmation = null;
-                        unrecognizedConfirmation = confirmationValue;
-                    }
-                    break;
-
-                default:
-                    throw new JsonException(
-                        $"Offline writer admission property '{propertyName}' is not supported."
-                    );
-            }
+            throw new JsonException(
+                $"Offline writer admission must be the string value '{DocumentCacheOfflineWriterAdmission.ClosedAndDrainedJsonValue}'."
+            );
         }
 
-        throw new JsonException("Offline writer admission object is incomplete.");
+        return DocumentCacheOfflineWriterAdmission.FromClosedAndDrainedJsonToken();
     }
 
     public override void Write(
@@ -532,25 +505,19 @@ public sealed class DocumentCacheOfflineWriterAdmissionJsonConverter
     {
         ArgumentNullException.ThrowIfNull(value);
 
-        writer.WriteStartObject();
-        writer.WriteBoolean("confirmed", value.Confirmed);
-        if (value.Confirmation is { } confirmation)
+        if (
+            !value.Confirmed
+            || value.HasUnrecognizedConfirmation
+            || (value.Confirmation is null && !value.AcceptedClosedAndDrainedToken)
+        )
         {
-            writer.WriteString("confirmation", ToJsonName(confirmation));
+            throw new JsonException(
+                "Offline writer admission cannot be serialized without the confirmed closed-and-drained acknowledgement."
+            );
         }
-        else if (value.UnrecognizedConfirmation is { } unrecognizedConfirmation)
-        {
-            writer.WriteString("confirmation", unrecognizedConfirmation);
-        }
-        else
-        {
-            writer.WriteNull("confirmation");
-        }
-        writer.WriteEndObject();
-    }
 
-    private static string ToJsonName(DocumentCacheOfflineWriterAdmissionConfirmation confirmation) =>
-        JsonNamingPolicy.CamelCase.ConvertName(confirmation.ToString());
+        writer.WriteStringValue(DocumentCacheOfflineWriterAdmission.ClosedAndDrainedJsonValue);
+    }
 }
 
 public sealed class DocumentCacheNullableTimeSpanSecondsJsonConverter : JsonConverter<TimeSpan?>

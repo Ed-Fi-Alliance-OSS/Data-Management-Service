@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using FluentAssertions;
@@ -508,12 +507,6 @@ public class DocumentCachePreflightClassifierTests
                 DocumentCacheAdministrativeCommandClassification.MismatchedOfflineWriterAdmission,
                 DocumentCacheAdministrativeDiagnosticCategory.MismatchedOfflineWriterAdmission
             ).SetName("Mismatched admission");
-
-            yield return new TestCaseData(
-                UnknownOfflineWriterAdmission(),
-                DocumentCacheAdministrativeCommandClassification.MismatchedOfflineWriterAdmission,
-                DocumentCacheAdministrativeDiagnosticCategory.MismatchedOfflineWriterAdmission
-            ).SetName("Unknown admission");
         }
     }
 
@@ -1239,16 +1232,6 @@ public class DocumentCachePreflightClassifierTests
             _cacheAheadRecoveryAdmission,
             expectedPhysicalSourceFingerprint ?? _fingerprint
         );
-
-    protected static DocumentCacheOfflineWriterAdmission UnknownOfflineWriterAdmission() =>
-        JsonSerializer.Deserialize<DocumentCacheOfflineWriterAdmission>(
-            """
-            {
-              "confirmed": true,
-              "confirmation": "unknownWritersClosedAndDrained"
-            }
-            """
-        )!;
 
     protected static DocumentCacheGuardedNewEmptyActivationPreflightFacts GuardedFacts(
         DocumentCacheTargetContextGeneration? expectedTargetContextGeneration = null,
