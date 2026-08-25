@@ -100,7 +100,8 @@ public sealed class Given_DocumentCacheAdminHelpAndDocumentation
         _readme.Should().Contain("\"confirmation\": \"offlineActivation\"");
         _readme.Should().Contain("\"expectedPhysicalSourceFingerprint\"");
         _readme.Should().Contain("\"offlineWriterAdmission\"");
-        _readme.Should().Contain("\"confirmation\": \"offlineActivationWritersClosedAndDrained\"");
+        _readme.Should().Contain("\"offlineWriterAdmission\": \"closedAndDrained\"");
+        _readme.Should().NotContain("\"confirmation\": \"offlineActivationWritersClosedAndDrained\"");
         _readme.Should().Contain(Fingerprint);
     }
 

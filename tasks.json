@@ -458,7 +458,7 @@
       "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~Parser",
       "dotnet run --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- activate-offline --request-json ./missing-offline-admission.json"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "cli-timeout-budget-coverage",

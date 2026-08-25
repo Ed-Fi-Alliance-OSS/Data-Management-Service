@@ -77,11 +77,37 @@ public sealed class Given_DocumentCacheAdminJsonRequestAndSerializationContracts
         request.ExpectedPhysicalSourceFingerprint!.Value.Should().Be(Fingerprint);
     }
 
-    [Test]
-    public void It_accepts_writer_fenced_json_request_fields_for_writer_fenced_commands()
+    [TestCase(
+        DocumentCacheAdminCommandSurface.ActivateOfflineCommandName,
+        "offlineActivation",
+        typeof(DocumentCacheOfflineActivationRequest),
+        DocumentCacheAdministrativeCommandConfirmation.OfflineActivation,
+        DocumentCacheOfflineWriterAdmissionConfirmation.OfflineActivationWritersClosedAndDrained
+    )]
+    [TestCase(
+        DocumentCacheAdminCommandSurface.DeactivateOfflineCommandName,
+        "offlineDeactivation",
+        typeof(DocumentCacheOfflineDeactivationRequest),
+        DocumentCacheAdministrativeCommandConfirmation.OfflineDeactivation,
+        DocumentCacheOfflineWriterAdmissionConfirmation.OfflineDeactivationWritersClosedAndDrained
+    )]
+    [TestCase(
+        DocumentCacheAdminCommandSurface.RecoverCacheAheadCommandName,
+        "internalCacheAheadRecovery",
+        typeof(DocumentCacheInternalOnlyCacheAheadRecoveryRequest),
+        DocumentCacheAdministrativeCommandConfirmation.InternalCacheAheadRecovery,
+        DocumentCacheOfflineWriterAdmissionConfirmation.InternalOnlyCacheAheadRecoveryWritersClosedAndDrained
+    )]
+    public void It_accepts_closed_and_drained_json_request_admission_for_writer_fenced_commands(
+        string commandName,
+        string confirmation,
+        Type expectedRequestType,
+        DocumentCacheAdministrativeCommandConfirmation expectedConfirmation,
+        DocumentCacheOfflineWriterAdmissionConfirmation expectedAdmission
+    )
     {
         var parseResult = ParseCommand(
-            DocumentCacheAdminCommandSurface.ActivateOfflineCommandName,
+            commandName,
             DocumentCacheAdminCommandSurface.RequestJsonOptionName,
             "-"
         );
@@ -92,12 +118,9 @@ public sealed class Given_DocumentCacheAdminJsonRequestAndSerializationContracts
                 $$"""
                 {
                   "targetKey": { "tenantKey": "", "dataStoreId": 1 },
-                  "confirmation": "offlineActivation",
+                  "confirmation": "{{confirmation}}",
                   "expectedPhysicalSourceFingerprint": "{{Fingerprint}}",
-                  "offlineWriterAdmission": {
-                    "confirmed": true,
-                    "confirmation": "offlineActivationWritersClosedAndDrained"
-                  }
+                  "offlineWriterAdmission": "closedAndDrained"
                 }
                 """,
             out DocumentCacheAdminInvocationTarget? invocationTarget,
@@ -105,14 +128,11 @@ public sealed class Given_DocumentCacheAdminJsonRequestAndSerializationContracts
         );
 
         parsed.Should().BeTrue(failure);
-        DocumentCacheOfflineActivationRequest request = invocationTarget!
-            .JsonRequest!.Request.Should()
-            .BeOfType<DocumentCacheOfflineActivationRequest>()
-            .Subject;
-        request.Confirmation.Should().Be(DocumentCacheAdministrativeCommandConfirmation.OfflineActivation);
-        request
-            .OfflineWriterAdmission!.Confirmation.Should()
-            .Be(DocumentCacheOfflineWriterAdmissionConfirmation.OfflineActivationWritersClosedAndDrained);
+        object request = invocationTarget!.JsonRequest!.Request;
+        request.Should().BeOfType(expectedRequestType);
+        RequestConfirmation(request).Should().Be(expectedConfirmation);
+        RequestOfflineWriterAdmission(request)!.Confirmed.Should().BeTrue();
+        RequestOfflineWriterAdmission(request)!.Confirmation.Should().Be(expectedAdmission);
     }
 
     [TestCase(DocumentCacheAdminCommandSurface.ConfirmOptionName, "onlineCacheRebuild")]
@@ -167,10 +187,7 @@ public sealed class Given_DocumentCacheAdminJsonRequestAndSerializationContracts
                 {
                   "targetKey": { "tenantKey": "", "dataStoreId": 1 },
                   "confirmation": "offlineActivation",
-                  "offlineWriterAdmission": {
-                    "confirmed": true,
-                    "confirmation": "offlineActivationWritersClosedAndDrained"
-                  }
+                  "offlineWriterAdmission": "closedAndDrained"
                 }
                 """,
             out DocumentCacheAdminInvocationTarget? invocationTarget,
@@ -208,11 +225,97 @@ public sealed class Given_DocumentCacheAdminJsonRequestAndSerializationContracts
         failure.Should().NotBeNullOrWhiteSpace();
     }
 
-    [Test]
-    public void It_rejects_unknown_fields_inside_offline_writer_admission_json()
+    [TestCase(
+        """
+            {
+              "targetKey": { "tenantKey": "", "dataStoreId": 1 },
+              "confirmation": "offlineActivation"
+            }
+            """,
+        "required"
+    )]
+    [TestCase(
+        """
+            {
+              "targetKey": { "tenantKey": "", "dataStoreId": 1 },
+              "confirmation": "offlineActivation",
+              "offlineWriterAdmission": true
+            }
+            """,
+        "must be a string"
+    )]
+    [TestCase(
+        """
+            {
+              "targetKey": { "tenantKey": "", "dataStoreId": 1 },
+              "confirmation": "offlineActivation",
+              "offlineWriterAdmission": "ClosedAndDrained"
+            }
+            """,
+        "closedAndDrained"
+    )]
+    [TestCase(
+        """
+            {
+              "targetKey": { "tenantKey": "", "dataStoreId": 1 },
+              "confirmation": "offlineActivation",
+              "offlineWriterAdmission": "writersStopped"
+            }
+            """,
+        "closedAndDrained"
+    )]
+    [TestCase(
+        """
+            {
+              "targetKey": { "tenantKey": "", "dataStoreId": 1 },
+              "confirmation": "offlineActivation",
+              "offlineWriterAdmission": {
+                "confirmed": true,
+                "confirmation": "offlineActivationWritersClosedAndDrained"
+              }
+            }
+            """,
+        "must be a string"
+    )]
+    [TestCase(
+        """
+            {
+              "targetKey": { "tenantKey": "", "dataStoreId": 1 },
+              "confirmation": "offlineActivation",
+              "offlineWriterAdmission": "closedAndDrained",
+              "offlineWriterAdmission": "closedAndDrained"
+            }
+            """,
+        "duplicated"
+    )]
+    public void It_rejects_invalid_json_offline_writer_admission_for_writer_fenced_commands(
+        string requestJson,
+        string expectedFailure
+    )
     {
         var parseResult = ParseCommand(
             DocumentCacheAdminCommandSurface.ActivateOfflineCommandName,
+            DocumentCacheAdminCommandSurface.RequestJsonOptionName,
+            "-"
+        );
+
+        bool parsed = DocumentCacheAdminInvocationTargetParser.TryParse(
+            parseResult,
+            _ => requestJson,
+            out DocumentCacheAdminInvocationTarget? invocationTarget,
+            out string? failure
+        );
+
+        parsed.Should().BeFalse();
+        invocationTarget.Should().BeNull();
+        failure.Should().Contain(expectedFailure);
+    }
+
+    [Test]
+    public void It_rejects_json_offline_writer_admission_for_commands_that_do_not_support_it()
+    {
+        var parseResult = ParseCommand(
+            DocumentCacheAdminCommandSurface.RebuildOnlineCommandName,
             DocumentCacheAdminCommandSurface.RequestJsonOptionName,
             "-"
         );
@@ -223,12 +326,8 @@ public sealed class Given_DocumentCacheAdminJsonRequestAndSerializationContracts
                 """
                 {
                   "targetKey": { "tenantKey": "", "dataStoreId": 1 },
-                  "confirmation": "offlineActivation",
-                  "offlineWriterAdmission": {
-                    "confirmed": true,
-                    "confirmation": "offlineActivationWritersClosedAndDrained",
-                    "extra": true
-                  }
+                  "confirmation": "onlineCacheRebuild",
+                  "offlineWriterAdmission": "closedAndDrained"
                 }
                 """,
             out DocumentCacheAdminInvocationTarget? invocationTarget,
@@ -320,6 +419,30 @@ public sealed class Given_DocumentCacheAdminJsonRequestAndSerializationContracts
 
     private static ParseResult ParseCommand(params string[] args) =>
         DocumentCacheAdminCommandSurface.CreateRootCommand().Parse(args);
+
+    private static DocumentCacheAdministrativeCommandConfirmation? RequestConfirmation(object request) =>
+        request switch
+        {
+            DocumentCacheOfflineActivationRequest offlineActivationRequest =>
+                offlineActivationRequest.Confirmation,
+            DocumentCacheOfflineDeactivationRequest offlineDeactivationRequest =>
+                offlineDeactivationRequest.Confirmation,
+            DocumentCacheInternalOnlyCacheAheadRecoveryRequest cacheAheadRecoveryRequest =>
+                cacheAheadRecoveryRequest.Confirmation,
+            _ => throw new ArgumentException("Unsupported request type.", nameof(request)),
+        };
+
+    private static DocumentCacheOfflineWriterAdmission? RequestOfflineWriterAdmission(object request) =>
+        request switch
+        {
+            DocumentCacheOfflineActivationRequest offlineActivationRequest =>
+                offlineActivationRequest.OfflineWriterAdmission,
+            DocumentCacheOfflineDeactivationRequest offlineDeactivationRequest =>
+                offlineDeactivationRequest.OfflineWriterAdmission,
+            DocumentCacheInternalOnlyCacheAheadRecoveryRequest cacheAheadRecoveryRequest =>
+                cacheAheadRecoveryRequest.OfflineWriterAdmission,
+            _ => throw new ArgumentException("Unsupported request type.", nameof(request)),
+        };
 
     private static DocumentCacheStatusResponse StatusResponse() =>
         new(

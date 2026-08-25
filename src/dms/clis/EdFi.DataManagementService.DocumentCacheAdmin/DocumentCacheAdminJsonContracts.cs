@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 
@@ -21,14 +20,6 @@ internal sealed record DocumentCacheAdminJsonRequest(
 
 internal static class DocumentCacheAdminJsonSerializer
 {
-    public static readonly JsonSerializerOptions RequestJsonOptions = new()
-    {
-        AllowTrailingCommas = false,
-        PropertyNameCaseInsensitive = false,
-        ReadCommentHandling = JsonCommentHandling.Disallow,
-        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
-    };
-
     public static string SerializeContract(object contract, Type contractType)
     {
         ArgumentNullException.ThrowIfNull(contract);
@@ -43,8 +34,11 @@ internal static class DocumentCacheAdminJsonRequestParser
     private sealed record MutatingCommandContract(
         Type RequestType,
         DocumentCacheAdministrativeCommandConfirmation ExpectedConfirmation,
-        bool SupportsOfflineWriterAdmission
-    );
+        DocumentCacheOfflineWriterAdmissionConfirmation? ExpectedOfflineWriterAdmissionConfirmation
+    )
+    {
+        public bool SupportsOfflineWriterAdmission => ExpectedOfflineWriterAdmissionConfirmation is not null;
+    }
 
     private static readonly IReadOnlyDictionary<string, MutatingCommandContract> MutatingContracts =
         new Dictionary<string, MutatingCommandContract>(StringComparer.Ordinal)
@@ -52,32 +46,32 @@ internal static class DocumentCacheAdminJsonRequestParser
             [DocumentCacheAdminCommandSurface.ActivateNewEmptyCommandName] = new(
                 typeof(DocumentCacheGuardedNewEmptyActivationRequest),
                 DocumentCacheAdministrativeCommandConfirmation.NewEmptyActivation,
-                SupportsOfflineWriterAdmission: false
+                ExpectedOfflineWriterAdmissionConfirmation: null
             ),
             [DocumentCacheAdminCommandSurface.ActivateOfflineCommandName] = new(
                 typeof(DocumentCacheOfflineActivationRequest),
                 DocumentCacheAdministrativeCommandConfirmation.OfflineActivation,
-                SupportsOfflineWriterAdmission: true
+                DocumentCacheOfflineWriterAdmissionConfirmation.OfflineActivationWritersClosedAndDrained
             ),
             [DocumentCacheAdminCommandSurface.DeactivateOfflineCommandName] = new(
                 typeof(DocumentCacheOfflineDeactivationRequest),
                 DocumentCacheAdministrativeCommandConfirmation.OfflineDeactivation,
-                SupportsOfflineWriterAdmission: true
+                DocumentCacheOfflineWriterAdmissionConfirmation.OfflineDeactivationWritersClosedAndDrained
             ),
             [DocumentCacheAdminCommandSurface.RebuildOnlineCommandName] = new(
                 typeof(DocumentCacheOnlineCacheRebuildRequest),
                 DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild,
-                SupportsOfflineWriterAdmission: false
+                ExpectedOfflineWriterAdmissionConfirmation: null
             ),
             [DocumentCacheAdminCommandSurface.ScrubCommandName] = new(
                 typeof(DocumentCacheExplicitIntegrityScrubRequest),
                 DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub,
-                SupportsOfflineWriterAdmission: false
+                ExpectedOfflineWriterAdmissionConfirmation: null
             ),
             [DocumentCacheAdminCommandSurface.RecoverCacheAheadCommandName] = new(
                 typeof(DocumentCacheInternalOnlyCacheAheadRecoveryRequest),
                 DocumentCacheAdministrativeCommandConfirmation.InternalCacheAheadRecovery,
-                SupportsOfflineWriterAdmission: true
+                DocumentCacheOfflineWriterAdmissionConfirmation.InternalOnlyCacheAheadRecoveryWritersClosedAndDrained
             ),
         };
 
@@ -126,13 +120,7 @@ internal static class DocumentCacheAdminJsonRequestParser
                 StringComparison.Ordinal
             )
                 ? TryParseStatusRequest(document.RootElement, out request, out failure)
-                : TryParseMutatingRequest(
-                    commandName,
-                    requestJson,
-                    document.RootElement,
-                    out request,
-                    out failure
-                );
+                : TryParseMutatingRequest(commandName, document.RootElement, out request, out failure);
         }
     }
 
@@ -180,7 +168,6 @@ internal static class DocumentCacheAdminJsonRequestParser
 
     private static bool TryParseMutatingRequest(
         string commandName,
-        string requestJson,
         JsonElement rootElement,
         out DocumentCacheAdminJsonRequest? request,
         out string? failure
@@ -198,12 +185,15 @@ internal static class DocumentCacheAdminJsonRequestParser
         string[] allowedProperties = contract.SupportsOfflineWriterAdmission
             ? ["targetKey", "confirmation", "expectedPhysicalSourceFingerprint", "offlineWriterAdmission"]
             : ["targetKey", "confirmation", "expectedPhysicalSourceFingerprint"];
+        string[] requiredProperties = contract.SupportsOfflineWriterAdmission
+            ? ["targetKey", "confirmation", "offlineWriterAdmission"]
+            : ["targetKey", "confirmation"];
 
         if (
             !TryReadProperties(
                 rootElement,
                 "request",
-                requiredProperties: ["targetKey", "confirmation"],
+                requiredProperties,
                 allowedProperties,
                 out Dictionary<string, JsonElement> rootProperties,
                 out failure
@@ -234,33 +224,45 @@ internal static class DocumentCacheAdminJsonRequestParser
             return false;
         }
 
-        try
+        if (
+            !TryReadExpectedPhysicalSourceFingerprint(
+                rootProperties,
+                out DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint,
+                out failure
+            )
+        )
         {
-            object? deserializedRequest = JsonSerializer.Deserialize(
-                requestJson,
-                contract.RequestType,
-                DocumentCacheAdminJsonSerializer.RequestJsonOptions
-            );
+            return false;
+        }
 
-            if (deserializedRequest is null)
+        DocumentCacheOfflineWriterAdmission? offlineWriterAdmission = null;
+        if (contract.SupportsOfflineWriterAdmission)
+        {
+            if (!TryReadExpectedOfflineWriterAdmission(rootProperties["offlineWriterAdmission"], out failure))
             {
-                failure = "Request JSON could not be deserialized.";
                 return false;
             }
 
-            request = new DocumentCacheAdminJsonRequest(
-                commandName,
-                contract.RequestType,
-                deserializedRequest,
-                validTargetKey
+            offlineWriterAdmission = new(
+                confirmed: true,
+                contract.ExpectedOfflineWriterAdmissionConfirmation!.Value
             );
-            return true;
         }
-        catch (Exception exception) when (exception is JsonException or ArgumentException)
-        {
-            failure = $"Request JSON is invalid: {exception.Message}";
-            return false;
-        }
+
+        object sharedRequest = CreateSharedMutatingRequest(
+            commandName,
+            validTargetKey,
+            expectedPhysicalSourceFingerprint,
+            contract.ExpectedConfirmation,
+            offlineWriterAdmission
+        );
+        request = new DocumentCacheAdminJsonRequest(
+            commandName,
+            contract.RequestType,
+            sharedRequest,
+            validTargetKey
+        );
+        return true;
     }
 
     private static bool TryReadExpectedConfirmation(
@@ -289,6 +291,137 @@ internal static class DocumentCacheAdminJsonRequestParser
         }
 
         return true;
+    }
+
+    private static bool TryReadExpectedOfflineWriterAdmission(
+        JsonElement offlineWriterAdmissionElement,
+        out string? failure
+    )
+    {
+        failure = null;
+
+        if (offlineWriterAdmissionElement.ValueKind != JsonValueKind.String)
+        {
+            failure = "Request JSON property 'offlineWriterAdmission' must be a string.";
+            return false;
+        }
+
+        string? suppliedAdmission = offlineWriterAdmissionElement.GetString();
+        if (
+            !string.Equals(
+                suppliedAdmission,
+                DocumentCacheAdminCommandSurface.OfflineWriterAdmissionClosedAndDrainedOptionValue,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            failure =
+                $"Request JSON offlineWriterAdmission '{suppliedAdmission}' does not match required acknowledgement '{DocumentCacheAdminCommandSurface.OfflineWriterAdmissionClosedAndDrainedOptionValue}'.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryReadExpectedPhysicalSourceFingerprint(
+        IReadOnlyDictionary<string, JsonElement> rootProperties,
+        out DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint,
+        out string? failure
+    )
+    {
+        expectedPhysicalSourceFingerprint = null;
+        failure = null;
+
+        if (
+            !rootProperties.TryGetValue(
+                "expectedPhysicalSourceFingerprint",
+                out JsonElement fingerprintElement
+            )
+        )
+        {
+            return true;
+        }
+
+        if (fingerprintElement.ValueKind == JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        if (fingerprintElement.ValueKind != JsonValueKind.String)
+        {
+            failure = "Request JSON property 'expectedPhysicalSourceFingerprint' must be a string.";
+            return false;
+        }
+
+        try
+        {
+            expectedPhysicalSourceFingerprint = new DocumentCachePhysicalSourceFingerprint(
+                fingerprintElement.GetString() ?? string.Empty
+            );
+            return true;
+        }
+        catch (ArgumentException exception)
+        {
+            failure =
+                $"Request JSON property 'expectedPhysicalSourceFingerprint' is invalid: {exception.Message}";
+            return false;
+        }
+    }
+
+    private static object CreateSharedMutatingRequest(
+        string commandName,
+        DocumentCacheTargetKey targetKey,
+        DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint,
+        DocumentCacheAdministrativeCommandConfirmation confirmation,
+        DocumentCacheOfflineWriterAdmission? offlineWriterAdmission
+    )
+    {
+        DocumentCacheAdministrativeTargetKey administrativeTargetKey =
+            DocumentCacheAdministrativeTargetKey.FromTargetKey(targetKey);
+
+        return commandName switch
+        {
+            DocumentCacheAdminCommandSurface.ActivateNewEmptyCommandName =>
+                new DocumentCacheGuardedNewEmptyActivationRequest(
+                    administrativeTargetKey,
+                    expectedPhysicalSourceFingerprint,
+                    confirmation
+                ),
+            DocumentCacheAdminCommandSurface.ActivateOfflineCommandName =>
+                new DocumentCacheOfflineActivationRequest(
+                    administrativeTargetKey,
+                    offlineWriterAdmission,
+                    expectedPhysicalSourceFingerprint,
+                    confirmation
+                ),
+            DocumentCacheAdminCommandSurface.DeactivateOfflineCommandName =>
+                new DocumentCacheOfflineDeactivationRequest(
+                    administrativeTargetKey,
+                    offlineWriterAdmission,
+                    expectedPhysicalSourceFingerprint,
+                    confirmation
+                ),
+            DocumentCacheAdminCommandSurface.RebuildOnlineCommandName =>
+                new DocumentCacheOnlineCacheRebuildRequest(
+                    administrativeTargetKey,
+                    expectedPhysicalSourceFingerprint,
+                    confirmation
+                ),
+            DocumentCacheAdminCommandSurface.ScrubCommandName =>
+                new DocumentCacheExplicitIntegrityScrubRequest(
+                    administrativeTargetKey,
+                    expectedPhysicalSourceFingerprint,
+                    confirmation
+                ),
+            DocumentCacheAdminCommandSurface.RecoverCacheAheadCommandName =>
+                new DocumentCacheInternalOnlyCacheAheadRecoveryRequest(
+                    administrativeTargetKey,
+                    offlineWriterAdmission,
+                    expectedPhysicalSourceFingerprint,
+                    confirmation
+                ),
+            _ => throw new InvalidOperationException($"Unsupported mutating command '{commandName}'."),
+        };
     }
 
     private static bool TryReadTargetKey(

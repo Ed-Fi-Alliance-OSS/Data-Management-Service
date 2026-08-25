@@ -431,12 +431,12 @@ public sealed class Given_DocumentCacheAdminParserAndContractUnitTests
         );
         yield return new TestCaseData(
             DocumentCacheAdminCommandSurface.ActivateOfflineCommandName,
-            MutatingRequestJson("offlineActivation", "offlineActivationWritersClosedAndDrained"),
+            MutatingRequestJson("offlineActivation", includeOfflineWriterAdmission: true),
             typeof(DocumentCacheOfflineActivationRequest)
         );
         yield return new TestCaseData(
             DocumentCacheAdminCommandSurface.DeactivateOfflineCommandName,
-            MutatingRequestJson("offlineDeactivation", "offlineDeactivationWritersClosedAndDrained"),
+            MutatingRequestJson("offlineDeactivation", includeOfflineWriterAdmission: true),
             typeof(DocumentCacheOfflineDeactivationRequest)
         );
         yield return new TestCaseData(
@@ -451,28 +451,19 @@ public sealed class Given_DocumentCacheAdminParserAndContractUnitTests
         );
         yield return new TestCaseData(
             DocumentCacheAdminCommandSurface.RecoverCacheAheadCommandName,
-            MutatingRequestJson(
-                "internalCacheAheadRecovery",
-                "internalOnlyCacheAheadRecoveryWritersClosedAndDrained"
-            ),
+            MutatingRequestJson("internalCacheAheadRecovery", includeOfflineWriterAdmission: true),
             typeof(DocumentCacheInternalOnlyCacheAheadRecoveryRequest)
         );
     }
 
-    private static string MutatingRequestJson(
-        string confirmation,
-        string? offlineWriterAdmissionConfirmation = null
-    )
+    private static string MutatingRequestJson(string confirmation, bool includeOfflineWriterAdmission = false)
     {
-        string offlineWriterAdmissionJson = offlineWriterAdmissionConfirmation is null
-            ? string.Empty
-            : $$"""
+        string offlineWriterAdmissionJson = includeOfflineWriterAdmission
+            ? """
                 ,
-                  "offlineWriterAdmission": {
-                    "confirmed": true,
-                    "confirmation": "{{offlineWriterAdmissionConfirmation}}"
-                  }
-                """;
+                  "offlineWriterAdmission": "closedAndDrained"
+                """
+            : string.Empty;
 
         return $$"""
             {

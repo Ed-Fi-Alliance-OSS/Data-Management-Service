@@ -186,7 +186,8 @@ Mutating request JSON uses the shared administrative DTO shape:
 }
 ```
 
-Writer-fenced JSON requests carry the shared offline writer admission object:
+Writer-fenced JSON requests carry the same offline writer admission token used by
+`--offline-writer-admission`:
 
 ```json
 {
@@ -196,10 +197,7 @@ Writer-fenced JSON requests carry the shared offline writer admission object:
   },
   "confirmation": "offlineActivation",
   "expectedPhysicalSourceFingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-  "offlineWriterAdmission": {
-    "confirmed": true,
-    "confirmation": "offlineActivationWritersClosedAndDrained"
-  }
+  "offlineWriterAdmission": "closedAndDrained"
 }
 ```
 
