@@ -5,8 +5,10 @@
 
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
@@ -20,6 +22,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
@@ -404,6 +407,241 @@ public class DataStoreDerivativeModuleTests
         {
             _body["validationErrors"]!.AsObject().Count.Should().Be(0);
             _body["errors"]!.AsArray().Count.Should().Be(0);
+        }
+    }
+
+    /// <summary>
+    /// A get returns the derivative's stored cipher text, so a client that reads it, changes an
+    /// unrelated field and writes the object back resubmits that exact value. Encrypting it a second
+    /// time leaves a value no reader can turn back into a connection string, so the write path has to
+    /// refuse it. These fixtures run against the real validator the host registers.
+    /// </summary>
+    [TestFixture]
+    public class ConnectionStringValidationTests : DataStoreDerivativeModuleTests
+    {
+        private const string ValidConnectionString = "Server=localhost;Database=ReplicaDb;";
+
+        [SetUp]
+        public void SetUpRepository()
+        {
+            // The fake is shared by the fixture, so recorded calls are cleared to keep each test's
+            // "was the repository reached" assertion its own.
+            Fake.ClearRecordedCalls(_repository);
+
+            A.CallTo(() => _repository.InsertDataStoreDerivative(A<DataStoreDerivativeInsertCommand>._))
+                .Returns(new DataStoreDerivativeInsertResult.Success(1));
+            A.CallTo(() => _repository.UpdateDataStoreDerivative(A<DataStoreDerivativeUpdateCommand>._))
+                .Returns(new DataStoreDerivativeUpdateResult.Success());
+        }
+
+        /// <summary>
+        /// What a get returns for this plain text: the stored bytes, Base64 encoded.
+        /// </summary>
+        private static string StoredValueFor(string plainText) =>
+            Convert.ToBase64String(
+                new ConnectionStringEncryptionService(
+                    Options.Create(
+                        new EdFi.DmsConfigurationService.Backend.DatabaseOptions
+                        {
+                            DatabaseConnection = "Server=test;",
+                            EncryptionKey = "TestEncryptionKey123456789012345678901234567890",
+                        }
+                    )
+                ).Encrypt(plainText)!
+            );
+
+        private static StringContent InsertBody(string? connectionString) =>
+            new(
+                JsonSerializer.Serialize(
+                    new DataStoreDerivativeInsertCommand
+                    {
+                        DataStoreId = 1,
+                        DerivativeType = "ReadReplica",
+                        ConnectionString = connectionString,
+                    }
+                ),
+                Encoding.UTF8,
+                "application/json"
+            );
+
+        private static StringContent UpdateBody(
+            string? connectionString,
+            string derivativeType = "ReadReplica"
+        ) =>
+            new(
+                JsonSerializer.Serialize(
+                    new DataStoreDerivativeUpdateCommand
+                    {
+                        Id = 1,
+                        DataStoreId = 1,
+                        DerivativeType = derivativeType,
+                        ConnectionString = connectionString,
+                    }
+                ),
+                Encoding.UTF8,
+                "application/json"
+            );
+
+        private static async Task ShouldBeDataValidationFailure(HttpResponseMessage response)
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+            JsonNode body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data");
+            body["validationErrors"]!.AsObject().Should().ContainKey("ConnectionString");
+        }
+
+        // Plain texts of different lengths, so the stored value covers more than one Base64 padding
+        // shape. The exhaustive sweep over lengths lives with the cipher text detector.
+        [TestCase("Server=a;Db=b")]
+        [TestCase("Server=localhost;Db=b")]
+        [TestCase("Server=localhost;Database=ReplicaDb;abc")]
+        public async Task It_rejects_resubmitted_cipher_text_on_post(string plainText)
+        {
+            using var client = SetUpClient();
+
+            var response = await client.PostAsync(
+                "/v3/dataStoreDerivatives/",
+                InsertBody(StoredValueFor(plainText))
+            );
+
+            await ShouldBeDataValidationFailure(response);
+            A.CallTo(() => _repository.InsertDataStoreDerivative(A<DataStoreDerivativeInsertCommand>._))
+                .MustNotHaveHappened();
+        }
+
+        [TestCase("Server=a;Db=b")]
+        [TestCase("Server=localhost;Db=b")]
+        [TestCase("Server=localhost;Database=ReplicaDb;abc")]
+        public async Task It_rejects_resubmitted_cipher_text_on_put(string plainText)
+        {
+            using var client = SetUpClient();
+
+            var response = await client.PutAsync(
+                "/v3/dataStoreDerivatives/1",
+                UpdateBody(StoredValueFor(plainText))
+            );
+
+            await ShouldBeDataValidationFailure(response);
+            A.CallTo(() => _repository.UpdateDataStoreDerivative(A<DataStoreDerivativeUpdateCommand>._))
+                .MustNotHaveHappened();
+        }
+
+        [TestCase("not-a-connection-string")]
+        [TestCase(";;;")]
+        [TestCase("host=")]
+        [TestCase("")]
+        [TestCase("   ")]
+        public async Task It_rejects_an_unusable_value_on_post(string connectionString)
+        {
+            using var client = SetUpClient();
+
+            var response = await client.PostAsync("/v3/dataStoreDerivatives/", InsertBody(connectionString));
+
+            await ShouldBeDataValidationFailure(response);
+            A.CallTo(() => _repository.InsertDataStoreDerivative(A<DataStoreDerivativeInsertCommand>._))
+                .MustNotHaveHappened();
+        }
+
+        [TestCase("not-a-connection-string")]
+        [TestCase(";;;")]
+        [TestCase("host=")]
+        [TestCase("")]
+        [TestCase("   ")]
+        public async Task It_rejects_an_unusable_value_on_put(string connectionString)
+        {
+            using var client = SetUpClient();
+
+            var response = await client.PutAsync("/v3/dataStoreDerivatives/1", UpdateBody(connectionString));
+
+            await ShouldBeDataValidationFailure(response);
+            A.CallTo(() => _repository.UpdateDataStoreDerivative(A<DataStoreDerivativeUpdateCommand>._))
+                .MustNotHaveHappened();
+        }
+
+        [Test]
+        public async Task It_accepts_a_new_connection_string_on_post()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.PostAsync(
+                "/v3/dataStoreDerivatives/",
+                InsertBody(ValidConnectionString)
+            );
+
+            response.StatusCode.Should().Be(HttpStatusCode.Created);
+            A.CallTo(() =>
+                    _repository.InsertDataStoreDerivative(
+                        A<DataStoreDerivativeInsertCommand>.That.Matches(command =>
+                            command.ConnectionString == ValidConnectionString
+                        )
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public async Task It_accepts_a_new_connection_string_on_put()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.PutAsync(
+                "/v3/dataStoreDerivatives/1",
+                UpdateBody(ValidConnectionString)
+            );
+
+            response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            A.CallTo(() =>
+                    _repository.UpdateDataStoreDerivative(
+                        A<DataStoreDerivativeUpdateCommand>.That.Matches(command =>
+                            command.ConnectionString == ValidConnectionString
+                        )
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+        }
+
+        /// <summary>
+        /// The case this validation must not break: an update that is really about another field.
+        /// </summary>
+        [Test]
+        public async Task It_accepts_an_update_that_changes_another_field()
+        {
+            using var client = SetUpClient();
+
+            var response = await client.PutAsync(
+                "/v3/dataStoreDerivatives/1",
+                UpdateBody(ValidConnectionString, derivativeType: "Snapshot")
+            );
+
+            response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            A.CallTo(() =>
+                    _repository.UpdateDataStoreDerivative(
+                        A<DataStoreDerivativeUpdateCommand>.That.Matches(command =>
+                            command.DerivativeType == "Snapshot"
+                            && command.ConnectionString == ValidConnectionString
+                        )
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+        }
+
+        /// <summary>
+        /// A provider's own parse failure message repeats the text it could not read, so a rejection
+        /// must never carry the submitted value into the response.
+        /// </summary>
+        [Test]
+        public async Task It_does_not_repeat_the_submitted_value_in_the_response()
+        {
+            using var client = SetUpClient();
+            string storedValue = StoredValueFor(ValidConnectionString);
+
+            foreach (string submitted in new[] { storedValue, "not-a-connection-string", "host=" })
+            {
+                var response = await client.PostAsync("/v3/dataStoreDerivatives/", InsertBody(submitted));
+
+                (await response.Content.ReadAsStringAsync()).Should().NotContain(submitted);
+            }
         }
     }
 }
