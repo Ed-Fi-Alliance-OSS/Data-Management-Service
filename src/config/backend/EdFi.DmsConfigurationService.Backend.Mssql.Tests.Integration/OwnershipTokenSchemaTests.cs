@@ -5,6 +5,7 @@
 
 using Dapper;
 using FluentAssertions;
+using Microsoft.Data.SqlClient;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration;
 
@@ -71,5 +72,79 @@ public class OwnershipTokenSchemaTests : DatabaseTest
         );
 
         deleteRule.Should().Be("NO_ACTION");
+    }
+
+    [Test]
+    public async Task It_rejects_a_null_ownership_token_description()
+    {
+        Func<Task> act = () =>
+            Connection!.ExecuteAsync(
+                """
+                INSERT INTO dmscs.OwnershipToken (Description)
+                VALUES (@Description);
+                """,
+                new { Description = (string?)null }
+            );
+
+        await act.Should().ThrowAsync<SqlException>();
+    }
+
+    [TestCase("")]
+    [TestCase("   ")]
+    [TestCase("\t\r\n")]
+    public async Task It_rejects_an_ownership_token_description_with_no_non_whitespace_characters(
+        string description
+    )
+    {
+        Func<Task> act = () =>
+            Connection!.ExecuteAsync(
+                """
+                INSERT INTO dmscs.OwnershipToken (Description)
+                VALUES (@Description);
+                """,
+                new { Description = description }
+            );
+
+        await act.Should().ThrowAsync<SqlException>();
+    }
+
+    [Test]
+    public async Task It_accepts_a_50_character_ownership_token_description()
+    {
+        string description = new('A', 50);
+
+        int count = await Connection!.ExecuteAsync(
+            """
+            INSERT INTO dmscs.OwnershipToken (Description)
+            VALUES (@Description);
+            """,
+            new { Description = description }
+        );
+
+        count.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_rejects_a_blank_ownership_token_description_on_update()
+    {
+        short id = await Connection!.ExecuteScalarAsync<short>(
+            """
+            INSERT INTO dmscs.OwnershipToken (Description)
+            OUTPUT INSERTED.Id
+            VALUES ('Valid description');
+            """
+        );
+
+        Func<Task> act = () =>
+            Connection!.ExecuteAsync(
+                """
+                UPDATE dmscs.OwnershipToken
+                SET Description = @Description
+                WHERE Id = @Id;
+                """,
+                new { Id = id, Description = "   " }
+            );
+
+        await act.Should().ThrowAsync<SqlException>();
     }
 }

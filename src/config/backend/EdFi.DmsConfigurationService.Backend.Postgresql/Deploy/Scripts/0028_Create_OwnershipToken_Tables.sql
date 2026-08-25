@@ -27,6 +27,17 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1
         FROM pg_constraint
+        WHERE conname = 'CK_OwnershipToken_Description_NotBlank'
+          AND conrelid = '"dmscs"."OwnershipToken"'::regclass
+    ) THEN
+        ALTER TABLE "dmscs"."OwnershipToken"
+            ADD CONSTRAINT "CK_OwnershipToken_Description_NotBlank"
+            CHECK (length(regexp_replace("Description", '\s', '', 'g')) > 0);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
         WHERE conname = 'FK_OwnershipToken_Tenant'
           AND conrelid = '"dmscs"."OwnershipToken"'::regclass
     ) THEN

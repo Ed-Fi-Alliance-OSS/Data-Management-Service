@@ -21,6 +21,15 @@ BEGIN
     ALTER TABLE dmscs.OwnershipToken ADD CONSTRAINT PK_OwnershipToken PRIMARY KEY (Id);
 END;
 
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = 'CK_OwnershipToken_Description_NotBlank' AND parent_object_id = OBJECT_ID('dmscs.OwnershipToken'))
+BEGIN
+    ALTER TABLE dmscs.OwnershipToken ADD CONSTRAINT CK_OwnershipToken_Description_NotBlank CHECK (
+        LEN(
+            REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(Description, N' ', N''), NCHAR(9), N''), NCHAR(10), N''), NCHAR(11), N''), NCHAR(12), N''), NCHAR(13), N'')
+        ) > 0
+    );
+END;
+
 IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_OwnershipToken_Tenant')
 BEGIN
     ALTER TABLE dmscs.OwnershipToken ADD CONSTRAINT FK_OwnershipToken_Tenant FOREIGN KEY (TenantId) REFERENCES dmscs.Tenant(Id) ON DELETE NO ACTION;
