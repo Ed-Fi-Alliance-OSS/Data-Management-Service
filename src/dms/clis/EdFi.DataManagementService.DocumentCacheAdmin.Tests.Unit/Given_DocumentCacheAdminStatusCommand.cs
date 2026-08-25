@@ -124,6 +124,43 @@ public sealed class Given_DocumentCacheAdminStatusCommand
     }
 
     [Test]
+    [Category("Timeout")]
+    public async Task It_applies_status_timeout_before_target_resolution_completes()
+    {
+        ScriptedDocumentCacheStatusService statusService = new(
+            (_, _) =>
+                throw new AssertionException(
+                    "Status pipeline must not run after target resolution times out."
+                )
+        );
+        await using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddSingleton<IDocumentCacheAdminTargetResolver>(new DelayingTargetResolver())
+            .AddSingleton<IDocumentCacheStatusService>(statusService)
+            .BuildServiceProvider();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+
+        int exitCode = await DocumentCacheAdminCommandExecutor.ExecuteAsync(
+            ParseStatusCommand(
+                DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
+                "1",
+                DocumentCacheAdminCommandSurface.StatusTimeoutSecondsOptionName,
+                "0.001",
+                DocumentCacheAdminCommandSurface.JsonOptionName
+            ),
+            InvocationTarget(),
+            serviceProvider,
+            stdout,
+            stderr
+        );
+
+        exitCode.Should().Be(DocumentCacheAdminExitCodes.FailedNoMutation);
+        stdout.ToString().Should().BeEmpty();
+        stderr.ToString().Should().Contain("status timed out");
+        statusService.EvaluationModes.Should().BeEmpty();
+    }
+
+    [Test]
     public async Task It_enforces_target_resolution_failure_before_status_pipeline()
     {
         UnexpectedMembershipTargetResolver targetResolver = new();
@@ -328,6 +365,18 @@ public sealed class Given_DocumentCacheAdminStatusCommand
                     "DocumentCache target registry did not contain exactly the invocation target."
                 )
             );
+        }
+    }
+
+    private sealed class DelayingTargetResolver : IDocumentCacheAdminTargetResolver
+    {
+        public async Task<DocumentCacheAdminTargetResolutionResult> ResolveAsync(
+            DocumentCacheTargetKey targetKey,
+            CancellationToken cancellationToken = default
+        )
+        {
+            await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+            throw new AssertionException("Target resolution should be cancelled by the status timeout.");
         }
     }
 }

@@ -101,7 +101,8 @@ public class SecurityMetadataProviderTests
             var configContext = new ConfigurationServiceContext(clientId, clientSecret, scope);
 
             var tokenHandler = A.Fake<IConfigurationServiceTokenHandler>();
-            A.CallTo(() => tokenHandler.GetTokenAsync(clientId, clientSecret, scope)).Returns(expectedToken);
+            A.CallTo(() => tokenHandler.GetTokenAsync(clientId, clientSecret, scope, A<CancellationToken>._))
+                .Returns(expectedToken);
 
             _metadataProvider = new ConfigurationServiceClaimSetProvider(
                 configServiceApiClient,
@@ -218,7 +219,8 @@ public class SecurityMetadataProviderTests
             var configContext = new ConfigurationServiceContext(clientId, clientSecret, scope);
 
             var tokenHandler = A.Fake<IConfigurationServiceTokenHandler>();
-            A.CallTo(() => tokenHandler.GetTokenAsync(clientId, clientSecret, scope)).Returns(expectedToken);
+            A.CallTo(() => tokenHandler.GetTokenAsync(clientId, clientSecret, scope, A<CancellationToken>._))
+                .Returns(expectedToken);
 
             _metadataProvider = new ConfigurationServiceClaimSetProvider(
                 _configServiceApiClient,

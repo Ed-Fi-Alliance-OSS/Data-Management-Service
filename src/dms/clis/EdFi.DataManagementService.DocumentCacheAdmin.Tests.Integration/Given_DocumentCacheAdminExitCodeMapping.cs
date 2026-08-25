@@ -83,7 +83,7 @@ public sealed class Given_DocumentCacheAdminCancellationExitCodes
         DocumentCacheAdminCommandSurface.CreateRootCommand().Parse([commandName, .. args]);
 
     private static DocumentCacheAdminInvocationTarget InvocationTarget() =>
-        new(DocumentCacheTargetKey.Create("", 1), DocumentCacheAdminInvocationTargetSource.Options);
+        new(DocumentCacheTargetKey.Create("", 1));
 
     private static DocumentCacheAdministrativeCommandResult Result(
         DocumentCacheAdministrativeCommandStatus status,
@@ -193,7 +193,7 @@ public sealed class Given_DocumentCacheAdminSessionLossExitCodes
         DocumentCacheAdminCommandSurface.CreateRootCommand().Parse([commandName, .. args]);
 
     private static DocumentCacheAdminInvocationTarget InvocationTarget() =>
-        new(DocumentCacheTargetKey.Create("", 1), DocumentCacheAdminInvocationTargetSource.Options);
+        new(DocumentCacheTargetKey.Create("", 1));
 
     private static DocumentCacheAdministrativeCommandResult Result(
         DocumentCacheAdministrativeCommandStatus status,
@@ -300,7 +300,7 @@ public sealed class Given_DocumentCacheAdminProviderCommandTimeoutExitCodes
         DocumentCacheAdminCommandSurface.CreateRootCommand().Parse([commandName, .. args]);
 
     private static DocumentCacheAdminInvocationTarget InvocationTarget() =>
-        new(DocumentCacheTargetKey.Create("", 1), DocumentCacheAdminInvocationTargetSource.Options);
+        new(DocumentCacheTargetKey.Create("", 1));
 
     private static DocumentCacheAdministrativeCommandResult Result(
         DocumentCacheAdministrativeCommandStatus status,

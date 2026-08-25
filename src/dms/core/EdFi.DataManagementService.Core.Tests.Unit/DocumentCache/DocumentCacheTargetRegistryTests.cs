@@ -193,6 +193,49 @@ public class DocumentCacheTargetRegistryTests
 
             fixture.DataStoreProvider.LoadDataStoreCalls.Should().Equal("TenantA", "");
         }
+
+        [Test]
+        public async Task It_forwards_the_refresh_cancellation_token_to_direct_load_hooks()
+        {
+            RegistryFixture fixture = new(Targets: [("TenantA", 7)]);
+            fixture.DataStoreProvider.QueueLoadResult("TenantA", CreateDataStore(7, "connection-a"));
+            using var cancellationTokenSource = new CancellationTokenSource();
+
+            await fixture.Registry.RefreshAsync(
+                DocumentCacheTargetRefreshReason.Startup,
+                cancellationTokenSource.Token
+            );
+
+            fixture
+                .DataStoreProvider.LoadDataStoreCancellationTokens.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(cancellationTokenSource.Token);
+        }
+
+        [Test]
+        public async Task It_forwards_the_refresh_cancellation_token_to_expiration_refresh_hooks()
+        {
+            RegistryFixture fixture = new(Targets: [("TenantA", 7)]);
+            fixture.DataStoreProvider.QueueLoadResult("TenantA", CreateDataStore(7, "connection-a"));
+            await fixture.Registry.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+            fixture.DataStoreProvider.QueueExpirationRefreshResult(
+                "TenantA",
+                CreateDataStore(7, "connection-a")
+            );
+            using var cancellationTokenSource = new CancellationTokenSource();
+
+            await fixture.Registry.RefreshAsync(
+                DocumentCacheTargetRefreshReason.SupervisorTriggered,
+                cancellationTokenSource.Token
+            );
+
+            fixture
+                .DataStoreProvider.RefreshIfExpiredCancellationTokens.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(cancellationTokenSource.Token);
+        }
     }
 
     [TestFixture]
@@ -1375,6 +1418,10 @@ public class DocumentCacheTargetRegistryTests
 
         public List<string> RefreshIfExpiredCalls { get; } = [];
 
+        public List<CancellationToken> LoadDataStoreCancellationTokens { get; } = [];
+
+        public List<CancellationToken> RefreshIfExpiredCancellationTokens { get; } = [];
+
         public List<(long Id, string TenantKey)> GetByIdCalls { get; } = [];
 
         public int LoadTenantsCallCount { get; private set; }
@@ -1395,10 +1442,14 @@ public class DocumentCacheTargetRegistryTests
         public void QueueMutationAfterNextGetById(string? tenant, params DataStore[] dataStores) =>
             GetGetByIdMutationQueue(tenant).Enqueue(dataStores);
 
-        public Task<IList<DataStore>> LoadDataStores(string? tenant = null)
+        public Task<IList<DataStore>> LoadDataStores(
+            string? tenant = null,
+            CancellationToken cancellationToken = default
+        )
         {
             string tenantKey = GetTenantKey(tenant);
             LoadDataStoreCalls.Add(tenantKey);
+            LoadDataStoreCancellationTokens.Add(cancellationToken);
 
             Queue<LoadDataStoresResult> queue = GetQueue(tenant);
             if (queue.Count == 0)
@@ -1417,10 +1468,14 @@ public class DocumentCacheTargetRegistryTests
             return Task.FromResult(result.DataStores);
         }
 
-        public Task RefreshInstancesIfExpiredAsync(string? tenant = null)
+        public Task RefreshInstancesIfExpiredAsync(
+            string? tenant = null,
+            CancellationToken cancellationToken = default
+        )
         {
             string tenantKey = GetTenantKey(tenant);
             RefreshIfExpiredCalls.Add(tenantKey);
+            RefreshIfExpiredCancellationTokens.Add(cancellationToken);
 
             Queue<LoadDataStoresResult> queue = GetExpirationRefreshQueue(tenant);
             if (queue.Count == 0)

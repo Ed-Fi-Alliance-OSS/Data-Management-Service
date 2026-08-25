@@ -393,13 +393,19 @@ public class DocumentCacheRefreshNotifyingDataStoreProviderTests
 
         public Action<RecordingDataStoreProvider>? OnRefreshInstancesIfExpired { get; init; }
 
-        public Task<IList<DataStore>> LoadDataStores(string? tenant = null)
+        public Task<IList<DataStore>> LoadDataStores(
+            string? tenant = null,
+            CancellationToken cancellationToken = default
+        )
         {
             OnLoadDataStores?.Invoke(this);
             return Task.FromResult<IList<DataStore>>(CurrentDataStores.ToList());
         }
 
-        public Task RefreshInstancesIfExpiredAsync(string? tenant = null)
+        public Task RefreshInstancesIfExpiredAsync(
+            string? tenant = null,
+            CancellationToken cancellationToken = default
+        )
         {
             OnRefreshInstancesIfExpired?.Invoke(this);
             return Task.CompletedTask;

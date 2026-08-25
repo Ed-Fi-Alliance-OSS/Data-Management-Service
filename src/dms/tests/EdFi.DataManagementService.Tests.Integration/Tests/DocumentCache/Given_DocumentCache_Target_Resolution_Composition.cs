@@ -798,7 +798,10 @@ public class Given_DocumentCache_Target_Resolution_Composition
         public void QueueLoadFailure(string? tenant, Exception exception) =>
             GetQueue(tenant).Enqueue(LoadDataStoresResult.Failure(exception));
 
-        public Task<IList<DataStore>> LoadDataStores(string? tenant = null)
+        public Task<IList<DataStore>> LoadDataStores(
+            string? tenant = null,
+            CancellationToken cancellationToken = default
+        )
         {
             string tenantKey = GetTenantKey(tenant);
             LoadDataStoreCalls.Add(tenantKey);
@@ -820,8 +823,10 @@ public class Given_DocumentCache_Target_Resolution_Composition
             return Task.FromResult(result.DataStores);
         }
 
-        public Task RefreshInstancesIfExpiredAsync(string? tenant = null) =>
-            throw new AssertionException("DocumentCache target registry must use explicit load hooks.");
+        public Task RefreshInstancesIfExpiredAsync(
+            string? tenant = null,
+            CancellationToken cancellationToken = default
+        ) => throw new AssertionException("DocumentCache target registry must use explicit load hooks.");
 
         public IReadOnlyList<DataStore> GetAll(string? tenant = null) =>
             _loadedDataStores.TryGetValue(GetTenantKey(tenant), out IList<DataStore>? dataStores)

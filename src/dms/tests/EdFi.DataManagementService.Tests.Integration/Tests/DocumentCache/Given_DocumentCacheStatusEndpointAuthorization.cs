@@ -372,7 +372,8 @@ public class Given_DocumentCacheStatusEndpointAuthorization
 
         var dataStoreProvider = A.Fake<IDataStoreProvider>();
         var dataStore = new DataStore(1, "Test", "TestInstance", "test-connection-string", []);
-        A.CallTo(() => dataStoreProvider.LoadDataStores(A<string?>._)).Returns([dataStore]);
+        A.CallTo(() => dataStoreProvider.LoadDataStores(A<string?>._, A<CancellationToken>._))
+            .Returns([dataStore]);
         A.CallTo(() => dataStoreProvider.LoadTenants()).Returns(["TestTenant"]);
         A.CallTo(() => dataStoreProvider.GetAll(A<string?>._)).Returns([dataStore]);
         A.CallTo(() => dataStoreProvider.GetById(A<long>._, A<string?>._)).Returns(dataStore);

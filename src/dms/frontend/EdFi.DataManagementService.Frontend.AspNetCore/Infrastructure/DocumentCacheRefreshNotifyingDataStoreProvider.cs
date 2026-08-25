@@ -49,11 +49,16 @@ internal sealed class DocumentCacheRefreshNotifyingDataStoreProvider : IDataStor
         _canNotify = canNotify ?? (() => true);
     }
 
-    public async Task<IList<DataStore>> LoadDataStores(string? tenant = null)
+    public async Task<IList<DataStore>> LoadDataStores(
+        string? tenant = null,
+        CancellationToken cancellationToken = default
+    )
     {
         IReadOnlyList<DataStore> beforeLoad = _dataStoreProvider.GetAll(tenant);
 
-        IList<DataStore> dataStores = await _dataStoreProvider.LoadDataStores(tenant).ConfigureAwait(false);
+        IList<DataStore> dataStores = await _dataStoreProvider
+            .LoadDataStores(tenant, cancellationToken)
+            .ConfigureAwait(false);
 
         IReadOnlyList<DataStore> afterLoad = _dataStoreProvider.GetAll(tenant);
         if (!DataStoreMetadataEquals(beforeLoad, afterLoad))
@@ -64,11 +69,16 @@ internal sealed class DocumentCacheRefreshNotifyingDataStoreProvider : IDataStor
         return dataStores;
     }
 
-    public async Task RefreshInstancesIfExpiredAsync(string? tenant = null)
+    public async Task RefreshInstancesIfExpiredAsync(
+        string? tenant = null,
+        CancellationToken cancellationToken = default
+    )
     {
         IReadOnlyList<DataStore> beforeRefresh = _dataStoreProvider.GetAll(tenant);
 
-        await _dataStoreProvider.RefreshInstancesIfExpiredAsync(tenant).ConfigureAwait(false);
+        await _dataStoreProvider
+            .RefreshInstancesIfExpiredAsync(tenant, cancellationToken)
+            .ConfigureAwait(false);
 
         IReadOnlyList<DataStore> afterRefresh = _dataStoreProvider.GetAll(tenant);
         if (!DataStoreMetadataEquals(beforeRefresh, afterRefresh))

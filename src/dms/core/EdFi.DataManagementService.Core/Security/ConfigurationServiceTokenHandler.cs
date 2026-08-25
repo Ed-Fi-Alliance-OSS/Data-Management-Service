@@ -12,7 +12,12 @@ namespace EdFi.DataManagementService.Core.Security;
 
 public interface IConfigurationServiceTokenHandler
 {
-    Task<string> GetTokenAsync(string clientId, string clientSecret, string scope);
+    Task<string> GetTokenAsync(
+        string clientId,
+        string clientSecret,
+        string scope,
+        CancellationToken cancellationToken = default
+    );
 }
 
 /// <summary>
@@ -28,7 +33,12 @@ public class ConfigurationServiceTokenHandler(
 {
     private const string TokenCacheKey = "ConfigServiceToken";
 
-    public async Task<string> GetTokenAsync(string clientId, string clientSecret, string scope)
+    public async Task<string> GetTokenAsync(
+        string clientId,
+        string clientSecret,
+        string scope,
+        CancellationToken cancellationToken = default
+    )
     {
         // HybridCache.GetOrCreateAsync provides stampede protection:
         // Only one concurrent caller executes the factory; others wait for the result
@@ -41,7 +51,8 @@ public class ConfigurationServiceTokenHandler(
                 {
                     Expiration = TimeSpan.FromSeconds(cacheSettings.TokenCacheExpirationSeconds),
                     LocalCacheExpiration = TimeSpan.FromSeconds(cacheSettings.TokenCacheExpirationSeconds),
-                }
+                },
+                cancellationToken: cancellationToken
             )
         )!;
     }

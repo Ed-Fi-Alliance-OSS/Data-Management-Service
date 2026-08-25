@@ -32,7 +32,8 @@ public static class TestMockHelper
         // Mock IDataStoreProvider
         var dataStoreProvider = A.Fake<IDataStoreProvider>();
         var mockInstance = new DataStore(1, "Test", "TestInstance", "test-connection-string", []);
-        A.CallTo(() => dataStoreProvider.LoadDataStores(A<string?>.Ignored)).Returns([mockInstance]);
+        A.CallTo(() => dataStoreProvider.LoadDataStores(A<string?>.Ignored, A<CancellationToken>._))
+            .Returns([mockInstance]);
         A.CallTo(() => dataStoreProvider.LoadTenants()).Returns(new List<string> { "TestTenant" });
         A.CallTo(() => dataStoreProvider.GetAll(A<string?>.Ignored)).Returns([mockInstance]);
         A.CallTo(() => dataStoreProvider.GetById(A<long>.Ignored, A<string?>.Ignored)).Returns(mockInstance);

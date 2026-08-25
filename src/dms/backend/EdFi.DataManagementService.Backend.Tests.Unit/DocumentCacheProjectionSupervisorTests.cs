@@ -2103,7 +2103,10 @@ public class Given_DocumentCacheProjectionSupervisor
         public void QueueLoadResult(string? tenant, params DataStore[] dataStores) =>
             GetQueue(tenant).Enqueue(dataStores);
 
-        public Task<IList<DataStore>> LoadDataStores(string? tenant = null)
+        public Task<IList<DataStore>> LoadDataStores(
+            string? tenant = null,
+            CancellationToken cancellationToken = default
+        )
         {
             string tenantKey = GetTenantKey(tenant);
             LoadDataStoreCalls.Add(tenantKey);
@@ -2114,7 +2117,10 @@ public class Given_DocumentCacheProjectionSupervisor
             return Task.FromResult(dataStores);
         }
 
-        public Task RefreshInstancesIfExpiredAsync(string? tenant = null)
+        public Task RefreshInstancesIfExpiredAsync(
+            string? tenant = null,
+            CancellationToken cancellationToken = default
+        )
         {
             RefreshIfExpiredCalls.Add(GetTenantKey(tenant));
             return Task.CompletedTask;
