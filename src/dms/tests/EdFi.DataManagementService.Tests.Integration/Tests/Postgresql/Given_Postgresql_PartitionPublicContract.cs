@@ -72,6 +72,12 @@ public sealed class Given_Postgresql_PartitionPublicContract : PostgresqlApiInte
         );
 
     [Test]
+    public Task It_resolves_a_partition_count_supplied_in_two_letter_cases_to_the_last_value() =>
+        PartitionPublicContractScenario.It_resolves_a_partition_count_supplied_in_two_letter_cases_to_the_last_value(
+            Harness
+        );
+
+    [Test]
     public Task It_covers_the_collection_with_one_partition_when_one_is_requested() =>
         PartitionPublicContractScenario.It_covers_the_collection_with_one_partition_when_one_is_requested(
             Harness

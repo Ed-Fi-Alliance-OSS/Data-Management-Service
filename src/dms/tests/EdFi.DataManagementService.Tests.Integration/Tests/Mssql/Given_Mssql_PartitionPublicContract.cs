@@ -18,7 +18,9 @@ namespace EdFi.DataManagementService.Tests.Integration.Tests.Mssql;
 /// The validation rows are deliberately absent. The change-version, filter, count, and
 /// reserved-parameter phases all answer before a provider is involved and return the same response
 /// from the same code on both engines, so binding them here would duplicate a PostgreSQL answer rather
-/// than test SQL Server.
+/// than test SQL Server. The count-canonicalization row is absent for the same reason even though it
+/// reaches provider SQL: what it pins down is which value survives the HTTP boundary, and that boundary
+/// is the same code on both engines.
 /// </remarks>
 public sealed class Given_Mssql_PartitionPublicContract : MssqlApiIntegrationTestBase
 {

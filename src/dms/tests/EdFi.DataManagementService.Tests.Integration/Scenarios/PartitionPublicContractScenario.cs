@@ -27,6 +27,13 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 /// real provider SQL. They are therefore asserted on both engines, while the validation rows above are
 /// answered before any provider is involved and are asserted once.
 /// </para>
+///
+/// <para>
+/// Count canonicalization sits across that split. Recognizing the count under either letter case and
+/// collapsing repeats to the last value happens at the HTTP boundary, before any provider, but the
+/// surviving value is only observable in the boundaries a provider then computes. That row is therefore
+/// asserted once, like the validation rows, even though it reaches provider SQL like the sizing rows.
+/// </para>
 /// </summary>
 internal static class PartitionPublicContractScenario
 {
@@ -236,6 +243,59 @@ internal static class PartitionPublicContractScenario
         );
 
         await ParameterValidationProblemDetails.AssertShellAsync(response, MalformedChangeVersion);
+    }
+
+    /// <summary>
+    /// A partition count supplied twice in different letter cases is recognized under either casing and
+    /// resolved to the last value supplied.
+    /// </summary>
+    /// <remarks>
+    /// One request separates four ways this can go wrong. If <c>NUMBER</c> were treated as an unknown
+    /// parameter, the answer would be the unknown-field message; if the variants were not collapsed, the
+    /// surviving <c>number=abc</c> would be answered with the range message; if the first value won,
+    /// <c>abc</c> would be answered the same way; and if collapsing threw, nothing would be served at
+    /// all. Only recognition under either casing plus last-value-wins reaches a served token array.
+    ///
+    /// <para>
+    /// Which value survived is then asserted through the boundaries it produces rather than through the
+    /// response merely succeeding. One token is a result only a count of one yields over this seed: the
+    /// minimum partition size binds at ten rows, so a dropped or defaulted count would have cut the same
+    /// twenty-five documents into <see cref="PartitionsWhenMinimumSizeBinds"/> instead.
+    /// </para>
+    /// </remarks>
+    public static async Task It_resolves_a_partition_count_supplied_in_two_letter_cases_to_the_last_value(
+        ApiIntegrationHarness harness
+    )
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+
+        await CursorContractSupport.SeedMergeItemsAsync(harness, "case-variant-count", SeededDocumentCount);
+
+        var caseVariantTokens = await CursorContractSupport.ReadPageTokensAsync(
+            harness,
+            $"{CursorContractSupport.MergeItemsPartitionsEndpoint}?number=abc&NUMBER=1"
+        );
+
+        caseVariantTokens
+            .Should()
+            .HaveCount(
+                1,
+                "the last value supplied under either casing is the count that binds, and only a count "
+                    + "of one leaves this seed in a single partition"
+            );
+
+        var singleCasingTokens = await CursorContractSupport.ReadPageTokensAsync(
+            harness,
+            $"{CursorContractSupport.MergeItemsPartitionsEndpoint}?number=1"
+        );
+
+        caseVariantTokens
+            .Should()
+            .Equal(
+                singleCasingTokens,
+                "a count reached through case-variant collapsing produces the same boundary as the same "
+                    + "count supplied once"
+            );
     }
 
     /// <summary>
