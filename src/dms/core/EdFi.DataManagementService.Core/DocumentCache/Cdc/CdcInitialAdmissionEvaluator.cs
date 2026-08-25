@@ -99,11 +99,13 @@ public static class CdcInitialAdmissionEvaluator
         CdcComponent secondProjectionCaughtUp = status.Projection;
         CdcComponent lag = status.Lag;
 
-        (providerBarrier, secondProjectionCaughtUp) = ApplyInitialAdmissionOrdering(
+        (providerBarrier, sourceHistory, secondProjectionCaughtUp) = ApplyInitialAdmissionOrdering(
             input.FirstProjectionCaughtUp,
             input.ProviderBarrier,
+            input.SourceHistory,
             input.SecondProjectionCaughtUp,
             providerBarrier,
+            sourceHistory,
             secondProjectionCaughtUp,
             diagnostics
         );
@@ -310,12 +312,15 @@ public static class CdcInitialAdmissionEvaluator
 
     private static (
         CdcComponent ProviderBarrier,
+        CdcComponent SourceHistory,
         CdcComponent SecondProjectionCaughtUp
     ) ApplyInitialAdmissionOrdering(
         CdcProjectionCorrelationObservation? firstProjection,
         CdcProviderBarrierObservation? providerBarrierObservation,
+        CdcSourceHistoryObservation? sourceHistoryObservation,
         CdcProjectionCorrelationObservation? secondProjection,
         CdcComponent providerBarrier,
+        CdcComponent sourceHistory,
         CdcComponent secondProjectionCaughtUp,
         CdcDiagnosticCollector diagnostics
     )
@@ -356,6 +361,43 @@ public static class CdcInitialAdmissionEvaluator
 
         if (
             providerBarrierObservation?.BarrierState == CdcProviderBarrierState.Reached
+            && sourceHistoryObservation?.Continuity == CdcSourceHistoryContinuity.Healthy
+            && sourceHistoryObservation.ObservedAt <= providerBarrierObservation.ConnectorOffsetObservedAt
+        )
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidOrdering,
+                "$.sourceHistory.observedAt",
+                "CDC initial admission source-history observation must be after provider barrier success."
+            );
+            sourceHistory = UnknownForOrdering(
+                sourceHistory,
+                sourceHistoryObservation.ObservedAt,
+                "source-history ordering unavailable"
+            );
+        }
+
+        if (
+            providerBarrierObservation?.BarrierState == CdcProviderBarrierState.Reached
+            && sourceHistoryObservation?.Continuity == CdcSourceHistoryContinuity.Healthy
+            && secondProjection is not null
+            && secondProjection.ProjectionObservedAt <= sourceHistoryObservation.ObservedAt
+        )
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidOrdering,
+                "$.sourceHistory.observedAt",
+                "CDC initial admission second projection caught-up observation must be after source-history continuity evidence."
+            );
+            secondProjectionCaughtUp = UnknownForOrdering(
+                secondProjectionCaughtUp,
+                secondProjection.ObservedAt,
+                "second projection ordering unavailable"
+            );
+        }
+
+        if (
+            providerBarrierObservation?.BarrierState == CdcProviderBarrierState.Reached
             && secondProjection is not null
             && secondProjection.ProjectionObservedAt <= providerBarrierObservation.ConnectorOffsetObservedAt
         )
@@ -372,7 +414,7 @@ public static class CdcInitialAdmissionEvaluator
             );
         }
 
-        return (providerBarrier, secondProjectionCaughtUp);
+        return (providerBarrier, sourceHistory, secondProjectionCaughtUp);
     }
 
     private static CdcComponent? TryClassifyValidationFailure(

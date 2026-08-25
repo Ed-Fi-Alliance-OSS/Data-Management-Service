@@ -115,6 +115,78 @@ public class Given_CdcAdmissionEvaluator
 public class Given_CdcAdmissionOrdering
 {
     [Test]
+    public void It_admits_when_source_history_is_between_provider_barrier_success_and_second_projection()
+    {
+        CdcAdmission admission = CdcInitialAdmissionEvaluator.Evaluate(CdcAdmissionFixture.ValidInput());
+
+        admission.AdmissionState.Should().Be(CdcAdmissionState.Admitted);
+        admission.PrimaryBlockingCategory.Should().Be(CdcBlockingCategory.None);
+        admission.Steps.SourceHistory.State.Should().Be(CdcComponentState.Satisfied);
+        admission.Steps.SecondProjectionCaughtUp.State.Should().Be(CdcComponentState.Satisfied);
+        admission.Diagnostics.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_requires_source_history_observation_after_provider_barrier_success()
+    {
+        CdcBinding binding = CdcTargetStatusFixture.CreateBinding();
+        DateTimeOffset staleSourceHistoryTime = CdcTargetStatusFixture.ObservationObservedAt.AddSeconds(-2);
+
+        CdcAdmission admission = CdcInitialAdmissionEvaluator.Evaluate(
+            CdcAdmissionFixture.ValidInput(binding) with
+            {
+                SourceHistory = CdcTargetStatusFixture.SourceHistory(binding) with
+                {
+                    ObservedAt = staleSourceHistoryTime,
+                },
+            }
+        );
+
+        admission.AdmissionState.Should().Be(CdcAdmissionState.Unknown);
+        admission.PrimaryBlockingCategory.Should().Be(CdcBlockingCategory.StatusObservationUnavailable);
+        admission.Steps.SourceHistory.State.Should().Be(CdcComponentState.Unknown);
+        admission.Steps.SourceHistory.Category.Should().Be(CdcBlockingCategory.StatusObservationUnavailable);
+        admission
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CdcDiagnosticCategory.InvalidOrdering
+                && diagnostic.Path == "$.sourceHistory.observedAt"
+            );
+    }
+
+    [Test]
+    public void It_requires_second_projection_caught_up_observation_after_source_history()
+    {
+        CdcBinding binding = CdcTargetStatusFixture.CreateBinding();
+        DateTimeOffset sourceHistoryAfterSecondProjection =
+            CdcTargetStatusFixture.ObservationObservedAt.AddSeconds(2);
+
+        CdcAdmission admission = CdcInitialAdmissionEvaluator.Evaluate(
+            CdcAdmissionFixture.ValidInput(binding) with
+            {
+                SourceHistory = CdcTargetStatusFixture.SourceHistory(binding) with
+                {
+                    ObservedAt = sourceHistoryAfterSecondProjection,
+                },
+            }
+        );
+
+        admission.AdmissionState.Should().Be(CdcAdmissionState.Unknown);
+        admission.PrimaryBlockingCategory.Should().Be(CdcBlockingCategory.StatusObservationUnavailable);
+        admission.Steps.SourceHistory.State.Should().Be(CdcComponentState.Satisfied);
+        admission.Steps.SecondProjectionCaughtUp.State.Should().Be(CdcComponentState.Unknown);
+        admission
+            .Steps.SecondProjectionCaughtUp.Category.Should()
+            .Be(CdcBlockingCategory.StatusObservationUnavailable);
+        admission
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CdcDiagnosticCategory.InvalidOrdering
+                && diagnostic.Path == "$.sourceHistory.observedAt"
+            );
+    }
+
+    [Test]
     public void It_requires_the_second_projection_caught_up_observation_after_provider_barrier_success()
     {
         CdcBinding binding = CdcTargetStatusFixture.CreateBinding();
