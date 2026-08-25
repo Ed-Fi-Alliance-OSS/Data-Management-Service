@@ -77,6 +77,10 @@ public sealed class Given_DocumentCacheAdminServiceRegistration
             .Should()
             .BeOfType<DocumentCacheDiagnosticSnapshotProvider>(displayName);
         serviceProvider.GetRequiredService<IDocumentCacheStatusService>().Should().NotBeNull(displayName);
+        serviceProvider
+            .GetRequiredService<IDocumentCacheAdminMutatingCommandDispatcher>()
+            .Should()
+            .BeOfType<DocumentCacheAdminMutatingCommandDispatcher>(displayName);
 
         DocumentCacheProjectionSupervisor supervisor =
             serviceProvider.GetRequiredService<DocumentCacheProjectionSupervisor>();

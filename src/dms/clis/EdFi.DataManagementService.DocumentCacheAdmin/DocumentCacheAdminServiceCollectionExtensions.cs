@@ -60,6 +60,10 @@ internal static class DocumentCacheAdminServiceCollectionExtensions
         }
 
         services.AddSingleton<IDocumentCacheAdminTargetResolver, DocumentCacheAdminTargetResolver>();
+        services.AddSingleton<
+            IDocumentCacheAdminMutatingCommandDispatcher,
+            DocumentCacheAdminMutatingCommandDispatcher
+        >();
 
         string datastore = configuration.GetSection("AppSettings:Datastore").Value ?? string.Empty;
         if (string.Equals(datastore, "postgresql", StringComparison.OrdinalIgnoreCase))

@@ -141,7 +141,7 @@
       "rg -n \"TRUNCATE|DELETE FROM|UPDATE .*DocumentCacheState|sp_getapplock|pg_advisory\" src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin",
       "dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCache"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "exit-codes-and-process-failures",

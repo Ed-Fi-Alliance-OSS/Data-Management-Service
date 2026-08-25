@@ -78,22 +78,79 @@ internal static class DocumentCacheAdminCommandExecutor
             }
         }
 
-        if (
-            DocumentCacheAdminCommandSurface.IsMutatingCommand(parseResult.CommandResult.Command.Name)
-            && !DocumentCacheAdminMutatingCommandRequestBuilder.TryBuild(
-                parseResult,
-                invocationTarget,
-                out _,
-                out string? failure
-            )
-        )
+        if (DocumentCacheAdminCommandSurface.IsMutatingCommand(parseResult.CommandResult.Command.Name))
         {
-            if (standardError is not null)
+            if (
+                !DocumentCacheAdminMutatingCommandRequestBuilder.TryBuild(
+                    parseResult,
+                    invocationTarget,
+                    out DocumentCacheAdminMutatingCommandRequest? commandRequest,
+                    out string? failure
+                )
+            )
             {
-                await standardError.WriteLineAsync(failure).ConfigureAwait(false);
+                if (standardError is not null)
+                {
+                    await standardError.WriteLineAsync(failure).ConfigureAwait(false);
+                }
+
+                return DocumentCacheAdminExitCodes.ArgumentError;
             }
 
-            return DocumentCacheAdminExitCodes.ArgumentError;
+            IDocumentCacheAdminMutatingCommandDispatcher? dispatcher =
+                serviceProvider.GetService<IDocumentCacheAdminMutatingCommandDispatcher>();
+            if (dispatcher is null)
+            {
+                if (standardError is not null)
+                {
+                    await standardError
+                        .WriteLineAsync(
+                            "DocumentCache administrative command runtime services are not configured for this invocation."
+                        )
+                        .ConfigureAwait(false);
+                }
+
+                return DocumentCacheAdminExitCodes.ConfigurationError;
+            }
+
+            try
+            {
+                DocumentCacheAdministrativeCommandResult result = await dispatcher
+                    .ExecuteAsync(commandRequest!, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (parseResult.GetValue<bool>(DocumentCacheAdminCommandSurface.JsonOptionName))
+                {
+                    await standardOutput
+                        .WriteLineAsync(
+                            DocumentCacheAdminJsonSerializer.SerializeContract(
+                                result,
+                                typeof(DocumentCacheAdministrativeCommandResult)
+                            )
+                        )
+                        .ConfigureAwait(false);
+                }
+                else
+                {
+                    await WriteHumanAdministrativeCommandResultAsync(result, standardOutput)
+                        .ConfigureAwait(false);
+                }
+
+                return ExitCodeFor(result.Status);
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                if (standardError is not null)
+                {
+                    await standardError
+                        .WriteLineAsync(
+                            $"DocumentCache administrative command failed before a shared result could be produced: {exception.Message}"
+                        )
+                        .ConfigureAwait(false);
+                }
+
+                return DocumentCacheAdminExitCodes.UnexpectedFailure;
+            }
         }
 
         return await parseResult.InvokeAsync().ConfigureAwait(false);
@@ -159,6 +216,58 @@ internal static class DocumentCacheAdminCommandExecutor
         }
     }
 
+    private static async Task WriteHumanAdministrativeCommandResultAsync(
+        DocumentCacheAdministrativeCommandResult result,
+        TextWriter standardOutput
+    )
+    {
+        await standardOutput
+            .WriteLineAsync(
+                $"DocumentCache command={result.Command} status={result.Status} classification={result.Classification} mutated={FormatNullableBoolean(result.Mutated)}"
+            )
+            .ConfigureAwait(false);
+        await standardOutput
+            .WriteLineAsync(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"target tenantKey=\"{result.TargetKey.TenantKey}\" dataStoreId={result.TargetKey.DataStoreId}"
+                )
+            )
+            .ConfigureAwait(false);
+        await standardOutput
+            .WriteLineAsync(
+                $"  generation={FormatNullableLong(result.TargetGeneration)} fingerprint={FormatNullableFingerprint(result.PhysicalSourceFingerprint)}"
+            )
+            .ConfigureAwait(false);
+        await standardOutput
+            .WriteLineAsync(
+                $"  lifecycle={FormatNullableEnum(result.Lifecycle)} cacheAheadRecoveryRequired={FormatNullableBoolean(result.CacheAheadRecoveryRequired)} elapsedCommandTimeSeconds={FormatNullableDurationSeconds(result.ElapsedCommandTime)}"
+            )
+            .ConfigureAwait(false);
+
+        foreach (DocumentCacheAdministrativePhaseDiagnostic diagnostic in result.PhaseDiagnostics)
+        {
+            await standardOutput
+                .WriteLineAsync(
+                    $"  diagnostic phase={diagnostic.CurrentPhase} category={diagnostic.DiagnosticCategory} retryable={FormatNullableBoolean(diagnostic.Retryable)} message=\"{diagnostic.Message}\""
+                )
+                .ConfigureAwait(false);
+        }
+    }
+
+    private static int ExitCodeFor(DocumentCacheAdministrativeCommandStatus status) =>
+        status switch
+        {
+            DocumentCacheAdministrativeCommandStatus.Completed => DocumentCacheAdminExitCodes.Success,
+            DocumentCacheAdministrativeCommandStatus.RejectedNoMutation =>
+                DocumentCacheAdminExitCodes.RejectedNoMutation,
+            DocumentCacheAdministrativeCommandStatus.FailedNoMutation =>
+                DocumentCacheAdminExitCodes.FailedNoMutation,
+            DocumentCacheAdministrativeCommandStatus.IncompleteRetryable =>
+                DocumentCacheAdminExitCodes.IncompleteRetryable,
+            _ => DocumentCacheAdminExitCodes.UnexpectedFailure,
+        };
+
     private static string FormatTimestamp(DateTimeOffset timestamp) =>
         timestamp.UtcDateTime.ToString("O", CultureInfo.InvariantCulture);
 
@@ -173,6 +282,15 @@ internal static class DocumentCacheAdminCommandExecutor
 
     private static string FormatNullableDouble(double? value) =>
         value is null ? "null" : value.Value.ToString("G17", CultureInfo.InvariantCulture);
+
+    private static string FormatNullableFingerprint(DocumentCachePhysicalSourceFingerprint? fingerprint) =>
+        fingerprint is null ? "null" : fingerprint.Value;
+
+    private static string FormatNullableEnum<TEnum>(TEnum? value)
+        where TEnum : struct, Enum => value is null ? "null" : value.Value.ToString();
+
+    private static string FormatNullableDurationSeconds(TimeSpan? duration) =>
+        duration is null ? "null" : duration.Value.TotalSeconds.ToString("G17", CultureInfo.InvariantCulture);
 
     private static async Task<DocumentCacheStatusResponse> GetStatusResponseAsync(
         DocumentCacheTargetKey targetKey,
