@@ -40,4 +40,5 @@ public enum FixtureKey
     AuthorizationQuery,
     AuthoritativeDs52,
     AuthoritativeDs52Tpdm,
+    CursorPartitionContract,
 }

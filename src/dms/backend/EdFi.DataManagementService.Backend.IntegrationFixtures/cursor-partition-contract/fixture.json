@@ -1,0 +1,7 @@
+{
+  "apiSchemaFiles": [
+    "repo:src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/descriptor-runtime/inputs/ApiSchema.json",
+    "cursor-partition-extension.json"
+  ],
+  "dialects": ["pgsql", "mssql"]
+}

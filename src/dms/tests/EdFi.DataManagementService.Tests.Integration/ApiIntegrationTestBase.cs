@@ -115,6 +115,19 @@ public abstract class ApiIntegrationTestBase
     protected virtual int? MaximumPageSizeOverride => null;
 
     /// <summary>
+    /// Empties the body of the first page that hydrates rows, while leaving its selected maximum in
+    /// place. Default false, so no existing fixture changes behavior.
+    /// </summary>
+    /// <remarks>
+    /// The continuation header is gated on a non-null selected maximum rather than on the response
+    /// body, which is what keeps a walk advancing past keys whose rows were deleted before hydration
+    /// completed. Selection and projection are statements inside one command batch, so no test can land
+    /// a delete between them; this seam makes the resulting response observable over HTTP without
+    /// changing production behavior.
+    /// </remarks>
+    protected virtual bool SuppressHydratedRowsOnce => false;
+
+    /// <summary>
     /// Profile names assigned to the requesting application, by name. Empty means no assignment.
     /// </summary>
     /// <remarks>
@@ -175,6 +188,7 @@ public abstract class ApiIntegrationTestBase
         var providerFailureRecorder = _providerFailureRecorder;
         var clientNamespacePrefixes = ClientNamespacePrefixes;
         var assignedProfileNames = AssignedProfileNames;
+        var suppressHydratedRowsOnce = SuppressHydratedRowsOnce;
 
         _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -248,6 +262,11 @@ public abstract class ApiIntegrationTestBase
                     services.AddSingleton(queryRecorder);
                     services.ReplaceDocumentHydratorWithRecorder();
                     services.ReplaceRelationalCommandExecutorWithRecorder();
+                }
+
+                if (suppressHydratedRowsOnce)
+                {
+                    services.SuppressHydratedRowsOnce();
                 }
             });
         });

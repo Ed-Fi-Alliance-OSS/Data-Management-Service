@@ -1,0 +1,131 @@
+{
+  "description": "The closed catalog of approved intentional differences from ODS 7.3.2, one entry per bullet of the epic's 'Approved Intentional ODS Differences' list, in the order that list states them. A comparison case may only declare a difference by naming an id from this catalog, and every entry here must be referenced by at least one executed case.",
+  "differences": [
+    {
+      "id": "reject-limit-with-cursor-parameters",
+      "bullet": 1,
+      "summary": "Reject limit whenever cursor parameters are present, including when pageSize is also present.",
+      "executable": true
+    },
+    {
+      "id": "totalcount-rejected-at-validation",
+      "bullet": 2,
+      "summary": "Reject totalCount=true with a valid pageToken during parameter validation, with DMS's text. ODS also returns 400, but only after its repository builds the count template, and with different text.",
+      "executable": true
+    },
+    {
+      "id": "cursor-key-presence-is-significant",
+      "bullet": 3,
+      "summary": "Treat query-key presence as significant for cursor parameters and apply the DMS validator to blank and non-numeric values, where ODS's int? model binding reads a blank value as absent and fails binding on a non-numeric value before its validator can emit a range message.",
+      "executable": true
+    },
+    {
+      "id": "number-reserved-from-filter-matching",
+      "bullet": 4,
+      "summary": "Reserve the number count key out of resource-filter matching on /partitions, so a resource exposing a query field of that name filters on it on its collection GET but cannot filter on it here. ODS applies one supplied ?number= as both meanings at once.",
+      "executable": true
+    },
+    {
+      "id": "number-non-numeric-range-message",
+      "bullet": 5,
+      "summary": "Return the partition-count range message for a non-numeric /partitions?number=abc, where ODS's model binding fails before its controller body runs and answers with a model-state shell instead.",
+      "executable": true
+    },
+    {
+      "id": "number-blank-range-message",
+      "bullet": 6,
+      "summary": "Return that same range error for a present-but-blank /partitions?number=, where ODS reads the empty value as absent and succeeds with the configured default partition count.",
+      "executable": true
+    },
+    {
+      "id": "cursor-parameters-rejected-on-change-queries",
+      "bullet": 7,
+      "summary": "Reject pageToken and pageSize on /deletes and /keyChanges under the unknown-query-field rule, where ODS binds the same request model on those endpoints and accepts a valid token.",
+      "executable": true
+    },
+    {
+      "id": "partition-reserved-parameters-unsupported",
+      "bullet": 8,
+      "summary": "Reject all five of limit, offset, pageToken, pageSize, and totalCount on /partitions as unsupported, where ODS binds those names, range-checks only number, and ignores the rest.",
+      "executable": true
+    },
+    {
+      "id": "ods-only-partition-parameters-rejected",
+      "bullet": 9,
+      "summary": "Reject ODS's undocumented allowSmallPartitions and useJoinAuth partition parameters under the unknown-query-field rule, where ODS reads them from its additional-parameters dictionary.",
+      "executable": true
+    },
+    {
+      "id": "true-ceiling-at-most-requested-count",
+      "bullet": 10,
+      "summary": "Return evenly sized partitions and at most the requested count by computing a true ceiling. ODS floors the size, and with number omitted can return one more token than its configured default partition count.",
+      "executable": true
+    },
+    {
+      "id": "partitions-enforce-profile-method-usage",
+      "bullet": 11,
+      "summary": "Route /partitions through the same profile content-type outcome as GET-many, including the HTTP 405 profile method-usage response, where ODS's partitions controller carries no assigned-profile-usage enforcement filter.",
+      "executable": true
+    },
+    {
+      "id": "header-gated-on-selected-keyset-maximum",
+      "bullet": 12,
+      "summary": "Gate Next-Page-Token on a non-null selected keyset maximum, including when concurrent deletion leaves an empty hydrated body, while ODS gates the header on hydrated body count.",
+      "executable": true
+    },
+    {
+      "id": "offset-message-text-retained",
+      "bullet": 13,
+      "summary": "Retain DMS's existing offset message rather than ODS's 'Offset cannot be a negative value.'",
+      "executable": true
+    },
+    {
+      "id": "limit-message-text-retained",
+      "bullet": 14,
+      "summary": "Retain DMS's existing limit message rather than ODS's 'Limit must be a value between 0 and {N}.'",
+      "executable": true
+    },
+    {
+      "id": "maximum-page-size-is-the-omitted-default",
+      "bullet": 15,
+      "summary": "Use the configured MaximumPageSize as the value applied when limit or pageSize is omitted, where Ed-Fi's published default is 25.",
+      "executable": true
+    },
+    {
+      "id": "openapi-publishes-runtime-page-size-bounds",
+      "bullet": 16,
+      "summary": "Publish the runtime MaximumPageSize as both the default and the maximum for limit and pageSize, replacing the authoritative fixture's hardcoded values.",
+      "executable": true
+    },
+    {
+      "id": "openapi-publishes-runtime-default-partition-count",
+      "bullet": 17,
+      "summary": "Publish the runtime DefaultPartitionCount as the OpenAPI numberOfPartitions default, which Ed-Fi's published metadata omits entirely.",
+      "executable": true
+    },
+    {
+      "id": "write-only-profile-omits-partitions-path",
+      "bullet": 18,
+      "summary": "Omit the /partitions path from a profile document for a resource the profile includes as write-only, where ODS 7.3.2 publishes it.",
+      "executable": true
+    },
+    {
+      "id": "int64-document-id-bounds",
+      "bullet": 19,
+      "summary": "Use Int64 DocumentId bounds rather than ODS Int32 AggregateId bounds.",
+      "executable": true
+    },
+    {
+      "id": "no-header-overflow-at-int64-max",
+      "bullet": 20,
+      "summary": "Omit the next-page header rather than overflowing at Int64.MaxValue.",
+      "executable": true
+    },
+    {
+      "id": "strict-base64url-and-decimal-decoder",
+      "bullet": 21,
+      "summary": "Use the stricter approved base64url and decimal decoder contract.",
+      "executable": true
+    }
+  ]
+}

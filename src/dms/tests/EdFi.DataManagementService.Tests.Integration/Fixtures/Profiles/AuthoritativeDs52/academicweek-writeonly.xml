@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    A write-only profile over a single Data Standard 5.2 resource, used by the ODS comparison suite to
+    execute one approved intentional difference: DMS omits the sibling /partitions path from a profile
+    document for a resource the profile includes as write-only, where ODS 7.3.2 publishes it.
+
+    It has to be this fixture. The focused fixtures declare empty OpenAPI base document paths, so their
+    served documents carry no paths at all and "the profile document does not contain /partitions" would
+    hold vacuously. The authoritative Data Standard 5.2 document really publishes both the collection
+    path and its /partitions sibling, so the omission is observable against it and only against it.
+
+    AcademicWeek is chosen for being small and unremarkable: the difference under test is about which
+    paths a profile document publishes, not about the resource's own shape, so IncludeAll keeps the
+    profile from asserting anything incidental.
+-->
+<Profile name="AcademicWeek-WriteOnly">
+    <Resource name="AcademicWeek">
+        <WriteContentType memberSelection="IncludeAll" />
+    </Resource>
+</Profile>

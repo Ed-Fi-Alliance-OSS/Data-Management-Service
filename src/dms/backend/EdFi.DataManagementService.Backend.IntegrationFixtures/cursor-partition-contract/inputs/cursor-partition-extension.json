@@ -1,0 +1,119 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "abstractResources": {},
+    "caseInsensitiveEndpointNameMapping": {
+      "partitioncontractitems": "partitionContractItems"
+    },
+    "compatibleDsRange": "5.0.0",
+    "description": "Synthetic extension project supplying one standalone extension resource for cursor and partition contract coverage. It declares a query field literally named 'number', which is the only way to exercise the approved intentional ODS difference in which that key filters on the collection GET but is consumed as the partition count on the sibling /partitions operation. The 'label' field is an ordinary filterable string used for the filtered-walk coverage.",
+    "domains": [],
+    "educationOrganizationHierarchy": {},
+    "educationOrganizationTypes": [],
+    "isExtensionProject": true,
+    "projectEndpointName": "cursorpartitionext",
+    "projectName": "CursorPartitionExt",
+    "projectVersion": "1.0.0",
+    "resourceNameMapping": {
+      "PartitionContractItem": "partitionContractItems"
+    },
+    "resourceSchemas": {
+      "partitionContractItems": {
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [],
+        "authorizationPathways": [],
+        "booleanJsonPaths": [],
+        "dateJsonPaths": [],
+        "dateTimeJsonPaths": [],
+        "decimalPropertyValidationInfos": [],
+        "documentPathsMapping": {
+          "Label": {
+            "isPartOfIdentity": false,
+            "isReference": false,
+            "isRequired": false,
+            "path": "$.label",
+            "type": "string"
+          },
+          "Number": {
+            "isPartOfIdentity": false,
+            "isReference": false,
+            "isRequired": false,
+            "path": "$.number",
+            "type": "number"
+          },
+          "PartitionContractItemId": {
+            "isPartOfIdentity": true,
+            "isReference": false,
+            "isRequired": true,
+            "path": "$.partitionContractItemId",
+            "type": "number"
+          }
+        },
+        "domains": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": ["$.partitionContractItemId"],
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSchoolYearEnumeration": false,
+        "isSubclass": false,
+        "jsonSchemaForInsert": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "description": "Synthetic extension resource used by cursor and partition contract coverage.",
+          "properties": {
+            "label": {
+              "maxLength": 100,
+              "type": "string"
+            },
+            "number": {
+              "format": "int32",
+              "type": "integer"
+            },
+            "partitionContractItemId": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          "required": ["partitionContractItemId"],
+          "title": "CursorPartitionExt.PartitionContractItem",
+          "type": "object"
+        },
+        "numericJsonPaths": ["$.partitionContractItemId", "$.number"],
+        "queryFieldMapping": {
+          "id": [
+            {
+              "path": "$.id",
+              "type": "string"
+            }
+          ],
+          "label": [
+            {
+              "path": "$.label",
+              "type": "string"
+            }
+          ],
+          "number": [
+            {
+              "path": "$.number",
+              "type": "number"
+            }
+          ],
+          "partitionContractItemId": [
+            {
+              "path": "$.partitionContractItemId",
+              "type": "number"
+            }
+          ]
+        },
+        "resourceName": "PartitionContractItem",
+        "securableElements": {
+          "Contact": [],
+          "EducationOrganization": [],
+          "Namespace": [],
+          "Staff": [],
+          "Student": []
+        }
+      }
+    }
+  }
+}
