@@ -215,7 +215,7 @@
       "dotnet csharpier format src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit",
       "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~Contract"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "in-process-command-runner-tests",
