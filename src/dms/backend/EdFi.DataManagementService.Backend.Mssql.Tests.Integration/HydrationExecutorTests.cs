@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using NUnit.Framework;
@@ -1297,6 +1298,14 @@ public class Given_A_Mssql_Query_Keyset_That_Returns_Its_Selected_Ids
     private const long SecondDocumentId = 509L;
     private const long ThirdDocumentId = 517L;
 
+    /// <summary>
+    /// Content versions that run counter to the ids and share no value with them, so an anchored page's
+    /// maximum cannot be mistaken for a <c>DocumentId</c>, a count, or the last returned row.
+    /// </summary>
+    private const long FirstDocumentContentVersion = 73L;
+    private const long SecondDocumentContentVersion = 61L;
+    private const long ThirdDocumentContentVersion = 67L;
+
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
     {
@@ -1364,11 +1373,11 @@ public class Given_A_Mssql_Query_Keyset_That_Returns_Its_Selected_Ids
             DELETE FROM hydselected.School;
             DELETE FROM dms.Document;
 
-            INSERT INTO dms.Document (DocumentId, DocumentUuid)
+            INSERT INTO dms.Document (DocumentId, DocumentUuid, ContentVersion)
             VALUES
-                (501, '22222222-8888-8888-8888-222222222222'),
-                (509, '33333333-9999-9999-9999-333333333333'),
-                (517, '44444444-aaaa-aaaa-aaaa-444444444444');
+                (501, '22222222-8888-8888-8888-222222222222', 73),
+                (509, '33333333-9999-9999-9999-333333333333', 61),
+                (517, '44444444-aaaa-aaaa-aaaa-444444444444', 67);
 
             INSERT INTO hydselected.School (DocumentId, SchoolId)
             VALUES (501, 910001), (509, 910002), (517, 910003);
@@ -1497,6 +1506,133 @@ public class Given_A_Mssql_Query_Keyset_That_Returns_Its_Selected_Ids
         result.DocumentMetadata.Should().BeEmpty();
         result.TableRowsInDependencyOrder.Should().OnlyContain(tableRows => tableRows.Rows.Count == 0);
     }
+
+    /// <summary>
+    /// A <c>ContentVersion</c>-anchored page reports the maximum anchor among the rows selection
+    /// returned, not the anchor of the last one. <c>OUTPUT INSERTED</c> promises no order, and the page
+    /// selection here orders by <c>DocumentId</c> while the content versions run the other way, so a
+    /// reader that took the final row would report the wrong anchor and rewind the walk.
+    /// </summary>
+    [Test]
+    public async Task It_returns_the_maximum_selected_content_version_regardless_of_the_returned_row_order()
+    {
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+
+        var result = await HydrationExecutor.ExecuteAsync(
+            connection,
+            HydrationTestHelper.BuildSchoolReadPlan(TestSchema, SqlDialect.Mssql),
+            CreateContentVersionAnchoredKeyset(pageSize: 2L),
+            SqlDialect.Mssql,
+            CancellationToken.None
+        );
+
+        result.HighestSelectedAnchor.Should().Be(FirstDocumentContentVersion);
+        result
+            .DocumentMetadata.Select(static documentMetadata => documentMetadata.DocumentId)
+            .Should()
+            .Equal(FirstDocumentId, SecondDocumentId);
+    }
+
+    /// <summary>
+    /// The concurrency regression for a <c>ContentVersion</c> anchor: every selected row is deleted
+    /// inside the hydration batch, between the materialization that selected them and the hydration
+    /// selects that follow it. The anchor still has to arrive, because an empty body with no anchor is
+    /// indistinguishable from a completed walk and would end the walk early.
+    /// </summary>
+    [Test]
+    public async Task It_returns_the_content_version_maximum_when_every_selected_row_was_deleted_before_hydration()
+    {
+        const string SpliceAfter = "SELECT [DocumentId], [ContentVersion] FROM page_ids;";
+        const string DeleteEverySelectedRow = """
+
+            DELETE FROM hydselected.SchoolAddressPeriod;
+            DELETE FROM hydselected.SchoolAddress;
+            DELETE FROM hydselected.School;
+            DELETE FROM dms.Document;
+            """;
+
+        // Every row is selected, so the anchor is the maximum content version across all three.
+        var expectedAnchor = Math.Max(
+            FirstDocumentContentVersion,
+            Math.Max(SecondDocumentContentVersion, ThirdDocumentContentVersion)
+        );
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync();
+        var splicedBatches = new List<string>();
+
+        var result = await HydrationExecutor.ExecuteAsync(
+            batchSql =>
+            {
+                CountOccurrences(batchSql, SpliceAfter)
+                    .Should()
+                    .Be(
+                        1,
+                        "the anchored materialization statement is the splice point, so it must appear exactly once"
+                    );
+
+                var splicedBatch = batchSql.Replace(
+                    SpliceAfter,
+                    SpliceAfter + DeleteEverySelectedRow,
+                    StringComparison.Ordinal
+                );
+                splicedBatches.Add(splicedBatch);
+
+                var command = connection.CreateCommand();
+                command.CommandText = splicedBatch;
+                return command;
+            },
+            HydrationTestHelper.BuildSchoolReadPlan(TestSchema, SqlDialect.Mssql),
+            CreateContentVersionAnchoredKeyset(pageSize: 25L),
+            SqlDialect.Mssql,
+            new HydrationExecutionOptions(),
+            CancellationToken.None
+        );
+
+        splicedBatches.Should().ContainSingle();
+        result.HighestSelectedAnchor.Should().Be(expectedAnchor);
+        result.DocumentMetadata.Should().BeEmpty();
+        result.TableRowsInDependencyOrder.Should().OnlyContain(tableRows => tableRows.Rows.Count == 0);
+    }
+
+    /// <summary>
+    /// Bounds and orders on <c>ContentVersion</c> the way a max-bearing window's compiled candidate SQL
+    /// does, but orders the projection by <c>DocumentId</c> so the selected maximum is not the last row
+    /// the materialization returns.
+    /// </summary>
+    private static PageKeysetSpec.Query CreateContentVersionAnchoredKeyset(
+        object pageSize,
+        long inclusiveMinimum = 1L,
+        long inclusiveMaximum = long.MaxValue
+    ) =>
+        new(
+            new PageDocumentIdSqlPlan(
+                PageDocumentIdSql: """
+                SELECT TOP (@pageSize) s.DocumentId, d.ContentVersion
+                FROM hydselected.School s
+                JOIN dms.Document d ON d.DocumentId = s.DocumentId
+                WHERE d.ContentVersion >= @cursorMin
+                  AND d.ContentVersion <= @cursorMax
+                ORDER BY s.DocumentId
+                """,
+                TotalCountSql: null,
+                PageParametersInOrder:
+                [
+                    new QuerySqlParameter(QuerySqlParameterRole.CursorInclusiveMinimum, "cursorMin"),
+                    new QuerySqlParameter(QuerySqlParameterRole.CursorInclusiveMaximum, "cursorMax"),
+                    new QuerySqlParameter(QuerySqlParameterRole.PageSize, "pageSize"),
+                ],
+                TotalCountParametersInOrder: null
+            ),
+            new Dictionary<string, object?>
+            {
+                ["cursorMin"] = inclusiveMinimum,
+                ["cursorMax"] = inclusiveMaximum,
+                ["pageSize"] = pageSize,
+            },
+            PageOrderingMode.ContentVersion
+        );
 
     private static PageKeysetSpec.Query CreateCursorKeyset(
         object pageSize,

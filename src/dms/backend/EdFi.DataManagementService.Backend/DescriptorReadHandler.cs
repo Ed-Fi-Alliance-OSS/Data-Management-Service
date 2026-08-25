@@ -1291,12 +1291,6 @@ internal sealed class DescriptorReadHandler(
     }
 
     /// <summary>
-    /// The maximum <c>DocumentId</c> among the selected descriptor rows, or <see langword="null"/> when
-    /// the page selected none. Taken across every row rather than from the last one: the page query
-    /// orders ascending today, but a boundary that depended on that could not survive an ordering
-    /// change, and the maximum costs the same either way.
-    /// </summary>
-    /// <summary>
     /// The maximum continuation-anchor value among the selected descriptor rows, or
     /// <see langword="null"/> when the page selected none.
     /// </summary>
@@ -1304,6 +1298,9 @@ internal sealed class DescriptorReadHandler(
     /// The units follow the anchor the request resolved, exactly as they do for a regular resource.
     /// Descriptors need no SQL change to report either one: the rows selection returns already carry
     /// both <c>DocumentId</c> and <c>ContentVersion</c>, so this only has to take the right column.
+    /// Taken across every row rather than from the last one: the page query orders ascending today, but
+    /// a boundary that depended on that could not survive an ordering change, and the maximum costs the
+    /// same either way.
     /// </remarks>
     private static long? SelectedMaximumOf(
         IReadOnlyList<IDescriptorReadCandidateMetadata> descriptorRows,
