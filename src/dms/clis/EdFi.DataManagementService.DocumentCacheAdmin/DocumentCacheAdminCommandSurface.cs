@@ -7,7 +7,6 @@ using System.CommandLine;
 using System.CommandLine.Help;
 using System.CommandLine.Parsing;
 using System.Globalization;
-using System.Text.Json;
 using EdFi.DataManagementService.Core.DocumentCache;
 
 namespace EdFi.DataManagementService.DocumentCacheAdmin;
@@ -134,49 +133,9 @@ internal static class DocumentCacheAdminCommandSurface
             out DocumentCacheAdminMutatingCommandContract? contract
         ) && contract.RequiresOfflineWriterAdmission;
 
-    public static bool TryGetExpectedConfirmation(
-        string commandName,
-        out DocumentCacheAdministrativeCommandConfirmation confirmation
-    )
-    {
-        if (
-            DocumentCacheAdminMutatingCommandContracts.TryGet(
-                commandName,
-                out DocumentCacheAdminMutatingCommandContract? contract
-            )
-        )
-        {
-            confirmation = contract.ExpectedConfirmation;
-            return true;
-        }
-
-        confirmation = default;
-        return false;
-    }
-
-    public static bool TryGetExpectedOfflineWriterAdmissionConfirmation(
-        string commandName,
-        out DocumentCacheOfflineWriterAdmissionConfirmation confirmation
-    )
-    {
-        if (
-            DocumentCacheAdminMutatingCommandContracts.TryGet(
-                commandName,
-                out DocumentCacheAdminMutatingCommandContract? contract
-            ) && contract.ExpectedOfflineWriterAdmissionConfirmation is { } expectedConfirmation
-        )
-        {
-            confirmation = expectedConfirmation;
-            return true;
-        }
-
-        confirmation = default;
-        return false;
-    }
-
     public static string ExpectedConfirmationOptionValue(string commandName)
     {
-        if (!TryGetExpectedConfirmation(commandName, out var confirmation))
+        if (!DocumentCacheAdminMutatingCommandContracts.TryGet(commandName, out var contract))
         {
             throw new ArgumentException(
                 $"Command '{commandName}' does not have an expected confirmation.",
@@ -184,9 +143,7 @@ internal static class DocumentCacheAdminCommandSurface
             );
         }
 
-        return DocumentCacheAdminMutatingCommandContracts.TryGet(commandName, out var contract)
-            ? contract.ExpectedConfirmationJsonValue
-            : ToLowerCamelName(confirmation);
+        return contract.ExpectedConfirmationJsonValue;
     }
 
     public static bool TryParsePositiveSeconds(string? value, out TimeSpan timeSpan)
@@ -469,7 +426,4 @@ internal static class DocumentCacheAdminCommandSurface
 
         return timeSpan.ToString("c", CultureInfo.InvariantCulture);
     }
-
-    private static string ToLowerCamelName<TEnum>(TEnum value)
-        where TEnum : struct, Enum => JsonNamingPolicy.CamelCase.ConvertName(value.ToString());
 }

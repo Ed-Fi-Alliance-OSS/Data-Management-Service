@@ -74,7 +74,7 @@ public sealed class Given_DocumentCacheAdminHelpAndDocumentation
         {
             _readme
                 .Should()
-                .Contain(DocumentCacheAdminCommandSurface.ExpectedConfirmationOptionValue(command.Name));
+                .Contain(DocumentCacheAdminTestCommandContracts.ExpectedConfirmationJsonValue(command.Name));
         }
 
         _readme

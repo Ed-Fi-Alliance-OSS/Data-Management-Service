@@ -294,6 +294,6 @@ public sealed class Given_DocumentCacheAdminCommandSurface
         [
             commandName,
             DocumentCacheAdminCommandSurface.ConfirmOptionName,
-            DocumentCacheAdminCommandSurface.ExpectedConfirmationOptionValue(commandName),
+            DocumentCacheAdminTestCommandContracts.ExpectedConfirmationJsonValue(commandName),
         ];
 }

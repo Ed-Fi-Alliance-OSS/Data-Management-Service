@@ -707,22 +707,6 @@ public static class DocumentCachePreflightClassifier
         return null;
     }
 
-    public static DocumentCacheAdministrativeCommandConfirmation? AcceptedCommandConfirmation(
-        DocumentCacheAdministrativeCommand command,
-        DocumentCacheAdministrativeCommandConfirmation? confirmation
-    )
-    {
-        if (confirmation is null || !Enum.IsDefined(confirmation.Value))
-        {
-            return null;
-        }
-
-        DocumentCacheAdministrativeCommandConfirmation expectedConfirmation = ExpectedCommandConfirmation(
-            command
-        );
-        return confirmation.Value == expectedConfirmation ? confirmation : null;
-    }
-
     public static DocumentCacheAdministrativeCommandResult? ClassifyTargetObservationFailure(
         DocumentCacheAdministrativeCommand command,
         DocumentCacheAdministrativeTargetKey targetKey,

@@ -70,9 +70,6 @@ internal sealed record DocumentCacheAdministrativeCommandRunnerRequest
 
     public DocumentCacheAdministrativeCommandConfirmation? Confirmation { get; }
 
-    public DocumentCacheAdministrativeCommandConfirmation? AcceptedCommandConfirmation =>
-        DocumentCachePreflightClassifier.AcceptedCommandConfirmation(Command, Confirmation);
-
     public DocumentCacheOfflineWriterAdmissionConfirmation? AcceptedOfflineWriterAdmissionConfirmation =>
         DocumentCachePreflightClassifier.AcceptedOfflineWriterAdmissionConfirmation(
             Command,

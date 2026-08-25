@@ -413,7 +413,7 @@ public sealed class Given_DocumentCacheAdminParserAndContractUnitTests
             DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
             "1",
             DocumentCacheAdminCommandSurface.ConfirmOptionName,
-            DocumentCacheAdminCommandSurface.ExpectedConfirmationOptionValue(commandName),
+            DocumentCacheAdminTestCommandContracts.ExpectedConfirmationJsonValue(commandName),
             optionName,
             optionValue,
         ];

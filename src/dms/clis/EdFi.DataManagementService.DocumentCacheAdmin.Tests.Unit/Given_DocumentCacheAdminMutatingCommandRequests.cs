@@ -123,7 +123,7 @@ public sealed class Given_DocumentCacheAdminMutatingCommandRequests
                 DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
                 "1",
                 DocumentCacheAdminCommandSurface.ConfirmOptionName,
-                DocumentCacheAdminCommandSurface.ExpectedConfirmationOptionValue(
+                DocumentCacheAdminTestCommandContracts.ExpectedConfirmationJsonValue(
                     DocumentCacheAdminCommandSurface.ActivateOfflineCommandName
                 ),
                 DocumentCacheAdminCommandSurface.OfflineWriterAdmissionOptionName,
@@ -143,7 +143,7 @@ public sealed class Given_DocumentCacheAdminMutatingCommandRequests
                 DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
                 "1",
                 DocumentCacheAdminCommandSurface.ConfirmOptionName,
-                DocumentCacheAdminCommandSurface.ExpectedConfirmationOptionValue(
+                DocumentCacheAdminTestCommandContracts.ExpectedConfirmationJsonValue(
                     DocumentCacheAdminCommandSurface.RebuildOnlineCommandName
                 ),
                 DocumentCacheAdminCommandSurface.ExpectedPhysicalSourceFingerprintOptionName,
@@ -219,7 +219,7 @@ public sealed class Given_DocumentCacheAdminMutatingCommandRequests
         if (includeConfirmation)
         {
             args.Add(DocumentCacheAdminCommandSurface.ConfirmOptionName);
-            args.Add(DocumentCacheAdminCommandSurface.ExpectedConfirmationOptionValue(commandName));
+            args.Add(DocumentCacheAdminTestCommandContracts.ExpectedConfirmationJsonValue(commandName));
         }
 
         if (includeOfflineWriterAdmission)
