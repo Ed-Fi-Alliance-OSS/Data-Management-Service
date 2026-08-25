@@ -84,6 +84,12 @@ public enum CdcDiagnosticCategory
     ArtifactNameMismatch,
     ArtifactNotRemoved,
     UnsafeEvidence,
+    OperationMismatch,
+    TargetMismatch,
+    ProviderMismatch,
+    SourceMismatch,
+    InvalidOrdering,
+    InvalidObservation,
 }
 
 public sealed record CdcTargetIdentity(
