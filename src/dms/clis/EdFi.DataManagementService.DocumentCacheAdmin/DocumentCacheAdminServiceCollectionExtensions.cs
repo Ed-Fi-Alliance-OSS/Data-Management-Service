@@ -11,7 +11,6 @@ using EdFi.DataManagementService.Core.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Options;
 using Serilog;
 
 namespace EdFi.DataManagementService.DocumentCacheAdmin;
@@ -35,12 +34,7 @@ internal static class DocumentCacheAdminServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(logger);
 
-        services
-            .AddOptions<AppSettings>()
-            .Bind(configuration.GetSection("AppSettings"))
-            .Services.TryAddEnumerable(
-                ServiceDescriptor.Singleton<IValidateOptions<AppSettings>, AppSettingsValidator>()
-            );
+        services.AddOptions<AppSettings>().Bind(configuration.GetSection("AppSettings"));
 
         services
             .AddDmsDefaultConfiguration(

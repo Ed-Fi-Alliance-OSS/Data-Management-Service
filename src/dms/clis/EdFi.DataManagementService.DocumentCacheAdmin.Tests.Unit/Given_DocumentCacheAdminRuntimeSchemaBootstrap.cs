@@ -171,7 +171,6 @@ public sealed class Given_DocumentCacheAdminRuntimeSchemaBootstrap
                 {
                     ["AppSettings:Datastore"] = datastore,
                     ["AppSettings:AllowIdentityUpdateOverrides"] = string.Empty,
-                    ["AppSettings:MaximumPageSize"] = "500",
                     ["AppSettings:DefaultPartitionCount"] = "10",
                     ["ConfigurationServiceSettings:BaseUrl"] = "https://cms.example.org",
                     ["ConfigurationServiceSettings:ClientId"] = "client-id",

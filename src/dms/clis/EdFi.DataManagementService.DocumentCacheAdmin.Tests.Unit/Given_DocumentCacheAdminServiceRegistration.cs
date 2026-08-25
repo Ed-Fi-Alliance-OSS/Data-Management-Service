@@ -120,6 +120,7 @@ public sealed class Given_DocumentCacheAdminServiceRegistration
             .ContainSingle()
             .Which.Should()
             .Be(DocumentCacheTargetKey.Create(string.Empty, 1));
+        serviceProvider.GetRequiredService<IOptions<AppSettings>>().Value.MaximumPageSize.Should().Be(0);
     }
 
     [Test]
@@ -153,7 +154,6 @@ public sealed class Given_DocumentCacheAdminServiceRegistration
                 new Dictionary<string, string?>
                 {
                     ["AppSettings:Datastore"] = datastore,
-                    ["AppSettings:MaximumPageSize"] = "500",
                     ["AppSettings:DefaultPartitionCount"] = "10",
                     ["ConfigurationServiceSettings:BaseUrl"] = "https://cms.example.org",
                     ["ConfigurationServiceSettings:ClientId"] = "client-id",
@@ -173,7 +173,6 @@ public sealed class Given_DocumentCacheAdminServiceRegistration
                 new Dictionary<string, string?>
                 {
                     ["AppSettings:Datastore"] = "postgresql",
-                    ["AppSettings:MaximumPageSize"] = "500",
                     ["AppSettings:DefaultPartitionCount"] = "10",
                     ["ConfigurationServiceSettings:BaseUrl"] = "https://cms.example.org",
                     ["ConfigurationServiceSettings:ClientId"] = "client-id",

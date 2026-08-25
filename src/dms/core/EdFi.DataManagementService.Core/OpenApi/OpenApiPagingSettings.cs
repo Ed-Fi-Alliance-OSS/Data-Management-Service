@@ -22,7 +22,7 @@ public sealed record OpenApiPagingSettings(int MaximumPageSize, int DefaultParti
     /// <summary>
     /// The MaximumPageSize the service ships with in appsettings.json.
     /// </summary>
-    public const int MaximumPageSizeDefault = AppSettings.MaximumPageSizeDefault;
+    public const int MaximumPageSizeDefault = 500;
 
     /// <summary>
     /// The shipped defaults, for callers with no runtime configuration source of their own.
