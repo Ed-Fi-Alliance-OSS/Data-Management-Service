@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Startup;
 using Microsoft.Extensions.DependencyInjection;
@@ -27,16 +26,6 @@ internal static class DocumentCacheAdminRuntimeInitializer
         await serviceProvider
             .GetRequiredService<IEffectiveSchemaBootstrapper>()
             .InitializeAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        IRuntimeMappingSetCompiler runtimeCompiler =
-            serviceProvider.GetServices<IRuntimeMappingSetCompiler>().SingleOrDefault()
-            ?? throw new InvalidOperationException("No runtime mapping-set compiler is configured.");
-
-        MappingSetKey mappingSetKey = runtimeCompiler.GetCurrentKey();
-        _ = await serviceProvider
-            .GetRequiredService<IMappingSetProvider>()
-            .GetOrCreateAsync(mappingSetKey, cancellationToken)
             .ConfigureAwait(false);
     }
 }

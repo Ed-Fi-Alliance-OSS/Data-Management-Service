@@ -7,9 +7,11 @@ using System.Collections.Immutable;
 using System.CommandLine;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.DocumentCacheAdmin;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -69,6 +71,53 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
         root["elapsedCommandTimeSeconds"]!.GetValue<double>().Should().Be(1.25);
         root.Should().NotContainKey("result");
         stderr.ToString().Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_gets_the_mapping_set_only_when_mutating_dispatch_creates_a_target_runtime_context()
+    {
+        ThrowingMappingSetProvider mappingSetProvider = new(
+            "Mutating target-context creation requested a mapping set."
+        );
+        FixedRuntimeMappingSetCompiler runtimeCompiler = new(SqlDialect.Pgsql);
+        RecordingProjectionSupervisor projectionSupervisor = new(MatchingRegistrySnapshot());
+        await using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddSingleton<IDocumentCacheProjectionSupervisor>(projectionSupervisor)
+            .AddSingleton(A.Fake<IDocumentCacheMaterializer>())
+            .AddSingleton(A.Fake<IDocumentCacheWriter>())
+            .AddSingleton(A.Fake<IDocumentCacheProjectionObservationSink>())
+            .AddSingleton<IMappingSetProvider>(mappingSetProvider)
+            .AddSingleton<IRuntimeMappingSetCompiler>(runtimeCompiler)
+            .AddSingleton<
+                IDocumentCacheProjectionTargetRuntimeContextFactory,
+                DocumentCacheProjectionTargetRuntimeContextFactory
+            >()
+            .AddSingleton<IDocumentCacheAdminMutatingCommandDispatcher, TargetContextCreatingDispatcher>()
+            .BuildServiceProvider();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+
+        int exitCode = await DocumentCacheAdminCommandExecutor.ExecuteAsync(
+            ParseCommand(
+                DocumentCacheAdminCommandSurface.RebuildOnlineCommandName,
+                DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
+                "1",
+                DocumentCacheAdminCommandSurface.ConfirmOptionName,
+                "onlineCacheRebuild"
+            ),
+            InvocationTarget(),
+            serviceProvider,
+            stdout,
+            stderr
+        );
+
+        exitCode.Should().Be(DocumentCacheAdminExitCodes.UnexpectedFailure);
+        projectionSupervisor.RefreshCount.Should().Be(1);
+        runtimeCompiler.GetCurrentKeyCount.Should().Be(1);
+        runtimeCompiler.CompileCount.Should().Be(0);
+        mappingSetProvider.GetOrCreateCount.Should().Be(1);
+        stdout.ToString().Should().BeEmpty();
+        stderr.ToString().Should().Contain("failed before a shared result could be produced");
     }
 
     [TestCase(
@@ -300,6 +349,48 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
             ],
             elapsedCommandTime: TimeSpan.FromSeconds(1.25)
         );
+
+    private sealed class TargetContextCreatingDispatcher(
+        IDocumentCacheProjectionTargetRuntimeContextFactory targetContextFactory
+    ) : IDocumentCacheAdminMutatingCommandDispatcher
+    {
+        public async Task<DocumentCacheAdministrativeCommandResult> ExecuteAsync(
+            DocumentCacheAdminMutatingCommandRequest commandRequest,
+            CancellationToken cancellationToken = default
+        )
+        {
+            await using DocumentCacheProjectionTargetRuntimeContext targetContext = await targetContextFactory
+                .CreateAsync(TargetExecutionContext(commandRequest.TargetKey), cancellationToken)
+                .ConfigureAwait(false);
+
+            throw new AssertionException("Throwing mapping provider should prevent target-context creation.");
+        }
+
+        private static DocumentCacheTargetExecutionContext TargetExecutionContext(
+            DocumentCacheTargetKey targetKey
+        ) =>
+            new(
+                targetKey,
+                new DocumentCacheTargetContextGeneration(1),
+                DocumentCacheTargetEffectiveSettings.FromOptions(new DocumentCacheOptions()),
+                new DocumentCacheTargetDataStoreMetadata(
+                    targetKey.DataStoreId,
+                    RelationalProviderToken.PostgresqlValue
+                ),
+                new DocumentCacheTargetConnectionInput(RelationalProviderToken.Postgresql, "connection"),
+                new DocumentCachePhysicalSourceFingerprint(Fingerprint),
+                new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false),
+                new DocumentCacheInventoryValidationResult(
+                    DocumentCacheInventoryStatus.Satisfied,
+                    "Inventory."
+                ),
+                new DocumentCacheEnqueueTriggerValidationResult(
+                    DocumentCacheEnqueueTriggerStatus.Satisfied,
+                    "Trigger."
+                ),
+                DocumentCacheSqlServerPrerequisiteDetails.NotApplicable()
+            );
+    }
 
     private sealed class RecordingMutatingCommandDispatcher(
         Func<DocumentCacheAdminMutatingCommandRequest, DocumentCacheAdministrativeCommandResult> execute

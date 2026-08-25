@@ -101,14 +101,23 @@ public sealed class Given_DocumentCacheAdminRuntimeSchemaBootstrap
         }
         """;
 
-    [TestCase("postgresql", SqlDialect.Pgsql)]
-    [TestCase("mssql", SqlDialect.Mssql)]
-    public async Task It_initializes_both_effective_schema_providers_and_compiles_the_current_runtime_mapping_set(
-        string datastore,
-        SqlDialect expectedDialect
+    [TestCase("postgresql")]
+    [TestCase("mssql")]
+    public async Task It_initializes_both_effective_schema_providers_without_compiling_the_current_runtime_mapping_set(
+        string datastore
     )
     {
-        await using ServiceProvider serviceProvider = CreateServiceProvider(datastore);
+        ThrowingMappingSetProvider mappingSetProvider = new(
+            "Common CLI runtime initialization must not compile a mapping set."
+        );
+        await using ServiceProvider serviceProvider = CreateServiceProvider(
+            datastore,
+            services =>
+            {
+                services.RemoveAll<IRuntimeMappingSetCompiler>();
+                services.Replace(ServiceDescriptor.Singleton<IMappingSetProvider>(mappingSetProvider));
+            }
+        );
 
         await DocumentCacheAdminRuntimeInitializer.InitializeAsync(serviceProvider);
 
@@ -124,21 +133,14 @@ public sealed class Given_DocumentCacheAdminRuntimeSchemaBootstrap
         effectiveApiSchemaProvider.IsInitialized.Should().BeTrue();
         effectiveApiSchemaProvider.Documents.GetAllProjectSchemas().Should().ContainSingle();
 
-        IRuntimeMappingSetCompiler runtimeCompiler = serviceProvider
-            .GetServices<IRuntimeMappingSetCompiler>()
-            .Single();
-        runtimeCompiler.Dialect.Should().Be(expectedDialect);
-
-        MappingSetKey mappingSetKey = runtimeCompiler.GetCurrentKey();
-        MappingSet mappingSet = await serviceProvider
-            .GetRequiredService<IMappingSetProvider>()
-            .GetOrCreateAsync(mappingSetKey, CancellationToken.None);
-
-        mappingSet.Key.Should().Be(mappingSetKey);
-        mappingSet.ResourceKeyIdByResource.Should().ContainKey(new QualifiedResourceName("Ed-Fi", "Student"));
+        serviceProvider.GetServices<IRuntimeMappingSetCompiler>().Should().BeEmpty();
+        mappingSetProvider.GetOrCreateCount.Should().Be(0);
     }
 
-    private static ServiceProvider CreateServiceProvider(string datastore)
+    private static ServiceProvider CreateServiceProvider(
+        string datastore,
+        Action<IServiceCollection>? configureServices = null
+    )
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -148,6 +150,7 @@ public sealed class Given_DocumentCacheAdminRuntimeSchemaBootstrap
             DocumentCacheTargetKey.Create(string.Empty, 1)
         );
         services.Replace(ServiceDescriptor.Singleton(CreateApiSchemaProvider()));
+        configureServices?.Invoke(services);
 
         return services.BuildServiceProvider();
     }

@@ -6,6 +6,7 @@
 using System.Collections.Immutable;
 using System.CommandLine;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.DocumentCacheAdmin;
@@ -49,6 +50,47 @@ public sealed class Given_DocumentCacheAdminStatusCommand
         stdout.ToString().Should().Contain("DocumentCache status observedAt=2026-08-20T12:30:00.0000000Z");
         stdout.ToString().Should().Contain("lifecycle=Tracking availability=Available");
         stdout.ToString().Should().Contain("operationalHealth=Unknown reason=RuntimeNotObserved");
+        stderr.ToString().Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_does_not_resolve_mapping_services_for_status()
+    {
+        int runtimeCompilerResolveCount = 0;
+        int mappingProviderResolveCount = 0;
+        ScriptedDocumentCacheStatusService statusService = new(_ => Task.FromResult(StatusResponse()));
+        await using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddSingleton<IRuntimeMappingSetCompiler>(_ =>
+            {
+                runtimeCompilerResolveCount++;
+                return new FixedRuntimeMappingSetCompiler(SqlDialect.Pgsql);
+            })
+            .AddSingleton<IMappingSetProvider>(_ =>
+            {
+                mappingProviderResolveCount++;
+                return new ThrowingMappingSetProvider("Status command must not request a mapping set.");
+            })
+            .AddSingleton<IDocumentCacheStatusService>(statusService)
+            .BuildServiceProvider();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+
+        int exitCode = await DocumentCacheAdminCommandExecutor.ExecuteAsync(
+            ParseStatusCommand(DocumentCacheAdminCommandSurface.DataStoreIdOptionName, "1"),
+            InvocationTarget(),
+            serviceProvider,
+            stdout,
+            stderr
+        );
+
+        exitCode.Should().Be(DocumentCacheAdminExitCodes.Success);
+        runtimeCompilerResolveCount.Should().Be(0);
+        mappingProviderResolveCount.Should().Be(0);
+        statusService
+            .EvaluationModes.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(DocumentCacheStatusEvaluationMode.StandaloneDirectObservation);
         stderr.ToString().Should().BeEmpty();
     }
 
