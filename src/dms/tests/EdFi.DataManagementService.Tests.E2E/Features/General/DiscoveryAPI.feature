@@ -225,6 +225,11 @@ Feature: The Discovery API provides information about the application version, s
                       "prefix": "Profiles"
                     },
                     {
+                      "name": "E2E-Test-School-WriteOnly",
+                      "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-School-WriteOnly/resources-spec.json",
+                      "prefix": "Profiles"
+                    },
+                    {
                       "name": "E2E-Test-School-Write-RequiredCollectionWithRule",
                       "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-School-Write-RequiredCollectionWithRule/resources-spec.json",
                       "prefix": "Profiles"
