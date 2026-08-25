@@ -66,21 +66,6 @@ internal sealed record PostgresqlCdcProviderBarrierObservationRequest(
     string? ExpectedConnectSourcePartitionHash = null
 );
 
-internal sealed record PostgresqlCdcSourceHistoryObservationRequest(
-    string ConnectionString,
-    string OperationId,
-    CdcBinding Binding,
-    CdcProviderSetupObservation? ProviderSetup,
-    CdcConnectorOffsetObservation ConnectorOffset
-)
-{
-    public CdcIncident? LatchedIncident { get; init; }
-
-    public string? ExpectedConnectSourcePartitionHash { get; init; }
-
-    public TimeSpan CommandTimeout { get; init; } = TimeSpan.FromSeconds(30);
-}
-
 internal sealed class PostgresqlCdcSourcePositionAdapter(
     NpgsqlDataSourceCache dataSourceCache,
     IDocumentCacheProviderCommandTimeoutClassifier timeoutClassifier,
@@ -89,18 +74,6 @@ internal sealed class PostgresqlCdcSourcePositionAdapter(
 ) : ICdcProviderSourcePositionAdapter
 {
     private const string CurrentWalLsnPath = "$.postgresqlBarrierLsn";
-    private const string ProviderHistoryPath = "$.providerHistory";
-    private const string PostgresqlReplicationSlotPath = "$.providerHistory.postgresqlReplicationSlot";
-    private const string PostgresqlPublicationPath = "$.providerHistory.postgresqlPublication";
-    private const string PostgresqlRetainedRangeStartPath = "$.providerHistory.retainedRangeStart";
-    private const string PostgresqlRetainedRangeEndPath = "$.providerHistory.retainedRangeEnd";
-
-    private static readonly string[] _expectedPublicationTables =
-    [
-        "dms.CdcHeartbeat",
-        "dms.Document",
-        "dms.DocumentCache",
-    ];
 
     private readonly NpgsqlDataSourceCache _dataSourceCache =
         dataSourceCache ?? throw new ArgumentNullException(nameof(dataSourceCache));
@@ -163,21 +136,7 @@ internal sealed class PostgresqlCdcSourcePositionAdapter(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        return ObserveSourceHistoryAsync(
-            new(
-                request.ConnectionString,
-                request.OperationId,
-                request.Binding,
-                request.ProviderSetup,
-                request.ConnectorOffset
-            )
-            {
-                LatchedIncident = request.LatchedIncident,
-                ExpectedConnectSourcePartitionHash = request.ExpectedConnectSourcePartitionHash,
-                CommandTimeout = request.CommandTimeout,
-            },
-            cancellationToken
-        );
+        return ObserveSourceHistoryAsync(request, cancellationToken);
     }
 
     public async Task<PostgresqlCdcProviderBarrierCaptureResult> CaptureBarrierAsync(
@@ -335,40 +294,31 @@ internal sealed class PostgresqlCdcSourcePositionAdapter(
         );
     }
 
-    public async Task<CdcSourceHistoryClassificationResult> ObserveSourceHistoryAsync(
-        PostgresqlCdcSourceHistoryObservationRequest request,
+    public Task<CdcSourceHistoryClassificationResult> ObserveSourceHistoryAsync(
+        CdcSourceHistoryObservationRequest request,
         CancellationToken cancellationToken = default
     )
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.Binding);
         ArgumentNullException.ThrowIfNull(request.ConnectorOffset);
+        cancellationToken.ThrowIfCancellationRequested();
 
         CdcDiagnosticCollector diagnostics = new();
         ValidatePostgresqlBinding(request.Binding, "$.binding.provider", diagnostics);
 
-        CdcProviderSourceHistoryEvidence? providerHistory = null;
-        if (!diagnostics.HasDiagnostics)
-        {
-            providerHistory = await ReadProviderHistoryEvidenceAsync(
-                    request.ConnectionString,
-                    request.Binding,
-                    request.CommandTimeout,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-        }
-
-        return CdcSourceHistoryContinuityClassifier.Evaluate(
-            new(request.OperationId, UtcNow(), UtcNow(), request.Binding)
-            {
-                ProviderSetup = request.ProviderSetup,
-                ConnectorOffset = request.ConnectorOffset,
-                ProviderHistory = providerHistory,
-                LatchedIncident = request.LatchedIncident,
-                ExpectedConnectSourcePartitionHash = request.ExpectedConnectSourcePartitionHash,
-                Diagnostics = [.. diagnostics.Diagnostics],
-            }
+        return Task.FromResult(
+            CdcSourceHistoryContinuityClassifier.Evaluate(
+                new(request.OperationId, UtcNow(), UtcNow(), request.Binding)
+                {
+                    ProviderSetup = request.ProviderSetup,
+                    ConnectorOffset = request.ConnectorOffset,
+                    ProviderHistory = request.ProviderHistory,
+                    LatchedIncident = request.LatchedIncident,
+                    ExpectedConnectSourcePartitionHash = request.ExpectedConnectSourcePartitionHash,
+                    Diagnostics = [.. diagnostics.Diagnostics],
+                }
+            )
         );
     }
 
@@ -404,463 +354,6 @@ internal sealed class PostgresqlCdcSourcePositionAdapter(
                     ),
                 ]
         );
-    }
-
-    private async Task<CdcProviderSourceHistoryEvidence> ReadProviderHistoryEvidenceAsync(
-        string connectionString,
-        CdcBinding binding,
-        TimeSpan commandTimeout,
-        CancellationToken cancellationToken
-    )
-    {
-        CdcArtifactNameResult artifactNameResult = CdcArtifactNameGenerator.RecoverFromBinding(binding);
-        if (artifactNameResult.Inventory is null)
-        {
-            return UnknownProviderHistory(null, artifactNameResult.Diagnostics);
-        }
-
-        CdcArtifactInventory inventory = artifactNameResult.Inventory;
-        string slotName =
-            inventory.PostgresqlLogicalSlotName
-            ?? throw new InvalidOperationException("PostgreSQL logical slot name was not rendered.");
-        string publicationName =
-            inventory.PostgresqlPublicationName
-            ?? throw new InvalidOperationException("PostgreSQL publication name was not rendered.");
-
-        try
-        {
-            NpgsqlDataSource dataSource = _dataSourceCache.GetOrCreate(connectionString);
-            await using NpgsqlConnection connection = await dataSource
-                .OpenConnectionAsync(cancellationToken)
-                .ConfigureAwait(false);
-
-            PostgresqlReplicationSlotMetadata slot = await ReadReplicationSlotAsync(
-                    connection,
-                    slotName,
-                    commandTimeout,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-            PostgresqlPublicationMetadata publication = await ReadPublicationAsync(
-                    connection,
-                    publicationName,
-                    commandTimeout,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-
-            return CreateProviderHistoryEvidence(slot, publication, slotName, publicationName);
-        }
-        catch (OperationCanceledException)
-        {
-            return UnknownProviderHistory(
-                slotName,
-                [
-                    new(
-                        CdcDiagnosticCategory.LocalStateUnavailable,
-                        ProviderHistoryPath,
-                        "CDC PostgreSQL provider source-history observation was cancelled."
-                    ),
-                ]
-            );
-        }
-        catch (Exception exception) when (_timeoutClassifier.IsProviderCommandTimeout(exception))
-        {
-            LogProviderObservationFailure(exception, "provider-history-timeout");
-            return UnknownProviderHistory(
-                slotName,
-                [
-                    new(
-                        CdcDiagnosticCategory.LocalStateUnavailable,
-                        ProviderHistoryPath,
-                        "CDC PostgreSQL provider source-history observation timed out."
-                    ),
-                ]
-            );
-        }
-        catch (Exception exception)
-        {
-            LogProviderObservationFailure(exception, "provider-history-failed");
-            return UnknownProviderHistory(
-                slotName,
-                [
-                    new(
-                        CdcDiagnosticCategory.LocalStateUnavailable,
-                        ProviderHistoryPath,
-                        "CDC PostgreSQL provider source-history observation failed."
-                    ),
-                ]
-            );
-        }
-    }
-
-    private static CdcProviderSourceHistoryEvidence CreateProviderHistoryEvidence(
-        PostgresqlReplicationSlotMetadata slot,
-        PostgresqlPublicationMetadata publication,
-        string slotName,
-        string publicationName
-    )
-    {
-        CdcDiagnosticCollector diagnostics = new();
-        AddDiagnostics(diagnostics, slot.Diagnostics);
-        AddDiagnostics(diagnostics, publication.Diagnostics);
-
-        if (!slot.Exists)
-        {
-            diagnostics.Add(
-                CdcDiagnosticCategory.InvalidObservation,
-                PostgresqlReplicationSlotPath,
-                "CDC PostgreSQL binding-derived logical replication slot is missing."
-            );
-            return new(
-                CdcProviderArtifactContinuityState.Missing,
-                CdcProviderRetainedRangeState.Unknown,
-                slotName,
-                null,
-                null,
-                [CdcIncidentUnavailableFact.ProviderArtifact]
-            )
-            {
-                Diagnostics = [.. diagnostics.Diagnostics],
-            };
-        }
-
-        if (!publication.Exists)
-        {
-            diagnostics.Add(
-                CdcDiagnosticCategory.InvalidObservation,
-                PostgresqlPublicationPath,
-                "CDC PostgreSQL binding-derived publication is missing."
-            );
-            return new(
-                CdcProviderArtifactContinuityState.Missing,
-                CdcProviderRetainedRangeState.Unknown,
-                publicationName,
-                slot.RestartLsn,
-                slot.ConfirmedFlushLsn,
-                [CdcIncidentUnavailableFact.ProviderArtifact]
-            )
-            {
-                Diagnostics = [.. diagnostics.Diagnostics],
-            };
-        }
-
-        if (!slot.IsExactMatch || !publication.IsExactMatch)
-        {
-            return new(
-                CdcProviderArtifactContinuityState.Recreated,
-                CdcProviderRetainedRangeState.Unknown,
-                !slot.IsExactMatch ? slotName : publicationName,
-                slot.RestartLsn,
-                slot.ConfirmedFlushLsn,
-                [CdcIncidentUnavailableFact.ProviderArtifact]
-            )
-            {
-                Diagnostics = [.. diagnostics.Diagnostics],
-            };
-        }
-
-        CdcProviderRetainedRangeState retainedRangeState = ValidateRetainedRange(slot, diagnostics);
-        return new(
-            CdcProviderArtifactContinuityState.ExactMatch,
-            retainedRangeState,
-            slotName,
-            slot.RestartLsn,
-            slot.ConfirmedFlushLsn,
-            retainedRangeState == CdcProviderRetainedRangeState.Unknown
-                ? [CdcIncidentUnavailableFact.ProviderRetainedRange]
-                : []
-        )
-        {
-            Diagnostics = [.. diagnostics.Diagnostics],
-        };
-    }
-
-    private static CdcProviderRetainedRangeState ValidateRetainedRange(
-        PostgresqlReplicationSlotMetadata slot,
-        CdcDiagnosticCollector diagnostics
-    )
-    {
-        CdcPostgresqlWalPositionResult start = CdcPostgresqlProviderPosition.ParseWalLsn(
-            slot.RestartLsn,
-            PostgresqlRetainedRangeStartPath
-        );
-        CdcPostgresqlWalPositionResult end = CdcPostgresqlProviderPosition.ParseWalLsn(
-            slot.ConfirmedFlushLsn,
-            PostgresqlRetainedRangeEndPath
-        );
-        AddDiagnostics(diagnostics, start.Diagnostics);
-        AddDiagnostics(diagnostics, end.Diagnostics);
-
-        if (start.Position is null || end.Position is null)
-        {
-            return CdcProviderRetainedRangeState.Unknown;
-        }
-
-        if (
-            string.Equals(slot.WalStatus, "lost", StringComparison.OrdinalIgnoreCase)
-            || !string.IsNullOrWhiteSpace(slot.InvalidationReason)
-        )
-        {
-            diagnostics.Add(
-                CdcDiagnosticCategory.InvalidObservation,
-                PostgresqlReplicationSlotPath,
-                "CDC PostgreSQL logical replication slot retained WAL is no longer continuous."
-            );
-            return CdcProviderRetainedRangeState.Gap;
-        }
-
-        if (start.Position.Value.CompareTo(end.Position.Value) > 0)
-        {
-            diagnostics.Add(
-                CdcDiagnosticCategory.InvalidOrdering,
-                PostgresqlRetainedRangeStartPath,
-                "CDC PostgreSQL retained range start must not be after retained range end."
-            );
-            return CdcProviderRetainedRangeState.Unknown;
-        }
-
-        return CdcProviderRetainedRangeState.CoversCommittedOffset;
-    }
-
-    private static CdcProviderSourceHistoryEvidence UnknownProviderHistory(
-        string? providerArtifactName,
-        IReadOnlyList<CdcDiagnostic> diagnostics
-    ) =>
-        new(
-            CdcProviderArtifactContinuityState.Unknown,
-            CdcProviderRetainedRangeState.Unknown,
-            providerArtifactName,
-            null,
-            null,
-            [CdcIncidentUnavailableFact.ProviderRetainedRange]
-        )
-        {
-            Diagnostics = diagnostics,
-        };
-
-    private static async Task<PostgresqlReplicationSlotMetadata> ReadReplicationSlotAsync(
-        NpgsqlConnection connection,
-        string slotName,
-        TimeSpan commandTimeout,
-        CancellationToken cancellationToken
-    )
-    {
-        await using NpgsqlCommand command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT
-                slot.plugin AS plugin,
-                slot.slot_type AS slot_type,
-                slot.database AS database_name,
-                current_database() AS expected_database_name,
-                slot.temporary AS temporary,
-                slot.active AS active,
-                COALESCE(to_jsonb(slot)->>'two_phase', 'unsupported') AS two_phase,
-                slot.restart_lsn::text AS restart_lsn,
-                slot.confirmed_flush_lsn::text AS confirmed_flush_lsn,
-                COALESCE(to_jsonb(slot)->>'wal_status', 'unavailable') AS wal_status,
-                COALESCE(to_jsonb(slot)->>'invalidation_reason', '') AS invalidation_reason
-            FROM pg_catalog.pg_replication_slots slot
-            WHERE slot.slot_name = @slotName;
-            """;
-        command.CommandTimeout = GetCommandTimeoutSeconds(commandTimeout);
-        command.Parameters.AddWithValue("slotName", slotName);
-
-        await using NpgsqlDataReader reader = await command
-            .ExecuteReaderAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            return PostgresqlReplicationSlotMetadata.Missing();
-        }
-
-        string? plugin = ReadOptionalString(reader, "plugin");
-        string? slotType = ReadOptionalString(reader, "slot_type");
-        string? databaseName = ReadOptionalString(reader, "database_name");
-        string expectedDatabaseName = ReadRequiredString(reader, "expected_database_name");
-        bool temporary = ReadRequiredBoolean(reader, "temporary");
-        string twoPhase = ReadRequiredString(reader, "two_phase");
-        string? restartLsn = ReadOptionalString(reader, "restart_lsn");
-        string? confirmedFlushLsn = ReadOptionalString(reader, "confirmed_flush_lsn");
-        string walStatus = ReadRequiredString(reader, "wal_status");
-        string invalidationReason = ReadRequiredString(reader, "invalidation_reason");
-        CdcDiagnosticCollector diagnostics = new();
-
-        if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            diagnostics.Add(
-                CdcDiagnosticCategory.InvalidObservation,
-                PostgresqlReplicationSlotPath,
-                "CDC PostgreSQL logical replication slot metadata returned multiple rows."
-            );
-        }
-
-        bool exact =
-            string.Equals(plugin, "pgoutput", StringComparison.Ordinal)
-            && string.Equals(slotType, "logical", StringComparison.Ordinal)
-            && string.Equals(databaseName, expectedDatabaseName, StringComparison.Ordinal)
-            && !temporary
-            && (
-                string.Equals(twoPhase, "unsupported", StringComparison.Ordinal)
-                || string.Equals(twoPhase, "false", StringComparison.OrdinalIgnoreCase)
-            );
-
-        if (!exact)
-        {
-            diagnostics.Add(
-                CdcDiagnosticCategory.InvalidObservation,
-                PostgresqlReplicationSlotPath,
-                "CDC PostgreSQL logical replication slot must be a permanent pgoutput slot for the current database."
-            );
-        }
-
-        return new(
-            true,
-            exact,
-            restartLsn,
-            confirmedFlushLsn,
-            walStatus,
-            invalidationReason,
-            [.. diagnostics.Diagnostics]
-        );
-    }
-
-    private static async Task<PostgresqlPublicationMetadata> ReadPublicationAsync(
-        NpgsqlConnection connection,
-        string publicationName,
-        TimeSpan commandTimeout,
-        CancellationToken cancellationToken
-    )
-    {
-        PostgresqlPublicationProperties? properties = await ReadPublicationPropertiesAsync(
-                connection,
-                publicationName,
-                commandTimeout,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-        if (properties is null)
-        {
-            return PostgresqlPublicationMetadata.Missing();
-        }
-
-        IReadOnlyList<PostgresqlPublicationTableMetadata> tables = await ReadPublicationTablesAsync(
-                connection,
-                publicationName,
-                commandTimeout,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-        CdcDiagnosticCollector diagnostics = new();
-
-        string[] observedTables = tables
-            .Select(table => table.TableName)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
-        string[] expectedTables = _expectedPublicationTables.Order(StringComparer.Ordinal).ToArray();
-        bool tableSetMatches = observedTables.SequenceEqual(expectedTables, StringComparer.Ordinal);
-        bool tableShapesMatch = tables.All(table => table.PublishesAllColumns && table.RowFilterAbsent);
-        bool exact =
-            properties.PublishesInsert
-            && properties.PublishesUpdate
-            && properties.PublishesDelete
-            && !properties.PublishesTruncate
-            && !properties.PublishesAllTables
-            && !properties.PublishViaPartitionRoot
-            && tableSetMatches
-            && tableShapesMatch;
-
-        if (!exact)
-        {
-            diagnostics.Add(
-                CdcDiagnosticCategory.InvalidObservation,
-                PostgresqlPublicationPath,
-                "CDC PostgreSQL publication must capture exactly dms.CdcHeartbeat, dms.Document, and dms.DocumentCache with insert/update/delete changes."
-            );
-        }
-
-        return new(true, exact, [.. diagnostics.Diagnostics]);
-    }
-
-    private static async Task<PostgresqlPublicationProperties?> ReadPublicationPropertiesAsync(
-        NpgsqlConnection connection,
-        string publicationName,
-        TimeSpan commandTimeout,
-        CancellationToken cancellationToken
-    )
-    {
-        await using NpgsqlCommand command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT
-                publication.pubinsert,
-                publication.pubupdate,
-                publication.pubdelete,
-                publication.pubtruncate,
-                publication.puballtables,
-                COALESCE(to_jsonb(publication)->>'pubviaroot', 'false') AS publish_via_partition_root
-            FROM pg_catalog.pg_publication publication
-            WHERE publication.pubname = @publicationName;
-            """;
-        command.CommandTimeout = GetCommandTimeoutSeconds(commandTimeout);
-        command.Parameters.AddWithValue("publicationName", publicationName);
-
-        await using NpgsqlDataReader reader = await command
-            .ExecuteReaderAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            return null;
-        }
-
-        return new(
-            reader.GetBoolean(0),
-            reader.GetBoolean(1),
-            reader.GetBoolean(2),
-            reader.GetBoolean(3),
-            reader.GetBoolean(4),
-            string.Equals(reader.GetString(5), "true", StringComparison.OrdinalIgnoreCase)
-        );
-    }
-
-    private static async Task<IReadOnlyList<PostgresqlPublicationTableMetadata>> ReadPublicationTablesAsync(
-        NpgsqlConnection connection,
-        string publicationName,
-        TimeSpan commandTimeout,
-        CancellationToken cancellationToken
-    )
-    {
-        await using NpgsqlCommand command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT
-                namespace_info.nspname || '.' || table_info.relname AS table_name,
-                publication_table.prattrs IS NULL AS publishes_all_columns,
-                publication_table.prqual IS NULL AS row_filter_absent
-            FROM pg_catalog.pg_publication_rel publication_table
-            INNER JOIN pg_catalog.pg_publication publication
-                ON publication.oid = publication_table.prpubid
-            INNER JOIN pg_catalog.pg_class table_info
-                ON table_info.oid = publication_table.prrelid
-            INNER JOIN pg_catalog.pg_namespace namespace_info
-                ON namespace_info.oid = table_info.relnamespace
-            WHERE publication.pubname = @publicationName
-            ORDER BY namespace_info.nspname, table_info.relname;
-            """;
-        command.CommandTimeout = GetCommandTimeoutSeconds(commandTimeout);
-        command.Parameters.AddWithValue("publicationName", publicationName);
-
-        List<PostgresqlPublicationTableMetadata> tables = [];
-        await using NpgsqlDataReader reader = await command
-            .ExecuteReaderAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            tables.Add(new(reader.GetString(0), reader.GetBoolean(1), reader.GetBoolean(2)));
-        }
-
-        return tables;
     }
 
     private static void ValidatePostgresqlBinding(
@@ -927,27 +420,6 @@ internal sealed class PostgresqlCdcSourcePositionAdapter(
         );
     }
 
-    private static string? ReadOptionalString(NpgsqlDataReader reader, string columnName)
-    {
-        int ordinal = reader.GetOrdinal(columnName);
-
-        return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
-    }
-
-    private static string ReadRequiredString(NpgsqlDataReader reader, string columnName)
-    {
-        int ordinal = reader.GetOrdinal(columnName);
-
-        return reader.GetString(ordinal);
-    }
-
-    private static bool ReadRequiredBoolean(NpgsqlDataReader reader, string columnName)
-    {
-        int ordinal = reader.GetOrdinal(columnName);
-
-        return reader.GetBoolean(ordinal);
-    }
-
     private static void AddDiagnostics(
         CdcDiagnosticCollector collector,
         IReadOnlyList<CdcDiagnostic>? diagnostics
@@ -963,42 +435,4 @@ internal sealed class PostgresqlCdcSourcePositionAdapter(
             collector.Add(diagnostic);
         }
     }
-
-    private sealed record PostgresqlReplicationSlotMetadata(
-        bool Exists,
-        bool IsExactMatch,
-        string? RestartLsn,
-        string? ConfirmedFlushLsn,
-        string WalStatus,
-        string InvalidationReason,
-        IReadOnlyList<CdcDiagnostic> Diagnostics
-    )
-    {
-        public static PostgresqlReplicationSlotMetadata Missing() =>
-            new(false, false, null, null, "unavailable", "", []);
-    }
-
-    private sealed record PostgresqlPublicationMetadata(
-        bool Exists,
-        bool IsExactMatch,
-        IReadOnlyList<CdcDiagnostic> Diagnostics
-    )
-    {
-        public static PostgresqlPublicationMetadata Missing() => new(false, false, []);
-    }
-
-    private sealed record PostgresqlPublicationProperties(
-        bool PublishesInsert,
-        bool PublishesUpdate,
-        bool PublishesDelete,
-        bool PublishesTruncate,
-        bool PublishesAllTables,
-        bool PublishViaPartitionRoot
-    );
-
-    private sealed record PostgresqlPublicationTableMetadata(
-        string TableName,
-        bool PublishesAllColumns,
-        bool RowFilterAbsent
-    );
 }

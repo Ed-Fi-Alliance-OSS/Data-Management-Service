@@ -23,7 +23,11 @@ public class Given_CdcConnectorTemplateIntegrationBoundaryTests
         "Microsoft.Extensions.DependencyInjection.Abstractions",
     ];
 
-    private static readonly string[] ExpectedProjectReferences = ["EdFi.DataManagementService.Backend.Ddl"];
+    private static readonly string[] ExpectedProjectReferences =
+    [
+        "EdFi.DataManagementService.Backend.Ddl",
+        "EdFi.DataManagementService.Core",
+    ];
 
     [Test]
     public void It_returns_render_registration_and_artifact_evidence_without_connect_lifecycle_inputs()

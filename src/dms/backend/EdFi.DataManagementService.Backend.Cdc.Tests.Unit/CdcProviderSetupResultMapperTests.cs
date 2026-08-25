@@ -1,0 +1,326 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using EdFi.DataManagementService.Backend.Ddl;
+using FluentAssertions;
+using NUnit.Framework;
+using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
+
+namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
+
+[TestFixture]
+[Parallelizable]
+[Category("CdcProviderSetupResultMapper")]
+public class Given_CdcProviderSetupResultMapper
+{
+    private static readonly DateTimeOffset ObservedAt = new(2026, 8, 25, 12, 0, 0, TimeSpan.Zero);
+
+    [Test]
+    public void It_normalizes_postgresql_safe_wal_values_to_provider_positions()
+    {
+        CoreCdc.CdcBinding binding = BuildBinding(CoreCdc.CdcProvider.Postgresql);
+        CoreCdc.CdcArtifactInventory inventory = RecoverInventory(binding);
+        CdcProviderSetupResult setupResult = BuildSetupResult(
+            CdcProvider.Postgresql,
+            binding,
+            [
+                Artifact(CdcProviderArtifactKind.PostgresqlPublication, inventory.PostgresqlPublicationName!),
+                Artifact(
+                    CdcProviderArtifactKind.PostgresqlReplicationSlot,
+                    inventory.PostgresqlLogicalSlotName!
+                ),
+            ],
+            [
+                History(
+                    CdcProviderArtifactKind.PostgresqlReplicationSlot,
+                    inventory.PostgresqlLogicalSlotName!,
+                    new Dictionary<string, string>
+                    {
+                        ["restart_lsn"] = "0_16B6C50",
+                        ["confirmed_flush_lsn"] = "0_16B6C60",
+                        ["wal_status"] = "reserved",
+                        ["invalidation_reason"] = "",
+                    }
+                ),
+            ]
+        );
+
+        CoreCdc.CdcProviderSourceHistoryEvidence providerHistory =
+            CdcProviderSetupResultMapper.ToProviderSourceHistoryEvidence(binding, setupResult);
+
+        providerHistory
+            .ProviderArtifactState.Should()
+            .Be(CoreCdc.CdcProviderArtifactContinuityState.ExactMatch);
+        providerHistory
+            .RetainedRangeState.Should()
+            .Be(CoreCdc.CdcProviderRetainedRangeState.CoversCommittedOffset);
+        providerHistory.RetainedRangeStart.Should().Be("0/16B6C50");
+        providerHistory.RetainedRangeEnd.Should().Be("0/16B6C60");
+    }
+
+    [Test]
+    public void It_maps_enabled_sql_server_capture_job_not_running_to_stopped_unknown_continuity()
+    {
+        CoreCdc.CdcBinding binding = BuildBinding(CoreCdc.CdcProvider.SqlServer);
+        CoreCdc.CdcArtifactInventory inventory = RecoverInventory(binding);
+        CdcProviderSetupObservationMapping mapping = MapSqlServerProviderSetup(
+            binding,
+            SqlServerDatabaseHistory(captureJobRunning: false, cleanupJobRunning: true)
+        );
+
+        CoreCdc.CdcSourceHistoryClassificationResult result = ClassifySqlServer(binding, inventory, mapping);
+
+        mapping
+            .ProviderHistory.SqlServerJobs!.CaptureJobState.Should()
+            .Be(CoreCdc.CdcSqlServerCdcJobState.Stopped);
+        result.Observation.Continuity.Should().Be(CoreCdc.CdcSourceHistoryContinuity.Unknown);
+        result
+            .Observation.RetainedRangeState.Should()
+            .Be(CoreCdc.CdcProviderRetainedRangeState.CoversCommittedOffset);
+        result.IncidentCandidate.Should().BeNull();
+    }
+
+    [Test]
+    public void It_keeps_sql_server_cleanup_job_not_running_healthy_when_last_run_did_not_fail()
+    {
+        CoreCdc.CdcBinding binding = BuildBinding(CoreCdc.CdcProvider.SqlServer);
+        CoreCdc.CdcArtifactInventory inventory = RecoverInventory(binding);
+        CdcProviderSetupObservationMapping mapping = MapSqlServerProviderSetup(
+            binding,
+            SqlServerDatabaseHistory(captureJobRunning: true, cleanupJobRunning: false)
+        );
+
+        CoreCdc.CdcSourceHistoryClassificationResult result = ClassifySqlServer(binding, inventory, mapping);
+
+        mapping
+            .ProviderHistory.SqlServerJobs!.CleanupJobState.Should()
+            .Be(CoreCdc.CdcSqlServerCdcJobState.Healthy);
+        result.Observation.Continuity.Should().Be(CoreCdc.CdcSourceHistoryContinuity.Healthy);
+        result.Observation.SqlServerJobs.Should().Be(CoreCdc.CdcSqlServerCdcJobEvidence.Healthy);
+        result.IncidentCandidate.Should().BeNull();
+    }
+
+    [Test]
+    public void It_maps_sql_server_unavailable_history_to_unknown_job_evidence()
+    {
+        CoreCdc.CdcBinding binding = BuildBinding(CoreCdc.CdcProvider.SqlServer);
+        CdcProviderSetupObservationMapping mapping = MapSqlServerProviderSetup(
+            binding,
+            History(
+                CdcProviderArtifactKind.ProviderHistory,
+                "sqlserver_database_cdc",
+                new Dictionary<string, string> { ["history"] = "unavailable" }
+            )
+        );
+
+        mapping
+            .ProviderHistory.ProviderArtifactState.Should()
+            .Be(CoreCdc.CdcProviderArtifactContinuityState.Unknown);
+        mapping.ProviderHistory.SqlServerJobs.Should().Be(CoreCdc.CdcSqlServerCdcJobEvidence.Unknown);
+    }
+
+    private static CdcProviderSetupObservationMapping MapSqlServerProviderSetup(
+        CoreCdc.CdcBinding binding,
+        CdcProviderHistoryObservation databaseHistory
+    )
+    {
+        CoreCdc.CdcArtifactInventory inventory = RecoverInventory(binding);
+        CdcProviderSetupResult setupResult = BuildSetupResult(
+            CdcProvider.SqlServer,
+            binding,
+            [
+                Artifact(
+                    CdcProviderArtifactKind.SqlServerCaptureInstance,
+                    inventory.SqlServerCaptureInstanceDocumentCacheName!
+                ),
+                Artifact(
+                    CdcProviderArtifactKind.SqlServerCaptureInstance,
+                    inventory.SqlServerCaptureInstanceDocumentName!
+                ),
+                Artifact(
+                    CdcProviderArtifactKind.SqlServerCaptureInstance,
+                    inventory.SqlServerCaptureInstanceCdcHeartbeatName!
+                ),
+            ],
+            [
+                databaseHistory,
+                SqlServerCaptureHistory(
+                    inventory.SqlServerCaptureInstanceDocumentCacheName!,
+                    "0x00000000000000000001"
+                ),
+                SqlServerCaptureHistory(
+                    inventory.SqlServerCaptureInstanceDocumentName!,
+                    "0x00000000000000000001"
+                ),
+                SqlServerCaptureHistory(
+                    inventory.SqlServerCaptureInstanceCdcHeartbeatName!,
+                    "0x00000000000000000001"
+                ),
+            ]
+        );
+
+        return CdcProviderSetupResultMapper.MapValidateOnlyResult(
+            "operation-id",
+            ObservedAt,
+            binding,
+            setupResult
+        );
+    }
+
+    private static CdcProviderSetupResult BuildSetupResult(
+        CdcProvider provider,
+        CoreCdc.CdcBinding binding,
+        IReadOnlyList<CdcProviderArtifactObservation> artifactInventory,
+        IReadOnlyList<CdcProviderHistoryObservation> providerHistoryObservations
+    ) =>
+        new(
+            provider,
+            CdcProviderSetupMode.ValidateOnly,
+            CdcProviderSetupOutcome.ExactMatch,
+            new CdcSourceFingerprint(CdcSourceFingerprintMetadata.Version, binding.PhysicalSourceFingerprint),
+            new CdcSourceFingerprint(CdcSourceFingerprintMetadata.Version, binding.PhysicalSourceFingerprint),
+            artifactInventory,
+            [],
+            [],
+            [],
+            null,
+            providerHistoryObservations,
+            null,
+            []
+        );
+
+    private static CdcProviderArtifactObservation Artifact(
+        CdcProviderArtifactKind artifactKind,
+        string safeName,
+        CdcProviderArtifactState state = CdcProviderArtifactState.Matched
+    ) => new(artifactKind, new CdcSafeName(safeName), state, new Dictionary<string, string>());
+
+    private static CdcProviderHistoryObservation History(
+        CdcProviderArtifactKind artifactKind,
+        string safeName,
+        IReadOnlyDictionary<string, string> safeObservedValues
+    ) =>
+        new(
+            artifactKind,
+            new CdcSafeName(safeName),
+            safeObservedValues,
+            CdcProviderRetryContinuityClassification.None
+        );
+
+    private static CdcProviderHistoryObservation SqlServerDatabaseHistory(
+        bool captureJobRunning,
+        bool cleanupJobRunning
+    ) =>
+        History(
+            CdcProviderArtifactKind.ProviderHistory,
+            "sqlserver_database_cdc",
+            new Dictionary<string, string>
+            {
+                ["database_cdc_enabled"] = "True",
+                ["capture_job_present"] = "True",
+                ["capture_job_name"] = "cdc.edfi_datastore_capture",
+                ["capture_job_enabled"] = "True",
+                ["capture_job_running"] = captureJobRunning.ToString(),
+                ["capture_job_last_run_status"] = "1",
+                ["cleanup_job_present"] = "True",
+                ["cleanup_job_name"] = "cdc.edfi_datastore_cleanup",
+                ["cleanup_job_enabled"] = "True",
+                ["cleanup_job_running"] = cleanupJobRunning.ToString(),
+                ["cleanup_job_last_run_status"] = "1",
+                ["retained_max_lsn"] = "0x00000000000000000010",
+            }
+        );
+
+    private static CdcProviderHistoryObservation SqlServerCaptureHistory(
+        string safeName,
+        string retainedMinLsn
+    ) =>
+        History(
+            CdcProviderArtifactKind.SqlServerCaptureInstance,
+            safeName,
+            new Dictionary<string, string>
+            {
+                ["retained_min_lsn"] = retainedMinLsn,
+                ["retained_max_lsn"] = "0x00000000000000000010",
+            }
+        );
+
+    private static CoreCdc.CdcSourceHistoryClassificationResult ClassifySqlServer(
+        CoreCdc.CdcBinding binding,
+        CoreCdc.CdcArtifactInventory inventory,
+        CdcProviderSetupObservationMapping mapping
+    )
+    {
+        string sourcePartitionHash = CoreCdc
+            .CdcSourcePartitionHashCalculator.ComputeSqlServer(inventory.TopicPrefix, binding.InstanceKey)
+            .Hash!;
+
+        return CoreCdc.CdcSourceHistoryContinuityClassifier.Evaluate(
+            new("operation-id", ObservedAt, ObservedAt, binding)
+            {
+                ProviderSetup = mapping.ProviderSetup,
+                ConnectorOffset = new CoreCdc.CdcConnectorOffsetObservation(
+                    CoreCdc.CdcJsonContract.CurrentContractVersion,
+                    "operation-id",
+                    ObservedAt,
+                    binding.ToTargetIdentity(),
+                    CoreCdc.CdcProvider.SqlServer,
+                    binding.PhysicalSourceFingerprint,
+                    inventory.ConnectorName,
+                    inventory.TopicPrefix,
+                    CoreCdc.CdcConnectorOffsetMatchResult.Exact,
+                    sourcePartitionHash,
+                    false,
+                    false,
+                    null,
+                    "0x00000000000000000001",
+                    "0x00000000000000000001",
+                    2,
+                    []
+                ),
+                ProviderHistory = mapping.ProviderHistory,
+                SqlServerSchemaHistory = new CoreCdc.CdcSqlServerSchemaHistoryEvidence(
+                    CoreCdc.CdcSqlServerSchemaHistoryEnablementPhase.AfterInitialAdmission,
+                    CoreCdc.CdcSqlServerSchemaHistoryState.Valid
+                ),
+                ExpectedConnectSourcePartitionHash = sourcePartitionHash,
+            }
+        );
+    }
+
+    private static CoreCdc.CdcBinding BuildBinding(CoreCdc.CdcProvider provider)
+    {
+        string instanceKey =
+            provider == CoreCdc.CdcProvider.Postgresql ? "postgresql-datastore" : "edfi_datastore";
+        CoreCdc.CdcArtifactInventory inventory = CoreCdc
+            .CdcArtifactNameGenerator.Render(new("dms-local", "edfi.dms", instanceKey, 1, provider))
+            .Inventory!;
+        string fingerprint = CoreCdc
+            .CdcPhysicalSourceFingerprintCalculator.Compute(
+                provider,
+                Guid.Parse("f81d4fae-7dec-11d0-a765-00a0c91e6bf6")
+            )
+            .Fingerprint!;
+
+        return new(
+            CoreCdc.CdcJsonContract.CurrentContractVersion,
+            "dms-local",
+            CoreCdc.CdcTargetValidator.DefaultBindingTenantKey,
+            "1",
+            instanceKey,
+            1,
+            provider,
+            fingerprint,
+            inventory.ConnectorName,
+            inventory.TopicName,
+            3,
+            CoreCdc.CdcTargetValidator.KafkaMurmur2V1PartitionerAlgorithm,
+            CoreCdc.CdcJsonContract.CurrentContractVersion
+        );
+    }
+
+    private static CoreCdc.CdcArtifactInventory RecoverInventory(CoreCdc.CdcBinding binding) =>
+        CoreCdc.CdcArtifactNameGenerator.RecoverFromBinding(binding).Inventory!;
+}

@@ -473,6 +473,14 @@
           "Microsoft.Extensions.Options": "[10.0.1, )"
         }
       },
+      "edfi.datamanagementservice.backend.cdc": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.DataManagementService.Backend.Ddl": "[1.0.0, )",
+          "EdFi.DataManagementService.Core": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.1, )"
+        }
+      },
       "edfi.datamanagementservice.backend.ddl": {
         "type": "Project",
         "dependencies": {
@@ -490,7 +498,6 @@
         "type": "Project",
         "dependencies": {
           "EdFi.DataManagementService.Backend": "[1.0.0, )",
-          "EdFi.DataManagementService.Backend.Ddl": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.Plans": "[1.0.0, )",
           "EdFi.DataManagementService.Core": "[1.0.0, )",
           "Microsoft.CodeAnalysis": "[4.12.0, )",

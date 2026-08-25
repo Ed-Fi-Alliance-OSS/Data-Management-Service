@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.Cdc;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
@@ -13,8 +14,6 @@ using NUnit.Framework;
 using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using DdlCdcProvider = EdFi.DataManagementService.Backend.Ddl.CdcProvider;
 using DdlCdcProviderSetupMode = EdFi.DataManagementService.Backend.Ddl.CdcProviderSetupMode;
-using DmsCdcProviderSetupMode = EdFi.DataManagementService.Core.DocumentCache.Cdc.CdcProviderSetupMode;
-using DmsCdcProviderSetupOutcome = EdFi.DataManagementService.Core.DocumentCache.Cdc.CdcProviderSetupOutcome;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
@@ -180,9 +179,7 @@ public class Given_MssqlCdcSourcePositionAdapter
             inventory
         );
 
-        foreach (
-            CdcSourceTableInventory sourceTable in MssqlCdcSourcePositionAdapter.ExpectedSqlServerSourceInventory
-        )
+        foreach (CdcSourceTableInventory sourceTable in _fixture.CdcSourceInventory)
         {
             string captureName = CaptureNameForSourceTable(inventory, sourceTable.TableKind);
             columnsByCapture.Should().ContainKey(captureName);
@@ -209,18 +206,10 @@ public class Given_MssqlCdcSourcePositionAdapter
         SqlServerRetainedLsnRange retainedRange = await ReadRetainedLsnRangeAsync(inventory);
 
         _timeProvider.Set(capture.BarrierCapturedAt.AddSeconds(1));
-        CoreCdc.CdcSourceHistoryClassificationResult result = await _adapter.ObserveSourceHistoryAsync(
-            new(
-                _database.ConnectionString,
-                OperationId(),
-                binding,
-                BuildSatisfiedProviderSetup(binding),
-                BuildConnectorOffset(binding, inventory, retainedRange.Start, retainedRange.Start, 2),
-                BuildValidSchemaHistory()
-            )
-            {
-                ExpectedConnectSourcePartitionHash = ExpectedSourcePartitionHash(inventory),
-            }
+        CoreCdc.CdcSourceHistoryClassificationResult result = await ObserveSourceHistoryAsync(
+            binding,
+            inventory,
+            BuildConnectorOffset(binding, inventory, retainedRange.Start, retainedRange.Start, 2)
         );
 
         result.Observation.Continuity.Should().Be(CoreCdc.CdcSourceHistoryContinuity.Healthy);
@@ -236,7 +225,9 @@ public class Given_MssqlCdcSourcePositionAdapter
         result.Observation.SqlServerJobs.Should().Be(CoreCdc.CdcSqlServerCdcJobEvidence.Healthy);
         result.Observation.PositionEvidence.RetainedRangeStart.Should().NotBeNullOrWhiteSpace();
         result.Observation.PositionEvidence.RetainedRangeEnd.Should().NotBeNullOrWhiteSpace();
-        result.Observation.Diagnostics.Should().BeEmpty();
+        result
+            .Observation.Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Severity == CoreCdc.CdcDiagnosticSeverity.Error);
         result.IncidentCandidate.Should().BeNull();
         ValidateSourceHistoryObservation(result.Observation, binding).Succeeded.Should().BeTrue();
     }
@@ -255,24 +246,16 @@ public class Given_MssqlCdcSourcePositionAdapter
         await DropCdcJobAsync("capture");
 
         _timeProvider.Set(ProjectionCaughtUpObservedAt.AddSeconds(30));
-        CoreCdc.CdcSourceHistoryClassificationResult result = await _adapter.ObserveSourceHistoryAsync(
-            new(
-                _database.ConnectionString,
-                OperationId(),
+        CoreCdc.CdcSourceHistoryClassificationResult result = await ObserveSourceHistoryAsync(
+            binding,
+            inventory,
+            BuildConnectorOffset(
                 binding,
-                BuildSatisfiedProviderSetup(binding),
-                BuildConnectorOffset(
-                    binding,
-                    inventory,
-                    capture.SqlServerCommitLsn!,
-                    capture.SqlServerChangeLsn!,
-                    capture.SqlServerEventSerialNo!.Value
-                ),
-                BuildValidSchemaHistory()
+                inventory,
+                capture.SqlServerCommitLsn!,
+                capture.SqlServerChangeLsn!,
+                capture.SqlServerEventSerialNo!.Value
             )
-            {
-                ExpectedConnectSourcePartitionHash = ExpectedSourcePartitionHash(inventory),
-            }
         );
 
         result.Observation.Continuity.Should().Be(CoreCdc.CdcSourceHistoryContinuity.Lost);
@@ -304,24 +287,16 @@ public class Given_MssqlCdcSourcePositionAdapter
         await DisableCdcJobAsync("capture");
 
         _timeProvider.Set(ProjectionCaughtUpObservedAt.AddSeconds(30));
-        CoreCdc.CdcSourceHistoryClassificationResult result = await _adapter.ObserveSourceHistoryAsync(
-            new(
-                _database.ConnectionString,
-                OperationId(),
+        CoreCdc.CdcSourceHistoryClassificationResult result = await ObserveSourceHistoryAsync(
+            binding,
+            inventory,
+            BuildConnectorOffset(
                 binding,
-                BuildSatisfiedProviderSetup(binding),
-                BuildConnectorOffset(
-                    binding,
-                    inventory,
-                    capture.SqlServerCommitLsn!,
-                    capture.SqlServerChangeLsn!,
-                    capture.SqlServerEventSerialNo!.Value
-                ),
-                BuildValidSchemaHistory()
+                inventory,
+                capture.SqlServerCommitLsn!,
+                capture.SqlServerChangeLsn!,
+                capture.SqlServerEventSerialNo!.Value
             )
-            {
-                ExpectedConnectSourcePartitionHash = ExpectedSourcePartitionHash(inventory),
-            }
         );
 
         result.Observation.Continuity.Should().Be(CoreCdc.CdcSourceHistoryContinuity.Unknown);
@@ -345,7 +320,7 @@ public class Given_MssqlCdcSourcePositionAdapter
     }
 
     [Test]
-    public async Task It_reports_unknown_when_job_health_query_is_unavailable()
+    public async Task It_reports_unknown_when_job_health_metadata_is_unavailable()
     {
         CoreCdc.CdcBinding binding = await BuildBindingAsync();
         CoreCdc.CdcArtifactInventory inventory = BuildInventory();
@@ -355,13 +330,35 @@ public class Given_MssqlCdcSourcePositionAdapter
             setup.HeartbeatActionQuery!.Sql
         );
 
+        CdcProviderSetupObservationMapping providerSetup = await ObserveProviderSetupAsync(
+            binding,
+            inventory
+        );
+        CoreCdc.CdcProviderSourceHistoryEvidence unavailableProviderHistory =
+            providerSetup.ProviderHistory with
+            {
+                ProviderArtifactState = CoreCdc.CdcProviderArtifactContinuityState.Unknown,
+                RetainedRangeState = CoreCdc.CdcProviderRetainedRangeState.Unknown,
+                RetainedRangeStart = null,
+                RetainedRangeEnd = null,
+                UnavailableFacts = [CoreCdc.CdcIncidentUnavailableFact.ProviderRetainedRange],
+                SqlServerJobs = CoreCdc.CdcSqlServerCdcJobEvidence.Unknown,
+                Diagnostics =
+                [
+                    new CoreCdc.CdcDiagnostic(
+                        CoreCdc.CdcDiagnosticCategory.LocalStateUnavailable,
+                        "$.providerHistory.sqlServerJobs",
+                        "SQL Server CDC job health metadata was unavailable in provider setup evidence."
+                    ),
+                ],
+            };
+
         _timeProvider.Set(ProjectionCaughtUpObservedAt.AddSeconds(30));
         CoreCdc.CdcSourceHistoryClassificationResult result = await _adapter.ObserveSourceHistoryAsync(
             new(
-                ConnectorConnectionString(),
                 OperationId(),
                 binding,
-                BuildSatisfiedProviderSetup(binding),
+                providerSetup.ProviderSetup,
                 BuildConnectorOffset(
                     binding,
                     inventory,
@@ -369,15 +366,22 @@ public class Given_MssqlCdcSourcePositionAdapter
                     capture.SqlServerChangeLsn!,
                     capture.SqlServerEventSerialNo!.Value
                 ),
-                BuildValidSchemaHistory()
+                unavailableProviderHistory
             )
             {
+                SqlServerSchemaHistory = BuildValidSchemaHistory(),
                 ExpectedConnectSourcePartitionHash = ExpectedSourcePartitionHash(inventory),
             }
         );
 
         result.Observation.Continuity.Should().Be(CoreCdc.CdcSourceHistoryContinuity.Unknown);
-        result.Observation.SqlServerJobs.Should().Be(CoreCdc.CdcSqlServerCdcJobEvidence.Unknown);
+        result
+            .Observation.ProviderArtifactState.Should()
+            .Be(CoreCdc.CdcProviderArtifactContinuityState.Unknown);
+        result.Observation.RetainedRangeState.Should().Be(CoreCdc.CdcProviderRetainedRangeState.Unknown);
+        result
+            .Observation.SqlServerJobs!.CaptureJobState.Should()
+            .Be(CoreCdc.CdcSqlServerCdcJobState.Unknown);
         result
             .Observation.Diagnostics.Should()
             .Contain(diagnostic =>
@@ -402,24 +406,16 @@ public class Given_MssqlCdcSourcePositionAdapter
         await RecreateDocumentCaptureWithMissingColumnAsync(inventory);
 
         _timeProvider.Set(ProjectionCaughtUpObservedAt.AddSeconds(30));
-        CoreCdc.CdcSourceHistoryClassificationResult result = await _adapter.ObserveSourceHistoryAsync(
-            new(
-                _database.ConnectionString,
-                OperationId(),
+        CoreCdc.CdcSourceHistoryClassificationResult result = await ObserveSourceHistoryAsync(
+            binding,
+            inventory,
+            BuildConnectorOffset(
                 binding,
-                BuildSatisfiedProviderSetup(binding),
-                BuildConnectorOffset(
-                    binding,
-                    inventory,
-                    capture.SqlServerCommitLsn!,
-                    capture.SqlServerChangeLsn!,
-                    capture.SqlServerEventSerialNo!.Value
-                ),
-                BuildValidSchemaHistory()
+                inventory,
+                capture.SqlServerCommitLsn!,
+                capture.SqlServerChangeLsn!,
+                capture.SqlServerEventSerialNo!.Value
             )
-            {
-                ExpectedConnectSourcePartitionHash = ExpectedSourcePartitionHash(inventory),
-            }
         );
 
         result.Observation.Continuity.Should().Be(CoreCdc.CdcSourceHistoryContinuity.Lost);
@@ -432,8 +428,9 @@ public class Given_MssqlCdcSourcePositionAdapter
         result
             .Observation.Diagnostics.Should()
             .Contain(diagnostic =>
-                diagnostic.Category == CoreCdc.CdcDiagnosticCategory.InvalidObservation
-                && diagnostic.Path == "$.providerHistory.sqlServerCaptureInstances"
+                diagnostic.Code == "CDC_PROVIDER_ARTIFACT_MISMATCH"
+                && diagnostic.Component == CoreCdc.CdcDiagnosticComponent.SourceHistory
+                && diagnostic.ArtifactKind == CdcProviderArtifactKind.SqlServerCaptureInstance.ToString()
             );
         result.IncidentCandidate.Should().NotBeNull();
         ValidateSourceHistoryObservation(result.Observation, binding).Succeeded.Should().BeTrue();
@@ -453,24 +450,16 @@ public class Given_MssqlCdcSourcePositionAdapter
         await DropHeartbeatCaptureInstanceAsync(inventory.SqlServerCaptureInstanceCdcHeartbeatName!);
 
         _timeProvider.Set(ProjectionCaughtUpObservedAt.AddSeconds(30));
-        CoreCdc.CdcSourceHistoryClassificationResult result = await _adapter.ObserveSourceHistoryAsync(
-            new(
-                _database.ConnectionString,
-                OperationId(),
+        CoreCdc.CdcSourceHistoryClassificationResult result = await ObserveSourceHistoryAsync(
+            binding,
+            inventory,
+            BuildConnectorOffset(
                 binding,
-                BuildSatisfiedProviderSetup(binding),
-                BuildConnectorOffset(
-                    binding,
-                    inventory,
-                    capture.SqlServerCommitLsn!,
-                    capture.SqlServerChangeLsn!,
-                    capture.SqlServerEventSerialNo!.Value
-                ),
-                BuildValidSchemaHistory()
+                inventory,
+                capture.SqlServerCommitLsn!,
+                capture.SqlServerChangeLsn!,
+                capture.SqlServerEventSerialNo!.Value
             )
-            {
-                ExpectedConnectSourcePartitionHash = ExpectedSourcePartitionHash(inventory),
-            }
         );
 
         result.Observation.Continuity.Should().Be(CoreCdc.CdcSourceHistoryContinuity.Lost);
@@ -506,7 +495,8 @@ public class Given_MssqlCdcSourcePositionAdapter
     private async Task<CdcProviderSetupResult> RunSetupAsync(
         SqlConnection connection,
         CoreCdc.CdcBinding binding,
-        CoreCdc.CdcArtifactInventory inventory
+        CoreCdc.CdcArtifactInventory inventory,
+        DdlCdcProviderSetupMode mode = DdlCdcProviderSetupMode.InitialCreateOrExactMatch
     )
     {
         var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
@@ -518,7 +508,7 @@ public class Given_MssqlCdcSourcePositionAdapter
         return await service.SetupAsync(
             new CdcProviderSetupRequest(
                 provider: DdlCdcProvider.SqlServer,
-                mode: DdlCdcProviderSetupMode.InitialCreateOrExactMatch,
+                mode: mode,
                 boundPhysicalSourceFingerprint: new CdcSourceFingerprint(
                     CdcSourceFingerprintMetadata.Version,
                     binding.PhysicalSourceFingerprint
@@ -543,6 +533,54 @@ public class Given_MssqlCdcSourcePositionAdapter
                 dmsManagedTableInventory: _fixture.CdcDmsManagedTableInventory,
                 databaseExecutor: executor
             )
+        );
+    }
+
+    private async Task<CdcProviderSetupObservationMapping> ObserveProviderSetupAsync(
+        CoreCdc.CdcBinding binding,
+        CoreCdc.CdcArtifactInventory inventory
+    )
+    {
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        CdcProviderSetupResult result = await RunSetupAsync(
+            connection,
+            binding,
+            inventory,
+            DdlCdcProviderSetupMode.ValidateOnly
+        );
+
+        return CdcProviderSetupResultMapper.MapValidateOnlyResult(
+            OperationId(),
+            _timeProvider.GetUtcNow(),
+            binding,
+            result
+        );
+    }
+
+    private async Task<CoreCdc.CdcSourceHistoryClassificationResult> ObserveSourceHistoryAsync(
+        CoreCdc.CdcBinding binding,
+        CoreCdc.CdcArtifactInventory inventory,
+        CoreCdc.CdcConnectorOffsetObservation connectorOffset
+    )
+    {
+        CdcProviderSetupObservationMapping providerSetup = await ObserveProviderSetupAsync(
+            binding,
+            inventory
+        );
+
+        return await _adapter.ObserveSourceHistoryAsync(
+            new(
+                OperationId(),
+                binding,
+                providerSetup.ProviderSetup,
+                connectorOffset,
+                providerSetup.ProviderHistory
+            )
+            {
+                SqlServerSchemaHistory = BuildValidSchemaHistory(),
+                ExpectedConnectSourcePartitionHash = ExpectedSourcePartitionHash(inventory),
+            }
         );
     }
 
@@ -652,24 +690,6 @@ public class Given_MssqlCdcSourcePositionAdapter
         CoreCdc
             .CdcSourcePartitionHashCalculator.ComputeSqlServer(inventory.TopicPrefix, _database.DatabaseName)
             .Hash!;
-
-    private CoreCdc.CdcProviderSetupObservation BuildSatisfiedProviderSetup(CoreCdc.CdcBinding binding) =>
-        new(
-            CoreCdc.CdcJsonContract.CurrentContractVersion,
-            OperationId(),
-            _timeProvider.GetUtcNow(),
-            binding.ToTargetIdentity(),
-            CoreCdc.CdcProvider.SqlServer,
-            binding.PhysicalSourceFingerprint,
-            DmsCdcProviderSetupMode.InitialCreateOrExactMatch,
-            DmsCdcProviderSetupOutcome.Satisfied,
-            CoreCdc.CdcProviderSetupState.Matched,
-            CoreCdc.CdcProviderSetupState.Matched,
-            CoreCdc.CdcProviderSetupState.Matched,
-            CoreCdc.CdcProviderSetupState.Matched,
-            CoreCdc.CdcProviderSetupState.Matched,
-            []
-        );
 
     private static CoreCdc.CdcSqlServerSchemaHistoryEvidence BuildValidSchemaHistory() =>
         new(
@@ -916,18 +936,6 @@ public class Given_MssqlCdcSourcePositionAdapter
             """;
 
         return (await command.ExecuteScalarAsync())!.ToString()!;
-    }
-
-    private string ConnectorConnectionString()
-    {
-        SqlConnectionStringBuilder builder = new(_database.ConnectionString)
-        {
-            UserID = _connectorPrincipalName,
-            Password = ConnectorPassword,
-            IntegratedSecurity = false,
-        };
-
-        return builder.ConnectionString;
     }
 
     private static CoreCdc.CdcSqlServerLsn ParseSqlServerLsn(string value)

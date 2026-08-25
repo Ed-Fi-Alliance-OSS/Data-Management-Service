@@ -1,0 +1,840 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using EdFi.DataManagementService.Backend.Ddl;
+using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
+
+namespace EdFi.DataManagementService.Backend.Cdc;
+
+public sealed record CdcProviderSetupObservationMapping(
+    CoreCdc.CdcProviderSetupObservation ProviderSetup,
+    CoreCdc.CdcProviderSourceHistoryEvidence ProviderHistory
+);
+
+public static class CdcProviderSetupResultMapper
+{
+    private const string PostgresqlReplicationSlotPath =
+        "$.providerSetup.providerHistory.postgresqlReplicationSlot";
+    private const string SqlServerRetainedRangeStartPath =
+        "$.providerSetup.providerHistory.retainedRangeStart";
+    private const string SqlServerRetainedRangeEndPath = "$.providerSetup.providerHistory.retainedRangeEnd";
+
+    private static readonly IReadOnlySet<CdcProviderArtifactKind> SourceHistoryArtifactKinds =
+        new HashSet<CdcProviderArtifactKind>
+        {
+            CdcProviderArtifactKind.ProviderHistory,
+            CdcProviderArtifactKind.PostgresqlPublication,
+            CdcProviderArtifactKind.PostgresqlReplicationSlot,
+            CdcProviderArtifactKind.SqlServerCaptureInstance,
+        };
+
+    public static CdcProviderSetupObservationMapping MapValidateOnlyResult(
+        string operationId,
+        DateTimeOffset observedAt,
+        CoreCdc.CdcBinding binding,
+        CdcProviderSetupResult result
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(operationId);
+        ArgumentNullException.ThrowIfNull(binding);
+        ArgumentNullException.ThrowIfNull(result);
+
+        DateTimeOffset normalizedObservedAt = observedAt.ToUniversalTime();
+        IReadOnlyList<CoreCdc.CdcDiagnostic> diagnostics = MapDiagnostics(
+            result.Diagnostics,
+            normalizedObservedAt
+        );
+        CoreCdc.CdcProviderSourceHistoryEvidence providerHistory = ToProviderSourceHistoryEvidence(
+            binding,
+            result,
+            diagnostics
+        );
+
+        return new(
+            new CoreCdc.CdcProviderSetupObservation(
+                CoreCdc.CdcJsonContract.CurrentContractVersion,
+                operationId,
+                normalizedObservedAt,
+                binding.ToTargetIdentity(),
+                binding.Provider,
+                binding.PhysicalSourceFingerprint,
+                MapSetupMode(result.Mode),
+                HasNonSourceHistoryError(result)
+                    ? CoreCdc.CdcProviderSetupOutcome.Invalid
+                    : CoreCdc.CdcProviderSetupOutcome.Satisfied,
+                MapNonSourceHistoryArtifactState(result),
+                MapGrantInventoryState(result),
+                MapSourceInventoryState(result),
+                MapHeartbeatState(result),
+                MapProviderHistoryState(providerHistory),
+                diagnostics
+            ),
+            providerHistory
+        );
+    }
+
+    public static CoreCdc.CdcProviderSourceHistoryEvidence ToProviderSourceHistoryEvidence(
+        CoreCdc.CdcBinding binding,
+        CdcProviderSetupResult result
+    )
+    {
+        ArgumentNullException.ThrowIfNull(binding);
+        ArgumentNullException.ThrowIfNull(result);
+
+        return ToProviderSourceHistoryEvidence(
+            binding,
+            result,
+            MapDiagnostics(result.Diagnostics, DateTimeOffset.UtcNow)
+        );
+    }
+
+    private static CoreCdc.CdcProviderSourceHistoryEvidence ToProviderSourceHistoryEvidence(
+        CoreCdc.CdcBinding binding,
+        CdcProviderSetupResult result,
+        IReadOnlyList<CoreCdc.CdcDiagnostic> diagnostics
+    )
+    {
+        CoreCdc.CdcArtifactNameResult artifactNames = CoreCdc.CdcArtifactNameGenerator.RecoverFromBinding(
+            binding
+        );
+        IReadOnlyList<CoreCdc.CdcDiagnostic> combinedDiagnostics =
+        [
+            .. diagnostics,
+            .. artifactNames.Diagnostics,
+        ];
+
+        if (artifactNames.Inventory is null)
+        {
+            return UnknownProviderHistory(null, combinedDiagnostics, binding.Provider);
+        }
+
+        if (MapProvider(result.Provider) != binding.Provider)
+        {
+            return UnknownProviderHistory(
+                DefaultProviderArtifactName(binding.Provider, artifactNames.Inventory),
+                [
+                    .. combinedDiagnostics,
+                    new CoreCdc.CdcDiagnostic(
+                        CoreCdc.CdcDiagnosticCategory.ProviderMismatch,
+                        "$.providerSetup.provider",
+                        "CDC provider setup result provider did not match the binding provider."
+                    ),
+                ],
+                binding.Provider
+            );
+        }
+
+        return binding.Provider == CoreCdc.CdcProvider.Postgresql
+            ? ToPostgresqlProviderHistory(result, artifactNames.Inventory, combinedDiagnostics)
+            : ToSqlServerProviderHistory(result, artifactNames.Inventory, combinedDiagnostics);
+    }
+
+    private static CoreCdc.CdcProviderSourceHistoryEvidence ToPostgresqlProviderHistory(
+        CdcProviderSetupResult result,
+        CoreCdc.CdcArtifactInventory inventory,
+        IReadOnlyList<CoreCdc.CdcDiagnostic> diagnostics
+    )
+    {
+        string slotName = inventory.PostgresqlLogicalSlotName ?? string.Empty;
+        string publicationName = inventory.PostgresqlPublicationName ?? string.Empty;
+        CdcProviderArtifactObservation? slotArtifact = Artifact(
+            result,
+            CdcProviderArtifactKind.PostgresqlReplicationSlot,
+            slotName
+        );
+        CdcProviderArtifactObservation? publicationArtifact = Artifact(
+            result,
+            CdcProviderArtifactKind.PostgresqlPublication,
+            publicationName
+        );
+        CdcProviderHistoryObservation? slotHistory = History(
+            result,
+            CdcProviderArtifactKind.PostgresqlReplicationSlot,
+            slotName
+        );
+
+        string? retainedStart = PostgresqlWalFromSafe(ObservedValue(slotHistory, "restart_lsn"));
+        string? retainedEnd = PostgresqlWalFromSafe(ObservedValue(slotHistory, "confirmed_flush_lsn"));
+        bool retainedWalLost =
+            string.Equals(
+                ObservedValue(slotHistory, "wal_status"),
+                "lost",
+                StringComparison.OrdinalIgnoreCase
+            ) || !string.IsNullOrWhiteSpace(ObservedValue(slotHistory, "invalidation_reason"));
+        CoreCdc.CdcProviderArtifactContinuityState artifactState = PostgresqlArtifactState(
+            result,
+            slotArtifact,
+            publicationArtifact,
+            retainedWalLost
+        );
+        CoreCdc.CdcProviderRetainedRangeState retainedRangeState = PostgresqlRetainedRangeState(
+            artifactState,
+            retainedStart,
+            retainedEnd,
+            retainedWalLost
+        );
+
+        return new(
+            artifactState,
+            retainedRangeState,
+            PostgresqlProviderArtifactName(artifactState, slotArtifact, publicationArtifact, slotName),
+            retainedStart,
+            retainedEnd,
+            UnavailableFacts(artifactState, retainedRangeState, null)
+        )
+        {
+            Diagnostics = diagnostics,
+        };
+    }
+
+    private static CoreCdc.CdcProviderArtifactContinuityState PostgresqlArtifactState(
+        CdcProviderSetupResult result,
+        CdcProviderArtifactObservation? slotArtifact,
+        CdcProviderArtifactObservation? publicationArtifact,
+        bool retainedWalLost
+    )
+    {
+        if (HasProviderHistoryUnavailable(result))
+        {
+            return CoreCdc.CdcProviderArtifactContinuityState.Unknown;
+        }
+
+        if (slotArtifact?.State == CdcProviderArtifactState.Missing)
+        {
+            return CoreCdc.CdcProviderArtifactContinuityState.Missing;
+        }
+
+        if (publicationArtifact?.State == CdcProviderArtifactState.Missing)
+        {
+            return CoreCdc.CdcProviderArtifactContinuityState.Missing;
+        }
+
+        if (retainedWalLost)
+        {
+            return CoreCdc.CdcProviderArtifactContinuityState.ExactMatch;
+        }
+
+        if (slotArtifact?.State == CdcProviderArtifactState.Mismatched)
+        {
+            return CoreCdc.CdcProviderArtifactContinuityState.Recreated;
+        }
+
+        if (publicationArtifact?.State == CdcProviderArtifactState.Mismatched)
+        {
+            return CoreCdc.CdcProviderArtifactContinuityState.Recreated;
+        }
+
+        return CoreCdc.CdcProviderArtifactContinuityState.ExactMatch;
+    }
+
+    private static CoreCdc.CdcProviderRetainedRangeState PostgresqlRetainedRangeState(
+        CoreCdc.CdcProviderArtifactContinuityState artifactState,
+        string? retainedStart,
+        string? retainedEnd,
+        bool retainedWalLost
+    )
+    {
+        if (artifactState != CoreCdc.CdcProviderArtifactContinuityState.ExactMatch)
+        {
+            return CoreCdc.CdcProviderRetainedRangeState.Unknown;
+        }
+
+        if (retainedWalLost)
+        {
+            return CoreCdc.CdcProviderRetainedRangeState.Gap;
+        }
+
+        CoreCdc.CdcPostgresqlWalPositionResult start = CoreCdc.CdcPostgresqlProviderPosition.ParseWalLsn(
+            retainedStart,
+            PostgresqlReplicationSlotPath
+        );
+        CoreCdc.CdcPostgresqlWalPositionResult end = CoreCdc.CdcPostgresqlProviderPosition.ParseWalLsn(
+            retainedEnd,
+            PostgresqlReplicationSlotPath
+        );
+        if (start.Position is null || end.Position is null)
+        {
+            return CoreCdc.CdcProviderRetainedRangeState.Unknown;
+        }
+
+        return start.Position.Value.CompareTo(end.Position.Value) <= 0
+            ? CoreCdc.CdcProviderRetainedRangeState.CoversCommittedOffset
+            : CoreCdc.CdcProviderRetainedRangeState.Unknown;
+    }
+
+    private static string PostgresqlProviderArtifactName(
+        CoreCdc.CdcProviderArtifactContinuityState artifactState,
+        CdcProviderArtifactObservation? slotArtifact,
+        CdcProviderArtifactObservation? publicationArtifact,
+        string slotName
+    ) =>
+        artifactState switch
+        {
+            CoreCdc.CdcProviderArtifactContinuityState.Missing
+                when slotArtifact?.State == CdcProviderArtifactState.Missing => slotArtifact
+                .SafeArtifactName
+                .Value,
+            CoreCdc.CdcProviderArtifactContinuityState.Missing
+                when publicationArtifact?.State == CdcProviderArtifactState.Missing => publicationArtifact
+                .SafeArtifactName
+                .Value,
+            CoreCdc.CdcProviderArtifactContinuityState.Recreated
+                when slotArtifact?.State == CdcProviderArtifactState.Mismatched => slotArtifact
+                .SafeArtifactName
+                .Value,
+            CoreCdc.CdcProviderArtifactContinuityState.Recreated
+                when publicationArtifact?.State == CdcProviderArtifactState.Mismatched => publicationArtifact
+                .SafeArtifactName
+                .Value,
+            _ => slotName,
+        };
+
+    private static CoreCdc.CdcProviderSourceHistoryEvidence ToSqlServerProviderHistory(
+        CdcProviderSetupResult result,
+        CoreCdc.CdcArtifactInventory inventory,
+        IReadOnlyList<CoreCdc.CdcDiagnostic> diagnostics
+    )
+    {
+        string heartbeatCaptureName = inventory.SqlServerCaptureInstanceCdcHeartbeatName ?? string.Empty;
+        CdcProviderHistoryObservation? databaseHistory = History(
+            result,
+            CdcProviderArtifactKind.ProviderHistory,
+            "sqlserver_database_cdc"
+        );
+        IReadOnlyList<CdcProviderArtifactObservation> captureArtifacts = Artifacts(
+                result,
+                CdcProviderArtifactKind.SqlServerCaptureInstance
+            )
+            .ToArray();
+        IReadOnlyList<CdcProviderHistoryObservation> captureHistory = Histories(
+                result,
+                CdcProviderArtifactKind.SqlServerCaptureInstance
+            )
+            .ToArray();
+
+        CoreCdc.CdcSqlServerCdcJobEvidence jobs = SqlServerJobs(databaseHistory);
+        CoreCdc.CdcProviderArtifactContinuityState artifactState = SqlServerArtifactState(
+            databaseHistory,
+            captureArtifacts,
+            jobs
+        );
+        string providerArtifactName = SqlServerProviderArtifactName(
+            artifactState,
+            captureArtifacts,
+            heartbeatCaptureName
+        );
+        string? retainedStart = MaxSqlServerLsn(
+            captureHistory.Select(history => ObservedValue(history, "retained_min_lsn"))
+        );
+        string? retainedEnd =
+            SqlServerLsnFromSafe(ObservedValue(databaseHistory, "retained_max_lsn"))
+            ?? MaxSqlServerLsn(captureHistory.Select(history => ObservedValue(history, "retained_max_lsn")));
+        CoreCdc.CdcProviderRetainedRangeState retainedRangeState = SqlServerRetainedRangeState(
+            artifactState,
+            retainedStart,
+            retainedEnd
+        );
+
+        return new(
+            artifactState,
+            retainedRangeState,
+            providerArtifactName,
+            retainedStart,
+            retainedEnd,
+            UnavailableFacts(artifactState, retainedRangeState, jobs)
+        )
+        {
+            Diagnostics = diagnostics,
+            SqlServerJobs = jobs,
+        };
+    }
+
+    private static CoreCdc.CdcProviderArtifactContinuityState SqlServerArtifactState(
+        CdcProviderHistoryObservation? databaseHistory,
+        IReadOnlyList<CdcProviderArtifactObservation> captureArtifacts,
+        CoreCdc.CdcSqlServerCdcJobEvidence jobs
+    )
+    {
+        if (databaseHistory is null || ObservedValue(databaseHistory, "history") == "unavailable")
+        {
+            return CoreCdc.CdcProviderArtifactContinuityState.Unknown;
+        }
+
+        if (!BoolValue(databaseHistory, "database_cdc_enabled"))
+        {
+            return CoreCdc.CdcProviderArtifactContinuityState.Missing;
+        }
+
+        if (jobs.HasMissingJob)
+        {
+            return CoreCdc.CdcProviderArtifactContinuityState.Missing;
+        }
+
+        if (captureArtifacts.Any(artifact => artifact.State == CdcProviderArtifactState.Missing))
+        {
+            return CoreCdc.CdcProviderArtifactContinuityState.Missing;
+        }
+
+        if (captureArtifacts.Any(artifact => artifact.State == CdcProviderArtifactState.Unavailable))
+        {
+            return CoreCdc.CdcProviderArtifactContinuityState.Unknown;
+        }
+
+        if (captureArtifacts.Any(artifact => artifact.State == CdcProviderArtifactState.Mismatched))
+        {
+            return CoreCdc.CdcProviderArtifactContinuityState.Recreated;
+        }
+
+        return CoreCdc.CdcProviderArtifactContinuityState.ExactMatch;
+    }
+
+    private static string SqlServerProviderArtifactName(
+        CoreCdc.CdcProviderArtifactContinuityState artifactState,
+        IReadOnlyList<CdcProviderArtifactObservation> captureArtifacts,
+        string heartbeatCaptureName
+    )
+    {
+        CdcProviderArtifactObservation? blockingCapture = artifactState switch
+        {
+            CoreCdc.CdcProviderArtifactContinuityState.Missing => captureArtifacts.FirstOrDefault(artifact =>
+                artifact.State == CdcProviderArtifactState.Missing
+            ),
+            CoreCdc.CdcProviderArtifactContinuityState.Recreated => captureArtifacts.FirstOrDefault(
+                artifact => artifact.State == CdcProviderArtifactState.Mismatched
+            ),
+            CoreCdc.CdcProviderArtifactContinuityState.Unknown => captureArtifacts.FirstOrDefault(artifact =>
+                artifact.State == CdcProviderArtifactState.Unavailable
+            ),
+            _ => null,
+        };
+
+        return blockingCapture?.SafeArtifactName.Value ?? heartbeatCaptureName;
+    }
+
+    private static CoreCdc.CdcProviderRetainedRangeState SqlServerRetainedRangeState(
+        CoreCdc.CdcProviderArtifactContinuityState artifactState,
+        string? retainedStart,
+        string? retainedEnd
+    )
+    {
+        if (
+            artifactState
+            is CoreCdc.CdcProviderArtifactContinuityState.Missing
+                or CoreCdc.CdcProviderArtifactContinuityState.Unknown
+        )
+        {
+            return CoreCdc.CdcProviderRetainedRangeState.Unknown;
+        }
+
+        CoreCdc.CdcSqlServerLsnResult start = CoreCdc.CdcSqlServerProviderPositionParser.ParseLsn(
+            retainedStart,
+            SqlServerRetainedRangeStartPath
+        );
+        CoreCdc.CdcSqlServerLsnResult end = CoreCdc.CdcSqlServerProviderPositionParser.ParseLsn(
+            retainedEnd,
+            SqlServerRetainedRangeEndPath
+        );
+        if (start.Lsn is null || end.Lsn is null)
+        {
+            return CoreCdc.CdcProviderRetainedRangeState.Unknown;
+        }
+
+        return start.Lsn.Value.CompareTo(end.Lsn.Value) <= 0
+            ? CoreCdc.CdcProviderRetainedRangeState.CoversCommittedOffset
+            : CoreCdc.CdcProviderRetainedRangeState.Unknown;
+    }
+
+    private static CoreCdc.CdcSqlServerCdcJobEvidence SqlServerJobs(
+        CdcProviderHistoryObservation? databaseHistory
+    )
+    {
+        if (databaseHistory is null || ObservedValue(databaseHistory, "history") == "unavailable")
+        {
+            return CoreCdc.CdcSqlServerCdcJobEvidence.Unknown;
+        }
+
+        return new(
+            SqlServerJobState(databaseHistory, "capture", captureJob: true),
+            SqlServerJobState(databaseHistory, "cleanup", captureJob: false)
+        );
+    }
+
+    private static CoreCdc.CdcSqlServerCdcJobState SqlServerJobState(
+        CdcProviderHistoryObservation? databaseHistory,
+        string jobType,
+        bool captureJob
+    )
+    {
+        if (!BoolValue(databaseHistory, $"{jobType}_job_present"))
+        {
+            return CoreCdc.CdcSqlServerCdcJobState.Missing;
+        }
+
+        if (IsFalseValue(databaseHistory, $"{jobType}_job_enabled"))
+        {
+            return CoreCdc.CdcSqlServerCdcJobState.Stopped;
+        }
+
+        if (captureJob && IsFalseValue(databaseHistory, $"{jobType}_job_running"))
+        {
+            return CoreCdc.CdcSqlServerCdcJobState.Stopped;
+        }
+
+        return ObservedValue(databaseHistory, $"{jobType}_job_last_run_status") == "0"
+            ? CoreCdc.CdcSqlServerCdcJobState.Failed
+            : CoreCdc.CdcSqlServerCdcJobState.Healthy;
+    }
+
+    private static IReadOnlyList<CoreCdc.CdcIncidentUnavailableFact> UnavailableFacts(
+        CoreCdc.CdcProviderArtifactContinuityState artifactState,
+        CoreCdc.CdcProviderRetainedRangeState retainedRangeState,
+        CoreCdc.CdcSqlServerCdcJobEvidence? jobs
+    )
+    {
+        HashSet<CoreCdc.CdcIncidentUnavailableFact> facts = [];
+        if (artifactState != CoreCdc.CdcProviderArtifactContinuityState.ExactMatch)
+        {
+            facts.Add(CoreCdc.CdcIncidentUnavailableFact.ProviderArtifact);
+        }
+
+        if (retainedRangeState == CoreCdc.CdcProviderRetainedRangeState.Unknown)
+        {
+            facts.Add(CoreCdc.CdcIncidentUnavailableFact.ProviderRetainedRange);
+        }
+
+        if (jobs is not null && !jobs.IsHealthy)
+        {
+            facts.Add(CoreCdc.CdcIncidentUnavailableFact.ProviderArtifact);
+        }
+
+        return facts.Order().ToArray();
+    }
+
+    private static CoreCdc.CdcProviderSetupState MapNonSourceHistoryArtifactState(
+        CdcProviderSetupResult result
+    ) =>
+        ReduceArtifactState(
+            ArtifactInventory(result)
+                .Where(artifact =>
+                    !SourceHistoryArtifactKinds.Contains(artifact.ArtifactKind)
+                    && artifact.ArtifactKind != CdcProviderArtifactKind.Grant
+                    && artifact.ArtifactKind != CdcProviderArtifactKind.HeartbeatTable
+                )
+                .Select(artifact => artifact.State)
+        );
+
+    private static CoreCdc.CdcProviderSetupState MapGrantInventoryState(CdcProviderSetupResult result) =>
+        HasErrorDiagnostic(result, CdcProviderDiagnosticCategory.ConnectorPrincipalPrivilegeFailure)
+            ? CoreCdc.CdcProviderSetupState.Mismatched
+            : ReduceArtifactState(
+                ArtifactInventory(result)
+                    .Where(artifact => artifact.ArtifactKind == CdcProviderArtifactKind.Grant)
+                    .Select(artifact => artifact.State),
+                defaultWhenEmpty: CoreCdc.CdcProviderSetupState.Matched
+            );
+
+    private static CoreCdc.CdcProviderSetupState MapSourceInventoryState(CdcProviderSetupResult result) =>
+        HasErrorDiagnostic(result, CdcProviderDiagnosticCategory.MissingRequiredSourceObject)
+        || HasErrorDiagnostic(result, CdcProviderDiagnosticCategory.WorkTableCaptureViolation)
+            ? CoreCdc.CdcProviderSetupState.Mismatched
+            : CoreCdc.CdcProviderSetupState.Matched;
+
+    private static CoreCdc.CdcProviderSetupState MapHeartbeatState(CdcProviderSetupResult result) =>
+        ReduceArtifactState(
+            ArtifactInventory(result)
+                .Where(artifact => artifact.ArtifactKind == CdcProviderArtifactKind.HeartbeatTable)
+                .Select(artifact => artifact.State),
+            defaultWhenEmpty: CoreCdc.CdcProviderSetupState.Matched
+        );
+
+    private static CoreCdc.CdcProviderSetupState MapProviderHistoryState(
+        CoreCdc.CdcProviderSourceHistoryEvidence providerHistory
+    )
+    {
+        if (providerHistory.ProviderArtifactState == CoreCdc.CdcProviderArtifactContinuityState.Missing)
+        {
+            return CoreCdc.CdcProviderSetupState.Missing;
+        }
+
+        if (
+            providerHistory.ProviderArtifactState == CoreCdc.CdcProviderArtifactContinuityState.Recreated
+            || providerHistory.RetainedRangeState == CoreCdc.CdcProviderRetainedRangeState.Gap
+        )
+        {
+            return CoreCdc.CdcProviderSetupState.Mismatched;
+        }
+
+        if (
+            providerHistory.ProviderArtifactState == CoreCdc.CdcProviderArtifactContinuityState.Unknown
+            || providerHistory.RetainedRangeState == CoreCdc.CdcProviderRetainedRangeState.Unknown
+            || providerHistory.SqlServerJobs?.HasUnknownJob == true
+            || providerHistory.SqlServerJobs?.HasStoppedOrFailedJob == true
+        )
+        {
+            return CoreCdc.CdcProviderSetupState.Unknown;
+        }
+
+        return CoreCdc.CdcProviderSetupState.Matched;
+    }
+
+    private static CoreCdc.CdcProviderSetupState ReduceArtifactState(
+        IEnumerable<CdcProviderArtifactState> states,
+        CoreCdc.CdcProviderSetupState defaultWhenEmpty = CoreCdc.CdcProviderSetupState.Matched
+    )
+    {
+        CdcProviderArtifactState[] stateArray = states.ToArray();
+        if (stateArray.Length == 0)
+        {
+            return defaultWhenEmpty;
+        }
+
+        if (Array.Exists(stateArray, state => state == CdcProviderArtifactState.Missing))
+        {
+            return CoreCdc.CdcProviderSetupState.Missing;
+        }
+
+        if (Array.Exists(stateArray, state => state == CdcProviderArtifactState.Mismatched))
+        {
+            return CoreCdc.CdcProviderSetupState.Mismatched;
+        }
+
+        if (Array.Exists(stateArray, state => state == CdcProviderArtifactState.Unavailable))
+        {
+            return CoreCdc.CdcProviderSetupState.Unknown;
+        }
+
+        return CoreCdc.CdcProviderSetupState.Matched;
+    }
+
+    private static bool HasNonSourceHistoryError(CdcProviderSetupResult result) =>
+        Diagnostics(result)
+            .Any(diagnostic =>
+                diagnostic.Severity == CdcProviderDiagnosticSeverity.Error
+                && !IsSourceHistoryDiagnostic(diagnostic)
+            );
+
+    private static bool HasProviderHistoryUnavailable(CdcProviderSetupResult result) =>
+        Diagnostics(result)
+            .Any(diagnostic =>
+                diagnostic.Category == CdcProviderDiagnosticCategory.ProviderHistoryUnavailable
+            );
+
+    private static bool HasErrorDiagnostic(
+        CdcProviderSetupResult result,
+        CdcProviderDiagnosticCategory category
+    ) =>
+        Diagnostics(result)
+            .Any(diagnostic =>
+                diagnostic.Severity == CdcProviderDiagnosticSeverity.Error && diagnostic.Category == category
+            );
+
+    private static bool IsSourceHistoryDiagnostic(CdcProviderDiagnostic diagnostic) =>
+        diagnostic.Category
+            is CdcProviderDiagnosticCategory.ProviderHistoryUnavailable
+                or CdcProviderDiagnosticCategory.ProviderHistoryLossEvidence
+        || SourceHistoryArtifactKinds.Contains(diagnostic.ArtifactKind);
+
+    private static IReadOnlyList<CoreCdc.CdcDiagnostic> MapDiagnostics(
+        IReadOnlyList<CdcProviderDiagnostic>? diagnostics,
+        DateTimeOffset observedAt
+    ) =>
+        Diagnostics(diagnostics)
+            .Select(diagnostic => new CoreCdc.CdcDiagnostic(
+                diagnostic.Code,
+                MapDiagnosticCategory(diagnostic),
+                MapDiagnosticSeverity(diagnostic.Severity),
+                IsSourceHistoryDiagnostic(diagnostic)
+                    ? CoreCdc.CdcDiagnosticComponent.SourceHistory
+                    : CoreCdc.CdcDiagnosticComponent.ProviderSetup,
+                observedAt,
+                $"CDC provider setup diagnostic `{diagnostic.Code}`.",
+                diagnostic.Classification
+                    is CdcProviderRetryContinuityClassification.Retryable
+                        or CdcProviderRetryContinuityClassification.SourceHistoryUnknown,
+                diagnostic.ArtifactKind.ToString(),
+                diagnostic.SafeName.Value,
+                diagnostic.ExpectedValue,
+                diagnostic.ObservedValue
+            ))
+            .ToArray();
+
+    private static CoreCdc.CdcDiagnosticCategory MapDiagnosticCategory(CdcProviderDiagnostic diagnostic) =>
+        diagnostic.Category switch
+        {
+            CdcProviderDiagnosticCategory.ProviderHistoryUnavailable => CoreCdc
+                .CdcDiagnosticCategory
+                .ProviderHistoryUnknown,
+            CdcProviderDiagnosticCategory.ProviderHistoryLossEvidence => CoreCdc
+                .CdcDiagnosticCategory
+                .SourceHistoryLost,
+            _ => CoreCdc.CdcDiagnosticCategory.ProviderSetupInvalid,
+        };
+
+    private static CoreCdc.CdcDiagnosticSeverity MapDiagnosticSeverity(
+        CdcProviderDiagnosticSeverity severity
+    ) =>
+        severity switch
+        {
+            CdcProviderDiagnosticSeverity.Info => CoreCdc.CdcDiagnosticSeverity.Info,
+            CdcProviderDiagnosticSeverity.Warning => CoreCdc.CdcDiagnosticSeverity.Warning,
+            _ => CoreCdc.CdcDiagnosticSeverity.Error,
+        };
+
+    private static CoreCdc.CdcProviderSetupMode MapSetupMode(CdcProviderSetupMode mode) =>
+        mode switch
+        {
+            CdcProviderSetupMode.InitialCreateOrExactMatch => CoreCdc
+                .CdcProviderSetupMode
+                .InitialCreateOrExactMatch,
+            CdcProviderSetupMode.ValidateOnly => CoreCdc.CdcProviderSetupMode.ValidateOnly,
+            _ => CoreCdc.CdcProviderSetupMode.ValidateOnly,
+        };
+
+    private static CoreCdc.CdcProvider? MapProvider(CdcProvider provider) =>
+        provider switch
+        {
+            CdcProvider.Postgresql => CoreCdc.CdcProvider.Postgresql,
+            CdcProvider.SqlServer => CoreCdc.CdcProvider.SqlServer,
+            _ => null,
+        };
+
+    private static CdcProviderArtifactObservation? Artifact(
+        CdcProviderSetupResult result,
+        CdcProviderArtifactKind artifactKind,
+        string safeName
+    ) =>
+        Artifacts(result, artifactKind)
+            .FirstOrDefault(artifact =>
+                string.Equals(artifact.SafeArtifactName.Value, safeName, StringComparison.Ordinal)
+            );
+
+    private static IEnumerable<CdcProviderArtifactObservation> Artifacts(
+        CdcProviderSetupResult result,
+        CdcProviderArtifactKind artifactKind
+    ) => ArtifactInventory(result).Where(artifact => artifact.ArtifactKind == artifactKind);
+
+    private static CdcProviderHistoryObservation? History(
+        CdcProviderSetupResult result,
+        CdcProviderArtifactKind artifactKind,
+        string safeName
+    ) =>
+        Histories(result, artifactKind)
+            .FirstOrDefault(history =>
+                string.Equals(history.SafeArtifactName.Value, safeName, StringComparison.Ordinal)
+            );
+
+    private static IEnumerable<CdcProviderHistoryObservation> Histories(
+        CdcProviderSetupResult result,
+        CdcProviderArtifactKind artifactKind
+    ) => ProviderHistoryObservations(result).Where(history => history.ArtifactKind == artifactKind);
+
+    private static string? ObservedValue(CdcProviderHistoryObservation? observation, string key)
+    {
+        if (observation?.SafeObservedValues is null)
+        {
+            return null;
+        }
+
+        return observation.SafeObservedValues.TryGetValue(key, out string? value) ? value : null;
+    }
+
+    private static bool BoolValue(CdcProviderHistoryObservation? observation, string key) =>
+        ObservedValue(observation, key) is "True" or "true" or "1";
+
+    private static bool IsFalseValue(CdcProviderHistoryObservation? observation, string key) =>
+        ObservedValue(observation, key) is "False" or "false" or "0";
+
+    private static string? PostgresqlWalFromSafe(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value == "none")
+        {
+            return null;
+        }
+
+        int separatorIndex = value.IndexOf('_', StringComparison.Ordinal);
+        return separatorIndex <= 0 || value.IndexOf('_', separatorIndex + 1) >= 0
+            ? value
+            : $"{value[..separatorIndex]}/{value[(separatorIndex + 1)..]}";
+    }
+
+    private static string? SqlServerLsnFromSafe(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value == "none")
+        {
+            return null;
+        }
+
+        CoreCdc.CdcSqlServerLsnResult result = CoreCdc.CdcSqlServerProviderPositionParser.ParseLsn(
+            value,
+            "$.providerSetup.providerHistory.sqlServerLsn"
+        );
+        return result.Lsn?.ToString();
+    }
+
+    private static string? MaxSqlServerLsn(IEnumerable<string?> values)
+    {
+        CoreCdc.CdcSqlServerLsn? max = null;
+        foreach (string? value in values)
+        {
+            CoreCdc.CdcSqlServerLsnResult parsed = CoreCdc.CdcSqlServerProviderPositionParser.ParseLsn(
+                SqlServerLsnFromSafe(value),
+                "$.providerSetup.providerHistory.sqlServerLsn"
+            );
+            if (parsed.Lsn is null)
+            {
+                continue;
+            }
+
+            if (max is null || parsed.Lsn.Value.CompareTo(max.Value) > 0)
+            {
+                max = parsed.Lsn.Value;
+            }
+        }
+
+        return max?.ToString();
+    }
+
+    private static string? DefaultProviderArtifactName(
+        CoreCdc.CdcProvider provider,
+        CoreCdc.CdcArtifactInventory inventory
+    ) =>
+        provider == CoreCdc.CdcProvider.Postgresql
+            ? inventory.PostgresqlLogicalSlotName
+            : inventory.SqlServerCaptureInstanceCdcHeartbeatName;
+
+    private static CoreCdc.CdcProviderSourceHistoryEvidence UnknownProviderHistory(
+        string? providerArtifactName,
+        IReadOnlyList<CoreCdc.CdcDiagnostic> diagnostics,
+        CoreCdc.CdcProvider provider
+    ) =>
+        new(
+            CoreCdc.CdcProviderArtifactContinuityState.Unknown,
+            CoreCdc.CdcProviderRetainedRangeState.Unknown,
+            providerArtifactName,
+            null,
+            null,
+            [CoreCdc.CdcIncidentUnavailableFact.ProviderRetainedRange]
+        )
+        {
+            Diagnostics = diagnostics,
+            SqlServerJobs =
+                provider == CoreCdc.CdcProvider.SqlServer ? CoreCdc.CdcSqlServerCdcJobEvidence.Unknown : null,
+        };
+
+    private static IReadOnlyList<CdcProviderArtifactObservation> ArtifactInventory(
+        CdcProviderSetupResult result
+    ) => result.ArtifactInventory?.Where(artifact => artifact is not null).ToArray() ?? [];
+
+    private static IReadOnlyList<CdcProviderHistoryObservation> ProviderHistoryObservations(
+        CdcProviderSetupResult result
+    ) => result.ProviderHistoryObservations?.Where(observation => observation is not null).ToArray() ?? [];
+
+    private static IReadOnlyList<CdcProviderDiagnostic> Diagnostics(CdcProviderSetupResult result) =>
+        Diagnostics(result.Diagnostics);
+
+    private static IReadOnlyList<CdcProviderDiagnostic> Diagnostics(
+        IReadOnlyList<CdcProviderDiagnostic>? diagnostics
+    ) => diagnostics?.Where(diagnostic => diagnostic is not null).ToArray() ?? [];
+}

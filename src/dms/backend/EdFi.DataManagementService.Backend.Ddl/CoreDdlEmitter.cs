@@ -186,7 +186,45 @@ public sealed class CoreDdlEmitter
     }
 
     private IReadOnlyList<CdcSourceTableInventory> BuildCdcSourceInventory() =>
-        CdcSourceInventoryContract.EmitRequiredSourceInventory(_dialect);
+        CdcSourceInventoryContract
+            .RequiredSourceTableKinds.Select(kind => BuildCdcSourceTableInventory(kind))
+            .ToArray();
+
+    private CdcSourceTableInventory BuildCdcSourceTableInventory(CdcSourceTableKind tableKind)
+    {
+        DmsCoreTableDefinition table = CoreTableDefinition(tableKind);
+
+        return new(
+            tableKind,
+            table.TableName,
+            _dialect.QualifyTable(table.TableName),
+            table
+                .Columns.Select(
+                    (column, index) =>
+                        new CdcSourceColumnInventory(
+                            column.ColumnName,
+                            _dialect.QuoteIdentifier(column.ColumnName.Value),
+                            index + 1,
+                            column.SqlType,
+                            column.IsNullable
+                        )
+                )
+                .ToArray()
+        );
+    }
+
+    private DmsCoreTableDefinition CoreTableDefinition(CdcSourceTableKind tableKind) =>
+        tableKind switch
+        {
+            CdcSourceTableKind.DocumentCache => DmsCoreTableDefinitions.DocumentCache(_dialect),
+            CdcSourceTableKind.Document => DmsCoreTableDefinitions.Document(_dialect),
+            CdcSourceTableKind.CdcHeartbeat => DmsCoreTableDefinitions.CdcHeartbeat(_dialect),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(tableKind),
+                tableKind,
+                "Unsupported CDC source table kind."
+            ),
+        };
 
     // ── Phase 1: Schemas ────────────────────────────────────────────────
 

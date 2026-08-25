@@ -186,11 +186,11 @@ public sealed record CdcProviderBarrierObservationRequest(
 );
 
 public sealed record CdcSourceHistoryObservationRequest(
-    string ConnectionString,
     string OperationId,
     CdcBinding Binding,
     CdcProviderSetupObservation? ProviderSetup,
-    CdcConnectorOffsetObservation ConnectorOffset
+    CdcConnectorOffsetObservation ConnectorOffset,
+    CdcProviderSourceHistoryEvidence? ProviderHistory
 )
 {
     public CdcIncident? LatchedIncident { get; init; }
@@ -198,8 +198,6 @@ public sealed record CdcSourceHistoryObservationRequest(
     public CdcSqlServerSchemaHistoryEvidence? SqlServerSchemaHistory { get; init; }
 
     public string? ExpectedConnectSourcePartitionHash { get; init; }
-
-    public TimeSpan CommandTimeout { get; init; } = TimeSpan.FromSeconds(30);
 }
 
 public interface ICdcProviderSourcePositionAdapter

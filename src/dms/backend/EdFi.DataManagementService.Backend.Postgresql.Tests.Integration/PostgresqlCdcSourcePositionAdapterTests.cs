@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.Cdc;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
@@ -13,8 +14,6 @@ using NUnit.Framework;
 using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using DdlCdcProvider = EdFi.DataManagementService.Backend.Ddl.CdcProvider;
 using DdlCdcProviderSetupMode = EdFi.DataManagementService.Backend.Ddl.CdcProviderSetupMode;
-using DmsCdcProviderSetupMode = EdFi.DataManagementService.Core.DocumentCache.Cdc.CdcProviderSetupMode;
-using DmsCdcProviderSetupOutcome = EdFi.DataManagementService.Core.DocumentCache.Cdc.CdcProviderSetupOutcome;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
@@ -201,15 +200,16 @@ public class Given_PostgresqlCdcSourcePositionAdapter
         CoreCdc.CdcBinding binding = await BuildBindingAsync();
         await CreateProviderArtifactsAsync();
         PostgresqlRetainedWalRange retainedRange = await ReadRetainedWalRangeAsync();
+        CdcProviderSetupObservationMapping providerSetup = await ObserveProviderSetupAsync(binding);
 
         _timeProvider.Set(ProjectionCaughtUpObservedAt.AddSeconds(2));
         CoreCdc.CdcSourceHistoryClassificationResult result = await _adapter.ObserveSourceHistoryAsync(
             new(
-                _database.ConnectionString,
                 OperationId(),
                 binding,
-                BuildSatisfiedProviderSetup(binding),
-                BuildConnectorOffset(binding, BuildInventory(), unchecked((long)retainedRange.Start.Value))
+                providerSetup.ProviderSetup,
+                BuildConnectorOffset(binding, BuildInventory(), unchecked((long)retainedRange.Start.Value)),
+                providerSetup.ProviderHistory
             )
         );
 
@@ -238,15 +238,16 @@ public class Given_PostgresqlCdcSourcePositionAdapter
         await CreateProviderArtifactsAsync();
         PostgresqlRetainedWalRange retainedRange = await ReadRetainedWalRangeAsync();
         await DropReplicationSlotIfExistsAsync(BuildInventory().PostgresqlLogicalSlotName!);
+        CdcProviderSetupObservationMapping providerSetup = await ObserveProviderSetupAsync(binding);
 
         _timeProvider.Set(ProjectionCaughtUpObservedAt.AddSeconds(2));
         CoreCdc.CdcSourceHistoryClassificationResult result = await _adapter.ObserveSourceHistoryAsync(
             new(
-                _database.ConnectionString,
                 OperationId(),
                 binding,
-                BuildSatisfiedProviderSetup(binding),
-                BuildConnectorOffset(binding, BuildInventory(), unchecked((long)retainedRange.Start.Value))
+                providerSetup.ProviderSetup,
+                BuildConnectorOffset(binding, BuildInventory(), unchecked((long)retainedRange.Start.Value)),
+                providerSetup.ProviderHistory
             )
         );
 
@@ -270,19 +271,20 @@ public class Given_PostgresqlCdcSourcePositionAdapter
         CoreCdc.CdcBinding binding = await BuildBindingAsync();
         await CreateProviderArtifactsAsync();
         PostgresqlRetainedWalRange retainedRange = await ReadRetainedWalRangeAsync();
+        CdcProviderSetupObservationMapping providerSetup = await ObserveProviderSetupAsync(binding);
 
         _timeProvider.Set(ProjectionCaughtUpObservedAt.AddSeconds(2));
         CoreCdc.CdcSourceHistoryClassificationResult result = await _adapter.ObserveSourceHistoryAsync(
             new(
-                _database.ConnectionString,
                 OperationId(),
                 binding,
-                BuildSatisfiedProviderSetup(binding),
+                providerSetup.ProviderSetup,
                 BuildConnectorOffset(
                     binding,
                     BuildInventory(),
                     unchecked((long)(retainedRange.Start.Value - 1))
-                )
+                ),
+                providerSetup.ProviderHistory
             )
         );
 
@@ -305,7 +307,10 @@ public class Given_PostgresqlCdcSourcePositionAdapter
         result.Diagnostics.Should().BeEmpty();
     }
 
-    private async Task<CdcProviderSetupResult> RunSetupAsync(NpgsqlConnection connection)
+    private async Task<CdcProviderSetupResult> RunSetupAsync(
+        NpgsqlConnection connection,
+        DdlCdcProviderSetupMode mode = DdlCdcProviderSetupMode.InitialCreateOrExactMatch
+    )
     {
         CoreCdc.CdcArtifactInventory inventory = BuildInventory();
         var service = new CdcProviderSetupService([new CdcPostgresqlHeartbeatPublicationProvider()]);
@@ -314,7 +319,7 @@ public class Given_PostgresqlCdcSourcePositionAdapter
         return await service.SetupAsync(
             new CdcProviderSetupRequest(
                 provider: DdlCdcProvider.Postgresql,
-                mode: DdlCdcProviderSetupMode.InitialCreateOrExactMatch,
+                mode: mode,
                 boundPhysicalSourceFingerprint: CdcSourceFingerprintMetadata.Compute(
                     DdlCdcProvider.Postgresql,
                     await ReadDataStoreIdentityAsync(connection)
@@ -330,6 +335,22 @@ public class Given_PostgresqlCdcSourcePositionAdapter
                 dmsManagedTableInventory: _fixture.CdcDmsManagedTableInventory,
                 databaseExecutor: executor
             )
+        );
+    }
+
+    private async Task<CdcProviderSetupObservationMapping> ObserveProviderSetupAsync(
+        CoreCdc.CdcBinding binding
+    )
+    {
+        await using var connection = new NpgsqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        CdcProviderSetupResult result = await RunSetupAsync(connection, DdlCdcProviderSetupMode.ValidateOnly);
+
+        return CdcProviderSetupResultMapper.MapValidateOnlyResult(
+            OperationId(),
+            _timeProvider.GetUtcNow(),
+            binding,
+            result
         );
     }
 
@@ -410,24 +431,6 @@ public class Given_PostgresqlCdcSourcePositionAdapter
             []
         );
     }
-
-    private CoreCdc.CdcProviderSetupObservation BuildSatisfiedProviderSetup(CoreCdc.CdcBinding binding) =>
-        new(
-            CoreCdc.CdcJsonContract.CurrentContractVersion,
-            OperationId(),
-            _timeProvider.GetUtcNow(),
-            binding.ToTargetIdentity(),
-            CoreCdc.CdcProvider.Postgresql,
-            binding.PhysicalSourceFingerprint,
-            DmsCdcProviderSetupMode.InitialCreateOrExactMatch,
-            DmsCdcProviderSetupOutcome.Satisfied,
-            CoreCdc.CdcProviderSetupState.Matched,
-            CoreCdc.CdcProviderSetupState.Matched,
-            CoreCdc.CdcProviderSetupState.Matched,
-            CoreCdc.CdcProviderSetupState.Matched,
-            CoreCdc.CdcProviderSetupState.Matched,
-            []
-        );
 
     private CoreCdc.CdcContractValidationResult ValidateBarrierObservation(
         CoreCdc.CdcProviderBarrierObservation observation,

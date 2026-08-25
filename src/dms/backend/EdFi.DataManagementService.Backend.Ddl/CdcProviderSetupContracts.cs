@@ -748,13 +748,6 @@ public static class CdcSourceInventoryContract
             ),
         };
 
-    public static IReadOnlyList<CdcSourceTableInventory> EmitRequiredSourceInventory(ISqlDialect dialect)
-    {
-        ArgumentNullException.ThrowIfNull(dialect);
-
-        return RequiredSourceTableKinds.Select(kind => BuildSourceTable(dialect, kind)).ToArray();
-    }
-
     public static string SourceTableKindToken(CdcSourceTableKind tableKind) =>
         tableKind switch
         {
@@ -780,45 +773,6 @@ public static class CdcSourceInventoryContract
 
         return token is "document_cache" or "document" or "cdc_heartbeat";
     }
-
-    private static CdcSourceTableInventory BuildSourceTable(ISqlDialect dialect, CdcSourceTableKind tableKind)
-    {
-        DmsCoreTableDefinition table = CoreTableDefinition(dialect, tableKind);
-
-        return new(
-            tableKind,
-            table.TableName,
-            dialect.QualifyTable(table.TableName),
-            table
-                .Columns.Select(
-                    (column, index) =>
-                        new CdcSourceColumnInventory(
-                            column.ColumnName,
-                            dialect.QuoteIdentifier(column.ColumnName.Value),
-                            index + 1,
-                            column.SqlType,
-                            column.IsNullable
-                        )
-                )
-                .ToArray()
-        );
-    }
-
-    private static DmsCoreTableDefinition CoreTableDefinition(
-        ISqlDialect dialect,
-        CdcSourceTableKind tableKind
-    ) =>
-        tableKind switch
-        {
-            CdcSourceTableKind.DocumentCache => DmsCoreTableDefinitions.DocumentCache(dialect),
-            CdcSourceTableKind.Document => DmsCoreTableDefinitions.Document(dialect),
-            CdcSourceTableKind.CdcHeartbeat => DmsCoreTableDefinitions.CdcHeartbeat(dialect),
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(tableKind),
-                tableKind,
-                "Unsupported CDC source table kind."
-            ),
-        };
 
     public static IReadOnlyList<CdcExpectedMessageKeyColumns> RequiredMessageKeyColumns() =>
         RequiredMessageKeyTableKinds
