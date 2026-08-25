@@ -367,7 +367,11 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
 
         if (readResult.Missing)
         {
-            return new CdcDeleteBindingStateStoreResult.BindingMissing(completeIdentity);
+            return await DeleteOrphanIncidentAfterVerifiedCleanupAsync(
+                verifiedCleanupProof,
+                completeIdentity,
+                cancellationToken
+            );
         }
 
         CdcStateStoreFailure? proofFailure = ValidateCleanupProofForBinding(
@@ -391,6 +395,15 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             return new CdcDeleteBindingStateStoreResult.StateStoreFailure(incidentPath.ToFailure());
         }
 
+        CdcStateStoreFailure? bindingDeleteFailure = DeleteStateFile(
+            bindingPath.FilePath!,
+            "delete binding state"
+        );
+        if (bindingDeleteFailure is not null)
+        {
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(bindingDeleteFailure);
+        }
+
         CdcStateStoreFailure? incidentDeleteFailure = DeleteStateFileIfPresent(
             incidentPath.FilePath!,
             "delete incident state"
@@ -400,13 +413,52 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             return new CdcDeleteBindingStateStoreResult.StateStoreFailure(incidentDeleteFailure);
         }
 
-        CdcStateStoreFailure? bindingDeleteFailure = DeleteStateFile(
-            bindingPath.FilePath!,
-            "delete binding state"
+        return new CdcDeleteBindingStateStoreResult.Deleted(completeIdentity);
+    }
+
+    private async Task<CdcDeleteBindingStateStoreResult> DeleteOrphanIncidentAfterVerifiedCleanupAsync(
+        CdcCleanupProof verifiedCleanupProof,
+        CdcCompleteBindingIdentity completeIdentity,
+        CancellationToken cancellationToken
+    )
+    {
+        CdcBindingIdentity identity = completeIdentity.ToBindingIdentity();
+        LocalIncidentReadResult incidentRead = await ReadIncidentStateAsync(
+            completeIdentity,
+            cancellationToken
         );
-        if (bindingDeleteFailure is not null)
+        if (incidentRead.Failure is not null)
         {
-            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(bindingDeleteFailure);
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(incidentRead.Failure);
+        }
+
+        if (incidentRead.Incident is null)
+        {
+            return new CdcDeleteBindingStateStoreResult.BindingMissing(completeIdentity);
+        }
+
+        CdcStateStoreFailure? proofFailure = ValidateCleanupProofForCompleteBindingIdentity(
+            verifiedCleanupProof,
+            completeIdentity
+        );
+        if (proofFailure is not null)
+        {
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(proofFailure);
+        }
+
+        CdcStateStorePathResolution incidentPath = _pathResolver.ResolveIncidentPath(identity);
+        if (!incidentPath.Succeeded)
+        {
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(incidentPath.ToFailure());
+        }
+
+        CdcStateStoreFailure? incidentDeleteFailure = DeleteStateFile(
+            incidentPath.FilePath!,
+            "delete orphan incident state"
+        );
+        if (incidentDeleteFailure is not null)
+        {
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(incidentDeleteFailure);
         }
 
         return new CdcDeleteBindingStateStoreResult.Deleted(completeIdentity);
@@ -865,9 +917,32 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         CancellationToken cancellationToken
     )
     {
-        CdcStateStorePathResolution incidentPath = _pathResolver.ResolveIncidentPath(
-            binding.ToBindingIdentity()
+        return await ReadIncidentStateForIdentityAsync(
+            binding.ToBindingIdentity(),
+            incident => ValidateIncidentForBindingState(incident, binding),
+            cancellationToken
         );
+    }
+
+    private async Task<LocalIncidentReadResult> ReadIncidentStateAsync(
+        CdcCompleteBindingIdentity completeIdentity,
+        CancellationToken cancellationToken
+    )
+    {
+        return await ReadIncidentStateForIdentityAsync(
+            completeIdentity.ToBindingIdentity(),
+            incident => ValidateIncidentForCompleteIdentity(incident, completeIdentity),
+            cancellationToken
+        );
+    }
+
+    private async Task<LocalIncidentReadResult> ReadIncidentStateForIdentityAsync(
+        CdcBindingIdentity identity,
+        Func<CdcIncident, CdcStateStoreFailure?> validateIncident,
+        CancellationToken cancellationToken
+    )
+    {
+        CdcStateStorePathResolution incidentPath = _pathResolver.ResolveIncidentPath(identity);
         if (!incidentPath.Succeeded)
         {
             return LocalIncidentReadResult.Failed(incidentPath.ToFailure());
@@ -875,9 +950,9 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
 
         CdcStateStoreFailure? collisionFailure = CheckPathCaseCollision(
             CdcStateStorePathResolver.IncidentsDirectoryName,
-            binding.DeploymentKey,
-            binding.InstanceKey,
-            $"{binding.Generation}.json"
+            identity.DeploymentKey,
+            identity.InstanceKey,
+            $"{identity.Generation}.json"
         );
         if (collisionFailure is not null)
         {
@@ -911,24 +986,40 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         }
 
         CdcIncident incident = incidentRead.Incident!;
+        CdcStateStoreFailure? validationFailure = validateIncident(incident);
+        return validationFailure is null
+            ? LocalIncidentReadResult.Read(incident)
+            : LocalIncidentReadResult.Failed(validationFailure);
+    }
+
+    private static CdcStateStoreFailure? ValidateIncidentForBindingState(
+        CdcIncident incident,
+        CdcBinding binding
+    )
+    {
         if (incident.BindingIdentity != binding.ToCompleteBindingIdentity())
         {
-            return LocalIncidentReadResult.Failed(
-                CdcStateStoreFailure.InvalidPersistedIncident([
-                    IdentityMismatchDiagnostic("$.bindingIdentity", "incident", "binding state"),
-                ])
-            );
+            return CdcStateStoreFailure.InvalidPersistedIncident([
+                IdentityMismatchDiagnostic("$.bindingIdentity", "incident", "binding state"),
+            ]);
         }
 
         CdcStateStoreFailure? validationFailure = ValidateIncidentForBinding(incident, binding);
-        if (validationFailure is not null)
-        {
-            return LocalIncidentReadResult.Failed(
-                CdcStateStoreFailure.InvalidPersistedIncident(validationFailure.Diagnostics)
-            );
-        }
+        return validationFailure is null
+            ? null
+            : CdcStateStoreFailure.InvalidPersistedIncident(validationFailure.Diagnostics);
+    }
 
-        return LocalIncidentReadResult.Read(incident);
+    private static CdcStateStoreFailure? ValidateIncidentForCompleteIdentity(
+        CdcIncident incident,
+        CdcCompleteBindingIdentity completeIdentity
+    )
+    {
+        return incident.BindingIdentity == completeIdentity
+            ? null
+            : CdcStateStoreFailure.InvalidPersistedIncident([
+                IdentityMismatchDiagnostic("$.bindingIdentity", "incident", "cleanup proof"),
+            ]);
     }
 
     private static async Task<LocalIncidentFileReadResult> ReadIncidentFileAsync(
@@ -1408,6 +1499,22 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         CdcContractValidationResult validationResult = CdcCleanupProofValidator.Validate(
             proof,
             binding,
+            DateTimeOffset.UtcNow
+        );
+
+        return validationResult.Succeeded
+            ? null
+            : CdcStateStoreFailure.InvalidOperation(validationResult.Diagnostics);
+    }
+
+    private static CdcStateStoreFailure? ValidateCleanupProofForCompleteBindingIdentity(
+        CdcCleanupProof proof,
+        CdcCompleteBindingIdentity completeIdentity
+    )
+    {
+        CdcContractValidationResult validationResult = CdcCleanupProofValidator.Validate(
+            proof,
+            completeIdentity,
             DateTimeOffset.UtcNow
         );
 

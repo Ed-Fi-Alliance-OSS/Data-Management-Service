@@ -611,48 +611,13 @@ public class Given_LocalCdcStateStore
     }
 
     [Test]
-    public async Task It_deletes_incident_before_binding_and_reports_cleanup_delete_failures_by_path()
+    public async Task It_preserves_incident_latch_on_partial_retirement_and_retries_orphan_cleanup()
     {
-        using TempCdcStateRoot incidentFailureRoot = new();
-        LocalCdcBindingStateStore incidentWriter = new(incidentFailureRoot.Path);
+        using TempCdcStateRoot bindingFailureRoot = new();
+        LocalCdcBindingStateStore bindingWriter = new(bindingFailureRoot.Path);
         CdcIncident incident = CreateIncident(SampleBinding);
         CdcCleanupProof cleanupProof = CreateCleanupProof(SampleBinding);
 
-        await incidentWriter.CreateBindingIfAbsentAsync(SampleBinding, CancellationToken.None);
-        await incidentWriter.LatchSourceHistoryLossAsync(incident, CancellationToken.None);
-
-        string incidentFailureBindingPath = incidentFailureRoot.BindingPath(SampleBinding);
-        string incidentFailureIncidentPath = incidentFailureRoot.IncidentPath(SampleBinding);
-        FailingDeleteCdcLocalStateStoreFileSystem incidentDeleteFailure = new(incidentFailureIncidentPath);
-        LocalCdcBindingStateStore incidentDeletingStore = new(
-            incidentFailureRoot.Path,
-            CdcLocalStateStorePermissions.Current,
-            incidentDeleteFailure
-        );
-
-        CdcDeleteBindingStateStoreResult incidentDeleteResult =
-            await incidentDeletingStore.DeleteStateAfterVerifiedCleanupAsync(
-                cleanupProof,
-                CancellationToken.None
-            );
-
-        incidentDeleteResult
-            .Should()
-            .BeOfType<CdcDeleteBindingStateStoreResult.StateStoreFailure>()
-            .Subject.Failure.Should()
-            .Match<CdcStateStoreFailure>(failure =>
-                failure.Kind == CdcStateStoreFailureKind.LocalStateUnavailable
-                && failure.Diagnostics.Single().Path == incidentFailureIncidentPath
-                && failure
-                    .Diagnostics.Single()
-                    .Message.Contains("delete incident state", StringComparison.Ordinal)
-            );
-        incidentDeleteFailure.DeleteCalls.Should().Equal(incidentFailureIncidentPath);
-        File.Exists(incidentFailureIncidentPath).Should().BeTrue();
-        File.Exists(incidentFailureBindingPath).Should().BeTrue();
-
-        using TempCdcStateRoot bindingFailureRoot = new();
-        LocalCdcBindingStateStore bindingWriter = new(bindingFailureRoot.Path);
         await bindingWriter.CreateBindingIfAbsentAsync(SampleBinding, CancellationToken.None);
         await bindingWriter.LatchSourceHistoryLossAsync(incident, CancellationToken.None);
 
@@ -670,6 +635,14 @@ public class Given_LocalCdcStateStore
                 cleanupProof,
                 CancellationToken.None
             );
+        CdcReadBindingStateStoreResult bindingFailureRead = await bindingWriter.ReadBindingAsync(
+            SampleBinding.ToBindingIdentity(),
+            CancellationToken.None
+        );
+        CdcListBindingsStateStoreResult bindingFailureList = await bindingWriter.ListBindingsAsync(
+            SampleBinding.DeploymentKey,
+            CancellationToken.None
+        );
 
         bindingDeleteResult
             .Should()
@@ -682,11 +655,95 @@ public class Given_LocalCdcStateStore
                     .Diagnostics.Single()
                     .Message.Contains("delete binding state", StringComparison.Ordinal)
             );
-        bindingDeleteFailure
-            .DeleteCalls.Should()
-            .Equal(bindingFailureIncidentPath, bindingFailureBindingPath);
-        File.Exists(bindingFailureIncidentPath).Should().BeFalse();
+        bindingDeleteFailure.DeleteCalls.Should().Equal(bindingFailureBindingPath);
+        File.Exists(bindingFailureIncidentPath).Should().BeTrue();
         File.Exists(bindingFailureBindingPath).Should().BeTrue();
+        bindingFailureRead
+            .Should()
+            .BeOfType<CdcReadBindingStateStoreResult.Found>()
+            .Subject.State.Incident.Should()
+            .BeEquivalentTo(incident);
+        CdcListBindingsStateStoreResult.Listed bindingFailureListed = bindingFailureList
+            .Should()
+            .BeOfType<CdcListBindingsStateStoreResult.Listed>()
+            .Subject;
+        bindingFailureListed.States.Should().ContainSingle();
+        bindingFailureListed.States.Single().Incident.Should().BeEquivalentTo(incident);
+
+        using TempCdcStateRoot incidentFailureRoot = new();
+        LocalCdcBindingStateStore incidentWriter = new(incidentFailureRoot.Path);
+        await incidentWriter.CreateBindingIfAbsentAsync(SampleBinding, CancellationToken.None);
+        await incidentWriter.LatchSourceHistoryLossAsync(incident, CancellationToken.None);
+
+        string incidentFailureBindingPath = incidentFailureRoot.BindingPath(SampleBinding);
+        string incidentFailureIncidentPath = incidentFailureRoot.IncidentPath(SampleBinding);
+        FailingDeleteCdcLocalStateStoreFileSystem incidentDeleteFailure = new(incidentFailureIncidentPath);
+        LocalCdcBindingStateStore incidentDeletingStore = new(
+            incidentFailureRoot.Path,
+            CdcLocalStateStorePermissions.Current,
+            incidentDeleteFailure
+        );
+
+        CdcDeleteBindingStateStoreResult incidentDeleteResult =
+            await incidentDeletingStore.DeleteStateAfterVerifiedCleanupAsync(
+                cleanupProof,
+                CancellationToken.None
+            );
+        CdcReadBindingStateStoreResult incidentFailureRead = await incidentWriter.ReadBindingAsync(
+            SampleBinding.ToBindingIdentity(),
+            CancellationToken.None
+        );
+        CdcListBindingsStateStoreResult incidentFailureList = await incidentWriter.ListBindingsAsync(
+            SampleBinding.DeploymentKey,
+            CancellationToken.None
+        );
+
+        incidentDeleteResult
+            .Should()
+            .BeOfType<CdcDeleteBindingStateStoreResult.StateStoreFailure>()
+            .Subject.Failure.Should()
+            .Match<CdcStateStoreFailure>(failure =>
+                failure.Kind == CdcStateStoreFailureKind.LocalStateUnavailable
+                && failure.Diagnostics.Single().Path == incidentFailureIncidentPath
+                && failure
+                    .Diagnostics.Single()
+                    .Message.Contains("delete incident state", StringComparison.Ordinal)
+            );
+        incidentDeleteFailure
+            .DeleteCalls.Should()
+            .Equal(incidentFailureBindingPath, incidentFailureIncidentPath);
+        File.Exists(incidentFailureIncidentPath).Should().BeTrue();
+        File.Exists(incidentFailureBindingPath).Should().BeFalse();
+        incidentFailureRead.Should().BeOfType<CdcReadBindingStateStoreResult.Missing>();
+        incidentFailureList
+            .Should()
+            .BeOfType<CdcListBindingsStateStoreResult.StateStoreFailure>()
+            .Subject.Failure.Kind.Should()
+            .Be(CdcStateStoreFailureKind.InvalidPersistedIncident);
+
+        CdcDeleteBindingStateStoreResult retryDeleteResult =
+            await incidentWriter.DeleteStateAfterVerifiedCleanupAsync(cleanupProof, CancellationToken.None);
+        CdcReadBindingStateStoreResult retryRead = await incidentWriter.ReadBindingAsync(
+            SampleBinding.ToBindingIdentity(),
+            CancellationToken.None
+        );
+        CdcListBindingsStateStoreResult retryList = await incidentWriter.ListBindingsAsync(
+            SampleBinding.DeploymentKey,
+            CancellationToken.None
+        );
+
+        retryDeleteResult
+            .Should()
+            .BeOfType<CdcDeleteBindingStateStoreResult.Deleted>()
+            .Subject.BindingIdentity.Should()
+            .Be(SampleBinding.ToCompleteBindingIdentity());
+        File.Exists(incidentFailureIncidentPath).Should().BeFalse();
+        retryRead.Should().BeOfType<CdcReadBindingStateStoreResult.Missing>();
+        retryList
+            .Should()
+            .BeOfType<CdcListBindingsStateStoreResult.Listed>()
+            .Subject.States.Should()
+            .BeEmpty();
     }
 
     private static CdcIncident CreateIncident(CdcBinding binding) =>

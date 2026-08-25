@@ -156,8 +156,46 @@ public static class CdcCleanupProofValidator
 
         ValidateStructure(proof, nowUtc, diagnostics);
         ValidateBindingIdentityMatchesBinding(proof.BindingIdentity, binding, diagnostics);
+        ValidateGovernedArtifactCoverageForBindingIdentity(
+            proof.GovernedArtifacts,
+            binding.ToCompleteBindingIdentity(),
+            diagnostics
+        );
 
-        CdcArtifactNameResult artifactNameResult = CdcArtifactNameGenerator.RecoverFromBinding(binding);
+        return diagnostics.ToValidationResult();
+    }
+
+    public static CdcContractValidationResult Validate(
+        CdcCleanupProof proof,
+        CdcCompleteBindingIdentity bindingIdentity,
+        DateTimeOffset nowUtc
+    )
+    {
+        ArgumentNullException.ThrowIfNull(proof);
+        ArgumentNullException.ThrowIfNull(bindingIdentity);
+
+        CdcDiagnosticCollector diagnostics = new();
+
+        ValidateStructure(proof, nowUtc, diagnostics);
+        ValidateBindingIdentityMatchesCompleteIdentity(proof.BindingIdentity, bindingIdentity, diagnostics);
+        ValidateGovernedArtifactCoverageForBindingIdentity(
+            proof.GovernedArtifacts,
+            bindingIdentity,
+            diagnostics
+        );
+
+        return diagnostics.ToValidationResult();
+    }
+
+    private static void ValidateGovernedArtifactCoverageForBindingIdentity(
+        IReadOnlyList<CdcGovernedArtifact>? governedArtifacts,
+        CdcCompleteBindingIdentity bindingIdentity,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        CdcArtifactNameResult artifactNameResult =
+            CdcArtifactNameGenerator.RecoverFromCompleteBindingIdentity(bindingIdentity);
+
         foreach (CdcDiagnostic diagnostic in artifactNameResult.Diagnostics)
         {
             diagnostics.Add(
@@ -170,13 +208,11 @@ public static class CdcCleanupProofValidator
         if (artifactNameResult.Inventory is not null)
         {
             ValidateGovernedArtifactCoverage(
-                proof.GovernedArtifacts,
+                governedArtifacts,
                 artifactNameResult.Inventory.GovernedArtifacts,
                 diagnostics
             );
         }
-
-        return diagnostics.ToValidationResult();
     }
 
     private static void ValidateStructure(
@@ -230,6 +266,27 @@ public static class CdcCleanupProofValidator
                 CdcDiagnosticCategory.BindingIdentityMismatch,
                 "$.bindingIdentity",
                 "CDC cleanup proof bindingIdentity must match the persisted binding."
+            );
+        }
+    }
+
+    private static void ValidateBindingIdentityMatchesCompleteIdentity(
+        CdcCompleteBindingIdentity? proofBindingIdentity,
+        CdcCompleteBindingIdentity expectedBindingIdentity,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (proofBindingIdentity is null)
+        {
+            return;
+        }
+
+        if (proofBindingIdentity != expectedBindingIdentity)
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.BindingIdentityMismatch,
+                "$.bindingIdentity",
+                "CDC cleanup proof bindingIdentity must match the cleanup target."
             );
         }
     }
