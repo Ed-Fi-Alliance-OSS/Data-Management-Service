@@ -387,7 +387,7 @@
       "/tmp/dms-document-cache-tool/dms-document-cache --help",
       "/tmp/dms-document-cache-tool/dms-document-cache rebuild-online --help"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "documentation-and-runbook-links",
