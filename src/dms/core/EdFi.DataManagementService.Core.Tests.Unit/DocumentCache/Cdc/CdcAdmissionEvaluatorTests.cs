@@ -197,7 +197,9 @@ public class Given_CdcAdmissionOrdering
     public void It_requires_source_history_observation_after_provider_barrier_success()
     {
         CdcBinding binding = CdcTargetStatusFixture.CreateBinding();
-        DateTimeOffset staleSourceHistoryTime = CdcTargetStatusFixture.ObservationObservedAt.AddSeconds(-2);
+        DateTimeOffset staleSourceHistoryTime = CdcTargetStatusFixture.ObservationObservedAt.AddMilliseconds(
+            -500
+        );
 
         CdcAdmission admission = CdcInitialAdmissionEvaluator.Evaluate(
             CdcAdmissionFixture.ValidInput(binding) with
@@ -226,7 +228,7 @@ public class Given_CdcAdmissionOrdering
     {
         CdcBinding binding = CdcTargetStatusFixture.CreateBinding();
         DateTimeOffset sourceHistoryAfterSecondProjection =
-            CdcTargetStatusFixture.ObservationObservedAt.AddSeconds(2);
+            CdcTargetStatusFixture.ObservationObservedAt.AddSeconds(3);
 
         CdcAdmission admission = CdcInitialAdmissionEvaluator.Evaluate(
             CdcAdmissionFixture.ValidInput(binding) with
@@ -257,7 +259,8 @@ public class Given_CdcAdmissionOrdering
     public void It_requires_the_second_projection_caught_up_observation_after_provider_barrier_success()
     {
         CdcBinding binding = CdcTargetStatusFixture.CreateBinding();
-        DateTimeOffset outOfOrderProjectionTime = CdcTargetStatusFixture.ObservationObservedAt.AddSeconds(-2);
+        DateTimeOffset outOfOrderProjectionTime =
+            CdcTargetStatusFixture.ObservationObservedAt.AddMilliseconds(-500);
 
         CdcAdmission admission = CdcInitialAdmissionEvaluator.Evaluate(
             CdcAdmissionFixture.ValidInput(binding) with
@@ -332,15 +335,25 @@ internal static class CdcAdmissionFixture
             ConnectorRuntime = CdcTargetStatusFixture.ConnectorRuntime(effectiveBinding),
             FirstProjectionCaughtUp = FirstProjection(effectiveBinding),
             ProviderBarrier = CdcTargetStatusFixture.ProviderBarrier(effectiveBinding),
-            SourceHistory = CdcTargetStatusFixture.SourceHistory(effectiveBinding),
+            SourceHistory = SourceHistory(effectiveBinding),
             SecondProjectionCaughtUp = SecondProjection(effectiveBinding),
             Lag = CdcTargetStatusFixture.Lag(effectiveBinding),
         };
     }
 
+    public static CdcSourceHistoryObservation SourceHistory(CdcBinding binding)
+    {
+        DateTimeOffset observedAt = CdcTargetStatusFixture.ObservationObservedAt.AddSeconds(1);
+
+        return CdcTargetStatusFixture.SourceHistory(binding) with
+        {
+            ObservedAt = observedAt,
+        };
+    }
+
     public static CdcProjectionCorrelationObservation SecondProjection(CdcBinding binding)
     {
-        DateTimeOffset projectionObservedAt = CdcTargetStatusFixture.ObservationObservedAt.AddSeconds(1);
+        DateTimeOffset projectionObservedAt = CdcTargetStatusFixture.ObservationObservedAt.AddSeconds(2);
 
         return CdcTargetStatusFixture.Projection(binding) with
         {

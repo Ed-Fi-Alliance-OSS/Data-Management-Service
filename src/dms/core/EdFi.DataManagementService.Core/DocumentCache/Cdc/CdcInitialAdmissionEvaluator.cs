@@ -362,7 +362,7 @@ public static class CdcInitialAdmissionEvaluator
         if (
             providerBarrierObservation?.BarrierState == CdcProviderBarrierState.Reached
             && sourceHistoryObservation?.Continuity == CdcSourceHistoryContinuity.Healthy
-            && sourceHistoryObservation.ObservedAt <= providerBarrierObservation.ConnectorOffsetObservedAt
+            && sourceHistoryObservation.ObservedAt <= providerBarrierObservation.ObservedAt
         )
         {
             diagnostics.Add(
@@ -399,7 +399,7 @@ public static class CdcInitialAdmissionEvaluator
         if (
             providerBarrierObservation?.BarrierState == CdcProviderBarrierState.Reached
             && secondProjection is not null
-            && secondProjection.ProjectionObservedAt <= providerBarrierObservation.ConnectorOffsetObservedAt
+            && secondProjection.ProjectionObservedAt <= providerBarrierObservation.ObservedAt
         )
         {
             diagnostics.Add(
