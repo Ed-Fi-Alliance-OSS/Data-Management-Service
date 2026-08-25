@@ -5,6 +5,7 @@
 
 using System.Collections.Immutable;
 using System.CommandLine;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.DocumentCacheAdmin;
@@ -120,6 +121,49 @@ public sealed class Given_DocumentCacheAdminStatusCommand
             .ContainSingle()
             .Which.Should()
             .Be(DocumentCacheStatusEvaluationMode.StandaloneDirectObservation);
+    }
+
+    [Test]
+    public async Task It_enforces_target_resolution_failure_before_status_pipeline()
+    {
+        UnexpectedMembershipTargetResolver targetResolver = new();
+        ScriptedDocumentCacheStatusService statusService = new(
+            (_, _) =>
+                throw new AssertionException("Status pipeline must not run after target resolution fails.")
+        );
+        await using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddSingleton<IDocumentCacheAdminTargetResolver>(targetResolver)
+            .AddSingleton<IDocumentCacheStatusService>(statusService)
+            .BuildServiceProvider();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+
+        int exitCode = await DocumentCacheAdminCommandExecutor.ExecuteAsync(
+            ParseStatusCommand(
+                DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
+                "1",
+                DocumentCacheAdminCommandSurface.JsonOptionName
+            ),
+            InvocationTarget(),
+            serviceProvider,
+            stdout,
+            stderr
+        );
+
+        exitCode.Should().Be(DocumentCacheAdminExitCodes.Success);
+        targetResolver.ResolveCount.Should().Be(1);
+        statusService.EvaluationModes.Should().BeEmpty();
+
+        JsonObject root = JsonNode.Parse(stdout.ToString())!.AsObject();
+        JsonObject target = root["targets"]![0]!.AsObject();
+        target["targetKey"]!["dataStoreId"]!.GetValue<long>().Should().Be(1);
+        target["resolution"]!["status"]!.GetValue<string>().Should().Be("unresolved");
+        target["resolution"]!["reason"]!.GetValue<string>().Should().Be("targetNotFound");
+        target["targetDiagnostics"]!["recentEvents"]![0]!["category"]!
+            .GetValue<string>()
+            .Should()
+            .Be("targetResolution");
+        stderr.ToString().Should().BeEmpty();
     }
 
     private static ParseResult ParseStatusCommand(params string[] args) =>
@@ -257,6 +301,38 @@ public sealed class Given_DocumentCacheAdminStatusCommand
             _evaluationModes.Add(evaluationMode);
             cancellationToken.ThrowIfCancellationRequested();
             return await getStatusAsync(evaluationMode, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private sealed class UnexpectedMembershipTargetResolver : IDocumentCacheAdminTargetResolver
+    {
+        public int ResolveCount { get; private set; }
+
+        public Task<DocumentCacheAdminTargetResolutionResult> ResolveAsync(
+            DocumentCacheTargetKey targetKey,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ResolveCount++;
+            DocumentCacheTargetObservation unexpectedTarget = DocumentCacheTargetObservation.Configured(
+                DocumentCacheTargetKey.Create("TenantB", 2),
+                DocumentCacheTargetEffectiveSettings.FromOptions(new DocumentCacheOptions())
+            );
+            DocumentCacheTargetRegistrySnapshot registrySnapshot = new([unexpectedTarget], ObservedAt);
+            DocumentCacheTargetRuntimeSnapshot runtimeSnapshot = new([], ObservedAt);
+
+            return Task.FromResult(
+                new DocumentCacheAdminTargetResolutionResult(
+                    DocumentCacheAdminTargetResolutionOutcome.UnexpectedTargetMembership,
+                    targetKey,
+                    Observation: null,
+                    ExecutionContext: null,
+                    registrySnapshot,
+                    runtimeSnapshot,
+                    "DocumentCache target registry did not contain exactly the invocation target."
+                )
+            );
         }
     }
 }

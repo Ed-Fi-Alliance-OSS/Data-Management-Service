@@ -6,6 +6,7 @@
 using System.Collections.Immutable;
 using System.CommandLine;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.DocumentCacheAdmin;
@@ -151,6 +152,51 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
     }
 
     [Test]
+    public async Task It_enforces_target_resolution_failure_before_mutating_dispatch()
+    {
+        UnexpectedMembershipTargetResolver targetResolver = new();
+        RecordingProjectionSupervisor projectionSupervisor = new();
+        RecordingMutatingCommandDispatcher dispatcher = new(_ =>
+            throw new AssertionException("Dispatcher must not run after target resolution fails.")
+        );
+        await using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddSingleton<IDocumentCacheAdminTargetResolver>(targetResolver)
+            .AddSingleton<IDocumentCacheProjectionSupervisor>(projectionSupervisor)
+            .AddSingleton<IDocumentCacheAdminMutatingCommandDispatcher>(dispatcher)
+            .BuildServiceProvider();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+
+        int exitCode = await DocumentCacheAdminCommandExecutor.ExecuteAsync(
+            ParseCommand(
+                DocumentCacheAdminCommandSurface.RebuildOnlineCommandName,
+                DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
+                "1",
+                DocumentCacheAdminCommandSurface.ConfirmOptionName,
+                "onlineCacheRebuild",
+                DocumentCacheAdminCommandSurface.JsonOptionName
+            ),
+            InvocationTarget(),
+            serviceProvider,
+            stdout,
+            stderr
+        );
+
+        exitCode.Should().Be(DocumentCacheAdminExitCodes.RejectedNoMutation);
+        targetResolver.ResolveCount.Should().Be(1);
+        projectionSupervisor.RefreshCount.Should().Be(0);
+        dispatcher.Requests.Should().BeEmpty();
+
+        JsonObject result = JsonNode.Parse(stdout.ToString())!.AsObject();
+        result["command"]!.GetValue<string>().Should().Be("onlineCacheRebuild");
+        result["status"]!.GetValue<string>().Should().Be("rejectedNoMutation");
+        result["classification"]!.GetValue<string>().Should().Be("targetNotConfigured");
+        result["mutated"]!.GetValue<bool>().Should().BeFalse();
+        result["phaseDiagnostics"]![0]!["currentPhase"]!.GetValue<string>().Should().Be("resolveTarget");
+        stderr.ToString().Should().BeEmpty();
+    }
+
+    [Test]
     [Category("Timeout")]
     public async Task It_applies_command_timeout_before_mutating_target_resolution_completes()
     {
@@ -246,6 +292,56 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
             cancellationToken.ThrowIfCancellationRequested();
             _requests.Add(commandRequest);
             return Task.FromResult(execute(commandRequest));
+        }
+    }
+
+    private sealed class UnexpectedMembershipTargetResolver : IDocumentCacheAdminTargetResolver
+    {
+        public int ResolveCount { get; private set; }
+
+        public Task<DocumentCacheAdminTargetResolutionResult> ResolveAsync(
+            DocumentCacheTargetKey targetKey,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ResolveCount++;
+            DateTimeOffset observedAt = DateTimeOffset.UtcNow;
+            DocumentCacheTargetObservation unexpectedTarget = DocumentCacheTargetObservation.Configured(
+                DocumentCacheTargetKey.Create("TenantB", 2),
+                DocumentCacheTargetEffectiveSettings.FromOptions(new DocumentCacheOptions())
+            );
+            DocumentCacheTargetRegistrySnapshot registrySnapshot = new([unexpectedTarget], observedAt);
+            DocumentCacheTargetRuntimeSnapshot runtimeSnapshot = new([], observedAt);
+
+            return Task.FromResult(
+                new DocumentCacheAdminTargetResolutionResult(
+                    DocumentCacheAdminTargetResolutionOutcome.UnexpectedTargetMembership,
+                    targetKey,
+                    Observation: null,
+                    ExecutionContext: null,
+                    registrySnapshot,
+                    runtimeSnapshot,
+                    "DocumentCache target registry did not contain exactly the invocation target."
+                )
+            );
+        }
+    }
+
+    private sealed class RecordingProjectionSupervisor : IDocumentCacheProjectionSupervisor
+    {
+        public int RefreshCount { get; private set; }
+
+        public ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> CurrentTargetContexts => [];
+
+        public Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
+            DocumentCacheTargetRefreshReason reason,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            RefreshCount++;
+            return Task.FromResult(new DocumentCacheTargetRegistrySnapshot([], DateTimeOffset.UtcNow));
         }
     }
 

@@ -189,8 +189,26 @@ internal static class DocumentCacheAdminCommandExecutor
 
             try
             {
-                await ResolveMutatingTargetAsync(commandRequest!, serviceProvider, commandTimeout.Token)
-                    .ConfigureAwait(false);
+                DocumentCacheAdministrativeCommandResult? targetResolutionResult =
+                    await ResolveMutatingTargetAsync(commandRequest!, serviceProvider, commandTimeout.Token)
+                        .ConfigureAwait(false);
+                if (targetResolutionResult is not null)
+                {
+                    await WriteAdministrativeCommandResultAsync(
+                            targetResolutionResult,
+                            jsonOutput,
+                            standardOutput
+                        )
+                        .ConfigureAwait(false);
+
+                    return CompleteCommand(
+                        DocumentCacheAdminExitCodeMapper.ForAdministrativeCommandResult(
+                            targetResolutionResult
+                        ),
+                        targetResolutionResult.Status.ToString(),
+                        targetResolutionResult.Classification.ToString()
+                    );
+                }
 
                 DocumentCacheAdministrativeCommandResult result = await dispatcher
                     .ExecuteAsync(commandRequest!, commandTimeout.Token)
@@ -256,12 +274,25 @@ internal static class DocumentCacheAdminCommandExecutor
         return await parseResult.InvokeAsync().ConfigureAwait(false);
     }
 
-    private static async Task ResolveMutatingTargetAsync(
+    private static async Task<DocumentCacheAdministrativeCommandResult?> ResolveMutatingTargetAsync(
         DocumentCacheAdminMutatingCommandRequest commandRequest,
         IServiceProvider serviceProvider,
         CancellationToken cancellationToken
     )
     {
+        IDocumentCacheAdminTargetResolver? targetResolver =
+            serviceProvider.GetService<IDocumentCacheAdminTargetResolver>();
+        if (targetResolver is not null)
+        {
+            DocumentCacheAdminTargetResolutionResult resolution = await targetResolver
+                .ResolveAsync(commandRequest.TargetKey, cancellationToken)
+                .ConfigureAwait(false);
+            if (resolution.Outcome != DocumentCacheAdminTargetResolutionOutcome.Completed)
+            {
+                return CreateTargetResolutionRejectedResult(commandRequest, resolution);
+            }
+        }
+
         IDocumentCacheProjectionSupervisor? projectionSupervisor =
             serviceProvider.GetService<IDocumentCacheProjectionSupervisor>();
         if (projectionSupervisor is not null)
@@ -269,17 +300,9 @@ internal static class DocumentCacheAdminCommandExecutor
             await projectionSupervisor
                 .RefreshAsync(DocumentCacheTargetRefreshReason.Startup, cancellationToken)
                 .ConfigureAwait(false);
-            return;
         }
 
-        IDocumentCacheAdminTargetResolver? targetResolver =
-            serviceProvider.GetService<IDocumentCacheAdminTargetResolver>();
-        if (targetResolver is not null)
-        {
-            await targetResolver
-                .ResolveAsync(commandRequest.TargetKey, cancellationToken)
-                .ConfigureAwait(false);
-        }
+        return null;
     }
 
     private static async Task WriteAdministrativeCommandResultAsync(
@@ -322,6 +345,30 @@ internal static class DocumentCacheAdminCommandExecutor
                     DocumentCacheAdministrativeDiagnosticCategory.WorkflowTimeout,
                     affectedDocumentIds: [],
                     "Administrative workflow timeout expired before a shared command result could be produced."
+                ),
+            ]
+        );
+
+    private static DocumentCacheAdministrativeCommandResult CreateTargetResolutionRejectedResult(
+        DocumentCacheAdminMutatingCommandRequest commandRequest,
+        DocumentCacheAdminTargetResolutionResult resolution
+    ) =>
+        new(
+            ToAdministrativeCommand(commandRequest.CommandName),
+            DocumentCacheAdministrativeTargetKey.FromTargetKey(commandRequest.TargetKey),
+            DocumentCacheAdministrativeCommandStatus.RejectedNoMutation,
+            DocumentCacheAdministrativeCommandClassification.TargetNotConfigured,
+            mutated: false,
+            phaseDiagnostics:
+            [
+                new DocumentCacheAdministrativePhaseDiagnostic(
+                    DocumentCacheAdministrativeCommandPhase.ResolveTarget,
+                    lastCompletedPhase: null,
+                    retryable: false,
+                    DocumentCacheAdministrativeDiagnosticCategory.TargetNotConfigured,
+                    affectedDocumentIds: [],
+                    resolution.FailureMessage
+                        ?? "DocumentCache target registry did not contain exactly the invocation target."
                 ),
             ]
         );
@@ -547,19 +594,140 @@ internal static class DocumentCacheAdminCommandExecutor
         CancellationToken cancellationToken
     )
     {
-        IDocumentCacheStatusService statusService =
-            serviceProvider.GetRequiredService<IDocumentCacheStatusService>();
-
         IDocumentCacheAdminTargetResolver? targetResolver =
             serviceProvider.GetService<IDocumentCacheAdminTargetResolver>();
         if (targetResolver is not null)
         {
-            await targetResolver.ResolveAsync(targetKey, cancellationToken).ConfigureAwait(false);
+            DocumentCacheAdminTargetResolutionResult resolution = await targetResolver
+                .ResolveAsync(targetKey, cancellationToken)
+                .ConfigureAwait(false);
+            if (resolution.Outcome != DocumentCacheAdminTargetResolutionOutcome.Completed)
+            {
+                return CreateTargetResolutionFailureStatusResponse(resolution);
+            }
         }
+
+        IDocumentCacheStatusService statusService =
+            serviceProvider.GetRequiredService<IDocumentCacheStatusService>();
 
         return await statusService
             .GetStatusAsync(cancellationToken, DocumentCacheStatusEvaluationMode.StandaloneDirectObservation)
             .ConfigureAwait(false);
+    }
+
+    private static DocumentCacheStatusResponse CreateTargetResolutionFailureStatusResponse(
+        DocumentCacheAdminTargetResolutionResult resolution
+    )
+    {
+        string message =
+            resolution.FailureMessage
+            ?? "DocumentCache target registry did not contain exactly the invocation target.";
+        DateTimeOffset observedAt = resolution.RegistrySnapshot.ObservedAt;
+        var notObservedInventory = new DocumentCacheStatusInventoryComponent(
+            DocumentCacheStatusInventoryStatus.NotObserved,
+            DocumentCacheStatusInventoryReason.None,
+            message: null
+        );
+        var unknownProviderPrerequisite = new DocumentCacheStatusProviderPrerequisiteComponent(
+            DocumentCacheStatusProviderPrerequisiteStatus.Unknown,
+            DocumentCacheStatusProviderPrerequisiteReason.None,
+            message: null
+        );
+
+        return new(
+            observedAt,
+            [
+                new DocumentCacheStatusTarget(
+                    DocumentCacheStatusTargetKey.FromTargetKey(resolution.TargetKey),
+                    targetGeneration: null,
+                    observedAt,
+                    durableObservedAt: null,
+                    provider: null,
+                    physicalSourceFingerprint: null,
+                    new DocumentCacheStatusResolutionComponent(
+                        DocumentCacheStatusResolutionStatus.Unresolved,
+                        DocumentCacheStatusResolutionReason.TargetNotFound,
+                        observedAt,
+                        message
+                    ),
+                    new DocumentCacheStatusEligibilityComponent(
+                        DocumentCacheStatusEligibilityStatus.Unknown,
+                        DocumentCacheStatusReason.UnresolvedTarget,
+                        message
+                    ),
+                    new DocumentCacheStatusInventoryComponentGroup(
+                        observedAt: null,
+                        notObservedInventory,
+                        notObservedInventory,
+                        notObservedInventory,
+                        notObservedInventory,
+                        new DocumentCacheStatusEnqueueTriggerComponent(
+                            DocumentCacheStatusEnqueueTriggerStatus.NotObserved,
+                            DocumentCacheStatusInventoryReason.None,
+                            message: null
+                        )
+                    ),
+                    new DocumentCacheStatusProviderPrerequisitesComponent(
+                        DocumentCacheStatusProviderPrerequisiteStatus.Unknown,
+                        DocumentCacheStatusProviderPrerequisiteReason.None,
+                        observedAt: null,
+                        unknownProviderPrerequisite,
+                        unknownProviderPrerequisite
+                    ),
+                    new DocumentCacheStatusLifecycleComponent(
+                        DocumentCacheStatusLifecycleState.Unknown,
+                        DocumentCacheStatusAvailability.Unknown,
+                        message
+                    ),
+                    new DocumentCacheStatusCacheAheadComponent(
+                        DocumentCacheStatusCacheAheadState.Unknown,
+                        recoveryRequired: null,
+                        message
+                    ),
+                    new DocumentCacheOperationalHealthComponent(
+                        DocumentCacheOperationalHealthStatus.Unknown,
+                        DocumentCacheStatusReason.UnresolvedTarget,
+                        message
+                    ),
+                    new DocumentCacheCaughtUpComponent(
+                        DocumentCacheCaughtUpStatus.Unknown,
+                        DocumentCacheStatusReason.UnresolvedTarget,
+                        message
+                    ),
+                    new DocumentCacheStatusQueueSummary(
+                        DocumentCacheStatusQueuePresence.Unavailable,
+                        oldestWorkFirstEnqueuedAt: null,
+                        oldestWorkAgeSeconds: null,
+                        DocumentCacheStatusBacklogEstimate.Unavailable
+                    ),
+                    new DocumentCacheStatusExecutionStateComponent(
+                        DocumentCacheStatusExecutionState.NotObserved,
+                        observedAt: null,
+                        activeWorkers: null,
+                        concurrencySlotsUsed: null,
+                        targetBackoffUntil: null,
+                        lastSuccessfulWorkAt: null,
+                        lastFailureAt: null,
+                        message
+                    ),
+                    activeCommand: null,
+                    lastEndedDiagnostic: null,
+                    new DocumentCacheStatusDiagnosticWindow<DocumentCacheStatusTargetDiagnosticEvent>([
+                        new DocumentCacheStatusTargetDiagnosticEvent(
+                            observedAt,
+                            DocumentCacheStatusTargetDiagnosticCategory.TargetResolution,
+                            message
+                        ),
+                    ]),
+                    new DocumentCacheStatusDiagnosticWindow<DocumentCacheStatusDocumentDiagnosticEvent>(),
+                    new DocumentCacheStatusDiagnosticWindow<DocumentCacheStatusPoisonTraversalDiagnosticEvent>(),
+                    DocumentCacheStatusEffectiveSettings.FromEffectiveSettings(
+                        DocumentCacheTargetEffectiveSettings.FromOptions(new DocumentCacheOptions())
+                    ),
+                    new DocumentCacheStatusEnqueueFailures()
+                ),
+            ]
+        );
     }
 
     private sealed class DocumentCacheAdminTimeoutScope : IDisposable
