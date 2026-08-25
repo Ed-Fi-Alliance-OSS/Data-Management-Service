@@ -611,6 +611,152 @@ public class Given_LocalCdcStateStore
     }
 
     [Test]
+    public async Task It_rejects_symlinked_binding_ancestors_before_missing_or_present_generation_state()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Ignore("Symlink creation is permission-sensitive on Windows.");
+        }
+
+        foreach (LocalCdcSymlinkAncestor ancestor in Enum.GetValues<LocalCdcSymlinkAncestor>())
+        {
+            foreach (bool createGenerationFile in new[] { false, true })
+            {
+                await WithSymlinkedAncestorAsync(
+                    LocalCdcStateKind.Bindings,
+                    ancestor,
+                    createGenerationFile,
+                    async root =>
+                    {
+                        LocalCdcBindingStateStore store = new(root.Path);
+
+                        CdcReadBindingStateStoreResult read = await store.ReadBindingAsync(
+                            SampleBinding.ToBindingIdentity(),
+                            CancellationToken.None
+                        );
+                        CdcCreateBindingStateStoreResult create = await store.CreateBindingIfAbsentAsync(
+                            SampleBinding,
+                            CancellationToken.None
+                        );
+                        CdcExactMatchBindingStateStoreResult exactMatch = await store.ExactMatchBindingAsync(
+                            SampleBinding,
+                            CancellationToken.None
+                        );
+                        CdcImportBindingStateStoreResult import = await store.ImportVerifiedBindingAsync(
+                            CreateAdoptionProof(SampleBinding),
+                            CancellationToken.None
+                        );
+                        CdcListBindingsStateStoreResult list = await store.ListBindingsAsync(
+                            SampleBinding.DeploymentKey,
+                            CancellationToken.None
+                        );
+
+                        ShouldBeLocalStateUnavailable(
+                            read.Should()
+                                .BeOfType<CdcReadBindingStateStoreResult.StateStoreFailure>()
+                                .Subject.Failure
+                        );
+                        ShouldBeLocalStateUnavailable(
+                            create
+                                .Should()
+                                .BeOfType<CdcCreateBindingStateStoreResult.StateStoreFailure>()
+                                .Subject.Failure
+                        );
+                        ShouldBeLocalStateUnavailable(
+                            exactMatch
+                                .Should()
+                                .BeOfType<CdcExactMatchBindingStateStoreResult.StateStoreFailure>()
+                                .Subject.Failure
+                        );
+                        ShouldBeLocalStateUnavailable(
+                            import
+                                .Should()
+                                .BeOfType<CdcImportBindingStateStoreResult.StateStoreFailure>()
+                                .Subject.Failure
+                        );
+                        ShouldBeLocalStateUnavailable(
+                            list.Should()
+                                .BeOfType<CdcListBindingsStateStoreResult.StateStoreFailure>()
+                                .Subject.Failure
+                        );
+                    }
+                );
+            }
+        }
+    }
+
+    [Test]
+    public async Task It_rejects_symlinked_incident_ancestors_before_missing_or_present_generation_state()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Ignore("Symlink creation is permission-sensitive on Windows.");
+        }
+
+        foreach (LocalCdcSymlinkAncestor ancestor in Enum.GetValues<LocalCdcSymlinkAncestor>())
+        {
+            foreach (bool createGenerationFile in new[] { false, true })
+            {
+                await WithSymlinkedAncestorAsync(
+                    LocalCdcStateKind.Incidents,
+                    ancestor,
+                    createGenerationFile,
+                    async root =>
+                    {
+                        if (ancestor is not LocalCdcSymlinkAncestor.Root)
+                        {
+                            await WriteStateFileAsync(root.Path, LocalCdcStateKind.Bindings);
+                        }
+
+                        LocalCdcBindingStateStore store = new(root.Path);
+
+                        CdcReadBindingStateStoreResult read = await store.ReadBindingAsync(
+                            SampleBinding.ToBindingIdentity(),
+                            CancellationToken.None
+                        );
+                        CdcLatchIncidentStateStoreResult latch = await store.LatchSourceHistoryLossAsync(
+                            CreateIncident(SampleBinding),
+                            CancellationToken.None
+                        );
+                        CdcListBindingsStateStoreResult list = await store.ListBindingsAsync(
+                            SampleBinding.DeploymentKey,
+                            CancellationToken.None
+                        );
+                        CdcDeleteBindingStateStoreResult delete =
+                            await store.DeleteStateAfterVerifiedCleanupAsync(
+                                CreateCleanupProof(SampleBinding),
+                                CancellationToken.None
+                            );
+
+                        ShouldBeLocalStateUnavailable(
+                            read.Should()
+                                .BeOfType<CdcReadBindingStateStoreResult.StateStoreFailure>()
+                                .Subject.Failure
+                        );
+                        ShouldBeLocalStateUnavailable(
+                            latch
+                                .Should()
+                                .BeOfType<CdcLatchIncidentStateStoreResult.StateStoreFailure>()
+                                .Subject.Failure
+                        );
+                        ShouldBeLocalStateUnavailable(
+                            list.Should()
+                                .BeOfType<CdcListBindingsStateStoreResult.StateStoreFailure>()
+                                .Subject.Failure
+                        );
+                        ShouldBeLocalStateUnavailable(
+                            delete
+                                .Should()
+                                .BeOfType<CdcDeleteBindingStateStoreResult.StateStoreFailure>()
+                                .Subject.Failure
+                        );
+                    }
+                );
+            }
+        }
+    }
+
+    [Test]
     public async Task It_preserves_incident_latch_on_partial_retirement_and_retries_orphan_cleanup()
     {
         using TempCdcStateRoot bindingFailureRoot = new();
@@ -846,6 +992,138 @@ public class Given_LocalCdcStateStore
         index.Should().BeGreaterThanOrEqualTo(0);
 
         return string.Concat(source.AsSpan(0, index), newValue, source.AsSpan(index + oldValue.Length));
+    }
+
+    private static void ShouldBeLocalStateUnavailable(CdcStateStoreFailure failure)
+    {
+        failure.Kind.Should().Be(CdcStateStoreFailureKind.LocalStateUnavailable);
+        failure
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic => diagnostic.Category == CdcDiagnosticCategory.LocalStateUnavailable);
+    }
+
+    private static async Task WithSymlinkedAncestorAsync(
+        LocalCdcStateKind stateKind,
+        LocalCdcSymlinkAncestor ancestor,
+        bool createGenerationFile,
+        Func<TempCdcStateRoot, Task> action
+    )
+    {
+        TempCdcStateRoot root = new();
+        TempCdcStateRoot target = new();
+
+        try
+        {
+            if (createGenerationFile)
+            {
+                await WriteStateFileAsync(target.Path, stateKind);
+            }
+
+            CreateSymlinkedAncestor(root.Path, target.Path, stateKind, ancestor);
+            await action(root);
+        }
+        finally
+        {
+            root.Dispose();
+            target.Dispose();
+        }
+    }
+
+    private static void CreateSymlinkedAncestor(
+        string rootPath,
+        string targetRootPath,
+        LocalCdcStateKind stateKind,
+        LocalCdcSymlinkAncestor ancestor
+    )
+    {
+        string stateDirectoryName = StateDirectoryName(stateKind);
+        string targetDirectory = ancestor switch
+        {
+            LocalCdcSymlinkAncestor.Root => targetRootPath,
+            LocalCdcSymlinkAncestor.StateKind => System.IO.Path.Combine(targetRootPath, stateDirectoryName),
+            LocalCdcSymlinkAncestor.Deployment => System.IO.Path.Combine(
+                targetRootPath,
+                stateDirectoryName,
+                SampleBinding.DeploymentKey
+            ),
+            LocalCdcSymlinkAncestor.Instance => System.IO.Path.Combine(
+                targetRootPath,
+                stateDirectoryName,
+                SampleBinding.DeploymentKey,
+                SampleBinding.InstanceKey
+            ),
+            _ => throw new InvalidOperationException("Unsupported symlink ancestor."),
+        };
+        string linkPath = ancestor switch
+        {
+            LocalCdcSymlinkAncestor.Root => rootPath,
+            LocalCdcSymlinkAncestor.StateKind => System.IO.Path.Combine(rootPath, stateDirectoryName),
+            LocalCdcSymlinkAncestor.Deployment => System.IO.Path.Combine(
+                rootPath,
+                stateDirectoryName,
+                SampleBinding.DeploymentKey
+            ),
+            LocalCdcSymlinkAncestor.Instance => System.IO.Path.Combine(
+                rootPath,
+                stateDirectoryName,
+                SampleBinding.DeploymentKey,
+                SampleBinding.InstanceKey
+            ),
+            _ => throw new InvalidOperationException("Unsupported symlink ancestor."),
+        };
+
+        Directory.CreateDirectory(targetDirectory);
+        string? parentDirectory = System.IO.Path.GetDirectoryName(linkPath);
+        if (parentDirectory is not null)
+        {
+            Directory.CreateDirectory(parentDirectory);
+        }
+
+        Directory.CreateSymbolicLink(linkPath, targetDirectory);
+    }
+
+    private static async Task WriteStateFileAsync(string rootPath, LocalCdcStateKind stateKind)
+    {
+        string path = StatePath(rootPath, stateKind);
+        Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
+        await File.WriteAllTextAsync(
+            path,
+            stateKind is LocalCdcStateKind.Bindings
+                ? CdcJsonContract.Serialize(SampleBinding)
+                : CdcJsonContract.Serialize(CreateIncident(SampleBinding))
+        );
+        SetOwnerOnlyFilePermissionsIfSupported(path);
+    }
+
+    private static string StatePath(string rootPath, LocalCdcStateKind stateKind) =>
+        System.IO.Path.Combine(
+            rootPath,
+            StateDirectoryName(stateKind),
+            SampleBinding.DeploymentKey,
+            SampleBinding.InstanceKey,
+            $"{SampleBinding.Generation}.json"
+        );
+
+    private static string StateDirectoryName(LocalCdcStateKind stateKind) =>
+        stateKind switch
+        {
+            LocalCdcStateKind.Bindings => "bindings",
+            LocalCdcStateKind.Incidents => "incidents",
+            _ => throw new InvalidOperationException("Unsupported local CDC state kind."),
+        };
+
+    private enum LocalCdcStateKind
+    {
+        Bindings,
+        Incidents,
+    }
+
+    private enum LocalCdcSymlinkAncestor
+    {
+        Root,
+        StateKind,
+        Deployment,
+        Instance,
     }
 
     private sealed class TempCdcStateRoot : IDisposable

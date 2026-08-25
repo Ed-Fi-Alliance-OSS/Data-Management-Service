@@ -135,17 +135,18 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             return new CdcListBindingsStateStoreResult.StateStoreFailure(deploymentPath.ToFailure());
         }
 
-        CdcStateStoreFailure? collisionFailure = CheckPathCaseCollision(
+        CdcStateStoreFailure? bindingAncestorFailure = ValidateExistingDeploymentPathAncestors(
             CdcStateStorePathResolver.BindingsDirectoryName,
-            deploymentPath.DeploymentKey!
+            deploymentPath.DeploymentKey!,
+            out bool bindingDeploymentDirectoryExists
         );
-        if (collisionFailure is not null)
+        if (bindingAncestorFailure is not null)
         {
-            return new CdcListBindingsStateStoreResult.StateStoreFailure(collisionFailure);
+            return new CdcListBindingsStateStoreResult.StateStoreFailure(bindingAncestorFailure);
         }
 
         Dictionary<CdcBindingIdentity, CdcStoredBindingState> statesByIdentity = [];
-        if (Directory.Exists(deploymentPath.BindingDeploymentDirectoryPath!))
+        if (bindingDeploymentDirectoryExists)
         {
             CdcStateStoreFailure? bindingFailure = await ReadDeploymentBindingsAsync(
                 deploymentPath,
@@ -406,6 +407,16 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             return new CdcDeleteBindingStateStoreResult.StateStoreFailure(incidentPath.ToFailure());
         }
 
+        CdcStateStoreFailure? bindingAncestorFailure = ValidateExistingStatePathAncestors(
+            CdcStateStorePathResolver.BindingsDirectoryName,
+            identity.DeploymentKey,
+            identity.InstanceKey
+        );
+        if (bindingAncestorFailure is not null)
+        {
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(bindingAncestorFailure);
+        }
+
         CdcStateStoreFailure? bindingDeleteFailure = DeleteStateFile(
             bindingPath.FilePath!,
             "delete binding state"
@@ -413,6 +424,16 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         if (bindingDeleteFailure is not null)
         {
             return new CdcDeleteBindingStateStoreResult.StateStoreFailure(bindingDeleteFailure);
+        }
+
+        CdcStateStoreFailure? incidentAncestorFailure = ValidateExistingStatePathAncestors(
+            CdcStateStorePathResolver.IncidentsDirectoryName,
+            identity.DeploymentKey,
+            identity.InstanceKey
+        );
+        if (incidentAncestorFailure is not null)
+        {
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(incidentAncestorFailure);
         }
 
         CdcStateStoreFailure? incidentDeleteFailure = DeleteStateFileIfPresent(
@@ -461,6 +482,16 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         if (!incidentPath.Succeeded)
         {
             return new CdcDeleteBindingStateStoreResult.StateStoreFailure(incidentPath.ToFailure());
+        }
+
+        CdcStateStoreFailure? incidentAncestorFailure = ValidateExistingStatePathAncestors(
+            CdcStateStorePathResolver.IncidentsDirectoryName,
+            identity.DeploymentKey,
+            identity.InstanceKey
+        );
+        if (incidentAncestorFailure is not null)
+        {
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(incidentAncestorFailure);
         }
 
         CdcStateStoreFailure? incidentDeleteFailure = DeleteStateFile(
@@ -716,16 +747,17 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         CancellationToken cancellationToken
     )
     {
-        CdcStateStoreFailure? collisionFailure = CheckPathCaseCollision(
+        CdcStateStoreFailure? incidentAncestorFailure = ValidateExistingDeploymentPathAncestors(
             CdcStateStorePathResolver.IncidentsDirectoryName,
-            deploymentPath.DeploymentKey!
+            deploymentPath.DeploymentKey!,
+            out bool incidentDeploymentDirectoryExists
         );
-        if (collisionFailure is not null)
+        if (incidentAncestorFailure is not null)
         {
-            return collisionFailure;
+            return incidentAncestorFailure;
         }
 
-        if (!Directory.Exists(deploymentPath.IncidentDeploymentDirectoryPath!))
+        if (!incidentDeploymentDirectoryExists)
         {
             return null;
         }
@@ -824,6 +856,16 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         if (!bindingPath.Succeeded)
         {
             return LocalBindingReadResult.Failed(bindingPath.ToFailure());
+        }
+
+        CdcStateStoreFailure? ancestorFailure = ValidateExistingStatePathAncestors(
+            CdcStateStorePathResolver.BindingsDirectoryName,
+            identity.DeploymentKey,
+            identity.InstanceKey
+        );
+        if (ancestorFailure is not null)
+        {
+            return LocalBindingReadResult.Failed(ancestorFailure);
         }
 
         CdcStateStoreFailure? collisionFailure = CheckPathCaseCollision(
@@ -957,6 +999,16 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         if (!incidentPath.Succeeded)
         {
             return LocalIncidentReadResult.Failed(incidentPath.ToFailure());
+        }
+
+        CdcStateStoreFailure? ancestorFailure = ValidateExistingStatePathAncestors(
+            CdcStateStorePathResolver.IncidentsDirectoryName,
+            identity.DeploymentKey,
+            identity.InstanceKey
+        );
+        if (ancestorFailure is not null)
+        {
+            return LocalIncidentReadResult.Failed(ancestorFailure);
         }
 
         CdcStateStoreFailure? collisionFailure = CheckPathCaseCollision(
@@ -1140,7 +1192,16 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         string currentPath = _pathResolver.RootPath;
         foreach (string segment in segments)
         {
-            if (!Directory.Exists(currentPath))
+            CdcStateStoreFailure? directoryFailure = ValidateDirectoryIfExists(
+                currentPath,
+                out bool directoryExists
+            );
+            if (directoryFailure is not null)
+            {
+                return directoryFailure;
+            }
+
+            if (!directoryExists)
             {
                 return null;
             }
@@ -1154,6 +1215,79 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             currentPath = Path.Combine(currentPath, segment);
         }
 
+        return null;
+    }
+
+    private CdcStateStoreFailure? ValidateExistingDeploymentPathAncestors(
+        string stateDirectoryName,
+        string deploymentKey,
+        out bool deploymentDirectoryExists
+    )
+    {
+        return ValidateExistingStateDirectoryPath(
+            [stateDirectoryName, deploymentKey],
+            out deploymentDirectoryExists
+        );
+    }
+
+    private CdcStateStoreFailure? ValidateExistingStatePathAncestors(
+        string stateDirectoryName,
+        string deploymentKey,
+        string instanceKey
+    )
+    {
+        CdcStateStoreFailure? failure = ValidateExistingStateDirectoryPath(
+            [stateDirectoryName, deploymentKey, instanceKey],
+            out _
+        );
+
+        return failure;
+    }
+
+    private CdcStateStoreFailure? ValidateExistingStateDirectoryPath(
+        IReadOnlyList<string> segments,
+        out bool fullDirectoryPathExists
+    )
+    {
+        fullDirectoryPathExists = false;
+        string currentPath = _pathResolver.RootPath;
+
+        CdcStateStoreFailure? rootFailure = ValidateDirectoryIfExists(currentPath, out bool rootExists);
+        if (rootFailure is not null)
+        {
+            return rootFailure;
+        }
+
+        if (!rootExists)
+        {
+            return null;
+        }
+
+        foreach (string segment in segments)
+        {
+            CdcStateStoreFailure? collisionFailure = CheckCaseCollision(currentPath, segment);
+            if (collisionFailure is not null)
+            {
+                return collisionFailure;
+            }
+
+            currentPath = Path.Combine(currentPath, segment);
+            CdcStateStoreFailure? directoryFailure = ValidateDirectoryIfExists(
+                currentPath,
+                out bool directoryExists
+            );
+            if (directoryFailure is not null)
+            {
+                return directoryFailure;
+            }
+
+            if (!directoryExists)
+            {
+                return null;
+            }
+        }
+
+        fullDirectoryPathExists = true;
         return null;
     }
 
@@ -1233,18 +1367,13 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
 
     private static CdcStateStoreFailure? ValidateDirectory(string path)
     {
-        FileInfo fileInfo = new(path);
-        if (fileInfo.Exists)
+        CdcStateStoreFailure? directoryFailure = ValidateDirectoryIfExists(path, out bool directoryExists);
+        if (directoryFailure is not null)
         {
-            return CdcStateStoreFailure.LocalStateUnavailable(
-                path,
-                "CDC local state path is an unexpected non-directory file."
-            );
+            return directoryFailure;
         }
 
-        DirectoryInfo directoryInfo = new(path);
-        directoryInfo.Refresh();
-        if (!directoryInfo.Exists)
+        if (!directoryExists)
         {
             return CdcStateStoreFailure.LocalStateUnavailable(
                 path,
@@ -1252,17 +1381,66 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             );
         }
 
-        return IsSymbolicLink(directoryInfo)
-            ? CdcStateStoreFailure.LocalStateUnavailable(
+        return null;
+    }
+
+    private static CdcStateStoreFailure? ValidateDirectoryIfExists(string path, out bool directoryExists)
+    {
+        directoryExists = false;
+
+        DirectoryInfo directoryInfo = new(path);
+        directoryInfo.Refresh();
+        if (IsSymbolicLink(directoryInfo))
+        {
+            directoryExists = true;
+            return CdcStateStoreFailure.LocalStateUnavailable(
                 path,
-                "CDC local state directory must not be a symlink."
-            )
-            : null;
+                "CDC local state directory must not be a symlink or reparse point."
+            );
+        }
+
+        if (directoryInfo.Exists)
+        {
+            directoryExists = true;
+            return null;
+        }
+
+        FileInfo fileInfo = new(path);
+        fileInfo.Refresh();
+        if (IsSymbolicLink(fileInfo))
+        {
+            directoryExists = true;
+            return CdcStateStoreFailure.LocalStateUnavailable(
+                path,
+                "CDC local state directory must not be a symlink or reparse point."
+            );
+        }
+
+        if (fileInfo.Exists)
+        {
+            directoryExists = true;
+            return CdcStateStoreFailure.LocalStateUnavailable(
+                path,
+                "CDC local state path is an unexpected non-directory file."
+            );
+        }
+
+        return null;
     }
 
     private static CdcStateStoreFailure? ValidateRegularFile(string path)
     {
-        if (Directory.Exists(path))
+        DirectoryInfo directoryInfo = new(path);
+        directoryInfo.Refresh();
+        if (IsSymbolicLink(directoryInfo))
+        {
+            return CdcStateStoreFailure.LocalStateUnavailable(
+                path,
+                "CDC local state file must not be a symlink or reparse point."
+            );
+        }
+
+        if (directoryInfo.Exists)
         {
             return CdcStateStoreFailure.LocalStateUnavailable(
                 path,
@@ -1272,14 +1450,20 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
 
         FileInfo fileInfo = new(path);
         fileInfo.Refresh();
+        if (IsSymbolicLink(fileInfo))
+        {
+            return CdcStateStoreFailure.LocalStateUnavailable(
+                path,
+                "CDC local state file must not be a symlink or reparse point."
+            );
+        }
+
         if (!fileInfo.Exists)
         {
             return CdcStateStoreFailure.LocalStateUnavailable(path, "CDC local state file is unavailable.");
         }
 
-        return IsSymbolicLink(fileInfo)
-            ? CdcStateStoreFailure.LocalStateUnavailable(path, "CDC local state file must not be a symlink.")
-            : null;
+        return null;
     }
 
     private CdcStateStoreFailure? ApplyOwnerOnlyDirectoryPermissions(string path)
@@ -1616,8 +1800,27 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
 
     private DateTimeOffset ObservedAt() => _timeProvider.GetUtcNow().ToUniversalTime();
 
-    private static bool IsSymbolicLink(FileSystemInfo info) =>
-        info.LinkTarget is not null || (info.Attributes & FileAttributes.ReparsePoint) != 0;
+    private static bool IsSymbolicLink(FileSystemInfo info)
+    {
+        if (info.LinkTarget is not null)
+        {
+            return true;
+        }
+
+        if (!info.Exists)
+        {
+            return false;
+        }
+
+        try
+        {
+            return (info.Attributes & FileAttributes.ReparsePoint) != 0;
+        }
+        catch (Exception exception) when (IsFileSystemException(exception))
+        {
+            return false;
+        }
+    }
 
     private static bool IsFileSystemException(Exception exception) =>
         exception
