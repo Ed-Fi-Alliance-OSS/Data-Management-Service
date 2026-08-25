@@ -50,7 +50,8 @@ public class Given_LocalCdcStateStore
         CdcCreateBindingStateStoreResult mismatch = await store.CreateBindingIfAbsentAsync(
             SampleBinding with
             {
-                ConnectorName = "dms-local-data-store-1-g1-other",
+                PhysicalSourceFingerprint =
+                    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             },
             CancellationToken.None
         );
@@ -72,7 +73,7 @@ public class Given_LocalCdcStateStore
             .Subject.Mismatch.Differences.Should()
             .ContainSingle(difference =>
                 difference.Kind == CdcBindingFieldDifferenceKind.DifferentValue
-                && difference.FieldName == "connectorName"
+                && difference.FieldName == "physicalSourceFingerprint"
             );
         read.Should()
             .BeOfType<CdcReadBindingStateStoreResult.Found>()
@@ -236,6 +237,97 @@ public class Given_LocalCdcStateStore
             .Should()
             .Contain(CdcDiagnosticCategory.InventoryIncomplete);
         readAfterRejectedDelete.Should().BeOfType<CdcReadBindingStateStoreResult.Found>();
+    }
+
+    [Test]
+    public async Task It_rejects_invalid_binding_input_without_writing_local_state()
+    {
+        using TempCdcStateRoot tempRoot = new();
+        LocalCdcBindingStateStore store = new(tempRoot.Path);
+        CdcBinding nonDeterministicBinding = SampleBinding with
+        {
+            ConnectorName = "dms-local-data-store-1-g1-other",
+        };
+        CdcAdoptionProof invalidBindingProof = CreateAdoptionProof(SampleBinding with { Version = 2 });
+
+        CdcCreateBindingStateStoreResult createResult = await store.CreateBindingIfAbsentAsync(
+            nonDeterministicBinding,
+            CancellationToken.None
+        );
+        CdcImportBindingStateStoreResult importResult = await store.ImportVerifiedBindingAsync(
+            invalidBindingProof,
+            CancellationToken.None
+        );
+
+        createResult
+            .Should()
+            .BeOfType<CdcCreateBindingStateStoreResult.StateStoreFailure>()
+            .Subject.Failure.Should()
+            .Match<CdcStateStoreFailure>(failure =>
+                failure.Kind == CdcStateStoreFailureKind.InvalidOperation
+                && failure.Diagnostics.Any(diagnostic =>
+                    diagnostic.Category == CdcDiagnosticCategory.MalformedPayload
+                    && diagnostic.Path == "$.connectorName"
+                )
+            );
+        importResult
+            .Should()
+            .BeOfType<CdcImportBindingStateStoreResult.StateStoreFailure>()
+            .Subject.Failure.Kind.Should()
+            .Be(CdcStateStoreFailureKind.InvalidOperation);
+        File.Exists(tempRoot.BindingPath(SampleBinding)).Should().BeFalse();
+    }
+
+    [Test]
+    public async Task It_treats_contract_invalid_persisted_bindings_as_store_failures()
+    {
+        using TempCdcStateRoot tempRoot = new();
+        LocalCdcBindingStateStore store = new(tempRoot.Path);
+        CdcBinding nonDeterministicBinding = SampleBinding with
+        {
+            ConnectorName = "dms-local-data-store-1-g1-other",
+        };
+
+        await store.CreateBindingIfAbsentAsync(SampleBinding, CancellationToken.None);
+        await File.WriteAllTextAsync(
+            tempRoot.BindingPath(SampleBinding),
+            CdcJsonContract.Serialize(nonDeterministicBinding)
+        );
+
+        CdcReadBindingStateStoreResult readResult = await store.ReadBindingAsync(
+            SampleBinding.ToBindingIdentity(),
+            CancellationToken.None
+        );
+        CdcExactMatchBindingStateStoreResult exactMatchResult = await store.ExactMatchBindingAsync(
+            SampleBinding,
+            CancellationToken.None
+        );
+        CdcListBindingsStateStoreResult listResult = await store.ListBindingsAsync(
+            SampleBinding.DeploymentKey,
+            CancellationToken.None
+        );
+
+        readResult
+            .Should()
+            .BeOfType<CdcReadBindingStateStoreResult.StateStoreFailure>()
+            .Subject.Failure.Should()
+            .Match<CdcStateStoreFailure>(failure =>
+                failure.Kind == CdcStateStoreFailureKind.InvalidPersistedBinding
+                && failure.Diagnostics.Any(diagnostic =>
+                    diagnostic.Category == CdcDiagnosticCategory.MalformedPayload
+                    && diagnostic.Path == "$.connectorName"
+                )
+            );
+        exactMatchResult
+            .Should()
+            .BeOfType<CdcExactMatchBindingStateStoreResult.StateStoreFailure>()
+            .Subject.Failure.Kind.Should()
+            .Be(CdcStateStoreFailureKind.InvalidPersistedBinding);
+        listResult
+            .Should()
+            .BeOfType<CdcListBindingsStateStoreResult.StateStoreFailure>()
+            .Subject.Failure.Kind.Should()
+            .Be(CdcStateStoreFailureKind.InvalidPersistedBinding);
     }
 
     [Test]

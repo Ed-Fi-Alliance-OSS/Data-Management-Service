@@ -73,6 +73,12 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
     {
         ArgumentNullException.ThrowIfNull(binding);
 
+        CdcStateStoreFailure? bindingInputFailure = ValidateBindingInput(binding);
+        if (bindingInputFailure is not null)
+        {
+            return new CdcExactMatchBindingStateStoreResult.StateStoreFailure(bindingInputFailure);
+        }
+
         CdcBindingIdentity identity = binding.ToBindingIdentity();
         LocalBindingReadResult readResult = await ReadBindingStateAsync(identity, cancellationToken);
         if (readResult.Failure is not null)
@@ -399,6 +405,12 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
     )
     {
         ArgumentNullException.ThrowIfNull(binding);
+
+        CdcStateStoreFailure? bindingInputFailure = ValidateBindingInput(binding);
+        if (bindingInputFailure is not null)
+        {
+            return LocalCreateBindingResult.Failed(bindingInputFailure);
+        }
 
         CdcStateStorePathResolution bindingPath = _pathResolver.ResolveBindingPath(
             binding.ToBindingIdentity()
@@ -801,10 +813,18 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         }
 
         CdcContractReadResult<CdcBinding> readResult = CdcJsonContract.Deserialize<CdcBinding>(json);
-        return readResult.Succeeded
+        if (!readResult.Succeeded)
+        {
+            return LocalBindingFileReadResult.Failed(
+                CdcStateStoreFailure.InvalidPersistedBinding(readResult.Diagnostics)
+            );
+        }
+
+        CdcContractValidationResult bindingValidation = CdcBindingValidator.Validate(readResult.Contract!);
+        return bindingValidation.Succeeded
             ? LocalBindingFileReadResult.Read(readResult.Contract!, json)
             : LocalBindingFileReadResult.Failed(
-                CdcStateStoreFailure.InvalidPersistedBinding(readResult.Diagnostics)
+                CdcStateStoreFailure.InvalidPersistedBinding(bindingValidation.Diagnostics)
             );
     }
 
@@ -1240,6 +1260,15 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             incident,
             DateTimeOffset.UtcNow
         );
+
+        return validationResult.Succeeded
+            ? null
+            : CdcStateStoreFailure.InvalidOperation(validationResult.Diagnostics);
+    }
+
+    private static CdcStateStoreFailure? ValidateBindingInput(CdcBinding binding)
+    {
+        CdcContractValidationResult validationResult = CdcBindingValidator.Validate(binding);
 
         return validationResult.Succeeded
             ? null

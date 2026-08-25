@@ -131,6 +131,42 @@ public class Given_CdcBindingExactMatch
             );
     }
 
+    [Test]
+    public void It_reports_contract_validation_diagnostics_even_when_persisted_fields_match()
+    {
+        CdcBinding invalidVersionBinding = SampleBinding with { Version = 2 };
+        CdcBinding invalidArtifactBinding = SampleBinding with
+        {
+            ConnectorName = "dms-local-data-store-1-g1-other",
+        };
+
+        CdcBindingExactMatchResult invalidVersionResult = CdcBindingExactMatch.Compare(
+            invalidVersionBinding,
+            CdcJsonContract.Serialize(invalidVersionBinding)
+        );
+        CdcBindingExactMatchResult invalidArtifactResult = CdcBindingExactMatch.Compare(
+            invalidArtifactBinding,
+            CdcJsonContract.Serialize(invalidArtifactBinding)
+        );
+
+        invalidVersionResult.Succeeded.Should().BeFalse();
+        invalidVersionResult.Differences.Should().BeEmpty();
+        invalidVersionResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Category == CdcDiagnosticCategory.InvalidContractVersion
+                && diagnostic.Path == "$.version"
+            );
+        invalidArtifactResult.Succeeded.Should().BeFalse();
+        invalidArtifactResult.Differences.Should().BeEmpty();
+        invalidArtifactResult
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Category == CdcDiagnosticCategory.MalformedPayload
+                && diagnostic.Path == "$.connectorName"
+            );
+    }
+
     private static string SetField(string fieldName, object value)
     {
         JsonObject root = JsonNode.Parse(CdcJsonContract.Serialize(SampleBinding))!.AsObject();

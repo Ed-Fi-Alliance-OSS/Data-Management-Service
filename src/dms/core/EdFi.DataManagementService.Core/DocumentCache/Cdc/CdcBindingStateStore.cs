@@ -309,8 +309,16 @@ internal static class CdcBindingExactMatch
         CdcContractReadResult<CdcBinding> readResult = CdcJsonContract.Deserialize<CdcBinding>(
             persistedBindingJson
         );
+        CdcContractValidationResult bindingValidation = readResult.Contract is null
+            ? CdcContractValidationResult.Success
+            : CdcBindingValidator.Validate(readResult.Contract);
 
-        return new(expectedBinding, readResult.Contract, differences, readResult.Diagnostics);
+        return new(
+            expectedBinding,
+            readResult.Contract,
+            differences,
+            [.. readResult.Diagnostics, .. bindingValidation.Diagnostics]
+        );
     }
 
     private static JsonDocument? ParseBindingJson(
