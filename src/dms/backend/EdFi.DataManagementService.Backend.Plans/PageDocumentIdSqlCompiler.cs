@@ -534,9 +534,9 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             _planSqlDialect.AppendCursorSelectRowLimitPrefix(writer, cursor.PageSizeParameterName);
         }
 
+        AppendCandidateProjectionSql(writer, mode);
+
         writer
-            .Append($"{_rootAlias}.")
-            .AppendQuoted(DocumentIdColumnName)
             .AppendLine()
             .Append("FROM ")
             .AppendRelation(new SqlRelationRef.PhysicalTable(spec.RootTable))
@@ -595,29 +595,83 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Resolves the page-selection ordering column. Only traditional paging can order by the mirrored
-    /// <c>ContentVersion</c> column; a cursor page is always ordered by <c>DocumentId</c>, because a
-    /// token anchored on the highest selected <c>DocumentId</c> is only safe when that is also the
-    /// page's ordering key.
+    /// Emits the candidate projection list, which is asymmetric by design.
     /// </summary>
-    private static string ResolveOrderingColumnName(PageCandidateMode mode)
+    /// <remarks>
+    /// A <c>DocumentId</c>-anchored mode projects <c>DocumentId</c> alone, exactly as before, so its
+    /// emitted SQL is unchanged.
+    /// <para>
+    /// Under a <c>ContentVersion</c> anchor the two shapes differ, and the difference is load-bearing.
+    /// The unpaged candidate relation projects the anchor alone: its consumer ranks and cuts boundaries
+    /// on that column and hands the value back, so the anchor is the whole result. A page cannot do
+    /// that. <c>DocumentId</c> feeds the keyset insert and every downstream hydration join, while
+    /// <c>ContentVersion</c> is the continuation anchor, and hydration can only read columns this
+    /// embedded SQL projects — so a page projects both. Projecting <c>DocumentId</c> alone would
+    /// compile and then force a second lookup after selection to recover the anchor, which is the
+    /// concurrent-delete stall cursor paging was designed against: a page whose rows are all deleted
+    /// between selection and hydration must still report where it ended.
+    /// </para>
+    /// </remarks>
+    private static void AppendCandidateProjectionSql(SqlWriter writer, PageCandidateMode mode)
     {
-        if (mode is not PageCandidateMode.Traditional traditional)
+        if (ResolveOrderingMode(mode) is PageOrderingMode.DocumentId)
         {
-            return DocumentIdColumnName;
+            writer.Append($"{_rootAlias}.").AppendQuoted(DocumentIdColumnName);
+
+            return;
         }
 
-        return traditional.OrderingMode switch
+        if (mode is PageCandidateMode.UnpagedCandidates)
+        {
+            writer.Append($"{_rootAlias}.").AppendQuoted(ContentVersionColumnName);
+
+            return;
+        }
+
+        writer
+            .Append($"{_rootAlias}.")
+            .AppendQuoted(DocumentIdColumnName)
+            .Append($", {_rootAlias}.")
+            .AppendQuoted(ContentVersionColumnName);
+    }
+
+    /// <summary>
+    /// Resolves the anchor column of the supplied mode: the column page selection is ordered by, the
+    /// column a cursor's bounds are compared against, and the column whose maximum anchors the
+    /// continuation token issued for the page.
+    /// </summary>
+    /// <remarks>
+    /// Every mode resolves through here, so ordering, bounds, and projection cannot name different
+    /// columns for one plan. Core resolves which anchor a request gets; this only maps that choice to a
+    /// column name.
+    /// </remarks>
+    private static string ResolveOrderingColumnName(PageCandidateMode mode) =>
+        ResolveOrderingMode(mode) switch
         {
             PageOrderingMode.DocumentId => DocumentIdColumnName,
             PageOrderingMode.ContentVersion => ContentVersionColumnName,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(mode),
-                traditional.OrderingMode,
+                ResolveOrderingMode(mode),
                 "Unsupported page ordering mode."
             ),
         };
-    }
+
+    /// <summary>
+    /// Reads the anchor off whichever mode this is. Every candidate mode carries one.
+    /// </summary>
+    private static PageOrderingMode ResolveOrderingMode(PageCandidateMode mode) =>
+        mode switch
+        {
+            PageCandidateMode.Traditional traditional => traditional.OrderingMode,
+            PageCandidateMode.Cursor cursor => cursor.OrderingMode,
+            PageCandidateMode.UnpagedCandidates unpaged => unpaged.OrderingMode,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(mode),
+                mode.GetType().Name,
+                "Unsupported page candidate mode."
+            ),
+        };
 
     /// <summary>
     /// Emits canonical SQL for total-row count selection.
@@ -746,8 +800,14 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Emits one inclusive cursor bound predicate against the root <c>DocumentId</c>.
+    /// Emits one inclusive cursor bound predicate against the mode's anchor column.
     /// </summary>
+    /// <remarks>
+    /// The operators stay inclusive under either anchor. <c>ContentVersion &gt; @anchor</c> and
+    /// <c>ContentVersion &gt;= @anchor + 1</c> are the same predicate over an integer sequence, so
+    /// reusing the inclusive form keeps one bound shape, one token shape, and one partition-range
+    /// assembler rather than a second set that would have to be kept in step with the first.
+    /// </remarks>
     private void AppendCursorBoundSql(SqlWriter writer, PageCandidateMode.Cursor cursor, int boundIndex)
     {
         var (operatorToken, parameterName) = boundIndex switch
@@ -764,7 +824,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         _planSqlDialect.AppendComparisonSql(
             writer,
             _rootAlias,
-            new DbColumnName(DocumentIdColumnName),
+            new DbColumnName(ResolveOrderingColumnName(cursor)),
             operatorToken,
             parameterName,
             ScalarKind.Int64

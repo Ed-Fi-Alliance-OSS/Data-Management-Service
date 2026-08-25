@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -185,6 +186,188 @@ public class Given_PageDocumentIdSqlCompiler_In_Unpaged_Candidates_Mode
     }
 }
 
+/// <summary>
+/// A cursor page whose request resolved a ContentVersion anchor. Bounds, ordering, and projection all
+/// follow the anchor; the page-size clause and everything the filter and authorization fragments emit
+/// are untouched by it.
+/// </summary>
+[TestFixture]
+public class Given_PageDocumentIdSqlCompiler_In_Content_Version_Anchored_Cursor_Mode
+{
+    private static PageDocumentIdSqlPlan Compile(SqlDialect dialect) =>
+        new PageDocumentIdSqlCompiler(dialect).Compile(
+            CandidateModeTestSpecs.CreateSpec(
+                new PageCandidateMode.Cursor(OrderingMode: PageOrderingMode.ContentVersion)
+            )
+        );
+
+    [Test]
+    public void It_should_bound_the_page_on_the_content_version_for_pgsql()
+    {
+        var sql = Compile(SqlDialect.Pgsql).PageDocumentIdSql;
+
+        sql.Should().Contain("AND (r.\"ContentVersion\" >= @cursorMin)");
+        sql.Should().Contain("AND (r.\"ContentVersion\" <= @cursorMax)");
+        sql.Should().NotContain("\"DocumentId\" >=");
+        sql.Should().NotContain("\"DocumentId\" <=");
+    }
+
+    [Test]
+    public void It_should_bound_the_page_on_the_content_version_for_mssql()
+    {
+        var sql = Compile(SqlDialect.Mssql).PageDocumentIdSql;
+
+        sql.Should().Contain("AND (r.[ContentVersion] >= @cursorMin)");
+        sql.Should().Contain("AND (r.[ContentVersion] <= @cursorMax)");
+        sql.Should().NotContain("[DocumentId] >=");
+        sql.Should().NotContain("[DocumentId] <=");
+    }
+
+    /// <summary>
+    /// The bounds stay inclusive under this anchor. An exclusive lower bound would be the same
+    /// predicate over an integer sequence, and one bound shape keeps one token shape.
+    /// </summary>
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_keep_the_inclusive_bound_operators(SqlDialect dialect)
+    {
+        var sql = Compile(dialect).PageDocumentIdSql;
+
+        sql.Should().NotContain(" > @cursorMin");
+        sql.Should().NotContain(" < @cursorMax");
+    }
+
+    [Test]
+    public void It_should_order_by_ascending_content_version_for_both_dialects()
+    {
+        Compile(SqlDialect.Pgsql)
+            .PageDocumentIdSql.Should()
+            .Contain("ORDER BY r.\"ContentVersion\" ASC")
+            .And.NotContain("ORDER BY r.\"DocumentId\"");
+        Compile(SqlDialect.Mssql)
+            .PageDocumentIdSql.Should()
+            .Contain("ORDER BY r.[ContentVersion] ASC")
+            .And.NotContain("ORDER BY r.[DocumentId]");
+    }
+
+    /// <summary>
+    /// The page projects both columns, and neither is optional. DocumentId feeds the keyset insert and
+    /// every downstream hydration join; ContentVersion is the continuation anchor, and hydration can
+    /// only read columns this embedded SQL projects. Dropping the anchor here would compile and then
+    /// force a second lookup after selection to recover it, which is the concurrent-delete stall the
+    /// design forbids.
+    /// </summary>
+    [Test]
+    public void It_should_project_the_document_id_and_the_anchor_for_pgsql()
+    {
+        Compile(SqlDialect.Pgsql)
+            .PageDocumentIdSql.Should()
+            .StartWith("SELECT r.\"DocumentId\", r.\"ContentVersion\"\n");
+    }
+
+    [Test]
+    public void It_should_project_the_document_id_and_the_anchor_after_the_top_clause_for_mssql()
+    {
+        Compile(SqlDialect.Mssql)
+            .PageDocumentIdSql.Should()
+            .StartWith("SELECT TOP (@pageSize) r.[DocumentId], r.[ContentVersion]\n");
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_not_emit_an_offset_or_total_count(SqlDialect dialect)
+    {
+        var plan = Compile(dialect);
+
+        plan.PageDocumentIdSql.Should().NotContain("OFFSET");
+        plan.PageDocumentIdSql.Should().NotContain("COUNT");
+        plan.TotalCountSql.Should().BeNull();
+        plan.TotalCountParametersInOrder.Should().BeNull();
+    }
+
+    [Test]
+    public void It_should_size_the_page_the_same_way_either_anchor_does()
+    {
+        Compile(SqlDialect.Pgsql).PageDocumentIdSql.Should().Contain("LIMIT @pageSize");
+        Compile(SqlDialect.Mssql).PageDocumentIdSql.Should().Contain("TOP (@pageSize)");
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_inventory_the_same_parameter_roles_either_anchor_does(SqlDialect dialect)
+    {
+        Compile(dialect)
+            .PageParametersInOrder.Select(parameter => (parameter.Role, parameter.ParameterName))
+            .Should()
+            .Equal(
+                (QuerySqlParameterRole.Filter, "schoolYear"),
+                (QuerySqlParameterRole.CursorInclusiveMinimum, "cursorMin"),
+                (QuerySqlParameterRole.CursorInclusiveMaximum, "cursorMax"),
+                (QuerySqlParameterRole.PageSize, "pageSize")
+            );
+    }
+}
+
+/// <summary>
+/// The partition candidate relation under a ContentVersion anchor. It projects the anchor alone,
+/// because the consumer ranks and cuts boundaries on that column and hands the value back.
+/// </summary>
+[TestFixture]
+public class Given_PageDocumentIdSqlCompiler_In_Content_Version_Anchored_Unpaged_Candidates_Mode
+{
+    private static PageDocumentIdSqlPlan Compile(SqlDialect dialect) =>
+        new PageDocumentIdSqlCompiler(dialect).Compile(
+            CandidateModeTestSpecs.CreateSpec(
+                new PageCandidateMode.UnpagedCandidates(OrderingMode: PageOrderingMode.ContentVersion)
+            )
+        );
+
+    [Test]
+    public void It_should_project_the_anchor_alone_for_pgsql()
+    {
+        Compile(SqlDialect.Pgsql)
+            .PageDocumentIdSql.Should()
+            .StartWith("SELECT r.\"ContentVersion\"\n")
+            .And.NotContain("\"DocumentId\"");
+    }
+
+    [Test]
+    public void It_should_project_the_anchor_alone_for_mssql()
+    {
+        Compile(SqlDialect.Mssql)
+            .PageDocumentIdSql.Should()
+            .StartWith("SELECT r.[ContentVersion]\n")
+            .And.NotContain("[DocumentId]");
+    }
+
+    /// <summary>
+    /// Still unordered: the consumer wraps this relation in a CTE and applies its own row numbering,
+    /// and SQL Server rejects ORDER BY in a CTE with no TOP or OFFSET. The anchor names the column that
+    /// consumer ranks, not an ORDER BY here.
+    /// </summary>
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_not_emit_an_order_by_or_a_size_clause(SqlDialect dialect)
+    {
+        var sql = Compile(dialect).PageDocumentIdSql;
+
+        sql.Should().NotContain("ORDER BY");
+        sql.Should().NotContain("LIMIT");
+        sql.Should().NotContain("TOP (");
+        sql.Should().NotContain("OFFSET");
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_inventory_filter_parameters_only(SqlDialect dialect)
+    {
+        Compile(dialect)
+            .PageParametersInOrder.Select(parameter => (parameter.Role, parameter.ParameterName))
+            .Should()
+            .Equal((QuerySqlParameterRole.Filter, "schoolYear"));
+    }
+}
+
 [TestFixture]
 public class Given_PageDocumentIdSqlCompiler_Candidate_Mode_Parameter_Validation
 {
@@ -201,6 +384,30 @@ public class Given_PageDocumentIdSqlCompiler_Candidate_Mode_Parameter_Validation
             _compiler.Compile(
                 CandidateModeTestSpecs.CreateSpec(
                     new PageCandidateMode.Cursor(),
+                    filterParameterName: filterParameterName
+                )
+            );
+
+        act.Should().Throw<ArgumentException>().WithParameterName("Predicates");
+    }
+
+    /// <summary>
+    /// Collision detection reads the mode's parameter names, which the anchor does not change, so a
+    /// filter named after a cursor bound is rejected under either anchor. Worth pinning separately:
+    /// the anchor moved the column those parameters are compared against, and a reader could
+    /// reasonably expect it to have moved the names too.
+    /// </summary>
+    [TestCase("cursorMin")]
+    [TestCase("CURSORMAX")]
+    [TestCase("pageSize")]
+    public void It_should_reject_the_same_filter_collisions_under_a_content_version_anchor(
+        string filterParameterName
+    )
+    {
+        var act = () =>
+            _compiler.Compile(
+                CandidateModeTestSpecs.CreateSpec(
+                    new PageCandidateMode.Cursor(OrderingMode: PageOrderingMode.ContentVersion),
                     filterParameterName: filterParameterName
                 )
             );
@@ -359,5 +566,138 @@ public class Given_PageDocumentIdSqlCompiler_Compiling_The_Same_Spec_In_Every_Ca
                 )
             )
         );
+    }
+}
+
+/// <summary>
+/// The anchor moves the range, ordering, and projection clauses and nothing else. The candidate root,
+/// joins, filter predicates, and authorization fragment a DocumentId-anchored plan emits have to come
+/// out byte-identical under a ContentVersion anchor, which is what makes an anchored page selectable
+/// from the same authorized candidate relation an unanchored one is.
+/// </summary>
+[TestFixture]
+public class Given_PageDocumentIdSqlCompiler_Compiling_One_Spec_Under_Both_Anchors
+{
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_produce_an_identical_shared_candidate_region_for_a_cursor_page(SqlDialect dialect)
+    {
+        AssertSharedRegionsMatch(
+            dialect,
+            new PageCandidateMode.Cursor(),
+            new PageCandidateMode.Cursor(OrderingMode: PageOrderingMode.ContentVersion),
+            withAuthorization: false
+        );
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_produce_an_identical_authorization_fragment_for_a_cursor_page(SqlDialect dialect)
+    {
+        AssertSharedRegionsMatch(
+            dialect,
+            new PageCandidateMode.Cursor(),
+            new PageCandidateMode.Cursor(OrderingMode: PageOrderingMode.ContentVersion),
+            withAuthorization: true
+        );
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_produce_an_identical_authorization_fragment_for_the_candidate_relation(
+        SqlDialect dialect
+    )
+    {
+        AssertSharedRegionsMatch(
+            dialect,
+            new PageCandidateMode.UnpagedCandidates(),
+            new PageCandidateMode.UnpagedCandidates(OrderingMode: PageOrderingMode.ContentVersion),
+            withAuthorization: true
+        );
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_produce_an_identical_authorization_fragment_for_a_traditional_page(
+        SqlDialect dialect
+    )
+    {
+        AssertSharedRegionsMatch(
+            dialect,
+            new PageCandidateMode.Traditional(),
+            new PageCandidateMode.Traditional(OrderingMode: PageOrderingMode.ContentVersion),
+            withAuthorization: true
+        );
+    }
+
+    /// <summary>
+    /// The parameter inventory is anchor-independent too, so a plan's bindings cannot shift with the
+    /// column its bounds compare against.
+    /// </summary>
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_produce_identical_filter_parameters_under_either_anchor(SqlDialect dialect)
+    {
+        var compiler = new PageDocumentIdSqlCompiler(dialect);
+        var authorization = CandidateModeTestSpecs.CreateNamespaceAuthorization(dialect);
+
+        var documentIdAnchored = compiler.Compile(
+            CandidateModeTestSpecs.CreateSpec(new PageCandidateMode.Cursor(), authorization: authorization)
+        );
+        var contentVersionAnchored = compiler.Compile(
+            CandidateModeTestSpecs.CreateSpec(
+                new PageCandidateMode.Cursor(OrderingMode: PageOrderingMode.ContentVersion),
+                authorization: authorization
+            )
+        );
+
+        CandidateSqlRegions
+            .FilterParameters(contentVersionAnchored)
+            .Should()
+            .Equal(CandidateSqlRegions.FilterParameters(documentIdAnchored));
+    }
+
+    private static void AssertSharedRegionsMatch(
+        SqlDialect dialect,
+        PageCandidateMode documentIdAnchoredMode,
+        PageCandidateMode contentVersionAnchoredMode,
+        bool withAuthorization
+    )
+    {
+        var compiler = new PageDocumentIdSqlCompiler(dialect);
+        var authorization = withAuthorization
+            ? CandidateModeTestSpecs.CreateNamespaceAuthorization(dialect)
+            : null;
+
+        var documentIdRegion = CandidateSqlRegions.SharedCandidateRegion(
+            compiler
+                .Compile(
+                    CandidateModeTestSpecs.CreateSpec(documentIdAnchoredMode, authorization: authorization)
+                )
+                .PageDocumentIdSql,
+            documentIdAnchoredMode,
+            dialect
+        );
+        var contentVersionRegion = CandidateSqlRegions.SharedCandidateRegion(
+            compiler
+                .Compile(
+                    CandidateModeTestSpecs.CreateSpec(
+                        contentVersionAnchoredMode,
+                        authorization: authorization
+                    )
+                )
+                .PageDocumentIdSql,
+            contentVersionAnchoredMode,
+            dialect
+        );
+
+        if (withAuthorization)
+        {
+            documentIdRegion
+                .Should()
+                .Contain("Namespace", "the arrangement must emit an authorization fragment");
+        }
+
+        contentVersionRegion.Should().Be(documentIdRegion);
     }
 }
