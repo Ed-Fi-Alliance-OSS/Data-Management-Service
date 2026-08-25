@@ -78,10 +78,19 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
     }
 
     public async Task<DocumentCacheStatusResponse> GetStatusAsync(
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken = default,
+        DocumentCacheStatusEvaluationMode evaluationMode = DocumentCacheStatusEvaluationMode.RuntimeEndpoint
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (!Enum.IsDefined(evaluationMode))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(evaluationMode),
+                evaluationMode,
+                "Unsupported DocumentCache status evaluation mode."
+            );
+        }
 
         DocumentCacheTargetStatusSnapshot statusSnapshot = _targetRegistry.CurrentStatusSnapshot;
         DocumentCacheTargetRegistrySnapshot registrySnapshot = statusSnapshot.RegistrySnapshot;
@@ -128,6 +137,7 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
                                 observedAt,
                                 runtimeSnapshot,
                                 projectionSnapshot,
+                                evaluationMode,
                                 endpointCancellationToken,
                                 cancellationToken
                             )
@@ -154,6 +164,7 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
                     registrySnapshot.ObservedAt,
                     observedAt,
                     projectionSnapshot,
+                    evaluationMode,
                     EndpointTimeoutNotStartedMessage
                 );
         }
@@ -167,6 +178,7 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         DateTimeOffset processObservedAt,
         DocumentCacheTargetRuntimeSnapshot runtimeSnapshot,
         DocumentCacheProjectionObservationSnapshot projectionSnapshot,
+        DocumentCacheStatusEvaluationMode evaluationMode,
         CancellationToken endpointCancellationToken,
         CancellationToken callerCancellationToken
     )
@@ -186,6 +198,7 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
                 registryObservedAt,
                 processObservedAt,
                 projectionSnapshot,
+                evaluationMode,
                 EndpointTimeoutStartedMessage,
                 targetHealth,
                 runtimeObservation
@@ -195,13 +208,14 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         DocumentCacheStatusProcessEligibility processEligibility =
             DocumentCacheStatusClassifier.ClassifyProcessEligibility(targetObservation, runtimeObservation);
 
-        if (!processEligibility.IsEligible)
+        if (!ShouldObserveDurableStatus(processEligibility, evaluationMode))
         {
             DocumentCacheStatusClassificationResult processClassification =
                 DocumentCacheStatusClassifier.Classify(
                     targetObservation,
                     runtimeObservation,
-                    durableObservation: null
+                    durableObservation: null,
+                    evaluationMode
                 );
 
             return BuildStatusTarget(
@@ -225,7 +239,8 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         DocumentCacheStatusClassificationResult classification = DocumentCacheStatusClassifier.Classify(
             targetObservation,
             runtimeObservation,
-            observedDurableStatus.DurableObservation
+            observedDurableStatus.DurableObservation,
+            evaluationMode
         );
 
         return BuildStatusTarget(
@@ -238,6 +253,17 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             observedDurableStatus.ProviderObservationDuration
         );
     }
+
+    private static bool ShouldObserveDurableStatus(
+        DocumentCacheStatusProcessEligibility processEligibility,
+        DocumentCacheStatusEvaluationMode evaluationMode
+    ) =>
+        processEligibility.IsEligible
+        || (
+            evaluationMode == DocumentCacheStatusEvaluationMode.StandaloneDirectObservation
+            && processEligibility.Status == DocumentCacheStatusProcessEligibilityStatus.Unknown
+            && processEligibility.Reason == DocumentCacheStatusReason.RuntimeNotObserved
+        );
 
     private async Task<ObservedDurableStatus> ObserveDurableStatusAsync(
         DocumentCacheTargetObservation targetObservation,
@@ -614,6 +640,7 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         DateTimeOffset registryObservedAt,
         DateTimeOffset processObservedAt,
         DocumentCacheProjectionObservationSnapshot projectionSnapshot,
+        DocumentCacheStatusEvaluationMode evaluationMode,
         string message,
         DocumentCacheProjectionTargetHealthSnapshot? targetHealth = null,
         DocumentCacheStatusRuntimeObservation? runtimeObservation = null
@@ -625,7 +652,8 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         DocumentCacheStatusClassificationResult classification = DocumentCacheStatusClassifier.Classify(
             targetObservation,
             runtimeObservation,
-            DocumentCacheStatusDurableObservation.EndpointTimeout(message)
+            DocumentCacheStatusDurableObservation.EndpointTimeout(message),
+            evaluationMode
         );
 
         return BuildStatusTarget(
@@ -797,7 +825,12 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         DocumentCacheAdministrativeCommandObservationSnapshot? snapshot =
             projectionSnapshot.GetCurrentGenerationActiveCommand(targetObservation.TargetKey);
 
-        return snapshot?.TargetGeneration == targetObservation.Generation ? snapshot : null;
+        if (snapshot?.TargetGeneration == targetObservation.Generation)
+        {
+            return snapshot;
+        }
+
+        return projectionSnapshot.GetActiveCommand(targetObservation.TargetKey, targetObservation.Generation);
     }
 
     private static DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot? GetCurrentGenerationLastEndedAdministrativeCommandDiagnostic(
@@ -814,6 +847,15 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             projectionSnapshot.GetCurrentGenerationLastEndedAdministrativeCommandDiagnostic(
                 targetObservation.TargetKey
             );
+
+        if (snapshot?.TargetGeneration == targetObservation.Generation)
+        {
+            return snapshot;
+        }
+
+        snapshot = projectionSnapshot.GetLastEndedAdministrativeCommandDiagnostic(
+            targetObservation.TargetKey
+        );
 
         return snapshot?.TargetGeneration == targetObservation.Generation ? snapshot : null;
     }

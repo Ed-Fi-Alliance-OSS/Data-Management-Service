@@ -59,7 +59,8 @@ try
         parseResult,
         validInvocationTarget,
         serviceProvider,
-        Console.Out
+        Console.Out,
+        Console.Error
     );
     return exitCode;
 }

@@ -351,6 +351,117 @@ public class Given_DocumentCacheStatusService
     }
 
     [Test]
+    public async Task It_observes_durable_status_in_standalone_mode_when_runtime_is_not_observed()
+    {
+        DocumentCacheTargetObservation target = ResolvedTarget(DocumentCacheTargetKey.Create("", 1));
+        StaticTargetRegistry registry = new([target], [ExecutionContext(target)]);
+        ScriptedStatusObserver observer = new(
+            (request, cancellationToken) =>
+            {
+                _ = request;
+                cancellationToken.ThrowIfCancellationRequested();
+                return Task.FromResult(
+                    DocumentCacheStatusCurrentSourceObservationResult.Success(
+                        DocumentCacheLifecycleState.Tracking,
+                        cacheAheadRecoveryRequired: false,
+                        DocumentCacheStatusDurableQueuePresence.NotEmpty,
+                        OldestWorkFirstEnqueuedAt,
+                        oldestWorkAgeSeconds: 300,
+                        DurableObservedAt
+                    )
+                );
+            }
+        );
+        DocumentCacheStatusService service = CreateService(
+            registry,
+            observationStore: new DocumentCacheProjectionObservationStore(
+                new FixedTimeProvider(ProcessObservedAt)
+            ),
+            observer
+        );
+
+        DocumentCacheStatusResponse response = await service.GetStatusAsync(
+            evaluationMode: DocumentCacheStatusEvaluationMode.StandaloneDirectObservation
+        );
+
+        DocumentCacheStatusTarget statusTarget = response.Targets.Should().ContainSingle().Which;
+        statusTarget.DurableObservedAt.Should().Be(DurableObservedAt);
+        statusTarget.Lifecycle.State.Should().Be(DocumentCacheStatusLifecycleState.Tracking);
+        statusTarget.Lifecycle.Availability.Should().Be(DocumentCacheStatusAvailability.Available);
+        statusTarget.CacheAhead.State.Should().Be(DocumentCacheStatusCacheAheadState.Clear);
+        statusTarget.CacheAhead.RecoveryRequired.Should().BeFalse();
+        statusTarget.QueueSummary.Presence.Should().Be(DocumentCacheStatusQueuePresence.NotEmpty);
+        statusTarget.QueueSummary.OldestWorkFirstEnqueuedAt.Should().Be(OldestWorkFirstEnqueuedAt);
+        statusTarget.QueueSummary.OldestWorkAgeSeconds.Should().Be(300);
+        statusTarget.ExecutionState.Status.Should().Be(DocumentCacheStatusExecutionState.NotObserved);
+        statusTarget.ActiveCommand.Should().BeNull();
+        statusTarget.LastEndedDiagnostic.Should().BeNull();
+        statusTarget.OperationalHealth.Status.Should().Be(DocumentCacheOperationalHealthStatus.Unknown);
+        statusTarget.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.RuntimeNotObserved);
+        statusTarget.CaughtUp.Status.Should().Be(DocumentCacheCaughtUpStatus.Unknown);
+        statusTarget.CaughtUp.Reason.Should().Be(DocumentCacheStatusReason.RuntimeNotObserved);
+        observer.StartedKeys.Should().ContainSingle().Which.Should().Be(target.TargetKey);
+    }
+
+    [Test]
+    public async Task It_reports_process_local_command_observations_in_standalone_mode_without_runtime_health()
+    {
+        DocumentCacheTargetObservation target = ResolvedTarget(DocumentCacheTargetKey.Create("", 1));
+        StaticTargetRegistry registry = new([target], [ExecutionContext(target)]);
+        DocumentCacheProjectionObservationStore observationStore = new(
+            new FixedTimeProvider(ProcessObservedAt)
+        );
+        DocumentCacheAdministrativeCommandExecutionId activeExecutionId = new(
+            Guid.Parse("11111111-2222-3333-4444-555555555555")
+        );
+        DocumentCacheAdministrativeCommandExecutionId endedExecutionId = new(
+            Guid.Parse("22222222-3333-4444-5555-666666666666")
+        );
+
+        observationStore.ObserveAdministrativeCommand(
+            CommandObservation(
+                activeExecutionId,
+                target,
+                DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation
+            )
+        );
+        observationStore.ObserveAdministrativeCommand(
+            CommandObservation(
+                endedExecutionId,
+                target,
+                DocumentCacheAdministrativeCommand.OnlineCacheRebuild
+            )
+        );
+        observationStore.EndAdministrativeCommand(
+            endedExecutionId,
+            CommandResult(target, DocumentCacheAdministrativeCommand.OnlineCacheRebuild),
+            RuntimeObservedAt.AddSeconds(10)
+        );
+        DocumentCacheStatusService service = CreateService(registry, observationStore, new(Success));
+
+        DocumentCacheStatusTarget statusTarget = (
+            await service.GetStatusAsync(
+                evaluationMode: DocumentCacheStatusEvaluationMode.StandaloneDirectObservation
+            )
+        )
+            .Targets.Should()
+            .ContainSingle()
+            .Which;
+
+        statusTarget.ExecutionState.Status.Should().Be(DocumentCacheStatusExecutionState.NotObserved);
+        statusTarget.ActiveCommand.Should().NotBeNull();
+        statusTarget
+            .ActiveCommand!.Command.Should()
+            .Be(DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation);
+        statusTarget.LastEndedDiagnostic.Should().NotBeNull();
+        statusTarget
+            .LastEndedDiagnostic!.Command.Should()
+            .Be(DocumentCacheAdministrativeCommand.OnlineCacheRebuild);
+        statusTarget.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.RuntimeNotObserved);
+        statusTarget.CaughtUp.Reason.Should().Be(DocumentCacheStatusReason.RuntimeNotObserved);
+    }
+
+    [Test]
     public async Task It_maps_inventory_components_independently()
     {
         DocumentCacheInventoryValidationResult validInventory = new(

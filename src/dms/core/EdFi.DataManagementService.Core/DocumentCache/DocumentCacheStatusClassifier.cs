@@ -493,22 +493,35 @@ public static class DocumentCacheStatusClassifier
     public static DocumentCacheStatusClassificationResult Classify(
         DocumentCacheTargetObservation targetObservation,
         DocumentCacheStatusRuntimeObservation? runtimeObservation,
-        DocumentCacheStatusDurableObservation? durableObservation
+        DocumentCacheStatusDurableObservation? durableObservation,
+        DocumentCacheStatusEvaluationMode evaluationMode = DocumentCacheStatusEvaluationMode.RuntimeEndpoint
     )
     {
+        if (!Enum.IsDefined(evaluationMode))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(evaluationMode),
+                evaluationMode,
+                "Unsupported status evaluation mode."
+            );
+        }
+
         DocumentCacheStatusProcessEligibility processEligibility = ClassifyProcessEligibility(
             targetObservation,
             runtimeObservation
         );
+        bool standaloneRuntimeNotObserved =
+            evaluationMode == DocumentCacheStatusEvaluationMode.StandaloneDirectObservation
+            && IsRuntimeNotObserved(processEligibility);
 
-        if (!processEligibility.IsEligible)
+        if (!processEligibility.IsEligible && !standaloneRuntimeNotObserved)
         {
             return FromProcessFailure(processEligibility);
         }
 
         if (durableObservation is null)
         {
-            return FromDurableUnknown(
+            DocumentCacheStatusClassificationResult durableMissingResult = FromDurableUnknown(
                 processEligibility,
                 DocumentCacheStatusReason.ProviderObservationFailed,
                 "DocumentCache durable status observation was not supplied."
@@ -516,9 +529,13 @@ public static class DocumentCacheStatusClassifier
             {
                 DurableObservationRequired = true,
             };
+
+            return standaloneRuntimeNotObserved
+                ? WithStandaloneRuntimeNotObservedHealth(durableMissingResult, processEligibility)
+                : durableMissingResult;
         }
 
-        return durableObservation.Outcome switch
+        DocumentCacheStatusClassificationResult result = durableObservation.Outcome switch
         {
             DocumentCacheStatusDurableObservationOutcome.StatusEndpointTimeout => FromDurableUnknown(
                 processEligibility,
@@ -549,7 +566,33 @@ public static class DocumentCacheStatusClassifier
                 "Unsupported durable observation outcome."
             ),
         };
+
+        return standaloneRuntimeNotObserved
+            ? WithStandaloneRuntimeNotObservedHealth(result, processEligibility)
+            : result;
     }
+
+    private static bool IsRuntimeNotObserved(DocumentCacheStatusProcessEligibility processEligibility) =>
+        processEligibility.Status == DocumentCacheStatusProcessEligibilityStatus.Unknown
+        && processEligibility.Reason == DocumentCacheStatusReason.RuntimeNotObserved;
+
+    private static DocumentCacheStatusClassificationResult WithStandaloneRuntimeNotObservedHealth(
+        DocumentCacheStatusClassificationResult result,
+        DocumentCacheStatusProcessEligibility processEligibility
+    ) =>
+        result with
+        {
+            OperationalHealth = new DocumentCacheOperationalHealthComponent(
+                DocumentCacheOperationalHealthStatus.Unknown,
+                DocumentCacheStatusReason.RuntimeNotObserved,
+                processEligibility.Message
+            ),
+            CaughtUp = new DocumentCacheCaughtUpComponent(
+                DocumentCacheCaughtUpStatus.Unknown,
+                DocumentCacheStatusReason.RuntimeNotObserved,
+                processEligibility.Message
+            ),
+        };
 
     private static DocumentCacheStatusClassificationResult FromProcessFailure(
         DocumentCacheStatusProcessEligibility processEligibility

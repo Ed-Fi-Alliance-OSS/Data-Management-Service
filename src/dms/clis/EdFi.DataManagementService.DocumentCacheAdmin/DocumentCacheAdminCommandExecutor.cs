@@ -5,6 +5,7 @@
 
 using System.CommandLine;
 using System.CommandLine.Parsing;
+using System.Globalization;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,6 +19,7 @@ internal static class DocumentCacheAdminCommandExecutor
         DocumentCacheAdminInvocationTarget invocationTarget,
         IServiceProvider serviceProvider,
         TextWriter standardOutput,
+        TextWriter? standardError = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -31,28 +33,128 @@ internal static class DocumentCacheAdminCommandExecutor
                 parseResult.CommandResult.Command.Name,
                 DocumentCacheAdminCommandSurface.StatusCommandName,
                 StringComparison.Ordinal
-            ) && parseResult.GetValue<bool>(DocumentCacheAdminCommandSurface.JsonOptionName)
+            )
         )
         {
-            DocumentCacheStatusResponse statusResponse = await GetStatusResponseAsync(
-                    invocationTarget.TargetKey,
-                    serviceProvider,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-            await standardOutput
-                .WriteLineAsync(
-                    DocumentCacheAdminJsonSerializer.SerializeContract(
-                        statusResponse,
-                        typeof(DocumentCacheStatusResponse)
+            try
+            {
+                DocumentCacheStatusResponse statusResponse = await GetStatusResponseAsync(
+                        invocationTarget.TargetKey,
+                        serviceProvider,
+                        cancellationToken
                     )
-                )
-                .ConfigureAwait(false);
-            return DocumentCacheAdminExitCodes.Success;
+                    .ConfigureAwait(false);
+
+                if (parseResult.GetValue<bool>(DocumentCacheAdminCommandSurface.JsonOptionName))
+                {
+                    await standardOutput
+                        .WriteLineAsync(
+                            DocumentCacheAdminJsonSerializer.SerializeContract(
+                                statusResponse,
+                                typeof(DocumentCacheStatusResponse)
+                            )
+                        )
+                        .ConfigureAwait(false);
+                }
+                else
+                {
+                    await WriteHumanStatusAsync(statusResponse, standardOutput).ConfigureAwait(false);
+                }
+
+                return DocumentCacheAdminExitCodes.Success;
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                if (standardError is not null)
+                {
+                    await standardError
+                        .WriteLineAsync(
+                            $"DocumentCache status failed before a complete status document could be produced: {exception.Message}"
+                        )
+                        .ConfigureAwait(false);
+                }
+
+                return DocumentCacheAdminExitCodes.FailedNoMutation;
+            }
         }
 
         return await parseResult.InvokeAsync().ConfigureAwait(false);
     }
+
+    private static async Task WriteHumanStatusAsync(
+        DocumentCacheStatusResponse statusResponse,
+        TextWriter standardOutput
+    )
+    {
+        await standardOutput
+            .WriteLineAsync(
+                $"DocumentCache status observedAt={FormatTimestamp(statusResponse.ObservedAt)} targets={statusResponse.Targets.Length.ToString(CultureInfo.InvariantCulture)}"
+            )
+            .ConfigureAwait(false);
+
+        foreach (DocumentCacheStatusTarget target in statusResponse.Targets)
+        {
+            await standardOutput
+                .WriteLineAsync(
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"target tenantKey=\"{target.TargetKey.TenantKey}\" dataStoreId={target.TargetKey.DataStoreId}"
+                    )
+                )
+                .ConfigureAwait(false);
+            await standardOutput
+                .WriteLineAsync(
+                    $"  resolution={target.Resolution.Status} reason={target.Resolution.Reason} generation={FormatNullableLong(target.TargetGeneration)}"
+                )
+                .ConfigureAwait(false);
+            await standardOutput
+                .WriteLineAsync(
+                    $"  eligibility={target.Eligibility.Status} reason={target.Eligibility.Reason}"
+                )
+                .ConfigureAwait(false);
+            await standardOutput
+                .WriteLineAsync(
+                    $"  lifecycle={target.Lifecycle.State} availability={target.Lifecycle.Availability} durableObservedAt={FormatNullableTimestamp(target.DurableObservedAt)}"
+                )
+                .ConfigureAwait(false);
+            await standardOutput
+                .WriteLineAsync(
+                    $"  cacheAhead={target.CacheAhead.State} recoveryRequired={FormatNullableBoolean(target.CacheAhead.RecoveryRequired)}"
+                )
+                .ConfigureAwait(false);
+            await standardOutput
+                .WriteLineAsync(
+                    $"  queue={target.QueueSummary.Presence} oldestWorkFirstEnqueuedAt={FormatNullableTimestamp(target.QueueSummary.OldestWorkFirstEnqueuedAt)} oldestWorkAgeSeconds={FormatNullableDouble(target.QueueSummary.OldestWorkAgeSeconds)}"
+                )
+                .ConfigureAwait(false);
+            await standardOutput
+                .WriteLineAsync(
+                    $"  operationalHealth={target.OperationalHealth.Status} reason={target.OperationalHealth.Reason}"
+                )
+                .ConfigureAwait(false);
+            await standardOutput
+                .WriteLineAsync($"  caughtUp={target.CaughtUp.Status} reason={target.CaughtUp.Reason}")
+                .ConfigureAwait(false);
+            await standardOutput
+                .WriteLineAsync($"  executionState={target.ExecutionState.Status}")
+                .ConfigureAwait(false);
+        }
+    }
+
+    private static string FormatTimestamp(DateTimeOffset timestamp) =>
+        timestamp.UtcDateTime.ToString("O", CultureInfo.InvariantCulture);
+
+    private static string FormatNullableTimestamp(DateTimeOffset? timestamp) =>
+        timestamp is null ? "null" : FormatTimestamp(timestamp.Value);
+
+    private static string FormatNullableLong(long? value) =>
+        value is null ? "null" : value.Value.ToString(CultureInfo.InvariantCulture);
+
+    private static string FormatNullableBoolean(bool? value) =>
+        value is null ? "null" : value.Value.ToString(CultureInfo.InvariantCulture).ToLowerInvariant();
+
+    private static string FormatNullableDouble(double? value) =>
+        value is null ? "null" : value.Value.ToString("G17", CultureInfo.InvariantCulture);
 
     private static async Task<DocumentCacheStatusResponse> GetStatusResponseAsync(
         DocumentCacheTargetKey targetKey,
@@ -74,7 +176,9 @@ internal static class DocumentCacheAdminCommandExecutor
             await targetResolver.ResolveAsync(targetKey, cancellationToken).ConfigureAwait(false);
         }
 
-        return await statusService.GetStatusAsync(cancellationToken).ConfigureAwait(false);
+        return await statusService
+            .GetStatusAsync(cancellationToken, DocumentCacheStatusEvaluationMode.StandaloneDirectObservation)
+            .ConfigureAwait(false);
     }
 
     private static DocumentCacheStatusResponse CreateUnconfiguredStatusResponse(

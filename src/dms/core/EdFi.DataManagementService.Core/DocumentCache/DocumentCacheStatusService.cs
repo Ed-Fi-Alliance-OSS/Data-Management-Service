@@ -5,7 +5,16 @@
 
 namespace EdFi.DataManagementService.Core.DocumentCache;
 
+public enum DocumentCacheStatusEvaluationMode
+{
+    RuntimeEndpoint,
+    StandaloneDirectObservation,
+}
+
 public interface IDocumentCacheStatusService
 {
-    Task<DocumentCacheStatusResponse> GetStatusAsync(CancellationToken cancellationToken = default);
+    Task<DocumentCacheStatusResponse> GetStatusAsync(
+        CancellationToken cancellationToken = default,
+        DocumentCacheStatusEvaluationMode evaluationMode = DocumentCacheStatusEvaluationMode.RuntimeEndpoint
+    );
 }

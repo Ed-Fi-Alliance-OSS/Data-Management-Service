@@ -351,8 +351,13 @@ public class Given_HealthCheckEndpointModule
 
         public int CallCount => _callCount;
 
-        public Task<DocumentCacheStatusResponse> GetStatusAsync(CancellationToken cancellationToken = default)
+        public Task<DocumentCacheStatusResponse> GetStatusAsync(
+            CancellationToken cancellationToken = default,
+            DocumentCacheStatusEvaluationMode evaluationMode =
+                DocumentCacheStatusEvaluationMode.RuntimeEndpoint
+        )
         {
+            evaluationMode.Should().Be(DocumentCacheStatusEvaluationMode.RuntimeEndpoint);
             Interlocked.Increment(ref _callCount);
             return Task.FromResult(response);
         }
