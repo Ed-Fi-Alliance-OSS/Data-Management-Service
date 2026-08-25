@@ -713,7 +713,7 @@ public class DocumentCacheTargetRegistryTests
             DocumentCacheTargetRegistrySnapshot initialSnapshot = await fixture.Registry.RefreshAsync(
                 DocumentCacheTargetRefreshReason.Startup
             );
-            fixture.DataStoreProvider.QueueLoadResult(
+            fixture.DataStoreProvider.QueueExpirationRefreshResult(
                 "TenantA",
                 CreateDataStore(7, "connection-a", RelationalProviderToken.SqlServer)
             );
@@ -739,12 +739,12 @@ public class DocumentCacheTargetRegistryTests
                 )
                 .Should()
                 .NotBeNull();
-            fixture.DataStoreProvider.LoadDataStoreCalls.Should().Equal("TenantA", "TenantA");
-            fixture.DataStoreProvider.RefreshIfExpiredCalls.Should().BeEmpty();
+            fixture.DataStoreProvider.LoadDataStoreCalls.Should().Equal("TenantA");
+            fixture.DataStoreProvider.RefreshIfExpiredCalls.Should().Equal("TenantA");
         }
 
         [Test]
-        public async Task It_does_not_retry_recoverable_SqlServerDocumentCachePrerequisite_failures_during_Cms_refresh()
+        public async Task It_retries_recoverable_SqlServerDocumentCachePrerequisite_failures_after_forced_Cms_refresh()
         {
             RegistryFixture fixture = new(Targets: [("TenantA", 7)]);
             fixture.ContextBuilder.QueueProviderPrerequisiteFailure(DocumentCacheLifecycleState.Disabled);
@@ -771,10 +771,16 @@ public class DocumentCacheTargetRegistryTests
                     diagnostic.Category == DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed
                 );
             DocumentCacheTargetObservation observation = cmsRefreshSnapshot.Targets.Single();
-            observation.EligibilityState.Should().Be(DocumentCacheTargetEligibilityState.Ineligible);
+            observation.EligibilityState.Should().Be(DocumentCacheTargetEligibilityState.Eligible);
             observation.Generation!.Value.Should().Be(1);
-            fixture.ContextBuilder.BuildCalls.Should().ContainSingle();
-            fixture.Registry.CurrentRuntimeSnapshot.GetExecutionContext(_tenantTargetKey).Should().BeNull();
+            fixture.ContextBuilder.BuildCalls.Select(call => call.Generation.Value).Should().Equal(1, 1);
+            fixture
+                .Registry.CurrentRuntimeSnapshot.GetExecutionContext(
+                    _tenantTargetKey,
+                    new DocumentCacheTargetContextGeneration(1)
+                )
+                .Should()
+                .NotBeNull();
             fixture.DataStoreProvider.LoadDataStoreCalls.Should().Equal("TenantA", "TenantA");
             fixture.DataStoreProvider.RefreshIfExpiredCalls.Should().BeEmpty();
         }
