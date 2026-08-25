@@ -81,6 +81,36 @@ public class Given_CdcSourceHistoryContinuityClassifier
     }
 
     [Test]
+    public void It_classifies_negative_sql_server_event_serial_as_malformed_connector_offset()
+    {
+        CdcBinding binding = CdcContinuityFixture.CreateBinding(CdcProvider.SqlServer);
+        CdcSourceHistoryClassificationInput baselineInput = CdcContinuityFixture.CreateInput(binding);
+        CdcSourceHistoryClassificationResult result = CdcSourceHistoryContinuityClassifier.Evaluate(
+            baselineInput with
+            {
+                ConnectorOffset = baselineInput.ConnectorOffset! with { EventSerialNo = -1 },
+            }
+        );
+
+        result.Observation.Continuity.Should().Be(CdcSourceHistoryContinuity.Lost);
+        result
+            .Observation.IncidentFailureCategory.Should()
+            .Be(CdcIncidentFailureCategory.ConnectOffsetMalformed);
+        result.IncidentCandidate.Should().NotBeNull();
+        result
+            .Observation.Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CdcDiagnosticCategory.MalformedPayload
+                && diagnostic.Path == "$.connectorOffset.eventSerialNo"
+            );
+        result
+            .Observation.Diagnostics.Select(diagnostic => diagnostic.Message)
+            .Should()
+            .NotContain(message => message.Contains("-1"));
+        ValidateObservation(result.Observation, binding).Succeeded.Should().BeTrue();
+    }
+
+    [Test]
     public void It_preserves_a_valid_latched_incident_without_creating_a_new_candidate()
     {
         CdcBinding binding = CdcContinuityFixture.CreateBinding(CdcProvider.Postgresql);

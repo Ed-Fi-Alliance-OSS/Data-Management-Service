@@ -555,12 +555,18 @@ public static class CdcIncidentValidator
 
     private static void ValidateEventSerialNo(long? eventSerialNo, CdcDiagnosticCollector diagnostics)
     {
-        if (eventSerialNo < 0)
+        if (eventSerialNo is null)
         {
-            diagnostics.MalformedPayload(
-                "$.positionMetadata.eventSerialNo",
-                "CDC eventSerialNo must be zero or positive."
-            );
+            return;
+        }
+
+        CdcSqlServerEventSerialNoResult result = CdcSqlServerProviderPositionParser.ParseEventSerialNo(
+            eventSerialNo,
+            "$.positionMetadata.eventSerialNo"
+        );
+        foreach (CdcDiagnostic diagnostic in result.Diagnostics)
+        {
+            diagnostics.Add(diagnostic);
         }
     }
 

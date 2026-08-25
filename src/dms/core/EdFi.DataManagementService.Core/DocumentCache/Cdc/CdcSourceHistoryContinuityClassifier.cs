@@ -857,7 +857,7 @@ public static class CdcSourceHistoryContinuityClassifier
                 )
             );
 
-        if (!comparison.Succeeded || offset.EventSerialNo is null || offset.EventSerialNo < 0)
+        if (!comparison.Succeeded || offset.EventSerialNo is null)
         {
             return CdcCommittedSourcePositionResult.Failure(comparison.Diagnostics);
         }

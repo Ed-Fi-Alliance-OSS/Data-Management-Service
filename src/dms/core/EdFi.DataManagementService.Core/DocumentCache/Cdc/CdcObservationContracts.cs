@@ -2609,9 +2609,16 @@ public static class CdcProviderBarrierObservationValidator
             );
         }
 
-        if (barrierRequired && observation.SqlServerEventSerialNo is null)
+        if (barrierRequired || observation.SqlServerEventSerialNo is not null)
         {
-            diagnostics.MissingRequiredField("$.sqlServerEventSerialNo", "sqlServerEventSerialNo");
+            CdcSqlServerEventSerialNoResult result = CdcSqlServerProviderPositionParser.ParseEventSerialNo(
+                observation.SqlServerEventSerialNo,
+                "$.sqlServerEventSerialNo"
+            );
+            foreach (CdcDiagnostic diagnostic in result.Diagnostics)
+            {
+                diagnostics.Add(diagnostic);
+            }
         }
 
         void Add(CdcSqlServerLsnResult result)
@@ -2820,10 +2827,14 @@ public static class CdcConnectorOffsetObservationValidator
 
         Add(CdcSqlServerProviderPositionParser.ParseLsn(observation.CommitLsn, "$.commitLsn"));
         Add(CdcSqlServerProviderPositionParser.ParseLsn(observation.ChangeLsn, "$.changeLsn"));
-
-        if (observation.EventSerialNo is null)
+        CdcSqlServerEventSerialNoResult eventSerialNoResult =
+            CdcSqlServerProviderPositionParser.ParseEventSerialNo(
+                observation.EventSerialNo,
+                "$.eventSerialNo"
+            );
+        foreach (CdcDiagnostic diagnostic in eventSerialNoResult.Diagnostics)
         {
-            diagnostics.MissingRequiredField("$.eventSerialNo", "eventSerialNo");
+            diagnostics.Add(diagnostic);
         }
 
         void Add(CdcSqlServerLsnResult result)
@@ -3412,9 +3423,17 @@ public static class CdcSourceHistoryObservationValidator
                     );
                 }
 
-                if (providerPositionRequired && positionEvidence.EventSerialNo is null)
+                if (providerPositionRequired || positionEvidence.EventSerialNo is not null)
                 {
-                    diagnostics.MissingRequiredField("$.positionEvidence.eventSerialNo", "eventSerialNo");
+                    CdcSqlServerEventSerialNoResult result =
+                        CdcSqlServerProviderPositionParser.ParseEventSerialNo(
+                            positionEvidence.EventSerialNo,
+                            "$.positionEvidence.eventSerialNo"
+                        );
+                    foreach (CdcDiagnostic diagnostic in result.Diagnostics)
+                    {
+                        diagnostics.Add(diagnostic);
+                    }
                 }
 
                 break;

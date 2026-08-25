@@ -212,6 +212,30 @@ public sealed record CdcSqlServerLsnResult
     }
 }
 
+public sealed record CdcSqlServerEventSerialNoResult
+{
+    private CdcSqlServerEventSerialNoResult(ulong? eventSerialNo, IReadOnlyList<CdcDiagnostic> diagnostics)
+    {
+        EventSerialNo = eventSerialNo;
+        Diagnostics = diagnostics;
+    }
+
+    public ulong? EventSerialNo { get; }
+
+    public IReadOnlyList<CdcDiagnostic> Diagnostics { get; }
+
+    public bool Succeeded => EventSerialNo is not null && Diagnostics.Count == 0;
+
+    public static CdcSqlServerEventSerialNoResult Success(ulong eventSerialNo) => new(eventSerialNo, []);
+
+    public static CdcSqlServerEventSerialNoResult Failure(IReadOnlyList<CdcDiagnostic> diagnostics)
+    {
+        ArgumentNullException.ThrowIfNull(diagnostics);
+
+        return new(null, diagnostics);
+    }
+}
+
 public readonly record struct CdcSqlServerLsn(uint First, uint Second, ushort Third)
     : IComparable<CdcSqlServerLsn>
 {
@@ -341,7 +365,7 @@ public static class CdcSqlServerProviderPositionParser
 
         CdcSqlServerLsn? commitLsn = ParseOffsetLsn(offset.CommitLsn, "$.commitLsn", diagnostics);
         CdcSqlServerLsn? changeLsn = ParseOffsetLsn(offset.ChangeLsn, "$.changeLsn", diagnostics);
-        ulong? eventSerialNo = ParseEventSerialNo(offset.EventSerialNo, diagnostics);
+        ulong? eventSerialNo = ParseOffsetEventSerialNo(offset.EventSerialNo, "$.eventSerialNo", diagnostics);
 
         if (diagnostics.HasDiagnostics || commitLsn is null || changeLsn is null || eventSerialNo is null)
         {
@@ -366,6 +390,25 @@ public static class CdcSqlServerProviderPositionParser
         return CdcProviderPositionComparisonResult.Success(committedPosition.ToString());
     }
 
+    public static CdcSqlServerEventSerialNoResult ParseEventSerialNo(long? value, string path)
+    {
+        CdcDiagnosticCollector diagnostics = new();
+
+        if (value is null)
+        {
+            diagnostics.MissingRequiredField(path, FieldNameFromPath(path));
+            return CdcSqlServerEventSerialNoResult.Failure(diagnostics.Diagnostics);
+        }
+
+        if (value < 0)
+        {
+            diagnostics.MalformedPayload(path, "CDC SQL Server eventSerialNo must be zero or positive.");
+            return CdcSqlServerEventSerialNoResult.Failure(diagnostics.Diagnostics);
+        }
+
+        return CdcSqlServerEventSerialNoResult.Success((ulong)value.Value);
+    }
+
     private static CdcSqlServerLsn? ParseOffsetLsn(
         string? value,
         string path,
@@ -381,15 +424,19 @@ public static class CdcSqlServerProviderPositionParser
         return result.Lsn;
     }
 
-    private static ulong? ParseEventSerialNo(long? eventSerialNo, CdcDiagnosticCollector diagnostics)
+    private static ulong? ParseOffsetEventSerialNo(
+        long? eventSerialNo,
+        string path,
+        CdcDiagnosticCollector diagnostics
+    )
     {
-        if (eventSerialNo is null)
+        CdcSqlServerEventSerialNoResult result = ParseEventSerialNo(eventSerialNo, path);
+        foreach (CdcDiagnostic diagnostic in result.Diagnostics)
         {
-            diagnostics.MissingRequiredField("$.eventSerialNo", "eventSerialNo");
-            return null;
+            diagnostics.Add(diagnostic);
         }
 
-        return unchecked((ulong)eventSerialNo.Value);
+        return result.EventSerialNo;
     }
 
     private static bool TryParseContiguousHex(string value, out CdcSqlServerLsn lsn)

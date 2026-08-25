@@ -136,6 +136,65 @@ public class Given_CdcProviderPosition
     }
 
     [Test]
+    public void It_rejects_negative_sql_server_event_serial_without_unsigned_wraparound()
+    {
+        CdcSqlServerProviderPosition zeroBarrier = new(new(0, 0, 0), new(0, 0, 0), 0);
+        CdcProviderPositionComparisonResult negativeResult =
+            CdcSqlServerProviderPositionParser.CompareCommittedOffsetToBarrier(
+                zeroBarrier,
+                new(
+                    CdcConnectorOffsetMatchResult.Exact,
+                    false,
+                    false,
+                    "00000000:00000000:0000",
+                    "00000000:00000000:0000",
+                    -1
+                )
+            );
+        CdcSqlServerEventSerialNoResult zeroResult = CdcSqlServerProviderPositionParser.ParseEventSerialNo(
+            0,
+            "$.eventSerialNo"
+        );
+        CdcSqlServerEventSerialNoResult heartbeatResult =
+            CdcSqlServerProviderPositionParser.ParseEventSerialNo(2, "$.eventSerialNo");
+        CdcSqlServerEventSerialNoResult largeResult = CdcSqlServerProviderPositionParser.ParseEventSerialNo(
+            long.MaxValue,
+            "$.eventSerialNo"
+        );
+        CdcProviderPositionComparisonResult largeComparisonResult =
+            CdcSqlServerProviderPositionParser.CompareCommittedOffsetToBarrier(
+                new(new(0x23, 0x138, 0x0002), new(0x23, 0x139, 0x0001), (ulong)long.MaxValue - 1),
+                new(
+                    CdcConnectorOffsetMatchResult.Exact,
+                    false,
+                    false,
+                    "00000023:00000138:0002",
+                    "00000023:00000139:0001",
+                    long.MaxValue
+                )
+            );
+
+        negativeResult.Succeeded.Should().BeFalse();
+        negativeResult.AtOrBeyondBarrier.Should().BeFalse();
+        negativeResult.CommittedPosition.Should().BeNull();
+        negativeResult
+            .Diagnostics.Should()
+            .Contain(diagnostic => diagnostic.Category == CdcDiagnosticCategory.MalformedPayload);
+        negativeResult
+            .Diagnostics.Select(diagnostic => diagnostic.Message)
+            .Should()
+            .NotContain(message => message.Contains("-1"));
+        zeroResult.Succeeded.Should().BeTrue();
+        zeroResult.EventSerialNo.Should().Be(0);
+        heartbeatResult.Succeeded.Should().BeTrue();
+        heartbeatResult.EventSerialNo.Should().Be(2);
+        largeResult.Succeeded.Should().BeTrue();
+        largeResult.EventSerialNo.Should().Be((ulong)long.MaxValue);
+        largeComparisonResult.Succeeded.Should().BeTrue();
+        largeComparisonResult.CommittedPosition.Should().EndWith($"/{long.MaxValue}");
+    }
+
+    [Test]
     public void It_rejects_sql_server_malformed_offsets_and_non_exact_source_partitions()
     {
         CdcSqlServerProviderPosition barrier = CdcSqlServerProviderPosition.HeartbeatAfterImage(

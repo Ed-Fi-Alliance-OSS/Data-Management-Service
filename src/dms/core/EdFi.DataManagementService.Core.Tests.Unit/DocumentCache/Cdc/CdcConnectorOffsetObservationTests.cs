@@ -123,6 +123,54 @@ public class Given_CdcConnectorOffsetObservation
     }
 
     [Test]
+    public void It_rejects_negative_sql_server_event_serial_values()
+    {
+        CdcBinding binding = CreateBinding(CdcProvider.SqlServer);
+        CdcArtifactInventory inventory = CdcArtifactNameGenerator.RecoverFromBinding(binding).Inventory!;
+        string sourcePartitionHash = CdcSourcePartitionHashCalculator
+            .ComputeSqlServer(inventory.TopicPrefix, "EdFi_DMS_CDC")
+            .Hash!;
+        CdcConnectorOffsetObservation observation = new(
+            CdcJsonContract.CurrentContractVersion,
+            OperationId,
+            ObservedAt,
+            binding.ToTargetIdentity(),
+            CdcProvider.SqlServer,
+            SourceFingerprint,
+            inventory.ConnectorName,
+            inventory.TopicPrefix,
+            CdcConnectorOffsetMatchResult.Exact,
+            sourcePartitionHash,
+            false,
+            false,
+            null,
+            "00000023:00000138:0002",
+            "00000023:00000139:0001",
+            -1,
+            []
+        );
+
+        CdcContractValidationResult result = CdcConnectorOffsetObservationValidator.ValidateForBinding(
+            observation,
+            binding,
+            new(OperationId, binding.ToTargetIdentity(), SourceFingerprint, Now),
+            sourcePartitionHash
+        );
+
+        result.Succeeded.Should().BeFalse();
+        result
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CdcDiagnosticCategory.MalformedPayload
+                && diagnostic.Path == "$.eventSerialNo"
+            );
+        result
+            .Diagnostics.Select(diagnostic => diagnostic.Message)
+            .Should()
+            .NotContain(message => message.Contains("-1"));
+    }
+
+    [Test]
     public void It_rejects_non_exact_partitions_mismatched_hash_and_provider_inapplicable_offsets()
     {
         CdcBinding binding = CreateBinding(CdcProvider.Postgresql);

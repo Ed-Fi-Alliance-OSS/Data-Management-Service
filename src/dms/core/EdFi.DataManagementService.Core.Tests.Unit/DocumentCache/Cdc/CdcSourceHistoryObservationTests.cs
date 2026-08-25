@@ -139,6 +139,35 @@ public class Given_CdcSourceHistoryObservation
     }
 
     [Test]
+    public void It_rejects_negative_sql_server_event_serial_position_evidence()
+    {
+        CdcBinding binding = CreateBinding(CdcProvider.SqlServer);
+        CdcSourceHistoryObservation baselineObservation = SqlServerSchemaHistoryLossObservation(binding);
+        CdcSourceHistoryObservation observation = baselineObservation with
+        {
+            PositionEvidence = baselineObservation.PositionEvidence! with { EventSerialNo = -1 },
+        };
+
+        CdcContractValidationResult result = CdcSourceHistoryObservationValidator.ValidateForBinding(
+            observation,
+            binding,
+            new(OperationId, binding.ToTargetIdentity(), SourceFingerprint, Now)
+        );
+
+        result.Succeeded.Should().BeFalse();
+        result
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CdcDiagnosticCategory.MalformedPayload
+                && diagnostic.Path == "$.positionEvidence.eventSerialNo"
+            );
+        result
+            .Diagnostics.Select(diagnostic => diagnostic.Message)
+            .Should()
+            .NotContain(message => message.Contains("-1"));
+    }
+
+    [Test]
     public void It_rejects_inconsistent_continuity_provider_artifacts_retained_ranges_and_schema_history()
     {
         CdcBinding binding = CreateBinding(CdcProvider.Postgresql);
