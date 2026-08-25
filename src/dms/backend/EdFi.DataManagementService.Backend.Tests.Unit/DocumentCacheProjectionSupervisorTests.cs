@@ -1844,7 +1844,8 @@ public class Given_DocumentCacheProjectionSupervisor
             new DocumentCacheAdministrativeCommandRunnerRequest(
                 DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
                 DocumentCacheAdministrativeTargetKey.FromTargetKey(targetContext.TargetKey),
-                Fingerprint
+                Fingerprint,
+                confirmation: DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild
             ),
             targetContext,
             new StubMutexLease(),

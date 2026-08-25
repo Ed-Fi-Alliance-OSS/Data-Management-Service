@@ -130,7 +130,8 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             new DocumentCacheAdministrativeCommandRunnerRequest(
                 DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
                 AdministrativeTargetKey,
-                OtherFingerprint
+                OtherFingerprint,
+                confirmation: DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild
             ),
             SucceedingWorkflow.Instance
         );
@@ -263,7 +264,8 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             new DocumentCacheAdministrativeCommandRunnerRequest(
                 DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation,
                 AdministrativeTargetKey,
-                Fingerprint
+                Fingerprint,
+                confirmation: DocumentCacheAdministrativeCommandConfirmation.NewEmptyActivation
             ),
             workflow
         );
@@ -438,7 +440,8 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             command,
             AdministrativeTargetKey,
             Fingerprint,
-            offlineWriterAdmission
+            offlineWriterAdmission,
+            DocumentCachePreflightClassifier.ExpectedCommandConfirmation(command)
         );
         DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(
             request,
@@ -456,6 +459,67 @@ public class Given_DocumentCacheAdministrativeCommandRunner
                 diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.Preflight
                 && diagnostic.DiagnosticCategory == expectedDiagnosticCategory
             );
+        mutex.AcquireCount.Should().Be(0);
+    }
+
+    [TestCaseSource(nameof(AdministrativeCommands))]
+    public async Task It_rejects_missing_command_confirmation_before_acquiring_the_mutex(
+        DocumentCacheAdministrativeCommand command
+    )
+    {
+        var mutex = new RecordingAdministrativeMutex();
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(ExecutionContext(generation: 1)),
+            new StubProjectionSupervisor([]),
+            mutex
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(
+            new DocumentCacheAdministrativeCommandRunnerRequest(
+                command,
+                AdministrativeTargetKey,
+                Fingerprint,
+                OfflineWriterAdmissionFor(command)
+            ),
+            ThrowingWorkflow()
+        );
+
+        AssertRejectedCommandConfirmation(
+            result,
+            DocumentCacheAdministrativeCommandClassification.MissingCommandConfirmation,
+            DocumentCacheAdministrativeDiagnosticCategory.MissingCommandConfirmation
+        );
+        mutex.AcquireCount.Should().Be(0);
+    }
+
+    [TestCaseSource(nameof(AdministrativeCommands))]
+    public async Task It_rejects_wrong_command_confirmation_before_acquiring_the_mutex(
+        DocumentCacheAdministrativeCommand command
+    )
+    {
+        var mutex = new RecordingAdministrativeMutex();
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(ExecutionContext(generation: 1)),
+            new StubProjectionSupervisor([]),
+            mutex
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(
+            new DocumentCacheAdministrativeCommandRunnerRequest(
+                command,
+                AdministrativeTargetKey,
+                Fingerprint,
+                OfflineWriterAdmissionFor(command),
+                WrongConfirmationFor(command)
+            ),
+            ThrowingWorkflow()
+        );
+
+        AssertRejectedCommandConfirmation(
+            result,
+            DocumentCacheAdministrativeCommandClassification.MismatchedCommandConfirmation,
+            DocumentCacheAdministrativeDiagnosticCategory.MismatchedCommandConfirmation
+        );
         mutex.AcquireCount.Should().Be(0);
     }
 
@@ -953,7 +1017,11 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         var command = new DocumentCacheExplicitIntegrityScrubCommand(runner);
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheExplicitIntegrityScrubRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub
+            )
         );
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
@@ -1006,7 +1074,11 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         var command = new DocumentCacheExplicitIntegrityScrubCommand(runner);
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheExplicitIntegrityScrubRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub
+            )
         );
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
@@ -1049,7 +1121,11 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         var command = new DocumentCacheExplicitIntegrityScrubCommand(runner);
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheExplicitIntegrityScrubRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub
+            )
         );
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
@@ -1099,7 +1175,11 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         var command = new DocumentCacheGuardedNewEmptyActivationCommand(runner);
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheGuardedNewEmptyActivationRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheGuardedNewEmptyActivationRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.NewEmptyActivation
+            )
         );
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
@@ -1841,7 +1921,11 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         var command = new DocumentCacheOnlineCacheRebuildCommand(runner, seeder, drainer);
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheOnlineCacheRebuildRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheOnlineCacheRebuildRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild
+            )
         );
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
@@ -2031,7 +2115,11 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         var command = new DocumentCacheExplicitIntegrityScrubCommand(runner);
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheExplicitIntegrityScrubRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub
+            )
         );
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
@@ -2090,7 +2178,11 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         var command = new DocumentCacheExplicitIntegrityScrubCommand(runner);
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheExplicitIntegrityScrubRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub
+            )
         );
 
         AssertSessionLossAfterMutation(
@@ -2240,8 +2332,34 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         new(
             DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
             AdministrativeTargetKey,
-            expectedPhysicalSourceFingerprint: Fingerprint
+            expectedPhysicalSourceFingerprint: Fingerprint,
+            confirmation: DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild
         );
+
+    private static DelegatingWorkflow ThrowingWorkflow() =>
+        new(
+            preflight: static (_, _) => throw new AssertionException("Preflight must not run."),
+            execute: static (_, _) => throw new AssertionException("Command work must not run.")
+        );
+
+    private static void AssertRejectedCommandConfirmation(
+        DocumentCacheAdministrativeCommandResult result,
+        DocumentCacheAdministrativeCommandClassification expectedClassification,
+        DocumentCacheAdministrativeDiagnosticCategory expectedDiagnosticCategory
+    )
+    {
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
+        result.Classification.Should().Be(expectedClassification);
+        result.Mutated.Should().BeFalse();
+        result.ElapsedCommandTime.Should().BeNull();
+        result.OfflineWriterAdmission.Should().BeNull();
+        result
+            .PhaseDiagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.Preflight
+                && diagnostic.DiagnosticCategory == expectedDiagnosticCategory
+            );
+    }
 
     private static void AssertSessionLossAfterMutation(
         DocumentCacheAdministrativeCommandResult result,
@@ -2386,6 +2504,43 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             DocumentCacheAdministrativeCommandClassification.MismatchedOfflineWriterAdmission,
             DocumentCacheAdministrativeDiagnosticCategory.MismatchedOfflineWriterAdmission
         ).SetName("Mismatched admission");
+    }
+
+    private static IEnumerable<TestCaseData> AdministrativeCommands()
+    {
+        return Enum.GetValues<DocumentCacheAdministrativeCommand>()
+            .Select(command => new TestCaseData(command).SetName($"Command {command}"));
+    }
+
+    private static DocumentCacheOfflineWriterAdmission? OfflineWriterAdmissionFor(
+        DocumentCacheAdministrativeCommand command
+    ) =>
+        command switch
+        {
+            DocumentCacheAdministrativeCommand.OfflineActivation => new(
+                confirmed: true,
+                DocumentCacheOfflineWriterAdmissionConfirmation.OfflineActivationWritersClosedAndDrained
+            ),
+            DocumentCacheAdministrativeCommand.OfflineDeactivation => new(
+                confirmed: true,
+                DocumentCacheOfflineWriterAdmissionConfirmation.OfflineDeactivationWritersClosedAndDrained
+            ),
+            DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery => new(
+                confirmed: true,
+                DocumentCacheOfflineWriterAdmissionConfirmation.InternalOnlyCacheAheadRecoveryWritersClosedAndDrained
+            ),
+            _ => null,
+        };
+
+    private static DocumentCacheAdministrativeCommandConfirmation WrongConfirmationFor(
+        DocumentCacheAdministrativeCommand command
+    )
+    {
+        DocumentCacheAdministrativeCommandConfirmation expectedConfirmation =
+            DocumentCachePreflightClassifier.ExpectedCommandConfirmation(command);
+        return expectedConfirmation == DocumentCacheAdministrativeCommandConfirmation.NewEmptyActivation
+            ? DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild
+            : DocumentCacheAdministrativeCommandConfirmation.NewEmptyActivation;
     }
 
     private static IEnumerable<TestCaseData> ProviderCommandTimeoutCases()

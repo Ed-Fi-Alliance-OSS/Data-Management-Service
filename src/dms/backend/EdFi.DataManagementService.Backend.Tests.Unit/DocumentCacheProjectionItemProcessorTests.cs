@@ -522,7 +522,8 @@ public class Given_DocumentCacheProjectionItemProcessor
             new DocumentCacheAdministrativeCommandRunnerRequest(
                 DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
                 DocumentCacheAdministrativeTargetKey.FromTargetKey(targetContext.TargetKey),
-                Fingerprint
+                Fingerprint,
+                confirmation: DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild
             ),
             targetContext,
             A.Fake<IDocumentCacheAdministrativeMutexLease>(),

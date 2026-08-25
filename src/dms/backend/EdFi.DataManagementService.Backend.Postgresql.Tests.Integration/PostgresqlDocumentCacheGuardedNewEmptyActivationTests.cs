@@ -91,7 +91,11 @@ public class Given_A_Postgresql_DocumentCacheGuardedNewEmptyActivation_Command
         );
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheGuardedNewEmptyActivationRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheGuardedNewEmptyActivationRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.NewEmptyActivation
+            )
         );
 
         result.Command.Should().Be(DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation);
@@ -129,7 +133,11 @@ public class Given_A_Postgresql_DocumentCacheGuardedNewEmptyActivation_Command
         );
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheGuardedNewEmptyActivationRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheGuardedNewEmptyActivationRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.NewEmptyActivation
+            )
         );
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
@@ -173,7 +181,11 @@ public class Given_A_Postgresql_DocumentCacheGuardedNewEmptyActivation_Command
         );
 
         Task<DocumentCacheAdministrativeCommandResult> commandTask = command.ExecuteAsync(
-            new DocumentCacheGuardedNewEmptyActivationRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheGuardedNewEmptyActivationRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.NewEmptyActivation
+            )
         );
 
         await lockAcquired.Task.WaitAsync(TimeSpan.FromSeconds(5));

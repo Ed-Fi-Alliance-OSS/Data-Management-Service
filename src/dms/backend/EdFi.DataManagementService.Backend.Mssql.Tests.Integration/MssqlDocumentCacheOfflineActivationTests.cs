@@ -108,7 +108,12 @@ public class Given_A_Mssql_DocumentCacheOfflineActivation_Command
         );
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheOfflineActivationRequest(AdministrativeTargetKey, Admission, Fingerprint)
+            new DocumentCacheOfflineActivationRequest(
+                AdministrativeTargetKey,
+                Admission,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.OfflineActivation
+            )
         );
 
         result.Command.Should().Be(DocumentCacheAdministrativeCommand.OfflineActivation);
@@ -150,7 +155,12 @@ public class Given_A_Mssql_DocumentCacheOfflineActivation_Command
         );
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheOfflineActivationRequest(AdministrativeTargetKey, Admission, Fingerprint)
+            new DocumentCacheOfflineActivationRequest(
+                AdministrativeTargetKey,
+                Admission,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.OfflineActivation
+            )
         );
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
@@ -176,7 +186,12 @@ public class Given_A_Mssql_DocumentCacheOfflineActivation_Command
         );
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheOfflineActivationRequest(AdministrativeTargetKey, Admission, Fingerprint)
+            new DocumentCacheOfflineActivationRequest(
+                AdministrativeTargetKey,
+                Admission,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.OfflineActivation
+            )
         );
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);

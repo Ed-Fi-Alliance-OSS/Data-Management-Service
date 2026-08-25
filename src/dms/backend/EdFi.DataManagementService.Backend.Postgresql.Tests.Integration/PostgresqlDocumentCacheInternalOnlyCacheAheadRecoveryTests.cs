@@ -114,7 +114,8 @@ public class Given_A_Postgresql_DocumentCacheInternalOnlyCacheAheadRecovery_Comm
             new DocumentCacheInternalOnlyCacheAheadRecoveryRequest(
                 AdministrativeTargetKey,
                 Admission,
-                Fingerprint
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.InternalCacheAheadRecovery
             )
         );
 
@@ -177,7 +178,8 @@ public class Given_A_Postgresql_DocumentCacheInternalOnlyCacheAheadRecovery_Comm
             new DocumentCacheInternalOnlyCacheAheadRecoveryRequest(
                 AdministrativeTargetKey,
                 Admission,
-                Fingerprint
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.InternalCacheAheadRecovery
             )
         );
 
@@ -217,7 +219,8 @@ public class Given_A_Postgresql_DocumentCacheInternalOnlyCacheAheadRecovery_Comm
             new DocumentCacheInternalOnlyCacheAheadRecoveryRequest(
                 AdministrativeTargetKey,
                 Admission,
-                Fingerprint
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.InternalCacheAheadRecovery
             )
         );
 
@@ -251,7 +254,8 @@ public class Given_A_Postgresql_DocumentCacheInternalOnlyCacheAheadRecovery_Comm
             new DocumentCacheInternalOnlyCacheAheadRecoveryRequest(
                 AdministrativeTargetKey,
                 Admission,
-                Fingerprint
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.InternalCacheAheadRecovery
             )
         );
 

@@ -112,7 +112,11 @@ public class Given_A_Mssql_DocumentCacheExplicitIntegrityScrub_Command
         );
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheExplicitIntegrityScrubRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub
+            )
         );
 
         result.Command.Should().Be(DocumentCacheAdministrativeCommand.ExplicitIntegrityScrub);
@@ -164,7 +168,11 @@ public class Given_A_Mssql_DocumentCacheExplicitIntegrityScrub_Command
         );
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheExplicitIntegrityScrubRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub
+            )
         );
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
@@ -190,7 +198,11 @@ public class Given_A_Mssql_DocumentCacheExplicitIntegrityScrub_Command
         );
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheExplicitIntegrityScrubRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub
+            )
         );
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
@@ -236,7 +248,11 @@ public class Given_A_Mssql_DocumentCacheExplicitIntegrityScrub_Command
         );
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheExplicitIntegrityScrubRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub
+            )
         );
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
@@ -293,7 +309,11 @@ public class Given_A_Mssql_DocumentCacheExplicitIntegrityScrub_Command
         );
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheExplicitIntegrityScrubRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub
+            )
         );
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.IncompleteRetryable);
@@ -348,7 +368,11 @@ public class Given_A_Mssql_DocumentCacheExplicitIntegrityScrub_Command
         );
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheExplicitIntegrityScrubRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub
+            )
         );
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);

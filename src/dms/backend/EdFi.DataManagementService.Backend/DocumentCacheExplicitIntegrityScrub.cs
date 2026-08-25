@@ -388,7 +388,12 @@ internal sealed class DocumentCacheExplicitIntegrityScrubCommand(
 
     private static DocumentCacheExplicitIntegrityScrubRequest Request(
         DocumentCacheAdministrativeCommandExecutionContext context
-    ) => new(context.Request.TargetKey, context.Request.ExpectedPhysicalSourceFingerprint);
+    ) =>
+        new(
+            context.Request.TargetKey,
+            context.Request.ExpectedPhysicalSourceFingerprint,
+            context.Request.Confirmation
+        );
 
     private sealed record DocumentCacheExplicitIntegrityScrubPageExecutionResult(
         DocumentCacheAdministrativeScrubPageResult? Page,

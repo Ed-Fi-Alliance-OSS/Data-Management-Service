@@ -668,6 +668,61 @@ public static class DocumentCachePreflightClassifier
         return null;
     }
 
+    public static DocumentCacheAdministrativeCommandResult? ClassifyCommandConfirmation(
+        DocumentCacheAdministrativeCommand command,
+        DocumentCacheAdministrativeTargetKey targetKey,
+        DocumentCacheAdministrativeCommandConfirmation? confirmation,
+        DocumentCacheTargetObservation? targetObservation = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(targetKey);
+
+        if (confirmation is null)
+        {
+            return Rejected(
+                command,
+                targetKey,
+                targetObservation,
+                DocumentCacheAdministrativeCommandClassification.MissingCommandConfirmation,
+                DocumentCacheAdministrativeDiagnosticCategory.MissingCommandConfirmation,
+                "Command confirmation is required for this administrative command."
+            );
+        }
+
+        DocumentCacheAdministrativeCommandConfirmation expectedConfirmation = ExpectedCommandConfirmation(
+            command
+        );
+        if (!Enum.IsDefined(confirmation.Value) || confirmation.Value != expectedConfirmation)
+        {
+            return Rejected(
+                command,
+                targetKey,
+                targetObservation,
+                DocumentCacheAdministrativeCommandClassification.MismatchedCommandConfirmation,
+                DocumentCacheAdministrativeDiagnosticCategory.MismatchedCommandConfirmation,
+                "Command confirmation must match the command-specific confirmation token."
+            );
+        }
+
+        return null;
+    }
+
+    public static DocumentCacheAdministrativeCommandConfirmation? AcceptedCommandConfirmation(
+        DocumentCacheAdministrativeCommand command,
+        DocumentCacheAdministrativeCommandConfirmation? confirmation
+    )
+    {
+        if (confirmation is null || !Enum.IsDefined(confirmation.Value))
+        {
+            return null;
+        }
+
+        DocumentCacheAdministrativeCommandConfirmation expectedConfirmation = ExpectedCommandConfirmation(
+            command
+        );
+        return confirmation.Value == expectedConfirmation ? confirmation : null;
+    }
+
     public static DocumentCacheAdministrativeCommandResult? ClassifyTargetObservationFailure(
         DocumentCacheAdministrativeCommand command,
         DocumentCacheAdministrativeTargetKey targetKey,
@@ -703,6 +758,26 @@ public static class DocumentCachePreflightClassifier
             ? confirmation
             : null;
     }
+
+    public static DocumentCacheAdministrativeCommandConfirmation ExpectedCommandConfirmation(
+        DocumentCacheAdministrativeCommand command
+    ) =>
+        command switch
+        {
+            DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation =>
+                DocumentCacheAdministrativeCommandConfirmation.NewEmptyActivation,
+            DocumentCacheAdministrativeCommand.OfflineActivation =>
+                DocumentCacheAdministrativeCommandConfirmation.OfflineActivation,
+            DocumentCacheAdministrativeCommand.OfflineDeactivation =>
+                DocumentCacheAdministrativeCommandConfirmation.OfflineDeactivation,
+            DocumentCacheAdministrativeCommand.OnlineCacheRebuild =>
+                DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild,
+            DocumentCacheAdministrativeCommand.ExplicitIntegrityScrub =>
+                DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub,
+            DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery =>
+                DocumentCacheAdministrativeCommandConfirmation.InternalCacheAheadRecovery,
+            _ => throw new ArgumentOutOfRangeException(nameof(command), command, "Unsupported command."),
+        };
 
     private static DocumentCacheAdministrativeCommandResult? ClassifyCommonTargetState(
         DocumentCacheAdministrativeCommand command,

@@ -101,7 +101,11 @@ public class Given_A_Postgresql_DocumentCacheOnlineCacheRebuild_Command
         );
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheOnlineCacheRebuildRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheOnlineCacheRebuildRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild
+            )
         );
 
         result.Command.Should().Be(DocumentCacheAdministrativeCommand.OnlineCacheRebuild);
@@ -141,7 +145,11 @@ public class Given_A_Postgresql_DocumentCacheOnlineCacheRebuild_Command
         );
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheOnlineCacheRebuildRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheOnlineCacheRebuildRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild
+            )
         );
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
@@ -173,7 +181,11 @@ public class Given_A_Postgresql_DocumentCacheOnlineCacheRebuild_Command
         );
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheOnlineCacheRebuildRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheOnlineCacheRebuildRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild
+            )
         );
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);

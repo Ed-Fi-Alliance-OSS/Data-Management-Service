@@ -100,7 +100,12 @@ public class Given_A_Postgresql_DocumentCacheOfflineDeactivation_Command
         );
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheOfflineDeactivationRequest(AdministrativeTargetKey, Admission, Fingerprint)
+            new DocumentCacheOfflineDeactivationRequest(
+                AdministrativeTargetKey,
+                Admission,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.OfflineDeactivation
+            )
         );
 
         result.Command.Should().Be(DocumentCacheAdministrativeCommand.OfflineDeactivation);
@@ -149,7 +154,12 @@ public class Given_A_Postgresql_DocumentCacheOfflineDeactivation_Command
         );
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheOfflineDeactivationRequest(AdministrativeTargetKey, Admission, Fingerprint)
+            new DocumentCacheOfflineDeactivationRequest(
+                AdministrativeTargetKey,
+                Admission,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.OfflineDeactivation
+            )
         );
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
@@ -176,7 +186,12 @@ public class Given_A_Postgresql_DocumentCacheOfflineDeactivation_Command
         );
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheOfflineDeactivationRequest(AdministrativeTargetKey, Admission, Fingerprint)
+            new DocumentCacheOfflineDeactivationRequest(
+                AdministrativeTargetKey,
+                Admission,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.OfflineDeactivation
+            )
         );
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
@@ -206,7 +221,12 @@ public class Given_A_Postgresql_DocumentCacheOfflineDeactivation_Command
         );
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheOfflineDeactivationRequest(AdministrativeTargetKey, Admission, Fingerprint)
+            new DocumentCacheOfflineDeactivationRequest(
+                AdministrativeTargetKey,
+                Admission,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.OfflineDeactivation
+            )
         );
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
