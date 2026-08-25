@@ -79,9 +79,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
                 new("ResourceKeyId", "smallint"),
                 new("CreatedByOwnershipTokenId", "smallint", IsNullable: true),
                 new("ContentVersion", "bigint"),
-                new("IdentityVersion", "bigint"),
                 new("ContentLastModifiedAt", "datetime2(7)"),
-                new("IdentityLastModifiedAt", "datetime2(7)"),
                 new("CreatedAt", "datetime2(7)"),
             ]
         ),

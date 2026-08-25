@@ -40,7 +40,7 @@ internal static class PerfFixtureSmokeScenario
         """;
 
     private const string DocumentRowSql = """
-        SELECT "DocumentId", "ResourceKeyId", "CreatedByOwnershipTokenId", "ContentVersion", "IdentityVersion"
+        SELECT "DocumentId", "ResourceKeyId", "CreatedByOwnershipTokenId", "ContentVersion"
         FROM "dms"."Document"
         WHERE "DocumentUuid" = @uuid;
         """;
@@ -112,8 +112,7 @@ internal static class PerfFixtureSmokeScenario
         long DocumentId,
         long ResourceKeyId,
         bool HasOwnershipToken,
-        long ContentVersion,
-        long IdentityVersion
+        long ContentVersion
     );
 
     private sealed record StudentRow(
@@ -178,7 +177,6 @@ internal static class PerfFixtureSmokeScenario
         loaderFirst.ResourceKeyId.Should().Be(control.ResourceKeyId);
         loaderFirst.HasOwnershipToken.Should().Be(control.HasOwnershipToken);
         loaderFirst.ContentVersion.Should().BePositive();
-        loaderFirst.IdentityVersion.Should().BePositive();
         control.ContentVersion.Should().BePositive();
 
         StudentRow loaderStudent = await ReadStudentRowAsync(connection, loaderFirst.DocumentId);
@@ -329,9 +327,8 @@ internal static class PerfFixtureSmokeScenario
 
     /// <summary>
     /// POSTs one control VisaDescriptor through the production descriptor write path and
-    /// holds the loader's VisaDescriptor rows to its shape: dms.Document identity fields,
-    /// the dms.Descriptor row semantics, referential-identity row count, and tracked-change
-    /// accounting.
+    /// holds the loader's VisaDescriptor rows to its shape: dms.Document metadata, the
+    /// dms.Descriptor row semantics, referential-identity row count, and tracked-change accounting.
     /// </summary>
     private static async Task AssertControlDescriptorParityAsync(
         ApiIntegrationHarness harness,
@@ -625,8 +622,7 @@ internal static class PerfFixtureSmokeScenario
             reader.GetInt64(0),
             Convert.ToInt64(reader.GetValue(1), CultureInfo.InvariantCulture),
             !await reader.IsDBNullAsync(2),
-            reader.GetInt64(3),
-            reader.GetInt64(4)
+            reader.GetInt64(3)
         );
     }
 

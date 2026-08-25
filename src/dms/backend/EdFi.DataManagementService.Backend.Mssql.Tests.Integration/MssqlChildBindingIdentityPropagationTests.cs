@@ -158,12 +158,7 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
         );
 
         await _database.WaitForUtcClockToAdvancePastAsync(
-            new[]
-            {
-                beforeBellSchedule.ContentLastModifiedAt,
-                beforeClassPeriod.ContentLastModifiedAt,
-                beforeClassPeriod.IdentityLastModifiedAt,
-            }.Max()
+            new[] { beforeBellSchedule.ContentLastModifiedAt, beforeClassPeriod.ContentLastModifiedAt }.Max()
         );
 
         // Act — update the upstream ClassPeriod identity column.
@@ -459,7 +454,6 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
             new[]
             {
                 baselineClassPeriod.ContentLastModifiedAt,
-                baselineClassPeriod.IdentityLastModifiedAt,
                 baselineBellSchedule.ContentLastModifiedAt,
             }.Max()
         );
