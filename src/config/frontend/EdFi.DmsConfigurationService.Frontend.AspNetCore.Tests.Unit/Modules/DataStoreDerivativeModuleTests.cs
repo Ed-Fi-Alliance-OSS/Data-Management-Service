@@ -286,4 +286,124 @@ public class DataStoreDerivativeModuleTests
             responseContent.Should().Contain("Request body id must match the id in the url.");
         }
     }
+
+    [TestFixture]
+    public class Given_insert_returns_a_duplicate_derivative : DataStoreDerivativeModuleTests
+    {
+        private HttpResponseMessage _response = null!;
+        private JsonNode _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            A.CallTo(() => _repository.InsertDataStoreDerivative(A<DataStoreDerivativeInsertCommand>.Ignored))
+                .Returns(
+                    new DataStoreDerivativeInsertResult.FailureDuplicateDataStoreDerivative(1, "ReadReplica")
+                );
+
+            using var client = SetUpClient();
+            using var content = new StringContent(
+                """{"dataStoreId":1,"derivativeType":"ReadReplica"}""",
+                Encoding.UTF8,
+                "application/json"
+            );
+            _response = await client.PostAsync("/v3/dataStoreDerivatives/", content);
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!;
+        }
+
+        [Test]
+        public void It_returns_409() => _response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        [Test]
+        public void It_uses_the_application_json_content_type() =>
+            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        [Test]
+        public void It_uses_the_conflict_type() =>
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:conflict");
+
+        [Test]
+        public void It_has_the_conflict_title() => _body["title"]!.GetValue<string>().Should().Be("Conflict");
+
+        [Test]
+        public void It_has_the_expected_detail() =>
+            _body["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("A DataStoreDerivative of type ReadReplica already exists for DataStore 1.");
+
+        [Test]
+        public void It_has_a_body_status_of_409() => _body["status"]!.GetValue<int>().Should().Be(409);
+
+        [Test]
+        public void It_includes_a_non_empty_correlation_id() =>
+            _body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+
+        [Test]
+        public void It_includes_empty_extension_members()
+        {
+            _body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            _body["errors"]!.AsArray().Count.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    public class Given_update_returns_a_duplicate_derivative : DataStoreDerivativeModuleTests
+    {
+        private HttpResponseMessage _response = null!;
+        private JsonNode _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            A.CallTo(() => _repository.UpdateDataStoreDerivative(A<DataStoreDerivativeUpdateCommand>.Ignored))
+                .Returns(
+                    new DataStoreDerivativeUpdateResult.FailureDuplicateDataStoreDerivative(2, "Snapshot")
+                );
+
+            using var client = SetUpClient();
+            using var content = new StringContent(
+                """{"id":1,"dataStoreId":2,"derivativeType":"Snapshot"}""",
+                Encoding.UTF8,
+                "application/json"
+            );
+            _response = await client.PutAsync("/v3/dataStoreDerivatives/1", content);
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!;
+        }
+
+        [Test]
+        public void It_returns_409() => _response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        [Test]
+        public void It_uses_the_application_json_content_type() =>
+            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        [Test]
+        public void It_uses_the_conflict_type() =>
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:conflict");
+
+        [Test]
+        public void It_has_the_conflict_title() => _body["title"]!.GetValue<string>().Should().Be("Conflict");
+
+        [Test]
+        public void It_has_the_expected_detail() =>
+            _body["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("A DataStoreDerivative of type Snapshot already exists for DataStore 2.");
+
+        [Test]
+        public void It_has_a_body_status_of_409() => _body["status"]!.GetValue<int>().Should().Be(409);
+
+        [Test]
+        public void It_includes_a_non_empty_correlation_id() =>
+            _body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+
+        [Test]
+        public void It_includes_empty_extension_members()
+        {
+            _body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            _body["errors"]!.AsArray().Count.Should().Be(0);
+        }
+    }
 }
