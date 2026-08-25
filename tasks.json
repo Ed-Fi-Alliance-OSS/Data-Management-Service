@@ -232,7 +232,7 @@
       "rg -n \"internalOnly|DownstreamPublicationHistory|offlineWriterAdmission\" src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit",
       "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~Downstream"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "cli-integration-test-harness",
