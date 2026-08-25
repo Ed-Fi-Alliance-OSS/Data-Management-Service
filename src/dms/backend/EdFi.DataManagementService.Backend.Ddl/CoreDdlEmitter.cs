@@ -187,14 +187,23 @@ public sealed class CoreDdlEmitter
 
     private IReadOnlyList<CdcSourceTableInventory> BuildCdcSourceInventory() =>
         CdcSourceInventoryContract
-            .RequiredSourceTableKinds.Select(kind => BuildCdcSourceTableInventory(kind))
+            .RequiredSourceTableKinds.Select(kind => BuildCdcSourceTable(kind, CoreTableDefinition(kind)))
             .ToArray();
 
-    private CdcSourceTableInventory BuildCdcSourceTableInventory(CdcSourceTableKind tableKind)
-    {
-        DmsCoreTableDefinition table = CoreTableDefinition(tableKind);
+    private DmsCoreTableDefinition CoreTableDefinition(CdcSourceTableKind tableKind) =>
+        tableKind switch
+        {
+            CdcSourceTableKind.DocumentCache => DmsCoreTableDefinitions.DocumentCache(_dialect),
+            CdcSourceTableKind.Document => DmsCoreTableDefinitions.Document(_dialect),
+            CdcSourceTableKind.CdcHeartbeat => DmsCoreTableDefinitions.CdcHeartbeat(_dialect),
+            _ => throw new InvalidOperationException("Unsupported CDC source table kind."),
+        };
 
-        return new(
+    private CdcSourceTableInventory BuildCdcSourceTable(
+        CdcSourceTableKind tableKind,
+        DmsCoreTableDefinition table
+    ) =>
+        new(
             tableKind,
             table.TableName,
             _dialect.QualifyTable(table.TableName),
@@ -211,20 +220,6 @@ public sealed class CoreDdlEmitter
                 )
                 .ToArray()
         );
-    }
-
-    private DmsCoreTableDefinition CoreTableDefinition(CdcSourceTableKind tableKind) =>
-        tableKind switch
-        {
-            CdcSourceTableKind.DocumentCache => DmsCoreTableDefinitions.DocumentCache(_dialect),
-            CdcSourceTableKind.Document => DmsCoreTableDefinitions.Document(_dialect),
-            CdcSourceTableKind.CdcHeartbeat => DmsCoreTableDefinitions.CdcHeartbeat(_dialect),
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(tableKind),
-                tableKind,
-                "Unsupported CDC source table kind."
-            ),
-        };
 
     // ── Phase 1: Schemas ────────────────────────────────────────────────
 
