@@ -159,6 +159,12 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
     {
         ArgumentNullException.ThrowIfNull(incident);
 
+        CdcStateStoreFailure? incidentInputFailure = ValidateIncidentInput(incident);
+        if (incidentInputFailure is not null)
+        {
+            return new CdcLatchIncidentStateStoreResult.StateStoreFailure(incidentInputFailure);
+        }
+
         CdcBindingIdentity identity = incident.BindingIdentity.ToBindingIdentity();
         LocalBindingReadResult readResult = await ReadBindingStateAsync(identity, cancellationToken);
         if (readResult.Failure is not null)
@@ -177,6 +183,15 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             return new CdcLatchIncidentStateStoreResult.BindingMismatch(
                 CompleteIdentityMismatch(currentState.Binding, incident.BindingIdentity)
             );
+        }
+
+        CdcStateStoreFailure? bindingIncidentFailure = ValidateIncidentForBinding(
+            incident,
+            currentState.Binding
+        );
+        if (bindingIncidentFailure is not null)
+        {
+            return new CdcLatchIncidentStateStoreResult.StateStoreFailure(bindingIncidentFailure);
         }
 
         if (currentState.Incident is not null)
@@ -250,7 +265,8 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         CdcStateStoreFailure? permissionFailure = ApplyOwnerOnlyFilePermissions(incidentPath.FilePath!);
         if (permissionFailure is not null)
         {
-            return new CdcLatchIncidentStateStoreResult.StateStoreFailure(permissionFailure);
+            CdcStateStoreFailure? deleteFailure = DeleteIncompleteIncidentFile(incidentPath.FilePath!);
+            return new CdcLatchIncidentStateStoreResult.StateStoreFailure(deleteFailure ?? permissionFailure);
         }
 
         LocalIncidentReadResult readBackIncident = await ReadIncidentStateAsync(
@@ -834,6 +850,14 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             );
         }
 
+        CdcStateStoreFailure? validationFailure = ValidateIncidentForBinding(incident, binding);
+        if (validationFailure is not null)
+        {
+            return LocalIncidentReadResult.Failed(
+                CdcStateStoreFailure.InvalidPersistedIncident(validationFailure.Diagnostics)
+            );
+        }
+
         return LocalIncidentReadResult.Read(incident);
     }
 
@@ -861,10 +885,22 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         }
 
         CdcContractReadResult<CdcIncident> readResult = CdcJsonContract.Deserialize<CdcIncident>(json);
-        return readResult.Succeeded
+        if (!readResult.Succeeded)
+        {
+            return LocalIncidentFileReadResult.Failed(
+                CdcStateStoreFailure.InvalidPersistedIncident(readResult.Diagnostics)
+            );
+        }
+
+        CdcContractValidationResult validationResult = CdcIncidentValidator.Validate(
+            readResult.Contract!,
+            DateTimeOffset.UtcNow
+        );
+
+        return validationResult.Succeeded
             ? LocalIncidentFileReadResult.Read(readResult.Contract!)
             : LocalIncidentFileReadResult.Failed(
-                CdcStateStoreFailure.InvalidPersistedIncident(readResult.Diagnostics)
+                CdcStateStoreFailure.InvalidPersistedIncident(validationResult.Diagnostics)
             );
     }
 
@@ -1184,6 +1220,48 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         return value.All(character => character is >= '0' and <= '9')
             && long.TryParse(value, out generation)
             && generation > 0;
+    }
+
+    private static CdcStateStoreFailure? ValidateIncidentInput(CdcIncident incident)
+    {
+        CdcContractValidationResult validationResult = CdcIncidentValidator.Validate(
+            incident,
+            DateTimeOffset.UtcNow
+        );
+
+        return validationResult.Succeeded
+            ? null
+            : CdcStateStoreFailure.InvalidOperation(validationResult.Diagnostics);
+    }
+
+    private static CdcStateStoreFailure? ValidateIncidentForBinding(CdcIncident incident, CdcBinding binding)
+    {
+        CdcContractValidationResult validationResult = CdcIncidentValidator.ValidateForBinding(
+            incident,
+            binding,
+            DateTimeOffset.UtcNow
+        );
+
+        return validationResult.Succeeded
+            ? null
+            : CdcStateStoreFailure.InvalidOperation(validationResult.Diagnostics);
+    }
+
+    private static CdcStateStoreFailure? DeleteIncompleteIncidentFile(string filePath)
+    {
+        try
+        {
+            if (File.Exists(filePath))
+            {
+                File.Delete(filePath);
+            }
+
+            return null;
+        }
+        catch (Exception exception) when (IsFileSystemException(exception))
+        {
+            return FileSystemFailure(filePath, "remove incomplete incident state");
+        }
     }
 
     private static CdcBindingMismatch CompleteIdentityMismatch(

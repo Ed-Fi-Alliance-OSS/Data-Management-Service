@@ -97,6 +97,9 @@ internal sealed record CdcStateStoreFailure
             "CDC persisted incident state is invalid.",
             diagnostics
         );
+
+    public static CdcStateStoreFailure InvalidOperation(IReadOnlyList<CdcDiagnostic> diagnostics) =>
+        new(CdcStateStoreFailureKind.InvalidOperation, "CDC state-store operation is invalid.", diagnostics);
 }
 
 internal abstract record CdcCreateBindingStateStoreResult
