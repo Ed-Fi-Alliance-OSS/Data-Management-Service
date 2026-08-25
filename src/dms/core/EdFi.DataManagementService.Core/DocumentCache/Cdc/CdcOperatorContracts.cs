@@ -411,6 +411,8 @@ public sealed record CdcGovernedArtifact
 
 internal static class CdcContractText
 {
+    public const string EvidenceUnavailable = "CDC evidence unavailable.";
+
     private const int MaximumTextLength = 512;
 
     public static string SanitizeRequired(string? value)
@@ -418,7 +420,7 @@ internal static class CdcContractText
         string sanitized = LoggingSanitizer.SanitizeForLogging(value);
         if (string.IsNullOrWhiteSpace(sanitized))
         {
-            return "CDC evidence unavailable.";
+            return EvidenceUnavailable;
         }
 
         return sanitized.Length <= MaximumTextLength ? sanitized : sanitized[..MaximumTextLength];

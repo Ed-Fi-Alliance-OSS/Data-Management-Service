@@ -207,22 +207,26 @@ public class Given_CdcBindingStateStore
                 .ToArray()
         );
 
-    private static CdcCleanupProof CreateCleanupProof(CdcBinding binding) =>
-        new(
+    private static CdcCleanupProof CreateCleanupProof(CdcBinding binding)
+    {
+        CdcArtifactInventory inventory = CdcArtifactNameGenerator.RecoverFromBinding(binding).Inventory!;
+
+        return new(
             CdcJsonContract.CurrentContractVersion,
             "operation-1",
             SampleObservedAt,
             binding.ToCompleteBindingIdentity(),
             CdcCleanupMode.RetireBindingGeneration,
-            [
-                new(
-                    CdcGovernedArtifactKind.KafkaConnectConnector,
-                    binding.ConnectorName,
+            inventory
+                .GovernedArtifacts.Select(artifact => new CdcGovernedArtifact(
+                    artifact.Kind,
+                    artifact.Name,
                     CdcCleanupState.Deleted,
                     "deleted"
-                ),
-            ]
+                ))
+                .ToArray()
         );
+    }
 
     private sealed class InMemoryCdcBindingStateStore : ICdcBindingStateStore
     {

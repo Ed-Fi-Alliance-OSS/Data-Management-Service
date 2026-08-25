@@ -190,6 +190,55 @@ public class Given_LocalCdcStateStore
     }
 
     [Test]
+    public async Task It_rejects_invalid_import_and_cleanup_proofs_without_mutating_state()
+    {
+        using TempCdcStateRoot tempRoot = new();
+        LocalCdcBindingStateStore store = new(tempRoot.Path);
+        CdcAdoptionProof invalidAdoptionProof = CreateAdoptionProof(SampleBinding) with
+        {
+            OperationId = "bad/operation",
+        };
+        CdcCleanupProof cleanupProof = CreateCleanupProof(SampleBinding);
+        CdcCleanupProof incompleteCleanupProof = cleanupProof with
+        {
+            GovernedArtifacts = cleanupProof.GovernedArtifacts.Take(1).ToArray(),
+        };
+
+        CdcImportBindingStateStoreResult importResult = await store.ImportVerifiedBindingAsync(
+            invalidAdoptionProof,
+            CancellationToken.None
+        );
+        CdcReadBindingStateStoreResult readAfterRejectedImport = await store.ReadBindingAsync(
+            SampleBinding.ToBindingIdentity(),
+            CancellationToken.None
+        );
+
+        await store.CreateBindingIfAbsentAsync(SampleBinding, CancellationToken.None);
+        CdcDeleteBindingStateStoreResult deleteResult = await store.DeleteStateAfterVerifiedCleanupAsync(
+            incompleteCleanupProof,
+            CancellationToken.None
+        );
+        CdcReadBindingStateStoreResult readAfterRejectedDelete = await store.ReadBindingAsync(
+            SampleBinding.ToBindingIdentity(),
+            CancellationToken.None
+        );
+
+        importResult
+            .Should()
+            .BeOfType<CdcImportBindingStateStoreResult.StateStoreFailure>()
+            .Subject.Failure.Kind.Should()
+            .Be(CdcStateStoreFailureKind.InvalidOperation);
+        readAfterRejectedImport.Should().BeOfType<CdcReadBindingStateStoreResult.Missing>();
+        deleteResult
+            .Should()
+            .BeOfType<CdcDeleteBindingStateStoreResult.StateStoreFailure>()
+            .Subject.Failure.Diagnostics.Select(diagnostic => diagnostic.Category)
+            .Should()
+            .Contain(CdcDiagnosticCategory.InventoryIncomplete);
+        readAfterRejectedDelete.Should().BeOfType<CdcReadBindingStateStoreResult.Found>();
+    }
+
+    [Test]
     public async Task It_treats_duplicate_json_properties_case_collisions_and_orphan_incidents_as_store_failures()
     {
         using TempCdcStateRoot tempRoot = new();
@@ -315,22 +364,41 @@ public class Given_LocalCdcStateStore
             )
         );
 
-    private static CdcCleanupProof CreateCleanupProof(CdcBinding binding) =>
+    private static CdcAdoptionProof CreateAdoptionProof(CdcBinding binding) =>
         new(
+            CdcJsonContract.CurrentContractVersion,
+            "operation-1",
+            SampleObservedAt,
+            binding,
+            Enum.GetValues<CdcAdoptionVerificationKind>()
+                .Select(kind => new CdcAdoptionVerificationResult(
+                    kind,
+                    CdcAdoptionVerificationState.ExactMatch,
+                    "verified"
+                ))
+                .ToArray()
+        );
+
+    private static CdcCleanupProof CreateCleanupProof(CdcBinding binding)
+    {
+        CdcArtifactInventory inventory = CdcArtifactNameGenerator.RecoverFromBinding(binding).Inventory!;
+
+        return new(
             CdcJsonContract.CurrentContractVersion,
             "operation-1",
             SampleObservedAt,
             binding.ToCompleteBindingIdentity(),
             CdcCleanupMode.RetireBindingGeneration,
-            [
-                new(
-                    CdcGovernedArtifactKind.KafkaConnectConnector,
-                    binding.ConnectorName,
+            inventory
+                .GovernedArtifacts.Select(artifact => new CdcGovernedArtifact(
+                    artifact.Kind,
+                    artifact.Name,
                     CdcCleanupState.Deleted,
                     "deleted"
-                ),
-            ]
+                ))
+                .ToArray()
         );
+    }
 
     private sealed class TempCdcStateRoot : IDisposable
     {

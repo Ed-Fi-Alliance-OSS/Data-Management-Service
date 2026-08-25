@@ -73,6 +73,17 @@ public enum CdcDiagnosticCategory
     InvalidContractVersion,
     FutureUtcTimestamp,
     LocalStateUnavailable,
+    MalformedProof,
+    InvalidOperationId,
+    InvalidTimestamp,
+    BindingIdentityMismatch,
+    VerificationIncomplete,
+    InventoryIncomplete,
+    UnexpectedArtifact,
+    DuplicateArtifact,
+    ArtifactNameMismatch,
+    ArtifactNotRemoved,
+    UnsafeEvidence,
 }
 
 public sealed record CdcTargetIdentity(

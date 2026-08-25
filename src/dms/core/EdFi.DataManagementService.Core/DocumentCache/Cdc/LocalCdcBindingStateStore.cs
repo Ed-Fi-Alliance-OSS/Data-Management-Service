@@ -303,6 +303,12 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
     {
         ArgumentNullException.ThrowIfNull(verifiedAdoptionProof);
 
+        CdcStateStoreFailure? proofFailure = ValidateAdoptionProof(verifiedAdoptionProof);
+        if (proofFailure is not null)
+        {
+            return new CdcImportBindingStateStoreResult.StateStoreFailure(proofFailure);
+        }
+
         LocalCreateBindingResult result = await CreateOrExactMatchBindingAsync(
             verifiedAdoptionProof.Binding,
             cancellationToken
@@ -329,6 +335,12 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
     {
         ArgumentNullException.ThrowIfNull(verifiedCleanupProof);
 
+        CdcStateStoreFailure? proofStructureFailure = ValidateCleanupProofStructure(verifiedCleanupProof);
+        if (proofStructureFailure is not null)
+        {
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(proofStructureFailure);
+        }
+
         CdcCompleteBindingIdentity completeIdentity = verifiedCleanupProof.BindingIdentity;
         CdcBindingIdentity identity = completeIdentity.ToBindingIdentity();
         LocalBindingReadResult readResult = await ReadBindingStateAsync(identity, cancellationToken);
@@ -342,13 +354,13 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             return new CdcDeleteBindingStateStoreResult.BindingMissing(completeIdentity);
         }
 
-        if (readResult.State!.State.Binding.ToCompleteBindingIdentity() != completeIdentity)
+        CdcStateStoreFailure? proofFailure = ValidateCleanupProofForBinding(
+            verifiedCleanupProof,
+            readResult.State!.State.Binding
+        );
+        if (proofFailure is not null)
         {
-            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(
-                CdcStateStoreFailure.InvalidPersistedBinding([
-                    IdentityMismatchDiagnostic("$.bindingIdentity", "binding", "cleanup proof"),
-                ])
-            );
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(proofFailure);
         }
 
         CdcStateStorePathResolution bindingPath = _pathResolver.ResolveBindingPath(identity);
@@ -1238,6 +1250,46 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
     {
         CdcContractValidationResult validationResult = CdcIncidentValidator.ValidateForBinding(
             incident,
+            binding,
+            DateTimeOffset.UtcNow
+        );
+
+        return validationResult.Succeeded
+            ? null
+            : CdcStateStoreFailure.InvalidOperation(validationResult.Diagnostics);
+    }
+
+    private static CdcStateStoreFailure? ValidateAdoptionProof(CdcAdoptionProof proof)
+    {
+        CdcContractValidationResult validationResult = CdcAdoptionProofValidator.Validate(
+            proof,
+            DateTimeOffset.UtcNow
+        );
+
+        return validationResult.Succeeded
+            ? null
+            : CdcStateStoreFailure.InvalidOperation(validationResult.Diagnostics);
+    }
+
+    private static CdcStateStoreFailure? ValidateCleanupProofStructure(CdcCleanupProof proof)
+    {
+        CdcContractValidationResult validationResult = CdcCleanupProofValidator.ValidateStructure(
+            proof,
+            DateTimeOffset.UtcNow
+        );
+
+        return validationResult.Succeeded
+            ? null
+            : CdcStateStoreFailure.InvalidOperation(validationResult.Diagnostics);
+    }
+
+    private static CdcStateStoreFailure? ValidateCleanupProofForBinding(
+        CdcCleanupProof proof,
+        CdcBinding binding
+    )
+    {
+        CdcContractValidationResult validationResult = CdcCleanupProofValidator.Validate(
+            proof,
             binding,
             DateTimeOffset.UtcNow
         );

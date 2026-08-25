@@ -176,12 +176,21 @@ public static class CdcArtifactNameGenerator
     {
         ArgumentNullException.ThrowIfNull(binding);
 
+        return RecoverFromCompleteBindingIdentity(binding.ToCompleteBindingIdentity());
+    }
+
+    public static CdcArtifactNameResult RecoverFromCompleteBindingIdentity(
+        CdcCompleteBindingIdentity bindingIdentity
+    )
+    {
+        ArgumentNullException.ThrowIfNull(bindingIdentity);
+
         CdcDiagnosticCollector diagnostics = new();
 
         string? topicPrefix = RecoverTopicPrefix(
-            binding.TopicName,
-            binding.InstanceKey,
-            binding.Generation,
+            bindingIdentity.TopicName,
+            bindingIdentity.InstanceKey,
+            bindingIdentity.Generation,
             diagnostics
         );
 
@@ -191,7 +200,13 @@ public static class CdcArtifactNameGenerator
         }
 
         CdcArtifactNameResult renderResult = Render(
-            new(binding.DeploymentKey, topicPrefix, binding.InstanceKey, binding.Generation, binding.Provider)
+            new(
+                bindingIdentity.DeploymentKey,
+                topicPrefix,
+                bindingIdentity.InstanceKey,
+                bindingIdentity.Generation,
+                bindingIdentity.Provider
+            )
         );
         foreach (CdcDiagnostic diagnostic in renderResult.Diagnostics)
         {
@@ -202,7 +217,7 @@ public static class CdcArtifactNameGenerator
         {
             if (
                 !string.Equals(
-                    binding.ConnectorName,
+                    bindingIdentity.ConnectorName,
                     renderResult.Inventory.ConnectorName,
                     StringComparison.Ordinal
                 )
@@ -214,7 +229,13 @@ public static class CdcArtifactNameGenerator
                 );
             }
 
-            if (!string.Equals(binding.TopicName, renderResult.Inventory.TopicName, StringComparison.Ordinal))
+            if (
+                !string.Equals(
+                    bindingIdentity.TopicName,
+                    renderResult.Inventory.TopicName,
+                    StringComparison.Ordinal
+                )
+            )
             {
                 diagnostics.MalformedPayload(
                     "$.topicName",
