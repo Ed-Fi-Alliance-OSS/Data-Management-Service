@@ -83,7 +83,7 @@
       "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~Serialization",
       "printf '{\"targetKey\":{\"tenantKey\":\"\",\"dataStoreId\":1}}' | dotnet run --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- status --request-json - --json"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "status-command",

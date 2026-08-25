@@ -55,7 +55,12 @@ try
     ConfigureServices(serviceCollection, configuration, verbose, validInvocationTarget.TargetKey);
     await using ServiceProvider serviceProvider = serviceCollection.BuildServiceProvider();
 
-    int exitCode = await parseResult.InvokeAsync();
+    int exitCode = await DocumentCacheAdminCommandExecutor.ExecuteAsync(
+        parseResult,
+        validInvocationTarget,
+        serviceProvider,
+        Console.Out
+    );
     return exitCode;
 }
 finally

@@ -62,9 +62,10 @@ public class DocumentCacheAdministrativeContractsTests
 
             bool hasOfflineWriterAdmission = root.ContainsKey("offlineWriterAdmission");
             string[] expectedProperties = hasOfflineWriterAdmission
-                ? ["targetKey", "expectedPhysicalSourceFingerprint", "offlineWriterAdmission"]
-                : ["targetKey", "expectedPhysicalSourceFingerprint"];
+                ? ["targetKey", "confirmation", "expectedPhysicalSourceFingerprint", "offlineWriterAdmission"]
+                : ["targetKey", "confirmation", "expectedPhysicalSourceFingerprint"];
             root.Select(property => property.Key).Should().Equal(expectedProperties);
+            root["confirmation"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
             root["expectedPhysicalSourceFingerprint"]!.GetValue<string>().Should().Be(Fingerprint);
 
             JsonObject targetKey = root["targetKey"]!.AsObject();
@@ -88,6 +89,7 @@ public class DocumentCacheAdministrativeContractsTests
             const string json = """
                 {
                   "targetKey": { "tenantKey": "", "dataStoreId": 1 },
+                  "confirmation": "offlineDeactivation",
                   "expectedPhysicalSourceFingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
                   "offlineWriterAdmission": {
                     "confirmed": true,
@@ -100,6 +102,9 @@ public class DocumentCacheAdministrativeContractsTests
                 JsonSerializer.Deserialize<DocumentCacheOfflineDeactivationRequest>(json)!;
 
             request.TargetKey.TargetKey.Should().Be(DocumentCacheTargetKey.Create("", 1));
+            request
+                .Confirmation.Should()
+                .Be(DocumentCacheAdministrativeCommandConfirmation.OfflineDeactivation);
             request.ExpectedPhysicalSourceFingerprint!.Value.Should().Be(Fingerprint);
             request.OfflineWriterAdmission.Should().NotBeNull();
             request
@@ -121,6 +126,7 @@ public class DocumentCacheAdministrativeContractsTests
             string json = $$"""
                 {
                   "targetKey": { "tenantKey": "", "dataStoreId": 1 },
+                  "confirmation": "newEmptyActivation",
                   "expectedPhysicalSourceFingerprint": {{serializedFingerprint}}
                 }
                 """;
@@ -137,6 +143,7 @@ public class DocumentCacheAdministrativeContractsTests
             const string json = """
                 {
                   "targetKey": { "tenantKey": "", "dataStoreId": 0 },
+                  "confirmation": "newEmptyActivation",
                   "expectedPhysicalSourceFingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
                 }
                 """;
@@ -150,14 +157,19 @@ public class DocumentCacheAdministrativeContractsTests
         private static IEnumerable<TestCaseData> RequestContracts()
         {
             yield return new TestCaseData(
-                new DocumentCacheGuardedNewEmptyActivationRequest(_defaultTargetKey, _fingerprint),
+                new DocumentCacheGuardedNewEmptyActivationRequest(
+                    _defaultTargetKey,
+                    _fingerprint,
+                    DocumentCacheAdministrativeCommandConfirmation.NewEmptyActivation
+                ),
                 typeof(DocumentCacheGuardedNewEmptyActivationRequest)
             ).SetName("Guarded new-empty activation");
             yield return new TestCaseData(
                 new DocumentCacheOfflineActivationRequest(
                     _defaultTargetKey,
                     _offlineActivationAdmission,
-                    _fingerprint
+                    _fingerprint,
+                    DocumentCacheAdministrativeCommandConfirmation.OfflineActivation
                 ),
                 typeof(DocumentCacheOfflineActivationRequest)
             ).SetName("Offline activation");
@@ -165,23 +177,33 @@ public class DocumentCacheAdministrativeContractsTests
                 new DocumentCacheOfflineDeactivationRequest(
                     _defaultTargetKey,
                     _offlineDeactivationAdmission,
-                    _fingerprint
+                    _fingerprint,
+                    DocumentCacheAdministrativeCommandConfirmation.OfflineDeactivation
                 ),
                 typeof(DocumentCacheOfflineDeactivationRequest)
             ).SetName("Offline deactivation");
             yield return new TestCaseData(
-                new DocumentCacheOnlineCacheRebuildRequest(_defaultTargetKey, _fingerprint),
+                new DocumentCacheOnlineCacheRebuildRequest(
+                    _defaultTargetKey,
+                    _fingerprint,
+                    DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild
+                ),
                 typeof(DocumentCacheOnlineCacheRebuildRequest)
             ).SetName("Online cache rebuild");
             yield return new TestCaseData(
-                new DocumentCacheExplicitIntegrityScrubRequest(_defaultTargetKey, _fingerprint),
+                new DocumentCacheExplicitIntegrityScrubRequest(
+                    _defaultTargetKey,
+                    _fingerprint,
+                    DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub
+                ),
                 typeof(DocumentCacheExplicitIntegrityScrubRequest)
             ).SetName("Explicit integrity scrub");
             yield return new TestCaseData(
                 new DocumentCacheInternalOnlyCacheAheadRecoveryRequest(
                     _defaultTargetKey,
                     _cacheAheadRecoveryAdmission,
-                    _fingerprint
+                    _fingerprint,
+                    DocumentCacheAdministrativeCommandConfirmation.InternalCacheAheadRecovery
                 ),
                 typeof(DocumentCacheInternalOnlyCacheAheadRecoveryRequest)
             ).SetName("Internal-only cache-ahead recovery");

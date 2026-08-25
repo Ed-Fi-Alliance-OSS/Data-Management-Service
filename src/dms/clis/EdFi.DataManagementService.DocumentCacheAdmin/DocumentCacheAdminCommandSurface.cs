@@ -152,6 +152,14 @@ internal static class DocumentCacheAdminCommandSurface
         return parseResult.Action is HelpAction;
     }
 
+    public static bool IsMutatingCommand(string commandName) => MutatingCommandNames.Contains(commandName);
+
+    public static bool RequiresOfflineWriterAdmission(string commandName) =>
+        commandName
+            is ActivateOfflineCommandName
+                or DeactivateOfflineCommandName
+                or RecoverCacheAheadCommandName;
+
     public static bool TryParsePositiveSeconds(string? value, out TimeSpan timeSpan)
     {
         timeSpan = TimeSpan.Zero;
@@ -338,12 +346,6 @@ internal static class DocumentCacheAdminCommandSurface
         _ = CreateConfigurationOverrides(parseResult);
         return DocumentCacheAdminExitCodes.Success;
     }
-
-    private static bool RequiresOfflineWriterAdmission(string commandName) =>
-        commandName
-            is ActivateOfflineCommandName
-                or DeactivateOfflineCommandName
-                or RecoverCacheAheadCommandName;
 
     private static string ToAppSettingsDatastoreValue(string datastore) =>
         string.Equals(datastore, SqlServerDatastoreOptionValue, StringComparison.Ordinal)

@@ -5,7 +5,6 @@
 
 using System.CommandLine;
 using System.CommandLine.Parsing;
-using System.Text.Json;
 using EdFi.DataManagementService.Core.Configuration;
 
 namespace EdFi.DataManagementService.DocumentCacheAdmin;
@@ -18,7 +17,8 @@ internal enum DocumentCacheAdminInvocationTargetSource
 
 internal sealed record DocumentCacheAdminInvocationTarget(
     DocumentCacheTargetKey TargetKey,
-    DocumentCacheAdminInvocationTargetSource Source
+    DocumentCacheAdminInvocationTargetSource Source,
+    DocumentCacheAdminJsonRequest? JsonRequest = null
 );
 
 internal static class DocumentCacheAdminInvocationTargetParser
@@ -141,6 +141,22 @@ internal static class DocumentCacheAdminInvocationTargetParser
             return false;
         }
 
+        string? duplicateRequestOption = Array.Find(
+            new[]
+            {
+                DocumentCacheAdminCommandSurface.ConfirmOptionName,
+                DocumentCacheAdminCommandSurface.OfflineWriterAdmissionOptionName,
+                DocumentCacheAdminCommandSurface.ExpectedPhysicalSourceFingerprintOptionName,
+            },
+            optionName => GetSpecifiedOption(parseResult, optionName) is not null
+        );
+        if (duplicateRequestOption is not null)
+        {
+            failure =
+                $"{duplicateRequestOption} cannot be supplied with {DocumentCacheAdminCommandSurface.RequestJsonOptionName}.";
+            return false;
+        }
+
         string? requestJsonPath = requestJsonResult.GetValueOrDefault<string?>();
         if (string.IsNullOrWhiteSpace(requestJsonPath))
         {
@@ -160,139 +176,23 @@ internal static class DocumentCacheAdminInvocationTargetParser
             return false;
         }
 
-        return TryParseTargetJson(requestJson, out invocationTarget, out failure);
-    }
-
-    private static bool TryParseTargetJson(
-        string requestJson,
-        out DocumentCacheAdminInvocationTarget? invocationTarget,
-        out string? failure
-    )
-    {
-        invocationTarget = null;
-        failure = null;
-
-        JsonDocument document;
-        try
-        {
-            document = JsonDocument.Parse(
+        if (
+            !DocumentCacheAdminJsonRequestParser.TryParse(
+                parseResult.CommandResult.Command.Name,
                 requestJson,
-                new JsonDocumentOptions
-                {
-                    AllowTrailingCommas = false,
-                    CommentHandling = JsonCommentHandling.Disallow,
-                }
-            );
-        }
-        catch (JsonException exception)
+                out DocumentCacheAdminJsonRequest? jsonRequest,
+                out failure
+            )
+        )
         {
-            failure = $"Request JSON is malformed: {exception.Message}";
             return false;
         }
 
-        using (document)
-        {
-            if (document.RootElement.ValueKind != JsonValueKind.Object)
-            {
-                failure = "Request JSON must be an object.";
-                return false;
-            }
-
-            if (
-                !TryReadExactProperties(
-                    document.RootElement,
-                    "request",
-                    ["targetKey"],
-                    out Dictionary<string, JsonElement> rootProperties,
-                    out failure
-                )
-            )
-            {
-                return false;
-            }
-
-            JsonElement targetKeyElement = rootProperties["targetKey"];
-            if (targetKeyElement.ValueKind != JsonValueKind.Object)
-            {
-                failure = "Request JSON property 'targetKey' must be an object.";
-                return false;
-            }
-
-            if (
-                !TryReadExactProperties(
-                    targetKeyElement,
-                    "targetKey",
-                    ["tenantKey", "dataStoreId"],
-                    out Dictionary<string, JsonElement> targetProperties,
-                    out failure
-                )
-            )
-            {
-                return false;
-            }
-
-            JsonElement tenantKeyElement = targetProperties["tenantKey"];
-            if (tenantKeyElement.ValueKind != JsonValueKind.String)
-            {
-                failure = "Request JSON property 'targetKey.tenantKey' must be a string.";
-                return false;
-            }
-
-            JsonElement dataStoreIdElement = targetProperties["dataStoreId"];
-            if (
-                dataStoreIdElement.ValueKind != JsonValueKind.Number
-                || !dataStoreIdElement.TryGetInt64(out long dataStoreId)
-            )
-            {
-                failure = "Request JSON property 'targetKey.dataStoreId' must be an integer.";
-                return false;
-            }
-
-            return TryCreateInvocationTarget(
-                tenantKeyElement.GetString(),
-                dataStoreId,
-                DocumentCacheAdminInvocationTargetSource.RequestJson,
-                out invocationTarget,
-                out failure
-            );
-        }
-    }
-
-    private static bool TryReadExactProperties(
-        JsonElement jsonObject,
-        string objectName,
-        string[] requiredProperties,
-        out Dictionary<string, JsonElement> properties,
-        out string? failure
-    )
-    {
-        properties = [];
-        failure = null;
-
-        foreach (JsonProperty property in jsonObject.EnumerateObject())
-        {
-            if (!requiredProperties.Contains(property.Name, StringComparer.Ordinal))
-            {
-                failure = $"Request JSON property '{property.Name}' is not supported in {objectName}.";
-                return false;
-            }
-
-            if (!properties.TryAdd(property.Name, property.Value))
-            {
-                failure = $"Request JSON property '{property.Name}' is duplicated in {objectName}.";
-                return false;
-            }
-        }
-
-        foreach (string requiredProperty in requiredProperties)
-        {
-            if (!properties.ContainsKey(requiredProperty))
-            {
-                failure = $"Request JSON property '{requiredProperty}' is required in {objectName}.";
-                return false;
-            }
-        }
-
+        invocationTarget = new DocumentCacheAdminInvocationTarget(
+            jsonRequest!.TargetKey,
+            DocumentCacheAdminInvocationTargetSource.RequestJson,
+            jsonRequest
+        );
         return true;
     }
 

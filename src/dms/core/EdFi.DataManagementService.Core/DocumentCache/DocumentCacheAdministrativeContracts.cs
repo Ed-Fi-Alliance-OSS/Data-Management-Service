@@ -21,6 +21,17 @@ public enum DocumentCacheAdministrativeCommand
     InternalOnlyCacheAheadRecovery,
 }
 
+[JsonConverter(typeof(LowerCamelJsonStringEnumConverter<DocumentCacheAdministrativeCommandConfirmation>))]
+public enum DocumentCacheAdministrativeCommandConfirmation
+{
+    NewEmptyActivation,
+    OfflineActivation,
+    OfflineDeactivation,
+    OnlineCacheRebuild,
+    IntegrityScrub,
+    InternalCacheAheadRecovery,
+}
+
 [JsonConverter(typeof(LowerCamelJsonStringEnumConverter<DocumentCacheAdministrativeCommandStatus>))]
 public enum DocumentCacheAdministrativeCommandStatus
 {
@@ -222,22 +233,28 @@ public sealed record DocumentCacheGuardedNewEmptyActivationRequest
     [JsonConstructor]
     public DocumentCacheGuardedNewEmptyActivationRequest(
         DocumentCacheAdministrativeTargetKey targetKey,
-        DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint = null
+        DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint = null,
+        DocumentCacheAdministrativeCommandConfirmation? confirmation = null
     )
     {
         ArgumentNullException.ThrowIfNull(targetKey);
 
         TargetKey = targetKey;
         ExpectedPhysicalSourceFingerprint = expectedPhysicalSourceFingerprint;
+        Confirmation = confirmation;
     }
 
     [JsonPropertyName("targetKey")]
     [JsonPropertyOrder(1)]
     public DocumentCacheAdministrativeTargetKey TargetKey { get; }
 
+    [JsonPropertyName("confirmation")]
+    [JsonPropertyOrder(2)]
+    public DocumentCacheAdministrativeCommandConfirmation? Confirmation { get; }
+
     [JsonPropertyName("expectedPhysicalSourceFingerprint")]
     [JsonConverter(typeof(DocumentCachePhysicalSourceFingerprintJsonConverter))]
-    [JsonPropertyOrder(2)]
+    [JsonPropertyOrder(3)]
     public DocumentCachePhysicalSourceFingerprint? ExpectedPhysicalSourceFingerprint { get; }
 }
 
@@ -247,7 +264,8 @@ public sealed record DocumentCacheOfflineActivationRequest
     public DocumentCacheOfflineActivationRequest(
         DocumentCacheAdministrativeTargetKey targetKey,
         DocumentCacheOfflineWriterAdmission? offlineWriterAdmission,
-        DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint = null
+        DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint = null,
+        DocumentCacheAdministrativeCommandConfirmation? confirmation = null
     )
     {
         ArgumentNullException.ThrowIfNull(targetKey);
@@ -255,19 +273,24 @@ public sealed record DocumentCacheOfflineActivationRequest
         TargetKey = targetKey;
         ExpectedPhysicalSourceFingerprint = expectedPhysicalSourceFingerprint;
         OfflineWriterAdmission = offlineWriterAdmission;
+        Confirmation = confirmation;
     }
 
     [JsonPropertyName("targetKey")]
     [JsonPropertyOrder(1)]
     public DocumentCacheAdministrativeTargetKey TargetKey { get; }
 
+    [JsonPropertyName("confirmation")]
+    [JsonPropertyOrder(2)]
+    public DocumentCacheAdministrativeCommandConfirmation? Confirmation { get; }
+
     [JsonPropertyName("expectedPhysicalSourceFingerprint")]
     [JsonConverter(typeof(DocumentCachePhysicalSourceFingerprintJsonConverter))]
-    [JsonPropertyOrder(2)]
+    [JsonPropertyOrder(3)]
     public DocumentCachePhysicalSourceFingerprint? ExpectedPhysicalSourceFingerprint { get; }
 
     [JsonPropertyName("offlineWriterAdmission")]
-    [JsonPropertyOrder(3)]
+    [JsonPropertyOrder(4)]
     public DocumentCacheOfflineWriterAdmission? OfflineWriterAdmission { get; }
 }
 
@@ -277,7 +300,8 @@ public sealed record DocumentCacheOfflineDeactivationRequest
     public DocumentCacheOfflineDeactivationRequest(
         DocumentCacheAdministrativeTargetKey targetKey,
         DocumentCacheOfflineWriterAdmission? offlineWriterAdmission,
-        DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint = null
+        DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint = null,
+        DocumentCacheAdministrativeCommandConfirmation? confirmation = null
     )
     {
         ArgumentNullException.ThrowIfNull(targetKey);
@@ -285,19 +309,24 @@ public sealed record DocumentCacheOfflineDeactivationRequest
         TargetKey = targetKey;
         ExpectedPhysicalSourceFingerprint = expectedPhysicalSourceFingerprint;
         OfflineWriterAdmission = offlineWriterAdmission;
+        Confirmation = confirmation;
     }
 
     [JsonPropertyName("targetKey")]
     [JsonPropertyOrder(1)]
     public DocumentCacheAdministrativeTargetKey TargetKey { get; }
 
+    [JsonPropertyName("confirmation")]
+    [JsonPropertyOrder(2)]
+    public DocumentCacheAdministrativeCommandConfirmation? Confirmation { get; }
+
     [JsonPropertyName("expectedPhysicalSourceFingerprint")]
     [JsonConverter(typeof(DocumentCachePhysicalSourceFingerprintJsonConverter))]
-    [JsonPropertyOrder(2)]
+    [JsonPropertyOrder(3)]
     public DocumentCachePhysicalSourceFingerprint? ExpectedPhysicalSourceFingerprint { get; }
 
     [JsonPropertyName("offlineWriterAdmission")]
-    [JsonPropertyOrder(3)]
+    [JsonPropertyOrder(4)]
     public DocumentCacheOfflineWriterAdmission? OfflineWriterAdmission { get; }
 }
 
@@ -306,22 +335,28 @@ public sealed record DocumentCacheOnlineCacheRebuildRequest
     [JsonConstructor]
     public DocumentCacheOnlineCacheRebuildRequest(
         DocumentCacheAdministrativeTargetKey targetKey,
-        DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint = null
+        DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint = null,
+        DocumentCacheAdministrativeCommandConfirmation? confirmation = null
     )
     {
         ArgumentNullException.ThrowIfNull(targetKey);
 
         TargetKey = targetKey;
         ExpectedPhysicalSourceFingerprint = expectedPhysicalSourceFingerprint;
+        Confirmation = confirmation;
     }
 
     [JsonPropertyName("targetKey")]
     [JsonPropertyOrder(1)]
     public DocumentCacheAdministrativeTargetKey TargetKey { get; }
 
+    [JsonPropertyName("confirmation")]
+    [JsonPropertyOrder(2)]
+    public DocumentCacheAdministrativeCommandConfirmation? Confirmation { get; }
+
     [JsonPropertyName("expectedPhysicalSourceFingerprint")]
     [JsonConverter(typeof(DocumentCachePhysicalSourceFingerprintJsonConverter))]
-    [JsonPropertyOrder(2)]
+    [JsonPropertyOrder(3)]
     public DocumentCachePhysicalSourceFingerprint? ExpectedPhysicalSourceFingerprint { get; }
 }
 
@@ -330,22 +365,28 @@ public sealed record DocumentCacheExplicitIntegrityScrubRequest
     [JsonConstructor]
     public DocumentCacheExplicitIntegrityScrubRequest(
         DocumentCacheAdministrativeTargetKey targetKey,
-        DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint = null
+        DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint = null,
+        DocumentCacheAdministrativeCommandConfirmation? confirmation = null
     )
     {
         ArgumentNullException.ThrowIfNull(targetKey);
 
         TargetKey = targetKey;
         ExpectedPhysicalSourceFingerprint = expectedPhysicalSourceFingerprint;
+        Confirmation = confirmation;
     }
 
     [JsonPropertyName("targetKey")]
     [JsonPropertyOrder(1)]
     public DocumentCacheAdministrativeTargetKey TargetKey { get; }
 
+    [JsonPropertyName("confirmation")]
+    [JsonPropertyOrder(2)]
+    public DocumentCacheAdministrativeCommandConfirmation? Confirmation { get; }
+
     [JsonPropertyName("expectedPhysicalSourceFingerprint")]
     [JsonConverter(typeof(DocumentCachePhysicalSourceFingerprintJsonConverter))]
-    [JsonPropertyOrder(2)]
+    [JsonPropertyOrder(3)]
     public DocumentCachePhysicalSourceFingerprint? ExpectedPhysicalSourceFingerprint { get; }
 }
 
@@ -355,7 +396,8 @@ public sealed record DocumentCacheInternalOnlyCacheAheadRecoveryRequest
     public DocumentCacheInternalOnlyCacheAheadRecoveryRequest(
         DocumentCacheAdministrativeTargetKey targetKey,
         DocumentCacheOfflineWriterAdmission? offlineWriterAdmission,
-        DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint = null
+        DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint = null,
+        DocumentCacheAdministrativeCommandConfirmation? confirmation = null
     )
     {
         ArgumentNullException.ThrowIfNull(targetKey);
@@ -363,19 +405,24 @@ public sealed record DocumentCacheInternalOnlyCacheAheadRecoveryRequest
         TargetKey = targetKey;
         ExpectedPhysicalSourceFingerprint = expectedPhysicalSourceFingerprint;
         OfflineWriterAdmission = offlineWriterAdmission;
+        Confirmation = confirmation;
     }
 
     [JsonPropertyName("targetKey")]
     [JsonPropertyOrder(1)]
     public DocumentCacheAdministrativeTargetKey TargetKey { get; }
 
+    [JsonPropertyName("confirmation")]
+    [JsonPropertyOrder(2)]
+    public DocumentCacheAdministrativeCommandConfirmation? Confirmation { get; }
+
     [JsonPropertyName("expectedPhysicalSourceFingerprint")]
     [JsonConverter(typeof(DocumentCachePhysicalSourceFingerprintJsonConverter))]
-    [JsonPropertyOrder(2)]
+    [JsonPropertyOrder(3)]
     public DocumentCachePhysicalSourceFingerprint? ExpectedPhysicalSourceFingerprint { get; }
 
     [JsonPropertyName("offlineWriterAdmission")]
-    [JsonPropertyOrder(3)]
+    [JsonPropertyOrder(4)]
     public DocumentCacheOfflineWriterAdmission? OfflineWriterAdmission { get; }
 }
 
@@ -402,6 +449,7 @@ public sealed class DocumentCacheOfflineWriterAdmissionJsonConverter
         bool confirmed = false;
         DocumentCacheOfflineWriterAdmissionConfirmation? confirmation = null;
         string? unrecognizedConfirmation = null;
+        HashSet<string> propertyNames = [];
 
         while (reader.Read())
         {
@@ -419,6 +467,11 @@ public sealed class DocumentCacheOfflineWriterAdmissionJsonConverter
             if (!reader.Read())
             {
                 throw new JsonException("Offline writer admission contains an incomplete property.");
+            }
+
+            if (propertyName is null || !propertyNames.Add(propertyName))
+            {
+                throw new JsonException("Offline writer admission contains a duplicate property.");
             }
 
             switch (propertyName)
@@ -462,8 +515,9 @@ public sealed class DocumentCacheOfflineWriterAdmissionJsonConverter
                     break;
 
                 default:
-                    reader.Skip();
-                    break;
+                    throw new JsonException(
+                        $"Offline writer admission property '{propertyName}' is not supported."
+                    );
             }
         }
 
