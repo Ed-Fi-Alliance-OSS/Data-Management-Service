@@ -115,6 +115,85 @@ public enum CdcSqlServerSchemaHistoryState
     NotApplicable,
 }
 
+[JsonConverter(typeof(CdcLowerCamelJsonStringEnumConverter<CdcKafkaPolicyState>))]
+public enum CdcKafkaPolicyState
+{
+    Satisfied,
+    Invalid,
+    Unknown,
+}
+
+[JsonConverter(typeof(CdcLowerCamelJsonStringEnumConverter<CdcKafkaPolicyItemState>))]
+public enum CdcKafkaPolicyItemState
+{
+    Satisfied,
+    Invalid,
+    Unknown,
+    NotApplicable,
+}
+
+[JsonConverter(typeof(CdcLowerCamelJsonStringEnumConverter<CdcConnectOffsetStorePolicyState>))]
+public enum CdcConnectOffsetStorePolicyState
+{
+    Satisfied,
+    Invalid,
+    Unknown,
+}
+
+[JsonConverter(typeof(CdcLowerCamelJsonStringEnumConverter<CdcConnectOffsetStoreItemState>))]
+public enum CdcConnectOffsetStoreItemState
+{
+    Satisfied,
+    Invalid,
+    Unknown,
+}
+
+[JsonConverter(typeof(CdcLowerCamelJsonStringEnumConverter<CdcConnectorConfigurationState>))]
+public enum CdcConnectorConfigurationState
+{
+    Matched,
+    Invalid,
+    Unknown,
+}
+
+[JsonConverter(typeof(CdcLowerCamelJsonStringEnumConverter<CdcConnectorConfigurationItemState>))]
+public enum CdcConnectorConfigurationItemState
+{
+    Matched,
+    Invalid,
+    Unknown,
+    NotApplicable,
+}
+
+[JsonConverter(typeof(CdcLowerCamelJsonStringEnumConverter<CdcConnectorRuntimeState>))]
+public enum CdcConnectorRuntimeState
+{
+    Running,
+    Paused,
+    Failed,
+    Stopped,
+    Unassigned,
+    Unknown,
+}
+
+[JsonConverter(typeof(CdcLowerCamelJsonStringEnumConverter<CdcConnectorSnapshotState>))]
+public enum CdcConnectorSnapshotState
+{
+    NotStarted,
+    Running,
+    Completed,
+    NotApplicable,
+    Unknown,
+}
+
+[JsonConverter(typeof(CdcLowerCamelJsonStringEnumConverter<CdcConnectorLagState>))]
+public enum CdcConnectorLagState
+{
+    WithinThreshold,
+    Exceeded,
+    Unknown,
+}
+
 public interface ICdcObservationContract : ICdcJsonContract
 {
     string OperationId { get; }
@@ -260,6 +339,117 @@ public sealed record CdcSourceHistoryObservation(
     [property: JsonRequired] CdcIncidentFailureCategory? IncidentFailureCategory,
     [property: JsonRequired] CdcSqlServerSchemaHistoryEnablementPhase? SchemaHistoryEnablementPhase,
     [property: JsonRequired] CdcSqlServerSchemaHistoryState SchemaHistoryState,
+    [property: JsonRequired] IReadOnlyList<CdcDiagnostic> Diagnostics
+) : ICdcObservationContract;
+
+public sealed record CdcKafkaTopicPolicy(
+    [property: JsonRequired] string TopicName,
+    [property: JsonRequired] CdcKafkaPolicyItemState State,
+    [property: JsonRequired] int? PartitionCount,
+    [property: JsonRequired] string? CleanupPolicy,
+    [property: JsonRequired] int? ReplicationFactor,
+    [property: JsonRequired] int? MinInSyncReplicas
+);
+
+public sealed record CdcKafkaAclPolicy(
+    [property: JsonRequired] string ResourceName,
+    [property: JsonRequired] CdcKafkaPolicyItemState State
+);
+
+public sealed record CdcKafkaRecordSizePolicy(
+    [property: JsonRequired] CdcKafkaPolicyItemState State,
+    [property: JsonRequired] int? MaxRecordBytes,
+    [property: JsonRequired] int? MaxMessageBytes
+);
+
+public sealed record CdcKafkaPolicyObservation(
+    [property: JsonRequired] int ContractVersion,
+    [property: JsonRequired] string OperationId,
+    [property: JsonRequired] DateTimeOffset ObservedAt,
+    [property: JsonRequired] CdcTargetIdentity TargetIdentity,
+    [property: JsonRequired] CdcProvider Provider,
+    [property: JsonRequired] string? PhysicalSourceFingerprint,
+    [property: JsonRequired] CdcKafkaPolicyState PolicyState,
+    [property: JsonRequired] string DurabilityProfile,
+    [property: JsonRequired] CdcKafkaTopicPolicy PublicTopic,
+    [property: JsonRequired] CdcKafkaTopicPolicy ProgressTopic,
+    [property: JsonRequired] CdcKafkaTopicPolicy? SchemaHistoryTopic,
+    [property: JsonRequired] CdcKafkaAclPolicy PublicTopicAcls,
+    [property: JsonRequired] CdcKafkaAclPolicy ProgressTopicAcls,
+    [property: JsonRequired] CdcKafkaAclPolicy? SchemaHistoryTopicAcls,
+    [property: JsonRequired] CdcKafkaRecordSizePolicy RecordSizePolicy,
+    [property: JsonRequired] IReadOnlyList<CdcDiagnostic> Diagnostics
+) : ICdcObservationContract;
+
+public sealed record CdcConnectOffsetStorePolicyObservation(
+    [property: JsonRequired] int ContractVersion,
+    [property: JsonRequired] string OperationId,
+    [property: JsonRequired] DateTimeOffset ObservedAt,
+    [property: JsonRequired] CdcTargetIdentity TargetIdentity,
+    [property: JsonRequired] CdcProvider Provider,
+    [property: JsonRequired] string? PhysicalSourceFingerprint,
+    [property: JsonRequired] string WorkerKey,
+    [property: JsonRequired] string OffsetStorageTopic,
+    [property: JsonRequired] CdcConnectOffsetStorePolicyState PolicyState,
+    [property: JsonRequired] string? CleanupPolicy,
+    [property: JsonRequired] int? ReplicationFactor,
+    [property: JsonRequired] int? MinInSyncReplicas,
+    [property: JsonRequired] CdcConnectOffsetStoreItemState AclState,
+    [property: JsonRequired] IReadOnlyList<CdcDiagnostic> Diagnostics
+) : ICdcObservationContract;
+
+public sealed record CdcConnectorConfigurationObservation(
+    [property: JsonRequired] int ContractVersion,
+    [property: JsonRequired] string OperationId,
+    [property: JsonRequired] DateTimeOffset ObservedAt,
+    [property: JsonRequired] CdcTargetIdentity TargetIdentity,
+    [property: JsonRequired] CdcProvider Provider,
+    [property: JsonRequired] string? PhysicalSourceFingerprint,
+    [property: JsonRequired] string ConnectorName,
+    [property: JsonRequired] CdcConnectorConfigurationState ConfigurationState,
+    [property: JsonRequired] string TopicPrefix,
+    [property: JsonRequired] int? TaskCount,
+    [property: JsonRequired] CdcConnectorConfigurationItemState TransformState,
+    [property: JsonRequired] CdcConnectorConfigurationItemState ConverterState,
+    [property: JsonRequired] CdcConnectorConfigurationItemState ProducerOverrideState,
+    [property: JsonRequired] CdcConnectorConfigurationItemState HeartbeatState,
+    [property: JsonRequired] CdcConnectorConfigurationItemState SourceIncludeListState,
+    [property: JsonRequired] CdcConnectorConfigurationItemState OffsetState,
+    [property: JsonRequired] CdcConnectorConfigurationItemState SchemaHistoryState,
+    [property: JsonRequired] IReadOnlyList<CdcDiagnostic> Diagnostics
+) : ICdcObservationContract;
+
+public sealed record CdcConnectorRuntimeObservation(
+    [property: JsonRequired] int ContractVersion,
+    [property: JsonRequired] string OperationId,
+    [property: JsonRequired] DateTimeOffset ObservedAt,
+    [property: JsonRequired] CdcTargetIdentity TargetIdentity,
+    [property: JsonRequired] CdcProvider Provider,
+    [property: JsonRequired] string? PhysicalSourceFingerprint,
+    [property: JsonRequired] string ConnectorName,
+    [property: JsonRequired] CdcConnectorRuntimeState ConnectorState,
+    [property: JsonRequired] int? TaskCount,
+    [property: JsonRequired] int? RunningTaskCount,
+    [property: JsonRequired] CdcConnectorRuntimeState SoleTaskState,
+    [property: JsonRequired] CdcConnectorSnapshotState SnapshotState,
+    [property: JsonRequired] string? LastErrorCategory,
+    [property: JsonRequired] DateTimeOffset? LastErrorObservedAt,
+    [property: JsonRequired] IReadOnlyList<CdcDiagnostic> Diagnostics
+) : ICdcObservationContract;
+
+public sealed record CdcConnectorLagObservation(
+    [property: JsonRequired] int ContractVersion,
+    [property: JsonRequired] string OperationId,
+    [property: JsonRequired] DateTimeOffset ObservedAt,
+    [property: JsonRequired] CdcTargetIdentity TargetIdentity,
+    [property: JsonRequired] CdcProvider Provider,
+    [property: JsonRequired] string? PhysicalSourceFingerprint,
+    [property: JsonRequired] CdcConnectorLagState LagState,
+    [property: JsonRequired] long? CurrentLagMilliseconds,
+    [property: JsonRequired] long? ThresholdMilliseconds,
+    [property: JsonRequired] long? P50LagMilliseconds,
+    [property: JsonRequired] long? P95LagMilliseconds,
+    [property: JsonRequired] long? P99LagMilliseconds,
     [property: JsonRequired] IReadOnlyList<CdcDiagnostic> Diagnostics
 ) : ICdcObservationContract;
 
@@ -808,6 +998,1412 @@ public static class CdcProviderSetupObservationValidator
                 CdcDiagnosticCategory.InvalidObservation,
                 "$.setupOutcome",
                 "CDC provider setup unknown outcome requires at least one unknown state."
+            );
+        }
+    }
+}
+
+public static class CdcKafkaPolicyObservationValidator
+{
+    public static CdcContractValidationResult Validate(
+        CdcKafkaPolicyObservation observation,
+        CdcObservationValidationContext context
+    )
+    {
+        ArgumentNullException.ThrowIfNull(observation);
+        ArgumentNullException.ThrowIfNull(context);
+
+        CdcDiagnosticCollector diagnostics = new();
+
+        ValidateStructure(observation, context, null, diagnostics);
+
+        return diagnostics.ToValidationResult();
+    }
+
+    public static CdcContractValidationResult ValidateForBinding(
+        CdcKafkaPolicyObservation observation,
+        CdcBinding binding,
+        CdcObservationValidationContext context
+    )
+    {
+        ArgumentNullException.ThrowIfNull(observation);
+        ArgumentNullException.ThrowIfNull(binding);
+        ArgumentNullException.ThrowIfNull(context);
+
+        CdcDiagnosticCollector diagnostics = new();
+
+        ValidateStructure(observation, context, binding, diagnostics);
+
+        return diagnostics.ToValidationResult();
+    }
+
+    private static void ValidateStructure(
+        CdcKafkaPolicyObservation observation,
+        CdcObservationValidationContext context,
+        CdcBinding? binding,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        CdcObservationValidationRules.ValidateEnvelope(observation, context, diagnostics);
+        ValidatePolicyState(observation.PolicyState, diagnostics);
+        CdcObservationValidationRules.ValidateRequiredToken(
+            observation.DurabilityProfile,
+            "$.durabilityProfile",
+            "durabilityProfile",
+            diagnostics
+        );
+        ValidateTopicPolicy(observation.PublicTopic, "$.publicTopic", true, diagnostics);
+        ValidateTopicPolicy(observation.ProgressTopic, "$.progressTopic", true, diagnostics);
+        ValidateTopicPolicy(
+            observation.SchemaHistoryTopic,
+            "$.schemaHistoryTopic",
+            observation.Provider == CdcProvider.SqlServer,
+            diagnostics
+        );
+        ValidateAclPolicy(observation.PublicTopicAcls, "$.publicTopicAcls", true, diagnostics);
+        ValidateAclPolicy(observation.ProgressTopicAcls, "$.progressTopicAcls", true, diagnostics);
+        ValidateAclPolicy(
+            observation.SchemaHistoryTopicAcls,
+            "$.schemaHistoryTopicAcls",
+            observation.Provider == CdcProvider.SqlServer,
+            diagnostics
+        );
+        ValidateRecordSizePolicy(observation.RecordSizePolicy, diagnostics);
+        ValidateProviderSchemaHistoryApplicability(observation, diagnostics);
+        ValidatePolicyStateConsistency(observation, diagnostics);
+
+        if (binding is not null)
+        {
+            ValidateBindingDerivedNames(observation, binding, diagnostics);
+        }
+    }
+
+    private static void ValidatePolicyState(
+        CdcKafkaPolicyState policyState,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (!Enum.IsDefined(policyState))
+        {
+            diagnostics.InvalidEnumValue(
+                "$.policyState",
+                "CDC Kafka policy observation policyState is unsupported."
+            );
+        }
+    }
+
+    private static void ValidateTopicPolicy(
+        CdcKafkaTopicPolicy? topicPolicy,
+        string path,
+        bool required,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (topicPolicy is null)
+        {
+            if (required)
+            {
+                diagnostics.MissingRequiredField(path, path.Split('.')[^1]);
+            }
+
+            return;
+        }
+
+        CdcObservationValidationRules.ValidateArtifactName(
+            topicPolicy.TopicName,
+            $"{path}.topicName",
+            "topicName",
+            true,
+            diagnostics
+        );
+        ValidateKafkaItemState(topicPolicy.State, $"{path}.state", diagnostics);
+        ValidateTopicNumericEvidence(
+            topicPolicy.PartitionCount,
+            $"{path}.partitionCount",
+            "partitionCount",
+            topicPolicy.State,
+            diagnostics
+        );
+        ValidateCleanupPolicy(
+            topicPolicy.CleanupPolicy,
+            $"{path}.cleanupPolicy",
+            topicPolicy.State,
+            diagnostics
+        );
+        ValidateTopicNumericEvidence(
+            topicPolicy.ReplicationFactor,
+            $"{path}.replicationFactor",
+            "replicationFactor",
+            topicPolicy.State,
+            diagnostics
+        );
+        ValidateTopicNumericEvidence(
+            topicPolicy.MinInSyncReplicas,
+            $"{path}.minInSyncReplicas",
+            "minInSyncReplicas",
+            topicPolicy.State,
+            diagnostics
+        );
+    }
+
+    private static void ValidateAclPolicy(
+        CdcKafkaAclPolicy? aclPolicy,
+        string path,
+        bool required,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (aclPolicy is null)
+        {
+            if (required)
+            {
+                diagnostics.MissingRequiredField(path, path.Split('.')[^1]);
+            }
+
+            return;
+        }
+
+        CdcObservationValidationRules.ValidateArtifactName(
+            aclPolicy.ResourceName,
+            $"{path}.resourceName",
+            "resourceName",
+            true,
+            diagnostics
+        );
+        ValidateKafkaItemState(aclPolicy.State, $"{path}.state", diagnostics);
+    }
+
+    private static void ValidateRecordSizePolicy(
+        CdcKafkaRecordSizePolicy? recordSizePolicy,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (recordSizePolicy is null)
+        {
+            diagnostics.MissingRequiredField("$.recordSizePolicy", "recordSizePolicy");
+            return;
+        }
+
+        ValidateKafkaItemState(recordSizePolicy.State, "$.recordSizePolicy.state", diagnostics);
+        ValidateTopicNumericEvidence(
+            recordSizePolicy.MaxRecordBytes,
+            "$.recordSizePolicy.maxRecordBytes",
+            "maxRecordBytes",
+            recordSizePolicy.State,
+            diagnostics
+        );
+        ValidateTopicNumericEvidence(
+            recordSizePolicy.MaxMessageBytes,
+            "$.recordSizePolicy.maxMessageBytes",
+            "maxMessageBytes",
+            recordSizePolicy.State,
+            diagnostics
+        );
+
+        if (
+            recordSizePolicy.State != CdcKafkaPolicyItemState.Unknown
+            && recordSizePolicy.MaxRecordBytes is not null
+            && recordSizePolicy.MaxMessageBytes is not null
+            && recordSizePolicy.MaxRecordBytes > recordSizePolicy.MaxMessageBytes
+        )
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                "$.recordSizePolicy.maxRecordBytes",
+                "CDC Kafka policy maxRecordBytes must not exceed maxMessageBytes."
+            );
+        }
+    }
+
+    private static void ValidateTopicNumericEvidence(
+        int? value,
+        string path,
+        string fieldName,
+        CdcKafkaPolicyItemState state,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (value is null)
+        {
+            if (state != CdcKafkaPolicyItemState.Unknown)
+            {
+                diagnostics.MissingRequiredField(path, fieldName);
+            }
+
+            return;
+        }
+
+        if (value <= 0)
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                path,
+                $"CDC Kafka policy observation {fieldName} must be positive."
+            );
+        }
+    }
+
+    private static void ValidateCleanupPolicy(
+        string? cleanupPolicy,
+        string path,
+        CdcKafkaPolicyItemState state,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (cleanupPolicy is null)
+        {
+            if (state != CdcKafkaPolicyItemState.Unknown)
+            {
+                diagnostics.MissingRequiredField(path, "cleanupPolicy");
+            }
+
+            return;
+        }
+
+        if (
+            cleanupPolicy.Length == 0
+            || cleanupPolicy.Length > 64
+            || cleanupPolicy.Contains(',', StringComparison.Ordinal)
+            || !string.Equals(
+                cleanupPolicy,
+                CdcContractText.SanitizeRequired(cleanupPolicy),
+                StringComparison.Ordinal
+            )
+        )
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.UnsafeEvidence,
+                path,
+                "CDC Kafka policy cleanupPolicy must be bounded sanitized evidence."
+            );
+        }
+    }
+
+    private static void ValidateKafkaItemState(
+        CdcKafkaPolicyItemState itemState,
+        string path,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (!Enum.IsDefined(itemState))
+        {
+            diagnostics.InvalidEnumValue(path, "CDC Kafka policy observation item state is unsupported.");
+        }
+    }
+
+    private static void ValidateProviderSchemaHistoryApplicability(
+        CdcKafkaPolicyObservation observation,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (observation.Provider == CdcProvider.Postgresql)
+        {
+            if (observation.SchemaHistoryTopic is not null)
+            {
+                diagnostics.Add(
+                    CdcDiagnosticCategory.InvalidObservation,
+                    "$.schemaHistoryTopic",
+                    "CDC Kafka policy schemaHistoryTopic is SQL Server-only evidence."
+                );
+            }
+
+            if (observation.SchemaHistoryTopicAcls is not null)
+            {
+                diagnostics.Add(
+                    CdcDiagnosticCategory.InvalidObservation,
+                    "$.schemaHistoryTopicAcls",
+                    "CDC Kafka policy schemaHistoryTopicAcls is SQL Server-only evidence."
+                );
+            }
+
+            return;
+        }
+
+        if (observation.Provider == CdcProvider.SqlServer)
+        {
+            if (observation.SchemaHistoryTopic is null)
+            {
+                diagnostics.MissingRequiredField("$.schemaHistoryTopic", "schemaHistoryTopic");
+            }
+
+            if (observation.SchemaHistoryTopicAcls is null)
+            {
+                diagnostics.MissingRequiredField("$.schemaHistoryTopicAcls", "schemaHistoryTopicAcls");
+            }
+        }
+    }
+
+    private static void ValidatePolicyStateConsistency(
+        CdcKafkaPolicyObservation observation,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (!Enum.IsDefined(observation.PolicyState))
+        {
+            return;
+        }
+
+        CdcKafkaPolicyItemState[] states =
+        [
+            StateOrUnknown(observation.PublicTopic),
+            StateOrUnknown(observation.ProgressTopic),
+            StateOrNotApplicable(observation.SchemaHistoryTopic),
+            StateOrUnknown(observation.PublicTopicAcls),
+            StateOrUnknown(observation.ProgressTopicAcls),
+            StateOrNotApplicable(observation.SchemaHistoryTopicAcls),
+            observation.RecordSizePolicy?.State ?? CdcKafkaPolicyItemState.Unknown,
+        ];
+
+        bool allStatesDefined = Array.TrueForAll(states, Enum.IsDefined);
+        if (!allStatesDefined)
+        {
+            return;
+        }
+
+        if (
+            observation.PolicyState == CdcKafkaPolicyState.Satisfied
+            && Array.Exists(
+                states,
+                state =>
+                    state is not (CdcKafkaPolicyItemState.Satisfied or CdcKafkaPolicyItemState.NotApplicable)
+            )
+        )
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                "$.policyState",
+                "CDC Kafka policy satisfied state requires every applicable item to be satisfied."
+            );
+        }
+
+        if (
+            observation.PolicyState == CdcKafkaPolicyState.Invalid
+            && Array.TrueForAll(states, state => state != CdcKafkaPolicyItemState.Invalid)
+        )
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                "$.policyState",
+                "CDC Kafka policy invalid state requires at least one invalid item."
+            );
+        }
+
+        if (
+            observation.PolicyState == CdcKafkaPolicyState.Unknown
+            && Array.TrueForAll(states, state => state != CdcKafkaPolicyItemState.Unknown)
+        )
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                "$.policyState",
+                "CDC Kafka policy unknown state requires at least one unknown item."
+            );
+        }
+    }
+
+    private static CdcKafkaPolicyItemState StateOrUnknown(CdcKafkaTopicPolicy? topicPolicy) =>
+        topicPolicy?.State ?? CdcKafkaPolicyItemState.Unknown;
+
+    private static CdcKafkaPolicyItemState StateOrUnknown(CdcKafkaAclPolicy? aclPolicy) =>
+        aclPolicy?.State ?? CdcKafkaPolicyItemState.Unknown;
+
+    private static CdcKafkaPolicyItemState StateOrNotApplicable(CdcKafkaTopicPolicy? topicPolicy) =>
+        topicPolicy?.State ?? CdcKafkaPolicyItemState.NotApplicable;
+
+    private static CdcKafkaPolicyItemState StateOrNotApplicable(CdcKafkaAclPolicy? aclPolicy) =>
+        aclPolicy?.State ?? CdcKafkaPolicyItemState.NotApplicable;
+
+    private static void ValidateBindingDerivedNames(
+        CdcKafkaPolicyObservation observation,
+        CdcBinding binding,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        CdcArtifactNameResult artifactNameResult = CdcArtifactNameGenerator.RecoverFromBinding(binding);
+        foreach (CdcDiagnostic diagnostic in artifactNameResult.Diagnostics)
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.ArtifactNameMismatch,
+                diagnostic.Path,
+                "CDC Kafka policy binding artifacts must match the deterministic inventory."
+            );
+        }
+
+        if (artifactNameResult.Inventory is null)
+        {
+            return;
+        }
+
+        ValidateOptionalExactMatch(
+            observation.PublicTopic?.TopicName,
+            artifactNameResult.Inventory.TopicName,
+            "$.publicTopic.topicName",
+            diagnostics
+        );
+        ValidateOptionalExactMatch(
+            observation.ProgressTopic?.TopicName,
+            artifactNameResult.Inventory.ProgressTopicName,
+            "$.progressTopic.topicName",
+            diagnostics
+        );
+        ValidateOptionalExactMatch(
+            observation.PublicTopicAcls?.ResourceName,
+            artifactNameResult.Inventory.TopicName,
+            "$.publicTopicAcls.resourceName",
+            diagnostics
+        );
+        ValidateOptionalExactMatch(
+            observation.ProgressTopicAcls?.ResourceName,
+            artifactNameResult.Inventory.ProgressTopicName,
+            "$.progressTopicAcls.resourceName",
+            diagnostics
+        );
+
+        if (artifactNameResult.Inventory.SchemaHistoryTopicName is null)
+        {
+            return;
+        }
+
+        ValidateOptionalExactMatch(
+            observation.SchemaHistoryTopic?.TopicName,
+            artifactNameResult.Inventory.SchemaHistoryTopicName,
+            "$.schemaHistoryTopic.topicName",
+            diagnostics
+        );
+        ValidateOptionalExactMatch(
+            observation.SchemaHistoryTopicAcls?.ResourceName,
+            artifactNameResult.Inventory.SchemaHistoryTopicName,
+            "$.schemaHistoryTopicAcls.resourceName",
+            diagnostics
+        );
+    }
+
+    private static void ValidateOptionalExactMatch(
+        string? actual,
+        string expected,
+        string path,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (actual is not null && !string.Equals(actual, expected, StringComparison.Ordinal))
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.ArtifactNameMismatch,
+                path,
+                "CDC Kafka policy artifact name must match the binding-derived inventory."
+            );
+        }
+    }
+}
+
+public static class CdcConnectOffsetStorePolicyObservationValidator
+{
+    public static CdcContractValidationResult Validate(
+        CdcConnectOffsetStorePolicyObservation observation,
+        CdcObservationValidationContext context
+    )
+    {
+        ArgumentNullException.ThrowIfNull(observation);
+        ArgumentNullException.ThrowIfNull(context);
+
+        CdcDiagnosticCollector diagnostics = new();
+
+        CdcObservationValidationRules.ValidateEnvelope(observation, context, diagnostics);
+        CdcObservationValidationRules.ValidateRequiredToken(
+            observation.WorkerKey,
+            "$.workerKey",
+            "workerKey",
+            diagnostics
+        );
+        CdcObservationValidationRules.ValidateArtifactName(
+            observation.OffsetStorageTopic,
+            "$.offsetStorageTopic",
+            "offsetStorageTopic",
+            true,
+            diagnostics
+        );
+        ValidatePolicyState(observation.PolicyState, diagnostics);
+        ValidateCleanupPolicy(observation, diagnostics);
+        ValidatePositiveIfRequired(
+            observation.ReplicationFactor,
+            "$.replicationFactor",
+            "replicationFactor",
+            observation.PolicyState != CdcConnectOffsetStorePolicyState.Unknown,
+            diagnostics
+        );
+        ValidatePositiveIfRequired(
+            observation.MinInSyncReplicas,
+            "$.minInSyncReplicas",
+            "minInSyncReplicas",
+            observation.PolicyState != CdcConnectOffsetStorePolicyState.Unknown,
+            diagnostics
+        );
+        ValidateAclState(observation.AclState, diagnostics);
+        ValidatePolicyStateConsistency(observation, diagnostics);
+
+        return diagnostics.ToValidationResult();
+    }
+
+    private static void ValidatePolicyState(
+        CdcConnectOffsetStorePolicyState policyState,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (!Enum.IsDefined(policyState))
+        {
+            diagnostics.InvalidEnumValue(
+                "$.policyState",
+                "CDC Connect offset-store observation policyState is unsupported."
+            );
+        }
+    }
+
+    private static void ValidateCleanupPolicy(
+        CdcConnectOffsetStorePolicyObservation observation,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (observation.CleanupPolicy is null)
+        {
+            if (observation.PolicyState != CdcConnectOffsetStorePolicyState.Unknown)
+            {
+                diagnostics.MissingRequiredField("$.cleanupPolicy", "cleanupPolicy");
+            }
+
+            return;
+        }
+
+        if (
+            observation.CleanupPolicy.Length == 0
+            || observation.CleanupPolicy.Length > 64
+            || observation.CleanupPolicy.Contains(',', StringComparison.Ordinal)
+            || !string.Equals(
+                observation.CleanupPolicy,
+                CdcContractText.SanitizeRequired(observation.CleanupPolicy),
+                StringComparison.Ordinal
+            )
+        )
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.UnsafeEvidence,
+                "$.cleanupPolicy",
+                "CDC Connect offset-store cleanupPolicy must be bounded sanitized evidence."
+            );
+        }
+    }
+
+    private static void ValidatePositiveIfRequired(
+        int? value,
+        string path,
+        string fieldName,
+        bool required,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (value is null)
+        {
+            if (required)
+            {
+                diagnostics.MissingRequiredField(path, fieldName);
+            }
+
+            return;
+        }
+
+        if (value <= 0)
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                path,
+                $"CDC Connect offset-store observation {fieldName} must be positive."
+            );
+        }
+    }
+
+    private static void ValidateAclState(
+        CdcConnectOffsetStoreItemState aclState,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (!Enum.IsDefined(aclState))
+        {
+            diagnostics.InvalidEnumValue(
+                "$.aclState",
+                "CDC Connect offset-store observation aclState is unsupported."
+            );
+        }
+    }
+
+    private static void ValidatePolicyStateConsistency(
+        CdcConnectOffsetStorePolicyObservation observation,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (!Enum.IsDefined(observation.PolicyState) || !Enum.IsDefined(observation.AclState))
+        {
+            return;
+        }
+
+        bool cleanupUnknown = observation.CleanupPolicy is null;
+        bool cleanupInvalid =
+            observation.CleanupPolicy is not null
+            && !string.Equals(observation.CleanupPolicy, "compact", StringComparison.Ordinal);
+        bool replicationUnknown = observation.ReplicationFactor is null;
+        bool replicationInvalid = observation.ReplicationFactor is <= 0;
+        bool minInSyncUnknown = observation.MinInSyncReplicas is null;
+        bool minInSyncInvalid = observation.MinInSyncReplicas is <= 0;
+
+        if (
+            observation.PolicyState == CdcConnectOffsetStorePolicyState.Satisfied
+            && (
+                cleanupUnknown
+                || cleanupInvalid
+                || replicationUnknown
+                || replicationInvalid
+                || minInSyncUnknown
+                || minInSyncInvalid
+                || observation.AclState != CdcConnectOffsetStoreItemState.Satisfied
+            )
+        )
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                "$.policyState",
+                "CDC Connect offset-store satisfied state requires compact cleanup, positive durability values, and satisfied ACLs."
+            );
+        }
+
+        if (
+            observation.PolicyState == CdcConnectOffsetStorePolicyState.Invalid
+            && !(
+                cleanupInvalid
+                || replicationInvalid
+                || minInSyncInvalid
+                || observation.AclState == CdcConnectOffsetStoreItemState.Invalid
+            )
+        )
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                "$.policyState",
+                "CDC Connect offset-store invalid state requires at least one invalid policy fact."
+            );
+        }
+
+        if (
+            observation.PolicyState == CdcConnectOffsetStorePolicyState.Unknown
+            && !(
+                cleanupUnknown
+                || replicationUnknown
+                || minInSyncUnknown
+                || observation.AclState == CdcConnectOffsetStoreItemState.Unknown
+            )
+        )
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                "$.policyState",
+                "CDC Connect offset-store unknown state requires at least one unknown policy fact."
+            );
+        }
+    }
+}
+
+public static class CdcConnectorConfigurationObservationValidator
+{
+    public static CdcContractValidationResult Validate(
+        CdcConnectorConfigurationObservation observation,
+        CdcObservationValidationContext context
+    )
+    {
+        ArgumentNullException.ThrowIfNull(observation);
+        ArgumentNullException.ThrowIfNull(context);
+
+        CdcDiagnosticCollector diagnostics = new();
+
+        ValidateStructure(observation, context, null, diagnostics);
+
+        return diagnostics.ToValidationResult();
+    }
+
+    public static CdcContractValidationResult ValidateForBinding(
+        CdcConnectorConfigurationObservation observation,
+        CdcBinding binding,
+        CdcObservationValidationContext context
+    )
+    {
+        ArgumentNullException.ThrowIfNull(observation);
+        ArgumentNullException.ThrowIfNull(binding);
+        ArgumentNullException.ThrowIfNull(context);
+
+        CdcDiagnosticCollector diagnostics = new();
+
+        ValidateStructure(observation, context, binding, diagnostics);
+
+        return diagnostics.ToValidationResult();
+    }
+
+    private static void ValidateStructure(
+        CdcConnectorConfigurationObservation observation,
+        CdcObservationValidationContext context,
+        CdcBinding? binding,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        CdcObservationValidationRules.ValidateEnvelope(observation, context, diagnostics);
+        CdcObservationValidationRules.ValidateArtifactName(
+            observation.ConnectorName,
+            "$.connectorName",
+            "connectorName",
+            true,
+            diagnostics
+        );
+        ValidateConfigurationState(observation.ConfigurationState, diagnostics);
+        CdcObservationValidationRules.ValidateRequiredToken(
+            observation.TopicPrefix,
+            "$.topicPrefix",
+            "topicPrefix",
+            diagnostics
+        );
+        ValidateTaskCount(observation.TaskCount, diagnostics);
+        ValidateConfigurationItemState(observation.TransformState, "$.transformState", diagnostics);
+        ValidateConfigurationItemState(observation.ConverterState, "$.converterState", diagnostics);
+        ValidateConfigurationItemState(
+            observation.ProducerOverrideState,
+            "$.producerOverrideState",
+            diagnostics
+        );
+        ValidateConfigurationItemState(observation.HeartbeatState, "$.heartbeatState", diagnostics);
+        ValidateConfigurationItemState(
+            observation.SourceIncludeListState,
+            "$.sourceIncludeListState",
+            diagnostics
+        );
+        ValidateConfigurationItemState(observation.OffsetState, "$.offsetState", diagnostics);
+        ValidateConfigurationItemState(observation.SchemaHistoryState, "$.schemaHistoryState", diagnostics);
+        ValidateSchemaHistoryApplicability(observation, diagnostics);
+        ValidateConfigurationStateConsistency(observation, diagnostics);
+
+        if (binding is not null)
+        {
+            ValidateBindingDerivedNames(observation, binding, diagnostics);
+        }
+    }
+
+    private static void ValidateConfigurationState(
+        CdcConnectorConfigurationState configurationState,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (!Enum.IsDefined(configurationState))
+        {
+            diagnostics.InvalidEnumValue(
+                "$.configurationState",
+                "CDC connector configuration observation configurationState is unsupported."
+            );
+        }
+    }
+
+    private static void ValidateConfigurationItemState(
+        CdcConnectorConfigurationItemState itemState,
+        string path,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (!Enum.IsDefined(itemState))
+        {
+            diagnostics.InvalidEnumValue(
+                path,
+                "CDC connector configuration observation item state is unsupported."
+            );
+        }
+    }
+
+    private static void ValidateTaskCount(int? taskCount, CdcDiagnosticCollector diagnostics)
+    {
+        if (taskCount is null)
+        {
+            diagnostics.MissingRequiredField("$.taskCount", "taskCount");
+            return;
+        }
+
+        if (taskCount != 1)
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                "$.taskCount",
+                "CDC connector configuration taskCount must be exactly one."
+            );
+        }
+    }
+
+    private static void ValidateSchemaHistoryApplicability(
+        CdcConnectorConfigurationObservation observation,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (observation.Provider == CdcProvider.Postgresql)
+        {
+            if (observation.SchemaHistoryState != CdcConnectorConfigurationItemState.NotApplicable)
+            {
+                diagnostics.Add(
+                    CdcDiagnosticCategory.InvalidObservation,
+                    "$.schemaHistoryState",
+                    "CDC connector configuration schemaHistoryState must be notApplicable for PostgreSQL."
+                );
+            }
+
+            return;
+        }
+
+        if (
+            observation.Provider == CdcProvider.SqlServer
+            && observation.SchemaHistoryState == CdcConnectorConfigurationItemState.NotApplicable
+        )
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                "$.schemaHistoryState",
+                "CDC connector configuration schemaHistoryState is required for SQL Server."
+            );
+        }
+    }
+
+    private static void ValidateConfigurationStateConsistency(
+        CdcConnectorConfigurationObservation observation,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (!Enum.IsDefined(observation.ConfigurationState))
+        {
+            return;
+        }
+
+        CdcConnectorConfigurationItemState[] states =
+        [
+            observation.TransformState,
+            observation.ConverterState,
+            observation.ProducerOverrideState,
+            observation.HeartbeatState,
+            observation.SourceIncludeListState,
+            observation.OffsetState,
+            observation.SchemaHistoryState,
+        ];
+
+        bool allStatesDefined = Array.TrueForAll(states, Enum.IsDefined);
+        if (!allStatesDefined)
+        {
+            return;
+        }
+
+        if (
+            observation.ConfigurationState == CdcConnectorConfigurationState.Matched
+            && (
+                observation.TaskCount != 1
+                || Array.Exists(
+                    states,
+                    state =>
+                        state
+                            is not (
+                                CdcConnectorConfigurationItemState.Matched
+                                or CdcConnectorConfigurationItemState.NotApplicable
+                            )
+                )
+            )
+        )
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                "$.configurationState",
+                "CDC connector matched configuration requires exactly one task and matched applicable settings."
+            );
+        }
+
+        if (
+            observation.ConfigurationState == CdcConnectorConfigurationState.Invalid
+            && Array.TrueForAll(states, state => state != CdcConnectorConfigurationItemState.Invalid)
+            && observation.TaskCount == 1
+        )
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                "$.configurationState",
+                "CDC connector invalid configuration requires at least one invalid setting."
+            );
+        }
+
+        if (
+            observation.ConfigurationState == CdcConnectorConfigurationState.Unknown
+            && Array.TrueForAll(states, state => state != CdcConnectorConfigurationItemState.Unknown)
+        )
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                "$.configurationState",
+                "CDC connector unknown configuration requires at least one unknown setting."
+            );
+        }
+    }
+
+    private static void ValidateBindingDerivedNames(
+        CdcConnectorConfigurationObservation observation,
+        CdcBinding binding,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        CdcArtifactNameResult artifactNameResult = CdcArtifactNameGenerator.RecoverFromBinding(binding);
+        foreach (CdcDiagnostic diagnostic in artifactNameResult.Diagnostics)
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.ArtifactNameMismatch,
+                diagnostic.Path,
+                "CDC connector configuration binding artifacts must match the deterministic inventory."
+            );
+        }
+
+        if (artifactNameResult.Inventory is null)
+        {
+            return;
+        }
+
+        if (
+            !string.Equals(
+                observation.ConnectorName,
+                artifactNameResult.Inventory.ConnectorName,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.ArtifactNameMismatch,
+                "$.connectorName",
+                "CDC connector configuration connectorName must match the binding-derived inventory."
+            );
+        }
+
+        if (
+            !string.Equals(
+                observation.TopicPrefix,
+                artifactNameResult.Inventory.TopicPrefix,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.ArtifactNameMismatch,
+                "$.topicPrefix",
+                "CDC connector configuration topicPrefix must match the binding-derived inventory."
+            );
+        }
+    }
+}
+
+public static class CdcConnectorRuntimeObservationValidator
+{
+    public static CdcContractValidationResult Validate(
+        CdcConnectorRuntimeObservation observation,
+        CdcObservationValidationContext context
+    )
+    {
+        ArgumentNullException.ThrowIfNull(observation);
+        ArgumentNullException.ThrowIfNull(context);
+
+        CdcDiagnosticCollector diagnostics = new();
+
+        ValidateStructure(observation, context, null, diagnostics);
+
+        return diagnostics.ToValidationResult();
+    }
+
+    public static CdcContractValidationResult ValidateForBinding(
+        CdcConnectorRuntimeObservation observation,
+        CdcBinding binding,
+        CdcObservationValidationContext context
+    )
+    {
+        ArgumentNullException.ThrowIfNull(observation);
+        ArgumentNullException.ThrowIfNull(binding);
+        ArgumentNullException.ThrowIfNull(context);
+
+        CdcDiagnosticCollector diagnostics = new();
+
+        ValidateStructure(observation, context, binding, diagnostics);
+
+        return diagnostics.ToValidationResult();
+    }
+
+    private static void ValidateStructure(
+        CdcConnectorRuntimeObservation observation,
+        CdcObservationValidationContext context,
+        CdcBinding? binding,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        CdcObservationValidationRules.ValidateEnvelope(observation, context, diagnostics);
+        CdcObservationValidationRules.ValidateArtifactName(
+            observation.ConnectorName,
+            "$.connectorName",
+            "connectorName",
+            true,
+            diagnostics
+        );
+        ValidateRuntimeState(observation.ConnectorState, "$.connectorState", diagnostics);
+        ValidateTaskCount(observation.TaskCount, "$.taskCount", "taskCount", diagnostics);
+        ValidateTaskCount(
+            observation.RunningTaskCount,
+            "$.runningTaskCount",
+            "runningTaskCount",
+            diagnostics
+        );
+        ValidateRuntimeState(observation.SoleTaskState, "$.soleTaskState", diagnostics);
+        ValidateSnapshotState(observation.SnapshotState, diagnostics);
+        ValidateLastError(observation, context.NowUtc, diagnostics);
+        ValidateRuntimeStateConsistency(observation, diagnostics);
+
+        if (binding is not null)
+        {
+            ValidateBindingDerivedName(observation, binding, diagnostics);
+        }
+    }
+
+    private static void ValidateRuntimeState(
+        CdcConnectorRuntimeState state,
+        string path,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (!Enum.IsDefined(state))
+        {
+            diagnostics.InvalidEnumValue(path, "CDC connector runtime observation state is unsupported.");
+        }
+    }
+
+    private static void ValidateSnapshotState(
+        CdcConnectorSnapshotState snapshotState,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (!Enum.IsDefined(snapshotState))
+        {
+            diagnostics.InvalidEnumValue(
+                "$.snapshotState",
+                "CDC connector runtime observation snapshotState is unsupported."
+            );
+        }
+    }
+
+    private static void ValidateTaskCount(
+        int? value,
+        string path,
+        string fieldName,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (value is null)
+        {
+            diagnostics.MissingRequiredField(path, fieldName);
+            return;
+        }
+
+        if (value < 0)
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                path,
+                $"CDC connector runtime observation {fieldName} must not be negative."
+            );
+        }
+    }
+
+    private static void ValidateLastError(
+        CdcConnectorRuntimeObservation observation,
+        DateTimeOffset nowUtc,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        bool failed =
+            observation.ConnectorState == CdcConnectorRuntimeState.Failed
+            || observation.SoleTaskState == CdcConnectorRuntimeState.Failed;
+        if (observation.LastErrorCategory is null)
+        {
+            if (failed || observation.LastErrorObservedAt is not null)
+            {
+                diagnostics.MissingRequiredField("$.lastErrorCategory", "lastErrorCategory");
+            }
+        }
+        else
+        {
+            CdcObservationValidationRules.ValidateRequiredToken(
+                observation.LastErrorCategory,
+                "$.lastErrorCategory",
+                "lastErrorCategory",
+                diagnostics
+            );
+        }
+
+        if (observation.LastErrorObservedAt is null)
+        {
+            return;
+        }
+
+        CdcObservationValidationRules.ValidateTimestamp(
+            observation.LastErrorObservedAt.Value,
+            nowUtc,
+            "$.lastErrorObservedAt",
+            diagnostics
+        );
+        if (observation.LastErrorObservedAt > observation.ObservedAt)
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidOrdering,
+                "$.lastErrorObservedAt",
+                "CDC connector runtime lastErrorObservedAt must not be later than observedAt."
+            );
+        }
+    }
+
+    private static void ValidateRuntimeStateConsistency(
+        CdcConnectorRuntimeObservation observation,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (observation.TaskCount is null || observation.RunningTaskCount is null)
+        {
+            return;
+        }
+
+        if (observation.RunningTaskCount > observation.TaskCount)
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                "$.runningTaskCount",
+                "CDC connector runtime runningTaskCount must not exceed taskCount."
+            );
+        }
+
+        if (observation.TaskCount != 1)
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                "$.taskCount",
+                "CDC connector runtime taskCount must be exactly one."
+            );
+        }
+
+        if (
+            observation.ConnectorState == CdcConnectorRuntimeState.Running
+            && (
+                observation.RunningTaskCount != 1
+                || observation.SoleTaskState != CdcConnectorRuntimeState.Running
+            )
+        )
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                "$.connectorState",
+                "CDC connector runtime running connector requires its sole task to be running."
+            );
+        }
+
+        if (
+            observation.SoleTaskState == CdcConnectorRuntimeState.Running
+            && observation.RunningTaskCount == 0
+        )
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                "$.soleTaskState",
+                "CDC connector runtime running sole task requires a running task count."
+            );
+        }
+    }
+
+    private static void ValidateBindingDerivedName(
+        CdcConnectorRuntimeObservation observation,
+        CdcBinding binding,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        CdcArtifactNameResult artifactNameResult = CdcArtifactNameGenerator.RecoverFromBinding(binding);
+        foreach (CdcDiagnostic diagnostic in artifactNameResult.Diagnostics)
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.ArtifactNameMismatch,
+                diagnostic.Path,
+                "CDC connector runtime binding artifacts must match the deterministic inventory."
+            );
+        }
+
+        if (
+            artifactNameResult.Inventory is not null
+            && !string.Equals(
+                observation.ConnectorName,
+                artifactNameResult.Inventory.ConnectorName,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.ArtifactNameMismatch,
+                "$.connectorName",
+                "CDC connector runtime connectorName must match the binding-derived inventory."
+            );
+        }
+    }
+}
+
+public static class CdcConnectorLagObservationValidator
+{
+    public static CdcContractValidationResult Validate(
+        CdcConnectorLagObservation observation,
+        CdcObservationValidationContext context
+    )
+    {
+        ArgumentNullException.ThrowIfNull(observation);
+        ArgumentNullException.ThrowIfNull(context);
+
+        CdcDiagnosticCollector diagnostics = new();
+
+        CdcObservationValidationRules.ValidateEnvelope(observation, context, diagnostics);
+        ValidateLagState(observation.LagState, diagnostics);
+        bool lagRequired = observation.LagState != CdcConnectorLagState.Unknown;
+        ValidateLagValue(
+            observation.CurrentLagMilliseconds,
+            "$.currentLagMilliseconds",
+            "currentLagMilliseconds",
+            lagRequired,
+            diagnostics
+        );
+        ValidateLagValue(
+            observation.ThresholdMilliseconds,
+            "$.thresholdMilliseconds",
+            "thresholdMilliseconds",
+            lagRequired,
+            diagnostics
+        );
+        ValidateLagValue(
+            observation.P50LagMilliseconds,
+            "$.p50LagMilliseconds",
+            "p50LagMilliseconds",
+            lagRequired,
+            diagnostics
+        );
+        ValidateLagValue(
+            observation.P95LagMilliseconds,
+            "$.p95LagMilliseconds",
+            "p95LagMilliseconds",
+            lagRequired,
+            diagnostics
+        );
+        ValidateLagValue(
+            observation.P99LagMilliseconds,
+            "$.p99LagMilliseconds",
+            "p99LagMilliseconds",
+            lagRequired,
+            diagnostics
+        );
+        ValidateLagStateConsistency(observation, diagnostics);
+        ValidateLagQuantileOrdering(observation, diagnostics);
+
+        return diagnostics.ToValidationResult();
+    }
+
+    private static void ValidateLagState(CdcConnectorLagState lagState, CdcDiagnosticCollector diagnostics)
+    {
+        if (!Enum.IsDefined(lagState))
+        {
+            diagnostics.InvalidEnumValue(
+                "$.lagState",
+                "CDC connector lag observation lagState is unsupported."
+            );
+        }
+    }
+
+    private static void ValidateLagValue(
+        long? value,
+        string path,
+        string fieldName,
+        bool required,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (value is null)
+        {
+            if (required)
+            {
+                diagnostics.MissingRequiredField(path, fieldName);
+            }
+
+            return;
+        }
+
+        if (value < 0)
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                path,
+                $"CDC connector lag observation {fieldName} must not be negative."
+            );
+        }
+    }
+
+    private static void ValidateLagStateConsistency(
+        CdcConnectorLagObservation observation,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (
+            observation.LagState == CdcConnectorLagState.WithinThreshold
+            && observation.CurrentLagMilliseconds is not null
+            && observation.ThresholdMilliseconds is not null
+            && observation.CurrentLagMilliseconds > observation.ThresholdMilliseconds
+        )
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                "$.currentLagMilliseconds",
+                "CDC connector lag withinThreshold state requires current lag to be within the threshold."
+            );
+        }
+
+        if (
+            observation.LagState == CdcConnectorLagState.Exceeded
+            && observation.CurrentLagMilliseconds is not null
+            && observation.ThresholdMilliseconds is not null
+            && observation.CurrentLagMilliseconds <= observation.ThresholdMilliseconds
+        )
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidObservation,
+                "$.currentLagMilliseconds",
+                "CDC connector lag exceeded state requires current lag to exceed the threshold."
+            );
+        }
+    }
+
+    private static void ValidateLagQuantileOrdering(
+        CdcConnectorLagObservation observation,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (
+            observation.P50LagMilliseconds is null
+            || observation.P95LagMilliseconds is null
+            || observation.P99LagMilliseconds is null
+        )
+        {
+            return;
+        }
+
+        if (
+            observation.P50LagMilliseconds > observation.P95LagMilliseconds
+            || observation.P95LagMilliseconds > observation.P99LagMilliseconds
+        )
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.InvalidOrdering,
+                "$.p50LagMilliseconds",
+                "CDC connector lag quantiles must be ordered p50 <= p95 <= p99."
             );
         }
     }
