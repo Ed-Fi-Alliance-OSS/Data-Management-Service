@@ -54,8 +54,8 @@ public sealed class Given_DocumentCacheAdminStatusCommand
     [Test]
     public async Task It_maps_status_pipeline_failures_to_failed_no_mutation_exit_code()
     {
-        ScriptedDocumentCacheStatusService statusService = new(_ =>
-            throw new InvalidOperationException("status pipeline failed")
+        ScriptedDocumentCacheStatusService statusService = new(
+            (_, _) => throw new InvalidOperationException("status pipeline failed")
         );
         await using ServiceProvider serviceProvider = new ServiceCollection()
             .AddSingleton<IDocumentCacheStatusService>(statusService)
@@ -74,6 +74,47 @@ public sealed class Given_DocumentCacheAdminStatusCommand
         exitCode.Should().Be(DocumentCacheAdminExitCodes.FailedNoMutation);
         stdout.ToString().Should().BeEmpty();
         stderr.ToString().Should().Contain("status failed before a complete status document");
+        statusService
+            .EvaluationModes.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(DocumentCacheStatusEvaluationMode.StandaloneDirectObservation);
+    }
+
+    [Test]
+    [Category("Timeout")]
+    public async Task It_applies_status_timeout_to_status_evaluation()
+    {
+        ScriptedDocumentCacheStatusService statusService = new(
+            async (_, cancellationToken) =>
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+                return StatusResponse();
+            }
+        );
+        await using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddSingleton<IDocumentCacheStatusService>(statusService)
+            .BuildServiceProvider();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+
+        int exitCode = await DocumentCacheAdminCommandExecutor.ExecuteAsync(
+            ParseStatusCommand(
+                DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
+                "1",
+                DocumentCacheAdminCommandSurface.StatusTimeoutSecondsOptionName,
+                "0.001",
+                DocumentCacheAdminCommandSurface.JsonOptionName
+            ),
+            InvocationTarget(),
+            serviceProvider,
+            stdout,
+            stderr
+        );
+
+        exitCode.Should().Be(DocumentCacheAdminExitCodes.FailedNoMutation);
+        stdout.ToString().Should().BeEmpty();
+        stderr.ToString().Should().Contain("status timed out");
         statusService
             .EvaluationModes.Should()
             .ContainSingle()
@@ -191,9 +232,18 @@ public sealed class Given_DocumentCacheAdminStatusCommand
         new(DocumentCacheStatusInventoryStatus.Valid, DocumentCacheStatusInventoryReason.None, message: null);
 
     private sealed class ScriptedDocumentCacheStatusService(
-        Func<DocumentCacheStatusEvaluationMode, Task<DocumentCacheStatusResponse>> getStatusAsync
+        Func<
+            DocumentCacheStatusEvaluationMode,
+            CancellationToken,
+            Task<DocumentCacheStatusResponse>
+        > getStatusAsync
     ) : IDocumentCacheStatusService
     {
+        public ScriptedDocumentCacheStatusService(
+            Func<DocumentCacheStatusEvaluationMode, Task<DocumentCacheStatusResponse>> getStatusAsync
+        )
+            : this((evaluationMode, _) => getStatusAsync(evaluationMode)) { }
+
         private readonly List<DocumentCacheStatusEvaluationMode> _evaluationModes = [];
 
         public ImmutableArray<DocumentCacheStatusEvaluationMode> EvaluationModes => [.. _evaluationModes];
@@ -206,7 +256,7 @@ public sealed class Given_DocumentCacheAdminStatusCommand
         {
             cancellationToken.ThrowIfCancellationRequested();
             _evaluationModes.Add(evaluationMode);
-            return await getStatusAsync(evaluationMode).ConfigureAwait(false);
+            return await getStatusAsync(evaluationMode, cancellationToken).ConfigureAwait(false);
         }
     }
 }

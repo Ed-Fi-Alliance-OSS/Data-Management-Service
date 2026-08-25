@@ -6,6 +6,7 @@
 using System.Collections.Immutable;
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -181,6 +182,43 @@ public class Given_DocumentCacheAdministrativeCommandRunner
                 && !diagnostic.Retryable
             );
         mutex.AcquireCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_bounds_administrative_target_retention_with_the_administration_workflow_timeout()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
+            generation: 1,
+            workflowTimeout: TimeSpan.FromMilliseconds(30)
+        );
+        DocumentCacheProjectionTargetRuntimeContext runtimeContext = RuntimeContext(executionContext);
+        var mutex = new RecordingAdministrativeMutex();
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new DelayingAdministrativeTargetRetainerProjectionSupervisor(
+                EligibleObservation(executionContext),
+                runtimeContext,
+                TimeSpan.FromMilliseconds(500)
+            ),
+            mutex
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(
+            Request(),
+            SucceedingWorkflow.Instance
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.WorkflowTimeout);
+        result.Mutated.Should().BeFalse();
+        result
+            .PhaseDiagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.ResolveTarget
+                && diagnostic.DiagnosticCategory
+                    == DocumentCacheAdministrativeDiagnosticCategory.WorkflowTimeout
+            );
+        mutex.AcquireCount.Should().Be(0);
     }
 
     [Test]
@@ -529,6 +567,73 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             .NotContain(diagnostic =>
                 diagnostic.DiagnosticCategory == DocumentCacheAdministrativeDiagnosticCategory.WorkflowTimeout
             );
+    }
+
+    [Test]
+    public async Task It_applies_remaining_workflow_budget_to_administrative_transaction_commands()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
+            generation: 1,
+            workflowTimeout: TimeSpan.FromSeconds(7.2)
+        );
+        List<CancellationToken> transactionTokens = [];
+        List<RecordingDbCommand> createdCommands = [];
+        var commandSession = new RecordingWriteSession(
+            RelationalProviderToken.Postgresql,
+            connection: new TestNpgsqlConnection(),
+            transaction: new TestDbTransaction(),
+            createCommand: _ =>
+            {
+                var command = new RecordingDbCommand(new DataTable().CreateDataReader());
+                createdCommands.Add(command);
+                return command;
+            }
+        );
+        RecordingMutexLease lease = LeaseWith(NormalSession(), commandSession);
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([RuntimeContext(executionContext)]),
+            new RecordingAdministrativeMutex(lease: lease)
+        );
+        var workflow = new DelegatingWorkflow(
+            preflight: static (context, _) => Task.FromResult(context.EligiblePreflightResult()),
+            execute: async (context, cancellationToken) =>
+            {
+                await DocumentCacheAdministrativeWorkflow
+                    .ExecuteInTransactionAsync(
+                        context,
+                        IsolationLevel.ReadCommitted,
+                        async (session, transactionCancellationToken) =>
+                        {
+                            transactionTokens.Add(transactionCancellationToken);
+                            await using DbCommand directCommand = session.CreateCommand(
+                                new RelationalCommand("select 1")
+                            );
+                            await session
+                                .CreateCommandExecutor()
+                                .ExecuteReaderAsync(
+                                    new RelationalCommand("select 2"),
+                                    static (_, _) => Task.FromResult(true),
+                                    transactionCancellationToken
+                                )
+                                .ConfigureAwait(false);
+
+                            return true;
+                        },
+                        commit: true,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                return context.Completed();
+            }
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(Request(), workflow);
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
+        transactionTokens.Should().ContainSingle().Which.Should().Be(CancellationToken.None);
+        createdCommands.Select(command => command.CommandTimeout).Should().Equal(8, 8);
     }
 
     [TestCase(false)]
@@ -2792,6 +2897,32 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         }
     }
 
+    private sealed class DelayingAdministrativeTargetRetainerProjectionSupervisor(
+        DocumentCacheTargetObservation targetObservation,
+        DocumentCacheProjectionTargetRuntimeContext targetContext,
+        TimeSpan retainDelay
+    ) : IDocumentCacheProjectionSupervisor, IDocumentCacheProjectionAdministrativeTargetRetainer
+    {
+        public ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> CurrentTargetContexts { get; } =
+            ImmutableArray.Create(targetContext);
+
+        public Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
+            DocumentCacheTargetRefreshReason reason,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
+        public async Task<DocumentCacheProjectionAdministrativeTargetRetainResult> TryRetainCurrentTargetForAdministrativeCommandAsync(
+            DocumentCacheTargetKey targetKey,
+            CancellationToken cancellationToken = default
+        )
+        {
+            targetKey.Should().Be(targetContext.TargetKey);
+            await Task.Delay(retainDelay, cancellationToken).ConfigureAwait(false);
+
+            return new(targetObservation, targetContext, targetContext.TryRetainForAdministrativeCommand());
+        }
+    }
+
     private sealed class ThrowingEndAdministrativeCommandObservationSink(Exception endException)
         : IDocumentCacheProjectionObservationSink
     {
@@ -2983,7 +3114,10 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         RelationalProviderToken providerToken,
         IsolationLevel isolationLevel = IsolationLevel.ReadCommitted,
         Func<RecordingWriteSession, CancellationToken, Task>? commitAsync = null,
-        Func<RecordingWriteSession, CancellationToken, Task>? rollbackAsync = null
+        Func<RecordingWriteSession, CancellationToken, Task>? rollbackAsync = null,
+        DbConnection? connection = null,
+        DbTransaction? transaction = null,
+        Func<RelationalCommand, DbCommand>? createCommand = null
     ) : IRelationalWriteSession
     {
         private RecordingMutexLease? _lease;
@@ -2992,11 +3126,12 @@ public class Given_DocumentCacheAdministrativeCommandRunner
 
         public IsolationLevel IsolationLevel { get; } = isolationLevel;
 
-        public DbConnection Connection => throw new NotSupportedException();
+        public DbConnection Connection => connection ?? throw new NotSupportedException();
 
-        public DbTransaction Transaction => throw new NotSupportedException();
+        public DbTransaction Transaction => transaction ?? throw new NotSupportedException();
 
-        public DbCommand CreateCommand(RelationalCommand command) => throw new NotSupportedException();
+        public DbCommand CreateCommand(RelationalCommand command) =>
+            createCommand?.Invoke(command) ?? throw new NotSupportedException();
 
         public void Attach(RecordingMutexLease lease) => _lease = lease;
 
@@ -3012,6 +3147,45 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             rollbackAsync?.Invoke(this, cancellationToken) ?? Task.CompletedTask;
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class TestNpgsqlConnection : DbConnection
+    {
+        [AllowNull]
+        public override string ConnectionString { get; set; } = "Host=localhost;Database=test";
+
+        public override string Database => "test";
+
+        public override string DataSource => "test";
+
+        public override string ServerVersion => "1.0";
+
+        public override ConnectionState State => ConnectionState.Open;
+
+        public override void ChangeDatabase(string databaseName) => throw new NotSupportedException();
+
+        public override void Close() { }
+
+        public override void Open() { }
+
+        protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) =>
+            new TestDbTransaction(this, isolationLevel);
+
+        protected override DbCommand CreateDbCommand() => throw new NotSupportedException();
+    }
+
+    private sealed class TestDbTransaction(
+        DbConnection? connection = null,
+        IsolationLevel isolationLevel = IsolationLevel.ReadCommitted
+    ) : DbTransaction
+    {
+        protected override DbConnection? DbConnection { get; } = connection;
+
+        public override IsolationLevel IsolationLevel { get; } = isolationLevel;
+
+        public override void Commit() { }
+
+        public override void Rollback() { }
     }
 
     private sealed class StubAdministrativePrimitives(

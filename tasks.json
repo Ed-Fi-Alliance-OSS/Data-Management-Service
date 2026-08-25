@@ -426,5 +426,104 @@
       "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj -c Release"
     ],
     "completed": true
+  },
+  {
+    "category": "json-duration-contract",
+    "description": "Medium: Change administrative command JSON output to expose numeric duration fields in seconds instead of serializing `TimeSpan` strings. Align the shared command-result DTO, CLI `--json` output, documentation, and tests with the story contract.",
+    "acceptance-criteria": [
+      "Administrative command JSON output uses a lower-camel seconds property such as `elapsedCommandTimeSeconds` with a numeric value.",
+      "The old `elapsedCommandTime` string-shaped JSON property is removed or ignored from emitted CLI/shared command-result JSON.",
+      "Status and command result duration fields are consistently documented as numeric seconds where they are exposed in JSON.",
+      "Unit tests fail if administrative command results serialize durations as `TimeSpan` strings."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~DocumentCacheAdministrativeContracts",
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~Json",
+      "dotnet run --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- rebuild-online --data-store-id 1 --confirm onlineCacheRebuild --json"
+    ],
+    "completed": false
+  },
+  {
+    "category": "json-request-offline-admission-contract",
+    "description": "Medium: Align CLI `--request-json` offline writer admission with the story contract before dispatching offline activation, offline deactivation, and cache-ahead recovery. JSON requests must use the same `closedAndDrained` token as `--offline-writer-admission`, and missing or malformed admission must be an argument error just like the option-based path.",
+    "acceptance-criteria": [
+      "`activate-offline`, `deactivate-offline`, and `recover-cache-ahead` JSON requests require `offlineWriterAdmission` as the exact string value `closedAndDrained`.",
+      "Missing, non-string, wrong-case, unknown, or duplicated offline writer admission input in `--request-json` fails during CLI parsing and returns exit code `64` before dispatch.",
+      "Commands that do not support offline writer admission still reject the `offlineWriterAdmission` JSON field.",
+      "CLI README and tests no longer document or require a CLI JSON `offlineWriterAdmission` object with `confirmed` and command-specific confirmation fields.",
+      "If the shared runner keeps command-specific `DocumentCacheOfflineWriterAdmission` internally, the CLI translates the validated `closedAndDrained` token before dispatch while the backend preflight classifier remains a defense-in-depth rejection path for direct shared runner calls."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~Json",
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~Parser",
+      "dotnet run --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- activate-offline --request-json ./missing-offline-admission.json"
+    ],
+    "completed": false
+  },
+  {
+    "category": "cli-timeout-budget-coverage",
+    "description": "Medium: Apply CLI timeout options as true active budgets that include target resolution, supervisor refresh, target retention, mutex acquisition, provider SQL execution, and command or status completion. `--status-timeout-seconds` must bound the whole status evaluation, and `--command-timeout-seconds` must bound the mutating invocation from target resolution through every administrative transaction.",
+    "acceptance-criteria": [
+      "Mutating CLI execution creates and passes a timeout token before target refresh or target retention begins.",
+      "Administrative command runner target retention no longer uses `CancellationToken.None` for operations that are part of the command timeout budget.",
+      "Administrative SQL commands executed through `IRelationalWriteSession.CreateCommand` and `CreateCommandExecutor` derive `DbCommand.CommandTimeout` from the active command budget instead of relying on provider defaults while transaction execution uses `CancellationToken.None`.",
+      "Lifecycle, clear, seed, scrub, and recovery SQL that exceeds the active budget is classified through the shared timeout result paths according to whether durable mutation already occurred.",
+      "Status CLI execution applies `--status-timeout-seconds` before target resolution and reuses that token through status observation.",
+      "Timeout failures still map to the documented typed result and exit-code behavior without message-text parsing."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~Timeout",
+      "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~DocumentCacheAdministrativeCommandRunner",
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter FullyQualifiedName~Cancellation"
+    ],
+    "completed": true
+  },
+  {
+    "category": "json-mode-argument-error-stdout",
+    "description": "Medium: Keep `--json` stdout machine-readable when command-line parsing fails. Invalid arguments currently invoke System.CommandLine help on stdout before returning `64`, which violates the JSON-mode no-prose stdout contract.",
+    "acceptance-criteria": [
+      "When `--json` is present and parsing fails, stdout is empty unless a shared JSON contract document can be produced.",
+      "Parser diagnostics, usage/help text, and validation details for JSON-mode argument errors are written to stderr or suppressed, never to stdout.",
+      "The startup exit-code integration test no longer expects `Usage:` in stdout for invalid `--json` invocations.",
+      "Human-mode parse errors still provide useful diagnostics without changing the documented exit code `64`."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter FullyQualifiedName~StartupExitCodes",
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~CommandSurface",
+      "dotnet run --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- status --data-store-id 0 --json"
+    ],
+    "completed": false
+  },
+  {
+    "category": "status-runtime-configuration-required",
+    "description": "Medium: Require valid DocumentCache runtime configuration for CLI `status` instead of fabricating a successful unconfigured status response. A missing datastore should be a process configuration error before the target registry or shared status pipeline can be built.",
+    "acceptance-criteria": [
+      "`status` requires enough runtime configuration to register the shared target registry and `IDocumentCacheStatusService`.",
+      "Missing or empty `AppSettings:Datastore` returns exit code `78` with sanitized stderr and empty stdout in `--json` mode.",
+      "The production `CreateUnconfiguredStatusResponse` fallback is removed or made unreachable outside tests.",
+      "`runtimeNotObserved` remains reserved for a valid resolved target with no current-process runtime observation, not for missing runtime services.",
+      "JSON/status contract tests use a configured service graph or explicit fake status service rather than relying on no-datastore success."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter FullyQualifiedName~StatusCommand",
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~Json",
+      "AppSettings__Datastore= dotnet run --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- status --data-store-id 1 --json"
+    ],
+    "completed": false
+  },
+  {
+    "category": "remove-progress-log-artifact",
+    "description": "Low: Remove the tracked `progress.txt` development log from the branch. It is not part of the CLI deliverable and records local verification commands and connection-string details that should not ship with production source.",
+    "acceptance-criteria": [
+      "`progress.txt` is no longer tracked or included in the branch diff.",
+      "No replacement scratch log, personal progress journal, or local environment transcript is added under source control.",
+      "Any retained verification notes live in appropriate docs, tests, or task metadata and omit credentials, connection strings, tenant display names, and unsanitized physical identifiers."
+    ],
+    "steps-to-verify": [
+      "git ls-files progress.txt",
+      "git diff --name-status -- progress.txt",
+      "git diff --check"
+    ],
+    "completed": false
   }
 ]

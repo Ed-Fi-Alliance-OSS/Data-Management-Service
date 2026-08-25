@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
 using System.CommandLine;
 using System.CommandLine.Parsing;
 using System.Globalization;
@@ -65,12 +66,18 @@ internal static class DocumentCacheAdminCommandExecutor
             )
         )
         {
+            using DocumentCacheAdminTimeoutScope statusTimeout = DocumentCacheAdminTimeoutScope.Start(
+                parseResult,
+                DocumentCacheAdminCommandSurface.StatusTimeoutSecondsOptionName,
+                cancellationToken
+            );
+
             try
             {
                 DocumentCacheStatusResponse statusResponse = await GetStatusResponseAsync(
                         invocationTarget.TargetKey,
                         serviceProvider,
-                        cancellationToken
+                        statusTimeout.Token
                     )
                     .ConfigureAwait(false);
 
@@ -91,6 +98,20 @@ internal static class DocumentCacheAdminCommandExecutor
                 }
 
                 return CompleteCommand(DocumentCacheAdminExitCodes.Success, "completed", "status");
+            }
+            catch (OperationCanceledException) when (statusTimeout.IsTimeoutExpired)
+            {
+                await WriteErrorAsync(
+                        standardError,
+                        "DocumentCache status timed out before a complete status document could be produced."
+                    )
+                    .ConfigureAwait(false);
+
+                return CompleteCommand(
+                    DocumentCacheAdminExitCodes.FailedNoMutation,
+                    "failedNoMutation",
+                    "statusTimeout"
+                );
             }
             catch (OperationCanceledException)
             {
@@ -160,36 +181,45 @@ internal static class DocumentCacheAdminCommandExecutor
                 );
             }
 
+            using DocumentCacheAdminTimeoutScope commandTimeout = DocumentCacheAdminTimeoutScope.Start(
+                parseResult,
+                DocumentCacheAdminCommandSurface.CommandTimeoutSecondsOptionName,
+                cancellationToken
+            );
+
             try
             {
-                await ResolveMutatingTargetAsync(commandRequest!, serviceProvider, cancellationToken)
+                await ResolveMutatingTargetAsync(commandRequest!, serviceProvider, commandTimeout.Token)
                     .ConfigureAwait(false);
 
                 DocumentCacheAdministrativeCommandResult result = await dispatcher
-                    .ExecuteAsync(commandRequest!, cancellationToken)
+                    .ExecuteAsync(commandRequest!, commandTimeout.Token)
                     .ConfigureAwait(false);
+                if (commandTimeout.IsTimeoutExpired)
+                {
+                    result = ConvertCancellationResultToWorkflowTimeout(result);
+                }
 
-                if (jsonOutput)
-                {
-                    await standardOutput
-                        .WriteLineAsync(
-                            DocumentCacheAdminJsonSerializer.SerializeContract(
-                                result,
-                                typeof(DocumentCacheAdministrativeCommandResult)
-                            )
-                        )
-                        .ConfigureAwait(false);
-                }
-                else
-                {
-                    await WriteHumanAdministrativeCommandResultAsync(result, standardOutput)
-                        .ConfigureAwait(false);
-                }
+                await WriteAdministrativeCommandResultAsync(result, jsonOutput, standardOutput)
+                    .ConfigureAwait(false);
 
                 return CompleteCommand(
                     DocumentCacheAdminExitCodeMapper.ForAdministrativeCommandResult(result),
                     result.Status.ToString(),
                     result.Classification.ToString()
+                );
+            }
+            catch (OperationCanceledException) when (commandTimeout.IsTimeoutExpired)
+            {
+                DocumentCacheAdministrativeCommandResult timeoutResult =
+                    CreateWorkflowTimeoutBeforeSharedResult(commandRequest!);
+                await WriteAdministrativeCommandResultAsync(timeoutResult, jsonOutput, standardOutput)
+                    .ConfigureAwait(false);
+
+                return CompleteCommand(
+                    DocumentCacheAdminExitCodeMapper.ForAdministrativeCommandResult(timeoutResult),
+                    timeoutResult.Status.ToString(),
+                    timeoutResult.Classification.ToString()
                 );
             }
             catch (OperationCanceledException)
@@ -251,6 +281,124 @@ internal static class DocumentCacheAdminCommandExecutor
                 .ConfigureAwait(false);
         }
     }
+
+    private static async Task WriteAdministrativeCommandResultAsync(
+        DocumentCacheAdministrativeCommandResult result,
+        bool jsonOutput,
+        TextWriter standardOutput
+    )
+    {
+        if (jsonOutput)
+        {
+            await standardOutput
+                .WriteLineAsync(
+                    DocumentCacheAdminJsonSerializer.SerializeContract(
+                        result,
+                        typeof(DocumentCacheAdministrativeCommandResult)
+                    )
+                )
+                .ConfigureAwait(false);
+            return;
+        }
+
+        await WriteHumanAdministrativeCommandResultAsync(result, standardOutput).ConfigureAwait(false);
+    }
+
+    private static DocumentCacheAdministrativeCommandResult CreateWorkflowTimeoutBeforeSharedResult(
+        DocumentCacheAdminMutatingCommandRequest commandRequest
+    ) =>
+        new(
+            ToAdministrativeCommand(commandRequest.CommandName),
+            DocumentCacheAdministrativeTargetKey.FromTargetKey(commandRequest.TargetKey),
+            DocumentCacheAdministrativeCommandStatus.FailedNoMutation,
+            DocumentCacheAdministrativeCommandClassification.WorkflowTimeout,
+            mutated: false,
+            phaseDiagnostics:
+            [
+                new DocumentCacheAdministrativePhaseDiagnostic(
+                    DocumentCacheAdministrativeCommandPhase.ResolveTarget,
+                    lastCompletedPhase: null,
+                    retryable: false,
+                    DocumentCacheAdministrativeDiagnosticCategory.WorkflowTimeout,
+                    affectedDocumentIds: [],
+                    "Administrative workflow timeout expired before a shared command result could be produced."
+                ),
+            ]
+        );
+
+    private static DocumentCacheAdministrativeCommandResult ConvertCancellationResultToWorkflowTimeout(
+        DocumentCacheAdministrativeCommandResult result
+    )
+    {
+        if (
+            result.Classification
+            is not DocumentCacheAdministrativeCommandClassification.CancellationBeforeMutation
+                and not DocumentCacheAdministrativeCommandClassification.CancellationAfterMutation
+        )
+        {
+            return result;
+        }
+
+        bool mutated = result.Mutated;
+        ImmutableArray<DocumentCacheAdministrativePhaseDiagnostic> existingDiagnostics = result
+            .PhaseDiagnostics
+            .IsDefault
+            ? []
+            : result.PhaseDiagnostics;
+        DocumentCacheAdministrativePhaseDiagnostic? lastDiagnostic = existingDiagnostics.LastOrDefault();
+
+        ImmutableArray<DocumentCacheAdministrativePhaseDiagnostic> timeoutDiagnostics =
+            existingDiagnostics.Add(
+                new DocumentCacheAdministrativePhaseDiagnostic(
+                    lastDiagnostic?.CurrentPhase ?? DocumentCacheAdministrativeCommandPhase.ResolveTarget,
+                    lastDiagnostic?.LastCompletedPhase,
+                    retryable: mutated,
+                    DocumentCacheAdministrativeDiagnosticCategory.WorkflowTimeout,
+                    affectedDocumentIds: [],
+                    mutated
+                        ? "Administrative workflow timeout expired after durable mutation; reissue the same explicit command."
+                        : "Administrative workflow timeout expired before durable mutation."
+                )
+            );
+
+        return new(
+            result.Command,
+            result.TargetKey,
+            mutated
+                ? DocumentCacheAdministrativeCommandStatus.IncompleteRetryable
+                : DocumentCacheAdministrativeCommandStatus.FailedNoMutation,
+            DocumentCacheAdministrativeCommandClassification.WorkflowTimeout,
+            mutated,
+            result.TargetGeneration,
+            result.PhysicalSourceFingerprint,
+            result.Lifecycle,
+            result.CacheAheadRecoveryRequired,
+            timeoutDiagnostics,
+            result.OfflineWriterAdmission,
+            result.ElapsedCommandTime
+        );
+    }
+
+    private static DocumentCacheAdministrativeCommand ToAdministrativeCommand(string commandName) =>
+        commandName switch
+        {
+            DocumentCacheAdminCommandSurface.ActivateNewEmptyCommandName =>
+                DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation,
+            DocumentCacheAdminCommandSurface.ActivateOfflineCommandName =>
+                DocumentCacheAdministrativeCommand.OfflineActivation,
+            DocumentCacheAdminCommandSurface.DeactivateOfflineCommandName =>
+                DocumentCacheAdministrativeCommand.OfflineDeactivation,
+            DocumentCacheAdminCommandSurface.RebuildOnlineCommandName =>
+                DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+            DocumentCacheAdminCommandSurface.ScrubCommandName =>
+                DocumentCacheAdministrativeCommand.ExplicitIntegrityScrub,
+            DocumentCacheAdminCommandSurface.RecoverCacheAheadCommandName =>
+                DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery,
+            _ => throw new ArgumentException(
+                $"Unsupported DocumentCache mutating command '{commandName}'.",
+                nameof(commandName)
+            ),
+        };
 
     private static async Task WriteHumanStatusAsync(
         DocumentCacheStatusResponse statusResponse,
@@ -527,5 +675,53 @@ internal static class DocumentCacheAdminCommandExecutor
                 ),
             ]
         );
+    }
+
+    private sealed class DocumentCacheAdminTimeoutScope : IDisposable
+    {
+        private readonly CancellationTokenSource _timeoutSource;
+        private readonly CancellationTokenSource _linkedSource;
+
+        private DocumentCacheAdminTimeoutScope(TimeSpan timeout, CancellationToken callerCancellationToken)
+        {
+            _timeoutSource = new CancellationTokenSource();
+            _timeoutSource.CancelAfter(timeout);
+            _linkedSource = CancellationTokenSource.CreateLinkedTokenSource(
+                callerCancellationToken,
+                _timeoutSource.Token
+            );
+        }
+
+        public CancellationToken Token => _linkedSource.Token;
+
+        public bool IsTimeoutExpired => _timeoutSource.IsCancellationRequested;
+
+        public static DocumentCacheAdminTimeoutScope Start(
+            ParseResult parseResult,
+            string timeoutOptionName,
+            CancellationToken callerCancellationToken
+        )
+        {
+            string timeoutSeconds = parseResult.GetRequiredValue<string>(timeoutOptionName);
+            if (
+                !DocumentCacheAdminCommandSurface.TryParsePositiveSeconds(
+                    timeoutSeconds,
+                    out TimeSpan timeout
+                )
+            )
+            {
+                throw new InvalidOperationException(
+                    $"Validated timeout option '{timeoutOptionName}' could not be converted."
+                );
+            }
+
+            return new(timeout, callerCancellationToken);
+        }
+
+        public void Dispose()
+        {
+            _linkedSource.Dispose();
+            _timeoutSource.Dispose();
+        }
     }
 }

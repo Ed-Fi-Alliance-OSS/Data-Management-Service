@@ -190,3 +190,55 @@ internal sealed class RelationalWriteSession(
         RolledBack,
     }
 }
+
+internal sealed class CommandTimeoutRelationalWriteSession(
+    IRelationalWriteSession innerSession,
+    Func<TimeSpan> getRemainingCommandBudget
+) : IRelationalWriteSession
+{
+    private readonly IRelationalWriteSession _innerSession =
+        innerSession ?? throw new ArgumentNullException(nameof(innerSession));
+    private readonly Func<TimeSpan> _getRemainingCommandBudget =
+        getRemainingCommandBudget ?? throw new ArgumentNullException(nameof(getRemainingCommandBudget));
+
+    public DbConnection Connection => _innerSession.Connection;
+
+    public DbTransaction Transaction => _innerSession.Transaction;
+
+    public DbCommand CreateCommand(RelationalCommand command)
+    {
+        DbCommand dbCommand = _innerSession.CreateCommand(command);
+        dbCommand.CommandTimeout = ToCommandTimeoutSeconds(_getRemainingCommandBudget());
+        return dbCommand;
+    }
+
+    public IRelationalCommandExecutor CreateCommandExecutor() =>
+        SessionRelationalCommandExecutor.ForSession(this);
+
+    public Task CommitAsync(CancellationToken cancellationToken = default) =>
+        _innerSession.CommitAsync(cancellationToken);
+
+    public Task RollbackAsync(CancellationToken cancellationToken = default) =>
+        _innerSession.RollbackAsync(cancellationToken);
+
+    public void ReportDatabaseFailure(DbException exception) =>
+        _innerSession.ReportDatabaseFailure(exception);
+
+    public ValueTask DisposeAsync() => _innerSession.DisposeAsync();
+
+    private static int ToCommandTimeoutSeconds(TimeSpan remainingCommandBudget)
+    {
+        if (remainingCommandBudget <= TimeSpan.Zero)
+        {
+            return 1;
+        }
+
+        double timeoutSeconds = Math.Ceiling(remainingCommandBudget.TotalSeconds);
+        if (timeoutSeconds >= int.MaxValue)
+        {
+            return int.MaxValue;
+        }
+
+        return Math.Max(1, Convert.ToInt32(timeoutSeconds));
+    }
+}

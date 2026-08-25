@@ -229,6 +229,17 @@ internal sealed class DocumentCacheAdministrativeCommandExecutionContext
 
     public TimeSpan ElapsedCommandTime => _timeProvider.GetUtcNow() - StartedAt;
 
+    public TimeSpan RemainingWorkflowTimeout
+    {
+        get
+        {
+            TimeSpan remaining =
+                TargetContext.TargetExecutionContext.EffectiveSettings.AdministrationWorkflowTimeout
+                - ElapsedCommandTime;
+            return remaining > TimeSpan.Zero ? remaining : TimeSpan.FromTicks(1);
+        }
+    }
+
     public ImmutableArray<DocumentCacheAdministrativePhaseDiagnostic> PhaseDiagnostics => _phaseDiagnostics;
 
     public int PhaseDiagnosticCapacity =>
@@ -491,8 +502,33 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
             return RecordAdministrativeCommandResult(offlineWriterAdmissionRejection);
         }
 
-        PinnedTargetResolution pinnedTargetResolution = await TryResolveAndRetainPinnedTargetAsync(request)
-            .ConfigureAwait(false);
+        using DocumentCacheAdministrativeCommandTimeoutBudget commandTimeout = new(cancellationToken);
+        DocumentCacheTargetObservation? initialTargetObservation = targetRegistry.CurrentSnapshot.GetTarget(
+            request.TargetKey.TargetKey
+        );
+        if (initialTargetObservation is not null)
+        {
+            commandTimeout.Start(
+                initialTargetObservation.EffectiveSettings.AdministrationWorkflowTimeout,
+                timeProvider.GetUtcNow()
+            );
+        }
+
+        PinnedTargetResolution pinnedTargetResolution;
+        try
+        {
+            pinnedTargetResolution = await TryResolveAndRetainPinnedTargetAsync(request, commandTimeout.Token)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (commandTimeout.IsTimeoutExpired)
+        {
+            return RecordAdministrativeCommandResult(CreatePreExecutionWorkflowTimeoutResult(request));
+        }
+        catch (OperationCanceledException) when (commandTimeout.IsCallerCancellationRequested)
+        {
+            return RecordAdministrativeCommandResult(CreatePreExecutionCancellationResult(request));
+        }
+
         if (pinnedTargetResolution.Rejection is not null)
         {
             return RecordAdministrativeCommandResult(pinnedTargetResolution.Rejection);
@@ -500,6 +536,10 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
 
         DocumentCacheProjectionTargetRuntimeContext targetContext = pinnedTargetResolution.TargetContext!;
         IDisposable pinnedTargetRetention = pinnedTargetResolution.TargetRetention!;
+        commandTimeout.Start(
+            targetContext.TargetExecutionContext.EffectiveSettings.AdministrationWorkflowTimeout,
+            timeProvider.GetUtcNow()
+        );
         DocumentCacheAdministrativeCommandResult? classifiedResult = null;
         try
         {
@@ -523,13 +563,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
 
             DocumentCacheAdministrativeCommandExecutionId executionId =
                 DocumentCacheAdministrativeCommandExecutionId.New();
-            DateTimeOffset startedAt = timeProvider.GetUtcNow();
-            using CancellationTokenSource commandTimeout = CancellationTokenSource.CreateLinkedTokenSource(
-                cancellationToken
-            );
-            commandTimeout.CancelAfter(
-                targetContext.TargetExecutionContext.EffectiveSettings.AdministrationWorkflowTimeout
-            );
+            DateTimeOffset startedAt = commandTimeout.StartedAt ?? timeProvider.GetUtcNow();
 
             IDocumentCacheAdministrativeMutexLease mutexLease;
             long mutexStartedAt = Stopwatch.GetTimestamp();
@@ -546,28 +580,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                     mutexStartedAt
                 );
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                RecordAdministrativeMutexOutcome(
-                    request,
-                    targetContext,
-                    DocumentCacheAdministrativeCommandClassification.MutexAcquisitionCancelled.ToString(),
-                    DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionCancelled,
-                    mutexStartedAt
-                );
-                classifiedResult = RecordAdministrativeCommandResult(
-                    CreateAcquireMutexFailure(
-                        request,
-                        targetContext,
-                        DocumentCacheAdministrativeCommandClassification.MutexAcquisitionCancelled,
-                        DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionCancelled,
-                        "DocumentCache administrative mutex acquisition was cancelled."
-                    ),
-                    targetContext
-                );
-                return classifiedResult;
-            }
-            catch (OperationCanceledException) when (commandTimeout.IsCancellationRequested)
+            catch (OperationCanceledException) when (commandTimeout.IsTimeoutExpired)
             {
                 RecordAdministrativeMutexOutcome(
                     request,
@@ -586,6 +599,27 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                     ),
                     targetContext,
                     DocumentCacheAdministrativeCommandPhase.AcquireMutex
+                );
+                return classifiedResult;
+            }
+            catch (OperationCanceledException) when (commandTimeout.IsCallerCancellationRequested)
+            {
+                RecordAdministrativeMutexOutcome(
+                    request,
+                    targetContext,
+                    DocumentCacheAdministrativeCommandClassification.MutexAcquisitionCancelled.ToString(),
+                    DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionCancelled,
+                    mutexStartedAt
+                );
+                classifiedResult = RecordAdministrativeCommandResult(
+                    CreateAcquireMutexFailure(
+                        request,
+                        targetContext,
+                        DocumentCacheAdministrativeCommandClassification.MutexAcquisitionCancelled,
+                        DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionCancelled,
+                        "DocumentCache administrative mutex acquisition was cancelled."
+                    ),
+                    targetContext
                 );
                 return classifiedResult;
             }
@@ -689,18 +723,18 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                     );
                     return classifiedResult;
                 }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                catch (OperationCanceledException) when (commandTimeout.IsTimeoutExpired)
                 {
                     classifiedResult = RecordAdministrativeCommandResult(
-                        CreateCancellationResult(commandContext),
+                        CreateWorkflowTimeoutResult(commandContext),
                         commandContext
                     );
                     return classifiedResult;
                 }
-                catch (OperationCanceledException) when (commandTimeout.IsCancellationRequested)
+                catch (OperationCanceledException) when (commandTimeout.IsCallerCancellationRequested)
                 {
                     classifiedResult = RecordAdministrativeCommandResult(
-                        CreateWorkflowTimeoutResult(commandContext),
+                        CreateCancellationResult(commandContext),
                         commandContext
                     );
                     return classifiedResult;
@@ -1027,7 +1061,8 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
     }
 
     private async Task<PinnedTargetResolution> TryResolveAndRetainPinnedTargetAsync(
-        DocumentCacheAdministrativeCommandRunnerRequest request
+        DocumentCacheAdministrativeCommandRunnerRequest request,
+        CancellationToken cancellationToken
     )
     {
         if (projectionSupervisor is IDocumentCacheProjectionAdministrativeTargetRetainer targetRetainer)
@@ -1035,7 +1070,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
             DocumentCacheProjectionAdministrativeTargetRetainResult retainResult = await targetRetainer
                 .TryRetainCurrentTargetForAdministrativeCommandAsync(
                     request.TargetKey.TargetKey,
-                    CancellationToken.None
+                    cancellationToken
                 )
                 .ConfigureAwait(false);
 
@@ -1309,6 +1344,50 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
         );
     }
 
+    private static DocumentCacheAdministrativeCommandResult CreatePreExecutionWorkflowTimeoutResult(
+        DocumentCacheAdministrativeCommandRunnerRequest request
+    ) =>
+        new(
+            request.Command,
+            request.TargetKey,
+            DocumentCacheAdministrativeCommandStatus.FailedNoMutation,
+            DocumentCacheAdministrativeCommandClassification.WorkflowTimeout,
+            mutated: false,
+            phaseDiagnostics:
+            [
+                new DocumentCacheAdministrativePhaseDiagnostic(
+                    DocumentCacheAdministrativeCommandPhase.ResolveTarget,
+                    lastCompletedPhase: null,
+                    retryable: false,
+                    DocumentCacheAdministrativeDiagnosticCategory.WorkflowTimeout,
+                    affectedDocumentIds: [],
+                    "Administrative workflow timeout expired before the target could be retained."
+                ),
+            ]
+        );
+
+    private static DocumentCacheAdministrativeCommandResult CreatePreExecutionCancellationResult(
+        DocumentCacheAdministrativeCommandRunnerRequest request
+    ) =>
+        new(
+            request.Command,
+            request.TargetKey,
+            DocumentCacheAdministrativeCommandStatus.FailedNoMutation,
+            DocumentCacheAdministrativeCommandClassification.CancellationBeforeMutation,
+            mutated: false,
+            phaseDiagnostics:
+            [
+                new DocumentCacheAdministrativePhaseDiagnostic(
+                    DocumentCacheAdministrativeCommandPhase.ResolveTarget,
+                    lastCompletedPhase: null,
+                    retryable: false,
+                    DocumentCacheAdministrativeDiagnosticCategory.Cancellation,
+                    affectedDocumentIds: [],
+                    "Administrative command was cancelled before the target could be retained."
+                ),
+            ]
+        );
+
     private static DocumentCacheAdministrativeCommandResult CreateCancellationResult(
         DocumentCacheAdministrativeCommandExecutionContext commandContext
     )
@@ -1551,6 +1630,45 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
             downstreamPublicationStatus: null,
             resultDiagnostics
         );
+    }
+
+    private sealed class DocumentCacheAdministrativeCommandTimeoutBudget(
+        CancellationToken callerCancellationToken
+    ) : IDisposable
+    {
+        private CancellationTokenSource? _timeoutSource;
+        private CancellationTokenSource? _linkedSource;
+
+        public CancellationToken Token => _linkedSource?.Token ?? callerCancellationToken;
+
+        public DateTimeOffset? StartedAt { get; private set; }
+
+        public bool IsTimeoutExpired => _timeoutSource?.IsCancellationRequested == true;
+
+        public bool IsCallerCancellationRequested =>
+            callerCancellationToken.IsCancellationRequested && !IsTimeoutExpired;
+
+        public void Start(TimeSpan workflowTimeout, DateTimeOffset startedAt)
+        {
+            if (_timeoutSource is not null)
+            {
+                return;
+            }
+
+            StartedAt = startedAt;
+            _timeoutSource = new CancellationTokenSource();
+            _timeoutSource.CancelAfter(workflowTimeout);
+            _linkedSource = CancellationTokenSource.CreateLinkedTokenSource(
+                callerCancellationToken,
+                _timeoutSource.Token
+            );
+        }
+
+        public void Dispose()
+        {
+            _linkedSource?.Dispose();
+            _timeoutSource?.Dispose();
+        }
     }
 
     private sealed record PinnedTargetResolution(

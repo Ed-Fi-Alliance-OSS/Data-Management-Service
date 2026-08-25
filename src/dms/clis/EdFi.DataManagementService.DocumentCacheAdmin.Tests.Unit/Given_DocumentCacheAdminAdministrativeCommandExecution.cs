@@ -148,6 +148,44 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
         stderr.ToString().Should().Contain("runtime services are not configured");
     }
 
+    [Test]
+    [Category("Timeout")]
+    public async Task It_applies_command_timeout_before_mutating_target_resolution_completes()
+    {
+        ThrowingMutatingCommandDispatcher dispatcher = new(
+            new AssertionException("Dispatcher must not run after target resolution times out.")
+        );
+        await using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddSingleton<IDocumentCacheAdminTargetResolver>(new DelayingTargetResolver())
+            .AddSingleton<IDocumentCacheAdminMutatingCommandDispatcher>(dispatcher)
+            .BuildServiceProvider();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+
+        int exitCode = await DocumentCacheAdminCommandExecutor.ExecuteAsync(
+            ParseCommand(
+                DocumentCacheAdminCommandSurface.RebuildOnlineCommandName,
+                DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
+                "1",
+                DocumentCacheAdminCommandSurface.ConfirmOptionName,
+                "onlineCacheRebuild",
+                DocumentCacheAdminCommandSurface.CommandTimeoutSecondsOptionName,
+                "0.001",
+                DocumentCacheAdminCommandSurface.JsonOptionName
+            ),
+            InvocationTarget(),
+            serviceProvider,
+            stdout,
+            stderr
+        );
+
+        exitCode.Should().Be(DocumentCacheAdminExitCodes.FailedNoMutation);
+        string json = stdout.ToString();
+        json.Should().Contain("\"classification\":\"workflowTimeout\"");
+        json.Should().Contain("\"currentPhase\":\"resolveTarget\"");
+        stderr.ToString().Should().BeEmpty();
+    }
+
     private static ParseResult ParseCommand(string commandName, params string[] args) =>
         DocumentCacheAdminCommandSurface.CreateRootCommand().Parse([commandName, .. args]);
 
@@ -207,5 +245,26 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
             _requests.Add(commandRequest);
             return Task.FromResult(execute(commandRequest));
         }
+    }
+
+    private sealed class DelayingTargetResolver : IDocumentCacheAdminTargetResolver
+    {
+        public async Task<DocumentCacheAdminTargetResolutionResult> ResolveAsync(
+            DocumentCacheTargetKey targetKey,
+            CancellationToken cancellationToken = default
+        )
+        {
+            await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+            throw new AssertionException("Target resolution should be cancelled by the command timeout.");
+        }
+    }
+
+    private sealed class ThrowingMutatingCommandDispatcher(Exception exception)
+        : IDocumentCacheAdminMutatingCommandDispatcher
+    {
+        public Task<DocumentCacheAdministrativeCommandResult> ExecuteAsync(
+            DocumentCacheAdminMutatingCommandRequest commandRequest,
+            CancellationToken cancellationToken = default
+        ) => Task.FromException<DocumentCacheAdministrativeCommandResult>(exception);
     }
 }
