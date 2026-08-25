@@ -509,7 +509,7 @@
       "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~Json",
       "AppSettings__Datastore= dotnet run --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- status --data-store-id 1 --json"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "remove-progress-log-artifact",

@@ -80,20 +80,16 @@ try
         return DocumentCacheAdminExitCodes.ConfigurationError;
     }
 
-    bool runtimeServicesConfigured = HasRuntimeServices(configuration);
     await using ServiceProvider serviceProvider = serviceCollection.BuildServiceProvider();
 
-    if (runtimeServicesConfigured)
+    try
     {
-        try
-        {
-            await InitializeRuntimeSchemaAsync(serviceProvider, processCancellationSource.Token);
-        }
-        catch (Exception exception) when (IsServiceConfigurationFailure(exception))
-        {
-            await WriteConfigurationFailureAsync(exception);
-            return DocumentCacheAdminExitCodes.ConfigurationError;
-        }
+        await InitializeRuntimeSchemaAsync(serviceProvider, processCancellationSource.Token);
+    }
+    catch (Exception exception) when (IsServiceConfigurationFailure(exception))
+    {
+        await WriteConfigurationFailureAsync(exception);
+        return DocumentCacheAdminExitCodes.ConfigurationError;
     }
 
     int exitCode = await DocumentCacheAdminCommandExecutor.ExecuteAsync(
@@ -160,10 +156,7 @@ void ConfigureServices(
 
     Log.Logger = logConfiguration.CreateLogger();
 
-    if (!string.IsNullOrWhiteSpace(configuration.GetSection("AppSettings:Datastore").Value))
-    {
-        services.AddDocumentCacheAdminRuntimeServices(configuration, Log.Logger, invocationTarget);
-    }
+    services.AddDocumentCacheAdminRuntimeServices(configuration, Log.Logger, invocationTarget);
 
     services.AddLogging(loggingBuilder =>
     {
@@ -185,9 +178,6 @@ static bool IsConfigurationBuildFailure(Exception exception) =>
 
 static bool IsServiceConfigurationFailure(Exception exception) =>
     exception is InvalidOperationException or ArgumentException or FormatException;
-
-static bool HasRuntimeServices(IConfiguration configuration) =>
-    !string.IsNullOrWhiteSpace(configuration.GetSection("AppSettings:Datastore").Value);
 
 static async Task InitializeRuntimeSchemaAsync(
     ServiceProvider serviceProvider,

@@ -292,7 +292,9 @@ public sealed class Given_DocumentCacheAdminJsonRequestAndSerializationContracts
             "1",
             DocumentCacheAdminCommandSurface.JsonOptionName
         );
-        await using ServiceProvider serviceProvider = new ServiceCollection().BuildServiceProvider();
+        await using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddSingleton<IDocumentCacheStatusService>(new StaticStatusService(StatusResponse()))
+            .BuildServiceProvider();
         using var output = new StringWriter();
 
         int exitCode = await DocumentCacheAdminCommandExecutor.ExecuteAsync(
@@ -318,4 +320,120 @@ public sealed class Given_DocumentCacheAdminJsonRequestAndSerializationContracts
 
     private static ParseResult ParseCommand(params string[] args) =>
         DocumentCacheAdminCommandSurface.CreateRootCommand().Parse(args);
+
+    private static DocumentCacheStatusResponse StatusResponse() =>
+        new(
+            new DateTimeOffset(2026, 8, 20, 12, 30, 0, TimeSpan.Zero),
+            [
+                new DocumentCacheStatusTarget(
+                    DocumentCacheStatusTargetKey.FromTargetKey(DocumentCacheTargetKey.Create("", 1)),
+                    targetGeneration: 3,
+                    processObservedAt: new DateTimeOffset(2026, 8, 20, 12, 30, 0, TimeSpan.Zero),
+                    durableObservedAt: new DateTimeOffset(2026, 8, 20, 12, 30, 1, TimeSpan.Zero),
+                    provider: "postgresql",
+                    physicalSourceFingerprint: Fingerprint,
+                    new DocumentCacheStatusResolutionComponent(
+                        DocumentCacheStatusResolutionStatus.Resolved,
+                        DocumentCacheStatusResolutionReason.None,
+                        new DateTimeOffset(2026, 8, 20, 12, 30, 0, TimeSpan.Zero),
+                        message: null
+                    ),
+                    new DocumentCacheStatusEligibilityComponent(
+                        DocumentCacheStatusEligibilityStatus.Unknown,
+                        DocumentCacheStatusReason.RuntimeNotObserved,
+                        "Current-generation DocumentCache projection runtime has not been observed."
+                    ),
+                    new DocumentCacheStatusInventoryComponentGroup(
+                        new DateTimeOffset(2026, 8, 20, 12, 30, 0, TimeSpan.Zero),
+                        ValidInventory(),
+                        ValidInventory(),
+                        ValidInventory(),
+                        ValidInventory(),
+                        new DocumentCacheStatusEnqueueTriggerComponent(
+                            DocumentCacheStatusEnqueueTriggerStatus.Enabled,
+                            DocumentCacheStatusInventoryReason.None,
+                            message: null
+                        )
+                    ),
+                    new DocumentCacheStatusProviderPrerequisitesComponent(
+                        DocumentCacheStatusProviderPrerequisiteStatus.NotApplicable,
+                        DocumentCacheStatusProviderPrerequisiteReason.None,
+                        observedAt: null,
+                        new DocumentCacheStatusProviderPrerequisiteComponent(
+                            DocumentCacheStatusProviderPrerequisiteStatus.NotApplicable,
+                            DocumentCacheStatusProviderPrerequisiteReason.None,
+                            message: null
+                        ),
+                        new DocumentCacheStatusProviderPrerequisiteComponent(
+                            DocumentCacheStatusProviderPrerequisiteStatus.NotApplicable,
+                            DocumentCacheStatusProviderPrerequisiteReason.None,
+                            message: null
+                        )
+                    ),
+                    new DocumentCacheStatusLifecycleComponent(
+                        DocumentCacheStatusLifecycleState.Tracking,
+                        DocumentCacheStatusAvailability.Available,
+                        message: null
+                    ),
+                    new DocumentCacheStatusCacheAheadComponent(
+                        DocumentCacheStatusCacheAheadState.Clear,
+                        recoveryRequired: false,
+                        message: null
+                    ),
+                    new DocumentCacheOperationalHealthComponent(
+                        DocumentCacheOperationalHealthStatus.Unknown,
+                        DocumentCacheStatusReason.RuntimeNotObserved,
+                        "Current-generation DocumentCache projection runtime has not been observed."
+                    ),
+                    new DocumentCacheCaughtUpComponent(
+                        DocumentCacheCaughtUpStatus.Unknown,
+                        DocumentCacheStatusReason.RuntimeNotObserved,
+                        "Current-generation DocumentCache projection runtime has not been observed."
+                    ),
+                    new DocumentCacheStatusQueueSummary(
+                        DocumentCacheStatusQueuePresence.Empty,
+                        oldestWorkFirstEnqueuedAt: null,
+                        oldestWorkAgeSeconds: null,
+                        DocumentCacheStatusBacklogEstimate.Unavailable
+                    ),
+                    new DocumentCacheStatusExecutionStateComponent(
+                        DocumentCacheStatusExecutionState.NotObserved,
+                        observedAt: null,
+                        activeWorkers: null,
+                        concurrencySlotsUsed: null,
+                        targetBackoffUntil: null,
+                        lastSuccessfulWorkAt: null,
+                        lastFailureAt: null,
+                        message: null
+                    ),
+                    activeCommand: null,
+                    lastEndedDiagnostic: null,
+                    new DocumentCacheStatusDiagnosticWindow<DocumentCacheStatusTargetDiagnosticEvent>(),
+                    new DocumentCacheStatusDiagnosticWindow<DocumentCacheStatusDocumentDiagnosticEvent>(),
+                    new DocumentCacheStatusDiagnosticWindow<DocumentCacheStatusPoisonTraversalDiagnosticEvent>(),
+                    DocumentCacheStatusEffectiveSettings.FromEffectiveSettings(
+                        DocumentCacheTargetEffectiveSettings.FromOptions(new DocumentCacheOptions())
+                    ),
+                    new DocumentCacheStatusEnqueueFailures()
+                ),
+            ]
+        );
+
+    private static DocumentCacheStatusInventoryComponent ValidInventory() =>
+        new(DocumentCacheStatusInventoryStatus.Valid, DocumentCacheStatusInventoryReason.None, message: null);
+
+    private sealed class StaticStatusService(DocumentCacheStatusResponse response)
+        : IDocumentCacheStatusService
+    {
+        public Task<DocumentCacheStatusResponse> GetStatusAsync(
+            CancellationToken cancellationToken = default,
+            DocumentCacheStatusEvaluationMode evaluationMode =
+                DocumentCacheStatusEvaluationMode.RuntimeEndpoint
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            evaluationMode.Should().Be(DocumentCacheStatusEvaluationMode.StandaloneDirectObservation);
+            return Task.FromResult(response);
+        }
+    }
 }

@@ -254,8 +254,8 @@ public sealed class Given_DocumentCacheAdminStatusCommand
                 DocumentCacheStatusEvaluationMode.RuntimeEndpoint
         )
         {
-            cancellationToken.ThrowIfCancellationRequested();
             _evaluationModes.Add(evaluationMode);
+            cancellationToken.ThrowIfCancellationRequested();
             return await getStatusAsync(evaluationMode, cancellationToken).ConfigureAwait(false);
         }
     }

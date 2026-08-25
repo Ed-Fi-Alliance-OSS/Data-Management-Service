@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.DocumentCacheAdmin;
 using FluentAssertions;
 
@@ -15,7 +14,7 @@ namespace EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration;
 public sealed class Given_DocumentCacheAdminStatusCommand
 {
     [Test]
-    public async Task It_returns_one_shared_status_json_document_from_the_tool_process()
+    public async Task It_returns_configuration_error_when_runtime_datastore_is_missing()
     {
         ProcessResult result = await RunDocumentCacheAdminAsync(
             DocumentCacheAdminCommandSurface.StatusCommandName,
@@ -24,17 +23,10 @@ public sealed class Given_DocumentCacheAdminStatusCommand
             DocumentCacheAdminCommandSurface.JsonOptionName
         );
 
-        result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.Success);
-        result.StandardError.Should().BeEmpty();
-        result.StandardOutput.TrimEnd().Should().NotContain("\n");
-
-        JsonObject root = JsonNode.Parse(result.StandardOutput)!.AsObject();
-        root["contractVersion"]!.GetValue<int>().Should().Be(1);
-        JsonArray targets = root["targets"]!.AsArray();
-        targets.Should().ContainSingle();
-        targets[0]!["targetKey"]!["tenantKey"]!.GetValue<string>().Should().Be("");
-        targets[0]!["targetKey"]!["dataStoreId"]!.GetValue<long>().Should().Be(1);
-        targets[0]!["operationalHealth"]!["reason"]!.GetValue<string>().Should().Be("runtimeNotObserved");
+        result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.ConfigurationError);
+        result.StandardOutput.Should().BeEmpty();
+        result.StandardError.Should().Contain("DocumentCache configuration error");
+        result.StandardError.Should().Contain("AppSettings:Datastore must be one of: postgresql mssql");
     }
 
     private static async Task<ProcessResult> RunDocumentCacheAdminAsync(params string[] arguments)

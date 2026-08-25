@@ -550,12 +550,8 @@ internal static class DocumentCacheAdminCommandExecutor
         CancellationToken cancellationToken
     )
     {
-        IDocumentCacheStatusService? statusService =
-            serviceProvider.GetService<IDocumentCacheStatusService>();
-        if (statusService is null)
-        {
-            return CreateUnconfiguredStatusResponse(targetKey, DateTimeOffset.UtcNow);
-        }
+        IDocumentCacheStatusService statusService =
+            serviceProvider.GetRequiredService<IDocumentCacheStatusService>();
 
         IDocumentCacheAdminTargetResolver? targetResolver =
             serviceProvider.GetService<IDocumentCacheAdminTargetResolver>();
@@ -567,114 +563,6 @@ internal static class DocumentCacheAdminCommandExecutor
         return await statusService
             .GetStatusAsync(cancellationToken, DocumentCacheStatusEvaluationMode.StandaloneDirectObservation)
             .ConfigureAwait(false);
-    }
-
-    private static DocumentCacheStatusResponse CreateUnconfiguredStatusResponse(
-        DocumentCacheTargetKey targetKey,
-        DateTimeOffset observedAt
-    )
-    {
-        const string message = "DocumentCache runtime services are not configured for this invocation.";
-        DocumentCacheStatusInventoryComponent inventoryNotObserved = new(
-            DocumentCacheStatusInventoryStatus.NotObserved,
-            DocumentCacheStatusInventoryReason.None,
-            message
-        );
-        DocumentCacheStatusEnqueueTriggerComponent enqueueTriggerNotObserved = new(
-            DocumentCacheStatusEnqueueTriggerStatus.NotObserved,
-            DocumentCacheStatusInventoryReason.None,
-            message
-        );
-        DocumentCacheStatusProviderPrerequisiteComponent providerPrerequisiteUnknown = new(
-            DocumentCacheStatusProviderPrerequisiteStatus.Unknown,
-            DocumentCacheStatusProviderPrerequisiteReason.None,
-            message
-        );
-
-        return new DocumentCacheStatusResponse(
-            observedAt,
-            [
-                new DocumentCacheStatusTarget(
-                    DocumentCacheStatusTargetKey.FromTargetKey(targetKey),
-                    targetGeneration: null,
-                    observedAt,
-                    durableObservedAt: null,
-                    provider: null,
-                    physicalSourceFingerprint: null,
-                    new DocumentCacheStatusResolutionComponent(
-                        DocumentCacheStatusResolutionStatus.Unknown,
-                        DocumentCacheStatusResolutionReason.TargetNotFound,
-                        observedAt,
-                        message
-                    ),
-                    new DocumentCacheStatusEligibilityComponent(
-                        DocumentCacheStatusEligibilityStatus.Unknown,
-                        DocumentCacheStatusReason.UnresolvedTarget,
-                        message
-                    ),
-                    new DocumentCacheStatusInventoryComponentGroup(
-                        observedAt: null,
-                        inventoryNotObserved,
-                        inventoryNotObserved,
-                        inventoryNotObserved,
-                        inventoryNotObserved,
-                        enqueueTriggerNotObserved
-                    ),
-                    new DocumentCacheStatusProviderPrerequisitesComponent(
-                        DocumentCacheStatusProviderPrerequisiteStatus.Unknown,
-                        DocumentCacheStatusProviderPrerequisiteReason.None,
-                        observedAt: null,
-                        providerPrerequisiteUnknown,
-                        providerPrerequisiteUnknown
-                    ),
-                    new DocumentCacheStatusLifecycleComponent(
-                        DocumentCacheStatusLifecycleState.Unknown,
-                        DocumentCacheStatusAvailability.Unknown,
-                        message
-                    ),
-                    new DocumentCacheStatusCacheAheadComponent(
-                        DocumentCacheStatusCacheAheadState.Unknown,
-                        recoveryRequired: null,
-                        message
-                    ),
-                    new DocumentCacheOperationalHealthComponent(
-                        DocumentCacheOperationalHealthStatus.Unknown,
-                        DocumentCacheStatusReason.RuntimeNotObserved,
-                        message
-                    ),
-                    new DocumentCacheCaughtUpComponent(
-                        DocumentCacheCaughtUpStatus.Unknown,
-                        DocumentCacheStatusReason.RuntimeNotObserved,
-                        message
-                    ),
-                    new DocumentCacheStatusQueueSummary(
-                        DocumentCacheStatusQueuePresence.Unavailable,
-                        oldestWorkFirstEnqueuedAt: null,
-                        oldestWorkAgeSeconds: null,
-                        DocumentCacheStatusBacklogEstimate.Unavailable
-                    ),
-                    new DocumentCacheStatusExecutionStateComponent(
-                        DocumentCacheStatusExecutionState.NotObserved,
-                        observedAt: null,
-                        activeWorkers: null,
-                        concurrencySlotsUsed: null,
-                        targetBackoffUntil: null,
-                        lastSuccessfulWorkAt: null,
-                        lastFailureAt: null,
-                        message
-                    ),
-                    activeCommand: null,
-                    lastEndedDiagnostic: null,
-                    new DocumentCacheStatusDiagnosticWindow<DocumentCacheStatusTargetDiagnosticEvent>(),
-                    new DocumentCacheStatusDiagnosticWindow<DocumentCacheStatusDocumentDiagnosticEvent>(),
-                    new DocumentCacheStatusDiagnosticWindow<DocumentCacheStatusPoisonTraversalDiagnosticEvent>(),
-                    DocumentCacheStatusEffectiveSettings.FromEffectiveSettings(
-                        DocumentCacheTargetEffectiveSettings.FromOptions(new DocumentCacheOptions())
-                    ),
-                    new DocumentCacheStatusEnqueueFailures()
-                ),
-            ]
-        );
     }
 
     private sealed class DocumentCacheAdminTimeoutScope : IDisposable
