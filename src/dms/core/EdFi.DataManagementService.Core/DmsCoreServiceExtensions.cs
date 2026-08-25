@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Handler;
@@ -134,7 +135,8 @@ public static class DmsCoreServiceExtensions
             .AddSingleton<GetTokenInfoHandler>()
             .AddSingleton<AvailableChangeVersionsHandler>()
             // Collection-read observability
-            .AddSingleton<ICollectionPagingTelemetry, CollectionPagingTelemetry>();
+            .AddSingleton<ICollectionPagingTelemetry, CollectionPagingTelemetry>()
+            .AddDmsCdcControlPlane();
 
         return services;
 

@@ -71,6 +71,8 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IDocumentCacheAdministrativePrimitives>();
         var providerCommandTimeoutClassifier =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheProviderCommandTimeoutClassifier>();
+        var cdcSourcePositionAdapter =
+            scope.ServiceProvider.GetRequiredService<MssqlCdcSourcePositionAdapter>();
         var documentCacheBaselineSeeder =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheBaselineSeeder>();
         var documentCacheOfflineActivationCommand =
@@ -128,6 +130,7 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
         providerCommandTimeoutClassifier
             .Should()
             .BeOfType<MssqlDocumentCacheProviderCommandTimeoutClassifier>();
+        cdcSourcePositionAdapter.Should().BeOfType<MssqlCdcSourcePositionAdapter>();
         documentCacheBaselineSeeder.Should().BeOfType<DocumentCacheBaselineSeeder>();
         documentCacheOfflineActivationCommand.Should().BeOfType<DocumentCacheOfflineActivationCommand>();
         documentCacheOfflineDeactivationCommand.Should().BeOfType<DocumentCacheOfflineDeactivationCommand>();
@@ -241,6 +244,24 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
             .ServiceProvider.GetRequiredService<IDocumentCacheAdministrativeMutex>()
             .Should()
             .BeOfType<MssqlDocumentCacheAdministrativeMutex>();
+    }
+
+    [Test]
+    public void It_registers_the_mssql_Cdc_source_position_adapter()
+    {
+        var services = new ServiceCollection();
+
+        services.AddMssqlReferenceResolver();
+
+        services
+            .Where(descriptor => descriptor.ServiceType == typeof(MssqlCdcSourcePositionAdapter))
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Match<ServiceDescriptor>(descriptor =>
+                descriptor.Lifetime == ServiceLifetime.Singleton
+                && descriptor.ImplementationType == typeof(MssqlCdcSourcePositionAdapter)
+            );
     }
 
     [Test]

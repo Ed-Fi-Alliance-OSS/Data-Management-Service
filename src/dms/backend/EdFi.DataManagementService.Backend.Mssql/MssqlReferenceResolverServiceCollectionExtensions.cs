@@ -75,6 +75,9 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
                 )
             )
         );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<MssqlCdcSourcePositionAdapter, MssqlCdcSourcePositionAdapter>()
+        );
 
         services.AddReferenceResolver<
             MssqlReferenceResolverAdapterFactory,

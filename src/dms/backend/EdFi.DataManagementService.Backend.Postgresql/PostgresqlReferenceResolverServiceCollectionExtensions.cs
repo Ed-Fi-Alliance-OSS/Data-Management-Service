@@ -78,6 +78,12 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
                 )
             )
         );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                PostgresqlCdcSourcePositionAdapter,
+                PostgresqlCdcSourcePositionAdapter
+            >()
+        );
 
         services.AddReferenceResolver<
             PostgresqlReferenceResolverAdapterFactory,

@@ -142,6 +142,7 @@ public class Given_DocumentCacheServiceRegistration
             IDocumentCacheProviderCommandTimeoutClassifier,
             PostgresqlDocumentCacheProviderCommandTimeoutClassifier
         >(services);
+        AssertSingleton<PostgresqlCdcSourcePositionAdapter, PostgresqlCdcSourcePositionAdapter>(services);
         AssertSingleton<IServedEtagComposer, ServedEtagComposer>(services);
         AssertSingletonFactory<IDocumentCacheAdministrativePrimitives>(services);
         AssertSingleton<
@@ -173,6 +174,7 @@ public class Given_DocumentCacheServiceRegistration
             IDocumentCacheProviderCommandTimeoutClassifier,
             MssqlDocumentCacheProviderCommandTimeoutClassifier
         >(services);
+        AssertSingleton<MssqlCdcSourcePositionAdapter, MssqlCdcSourcePositionAdapter>(services);
         AssertSingleton<IServedEtagComposer, ServedEtagComposer>(services);
         AssertSingletonFactory<IDocumentCacheAdministrativePrimitives>(services);
         AssertSingleton<
