@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -11,17 +10,14 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace EdFi.DataManagementService.Backend.Postgresql;
+namespace EdFi.DataManagementService.Backend.Mssql;
 
-/// <summary>
-/// The relational-safe PostgreSQL datastore services to be registered to a Frontend DI container.
-/// </summary>
-public static class PostgresqlServiceExtensions
+public static class MssqlServiceExtensions
 {
     /// <summary>
-    /// The PostgreSQL backend datastore configuration with per-request connection string support.
+    /// The SQL Server backend datastore configuration with per-request connection string support.
     /// </summary>
-    public static IServiceCollection AddPostgresqlDatastore(
+    public static IServiceCollection AddMssqlDatastore(
         this IServiceCollection services,
         IConfiguration configuration
     )
@@ -29,19 +25,16 @@ public static class PostgresqlServiceExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        services.AddRelationalMappingSetServices(configuration, SqlDialect.Pgsql, new PgsqlDialectRules());
-
-        services.TryAddSingleton<NpgsqlDataSourceCache>();
-        services.TryAddScoped<NpgsqlDataSourceProvider>();
+        services.AddRelationalMappingSetServices(configuration, SqlDialect.Mssql, new MssqlDialectRules());
 
         return services;
     }
 
     /// <summary>
-    /// Adds the PostgreSQL relational services required for shared DocumentCache target
+    /// Adds the SQL Server relational services required for shared DocumentCache target
     /// resolution, status, projection, and administrative command execution.
     /// </summary>
-    public static IServiceCollection AddPostgresqlDocumentCacheRuntimeServices(
+    public static IServiceCollection AddMssqlDocumentCacheRuntimeServices(
         this IServiceCollection services,
         IConfiguration configuration
     )
@@ -49,39 +42,34 @@ public static class PostgresqlServiceExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        services.AddPostgresqlDatastore(configuration);
-        services.AddPostgresqlReferenceResolver();
-        services.AddPostgresqlRelationalTokenInfoEducationOrganizationLookup();
+        services.AddMssqlDatastore(configuration);
+        services.AddMssqlReferenceResolver();
+        services.AddMssqlRelationalTokenInfoEducationOrganizationLookup();
         services.Replace(
-            ServiceDescriptor.Singleton<IDatabaseFingerprintReader, PostgresqlDatabaseFingerprintReader>()
+            ServiceDescriptor.Singleton<IDatabaseFingerprintReader, MssqlDatabaseFingerprintReader>()
         );
         services.Replace(
             ServiceDescriptor.Singleton<
                 IDocumentCachePhysicalSourceFingerprintReader,
-                PostgresqlDocumentCachePhysicalSourceFingerprintReader
+                MssqlDocumentCachePhysicalSourceFingerprintReader
             >()
         );
         services.Replace(
             ServiceDescriptor.Singleton<
                 IDocumentCacheInventoryValidator,
-                PostgresqlDocumentCacheInventoryValidator
+                MssqlDocumentCacheInventoryValidator
             >()
         );
         services.Replace(
-            ServiceDescriptor.Singleton<
-                IDocumentCacheLifecycleReader,
-                PostgresqlDocumentCacheLifecycleReader
-            >()
+            ServiceDescriptor.Singleton<IDocumentCacheLifecycleReader, MssqlDocumentCacheLifecycleReader>()
         );
         services.Replace(
             ServiceDescriptor.Singleton<
                 IDocumentCacheProviderPrerequisiteValidator,
-                PostgresqlDocumentCacheProviderPrerequisiteValidator
+                MssqlDocumentCacheProviderPrerequisiteValidator
             >()
         );
-        services.Replace(
-            ServiceDescriptor.Singleton<IResourceKeyRowReader, PostgresqlResourceKeyRowReader>()
-        );
+        services.Replace(ServiceDescriptor.Singleton<IResourceKeyRowReader, MssqlResourceKeyRowReader>());
 
         return services;
     }

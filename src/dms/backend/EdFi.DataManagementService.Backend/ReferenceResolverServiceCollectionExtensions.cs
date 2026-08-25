@@ -18,6 +18,31 @@ namespace EdFi.DataManagementService.Backend;
 
 public static class ReferenceResolverServiceCollectionExtensions
 {
+    public static IServiceCollection AddDocumentCacheProjectionSupervisor(
+        this IServiceCollection services,
+        bool registerHostedService
+    )
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddSingleton<DocumentCacheProjectionSupervisor>();
+        services.AddSingleton<IDocumentCacheProjectionSupervisor>(serviceProvider =>
+            serviceProvider.GetRequiredService<DocumentCacheProjectionSupervisor>()
+        );
+        services.AddSingleton<IDocumentCacheProjectionRefreshSignal>(serviceProvider =>
+            serviceProvider.GetRequiredService<DocumentCacheProjectionSupervisor>()
+        );
+
+        if (registerHostedService)
+        {
+            services.AddHostedService(serviceProvider =>
+                serviceProvider.GetRequiredService<DocumentCacheProjectionSupervisor>()
+            );
+        }
+
+        return services;
+    }
+
     public static IServiceCollection AddReferenceResolver<TReferenceResolverAdapterFactory>(
         this IServiceCollection services
     )

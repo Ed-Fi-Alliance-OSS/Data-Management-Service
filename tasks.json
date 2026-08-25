@@ -1,0 +1,430 @@
+[
+  {
+    "category": "project-scaffolding",
+    "description": "Add the `EdFi.DataManagementService.DocumentCacheAdmin` .NET tool project under `src/dms/clis` and add matching unit and integration test projects. Wire all three projects into `src/dms/EdFi.DataManagementService.sln`, follow the existing SchemaTools CLI project, package, README packaging, and machine-readable stdout logging conventions, target `net10.0`, enable nullable references and warnings as errors, use `System.CommandLine`, and configure the tool package as `EdFi.Api.DocumentCacheAdmin` with `ToolCommandName` `dms-document-cache`.",
+    "acceptance-criteria": [
+      "The CLI project exists at `src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin` and builds as an executable .NET tool package.",
+      "The CLI package metadata uses package ID `EdFi.Api.DocumentCacheAdmin` and tool command name `dms-document-cache`.",
+      "Unit and integration test projects for the CLI exist under `src/dms/clis` and are included in `EdFi.DataManagementService.sln`.",
+      "The project references shared DMS projects needed for target resolution, status, administrative command execution, logging, and JSON contracts rather than copying provider-specific logic."
+    ],
+    "steps-to-verify": [
+      "dotnet build src/dms/EdFi.DataManagementService.sln -c Debug",
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj",
+      "dotnet list src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/EdFi.DataManagementService.DocumentCacheAdmin.csproj package"
+    ],
+    "completed": true
+  },
+  {
+    "category": "shared-registration-refactor",
+    "description": "Create shared DMS service-registration methods consumed by both runtime DMS and the CLI so the CLI can build a non-web generic-host/service-provider graph for one target without starting Kestrel, mapping HTTP endpoints, starting the ordinary all-target projector supervisor, or forking a DMS web process. Keep provider adapters, target registry semantics, status composition, administrative mutex, command runner, telemetry, and JSON DTOs in shared runtime components consumed by both DMS and the CLI.",
+    "acceptance-criteria": [
+      "The CLI can construct the shared services needed for target resolution, status observation, and administrative command execution for PostgreSQL and SQL Server.",
+      "The CLI service graph does not register or start Kestrel, HTTP endpoint mapping, ordinary hosted projector supervisors, or other request-path hosted services.",
+      "Runtime DMS continues to consume the same shared registrations and passes existing startup and DI tests.",
+      "No provider-specific rebuild, lifecycle, mutex, target-resolution, or status-classification logic is duplicated in the CLI project."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.csproj",
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~ServiceRegistration",
+      "rg -n \"UseKestrel|MapGet|IHostedService|DocumentCacheSupervisor\" src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin"
+    ],
+    "completed": true
+  },
+  {
+    "category": "command-surface",
+    "description": "Implement the v1 `System.CommandLine` command tree and global options for `status`, `activate-new-empty`, `activate-offline`, `deactivate-offline`, `rebuild-online`, `scrub`, and `recover-cache-ahead`. Add global configuration, logging, output, target, timeout, fingerprint, confirmation, offline-writer-admission, and `--request-json <path|->` options according to the story, including rejection of unsupported aliases such as `--timeout`, `--provider-command-timeout`, and `--mutex-timeout`.",
+    "acceptance-criteria": [
+      "The root command is `dms-document-cache` and exposes exactly the seven v1 subcommands named in the story.",
+      "Every command supports `--json`; human-readable mode is the default.",
+      "Global configuration options include `--settings`, `--environment`, and `--datastore postgresql|sqlserver` without accepting secret-bearing command-line connection string, CMS credential, or client-secret options.",
+      "Mutating commands expose `--command-timeout-seconds` with default `86400`; status exposes `--status-observation-timeout-seconds` default `5` and `--status-timeout-seconds` default `30`.",
+      "`--command-timeout-seconds` maps to `DataManagement:DocumentCache:Administration:WorkflowTimeout`; status timeout options map to `DataManagement:DocumentCache:Status:StatusObservationTimeout` and `DataManagement:DocumentCache:Status:EndpointTimeout`.",
+      "Timeout options accept positive numeric seconds, including fractional values where supported, and reject zero, negative, malformed, and overflow values with argument exit code `64`."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~CommandSurface",
+      "dotnet run --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- --help",
+      "dotnet run --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- status --help"
+    ],
+    "completed": false
+  },
+  {
+    "category": "configuration-and-target-resolution",
+    "description": "Load CLI configuration through the normal DMS configuration pipeline plus CLI-only non-secret overrides, then resolve exactly one invocation target using the shared 18-01 target registry semantics. Treat the invocation target as the CLI process's explicit one-entry `DocumentCache:Targets` membership for that run, default omitted `--tenant-key` to the normalized default-tenant wire value `\"\"`, and reject missing, multiple, malformed, or duplicate target input before any mutation.",
+    "acceptance-criteria": [
+      "Option-based invocation accepts `--data-store-id <positive integer>` plus optional `--tenant-key <value>` and defaults omitted tenant key to `\"\"`.",
+      "JSON-based invocation accepts exactly one nested `targetKey` with `tenantKey` and positive numeric `dataStoreId`.",
+      "The CLI does not infer target membership from HTTP requests, JWTs, CMS inventory, connection aliases, previous status calls, or a running DMS replica.",
+      "Resolved targets use shared tenant-key normalization, CMS refresh behavior, provider metadata compatibility, effective-schema and resource-key validation, provider inventory, SQL Server prerequisite observations, and physical-source fingerprint calculation.",
+      "Mutating commands reject unresolved or ineligible targets with typed no-mutation results before attempting provider mutation.",
+      "Mutating commands re-resolve and revalidate the target through the shared command runner instead of trusting a previous status result."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~TargetResolution",
+      "dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCache",
+      "dotnet run --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- status --data-store-id 0; test $? -eq 64"
+    ],
+    "completed": false
+  },
+  {
+    "category": "json-request-and-serialization-contracts",
+    "description": "Implement `--request-json <path|->` handling and shared JSON serialization for status and mutating commands. Reuse the shared administrative request/result DTOs and the 18-06 status DTOs, preserve the nested `targetKey` shape, lower-camel property names and enum values, UTC timestamps with `Z`, numeric duration fields in seconds, stable status component objects, unknown-field rejection for request input, and no numeric enum serialization.",
+    "acceptance-criteria": [
+      "Status `--request-json` accepts only `{ \"targetKey\": { \"tenantKey\": \"\", \"dataStoreId\": 1 } }` plus global timeout/output options.",
+      "Mutating `--request-json` input uses the selected command's shared administrative request DTO and carries shared `confirmation`, `offlineWriterAdmission`, target key, and expected fingerprint fields for commands whose shared DTO supports an expected fingerprint.",
+      "When `--request-json` is present, target fields, confirmation fields, offline writer admission, and other command DTO fields supplied as command-specific options are rejected as duplicates with exit code `64`.",
+      "`--json` stdout contains exactly one shared contract document with no CLI-only wrapper and no prose.",
+      "Status `--json` preserves the complete 18-06 v1 one-target status shape, including `targetDiagnostics`, `documentDiagnostics`, `poisonTraversalDiagnostics`, `enqueueFailures`, `effectiveSettings.projector`, `effectiveSettings.readAcceleration`, and `effectiveSettings.status`, with no v1 `administration` settings object.",
+      "Malformed JSON, unknown fields, command/request mismatches, missing target keys, and duplicate option/request fields return exit code `64`."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~JsonRequest",
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~Serialization",
+      "printf '{\"targetKey\":{\"tenantKey\":\"\",\"dataStoreId\":1}}' | dotnet run --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- status --request-json - --json"
+    ],
+    "completed": false
+  },
+  {
+    "category": "status-command",
+    "description": "Implement `dms-document-cache status` over the shared projection status pipeline with the CLI-specific standalone durable-observation behavior described by the story. The command should evaluate one invocation target, include direct provider current-source facts when target resolution and prerequisites succeed, avoid fabricating process-local active-command or last-ended command observations from other processes, and produce human output from the same DTO used for `--json`.",
+    "acceptance-criteria": [
+      "Successful `status --json` writes the 18-06 v1 status response shape to stdout with one target entry sorted by normalized target key semantics.",
+      "Standalone status runs read-only target inspection for lifecycle, cache-ahead latch, provider eligibility, physical source fingerprint, queue presence, oldest work, bounded diagnostics, retained enqueue-failure diagnostics, and effective status settings when available.",
+      "After successful target resolution, provider metadata compatibility, inventory validation, physical-source fingerprint calculation, and provider-prerequisite validation, standalone status performs the CLI-specific direct durable observation and populates lifecycle, cache-ahead, queue presence, oldest work, and `durableObservedAt` fields from the same read-only provider statement.",
+      "The standalone status durable-observation path does not scan `dms.Document`, scan `dms.DocumentCache`, calculate routine exact backlog counts, or run a source/cache/work relationship scrub.",
+      "When current-process active administrative command or last-ended diagnostic observations exist for the current target generation, status reports them through the 18-06 DTO using the shared administrative command, phase, status, outcome, and diagnostic enum values.",
+      "When no current-process runtime observation exists, process-local command fields use the documented `notObserved` or `null` values rather than inferred cross-process activity.",
+      "When no current-process runtime observation exists, `operationalHealth` and `caughtUp` remain `unknown` with reason `runtimeNotObserved` even when direct durable facts are present.",
+      "`unknown`, `nonOperational`, and `notCaughtUp` target states return exit code `0` when a complete status DTO is produced.",
+      "Exit code `11` is used only when status cannot produce a complete DTO after arguments and process configuration are valid."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~StatusCommand",
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter FullyQualifiedName~Status",
+      "dotnet run --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- status --data-store-id 1 --json"
+    ],
+    "completed": false
+  },
+  {
+    "category": "mutating-command-requests",
+    "description": "Implement option-based request builders for guarded new-empty activation, offline activation, offline deactivation, online cache rebuild, explicit integrity scrub, and internal-only cache-ahead recovery. Each command must build the shared administrative request DTO, require the exact command-specific confirmation token, require `offlineWriterAdmission` `closedAndDrained` for offline activation, offline deactivation, and cache-ahead recovery, and pass `expectedPhysicalSourceFingerprint` to shared command execution where supported.",
+    "acceptance-criteria": [
+      "`activate-new-empty` requires `--confirm newEmptyActivation`.",
+      "`activate-offline` requires `--confirm offlineActivation` and `--offline-writer-admission closedAndDrained`.",
+      "`deactivate-offline` requires `--confirm offlineDeactivation` and `--offline-writer-admission closedAndDrained`.",
+      "`rebuild-online` requires `--confirm onlineCacheRebuild`.",
+      "`scrub` requires `--confirm integrityScrub`.",
+      "`recover-cache-ahead` requires `--confirm internalCacheAheadRecovery` and `--offline-writer-admission closedAndDrained`.",
+      "Missing, wrong, differently cased, or generic boolean confirmation and offline-writer-admission values are argument errors with exit code `64`; the CLI never prompts interactively.",
+      "Every mutating command exposes `--expected-physical-source-fingerprint` and fails closed through shared DTO/runner classification when the current target or downstream-history observation is missing or mismatched."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~MutatingCommandRequests",
+      "dotnet run --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- rebuild-online --data-store-id 1; test $? -eq 64",
+      "dotnet run --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- activate-offline --data-store-id 1 --confirm offlineActivation; test $? -eq 64"
+    ],
+    "completed": false
+  },
+  {
+    "category": "administrative-command-execution",
+    "description": "Invoke the shared 18-04 administrative command runner for all mutating commands and map its shared result DTOs to JSON or human output without adding CLI-only result wrappers. Ensure the CLI does not create direct SQL lifecycle paths, dry-run paths, interactive prompts, HTTP proxy behavior, or provider-specific rebuild implementations.",
+    "acceptance-criteria": [
+      "All mutating commands invoke the shared command runner with shared request DTOs.",
+      "Rejected no-mutation classifications cover lifecycle, latch, fingerprint, provider prerequisite, unresolved target, nonempty guarded activation, provider mismatch, downstream-history ineligibility, and scrub/rebuild admission failures.",
+      "Offline activation, offline deactivation, and cache-ahead recovery depend on the trusted downstream-publication-history abstraction and reject the production default `unknown` state.",
+      "Online rebuild with a set cache-ahead latch rejects before any lifecycle, cache, work, or latch mutation.",
+      "The CLI project contains no provider-specific SQL for activation, deactivation, rebuild, scrub, or recovery."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~AdministrativeCommandExecution",
+      "rg -n \"TRUNCATE|DELETE FROM|UPDATE .*DocumentCacheState|sp_getapplock|pg_advisory\" src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin",
+      "dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCache"
+    ],
+    "completed": false
+  },
+  {
+    "category": "exit-codes-and-process-failures",
+    "description": "Publish and implement the stable exit-code mapping for completed, rejected-no-mutation, failed-no-mutation, incomplete-retryable, argument, configuration, and unexpected failures. Derive exit codes from typed classifications rather than message text, and handle cancellation, command timeout, provider command timeout, mutex acquisition cancellation, session loss, and retryable incomplete results without reconnecting under presumed mutex ownership.",
+    "acceptance-criteria": [
+      "Exit code `0` means status or administrative command completed according to its result DTO.",
+      "Exit code `10` means an administrative command was rejected before mutation by a known guard or preflight rule.",
+      "Exit code `11` means an administrative command failed before mutation, or status failed before a complete DTO could be produced.",
+      "Exit code `12` means an administrative command is incomplete and retryable after possible mutation.",
+      "Exit code `64` means command-line argument, confirmation, or JSON request validation error.",
+      "Exit code `78` means process-wide configuration error before the target registry or shared command contract could be built.",
+      "Exit code `1` means unexpected or unclassified CLI/runtime failure.",
+      "Cancellation or session loss after possible mutation returns the incomplete-retryable result and does not perform later mutation on a replacement connection."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~ExitCode",
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter FullyQualifiedName~Cancellation",
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter FullyQualifiedName~SessionLoss"
+    ],
+    "completed": false
+  },
+  {
+    "category": "logging-telemetry-and-stdout",
+    "description": "Route machine-readable stdout, human stdout, structured logs, progress, warnings, and diagnostics according to the story. Reuse the existing DMS logging sanitizer and DocumentCache meters for CLI command attempts, mutex acquisition, phases, outcomes, durations, and failures, while preventing secrets, connection strings, unsanitized target input, document bodies, raw student data, unbounded document identifiers, and physical identifiers from routine output.",
+    "acceptance-criteria": [
+      "`--json` mode writes only the contract JSON document to stdout.",
+      "Logs, warnings, progress, and sanitized diagnostics go to stderr or configured log sinks when stdout is machine-readable.",
+      "Human-readable output is derived from the same DTOs as JSON output and avoids secrets and unbounded identifiers.",
+      "CLI telemetry reuses E18 DocumentCache meters and bounded target surrogate labels.",
+      "Metric labels and logs do not contain connection strings, database names, tenant display names, raw target JSON, `DocumentUuid`, document bodies, or unbounded resource names."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~Logging",
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~Telemetry",
+      "dotnet run --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- status --data-store-id 1 --json > /tmp/document-cache-status.json"
+    ],
+    "completed": false
+  },
+  {
+    "category": "packaging-build-script",
+    "description": "Extend the DMS package build flow for the new tool while staying within the story boundary. Add `DocumentCacheAdmin` to the `build-dms.ps1 PackageTarget` validation set, make `PackageTarget=DocumentCacheAdmin` build only `EdFi.Api.DocumentCacheAdmin.<version>.nupkg`, make `PackageTarget=All` build the API, SchemaTools, and DocumentCacheAdmin packages, include the generated DocumentCacheAdmin package in the existing `Push` flow through `EdFiNuGetFeed` and `NuGetApiKey`, and add focused build-script tests for the package-target behavior.",
+    "acceptance-criteria": [
+      "`./build-dms.ps1 Package -PackageTarget DocumentCacheAdmin` produces only the DocumentCacheAdmin nupkg at the repo root.",
+      "`./build-dms.ps1 Package -PackageTarget All` produces API, SchemaTools, and DocumentCacheAdmin nupkgs.",
+      "The build script retains existing API and SchemaTools package behavior.",
+      "Focused PowerShell/Pester tests cover the recognized `PackageTarget` values and prove `All`, `Api`, `SchemaTools`, and `DocumentCacheAdmin` dispatch to the expected package builders.",
+      "`./build-dms.ps1 Push` accepts the generated DocumentCacheAdmin package through the existing `EdFiNuGetFeed` and `NuGetApiKey` flow without creating a separate release or feed path.",
+      "The script does not add signing, SBOM, provenance, release attachment, feed-view promotion, GitHub package/release workflow, PR workflow, or workflow-orchestrated installed-tool smoke work."
+    ],
+    "steps-to-verify": [
+      "pwsh ./build-dms.ps1 Package -Configuration Release -PackageTarget DocumentCacheAdmin",
+      "pwsh ./build-dms.ps1 Package -Configuration Release -PackageTarget All",
+      "pwsh -NoProfile -Command \"Invoke-Pester -Path eng/ci/tests/DocumentCacheAdminPackageTarget.Tests.ps1\""
+    ],
+    "completed": false
+  },
+  {
+    "category": "parser-and-contract-unit-tests",
+    "description": "Add focused unit tests that pin the command parser, CLI validation rules, JSON request and response contracts, lower-camel enum serialization, timeout defaults, confirmation requirements, duplicate-field rejection, stdout/stderr separation, and exit-code mapping. Use NUnit, FluentAssertions, and the existing CLI test style.",
+    "acceptance-criteria": [
+      "Tests pin all seven command names and supported options.",
+      "Tests pin timeout defaults and invalid timeout exit code `64`.",
+      "Tests pin required confirmation tokens and offline writer admission values.",
+      "Tests pin status target-only `--request-json` and mutating shared DTO `--request-json` behavior.",
+      "Tests pin lower-camel enum strings, nested `targetKey`, UTC timestamp formatting, numeric seconds, and no numeric enum output.",
+      "Tests pin the complete one-target 18-06 status JSON shape, including stable diagnostic components, `enqueueFailures`, effective settings, active-command enum values, and last-ended diagnostic enum values.",
+      "Tests pin duplicate option/request field rejection and stable exit-code mapping."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj",
+      "dotnet csharpier format src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit",
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~Contract"
+    ],
+    "completed": false
+  },
+  {
+    "category": "in-process-command-runner-tests",
+    "description": "Add in-process CLI host tests that exercise command execution through the real parser, shared request DTOs, shared command runner boundary, provider adapter abstractions, and status pipeline while using controlled fakes only for external dependencies such as trusted downstream-publication-history eligibility. Cover admitted offline activation/deactivation and cache-ahead recovery paths without shipping any non-production option or configuration flag that can make a target appear internal-only.",
+    "acceptance-criteria": [
+      "In-process tests prove every mutating CLI command reaches the shared command runner with the expected shared DTO.",
+      "Tests cover the production default downstream-history `unknown` rejection path.",
+      "Tests cover admitted offline activation, offline deactivation, and cache-ahead recovery through an explicit fake trusted downstream-publication-history provider.",
+      "No packaged CLI switch, appsettings flag, environment variable, or plugin proof mechanism can override downstream-history eligibility in production.",
+      "Status in-process tests use the shared status DTO and do not fabricate active-command or last-ended observations."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~InProcess",
+      "rg -n \"internalOnly|DownstreamPublicationHistory|offlineWriterAdmission\" src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit",
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~Downstream"
+    ],
+    "completed": false
+  },
+  {
+    "category": "cli-integration-test-harness",
+    "description": "Add reusable CLI integration test infrastructure that provisions isolated DocumentCache target databases, executes the CLI as a real process with settings/environment-based configuration, captures stdout/stderr/exit code separately, parses shared JSON DTOs, and exposes bounded state-inspection helpers for lifecycle, latch, cache/work counts, oldest work, and physical-source fingerprint. The harness should support PostgreSQL by default and SQL Server when `ConnectionStrings__MssqlAdmin` points to SQL Server 2025.",
+    "acceptance-criteria": [
+      "Integration tests can invoke `EdFi.DataManagementService.DocumentCacheAdmin` as a CLI process rather than bypassing parser/output/exit-code behavior.",
+      "The harness provisions isolated PostgreSQL and SQL Server target databases with the generated DMS schema and one explicit normalized target key.",
+      "The harness loads secrets through settings and environment providers, not command-line connection string or credential options.",
+      "The harness captures stdout, stderr, exit code, and parsed JSON independently so JSON-output purity and sanitized diagnostics are testable.",
+      "SQL Server harness tests skip only when `ConnectionStrings__MssqlAdmin` is absent and fail for command behavior regressions when it is present."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter FullyQualifiedName~CliIntegrationHarness",
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter Category=PostgresqlIntegration",
+      "ConnectionStrings__MssqlAdmin='Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true' dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter Category=MssqlIntegration"
+    ],
+    "completed": false
+  },
+  {
+    "category": "postgresql-status-and-activation-tests",
+    "description": "Add PostgreSQL CLI integration tests for standalone status and guarded new-empty activation. Use real target databases to verify complete one-target status DTOs, direct durable observations, exit-code behavior for status data states, successful guarded activation on an empty disabled target, and no-mutation rejection for nonempty or otherwise ineligible activation attempts.",
+    "acceptance-criteria": [
+      "PostgreSQL `status --json` returns a complete one-target 18-06 status DTO for resolved, unresolved, non-operational, not-caught-up, and unknown observation scenarios, including empty or populated bounded diagnostic components and retained enqueue-failure components.",
+      "Standalone status populates direct durable lifecycle, latch, queue, oldest-work, and `durableObservedAt` observations when target resolution and provider prerequisites succeed.",
+      "Standalone status uses indexed queue presence and oldest-work observation only, without source/cache scans or routine exact backlog counts.",
+      "Status target states such as `unknown`, `nonOperational`, and `notCaughtUp` return exit code `0` when the status DTO is complete.",
+      "Guarded new-empty activation succeeds on an empty `Disabled` target with a clear latch and required confirmation.",
+      "Guarded new-empty activation rejects nonempty canonical/cache/work state without lifecycle, cache, work, or latch mutation.",
+      "A deliberately racing canonical insert either commits first and makes guarded new-empty activation reject the nonempty database, or commits after activation and transactionally enqueues work."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter FullyQualifiedName~PostgresqlStatus",
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter FullyQualifiedName~PostgresqlActivateNewEmpty",
+      "docker logs dms-postgresql-integration --tail 80"
+    ],
+    "completed": false
+  },
+  {
+    "category": "postgresql-rebuild-and-scrub-tests",
+    "description": "Add PostgreSQL CLI integration tests for online cache rebuild and explicit integrity scrub. Verify the CLI reaches the shared 18-04 coordinator, preserves pending work while clearing cache for rebuild, performs bounded/backpressured baseline seeding and drain, resumes from `Rebuilding`, and applies scrub admission, work repair, and latch behavior exactly as the design requires.",
+    "acceptance-criteria": [
+      "Online rebuild from clear-latch `Tracking` preserves pending work, clears only `DocumentCache`, enters `Rebuilding`, seeds/drains work, and returns to `Tracking`.",
+      "Online rebuild from `Rebuilding` resumes baseline seeding without repeating cache clearing.",
+      "Online rebuild with a set cache-ahead latch rejects before lifecycle, cache, work, or latch mutation.",
+      "Scrub is admitted only from clear-latch `Tracking` and rejects any other lifecycle or pre-existing latch before relationship scan or mutation.",
+      "Admitted scrub conditionally inserts missing work, repairs mismatched work to current canonical versions, may set but never clears the cache-ahead latch, and does not act as health or caught-up evidence."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter FullyQualifiedName~PostgresqlRebuildOnline",
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter FullyQualifiedName~PostgresqlScrub",
+      "dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheAdministrativeCommandRunner"
+    ],
+    "completed": false
+  },
+  {
+    "category": "offline-and-cache-ahead-recovery-tests",
+    "description": "Add CLI tests for offline activation, offline deactivation, and internal-only cache-ahead recovery across the real PostgreSQL integration harness and the in-process fake-history harness where production-safe admission needs trusted downstream-publication-history proof. Verify required confirmations, required offline writer admission, production default `unknown` rejection, recovery latch transitions, and the absence of any packaged override that can fake internal-only proof.",
+    "acceptance-criteria": [
+      "Option-based offline activation, offline deactivation, and cache-ahead recovery reject missing or wrong `offlineWriterAdmission` values with exit code `64`.",
+      "Packaged CLI execution against real targets rejects the production default downstream-history `unknown` state for offline activation, offline deactivation, and cache-ahead recovery before mutation.",
+      "Admitted fake-history tests exercise offline activation, offline deactivation, and cache-ahead recovery through the real parser, shared DTOs, shared command runner, and provider adapters.",
+      "Cache-ahead recovery keeps the latch set while `Resetting`, clears cache and work, enters `Rebuilding`, and clears the latch only in the verified transition.",
+      "No packaged CLI switch, appsettings flag, environment variable, or plugin proof mechanism can make a production target appear `internalOnly`."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~Downstream",
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter FullyQualifiedName~Offline",
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter FullyQualifiedName~CacheAheadRecovery"
+    ],
+    "completed": false
+  },
+  {
+    "category": "sqlserver-status-and-prerequisite-tests",
+    "description": "Add SQL Server CLI integration tests for standalone status, provider-prerequisite observation, and activation preflight. Use the SQL Server 2025 integration setup to prove RCSI and server-level `nested triggers` are observed, surfaced in status, enforced before activation, and classified without mutation when absent or unreadable.",
+    "acceptance-criteria": [
+      "SQL Server status includes provider prerequisite observations for RCSI and server-level `nested triggers`.",
+      "SQL Server status returns complete one-target DTOs and the same status exit-code behavior as PostgreSQL for complete DTOs.",
+      "Activation preflight rejects unsatisfied RCSI or `nested triggers` prerequisites before lifecycle, cache, work, or latch mutation.",
+      "Activation succeeds after prerequisites are corrected and target state is otherwise eligible.",
+      "Tests skip or clearly report environment setup issues when `ConnectionStrings__MssqlAdmin` is absent, but fail for command behavior regressions when SQL Server is configured."
+    ],
+    "steps-to-verify": [
+      "docker start dms-mssql-integration-2025 || docker run --name dms-mssql-integration-2025 -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='EdFi_Dms1!' -p 14333:1433 -d mcr.microsoft.com/mssql/server:2025-latest",
+      "ConnectionStrings__MssqlAdmin='Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true' dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter FullyQualifiedName~MssqlStatus",
+      "ConnectionStrings__MssqlAdmin='Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true' dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter FullyQualifiedName~MssqlActivationPrerequisite"
+    ],
+    "completed": false
+  },
+  {
+    "category": "sqlserver-lifecycle-workflow-tests",
+    "description": "Add SQL Server CLI integration tests for the lifecycle workflows whose semantics must match PostgreSQL: online rebuild, explicit scrub, offline activation/deactivation rejection, and internal-only cache-ahead recovery rejection. Keep SQL Server-specific setup and environment gating separate from command behavior assertions.",
+    "acceptance-criteria": [
+      "SQL Server online rebuild has the same state transitions, pending-work preservation, baseline/drain behavior, `Rebuilding` resume behavior, and set-latch no-mutation rejection as PostgreSQL.",
+      "SQL Server scrub has the same admission, rejection, conditional work repair, and may-set-never-clear latch behavior as PostgreSQL.",
+      "SQL Server packaged CLI tests verify production default `unknown` downstream-history rejection for offline activation, offline deactivation, and cache-ahead recovery.",
+      "SQL Server tests prove exit-code classifications match the shared command result DTOs rather than provider-specific message text.",
+      "Environment setup skips are limited to absent SQL Server 2025 prerequisites; configured SQL Server command regressions fail the tests."
+    ],
+    "steps-to-verify": [
+      "ConnectionStrings__MssqlAdmin='Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true' dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter FullyQualifiedName~MssqlRebuildOnline",
+      "ConnectionStrings__MssqlAdmin='Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true' dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter FullyQualifiedName~MssqlScrub",
+      "ConnectionStrings__MssqlAdmin='Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true' dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter FullyQualifiedName~MssqlOffline"
+    ],
+    "completed": false
+  },
+  {
+    "category": "administrative-mutex-concurrency-tests",
+    "description": "Add provider integration tests that prove CLI administration serializes through the shared database-scoped administrative mutex and uses the exact provider mutex identity from the ADR. Cover aliases of the same physical database contending for one mutex and different physical databases on the same server or cluster administering concurrently.",
+    "acceptance-criteria": [
+      "Two CLI invocations targeting aliases of the same physical database serialize through the shared provider mutex.",
+      "CLI invocations targeting different physical databases on the same PostgreSQL cluster can administer concurrently.",
+      "CLI invocations targeting different physical SQL Server databases can administer concurrently when SQL Server is configured.",
+      "The CLI uses the shared PostgreSQL advisory-lock and SQL Server `sp_getapplock` adapter identities rather than deriving mutex identity from tenant key, `DataStoreId`, connection alias, connection-string database name, or `DataStoreIdentity`.",
+      "Mutex tests execute through CLI entry points and shared provider adapters rather than direct test-only locks."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter FullyQualifiedName~Mutex",
+      "dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheAdministrativeMutex",
+      "rg -n \"EdFi.DMS.DocumentProjection.Administration.v1|811646948|pg_advisory_lock|sp_getapplock\" src/dms/backend src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin"
+    ],
+    "completed": false
+  },
+  {
+    "category": "retry-timeout-and-session-loss-tests",
+    "description": "Add CLI tests for cancellation, command timeout, provider command timeout, mutex acquisition cancellation, mutex session loss, and retry after incomplete workflows. Verify the CLI maps typed shared results to stable exit codes and never reconnects under presumed mutex ownership after session loss or possible mutation.",
+    "acceptance-criteria": [
+      "Mutex acquisition cancellation and command timeout are bounded by `--command-timeout-seconds` and return the correct typed classification and exit code.",
+      "Provider command timeout before proved mutation returns failed-no-mutation, while timeout or cancellation after possible mutation returns incomplete-retryable.",
+      "Session loss releases the mutex, prevents later mutation on a replacement connection by the former owner, and returns incomplete-retryable when mutation may have occurred.",
+      "Reissuing the same command reacquires the mutex and revalidates durable state before repeating or resuming the workflow.",
+      "Retryable incomplete results serialize the shared result DTO and return exit code `12` without relying on message-text parsing."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter FullyQualifiedName~Cancellation",
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter FullyQualifiedName~SessionLoss",
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter FullyQualifiedName~RetryableIncomplete"
+    ],
+    "completed": false
+  },
+  {
+    "category": "packaged-tool-smoke-tests",
+    "description": "Add local generated-package install and help smoke verification for the new .NET tool. The smoke should build the package, install it from the repo-root package output into an isolated `--tool-path`, run `dms-document-cache --help` and representative subcommand help, and prove the package ID and installed command name match the README and project file.",
+    "acceptance-criteria": [
+      "The smoke installs `EdFi.Api.DocumentCacheAdmin` from the locally generated package.",
+      "The installed command is `dms-document-cache`.",
+      "Root and subcommand help run successfully from the installed tool.",
+      "The smoke does not depend on GitHub release workflows, feed-view promotion, signing, SBOM, provenance, or workflow-orchestrated package publishing."
+    ],
+    "steps-to-verify": [
+      "pwsh ./build-dms.ps1 Package -Configuration Release -PackageTarget DocumentCacheAdmin",
+      "rm -rf /tmp/dms-document-cache-tool && dotnet tool install --tool-path /tmp/dms-document-cache-tool EdFi.Api.DocumentCacheAdmin --add-source . --version <DMSVersion used for build-dms.ps1>",
+      "/tmp/dms-document-cache-tool/dms-document-cache --help",
+      "/tmp/dms-document-cache-tool/dms-document-cache rebuild-online --help"
+    ],
+    "completed": false
+  },
+  {
+    "category": "documentation-and-runbook-links",
+    "description": "Add CLI documentation and runbook cross-links that document the shipped commands, package installation, target selection, configuration loading, confirmation tokens, JSON request/output examples, exit-code table, retry guidance for `Resetting` and `Rebuilding`, online rebuild set-latch routing, cache-ahead recovery routing, persistent poison remediation, and safe activation/deactivation boundaries. Keep examples secret-safe and link back to the owning E18/E19 design and runbook material rather than restating Kafka connector setup as CLI scope.",
+    "acceptance-criteria": [
+      "The CLI README documents `EdFi.Api.DocumentCacheAdmin`, `dms-document-cache`, all seven commands, required confirmations, timeout options, JSON examples, and exit codes.",
+      "Runbook cross-links cover safe activation/deactivation, online rebuild, reset/rebuild crash retry, cache-ahead recovery routing, and persistent poison remediation.",
+      "Examples load secrets through settings/environment configuration and do not place connection strings, CMS credentials, client secrets, or raw target JSON in routine logs.",
+      "Documentation states that Kafka connector setup, connector teardown, source replacement, binding retirement, topic management, CDC bootstrap orchestration, and release pipeline work are outside this story.",
+      "Help-output or documentation tests fail if documented command names, option names, package ID, tool command name, or runbook command examples drift from implementation."
+    ],
+    "steps-to-verify": [
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~Help",
+      "rg -n \"dms-document-cache|EdFi.Api.DocumentCacheAdmin|onlineCacheRebuild|internalCacheAheadRecovery|Exit code\" src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin docs reference/design/backend-redesign/epics",
+      "dotnet run --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- --help"
+    ],
+    "completed": false
+  },
+  {
+    "category": "final-verification",
+    "description": "Run the focused final verification for the complete CLI story, covering formatting, solution build, CLI unit tests, package build behavior, provider integration tests where the required database engines are available, and local installed-tool smoke. Record any environment-gated tests as skipped only when their prerequisite service or connection string is genuinely absent.",
+    "acceptance-criteria": [
+      "CSharpier formatting succeeds for the new CLI, tests, and touched shared files.",
+      "The DMS solution builds successfully in Release.",
+      "All DocumentCacheAdmin unit tests pass.",
+      "PackageTarget tests and local package install/help smoke pass.",
+      "PostgreSQL integration tests pass.",
+      "SQL Server integration tests pass when a SQL Server 2025 admin connection is configured, or are explicitly skipped for missing environment only.",
+      "No production or test source outside the story scope has been changed except shared registration/refactoring changes required for CLI reuse."
+    ],
+    "steps-to-verify": [
+      "dotnet csharpier format src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration",
+      "dotnet build src/dms/EdFi.DataManagementService.sln -c Release",
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj -c Release",
+      "pwsh ./build-dms.ps1 Package -Configuration Release -PackageTarget All",
+      "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj -c Release"
+    ],
+    "completed": false
+  }
+]

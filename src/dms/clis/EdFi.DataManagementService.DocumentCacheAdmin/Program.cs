@@ -5,15 +5,17 @@
 
 using System.CommandLine;
 using EdFi.DataManagementService.DocumentCacheAdmin;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Serilog;
 using Serilog.Events;
 
 var verbose = Array.Exists(args, a => a is "--verbose" or "-v");
+IConfigurationRoot configuration = new ConfigurationBuilder().AddEnvironmentVariables().Build();
 
 var serviceCollection = new ServiceCollection();
-ConfigureServices(serviceCollection, verbose);
+ConfigureServices(serviceCollection, configuration, verbose);
 await using ServiceProvider serviceProvider = serviceCollection.BuildServiceProvider();
 
 try
@@ -35,7 +37,7 @@ finally
     await Log.CloseAndFlushAsync();
 }
 
-void ConfigureServices(IServiceCollection services, bool enableVerbose)
+void ConfigureServices(IServiceCollection services, IConfiguration configuration, bool enableVerbose)
 {
     var logConfiguration = new LoggerConfiguration().MinimumLevel.Is(
         enableVerbose ? LogEventLevel.Debug : LogEventLevel.Information
@@ -70,6 +72,11 @@ void ConfigureServices(IServiceCollection services, bool enableVerbose)
     }
 
     Log.Logger = logConfiguration.CreateLogger();
+
+    if (!string.IsNullOrWhiteSpace(configuration.GetSection("AppSettings:Datastore").Value))
+    {
+        services.AddDocumentCacheAdminRuntimeServices(configuration, Log.Logger);
+    }
 
     services.AddLogging(loggingBuilder =>
     {
