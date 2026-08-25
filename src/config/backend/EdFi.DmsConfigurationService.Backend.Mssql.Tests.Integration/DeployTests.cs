@@ -170,11 +170,99 @@ public class DeployTests : DatabaseTestBase
         }
     }
 
+    [Test]
+    public async Task It_removes_the_redundant_DataStoreDerivative_lookup_index()
+    {
+        await using var connection = await OpenConnectionAsync();
+
+        int redundantIndexes = await connection.ExecuteScalarAsync<int>(
+            """
+            SELECT COUNT(*)
+            FROM sys.indexes
+            WHERE name = 'IX_DataStoreDerivative_DataStoreId'
+              AND object_id = OBJECT_ID('dmscs.DataStoreDerivative');
+            """
+        );
+
+        redundantIndexes
+            .Should()
+            .Be(
+                0,
+                "the backing index of UX_DataStoreDerivative_DataStoreId_DerivativeType leads with the "
+                    + "same column, so it serves the parent lookup and the child-side foreign-key maintenance"
+            );
+    }
+
+    [Test]
+    public async Task It_creates_the_DataStoreDerivative_unique_constraint_over_the_intended_key_columns()
+    {
+        await using var connection = await OpenConnectionAsync();
+
+        string[] keyColumns = (
+            await connection.QueryAsync<string>(DataStoreDerivativeUniqueConstraintColumnsSql)
+        ).ToArray();
+
+        keyColumns.Should().Equal("DataStoreId", "DerivativeType");
+
+        bool backingIndexIsUnique = await connection.ExecuteScalarAsync<bool>(
+            """
+            SELECT index_info.is_unique
+            FROM sys.key_constraints constraint_info
+            JOIN sys.indexes index_info
+                ON index_info.object_id = constraint_info.parent_object_id
+               AND index_info.index_id = constraint_info.unique_index_id
+            WHERE constraint_info.name = 'UX_DataStoreDerivative_DataStoreId_DerivativeType'
+              AND constraint_info.type = 'UQ';
+            """
+        );
+
+        backingIndexIsUnique.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task It_creates_the_trusted_DataStoreDerivative_type_check_constraint()
+    {
+        await using var connection = await OpenConnectionAsync();
+
+        CheckConstraintShape constraint = await connection.QuerySingleAsync<CheckConstraintShape>(
+            """
+            SELECT is_disabled AS IsDisabled, is_not_trusted AS IsNotTrusted
+            FROM sys.check_constraints
+            WHERE name = 'CK_DataStoreDerivative_DerivativeType'
+              AND parent_object_id = OBJECT_ID('dmscs.DataStoreDerivative');
+            """
+        );
+
+        constraint.IsDisabled.Should().BeFalse();
+        constraint
+            .IsNotTrusted.Should()
+            .BeFalse("the constraint is added WITH CHECK, so it has validated the existing rows");
+    }
+
     private static async Task<ColumnShape[]> QueryDmscsColumnsAsync()
     {
         await using var connection = await OpenConnectionAsync();
         return (await connection.QueryAsync<ColumnShape>(ColumnsSql)).ToArray();
     }
 
+    private const string DataStoreDerivativeUniqueConstraintColumnsSql = """
+        SELECT column_info.name
+        FROM sys.key_constraints constraint_info
+        JOIN sys.indexes index_info
+            ON index_info.object_id = constraint_info.parent_object_id
+           AND index_info.index_id = constraint_info.unique_index_id
+        JOIN sys.index_columns index_column_info
+            ON index_column_info.object_id = index_info.object_id
+           AND index_column_info.index_id = index_info.index_id
+        JOIN sys.columns column_info
+            ON column_info.object_id = index_column_info.object_id
+           AND column_info.column_id = index_column_info.column_id
+        WHERE constraint_info.name = 'UX_DataStoreDerivative_DataStoreId_DerivativeType'
+          AND index_column_info.is_included_column = 0
+        ORDER BY index_column_info.key_ordinal;
+        """;
+
     private sealed record ColumnShape(string TableName, string ColumnName, string DataType);
+
+    private sealed record CheckConstraintShape(bool IsDisabled, bool IsNotTrusted);
 }

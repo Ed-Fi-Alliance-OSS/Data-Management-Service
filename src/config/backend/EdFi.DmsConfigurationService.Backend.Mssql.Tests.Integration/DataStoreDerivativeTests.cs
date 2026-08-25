@@ -436,30 +436,37 @@ public class DataStoreDerivativeTests : DatabaseTest
     [TestFixture]
     public class QueryPagingTests : DataStoreDerivativeTests
     {
+        /// <summary>
+        /// A data store holds at most one derivative of each type, and only the two real type names
+        /// are storable, so a four-row paging set spans two data stores.
+        /// </summary>
         [SetUp]
         public async Task Setup()
         {
-            var instanceResult = await _instanceRepository.InsertDataStore(
-                new DataStoreInsertCommand
-                {
-                    DataStoreType = "Production",
-                    Name = "Paging Parent Instance",
-                    ConnectionString = "Server=parent;Database=ParentDb;",
-                }
-            );
-            var dataStoreId = ((DataStoreInsertResult.Success)instanceResult).Id;
-
-            foreach (var derivativeType in new[] { "Alpha", "Bravo", "Charlie" })
+            foreach (var name in new[] { "Paging Parent Instance A", "Paging Parent Instance B" })
             {
-                var insertResult = await _repository.InsertDataStoreDerivative(
-                    new DataStoreDerivativeInsertCommand
+                var instanceResult = await _instanceRepository.InsertDataStore(
+                    new DataStoreInsertCommand
                     {
-                        DataStoreId = dataStoreId,
-                        DerivativeType = derivativeType,
-                        ConnectionString = $"Server={derivativeType};Database={derivativeType}Db;",
+                        DataStoreType = "Production",
+                        Name = name,
+                        ConnectionString = "Server=parent;Database=ParentDb;",
                     }
                 );
-                insertResult.Should().BeOfType<DataStoreDerivativeInsertResult.Success>();
+                var dataStoreId = ((DataStoreInsertResult.Success)instanceResult).Id;
+
+                foreach (var derivativeType in new[] { "ReadReplica", "Snapshot" })
+                {
+                    var insertResult = await _repository.InsertDataStoreDerivative(
+                        new DataStoreDerivativeInsertCommand
+                        {
+                            DataStoreId = dataStoreId,
+                            DerivativeType = derivativeType,
+                            ConnectionString = $"Server={derivativeType};Database={derivativeType}Db;",
+                        }
+                    );
+                    insertResult.Should().BeOfType<DataStoreDerivativeInsertResult.Success>();
+                }
             }
         }
 
@@ -470,7 +477,7 @@ public class DataStoreDerivativeTests : DatabaseTest
             getResult.Should().BeOfType<DataStoreDerivativeQueryResult.Success>();
             ((DataStoreDerivativeQueryResult.Success)getResult)
                 .DataStoreDerivativeResponses.Should()
-                .HaveCount(3);
+                .HaveCount(4);
         }
 
         [Test]
@@ -490,37 +497,45 @@ public class DataStoreDerivativeTests : DatabaseTest
             getResult.Should().BeOfType<DataStoreDerivativeQueryResult.Success>();
             ((DataStoreDerivativeQueryResult.Success)getResult)
                 .DataStoreDerivativeResponses.Should()
-                .HaveCount(2);
+                .HaveCount(3);
         }
     }
 
     [TestFixture]
     public class QuerySortTests : DataStoreDerivativeTests
     {
+        /// <summary>
+        /// Two data stores, each holding both storable derivative types, so ordering has ties to
+        /// resolve. Rows are inserted in reverse of the expected ascending order, so the assertion
+        /// proves the ORDER BY clause rather than the insertion order.
+        /// </summary>
         [SetUp]
         public async Task Setup()
         {
-            var instanceResult = await _instanceRepository.InsertDataStore(
-                new DataStoreInsertCommand
-                {
-                    DataStoreType = "Production",
-                    Name = "Sort Parent Instance",
-                    ConnectionString = "Server=parent;Database=ParentDb;",
-                }
-            );
-            var dataStoreId = ((DataStoreInsertResult.Success)instanceResult).Id;
-
-            foreach (var derivativeType in new[] { "Charlie", "Alpha", "Bravo" })
+            foreach (var name in new[] { "Sort Parent Instance A", "Sort Parent Instance B" })
             {
-                var insertResult = await _repository.InsertDataStoreDerivative(
-                    new DataStoreDerivativeInsertCommand
+                var instanceResult = await _instanceRepository.InsertDataStore(
+                    new DataStoreInsertCommand
                     {
-                        DataStoreId = dataStoreId,
-                        DerivativeType = derivativeType,
-                        ConnectionString = $"Server={derivativeType};Database={derivativeType}Db;",
+                        DataStoreType = "Production",
+                        Name = name,
+                        ConnectionString = "Server=parent;Database=ParentDb;",
                     }
                 );
-                insertResult.Should().BeOfType<DataStoreDerivativeInsertResult.Success>();
+                var dataStoreId = ((DataStoreInsertResult.Success)instanceResult).Id;
+
+                foreach (var derivativeType in new[] { "Snapshot", "ReadReplica" })
+                {
+                    var insertResult = await _repository.InsertDataStoreDerivative(
+                        new DataStoreDerivativeInsertCommand
+                        {
+                            DataStoreId = dataStoreId,
+                            DerivativeType = derivativeType,
+                            ConnectionString = $"Server={derivativeType};Database={derivativeType}Db;",
+                        }
+                    );
+                    insertResult.Should().BeOfType<DataStoreDerivativeInsertResult.Success>();
+                }
             }
         }
 
@@ -534,7 +549,7 @@ public class DataStoreDerivativeTests : DatabaseTest
             var derivativeTypes = ((DataStoreDerivativeQueryResult.Success)getResult)
                 .DataStoreDerivativeResponses.Select(d => d.DerivativeType)
                 .ToList();
-            derivativeTypes.Should().ContainInOrder("Alpha", "Bravo", "Charlie");
+            derivativeTypes.Should().ContainInOrder("ReadReplica", "ReadReplica", "Snapshot", "Snapshot");
         }
 
         [Test]
@@ -547,7 +562,7 @@ public class DataStoreDerivativeTests : DatabaseTest
             var derivativeTypes = ((DataStoreDerivativeQueryResult.Success)getResult)
                 .DataStoreDerivativeResponses.Select(d => d.DerivativeType)
                 .ToList();
-            derivativeTypes.Should().ContainInOrder("Charlie", "Bravo", "Alpha");
+            derivativeTypes.Should().ContainInOrder("Snapshot", "Snapshot", "ReadReplica", "ReadReplica");
         }
     }
 

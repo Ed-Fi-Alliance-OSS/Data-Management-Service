@@ -93,6 +93,14 @@ public class Given_CMS_PostgreSQL_database_shape
             false
         ),
         new("UX_OpenIddictApplication_ClientId", "OpenIddictApplication", "u", ["ClientId"], false),
+        new(
+            "UX_DataStoreDerivative_DataStoreId_DerivativeType",
+            "DataStoreDerivative",
+            "u",
+            ["DataStoreId", "DerivativeType"],
+            false
+        ),
+        new("CK_DataStoreDerivative_DerivativeType", "DataStoreDerivative", "c", ["DerivativeType"], false),
     ];
 
     private static readonly string[] ExpectedNonUniqueLookupIndexes =
@@ -102,7 +110,6 @@ public class Given_CMS_PostgreSQL_database_shape
         "IX_AuthorizationStrategy_TenantId",
         "IX_ResourceClaim_TenantId",
         "IX_DataStore_TenantId",
-        "IX_DataStoreDerivative_DataStoreId",
         "IX_OpenIddictToken_ApplicationId",
         "IX_OpenIddictToken_Subject",
         "IX_OpenIddictToken_ReferenceId",
@@ -151,6 +158,12 @@ public class Given_CMS_PostgreSQL_database_shape
         "Vendor",
     ];
 
+    /// <summary>
+    /// Indexes that earlier scripts created and a later upgrade removed. IX_DataStoreDerivative_DataStoreId
+    /// is redundant with the backing index of UX_DataStoreDerivative_DataStoreId_DerivativeType, whose
+    /// leading key is the same column, so the unique constraint serves the parent lookup and the
+    /// child-side foreign-key maintenance on its own.
+    /// </summary>
     private static readonly string[] RemovedRedundantIndexNames =
     [
         "idx_Company",
@@ -158,6 +171,7 @@ public class Given_CMS_PostgreSQL_database_shape
         "idx_vendor_applicationname",
         "idx_datastore_context_unique",
         "ix_profile_name",
+        "IX_DataStoreDerivative_DataStoreId",
     ];
 
     private string _databaseName = string.Empty;
