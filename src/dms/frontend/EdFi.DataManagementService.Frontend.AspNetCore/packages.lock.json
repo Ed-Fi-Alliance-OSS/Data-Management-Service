@@ -410,6 +410,7 @@
         "type": "Project",
         "dependencies": {
           "EdFi.DataManagementService.Backend": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Ddl": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.Plans": "[1.0.0, )",
           "EdFi.DataManagementService.Core": "[1.0.0, )",
           "Microsoft.CodeAnalysis": "[4.12.0, )",

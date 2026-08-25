@@ -170,6 +170,33 @@ public class Given_MssqlCdcSourcePositionAdapter
     }
 
     [Test]
+    public async Task It_provisions_capture_columns_from_the_shared_sql_server_source_inventory()
+    {
+        CoreCdc.CdcBinding binding = await BuildBindingAsync();
+        CoreCdc.CdcArtifactInventory inventory = BuildInventory();
+        await CreateProviderArtifactsAsync(binding, inventory);
+
+        IReadOnlyDictionary<string, string[]> columnsByCapture = await ReadCapturedColumnNamesAsync(
+            inventory
+        );
+
+        foreach (
+            CdcSourceTableInventory sourceTable in MssqlCdcSourcePositionAdapter.ExpectedSqlServerSourceInventory
+        )
+        {
+            string captureName = CaptureNameForSourceTable(inventory, sourceTable.TableKind);
+            columnsByCapture.Should().ContainKey(captureName);
+            columnsByCapture[captureName]
+                .Should()
+                .Equal(
+                    sourceTable
+                        .Columns.OrderBy(column => column.Ordinal)
+                        .Select(column => column.ColumnName.Value)
+                );
+        }
+    }
+
+    [Test]
     public async Task It_reads_capture_job_and_retained_lsn_metadata_for_healthy_continuity()
     {
         CoreCdc.CdcBinding binding = await BuildBindingAsync();
@@ -210,6 +237,57 @@ public class Given_MssqlCdcSourcePositionAdapter
         result.Observation.PositionEvidence.RetainedRangeEnd.Should().NotBeNullOrWhiteSpace();
         result.Observation.Diagnostics.Should().BeEmpty();
         result.IncidentCandidate.Should().BeNull();
+        ValidateSourceHistoryObservation(result.Observation, binding).Succeeded.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task It_latches_terminal_provider_artifact_loss_when_capture_columns_do_not_match_source_inventory()
+    {
+        CoreCdc.CdcBinding binding = await BuildBindingAsync();
+        CoreCdc.CdcArtifactInventory inventory = BuildInventory();
+        CdcProviderSetupResult setup = await CreateProviderArtifactsAsync(binding, inventory);
+        MssqlCdcProviderBarrierCaptureResult capture = await CaptureBarrierWithHeartbeatAsync(
+            binding,
+            setup.HeartbeatActionQuery!.Sql
+        );
+
+        await RecreateDocumentCaptureWithMissingColumnAsync(inventory);
+
+        _timeProvider.Set(ProjectionCaughtUpObservedAt.AddSeconds(30));
+        CoreCdc.CdcSourceHistoryClassificationResult result = await _adapter.ObserveSourceHistoryAsync(
+            new(
+                _database.ConnectionString,
+                OperationId(),
+                binding,
+                BuildSatisfiedProviderSetup(binding),
+                BuildConnectorOffset(
+                    binding,
+                    inventory,
+                    capture.SqlServerCommitLsn!,
+                    capture.SqlServerChangeLsn!,
+                    capture.SqlServerEventSerialNo!.Value
+                ),
+                BuildValidSchemaHistory()
+            )
+            {
+                ExpectedConnectSourcePartitionHash = ExpectedSourcePartitionHash(inventory),
+            }
+        );
+
+        result.Observation.Continuity.Should().Be(CoreCdc.CdcSourceHistoryContinuity.Lost);
+        result
+            .Observation.ProviderArtifactState.Should()
+            .Be(CoreCdc.CdcProviderArtifactContinuityState.Recreated);
+        result
+            .Observation.IncidentFailureCategory.Should()
+            .Be(CoreCdc.CdcIncidentFailureCategory.ProviderArtifactRecreated);
+        result
+            .Observation.Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CoreCdc.CdcDiagnosticCategory.InvalidObservation
+                && diagnostic.Path == "$.providerHistory.sqlServerCaptureInstances"
+            );
+        result.IncidentCandidate.Should().NotBeNull();
         ValidateSourceHistoryObservation(result.Observation, binding).Succeeded.Should().BeTrue();
     }
 
@@ -510,6 +588,89 @@ public class Given_MssqlCdcSourcePositionAdapter
         return Convert.ToInt64(await command.ExecuteScalarAsync()) > 0;
     }
 
+    private async Task<IReadOnlyDictionary<string, string[]>> ReadCapturedColumnNamesAsync(
+        CoreCdc.CdcArtifactInventory inventory
+    )
+    {
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT capture_info.capture_instance, captured_column.column_name
+            FROM cdc.change_tables capture_info
+            INNER JOIN cdc.captured_columns captured_column
+                ON captured_column.[object_id] = capture_info.[object_id]
+            WHERE capture_info.capture_instance IN (
+                @documentCaptureName,
+                @documentCacheCaptureName,
+                @heartbeatCaptureName
+            )
+            ORDER BY capture_info.capture_instance, captured_column.column_ordinal;
+            """;
+        command.Parameters.AddWithValue(
+            "@documentCaptureName",
+            inventory.SqlServerCaptureInstanceDocumentName!
+        );
+        command.Parameters.AddWithValue(
+            "@documentCacheCaptureName",
+            inventory.SqlServerCaptureInstanceDocumentCacheName!
+        );
+        command.Parameters.AddWithValue(
+            "@heartbeatCaptureName",
+            inventory.SqlServerCaptureInstanceCdcHeartbeatName!
+        );
+
+        Dictionary<string, List<string>> columnsByCapture = new(StringComparer.Ordinal);
+        await using SqlDataReader reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            string captureName = reader.GetString(0);
+            if (!columnsByCapture.TryGetValue(captureName, out List<string>? columns))
+            {
+                columns = [];
+                columnsByCapture[captureName] = columns;
+            }
+
+            columns.Add(reader.GetString(1));
+        }
+
+        return columnsByCapture.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value.ToArray(),
+            StringComparer.Ordinal
+        );
+    }
+
+    private async Task RecreateDocumentCaptureWithMissingColumnAsync(CoreCdc.CdcArtifactInventory inventory)
+    {
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            EXEC sys.sp_cdc_disable_table
+                @source_schema = N'dms',
+                @source_name = N'Document',
+                @capture_instance = @captureInstanceName;
+
+            EXEC sys.sp_cdc_enable_table
+                @source_schema = N'dms',
+                @source_name = N'Document',
+                @capture_instance = @captureInstanceName,
+                @supports_net_changes = 0,
+                @role_name = @roleName,
+                @index_name = NULL,
+                @captured_column_list = N'[DocumentId], [DocumentUuid]',
+                @filegroup_name = NULL,
+                @allow_partition_switch = 0;
+            """;
+        command.Parameters.AddWithValue(
+            "@captureInstanceName",
+            inventory.SqlServerCaptureInstanceDocumentName!
+        );
+        command.Parameters.AddWithValue("@roleName", inventory.SqlServerCdcGatingRoleName!);
+        await command.ExecuteNonQueryAsync();
+    }
+
     private async Task<SqlServerRetainedLsnRange> ReadRetainedLsnRangeAsync(
         CoreCdc.CdcArtifactInventory inventory
     )
@@ -641,6 +802,22 @@ public class Given_MssqlCdcSourcePositionAdapter
 
     private static string EscapeSqlLiteral(string value) =>
         value.Replace("'", "''", StringComparison.Ordinal);
+
+    private static string CaptureNameForSourceTable(
+        CoreCdc.CdcArtifactInventory inventory,
+        CdcSourceTableKind tableKind
+    ) =>
+        tableKind switch
+        {
+            CdcSourceTableKind.Document => inventory.SqlServerCaptureInstanceDocumentName!,
+            CdcSourceTableKind.DocumentCache => inventory.SqlServerCaptureInstanceDocumentCacheName!,
+            CdcSourceTableKind.CdcHeartbeat => inventory.SqlServerCaptureInstanceCdcHeartbeatName!,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(tableKind),
+                tableKind,
+                "Unsupported CDC source table kind."
+            ),
+        };
 
     private static string OperationId() => "cdc-operation-mssql-source-position";
 

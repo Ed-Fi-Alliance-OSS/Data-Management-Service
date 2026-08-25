@@ -7,6 +7,11 @@ using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
+using BackendSqlDialect = EdFi.DataManagementService.Backend.External.SqlDialect;
+using DdlCdcSourceInventoryContract = EdFi.DataManagementService.Backend.Ddl.CdcSourceInventoryContract;
+using DdlCdcSourceTableInventory = EdFi.DataManagementService.Backend.Ddl.CdcSourceTableInventory;
+using DdlCdcSourceTableKind = EdFi.DataManagementService.Backend.Ddl.CdcSourceTableKind;
+using DdlSqlDialectFactory = EdFi.DataManagementService.Backend.Ddl.SqlDialectFactory;
 
 namespace EdFi.DataManagementService.Backend.Mssql;
 
@@ -115,39 +120,13 @@ internal sealed class MssqlCdcSourcePositionAdapter(
     private const string SqlServerRetainedRangeEndPath = "$.providerHistory.retainedRangeEnd";
     private const long HeartbeatAfterImageEventSerialNo = 2;
 
-    private static readonly IReadOnlyList<string> _documentColumns =
-    [
-        "DocumentId",
-        "DocumentUuid",
-        "ResourceKeyId",
-        "CreatedByOwnershipTokenId",
-        "ContentVersion",
-        "IdentityVersion",
-        "ContentLastModifiedAt",
-        "IdentityLastModifiedAt",
-        "CreatedAt",
-    ];
+    private static readonly IReadOnlyList<DdlCdcSourceTableInventory> _expectedSqlServerSourceInventory =
+        DdlCdcSourceInventoryContract.EmitRequiredSourceInventory(
+            DdlSqlDialectFactory.Create(BackendSqlDialect.Mssql)
+        );
 
-    private static readonly IReadOnlyList<string> _documentCacheColumns =
-    [
-        "DocumentId",
-        "DocumentUuid",
-        "ProjectName",
-        "ResourceName",
-        "ResourceVersion",
-        "ContentVersion",
-        "StreamEtag",
-        "LastModifiedAt",
-        "DocumentJson",
-        "ComputedAt",
-    ];
-
-    private static readonly IReadOnlyList<string> _heartbeatColumns =
-    [
-        "HeartbeatId",
-        "HeartbeatSequence",
-        "HeartbeatAt",
-    ];
+    internal static IReadOnlyList<DdlCdcSourceTableInventory> ExpectedSqlServerSourceInventory =>
+        _expectedSqlServerSourceInventory;
 
     private readonly IDocumentCacheProviderCommandTimeoutClassifier _timeoutClassifier =
         timeoutClassifier ?? throw new ArgumentNullException(nameof(timeoutClassifier));
@@ -807,6 +786,7 @@ internal sealed class MssqlCdcSourcePositionAdapter(
             ?? throw new InvalidOperationException(
                 "SQL Server heartbeat capture instance name was not rendered."
             );
+        IReadOnlyDictionary<DdlCdcSourceTableKind, string> captureNames = SqlServerCaptureNames(inventory);
 
         await using SqlCommand command = connection.CreateCommand();
         command.CommandText = """
@@ -888,53 +868,39 @@ internal sealed class MssqlCdcSourcePositionAdapter(
             );
         }
 
-        return
-        [
-            CreateCaptureMetadata(
-                documentCaptureName,
-                "dms",
-                "Document",
-                inventory.SqlServerCdcGatingRoleName!,
-                _documentColumns,
-                rowsByCapture.GetValueOrDefault(documentCaptureName),
-                requireAllChangesFunction: false
-            ),
-            CreateCaptureMetadata(
-                documentCacheCaptureName,
-                "dms",
-                "DocumentCache",
-                inventory.SqlServerCdcGatingRoleName!,
-                _documentCacheColumns,
-                rowsByCapture.GetValueOrDefault(documentCacheCaptureName),
-                requireAllChangesFunction: false
-            ),
-            CreateCaptureMetadata(
-                heartbeatCaptureName,
-                "dms",
-                "CdcHeartbeat",
-                inventory.SqlServerCdcGatingRoleName!,
-                _heartbeatColumns,
-                rowsByCapture.GetValueOrDefault(heartbeatCaptureName),
-                requireAllChangesFunction: true
-            ),
-        ];
+        return _expectedSqlServerSourceInventory
+            .Select(sourceTable =>
+            {
+                string captureName = captureNames[sourceTable.TableKind];
+
+                return CreateCaptureMetadata(
+                    captureName,
+                    sourceTable,
+                    inventory.SqlServerCdcGatingRoleName!,
+                    rowsByCapture.GetValueOrDefault(captureName),
+                    requireAllChangesFunction: sourceTable.TableKind == DdlCdcSourceTableKind.CdcHeartbeat
+                );
+            })
+            .ToArray();
     }
 
     private static IReadOnlyList<SqlServerCaptureInstanceMetadata> ExpectedMissingCaptures(
         CdcArtifactInventory inventory
-    ) =>
-        [
-            SqlServerCaptureInstanceMetadata.Missing(inventory.SqlServerCaptureInstanceDocumentName!),
-            SqlServerCaptureInstanceMetadata.Missing(inventory.SqlServerCaptureInstanceDocumentCacheName!),
-            SqlServerCaptureInstanceMetadata.Missing(inventory.SqlServerCaptureInstanceCdcHeartbeatName!),
-        ];
+    )
+    {
+        IReadOnlyDictionary<DdlCdcSourceTableKind, string> captureNames = SqlServerCaptureNames(inventory);
+
+        return _expectedSqlServerSourceInventory
+            .Select(sourceTable =>
+                SqlServerCaptureInstanceMetadata.Missing(captureNames[sourceTable.TableKind])
+            )
+            .ToArray();
+    }
 
     private static SqlServerCaptureInstanceMetadata CreateCaptureMetadata(
         string captureInstanceName,
-        string expectedSourceSchema,
-        string expectedSourceName,
+        DdlCdcSourceTableInventory expectedSourceTable,
         string expectedRoleName,
-        IReadOnlyList<string> expectedColumns,
         IReadOnlyList<SqlServerCaptureInstanceRow>? rows,
         bool requireAllChangesFunction
     )
@@ -948,9 +914,17 @@ internal sealed class MssqlCdcSourcePositionAdapter(
         string[] observedColumns = rows.OrderBy(row => row.ColumnOrdinal)
             .Select(row => row.ColumnName)
             .ToArray();
+        string[] expectedColumns = expectedSourceTable
+            .Columns.OrderBy(column => column.Ordinal)
+            .Select(column => column.ColumnName.Value)
+            .ToArray();
         bool exact =
-            string.Equals(first.SourceSchema, expectedSourceSchema, StringComparison.Ordinal)
-            && string.Equals(first.SourceName, expectedSourceName, StringComparison.Ordinal)
+            string.Equals(
+                first.SourceSchema,
+                expectedSourceTable.TableName.Schema.Value,
+                StringComparison.Ordinal
+            )
+            && string.Equals(first.SourceName, expectedSourceTable.TableName.Name, StringComparison.Ordinal)
             && string.Equals(first.RoleName, expectedRoleName, StringComparison.Ordinal)
             && !first.SupportsNetChanges
             && !first.HasDropPending
@@ -967,6 +941,28 @@ internal sealed class MssqlCdcSourcePositionAdapter(
             string.IsNullOrWhiteSpace(first.RetainedMaxLsn) ? null : first.RetainedMaxLsn
         );
     }
+
+    private static IReadOnlyDictionary<DdlCdcSourceTableKind, string> SqlServerCaptureNames(
+        CdcArtifactInventory inventory
+    ) =>
+        new Dictionary<DdlCdcSourceTableKind, string>
+        {
+            [DdlCdcSourceTableKind.Document] =
+                inventory.SqlServerCaptureInstanceDocumentName
+                ?? throw new InvalidOperationException(
+                    "SQL Server document capture instance name was not rendered."
+                ),
+            [DdlCdcSourceTableKind.DocumentCache] =
+                inventory.SqlServerCaptureInstanceDocumentCacheName
+                ?? throw new InvalidOperationException(
+                    "SQL Server document cache capture instance name was not rendered."
+                ),
+            [DdlCdcSourceTableKind.CdcHeartbeat] =
+                inventory.SqlServerCaptureInstanceCdcHeartbeatName
+                ?? throw new InvalidOperationException(
+                    "SQL Server heartbeat capture instance name was not rendered."
+                ),
+        };
 
     private static async Task<long> ReadHeartbeatSequenceAsync(
         SqlConnection connection,
