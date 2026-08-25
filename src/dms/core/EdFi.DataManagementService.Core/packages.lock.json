@@ -424,6 +424,9 @@
           "System.Composition.Runtime": "8.0.0"
         }
       },
+      "EdFi.Api.CustomValidation": {
+        "type": "Project"
+      },
       "edfi.datamanagementservice.backend.external": {
         "type": "Project",
         "dependencies": {

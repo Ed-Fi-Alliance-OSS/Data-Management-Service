@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <IsPackable>true</IsPackable>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <PackageId>EdFi.Api.CustomValidation</PackageId>
+        <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+        <PackageProjectUrl>https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service</PackageProjectUrl>
+        <Title>Ed-Fi API Custom Validation Abstractions</Title>
+        <Description>Public abstractions for implementing custom resource validation in the Ed-Fi Data Management Service.</Description>
+        <PackageReadmeFile>CUSTOM-VALIDATION.md</PackageReadmeFile>
+        <!--
+            The contract's load-bearing rules (null-return handling, the no-mutation rule, the
+            exact-and-ordinal AppliesTo match) live only in /// comments, so the XML file has to
+            ship or an implementer's IDE shows them nothing.
+        -->
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    </PropertyGroup>
+    <!--
+        This project declares no PackageReference and no ProjectReference, on purpose, and both
+        halves matter.
+
+        No PackageReference: the dependency closure an implementer inherits is part of the contract.
+        Everything here resolves from the framework, so referencing this package obliges them to
+        nothing they did not choose.
+
+        No ProjectReference: the types in the signatures are declared here rather than borrowed from
+        EdFi.DataManagementService.Core.External. That is what lets this ship as a small package
+        without dragging that assembly's whole public surface along, and it decouples DMS's internal
+        model from what implementers compile against - a field added to Core.External's ResourceInfo
+        for an internal reason is not a published-API change. The cost is a mapping step where DMS
+        calls a validator, which is the same boundary that already builds ValidationScope.
+    -->
+    <ItemGroup>
+        <None Include="CUSTOM-VALIDATION.md" Pack="true" PackagePath="\" />
+    </ItemGroup>
+</Project>

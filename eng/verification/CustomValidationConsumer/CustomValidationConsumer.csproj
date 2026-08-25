@@ -1,0 +1,60 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    </PropertyGroup>
+
+    <!--
+    Declared as a property so CI can point this at the version it just packed
+    (-p:CustomValidationPackageVersion=<v>) without editing a tracked file. Nothing
+    produces this default on its own - build-dms.ps1's own -DMSVersion default is
+    8.0.0 - so a developer building this project locally first packs one. The
+    Package command packs without building, so it needs a prior build in the same
+    -Configuration:
+
+      ./build-dms.ps1 Build -Configuration Release
+      ./build-dms.ps1 Package -PackageTarget CustomValidation -DMSVersion 0.0.0-local -Configuration Release
+
+    Or pass -p:CustomValidationPackageVersion for whatever version they did pack.
+
+    The version is pinned exactly, in [brackets]. A bare version is a floor, not
+    a pin, so with more than one nupkg in the local folder feed NuGet resolves a
+    different one and warns via NU1603 instead of failing - which would let this
+    check validate an artifact other than the one just packed. Measured: with a
+    stale 0.0.0-probe present, a bare "0.0.0-local" resolved 0.0.0-probe.
+  -->
+    <PropertyGroup>
+        <CustomValidationPackageVersion Condition="'$(CustomValidationPackageVersion)' == ''"
+            >0.0.0-local</CustomValidationPackageVersion
+        >
+    </PropertyGroup>
+
+    <!--
+    Deliberately outside central package management: this project proves that
+    EdFi.Api.CustomValidation resolves and compiles as an ordinary consumer would
+    experience it, from the locally packed nupkg plus its declared dependencies
+    on nuget.org (see nuget.config). It carries no ProjectReference into src/ -
+    a project reference would defeat the entire point of the check - and it is
+    not added to any .sln.
+  -->
+    <ItemGroup>
+        <PackageReference Include="EdFi.Api.CustomValidation" Version="[$(CustomValidationPackageVersion)]" />
+        <!--
+      Declared here rather than leaned on transitively. An implementer needs DI and
+      Options to register a validator, but EdFi.Api.CustomValidation itself uses neither,
+      so it must not carry them as public dependencies just to make this project
+      compile - that would have this fixture validate the package's dependency
+      declaration instead of its actual needs.
+
+      These versions are deliberately independent of src/Directory.Packages.props and of
+      Dependabot, whose nuget scope is directory: src/. They happen to match today and are
+      not required to: an outside implementer picks their own versions, and this project
+      exists to behave like one. Bump them only to exercise a version an implementer might
+      realistically use, never to track DMS's own.
+    -->
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.1" />
+        <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.1" />
+    </ItemGroup>
+</Project>

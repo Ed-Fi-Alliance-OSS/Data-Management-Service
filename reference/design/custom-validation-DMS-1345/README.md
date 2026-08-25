@@ -4,7 +4,7 @@
 
 Epic DMS-1345 implements a custom validation extension point in the Data Management Service, so that a district or vendor can enforce its own business rules on data as it is written, with the rules living in their own versioned assembly rather than in DMS core source.
 
-The extension point is a public abstractions contract that a custom validator implements, delivered by referencing a published package and registering the validator into DMS's composition at build time, guarded by an unconditional fail-loud startup check. Custom validators are document-oriented and async, and they run only on the write path, on POST and PUT requests. They receive the request document, its resource identity, the write verb, the scope the write belongs to (tenant and route qualifiers), a trace id, and the request's cancellation token; this version's contract gives them no access to stored data.
+The extension point is a public abstractions contract that a custom validator implements, delivered by referencing the contract package and registering the validator into DMS's composition at build time, guarded by an unconditional fail-loud startup check. Custom validators are document-oriented and async, and they run only on the write path, on POST and PUT requests. They receive the request document, its resource identity, the write verb, the scope the write belongs to (tenant and route qualifiers), a trace id, and the request's cancellation token; this version's contract gives them no access to stored data.
 
 Runtime loading of a validator assembly that was not part of the build is deferred to its own design stream, deliberately not pre-filed as a ticket; see the Filing Gate below.
 
@@ -18,7 +18,7 @@ This design was produced by spike DMS-1346. The driving discussion is recorded o
 
 Field-level grounding for the three driving scenarios lives in [draft 05](./05-prove-custom-validation-end-to-end.md) under "## Scenario Grounding", not in the design document.
 
-Six things are deliberately out of scope for this epic, each recorded in design.md with its reasoning rather than left to be rediscovered:
+Seven things are deliberately out of scope for this epic, each recorded in design.md with its reasoning rather than left to be rediscovered:
 
 | Out of scope | Where design.md records it | Consequence |
 | --- | --- | --- |
@@ -27,6 +27,7 @@ Six things are deliberately out of scope for this epic, each recorded in design.
 | Any store-read capability for validators | "## Out of Scope" | Limits Scenario 3 to rules expressed against descriptor URIs, and makes the ODS UniqueId not-changed rule inexpressible, which DMS-1414 inherits. Store reads are one of two things that rule needs; it also needs the persisted document's identity, so granting store access alone would not deliver it |
 | Validation on GET or DELETE | "## Verb Coverage" | Custom validation runs on POST and PUT only, matching the ODS precedent, which has no delete-time resource validation either |
 | A wildcard in `AppliesTo` | "### Resource Applicability" | A validator enumerates every resource it applies to; adding a wildcard later is additive to `ValidatedResource` and breaks nothing |
+| Publishing the contract package | "### Publishing deferral" | The package is built and verified in the per-PR lane but never pushed. Publishing burns a package id permanently and nothing can consume the contract until the fan-in step lands, so it is taken up at the end of the epic |
 | Implementing any of the three driving scenarios | "## Driving Scenarios" | They are requirement drivers, not deliverables; the end-to-end story ships a neutral fixture validator instead |
 
 ## Ticket Drafts

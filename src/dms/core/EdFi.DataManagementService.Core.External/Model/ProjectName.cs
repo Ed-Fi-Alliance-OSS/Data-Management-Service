@@ -7,6 +7,6 @@ namespace EdFi.DataManagementService.Core.External.Model;
 
 /// <summary>
 /// A string type branded as a ProjectName, which is the MetaEd project name for a collection of
-/// API resources, e.g. "EdFi" for an Ed-Fi data standard version.
+/// API resources, e.g. "Ed-Fi" for an Ed-Fi data standard version.
 /// </summary>
 public record struct ProjectName(string Value);
