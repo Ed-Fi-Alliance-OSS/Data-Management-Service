@@ -1220,6 +1220,7 @@ public sealed class RelationalDocumentStoreRepository(
                         queryRequest.AuthorizationStrategyEvaluators,
                         queryRequest.ReadableProfileProjectionContext,
                         queryRequest.TraceId,
+                        queryRequest.PageOrderingMode,
                         queryRequest.AuthorizationContext,
                         queryRequest.ChangeVersionRange,
                         queryRequest.ResponseContentCoding,
@@ -1516,6 +1517,7 @@ public sealed class RelationalDocumentStoreRepository(
                     partitionRequest.RequestedPartitionCount,
                     partitionRequest.MinimumPartitionSize,
                     partitionRequest.TraceId,
+                    partitionRequest.PageOrderingMode,
                     partitionRequest.AuthorizationContext,
                     partitionRequest.ChangeVersionRange,
                     partitionRequest.TenantKey

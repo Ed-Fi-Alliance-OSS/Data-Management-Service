@@ -2650,7 +2650,8 @@ public partial class Given_DescriptorReadHandler
         int? offset = 0,
         bool includeDescriptorMetadata = true,
         CollectionPaging? paging = null,
-        ChangeVersionRange? changeVersionRange = null
+        ChangeVersionRange? changeVersionRange = null,
+        PageOrderingMode pageOrderingMode = PageOrderingMode.DocumentId
     )
     {
         var mappingSet = CreateQueryMappingSet(
@@ -2675,6 +2676,7 @@ public partial class Given_DescriptorReadHandler
             authorizationStrategyEvaluators ?? [],
             readableProfileProjectionContext,
             new TraceId("descriptor-query-trace"),
+            pageOrderingMode,
             new RelationalAuthorizationContext([], namespacePrefixes ?? []),
             changeVersionRange
         );

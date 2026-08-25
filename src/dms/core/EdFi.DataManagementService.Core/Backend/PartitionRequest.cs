@@ -36,6 +36,12 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// <see cref="External.Model.ChangeVersionRange.None"/> on the relational seam.
 /// </param>
 /// <param name="TenantKey">The normalized request tenant key.</param>
+/// <param name="PageOrderingMode">
+/// The boundary anchor Core resolved from the change-version window. Defaults to
+/// <see cref="External.Model.PageOrderingMode.DocumentId" />, which is the anchor of every window
+/// shape but a max-bearing one, so a fixture that omits it cuts boundaries the way this contract has
+/// always cut them.
+/// </param>
 internal sealed record RelationalPartitionRequest(
     ResourceInfo ResourceInfo,
     RelationalAuthorizationContext AuthorizationContext,
@@ -46,7 +52,8 @@ internal sealed record RelationalPartitionRequest(
     long MinimumPartitionSize,
     TraceId TraceId,
     ChangeVersionRange? ChangeVersionRange = null,
-    string TenantKey = ""
+    string TenantKey = "",
+    PageOrderingMode PageOrderingMode = External.Model.PageOrderingMode.DocumentId
 ) : IPartitionRequest
 {
     ChangeVersionRange IPartitionRequest.ChangeVersionRange =>

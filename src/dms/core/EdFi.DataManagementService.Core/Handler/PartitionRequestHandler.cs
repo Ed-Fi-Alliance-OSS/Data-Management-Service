@@ -322,6 +322,7 @@ internal class PartitionRequestHandler(
             MinimumPartitionSize: CursorPagingLimits.MinimumPartitionSize(_maximumPageSize),
             TraceId: requestInfo.FrontendRequest.TraceId,
             ChangeVersionRange: requestInfo.ChangeVersionRange,
+            PageOrderingMode: requestInfo.PageOrderingMode,
             TenantKey: requestInfo.FrontendRequest.Tenant ?? string.Empty
         );
     }

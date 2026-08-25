@@ -34,6 +34,12 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// Optional validated minChangeVersion / maxChangeVersion window. Null is normalized to
 /// <see cref="External.Model.ChangeVersionRange.None"/> on the relational seam.
 /// </param>
+/// <param name="PageOrderingMode">
+/// The page anchor Core resolved from the change-version window. Defaults to
+/// <see cref="External.Model.PageOrderingMode.DocumentId" />, which is the anchor of every window
+/// shape but a max-bearing one, so a fixture that omits it selects the ordering this contract has
+/// always used rather than a new one.
+/// </param>
 internal sealed record RelationalQueryRequest(
     ResourceInfo ResourceInfo,
     RelationalAuthorizationContext AuthorizationContext,
@@ -45,7 +51,8 @@ internal sealed record RelationalQueryRequest(
     ReadableProfileProjectionContext? ReadableProfileProjectionContext = null,
     ChangeVersionRange? ChangeVersionRange = null,
     ResponseContentCoding ResponseContentCoding = ResponseContentCoding.Identity,
-    string TenantKey = ""
+    string TenantKey = "",
+    PageOrderingMode PageOrderingMode = External.Model.PageOrderingMode.DocumentId
 ) : IQueryRequest
 {
     ChangeVersionRange IQueryRequest.ChangeVersionRange =>

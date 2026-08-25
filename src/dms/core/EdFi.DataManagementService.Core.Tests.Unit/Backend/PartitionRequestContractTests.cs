@@ -110,6 +110,22 @@ public class PartitionRequestContractTests
                 );
         }
 
+        /// <summary>
+        /// The boundary anchor, asserted on both contracts. It is not a paging contract — an ordering
+        /// key is not a page — so it coexists with <see cref="It_exposes_no_paging_contract" />: what
+        /// this operation must not carry is a page, not the ordering the boundaries are cut in.
+        /// </summary>
+        [TestCaseSource(nameof(_partitionRequestContracts))]
+        public void It_carries_the_resolved_boundary_anchor(Type contract)
+        {
+            PropertiesOf(contract)
+                .Should()
+                .Contain(property =>
+                    property.Name == nameof(IPartitionRequest.PageOrderingMode)
+                    && property.PropertyType == typeof(PageOrderingMode)
+                );
+        }
+
         [TestCaseSource(nameof(_partitionRequestContracts))]
         public void It_exposes_no_paging_contract(Type contract)
         {
@@ -260,6 +276,27 @@ public class PartitionRequestContractTests
         public void It_defaults_the_tenant_key_to_the_non_tenant_target()
         {
             Create(null).TenantKey.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_defaults_the_boundary_anchor_to_the_document_id()
+        {
+            ((IPartitionRequest)Create(null)).PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+        }
+
+        /// <summary>
+        /// Asserted with the non-default anchor: DocumentId is the enum's zero value, so a request
+        /// built with it would report the right value whether or not the argument reached the property.
+        /// </summary>
+        [Test]
+        public void It_carries_the_resolved_boundary_anchor()
+        {
+            RelationalPartitionRequest request = Create(null) with
+            {
+                PageOrderingMode = PageOrderingMode.ContentVersion,
+            };
+
+            ((IPartitionRequest)request).PageOrderingMode.Should().Be(PageOrderingMode.ContentVersion);
         }
 
         [Test]

@@ -399,6 +399,7 @@ internal class QueryRequestHandler(
             TenantKey: requestInfo.FrontendRequest.Tenant ?? string.Empty,
             ReadableProfileProjectionContext: CreateReadableProfileProjectionContext(requestInfo),
             ChangeVersionRange: requestInfo.ChangeVersionRange,
+            PageOrderingMode: requestInfo.PageOrderingMode,
             ResponseContentCoding: GetServedEtagContentCoding(requestInfo)
         );
     }
