@@ -405,3 +405,95 @@ Feature: DataStoreDerivatives endpoints
              Then it should respond with 201
              When a GET request is made to "/v3/dataStoreDerivatives?offset=0&limit=1"
              Then it should respond with 200
+
+        @MssqlRepresentative
+        Scenario: 21 Verify a connectionString from a previous response is rejected on POST
+             When a POST request is made to "/v3/dataStoreDerivatives" with
+                  """
+                    {
+                        "dataStoreId": {dataStoreId},
+                        "derivativeType": "ReadReplica",
+                        "connectionString": "RE1TLTEzMzkgY2lwaGVyIHRleHQgc2hhcGVkIHZhbHVlIGZvciBlMmUgdGVzdHMh"
+                    }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                    {
+                        "detail": "Data validation failed. See 'validationErrors' for details.",
+                        "type": "urn:ed-fi:api:bad-request:data",
+                        "title": "Data Validation Failed",
+                        "status": 400,
+                        "validationErrors": {
+                            "ConnectionString": [
+                                "'Connection String' must be a plaintext connection string. The value provided appears to be an encrypted value previously returned by this API."
+                            ]
+                        },
+                        "errors": []
+                    }
+                  """
+
+        Scenario: 22 Verify a connectionString from a previous response is rejected on PUT
+             When a POST request is made to "/v3/dataStoreDerivatives" with
+                  """
+                    {
+                        "dataStoreId": {dataStoreId},
+                        "derivativeType": "ReadReplica",
+                        "connectionString": "Server=roundtrip;Database=RoundTripDb;"
+                    }
+                  """
+             Then it should respond with 201
+             When a PUT request is made to "/v3/dataStoreDerivatives/{dataStoreDerivativeId}" with
+                  """
+                    {
+                        "id": {dataStoreDerivativeId},
+                        "dataStoreId": {dataStoreId},
+                        "derivativeType": "Snapshot",
+                        "connectionString": "RE1TLTEzMzkgY2lwaGVyIHRleHQgc2hhcGVkIHZhbHVlIGZvciBlMmUgdGVzdHMh"
+                    }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                    {
+                        "detail": "Data validation failed. See 'validationErrors' for details.",
+                        "type": "urn:ed-fi:api:bad-request:data",
+                        "title": "Data Validation Failed",
+                        "status": 400,
+                        "validationErrors": {
+                            "ConnectionString": [
+                                "'Connection String' must be a plaintext connection string. The value provided appears to be an encrypted value previously returned by this API."
+                            ]
+                        },
+                        "errors": []
+                    }
+                  """
+
+        Scenario: 23 Put an existing dataStoreDerivative without a connectionString
+             When a POST request is made to "/v3/dataStoreDerivatives" with
+                  """
+                    {
+                        "dataStoreId": {dataStoreId},
+                        "derivativeType": "ReadReplica",
+                        "connectionString": "Server=preserved;Database=PreservedDb;"
+                    }
+                  """
+             Then it should respond with 201
+             When a PUT request is made to "/v3/dataStoreDerivatives/{dataStoreDerivativeId}" with
+                  """
+                    {
+                        "id": {dataStoreDerivativeId},
+                        "dataStoreId": {dataStoreId},
+                        "derivativeType": "Snapshot"
+                    }
+                  """
+             Then it should respond with 204
+              And the record can be retrieved with a GET request
+                  """
+                    {
+                        "id": {id},
+                        "dataStoreId": {dataStoreId},
+                        "derivativeType": "Snapshot",
+                        "connectionString": "{ignore}"
+                    }
+                  """
