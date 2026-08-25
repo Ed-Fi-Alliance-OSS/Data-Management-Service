@@ -16,6 +16,8 @@ public class Given_CdcSourceHistoryContinuityClassifier
 {
     private static readonly DateTimeOffset ObservedAt = new(2026, 8, 17, 13, 10, 11, TimeSpan.Zero);
     private static readonly DateTimeOffset Now = ObservedAt.AddMinutes(1);
+    private const string MismatchedSourcePartitionHash =
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     [Test]
     public void It_reports_healthy_postgresql_continuity_when_artifacts_offsets_and_retained_range_match()
@@ -303,6 +305,74 @@ public class Given_CdcSourceHistoryContinuityClassifier
             .Observation.Diagnostics.Select(diagnostic => diagnostic.Message)
             .Should()
             .NotContain(message => message.Contains("-1"));
+        ValidateObservation(result.Observation, binding).Succeeded.Should().BeTrue();
+    }
+
+    [TestCase(CdcProvider.Postgresql)]
+    [TestCase(CdcProvider.SqlServer)]
+    public void It_latches_source_partition_hash_mismatch_from_exact_match_connector_offset(
+        CdcProvider provider
+    )
+    {
+        CdcBinding binding = CdcContinuityFixture.CreateBinding(provider);
+        CdcSourceHistoryClassificationInput baselineInput = CdcContinuityFixture.CreateInput(binding);
+        string expectedHash = CdcContinuityFixture.ExpectedSourcePartitionHash(binding);
+
+        CdcSourceHistoryClassificationResult result = CdcSourceHistoryContinuityClassifier.Evaluate(
+            baselineInput with
+            {
+                ConnectorOffset = CdcContinuityFixture.ConnectorOffset(
+                    binding,
+                    CdcConnectorOffsetMatchResult.Exact,
+                    sourcePartitionHash: MismatchedSourcePartitionHash
+                ),
+            }
+        );
+
+        result.Observation.Continuity.Should().Be(CdcSourceHistoryContinuity.Lost);
+        result
+            .Observation.IncidentFailureCategory.Should()
+            .Be(CdcIncidentFailureCategory.ConnectSourcePartitionMismatch);
+        result.Observation.PositionEvidence!.ConnectSourcePartitionHash.Should().Be(expectedHash);
+        result.IncidentCandidate.Should().NotBeNull();
+        result
+            .IncidentCandidate!.FailureCategory.Should()
+            .Be(CdcIncidentFailureCategory.ConnectSourcePartitionMismatch);
+        result.IncidentCandidate.PositionMetadata.ConnectSourcePartitionHash.Should().Be(expectedHash);
+
+        string incidentJson = CdcJsonContract.Serialize(result.IncidentCandidate.ToIncident());
+        incidentJson.Should().Contain(expectedHash);
+        incidentJson.Should().NotContain(MismatchedSourcePartitionHash);
+        incidentJson.Should().NotContain("EdFi_DMS_CDC");
+        ValidateObservation(result.Observation, binding).Succeeded.Should().BeTrue();
+        CdcIncidentValidator
+            .ValidateForBinding(result.IncidentCandidate.ToIncident(), binding, Now)
+            .Succeeded.Should()
+            .BeTrue();
+    }
+
+    [Test]
+    public void It_reports_unknown_without_incident_when_connector_offset_envelope_fails_without_hash_mismatch()
+    {
+        CdcBinding binding = CdcContinuityFixture.CreateBinding(CdcProvider.Postgresql);
+        CdcSourceHistoryClassificationInput baselineInput = CdcContinuityFixture.CreateInput(binding);
+
+        CdcSourceHistoryClassificationResult result = CdcSourceHistoryContinuityClassifier.Evaluate(
+            baselineInput with
+            {
+                ConnectorOffset = baselineInput.ConnectorOffset! with { OperationId = "other-operation" },
+            }
+        );
+
+        result.Observation.Continuity.Should().Be(CdcSourceHistoryContinuity.Unknown);
+        result.Observation.IncidentFailureCategory.Should().BeNull();
+        result.IncidentCandidate.Should().BeNull();
+        result
+            .Observation.Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CdcDiagnosticCategory.OperationMismatch
+                && diagnostic.Path == "$.connectorOffset.operationId"
+            );
         ValidateObservation(result.Observation, binding).Succeeded.Should().BeTrue();
     }
 
@@ -641,14 +711,12 @@ internal static class CdcContinuityFixture
     public static CdcConnectorOffsetObservation ConnectorOffset(
         CdcBinding binding,
         CdcConnectorOffsetMatchResult matchResult = CdcConnectorOffsetMatchResult.Exact,
-        bool isSnapshot = false
+        bool isSnapshot = false,
+        string? sourcePartitionHash = null
     )
     {
         CdcArtifactInventory inventory = CdcArtifactNameGenerator.RecoverFromBinding(binding).Inventory!;
-        string sourcePartitionHash =
-            binding.Provider == CdcProvider.Postgresql
-                ? CdcSourcePartitionHashCalculator.ComputePostgresql(inventory.TopicPrefix).Hash!
-                : SqlServerSourcePartitionHash;
+        string resolvedSourcePartitionHash = sourcePartitionHash ?? ExpectedSourcePartitionHash(binding);
 
         return new(
             CdcJsonContract.CurrentContractVersion,
@@ -660,7 +728,7 @@ internal static class CdcContinuityFixture
             inventory.ConnectorName,
             inventory.TopicPrefix,
             matchResult,
-            sourcePartitionHash,
+            resolvedSourcePartitionHash,
             isSnapshot,
             false,
             binding.Provider == CdcProvider.Postgresql ? 0x16B6C51 : null,
@@ -669,6 +737,15 @@ internal static class CdcContinuityFixture
             binding.Provider == CdcProvider.SqlServer ? 2 : null,
             []
         );
+    }
+
+    public static string ExpectedSourcePartitionHash(CdcBinding binding)
+    {
+        CdcArtifactInventory inventory = CdcArtifactNameGenerator.RecoverFromBinding(binding).Inventory!;
+
+        return binding.Provider == CdcProvider.Postgresql
+            ? CdcSourcePartitionHashCalculator.ComputePostgresql(inventory.TopicPrefix).Hash!
+            : SqlServerSourcePartitionHash;
     }
 
     public static CdcProviderSourceHistoryEvidence ProviderHistory(

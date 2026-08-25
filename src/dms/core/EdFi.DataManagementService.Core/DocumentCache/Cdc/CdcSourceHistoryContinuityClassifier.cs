@@ -331,9 +331,11 @@ public static class CdcSourceHistoryContinuityClassifier
             envelopeDiagnostics
         );
         ValidateConnectorOffsetBindingNames(input.ConnectorOffset, inventory, envelopeDiagnostics);
-        ValidateExpectedSourcePartitionHash(
+        CdcObservationValidationRules.ValidateSha256Fingerprint(
             input.ConnectorOffset.ConnectSourcePartitionHash,
-            expectedSourcePartitionHash,
+            "$.connectSourcePartitionHash",
+            "connectSourcePartitionHash",
+            true,
             envelopeDiagnostics
         );
         AddPrefixedDiagnostics(diagnostics, envelopeDiagnostics.Diagnostics, "$.connectorOffset");
@@ -350,6 +352,39 @@ public static class CdcSourceHistoryContinuityClassifier
                     null,
                     input.ProviderHistory,
                     [CdcIncidentUnavailableFact.ConnectOffset]
+                ),
+                null
+            );
+        }
+
+        CdcDiagnosticCollector sourcePartitionHashDiagnostics = new();
+        if (
+            !ValidateExpectedSourcePartitionHash(
+                input.ConnectorOffset.ConnectSourcePartitionHash,
+                expectedSourcePartitionHash,
+                sourcePartitionHashDiagnostics
+            )
+        )
+        {
+            AddPrefixedDiagnostics(
+                diagnostics,
+                sourcePartitionHashDiagnostics.Diagnostics,
+                "$.connectorOffset"
+            );
+            return new(
+                Lost(
+                    input,
+                    observedAt,
+                    diagnostics,
+                    CdcIncidentFailureCategory.ConnectSourcePartitionMismatch,
+                    BuildPositionMetadata(
+                        binding.Provider,
+                        inventory,
+                        expectedSourcePartitionHash,
+                        null,
+                        input.ProviderHistory,
+                        [CdcIncidentUnavailableFact.ConnectOffset]
+                    )
                 ),
                 null
             );
@@ -1010,7 +1045,7 @@ public static class CdcSourceHistoryContinuityClassifier
         }
     }
 
-    private static void ValidateExpectedSourcePartitionHash(
+    private static bool ValidateExpectedSourcePartitionHash(
         string observedHash,
         string? expectedHash,
         CdcDiagnosticCollector diagnostics
@@ -1018,7 +1053,7 @@ public static class CdcSourceHistoryContinuityClassifier
     {
         if (expectedHash is null)
         {
-            return;
+            return true;
         }
 
         if (!string.Equals(observedHash, expectedHash, StringComparison.Ordinal))
@@ -1028,7 +1063,10 @@ public static class CdcSourceHistoryContinuityClassifier
                 "$.connectSourcePartitionHash",
                 "CDC connector offset source partition hash must match the expected Connect source partition."
             );
+            return false;
         }
+
+        return true;
     }
 
     private static CdcCommittedSourcePositionResult ParseCommittedSourcePosition(
