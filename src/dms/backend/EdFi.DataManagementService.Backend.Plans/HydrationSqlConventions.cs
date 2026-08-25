@@ -18,6 +18,13 @@ internal static class HydrationSqlConventions
 
     public const string SelectedPageOrdinalColumnName = "Ordinal";
 
+    /// <summary>
+    /// The keyset table column carrying the continuation anchor of a <c>ContentVersion</c>-anchored
+    /// page. Nullable and present only on those pages, so a <c>DocumentId</c>-anchored batch emits the
+    /// keyset SQL it always has.
+    /// </summary>
+    public const string SelectedAnchorColumnName = "ContentVersion";
+
     public static string SerializeSelectedPageDocumentIds(IReadOnlyList<long> documentIds)
     {
         ArgumentNullException.ThrowIfNull(documentIds);

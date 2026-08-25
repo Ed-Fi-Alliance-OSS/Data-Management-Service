@@ -42,7 +42,11 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
             changeVersionRange
         );
 
-        return new PageKeysetSpec.Query(plannedCandidates.Plan, plannedCandidates.ParameterValues);
+        return new PageKeysetSpec.Query(
+            plannedCandidates.Plan,
+            plannedCandidates.ParameterValues,
+            plannedCandidates.OrderingMode
+        );
     }
 
     /// <summary>

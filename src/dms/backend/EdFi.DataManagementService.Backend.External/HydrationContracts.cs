@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend.External;
 
@@ -147,8 +148,16 @@ public abstract record PageKeysetSpec
     /// <param name="ParameterValues">
     /// Parameter values keyed by bare parameter name (without <c>@</c>).
     /// </param>
+    /// <param name="OrderingMode">
+    /// The anchor <paramref name="Plan" /> was compiled against, and therefore the column whose
+    /// selected maximum continues this page. Under a <c>ContentVersion</c> anchor the materialized
+    /// keyset carries that column alongside <c>DocumentId</c> and returns both, because the anchor has
+    /// to leave selection with the ids: a page whose rows are all deleted before hydration still has to
+    /// report where it ended, and by then there is nothing left to look the anchor up from.
+    /// </param>
     public sealed record Query(
         PageDocumentIdSqlPlan Plan,
-        IReadOnlyDictionary<string, object?> ParameterValues
+        IReadOnlyDictionary<string, object?> ParameterValues,
+        PageOrderingMode OrderingMode = PageOrderingMode.DocumentId
     ) : PageKeysetSpec;
 }

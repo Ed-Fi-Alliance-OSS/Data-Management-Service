@@ -10,6 +10,7 @@ using System.Runtime.CompilerServices;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Data.SqlClient;
 
 namespace EdFi.DataManagementService.Backend.Plans;
@@ -123,11 +124,11 @@ public static class HydrationBatchBuilder
         var planDialect = PlanSqlDialectFactory.Create(dialect);
         var writer = new SqlWriter(sqlDialect);
 
-        planDialect.AppendCreateKeysetTempTable(writer, plan.KeysetTable);
+        planDialect.AppendCreateKeysetTempTable(writer, plan.KeysetTable, CarriesSelectedAnchor(keyset));
         writer.AppendLine();
 
-        // The selected ids are returned even though this batch's candidates come from the metadata
-        // rows: the page's continuation boundary describes the keys selection chose, and a row deleted
+        // The selected keys are returned even though this batch's candidates come from the metadata
+        // rows: the page's continuation boundary describes what selection chose, and a row deleted
         // between materialization and the metadata select below would otherwise lower or erase it.
         AppendKeysetMaterialization(writer, planDialect, plan.KeysetTable, keyset);
         writer.AppendLine();
@@ -252,10 +253,10 @@ public static class HydrationBatchBuilder
     )
     {
         // 1. Create keyset temp table
-        planDialect.AppendCreateKeysetTempTable(writer, plan.KeysetTable);
+        planDialect.AppendCreateKeysetTempTable(writer, plan.KeysetTable, CarriesSelectedAnchor(keyset));
         writer.AppendLine();
 
-        // 2. Materialize keyset. A query keyset also returns the ids it inserted as the batch's first
+        // 2. Materialize keyset. A query keyset also returns the keys it inserted as the batch's first
         //    result set, which is what carries the selected-keyset boundary out of hydration.
         AppendKeysetMaterialization(
             writer,
@@ -447,7 +448,20 @@ public static class HydrationBatchBuilder
     }
 
     /// <summary>
-    /// Materializes the page keyset. A query keyset also returns the ids it inserted as a result set,
+    /// Whether the keyset table and its materialization carry the continuation-anchor column.
+    /// </summary>
+    /// <remarks>
+    /// Only a <c>ContentVersion</c>-anchored query keyset does. A <c>DocumentId</c>-anchored page needs
+    /// no second column — the ids it already returns are its anchor — and no other keyset variant
+    /// performs page selection at all, so every one of them emits the batch text it always has. The
+    /// table DDL, the insert column list, and the returning clause all read this one predicate, because
+    /// three separate decisions could disagree and name a column the keyset table does not have.
+    /// </remarks>
+    private static bool CarriesSelectedAnchor(PageKeysetSpec spec) =>
+        spec is PageKeysetSpec.Query { OrderingMode: PageOrderingMode.ContentVersion };
+
+    /// <summary>
+    /// Materializes the page keyset. A query keyset also returns the keys it inserted as a result set,
     /// which is what carries the page's continuation boundary out of hydration; the other keysets are
     /// handed the ids to materialize, so they perform no page selection and have no boundary to report.
     /// </summary>
@@ -460,6 +474,7 @@ public static class HydrationBatchBuilder
     )
     {
         var quotedDocIdCol = writer.Dialect.QuoteIdentifier(keyset.DocumentIdColumnName.Value);
+        var carriesAnchor = CarriesSelectedAnchor(spec);
 
         switch (spec)
         {
@@ -501,11 +516,18 @@ public static class HydrationBatchBuilder
                 break;
 
             case PageKeysetSpec.Query query when HasZeroPageSelectionSize(query):
-                AppendEmptyKeysetMaterialization(writer, keyset, quotedDocIdCol, planDialect);
+                AppendEmptyKeysetMaterialization(writer, keyset, quotedDocIdCol, planDialect, carriesAnchor);
                 break;
 
             case PageKeysetSpec.Query query:
-                AppendQueryKeysetMaterialization(writer, planDialect, keyset, query, quotedDocIdCol);
+                AppendQueryKeysetMaterialization(
+                    writer,
+                    planDialect,
+                    keyset,
+                    query,
+                    quotedDocIdCol,
+                    carriesAnchor
+                );
                 break;
 
             default:
@@ -518,17 +540,29 @@ public static class HydrationBatchBuilder
     }
 
     /// <summary>
-    /// Materializes the planned page keyset, returning the ids it inserted so the page's continuation
-    /// boundary describes the keys selection chose.
+    /// Materializes the planned page keyset, returning the keys it inserted so the page's continuation
+    /// boundary describes what selection chose.
     /// </summary>
+    /// <remarks>
+    /// Under a <c>ContentVersion</c> anchor the embedded page-selection SQL already projects both
+    /// <c>DocumentId</c> and the anchor, so this only has to carry both through the insert and the
+    /// returning clause. Hydration can read no column this embedded SQL does not project, which is why
+    /// the anchor rides out with the ids rather than being looked up after selection.
+    /// </remarks>
     private static void AppendQueryKeysetMaterialization(
         SqlWriter writer,
         IPlanSqlDialect planDialect,
         KeysetTableContract keyset,
         PageKeysetSpec.Query query,
-        string quotedDocIdCol
+        string quotedDocIdCol,
+        bool carriesAnchor
     )
     {
+        var quotedAnchorCol = writer.Dialect.QuoteIdentifier(
+            HydrationSqlConventions.SelectedAnchorColumnName
+        );
+        var insertColumns = carriesAnchor ? $"{quotedDocIdCol}, {quotedAnchorCol}" : quotedDocIdCol;
+
         writer
             .AppendLine("WITH page_ids AS (")
             .AppendLine(PlanSqlStatementText.AsEmbeddableBody(query.Plan.PageDocumentIdSql))
@@ -536,11 +570,11 @@ public static class HydrationBatchBuilder
             .Append("INSERT INTO ")
             .AppendRelation(keyset.Table)
             .Append(" (")
-            .Append(quotedDocIdCol)
+            .Append(insertColumns)
             .AppendLine(")");
-        planDialect.AppendKeysetSelectedIdOutputClause(writer, keyset);
-        writer.Append("SELECT ").Append(quotedDocIdCol).Append(" FROM page_ids");
-        planDialect.AppendKeysetSelectedIdReturningClause(writer, keyset);
+        planDialect.AppendKeysetSelectedIdOutputClause(writer, keyset, carriesAnchor);
+        writer.Append("SELECT ").Append(insertColumns).Append(" FROM page_ids");
+        planDialect.AppendKeysetSelectedIdReturningClause(writer, keyset, carriesAnchor);
         writer.AppendLine(";");
     }
 
@@ -554,18 +588,33 @@ public static class HydrationBatchBuilder
         SqlWriter writer,
         KeysetTableContract keyset,
         string quotedDocIdCol,
-        IPlanSqlDialect? selectedIdDialect
+        IPlanSqlDialect? selectedIdDialect,
+        bool carriesAnchor = false
     )
     {
+        var quotedAnchorCol = writer.Dialect.QuoteIdentifier(
+            HydrationSqlConventions.SelectedAnchorColumnName
+        );
+
         writer
             .Append("INSERT INTO ")
             .AppendRelation(keyset.Table)
             .Append(" (")
-            .Append(quotedDocIdCol)
+            .Append(carriesAnchor ? $"{quotedDocIdCol}, {quotedAnchorCol}" : quotedDocIdCol)
             .AppendLine(")");
-        selectedIdDialect?.AppendKeysetSelectedIdOutputClause(writer, keyset);
-        writer.Append("SELECT CAST(NULL AS bigint) AS ").Append(quotedDocIdCol).Append(" WHERE 1 = 0");
-        selectedIdDialect?.AppendKeysetSelectedIdReturningClause(writer, keyset);
+        selectedIdDialect?.AppendKeysetSelectedIdOutputClause(writer, keyset, carriesAnchor);
+        writer.Append("SELECT CAST(NULL AS bigint) AS ").Append(quotedDocIdCol);
+
+        if (carriesAnchor)
+        {
+            // Same column count as any other anchored page, so a zero-size page's empty result set has
+            // the shape the reader expects rather than a narrower one it would read the wrong ordinal
+            // from.
+            writer.Append(", CAST(NULL AS bigint) AS ").Append(quotedAnchorCol);
+        }
+
+        writer.Append(" WHERE 1 = 0");
+        selectedIdDialect?.AppendKeysetSelectedIdReturningClause(writer, keyset, carriesAnchor);
         writer.AppendLine(";");
     }
 

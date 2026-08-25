@@ -127,7 +127,11 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
 
     private static PageKeysetSpec.Query ToPageKeysetSpec(CandidateQueryPlan plannedCandidates)
     {
-        return new PageKeysetSpec.Query(plannedCandidates.Plan, plannedCandidates.ParameterValues);
+        return new PageKeysetSpec.Query(
+            plannedCandidates.Plan,
+            plannedCandidates.ParameterValues,
+            plannedCandidates.OrderingMode
+        );
     }
 
     private CandidateQueryPlan? PlanOrEmptyPage(

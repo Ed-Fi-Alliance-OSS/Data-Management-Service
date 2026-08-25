@@ -6,6 +6,7 @@
 using System.Data;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Backend.Plans.Tests.Unit.HydrationBatchBuilderTestHelper;
@@ -151,6 +152,27 @@ public class Given_HydrationBatchBuilder_With_A_Query_Keyset_Materialization
         );
     }
 
+    /// <summary>
+    /// A cursor keyset anchored on <c>ContentVersion</c>. The candidate mode and the keyset carry the
+    /// same anchor, exactly as the page keyset planner produces them: the mode decides what the embedded
+    /// page-selection SQL projects, and the keyset decides what the materialization carries out of it.
+    /// </summary>
+    internal static PageKeysetSpec.Query CreateAnchoredCursorKeyset(SqlDialect dialect, object pageSize)
+    {
+        var mode = new PageCandidateMode.Cursor(OrderingMode: PageOrderingMode.ContentVersion);
+
+        return new PageKeysetSpec.Query(
+            Compile(dialect, mode),
+            new Dictionary<string, object?>
+            {
+                [mode.InclusiveMinimumParameterName] = 1L,
+                [mode.InclusiveMaximumParameterName] = long.MaxValue,
+                [mode.PageSizeParameterName] = pageSize,
+            },
+            PageOrderingMode.ContentVersion
+        );
+    }
+
     internal static PageKeysetSpec.Query CreateTraditionalKeyset(
         SqlDialect dialect,
         object limit,
@@ -178,6 +200,206 @@ public class Given_HydrationBatchBuilder_With_A_Query_Keyset_Materialization
                 Mode: mode
             )
         );
+}
+
+/// <summary>
+/// A <c>ContentVersion</c>-anchored page carries its anchor out of selection alongside the ids. Both
+/// columns are load-bearing and neither is optional: <c>DocumentId</c> feeds the keyset table and every
+/// hydration join that follows, while <c>ContentVersion</c> is the value the page's continuation token
+/// is expressed in, and hydration can read no column the embedded page-selection SQL did not project.
+/// Recovering the anchor after selection instead would stall on a page whose rows were all deleted.
+/// </summary>
+[TestFixture]
+public class Given_HydrationBatchBuilder_With_A_Content_Version_Anchored_Query_Keyset
+{
+    private static string BuildAnchoredBatch(SqlDialect dialect, object pageSize = null!) =>
+        HydrationBatchBuilder.Build(
+            BuildTestReadPlan(dialect),
+            Given_HydrationBatchBuilder_With_A_Query_Keyset_Materialization.CreateAnchoredCursorKeyset(
+                dialect,
+                pageSize ?? 25L
+            ),
+            dialect
+        );
+
+    [Test]
+    public void It_adds_a_nullable_anchor_column_to_the_pgsql_keyset_table()
+    {
+        BuildAnchoredBatch(SqlDialect.Pgsql)
+            .Should()
+            .Contain(
+                "CREATE TEMP TABLE \"page\" (\"DocumentId\" bigint PRIMARY KEY, \"Ordinal\" int NULL, "
+                    + "\"ContentVersion\" bigint NULL) ON COMMIT DROP;"
+            );
+    }
+
+    [Test]
+    public void It_adds_a_nullable_anchor_column_to_the_mssql_keyset_table()
+    {
+        BuildAnchoredBatch(SqlDialect.Mssql)
+            .Should()
+            .Contain(
+                "CREATE TABLE [#page] ([DocumentId] bigint PRIMARY KEY, [Ordinal] int NULL, "
+                    + "[ContentVersion] bigint NULL);"
+            );
+    }
+
+    [Test]
+    public void It_inserts_and_returns_both_columns_on_pgsql()
+    {
+        BuildAnchoredBatch(SqlDialect.Pgsql)
+            .Should()
+            .Contain(
+                """
+                INSERT INTO "page" ("DocumentId", "ContentVersion")
+                SELECT "DocumentId", "ContentVersion" FROM page_ids RETURNING "DocumentId", "ContentVersion";
+                """
+            );
+    }
+
+    [Test]
+    public void It_inserts_and_returns_both_columns_on_mssql()
+    {
+        BuildAnchoredBatch(SqlDialect.Mssql)
+            .Should()
+            .Contain(
+                """
+                INSERT INTO [#page] ([DocumentId], [ContentVersion])
+                OUTPUT INSERTED.[DocumentId], INSERTED.[ContentVersion]
+                SELECT [DocumentId], [ContentVersion] FROM page_ids;
+                """
+            );
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_selects_both_columns_from_the_embedded_page_selection(SqlDialect dialect)
+    {
+        // The two-column projection comes from the candidate compiler, not from this builder. Asserted
+        // here because the insert and returning clauses above are only valid if page_ids really carries
+        // both, and a one-column projection would fail at the provider rather than at compilation.
+        // PostgreSQL limits a cursor page with a trailing LIMIT and SQL Server with a leading TOP, so
+        // only the projection is shared between them.
+        var quoted =
+            dialect == SqlDialect.Pgsql
+                ? "SELECT r.\"DocumentId\", r.\"ContentVersion\""
+                : "SELECT TOP (@pageSize) r.[DocumentId], r.[ContentVersion]";
+
+        BuildAnchoredBatch(dialect).Should().Contain(quoted);
+    }
+
+    [Test]
+    public void It_keeps_the_two_column_shape_for_a_zero_size_anchored_page()
+    {
+        // A zero-size page returns an empty result set rather than none, and it has to have the same
+        // column count as any other anchored page or the reader takes an ordinal that is not there.
+        BuildAnchoredBatch(SqlDialect.Pgsql, pageSize: 0L)
+            .Should()
+            .Contain(
+                """
+                INSERT INTO "page" ("DocumentId", "ContentVersion")
+                SELECT CAST(NULL AS bigint) AS "DocumentId", CAST(NULL AS bigint) AS "ContentVersion" WHERE 1 = 0 RETURNING "DocumentId", "ContentVersion";
+                """
+            );
+        BuildAnchoredBatch(SqlDialect.Mssql, pageSize: 0L)
+            .Should()
+            .Contain(
+                """
+                INSERT INTO [#page] ([DocumentId], [ContentVersion])
+                OUTPUT INSERTED.[DocumentId], INSERTED.[ContentVersion]
+                SELECT CAST(NULL AS bigint) AS [DocumentId], CAST(NULL AS bigint) AS [ContentVersion] WHERE 1 = 0;
+                """
+            );
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_emits_one_selected_keyset_result_set_under_either_anchor(SqlDialect dialect)
+    {
+        // The anchor widens the existing result set rather than adding one, so nothing downstream has to
+        // move: a co-batched reader skips the same number of result sets either way.
+        var plan = BuildTestReadPlan(dialect);
+        var options = new HydrationExecutionOptions();
+
+        HydrationExecutor
+            .GetResultSetCount(
+                plan,
+                Given_HydrationBatchBuilder_With_A_Query_Keyset_Materialization.CreateAnchoredCursorKeyset(
+                    dialect,
+                    25L
+                ),
+                options
+            )
+            .Should()
+            .Be(
+                HydrationExecutor.GetResultSetCount(
+                    plan,
+                    Given_HydrationBatchBuilder_With_A_Query_Keyset_Materialization.CreateCursorKeyset(
+                        dialect,
+                        25L
+                    ),
+                    options
+                )
+            );
+    }
+}
+
+/// <summary>
+/// Every batch that is not a <c>ContentVersion</c>-anchored query keyset emits the text it always has.
+/// This is the gate that keeps the shipped traditional and GET-by-id SQL untouched by this change.
+/// </summary>
+[TestFixture]
+public class Given_A_Keyset_That_Carries_No_Anchor
+{
+    [Test]
+    public void It_creates_the_pgsql_keyset_table_with_no_anchor_column()
+    {
+        var expected =
+            "CREATE TEMP TABLE \"page\" (\"DocumentId\" bigint PRIMARY KEY, \"Ordinal\" int NULL) "
+            + "ON COMMIT DROP;";
+
+        Given_HydrationBatchBuilder_With_A_Query_Keyset_Materialization
+            .BuildCursorQueryBatch(SqlDialect.Pgsql, 25L)
+            .Should()
+            .Contain(expected);
+        Given_HydrationBatchBuilder_With_A_Query_Keyset_Materialization
+            .BuildTraditionalQueryBatch(SqlDialect.Pgsql, 25L)
+            .Should()
+            .Contain(expected);
+        HydrationBatchBuilder
+            .Build(
+                BuildTestReadPlan(SqlDialect.Pgsql),
+                new PageKeysetSpec.Single(42L),
+                SqlDialect.Pgsql,
+                new HydrationExecutionOptions(UseSingleDocumentFastPath: false)
+            )
+            .Should()
+            .Contain(expected);
+    }
+
+    [Test]
+    public void It_creates_the_mssql_keyset_table_with_no_anchor_column()
+    {
+        var expected = "CREATE TABLE [#page] ([DocumentId] bigint PRIMARY KEY, [Ordinal] int NULL);";
+
+        Given_HydrationBatchBuilder_With_A_Query_Keyset_Materialization
+            .BuildCursorQueryBatch(SqlDialect.Mssql, 25L)
+            .Should()
+            .Contain(expected);
+        Given_HydrationBatchBuilder_With_A_Query_Keyset_Materialization
+            .BuildTraditionalQueryBatch(SqlDialect.Mssql, 25L)
+            .Should()
+            .Contain(expected);
+        HydrationBatchBuilder
+            .Build(
+                BuildTestReadPlan(SqlDialect.Mssql),
+                new PageKeysetSpec.Single(42L),
+                SqlDialect.Mssql,
+                new HydrationExecutionOptions(UseSingleDocumentFastPath: false)
+            )
+            .Should()
+            .Contain(expected);
+    }
 }
 
 /// <summary>
