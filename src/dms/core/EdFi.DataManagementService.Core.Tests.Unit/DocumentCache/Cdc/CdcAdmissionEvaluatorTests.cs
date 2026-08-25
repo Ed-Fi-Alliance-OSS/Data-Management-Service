@@ -103,6 +103,38 @@ public class Given_CdcAdmissionEvaluator
         admission.Steps.Binding.Category.Should().Be(CdcBlockingCategory.SourceMismatch);
     }
 
+    [TestCase(null, CdcDiagnosticCategory.MissingRequiredField)]
+    [TestCase("not-a-sha256-fingerprint", CdcDiagnosticCategory.MalformedPayload)]
+    public void It_maps_missing_or_malformed_observation_source_fingerprint_to_unavailable_admission_evidence(
+        string? observationFingerprint,
+        CdcDiagnosticCategory expectedDiagnosticCategory
+    )
+    {
+        CdcBinding binding = CdcTargetStatusFixture.CreateBinding();
+
+        CdcAdmission admission = CdcInitialAdmissionEvaluator.Evaluate(
+            CdcAdmissionFixture.ValidInput(binding) with
+            {
+                SecondProjectionCaughtUp = CdcAdmissionFixture.SecondProjection(binding) with
+                {
+                    PhysicalSourceFingerprint = observationFingerprint,
+                },
+            }
+        );
+
+        admission.AdmissionState.Should().Be(CdcAdmissionState.Unknown);
+        admission.PrimaryBlockingCategory.Should().Be(CdcBlockingCategory.StatusObservationUnavailable);
+        admission.Steps.SecondProjectionCaughtUp.State.Should().Be(CdcComponentState.Unknown);
+        admission
+            .Steps.SecondProjectionCaughtUp.Category.Should()
+            .Be(CdcBlockingCategory.StatusObservationUnavailable);
+        admission
+            .Diagnostics.Select(diagnostic => diagnostic.Category)
+            .Should()
+            .Contain(expectedDiagnosticCategory)
+            .And.NotContain(CdcDiagnosticCategory.SourceMismatch);
+    }
+
     [Test]
     public void It_keeps_provider_barrier_not_reached_as_the_primary_admission_blocker()
     {

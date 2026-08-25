@@ -219,6 +219,36 @@ public class Given_CdcTargetStatusEvaluator
             .Contain(CdcDiagnosticCategory.SourceMismatch);
     }
 
+    [TestCase(null, CdcDiagnosticCategory.MissingRequiredField)]
+    [TestCase("not-a-sha256-fingerprint", CdcDiagnosticCategory.MalformedPayload)]
+    public void It_maps_missing_or_malformed_observation_source_fingerprint_to_unavailable_status_evidence(
+        string? observationFingerprint,
+        CdcDiagnosticCategory expectedDiagnosticCategory
+    )
+    {
+        CdcBinding binding = CdcTargetStatusFixture.CreateBinding();
+
+        CdcTargetStatus status = CdcTargetStatusEvaluator.Evaluate(
+            CdcTargetStatusFixture.ValidInput(binding) with
+            {
+                Projection = CdcTargetStatusFixture.Projection(binding) with
+                {
+                    PhysicalSourceFingerprint = observationFingerprint,
+                },
+            }
+        );
+
+        status.Readiness.Should().Be(CdcReadiness.Unknown);
+        status.PrimaryBlockingCategory.Should().Be(CdcBlockingCategory.StatusObservationUnavailable);
+        status.Projection.State.Should().Be(CdcComponentState.Unknown);
+        status.Projection.Category.Should().Be(CdcBlockingCategory.StatusObservationUnavailable);
+        status
+            .Diagnostics.Select(diagnostic => diagnostic.Category)
+            .Should()
+            .Contain(expectedDiagnosticCategory)
+            .And.NotContain(CdcDiagnosticCategory.SourceMismatch);
+    }
+
     [TestCase(CdcDiagnosticCategory.SourceMismatch)]
     [TestCase(CdcDiagnosticCategory.ProviderMismatch)]
     public void It_maps_provider_barrier_source_or_provider_mismatch_diagnostics_to_source_mismatch(

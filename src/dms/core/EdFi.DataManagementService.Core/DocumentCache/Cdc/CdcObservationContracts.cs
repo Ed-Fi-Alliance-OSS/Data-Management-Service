@@ -4316,6 +4316,11 @@ internal static class CdcObservationValidationRules
             true,
             diagnostics
         );
+        if (!IsSha256Fingerprint(physicalSourceFingerprint))
+        {
+            return;
+        }
+
         if (
             !string.Equals(
                 physicalSourceFingerprint,
@@ -4395,6 +4400,15 @@ internal static class CdcObservationValidationRules
                 $"CDC observation {fieldName} must be `sha256:` plus 64 lowercase hex characters."
             );
         }
+    }
+
+    private static bool IsSha256Fingerprint(string? value)
+    {
+        const string sha256Prefix = "sha256:";
+        return value is not null
+            && value.Length == sha256Prefix.Length + 64
+            && value.StartsWith(sha256Prefix, StringComparison.Ordinal)
+            && value[sha256Prefix.Length..].All(IsLowercaseHex);
     }
 
     public static void ValidateProviderPositionText(

@@ -118,4 +118,63 @@ public class Given_CdcObservationEnvelope
             .And.Contain(CdcDiagnosticCategory.ProviderMismatch)
             .And.Contain(CdcDiagnosticCategory.SourceMismatch);
     }
+
+    [Test]
+    public void It_treats_missing_observation_source_fingerprint_as_missing_evidence_not_source_mismatch()
+    {
+        CdcProviderSetupObservation observation = ValidProviderSetupObservation() with
+        {
+            PhysicalSourceFingerprint = null,
+        };
+
+        CdcContractValidationResult result = CdcProviderSetupObservationValidator.Validate(
+            observation,
+            Context
+        );
+
+        result.Succeeded.Should().BeFalse();
+        result
+            .Diagnostics.Select(diagnostic => diagnostic.Category)
+            .Should()
+            .Contain(CdcDiagnosticCategory.MissingRequiredField)
+            .And.NotContain(CdcDiagnosticCategory.SourceMismatch);
+    }
+
+    [Test]
+    public void It_treats_malformed_observation_source_fingerprint_as_malformed_evidence_not_source_mismatch()
+    {
+        CdcProviderSetupObservation observation = ValidProviderSetupObservation() with
+        {
+            PhysicalSourceFingerprint = "not-a-sha256-fingerprint",
+        };
+
+        CdcContractValidationResult result = CdcProviderSetupObservationValidator.Validate(
+            observation,
+            Context
+        );
+
+        result.Succeeded.Should().BeFalse();
+        result
+            .Diagnostics.Select(diagnostic => diagnostic.Category)
+            .Should()
+            .Contain(CdcDiagnosticCategory.MalformedPayload)
+            .And.NotContain(CdcDiagnosticCategory.SourceMismatch);
+    }
+
+    private static CdcProviderSetupObservation ValidProviderSetupObservation() =>
+        new(
+            CdcJsonContract.CurrentContractVersion,
+            OperationId,
+            ObservedAt,
+            TargetIdentity,
+            CdcProvider.Postgresql,
+            SourceFingerprint,
+            CdcProviderSetupMode.ValidateOnly,
+            CdcProviderSetupOutcome.Satisfied,
+            CdcProviderSetupState.Matched,
+            CdcProviderSetupState.Matched,
+            CdcProviderSetupState.Matched,
+            CdcProviderSetupState.Matched,
+            []
+        );
 }
