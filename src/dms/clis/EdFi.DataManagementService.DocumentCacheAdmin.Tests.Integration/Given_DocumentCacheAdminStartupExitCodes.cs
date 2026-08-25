@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.DocumentCacheAdmin;
 using FluentAssertions;
 
@@ -35,6 +36,66 @@ public sealed class Given_DocumentCacheAdminStartupExitCodes
         result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.ConfigurationError);
         result.StandardOutput.Should().BeEmpty();
         result.StandardError.Should().Contain("DocumentCache configuration error");
+    }
+
+    [TestCaseSource(nameof(MalformedDocumentCacheOptionCases))]
+    public async Task It_returns_configuration_error_for_malformed_document_cache_options_before_status_execution(
+        MalformedDocumentCacheOption option,
+        string expectedDiagnostic
+    )
+    {
+        string settingsPath = CreateMalformedSettingsFile(option);
+
+        try
+        {
+            ProcessResult result = await RunDocumentCacheAdminAsync(
+                DocumentCacheAdminCommandSurface.StatusCommandName,
+                DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
+                "1",
+                DocumentCacheAdminCommandSurface.DatastoreOptionName,
+                DocumentCacheAdminCommandSurface.PostgresqlDatastoreOptionValue,
+                DocumentCacheAdminCommandSurface.SettingsOptionName,
+                settingsPath,
+                DocumentCacheAdminCommandSurface.JsonOptionName
+            );
+
+            AssertConfigurationError(result, expectedDiagnostic);
+        }
+        finally
+        {
+            TryDelete(settingsPath);
+        }
+    }
+
+    [TestCaseSource(nameof(MalformedDocumentCacheOptionCases))]
+    public async Task It_returns_configuration_error_for_malformed_document_cache_options_before_mutating_execution(
+        MalformedDocumentCacheOption option,
+        string expectedDiagnostic
+    )
+    {
+        string settingsPath = CreateMalformedSettingsFile(option);
+
+        try
+        {
+            ProcessResult result = await RunDocumentCacheAdminAsync(
+                DocumentCacheAdminCommandSurface.RebuildOnlineCommandName,
+                DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
+                "1",
+                DocumentCacheAdminCommandSurface.ConfirmOptionName,
+                "onlineCacheRebuild",
+                DocumentCacheAdminCommandSurface.DatastoreOptionName,
+                DocumentCacheAdminCommandSurface.PostgresqlDatastoreOptionValue,
+                DocumentCacheAdminCommandSurface.SettingsOptionName,
+                settingsPath,
+                DocumentCacheAdminCommandSurface.JsonOptionName
+            );
+
+            AssertConfigurationError(result, expectedDiagnostic);
+        }
+        finally
+        {
+            TryDelete(settingsPath);
+        }
     }
 
     [Test]
@@ -120,6 +181,129 @@ public sealed class Given_DocumentCacheAdminStartupExitCodes
         return new ProcessResult(process.ExitCode, await standardOutput, await standardError);
     }
 
+    private static IEnumerable<TestCaseData> MalformedDocumentCacheOptionCases()
+    {
+        yield return new TestCaseData(
+            MalformedDocumentCacheOption.Status,
+            "Status:EndpointTimeout must be positive"
+        ).SetName("Status timeout");
+        yield return new TestCaseData(
+            MalformedDocumentCacheOption.Administration,
+            "Administration:WorkflowTimeout must be positive"
+        ).SetName("Administration timeout");
+        yield return new TestCaseData(
+            MalformedDocumentCacheOption.Projector,
+            "Projector:PageSize must be positive"
+        ).SetName("Projector page size");
+        yield return new TestCaseData(
+            MalformedDocumentCacheOption.Target,
+            "Targets0 DataStoreId must be positive"
+        ).SetName("Configured target");
+    }
+
+    private static string CreateMalformedSettingsFile(MalformedDocumentCacheOption option)
+    {
+        JsonObject settings = CreateValidSettings();
+        JsonObject documentCacheSettings = settings["DataManagement"]!.AsObject()[
+            "DocumentCache"
+        ]!.AsObject();
+
+        switch (option)
+        {
+            case MalformedDocumentCacheOption.Status:
+                documentCacheSettings["Status"]!.AsObject()["EndpointTimeout"] = "00:00:00";
+                break;
+            case MalformedDocumentCacheOption.Administration:
+                documentCacheSettings["Administration"]!.AsObject()["WorkflowTimeout"] = "00:00:00";
+                break;
+            case MalformedDocumentCacheOption.Projector:
+                documentCacheSettings["Projector"]!.AsObject()["PageSize"] = 0;
+                break;
+            case MalformedDocumentCacheOption.Target:
+                documentCacheSettings["Targets"] = new JsonArray(
+                    new JsonObject { ["TenantKey"] = "", ["DataStoreId"] = 0 }
+                );
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(option), option, "Unknown option case.");
+        }
+
+        string settingsPath = Path.Combine(
+            Path.GetTempPath(),
+            $"{Guid.NewGuid():N}-document-cache-admin-settings.json"
+        );
+        File.WriteAllText(settingsPath, settings.ToJsonString());
+        return settingsPath;
+    }
+
+    private static JsonObject CreateValidSettings() =>
+        new()
+        {
+            ["AppSettings"] = new JsonObject
+            {
+                ["Datastore"] = DocumentCacheAdminCommandSurface.PostgresqlDatastoreOptionValue,
+                ["DefaultPartitionCount"] = 10,
+                ["UseApiSchemaPath"] = false,
+            },
+            ["ConfigurationServiceSettings"] = new JsonObject
+            {
+                ["BaseUrl"] = "https://cms.example.org",
+                ["ClientId"] = "document-cache-admin-startup-test",
+                ["Scope"] = "edfi_admin_api/full_access",
+                ["EncryptionKey"] = "TestEncryptionKey123456789012345678901234567890",
+            },
+            ["DataManagement"] = new JsonObject
+            {
+                ["DocumentCache"] = new JsonObject
+                {
+                    ["ReadAcceleration"] = new JsonObject
+                    {
+                        ["Enabled"] = false,
+                        ["DirectFillTimeout"] = "00:00:00.250",
+                    },
+                    ["Projector"] = new JsonObject
+                    {
+                        ["PollInterval"] = "00:00:05",
+                        ["PageSize"] = 100,
+                        ["MaxConcurrentTargets"] = 1,
+                        ["FailureBackoff"] = "00:00:05",
+                        ["BaselineHighWaterMark"] = 100,
+                    },
+                    ["Administration"] = new JsonObject { ["WorkflowTimeout"] = "00:05:00" },
+                    ["Status"] = new JsonObject
+                    {
+                        ["StatusObservationTimeout"] = "00:00:01",
+                        ["EndpointTimeout"] = "00:00:05",
+                    },
+                },
+            },
+        };
+
+    private static void AssertConfigurationError(ProcessResult result, string expectedDiagnostic)
+    {
+        result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.ConfigurationError);
+        result.StandardOutput.Should().BeEmpty();
+        result.StandardError.Should().Contain("DocumentCache configuration error");
+        result.StandardError.Should().Contain(expectedDiagnostic);
+        result.StandardError.Should().NotContain("Unexpected DocumentCache administration CLI failure");
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (IOException)
+        {
+            // Best-effort temp-file cleanup.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Best-effort temp-file cleanup.
+        }
+    }
+
     private static string ToolProjectPath() =>
         Path.Combine(
             RepositoryRoot(),
@@ -155,4 +339,12 @@ public sealed class Given_DocumentCacheAdminStartupExitCodes
     }
 
     private sealed record ProcessResult(int ExitCode, string StandardOutput, string StandardError);
+
+    public enum MalformedDocumentCacheOption
+    {
+        Status,
+        Administration,
+        Projector,
+        Target,
+    }
 }

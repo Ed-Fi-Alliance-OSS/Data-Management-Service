@@ -29,6 +29,8 @@ internal static class DocumentCacheAdminServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(invocationTarget);
 
+        services.TryAddSingleton(configuration);
+
         services.AddOptions<AppSettings>().Bind(configuration.GetSection("AppSettings"));
 
         services

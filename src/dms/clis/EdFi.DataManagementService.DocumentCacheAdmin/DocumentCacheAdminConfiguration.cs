@@ -4,7 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.CommandLine;
+using EdFi.DataManagementService.Core.Configuration;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.DocumentCacheAdmin;
 
@@ -33,6 +35,9 @@ internal static class DocumentCacheAdminConfiguration
         }
 
         builder.AddEnvironmentVariables();
+        IConfigurationRoot configurationWithoutCommandOverrides = builder.Build();
+        ValidateConfiguredDocumentCacheOptions(configurationWithoutCommandOverrides);
+
         builder.AddInMemoryCollection(
             DocumentCacheAdminCommandSurface.CreateConfigurationOverrides(parseResult)
         );
@@ -58,5 +63,25 @@ internal static class DocumentCacheAdminConfiguration
 
         string? aspnetCoreEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
         return string.IsNullOrWhiteSpace(aspnetCoreEnvironment) ? null : aspnetCoreEnvironment;
+    }
+
+    private static void ValidateConfiguredDocumentCacheOptions(IConfiguration configuration)
+    {
+        DocumentCacheOptions options = new();
+        configuration.GetSection(DocumentCacheOptions.SectionName).Bind(options);
+
+        ValidateOptionsResult validationResult = new DocumentCacheOptionsValidator(configuration).Validate(
+            Options.DefaultName,
+            options
+        );
+
+        if (validationResult.Failed)
+        {
+            throw new OptionsValidationException(
+                Options.DefaultName,
+                typeof(DocumentCacheOptions),
+                validationResult.Failures
+            );
+        }
     }
 }

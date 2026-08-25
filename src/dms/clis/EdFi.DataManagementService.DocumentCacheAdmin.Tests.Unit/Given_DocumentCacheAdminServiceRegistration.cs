@@ -7,10 +7,12 @@ using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.DocumentCacheAdmin;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Serilog;
@@ -125,6 +127,34 @@ public sealed class Given_DocumentCacheAdminServiceRegistration
     }
 
     [Test]
+    public async Task It_validates_document_cache_options_before_runtime_schema_initialization()
+    {
+        IServiceCollection services = new ServiceCollection();
+        CountingEffectiveSchemaBootstrapper bootstrapper = new();
+
+        services.AddLogging();
+        services.AddDocumentCacheAdminRuntimeServices(
+            CreateConfiguration(
+                DocumentCacheAdminCommandSurface.PostgresqlDatastoreOptionValue,
+                new Dictionary<string, string?> { ["DataManagement:DocumentCache:Projector:PageSize"] = "0" }
+            ),
+            new LoggerConfiguration().CreateLogger(),
+            DocumentCacheTargetKey.Create(string.Empty, 1)
+        );
+        services.Replace(ServiceDescriptor.Singleton<IEffectiveSchemaBootstrapper>(bootstrapper));
+
+        await using ServiceProvider serviceProvider = services.BuildServiceProvider();
+
+        Func<Task> initialize = () => DocumentCacheAdminRuntimeInitializer.InitializeAsync(serviceProvider);
+
+        await initialize
+            .Should()
+            .ThrowAsync<OptionsValidationException>()
+            .WithMessage("*Projector:PageSize must be positive*");
+        bootstrapper.InitializeCount.Should().Be(0);
+    }
+
+    [Test]
     public void It_treats_the_invocation_target_as_the_only_document_cache_target()
     {
         IServiceCollection services = new ServiceCollection();
@@ -149,22 +179,33 @@ public sealed class Given_DocumentCacheAdminServiceRegistration
         serviceProvider.GetRequiredService<IDocumentCacheAdminTargetResolver>().Should().NotBeNull();
     }
 
-    private static IConfiguration CreateConfiguration(string datastore) =>
-        new ConfigurationBuilder()
-            .AddInMemoryCollection(
-                new Dictionary<string, string?>
-                {
-                    ["AppSettings:Datastore"] = datastore,
-                    ["AppSettings:DefaultPartitionCount"] = "10",
-                    ["ConfigurationServiceSettings:BaseUrl"] = "https://cms.example.org",
-                    ["ConfigurationServiceSettings:ClientId"] = "client-id",
-                    ["ConfigurationServiceSettings:ClientSecret"] = "client-secret",
-                    ["ConfigurationServiceSettings:Scope"] = "scope",
-                    ["ConfigurationServiceSettings:EncryptionKey"] =
-                        "TestEncryptionKey123456789012345678901234567890",
-                }
-            )
-            .Build();
+    private static IConfiguration CreateConfiguration(
+        string datastore,
+        Dictionary<string, string?>? overrides = null
+    )
+    {
+        Dictionary<string, string?> settings = new()
+        {
+            ["AppSettings:Datastore"] = datastore,
+            ["AppSettings:DefaultPartitionCount"] = "10",
+            ["ConfigurationServiceSettings:BaseUrl"] = "https://cms.example.org",
+            ["ConfigurationServiceSettings:ClientId"] = "client-id",
+            ["ConfigurationServiceSettings:ClientSecret"] = "client-secret",
+            ["ConfigurationServiceSettings:Scope"] = "scope",
+            ["ConfigurationServiceSettings:EncryptionKey"] =
+                "TestEncryptionKey123456789012345678901234567890",
+        };
+
+        if (overrides is not null)
+        {
+            foreach ((string key, string? value) in overrides)
+            {
+                settings[key] = value;
+            }
+        }
+
+        return new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
+    }
 
     private static IConfiguration CreateConfigurationWithConfiguredTargets() =>
         new ConfigurationBuilder()
@@ -198,5 +239,16 @@ public sealed class Given_DocumentCacheAdminServiceRegistration
             );
 
         return serviceProvider.GetRequiredService(serviceType);
+    }
+
+    private sealed class CountingEffectiveSchemaBootstrapper : IEffectiveSchemaBootstrapper
+    {
+        public int InitializeCount { get; private set; }
+
+        public Task InitializeAsync(CancellationToken cancellationToken)
+        {
+            InitializeCount++;
+            return Task.CompletedTask;
+        }
     }
 }

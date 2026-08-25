@@ -9,6 +9,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Serilog;
 using Serilog.Events;
 
@@ -180,8 +181,10 @@ void ConfigureServices(
 
 static bool IsConfigurationBuildFailure(Exception exception) =>
     exception
-        is FileNotFoundException
+        is OptionsValidationException
+            or FileNotFoundException
             or DirectoryNotFoundException
+            or InvalidOperationException
             or InvalidDataException
             or IOException
             or UnauthorizedAccessException
@@ -189,7 +192,11 @@ static bool IsConfigurationBuildFailure(Exception exception) =>
             or ArgumentException;
 
 static bool IsServiceConfigurationFailure(Exception exception) =>
-    exception is InvalidOperationException or ArgumentException or FormatException;
+    exception
+        is OptionsValidationException
+            or InvalidOperationException
+            or ArgumentException
+            or FormatException;
 
 static Task WriteConfigurationFailureAsync(Exception exception) =>
     Console.Error.WriteLineAsync(

@@ -4,8 +4,10 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Startup;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.DocumentCacheAdmin;
 
@@ -19,6 +21,8 @@ internal static class DocumentCacheAdminRuntimeInitializer
         ArgumentNullException.ThrowIfNull(serviceProvider);
 
         cancellationToken.ThrowIfCancellationRequested();
+
+        _ = serviceProvider.GetRequiredService<IOptions<DocumentCacheOptions>>().Value;
 
         await serviceProvider
             .GetRequiredService<IEffectiveSchemaBootstrapper>()
