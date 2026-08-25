@@ -23,45 +23,27 @@ namespace EdFi.DataManagementService.Tests.Integration.Tests.Mssql;
 /// </remarks>
 public sealed class Given_Mssql_OdsComparison : MssqlApiIntegrationTestBase
 {
+    /// <summary>
+    /// The groups this binding executes, deliberately a subset of the PostgreSQL set: only the groups
+    /// whose observation is produced by provider work. Declared as data so the case-definition guardrail
+    /// can hold every bound group against the declared group set.
+    /// </summary>
+    internal static readonly string[] BoundGroups =
+    [
+        "sizing",
+        "sizing-default-count",
+        "number-collision",
+        "int64-bounds",
+        "identity-maximum",
+    ];
+
     protected override FixtureKey Fixture => FixtureKey.CursorPartitionContract;
 
     protected override int? MaximumPageSizeOverride => OdsComparisonScenario.HostMaximumPageSize;
 
-    [Test]
-    public Task It_matches_the_recorded_ods_outcome_for_partition_sizing() =>
-        OdsComparisonScenario.RunGroupAsync(Harness, "sizing", OdsComparisonScenario.HostMaximumPageSize);
-
-    [Test]
-    public Task It_matches_the_recorded_ods_outcome_for_the_default_partition_count() =>
-        OdsComparisonScenario.RunGroupAsync(
-            Harness,
-            "sizing-default-count",
-            OdsComparisonScenario.HostMaximumPageSize
-        );
-
-    [Test]
-    public Task It_matches_the_recorded_ods_outcome_for_the_number_collision() =>
-        OdsComparisonScenario.RunGroupAsync(
-            Harness,
-            "number-collision",
-            OdsComparisonScenario.HostMaximumPageSize
-        );
-
-    [Test]
-    public Task It_matches_the_recorded_ods_outcome_for_int64_range_bounds() =>
-        OdsComparisonScenario.RunGroupAsync(
-            Harness,
-            "int64-bounds",
-            OdsComparisonScenario.HostMaximumPageSize
-        );
-
-    [Test]
-    public Task It_matches_the_recorded_ods_outcome_at_the_identity_maximum() =>
-        OdsComparisonScenario.RunGroupAsync(
-            Harness,
-            "identity-maximum",
-            OdsComparisonScenario.HostMaximumPageSize
-        );
+    [TestCaseSource(nameof(BoundGroups))]
+    public Task It_matches_the_recorded_ods_outcomes_for_the_group(string group) =>
+        OdsComparisonScenario.RunGroupAsync(Harness, group, OdsComparisonScenario.HostMaximumPageSize);
 }
 
 /// <summary>
@@ -70,19 +52,18 @@ public sealed class Given_Mssql_OdsComparison : MssqlApiIntegrationTestBase
 /// </summary>
 public sealed class Given_Mssql_OdsComparisonEmptyHydration : MssqlApiIntegrationTestBase
 {
+    /// <summary>The group this binding executes. See <see cref="Given_Mssql_OdsComparison.BoundGroups" />.</summary>
+    internal static readonly string[] BoundGroups = ["empty-hydration"];
+
     protected override FixtureKey Fixture => FixtureKey.CursorPartitionContract;
 
     protected override int? MaximumPageSizeOverride => OdsComparisonScenario.HostMaximumPageSize;
 
     protected override bool SuppressHydratedRowsOnce => true;
 
-    [Test]
-    public Task It_matches_the_recorded_ods_outcome_for_the_empty_hydration_header() =>
-        OdsComparisonScenario.RunGroupAsync(
-            Harness,
-            "empty-hydration",
-            OdsComparisonScenario.HostMaximumPageSize
-        );
+    [TestCaseSource(nameof(BoundGroups))]
+    public Task It_matches_the_recorded_ods_outcomes_for_the_group(string group) =>
+        OdsComparisonScenario.RunGroupAsync(Harness, group, OdsComparisonScenario.HostMaximumPageSize);
 }
 
 /// <summary>
@@ -91,13 +72,12 @@ public sealed class Given_Mssql_OdsComparisonEmptyHydration : MssqlApiIntegratio
 /// </summary>
 public sealed class Given_Mssql_OdsComparisonDefaultPageSize : MssqlApiIntegrationTestBase
 {
+    /// <summary>The group this binding executes. See <see cref="Given_Mssql_OdsComparison.BoundGroups" />.</summary>
+    internal static readonly string[] BoundGroups = ["omitted-limit-default"];
+
     protected override FixtureKey Fixture => FixtureKey.CursorPartitionContract;
 
-    [Test]
-    public Task It_matches_the_recorded_ods_outcome_for_the_omitted_limit_default() =>
-        OdsComparisonScenario.RunGroupAsync(
-            Harness,
-            "omitted-limit-default",
-            OdsComparisonScenario.DeployedMaximumPageSize
-        );
+    [TestCaseSource(nameof(BoundGroups))]
+    public Task It_matches_the_recorded_ods_outcomes_for_the_group(string group) =>
+        OdsComparisonScenario.RunGroupAsync(Harness, group, OdsComparisonScenario.DeployedMaximumPageSize);
 }

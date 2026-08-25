@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
@@ -142,6 +143,176 @@ internal static class CursorContractSupport
     }
 
     /// <summary>
+    /// Decodes returned partition tokens and asserts the identity intervals they name are themselves
+    /// valid, contiguous, and non-overlapping, in the order the response listed them.
+    /// </summary>
+    /// <remarks>
+    /// Disjointness of the documents a walk returns is a weaker claim than disjointness of the ranges
+    /// that produced them: two overlapping intervals whose overlap happens to contain only sparse,
+    /// deleted, or inaccessible identities return disjoint documents and would satisfy the union and
+    /// exact-once assertions while still handing a client ranges that could double-count a document
+    /// created later. Reading the intervals out of the tokens is what closes that.
+    /// <para>
+    /// The contract is that each token covers its starting identity through one less than the next
+    /// starting identity, and the last is unbounded above. Asserting the exact adjacency rather than
+    /// mere non-overlap also rules out a gap between two ranges, which no set of returned documents
+    /// could reveal.
+    /// </para>
+    /// <para>
+    /// One copy, shared by every scenario that consumes a partitions response. These are the response's
+    /// invariants rather than any one scenario's expectations, so a second copy could only drift from
+    /// this one and weaken whichever surface held the weaker copy.
+    /// </para>
+    /// </remarks>
+    /// <param name="pageTokens">The tokens the partitions response returned, in response order.</param>
+    /// <param name="context">
+    /// How a failure should name what was being consumed, such as <c>"case 'cursor-precedence-01'"</c>.
+    /// </param>
+    internal static void AssertTokenRangesTileTheIdentitySpace(
+        IReadOnlyList<string> pageTokens,
+        string context
+    )
+    {
+        ArgumentNullException.ThrowIfNull(pageTokens);
+
+        List<CursorRange> ranges = [];
+
+        foreach (string pageToken in pageTokens)
+        {
+            PageTokenCodec
+                .TryDecode(pageToken, out CursorRange? range)
+                .Should()
+                .BeTrue(
+                    "{0}: a token the partitions response handed out must decode through the codec",
+                    context
+                );
+            ranges.Add(range!);
+        }
+
+        ranges
+            .Should()
+            .NotBeEmpty("{0}: a partitions response over a non-empty collection names a range", context);
+        ranges[0]
+            .InclusiveMinimum.Should()
+            .BePositive("{0}: the first partition starts at a real identity", context);
+
+        for (var index = 0; index < ranges.Count; index++)
+        {
+            ranges[index]
+                .InclusiveMaximum.Should()
+                .BeGreaterThanOrEqualTo(
+                    ranges[index].InclusiveMinimum,
+                    "{0}: partition {1} must name a range that can match something",
+                    context,
+                    index
+                );
+
+            if (index + 1 < ranges.Count)
+            {
+                ranges[index]
+                    .InclusiveMaximum.Should()
+                    .Be(
+                        ranges[index + 1].InclusiveMinimum - 1,
+                        "{0}: partition {1} must end exactly where partition {2} begins, leaving neither "
+                            + "a gap nor an overlap",
+                        context,
+                        index,
+                        index + 1
+                    );
+            }
+        }
+
+        ranges[^1]
+            .InclusiveMaximum.Should()
+            .Be(
+                long.MaxValue,
+                "{0}: the final partition is unbounded above, so a document created during the walk "
+                    + "cannot fall outside every range",
+                context
+            );
+    }
+
+    /// <summary>
+    /// Asserts the walked partitions hold every expected document exactly once and nothing else, and
+    /// that no two of them hold the same document.
+    /// </summary>
+    /// <remarks>
+    /// One copy for the same reason the range assertions are one copy: this is the tiling claim itself,
+    /// and a surface asserting a weaker version of it would report coverage it had not shown.
+    /// </remarks>
+    /// <param name="walkedPartitions">Each partition's documents, kept separate for the disjointness assertion.</param>
+    /// <param name="expectedIds">The document ids the seed says the partitions must together hold.</param>
+    /// <param name="context">How a failure should name what was being consumed.</param>
+    internal static void AssertPartitionsCoverExactly(
+        IReadOnlyList<IReadOnlyList<string>> walkedPartitions,
+        IReadOnlyCollection<string> expectedIds,
+        string context
+    )
+    {
+        ArgumentNullException.ThrowIfNull(walkedPartitions);
+        ArgumentNullException.ThrowIfNull(expectedIds);
+
+        for (var partition = 0; partition < walkedPartitions.Count; partition++)
+        {
+            walkedPartitions[partition]
+                .Should()
+                .OnlyHaveUniqueItems(
+                    "{0}: partition {1} must not return a document twice",
+                    context,
+                    partition
+                );
+
+            for (var other = partition + 1; other < walkedPartitions.Count; other++)
+            {
+                walkedPartitions[partition]
+                    .Should()
+                    .NotIntersectWith(
+                        walkedPartitions[other],
+                        "{0}: partitions {1} and {2} cover disjoint ranges",
+                        context,
+                        partition,
+                        other
+                    );
+            }
+        }
+
+        walkedPartitions
+            .SelectMany(static partition => partition)
+            .Should()
+            .BeEquivalentTo(
+                expectedIds,
+                "{0}: the partitions together cover every expected member exactly once and nothing else",
+                context
+            );
+    }
+
+    /// <summary>
+    /// Validates a query suffix against the one thing its callers cannot see: that it is appended to an
+    /// already-started query string and must therefore open with its own separator.
+    /// </summary>
+    /// <remarks>
+    /// A suffix missing the separator does not fail the request. It fuses onto the preceding value --
+    /// <c>pageSize=2label=x</c> -- so the walk silently issues a different query than the one the caller
+    /// named, and the coverage assertion that follows measures the wrong candidate set.
+    /// </remarks>
+    internal static void ValidateQuerySuffix(
+        string querySuffix,
+        [CallerArgumentExpression(nameof(querySuffix))] string? parameterName = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(querySuffix, parameterName);
+
+        if (querySuffix.Length > 0 && querySuffix[0] != '&')
+        {
+            throw new ArgumentException(
+                "A query suffix is appended to an existing query string and must begin with '&', but "
+                    + $"'{querySuffix}' does not.",
+                parameterName
+            );
+        }
+    }
+
+    /// <summary>
     /// Walks one range to its terminal empty page and returns every document id it yielded.
     /// </summary>
     /// <remarks>
@@ -171,7 +342,7 @@ internal static class CursorContractSupport
     {
         ArgumentNullException.ThrowIfNull(harness);
         ArgumentNullException.ThrowIfNull(pageToken);
-        ArgumentNullException.ThrowIfNull(querySuffix);
+        ValidateQuerySuffix(querySuffix);
 
         List<string> documentIds = [];
         string? nextPageToken = pageToken;

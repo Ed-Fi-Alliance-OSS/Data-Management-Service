@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text.Json.Nodes;
 using FluentAssertions;
 
@@ -21,6 +22,8 @@ internal static class BadRequestProblemDetails
     internal const string ProblemTitle = "Bad Request";
     internal const string ProblemDetail = "The request could not be processed. See 'errors' for details.";
 
+    private const string StandardJsonContentType = "application/json";
+
     internal static string UnknownQueryField(string queryFieldName) =>
         $"The query field '{queryFieldName}' is not valid for this resource.";
 
@@ -36,6 +39,15 @@ internal static class BadRequestProblemDetails
         string content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+
+        // Bound before asserting. Reaching through a null-conditional would short-circuit the whole
+        // chain, so an absent header would satisfy the media-type assertion instead of failing it.
+        MediaTypeHeaderValue? contentType = response.Content.Headers.ContentType;
+
+        contentType.Should().NotBeNull("a bad request must declare its media type");
+        contentType!
+            .MediaType.Should()
+            .Be(StandardJsonContentType, "a bad request is answered in the current DMS response media type");
 
         JsonNode body =
             JsonNode.Parse(content)

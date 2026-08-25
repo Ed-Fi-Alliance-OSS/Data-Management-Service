@@ -57,6 +57,17 @@ public class DmsApiClient : IDisposable
     }
 
     /// <summary>
+    /// The route-qualified path of one Ed-Fi resource collection, tenant segment included.
+    /// </summary>
+    /// <remarks>
+    /// Every route-qualified data-plane request composes its path from here, so a sibling operation
+    /// cannot lose the tenant segment or a qualifier the collection request keeps. Copies of the same
+    /// interpolation would hold that property only by coincidence.
+    /// </remarks>
+    private string ResourcePath(string districtId, string schoolYear, string resource) =>
+        BuildPath($"/{districtId}/{schoolYear}/data/ed-fi/{resource}");
+
+    /// <summary>
     /// POST a resource to DMS with route qualifiers
     /// </summary>
     public async Task<HttpResponseMessage> PostResourceAsync(
@@ -66,7 +77,7 @@ public class DmsApiClient : IDisposable
         object body
     )
     {
-        var url = BuildPath($"/{districtId}/{schoolYear}/data/ed-fi/{resource}");
+        var url = ResourcePath(districtId, schoolYear, resource);
         var response = await _httpClient.PostAsJsonAsync(url, body);
 
         return response;
@@ -82,7 +93,7 @@ public class DmsApiClient : IDisposable
         string? query = null
     )
     {
-        var url = BuildPath($"/{districtId}/{schoolYear}/data/ed-fi/{resource}");
+        var url = ResourcePath(districtId, schoolYear, resource);
 
         if (!string.IsNullOrEmpty(query))
         {
@@ -98,9 +109,9 @@ public class DmsApiClient : IDisposable
     /// GET the partitions sibling of a resource collection, with route qualifiers.
     /// </summary>
     /// <remarks>
-    /// Deliberately built from the same path <see cref="GetResourceAsync" /> composes, so a routed
-    /// partitions request cannot silently lose the tenant segment or a qualifier the collection
-    /// request keeps.
+    /// Built from <see cref="ResourcePath" />, the same composer <see cref="GetResourceAsync" /> uses,
+    /// so a routed partitions request cannot silently lose the tenant segment or a qualifier the
+    /// collection request keeps.
     /// </remarks>
     public async Task<HttpResponseMessage> GetPartitionsAsync(
         string districtId,
@@ -108,7 +119,7 @@ public class DmsApiClient : IDisposable
         string resource
     )
     {
-        var url = BuildPath($"/{districtId}/{schoolYear}/data/ed-fi/{resource}/partitions");
+        var url = $"{ResourcePath(districtId, schoolYear, resource)}/partitions";
 
         var response = await _httpClient.GetAsync(url);
 
@@ -147,7 +158,7 @@ public class DmsApiClient : IDisposable
         string segment
     )
     {
-        var url = BuildPath($"/{districtId}/{schoolYear}/data/ed-fi/{resource}/{segment}");
+        var url = $"{ResourcePath(districtId, schoolYear, resource)}/{segment}";
         return await _httpClient.GetAsync(url);
     }
 

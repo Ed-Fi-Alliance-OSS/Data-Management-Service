@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text.Json.Nodes;
 using FluentAssertions;
 
@@ -41,8 +42,14 @@ internal static class ParameterValidationProblemDetails
         string content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
-        response
-            .Content.Headers.ContentType?.MediaType.Should()
+
+        // Bound before asserting. Reaching through a null-conditional would short-circuit the whole
+        // chain, so an absent header would satisfy the media-type assertion instead of failing it.
+        MediaTypeHeaderValue? contentType = response.Content.Headers.ContentType;
+
+        contentType.Should().NotBeNull("a parameter fault must declare its media type");
+        contentType!
+            .MediaType.Should()
             .Be(
                 StandardJsonContentType,
                 "a parameter fault is answered in the current DMS response media type"

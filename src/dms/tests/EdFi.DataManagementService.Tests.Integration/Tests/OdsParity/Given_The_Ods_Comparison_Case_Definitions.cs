@@ -4,6 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Tests.Integration.OdsParity;
+using EdFi.DataManagementService.Tests.Integration.Scenarios;
+using EdFi.DataManagementService.Tests.Integration.Tests.Mssql;
+using EdFi.DataManagementService.Tests.Integration.Tests.Postgresql;
 using FluentAssertions;
 
 namespace EdFi.DataManagementService.Tests.Integration.Tests.OdsParity;
@@ -78,6 +81,35 @@ public class Given_The_Ods_Comparison_Case_Definitions
     ];
 
     /// <summary>
+    /// Every group the PostgreSQL bindings execute, read from the bindings themselves. Each declares its
+    /// groups as data and drives its test from that array, so this is the set that actually runs rather
+    /// than a second list that could disagree with it.
+    /// </summary>
+    /// <remarks>
+    /// Kept per engine rather than as one union. The two engines deliberately overlap, so a union would
+    /// still contain a group one engine had stopped binding as long as the other still bound it -- which
+    /// is exactly the silent shrinking these guardrails exist to catch. Referencing the bindings by name
+    /// rather than discovering them reflectively is deliberate too: a binding deleted outright becomes a
+    /// compile error here instead of quietly shrinking the set.
+    /// </remarks>
+    private static readonly string[] _postgresqlBoundGroups =
+    [
+        .. Given_Postgresql_OdsComparison.BoundGroups,
+        .. Given_Postgresql_OdsComparisonDefaultPageSize.BoundGroups,
+        .. Given_Postgresql_OdsComparisonEmptyHydration.BoundGroups,
+        .. Given_Postgresql_OdsComparisonProfile.BoundGroups,
+        .. Given_Postgresql_OdsComparisonProfileDocument.BoundGroups,
+    ];
+
+    /// <summary>Every group the SQL Server bindings execute, read from the bindings themselves.</summary>
+    private static readonly string[] _mssqlBoundGroups =
+    [
+        .. Given_Mssql_OdsComparison.BoundGroups,
+        .. Given_Mssql_OdsComparisonEmptyHydration.BoundGroups,
+        .. Given_Mssql_OdsComparisonDefaultPageSize.BoundGroups,
+    ];
+
+    /// <summary>
     /// Every group a case may belong to, and therefore every group a fixture must bind. A case in a
     /// group nothing runs would never be executed, and a bound group with no cases would assert nothing.
     /// </summary>
@@ -114,6 +146,31 @@ public class Given_The_Ods_Comparison_Case_Definitions
         "strict-decoder-whitespace-decimal",
     ];
 
+    /// <summary>
+    /// The groups the SQL Server bindings execute: those whose observation is produced by provider work.
+    /// Validation, published metadata, and profile resolution all answer before a provider is involved
+    /// and return the same response from the same code on both engines, so binding them there would
+    /// duplicate a PostgreSQL answer rather than test SQL Server.
+    /// </summary>
+    private static readonly string[] _expectedMssqlGroups =
+    [
+        "sizing",
+        "sizing-default-count",
+        "number-collision",
+        "int64-bounds",
+        "identity-maximum",
+        "empty-hydration",
+        "omitted-limit-default",
+    ];
+
+    /// <summary>The epic sections the recorded ODS outcomes were read out of.</summary>
+    private static readonly string[] _expectedDerivedFromSections =
+    [
+        "ODS Precedence Comparison",
+        "Approved Intentional ODS Differences",
+        "Approved Behavior Changes to Existing Endpoints",
+    ];
+
     private static readonly string[] _expectedExecutors =
     [
         "collection-get",
@@ -147,6 +204,67 @@ public class Given_The_Ods_Comparison_Case_Definitions
             .AsArray()
             .Should()
             .HaveCount(6, "the epic's Compatibility Baseline pins six ODS 7.3.2 sources");
+        metadata["derivedFromSections"]!
+            .AsArray()
+            .Select(section => section!.GetValue<string>())
+            .Should()
+            .Equal(_expectedDerivedFromSections, "the metadata names the epic sections the cases came from");
+    }
+
+    /// <summary>
+    /// The documented placeholder inventory and the executable one are the same set.
+    /// </summary>
+    /// <remarks>
+    /// The two are written in different files by different hands: a case file quotes a placeholder, the
+    /// metadata explains what it stands for, and the scenario computes its value. A placeholder the
+    /// scenario stopped substituting would reach the host as literal brace text and reject for the wrong
+    /// reason, while the metadata went on describing it; a placeholder added without documentation is
+    /// the same drift in the other direction.
+    /// </remarks>
+    [Test]
+    public void It_documents_exactly_the_placeholders_the_scenario_substitutes()
+    {
+        string[] documented =
+        [
+            .. OdsComparisonCatalog.Definitions.Metadata["placeholders"]!
+                .AsObject()
+                .Select(placeholder => placeholder.Key)
+                .Order(StringComparer.Ordinal),
+        ];
+
+        string[] executable = [.. OdsComparisonScenario.PlaceholderNames.Order(StringComparer.Ordinal)];
+
+        documented
+            .Should()
+            .Equal(
+                executable,
+                "every placeholder the scenario substitutes is documented, and nothing is documented "
+                    + "that no longer substitutes"
+            );
+    }
+
+    [Test]
+    public void It_executes_every_declared_group_from_a_postgresql_fixture()
+    {
+        _postgresqlBoundGroups
+            .Should()
+            .BeEquivalentTo(
+                _expectedGroups,
+                "PostgreSQL carries the complete comparison, so every declared group is bound by a "
+                    + "binding that really runs it, and no binding runs a group the declaration omits"
+            );
+    }
+
+    [Test]
+    public void It_executes_exactly_the_provider_dependent_groups_from_a_mssql_fixture()
+    {
+        _mssqlBoundGroups
+            .Should()
+            .BeEquivalentTo(
+                _expectedMssqlGroups,
+                "the SQL Server bindings carry the groups whose observation is produced by provider "
+                    + "work, and the ones answered before a provider is involved stay off this engine"
+            );
     }
 
     [Test]

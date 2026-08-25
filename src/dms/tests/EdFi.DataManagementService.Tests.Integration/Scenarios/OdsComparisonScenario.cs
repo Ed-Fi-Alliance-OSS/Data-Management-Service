@@ -5,6 +5,7 @@
 
 using System.Globalization;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -168,6 +169,12 @@ internal static class OdsComparisonScenario
         }
     }
 
+    /// <summary>
+    /// The placeholder names a case file may use. Exposed so the guardrails can hold the documented
+    /// inventory in the reference metadata against the one that really substitutes.
+    /// </summary>
+    internal static IReadOnlyCollection<string> PlaceholderNames => Placeholders(HostMaximumPageSize).Keys;
+
     private static Dictionary<string, string> Placeholders(int hostMaximumPageSize) =>
         new(StringComparer.Ordinal)
         {
@@ -178,6 +185,9 @@ internal static class OdsComparisonScenario
             ["{leadingPlusDecimalToken}"] = EncodePayload("+1,100"),
             ["{whitespaceDecimalToken}"] = EncodePayload("1, 100"),
             ["{beyondInt32Token}"] = PageTokenCodec.Encode(new CursorRange(3_000_000_000L, 4_000_000_000L)),
+            // Deliberately the same value as {validToken}: the encoder's own output is both "a token that
+            // decodes" and "the canonical unpadded transport form", and the decoder cases read better
+            // naming which property they turn on.
             ["{unpaddedToken}"] = PageTokenCodec.Encode(new CursorRange(1, 100)),
             ["{paddedToken}"] = Pad(PageTokenCodec.Encode(new CursorRange(1, 100))),
             ["{forbiddenAlphabetToken}"] = "MSwx+DA",
@@ -398,8 +408,15 @@ internal static class OdsComparisonScenario
     {
         JsonNode problem = JsonNode.Parse(body)!;
 
-        response
-            .Content.Headers.ContentType?.MediaType.Should()
+        // Bound before asserting. Reaching through a null-conditional would short-circuit the whole
+        // chain, so an absent header would satisfy the media-type assertion instead of failing it.
+        MediaTypeHeaderValue? contentType = response.Content.Headers.ContentType;
+
+        contentType
+            .Should()
+            .NotBeNull("case '{0}' must declare a media type on its rejection", comparisonCase.Id);
+        contentType!
+            .MediaType.Should()
             .Be("application/json", "case '{0}' answers in the DMS response media type", comparisonCase.Id);
 
         (string expectedType, string expectedTitle, string expectedDetail) =
@@ -493,7 +510,10 @@ internal static class OdsComparisonScenario
             $"{CursorContractSupport.ExtensionItemsPartitionsEndpoint}{query}"
         );
 
-        AssertRangesTileTheIdentitySpace(pageTokens, comparisonCase);
+        // The counts this case reports cannot see the ranges. A boundary bug inside an intermediate
+        // partition leaves the token count and the first and final document counts untouched while the
+        // ranges overlap or leave a gap, so the intervals are asserted directly rather than inferred.
+        CursorContractSupport.AssertTokenRangesTileTheIdentitySpace(pageTokens, CaseContext(comparisonCase));
 
         List<IReadOnlyList<string>> walkedPartitions = [];
 
@@ -509,7 +529,11 @@ internal static class OdsComparisonScenario
             );
         }
 
-        AssertPartitionsCoverTheSeed(walkedPartitions, seeded, comparisonCase);
+        CursorContractSupport.AssertPartitionsCoverExactly(
+            walkedPartitions,
+            [.. seeded.Select(item => item.Id)],
+            CaseContext(comparisonCase)
+        );
 
         return new ObservedOutcome(
             200,
@@ -524,116 +548,8 @@ internal static class OdsComparisonScenario
         );
     }
 
-    /// <summary>
-    /// Decodes every token a sizing case was handed and asserts the intervals they name really tile the
-    /// identity space: each valid, each finite one ending exactly one below the next one's start, and the
-    /// last unbounded above.
-    /// </summary>
-    /// <remarks>
-    /// The counts the comparison reports cannot see this. A boundary bug inside an intermediate
-    /// partition can leave the token count and the first and final document counts untouched while the
-    /// ranges overlap or leave a gap, so these invariants are asserted directly rather than inferred.
-    /// Adjacency rather than mere non-overlap is what also rules out a gap.
-    /// </remarks>
-    private static void AssertRangesTileTheIdentitySpace(
-        IReadOnlyList<string> pageTokens,
-        ComparisonCase comparisonCase
-    )
-    {
-        List<CursorRange> ranges = [];
-
-        foreach (string pageToken in pageTokens)
-        {
-            PageTokenCodec
-                .TryDecode(pageToken, out CursorRange? range)
-                .Should()
-                .BeTrue(
-                    "case '{0}': a token the partitions response handed out must decode through the codec",
-                    comparisonCase.Id
-                );
-            ranges.Add(range!);
-        }
-
-        ranges.Should().NotBeEmpty("case '{0}' partitions a non-empty collection", comparisonCase.Id);
-        ranges[0]
-            .InclusiveMinimum.Should()
-            .BePositive("case '{0}': the first partition starts at a real identity", comparisonCase.Id);
-
-        for (var index = 0; index < ranges.Count; index++)
-        {
-            ranges[index]
-                .InclusiveMaximum.Should()
-                .BeGreaterThanOrEqualTo(
-                    ranges[index].InclusiveMinimum,
-                    "case '{0}': partition {1} must name a range that can match something",
-                    comparisonCase.Id,
-                    index
-                );
-
-            if (index + 1 < ranges.Count)
-            {
-                ranges[index]
-                    .InclusiveMaximum.Should()
-                    .Be(
-                        ranges[index + 1].InclusiveMinimum - 1,
-                        "case '{0}': partition {1} must end exactly where partition {2} begins, leaving "
-                            + "neither a gap nor an overlap",
-                        comparisonCase.Id,
-                        index,
-                        index + 1
-                    );
-            }
-        }
-
-        ranges[^1]
-            .InclusiveMaximum.Should()
-            .Be(long.MaxValue, "case '{0}': the final partition is unbounded above", comparisonCase.Id);
-    }
-
-    /// <summary>
-    /// Asserts the partitions a sizing case walked hold every seeded document exactly once and nothing
-    /// else, and that no two of them hold the same document.
-    /// </summary>
-    private static void AssertPartitionsCoverTheSeed(
-        IReadOnlyList<IReadOnlyList<string>> walkedPartitions,
-        IReadOnlyList<CursorContractSupport.SeededExtensionItem> seeded,
-        ComparisonCase comparisonCase
-    )
-    {
-        for (var partition = 0; partition < walkedPartitions.Count; partition++)
-        {
-            walkedPartitions[partition]
-                .Should()
-                .OnlyHaveUniqueItems(
-                    "case '{0}': partition {1} must not return a document twice",
-                    comparisonCase.Id,
-                    partition
-                );
-
-            for (var other = partition + 1; other < walkedPartitions.Count; other++)
-            {
-                walkedPartitions[partition]
-                    .Should()
-                    .NotIntersectWith(
-                        walkedPartitions[other],
-                        "case '{0}': partitions {1} and {2} cover disjoint ranges",
-                        comparisonCase.Id,
-                        partition,
-                        other
-                    );
-            }
-        }
-
-        walkedPartitions
-            .SelectMany(static partition => partition)
-            .Should()
-            .BeEquivalentTo(
-                seeded.Select(item => item.Id),
-                "case '{0}': the partitions together cover every seeded document exactly once and "
-                    + "nothing else",
-                comparisonCase.Id
-            );
-    }
+    /// <summary>How a shared assertion names one comparison case in a failure message.</summary>
+    private static string CaseContext(ComparisonCase comparisonCase) => $"case '{comparisonCase.Id}'";
 
     private static async Task<ObservedOutcome> ObserveCollisionAsync(
         ApiIntegrationHarness harness,
@@ -893,6 +809,13 @@ internal static class OdsComparisonScenario
                 .Errors.Should()
                 .NotBeNull("case '{0}' expects a rejection body", comparisonCase.Id)
                 .And.Equal(expected.Errors, "{0} errors for case '{1}'", side, comparisonCase.Id);
+        }
+
+        if (expected.Shell is not null)
+        {
+            observation
+                .Shell.Should()
+                .Be(expected.Shell, "{0} shell for case '{1}'", side, comparisonCase.Id);
         }
 
         if (expected.Expect is null)

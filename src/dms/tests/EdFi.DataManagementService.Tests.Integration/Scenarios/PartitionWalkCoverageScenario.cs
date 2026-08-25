@@ -4,8 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
-using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Paging;
 using FluentAssertions;
 
 namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
@@ -50,6 +48,11 @@ internal static class PartitionWalkCoverageScenario
     /// range. A page size of two puts the minimum at ten rows, which the seeds clear.
     /// </remarks>
     internal const int HostMaximumPageSize = 2;
+
+    /// <summary>How a shared tiling assertion names this scenario in a failure message.</summary>
+    private const string WalkContext = "the partition walk";
+
+    private const string NumberCollisionContext = "the number-collision partition walk";
 
     /// <summary>
     /// Enough documents that the requested count of three is reachable at a minimum partition size of
@@ -309,7 +312,7 @@ internal static class PartitionWalkCoverageScenario
                     + "partitions rather than collapsing into one"
             );
 
-        AssertTokenRangesTileTheIdentitySpace(pageTokens);
+        CursorContractSupport.AssertTokenRangesTileTheIdentitySpace(pageTokens, NumberCollisionContext);
 
         var walkedIds = await WalkEveryPartitionAsync(
             harness,
@@ -434,6 +437,8 @@ internal static class PartitionWalkCoverageScenario
         bool inParallel
     )
     {
+        CursorContractSupport.ValidateQuerySuffix(querySuffix);
+
         var pageTokens = await CursorContractSupport.ReadPageTokensAsync(
             harness,
             $"{partitionsEndpoint}?number={RequestedPartitionCount.ToString(CultureInfo.InvariantCulture)}{querySuffix}"
@@ -453,7 +458,7 @@ internal static class PartitionWalkCoverageScenario
                 "the requested count is an upper bound the response never exceeds"
             );
 
-        AssertTokenRangesTileTheIdentitySpace(pageTokens);
+        CursorContractSupport.AssertTokenRangesTileTheIdentitySpace(pageTokens, WalkContext);
 
         var walkedPartitions = await WalkEveryPartitionAsync(
             harness,
@@ -463,93 +468,7 @@ internal static class PartitionWalkCoverageScenario
             inParallel
         );
 
-        for (var partition = 0; partition < walkedPartitions.Count; partition++)
-        {
-            walkedPartitions[partition]
-                .Should()
-                .OnlyHaveUniqueItems($"partition {partition} must not return a document twice");
-
-            for (var other = partition + 1; other < walkedPartitions.Count; other++)
-            {
-                walkedPartitions[partition]
-                    .Should()
-                    .NotIntersectWith(
-                        walkedPartitions[other],
-                        $"partitions {partition} and {other} cover disjoint ranges"
-                    );
-            }
-        }
-
-        walkedPartitions
-            .SelectMany(static partition => partition)
-            .Should()
-            .BeEquivalentTo(
-                expectedIds,
-                "the partitions together cover every expected member exactly once and nothing else"
-            );
-    }
-
-    /// <summary>
-    /// Decodes the returned tokens and asserts the identity intervals they name are themselves valid,
-    /// contiguous, and non-overlapping, in the order the response listed them.
-    /// </summary>
-    /// <remarks>
-    /// Disjointness of the documents a walk returns is a weaker claim than disjointness of the ranges
-    /// that produced them: two overlapping intervals whose overlap happens to contain only sparse,
-    /// deleted, or inaccessible identities return disjoint documents and would satisfy the union and
-    /// exact-once assertions while still handing a client ranges that could double-count a document
-    /// created later. Reading the intervals out of the tokens is what closes that.
-    /// <para>
-    /// The contract is that each token covers its starting identity through one less than the next
-    /// starting identity, and the last is unbounded above. Asserting the exact adjacency rather than
-    /// mere non-overlap also rules out a gap between two ranges, which no set of returned documents
-    /// could reveal.
-    /// </para>
-    /// </remarks>
-    private static void AssertTokenRangesTileTheIdentitySpace(IReadOnlyList<string> pageTokens)
-    {
-        List<CursorRange> ranges = [];
-
-        foreach (string pageToken in pageTokens)
-        {
-            PageTokenCodec
-                .TryDecode(pageToken, out var range)
-                .Should()
-                .BeTrue("a token the partitions response handed out must decode through the codec");
-            ranges.Add(range!);
-        }
-
-        for (var index = 0; index < ranges.Count; index++)
-        {
-            ranges[index]
-                .InclusiveMaximum.Should()
-                .BeGreaterThanOrEqualTo(
-                    ranges[index].InclusiveMinimum,
-                    "partition {0} must name a range that can match something",
-                    index
-                );
-
-            if (index + 1 < ranges.Count)
-            {
-                ranges[index]
-                    .InclusiveMaximum.Should()
-                    .Be(
-                        ranges[index + 1].InclusiveMinimum - 1,
-                        "partition {0} must end exactly where partition {1} begins, leaving neither a "
-                            + "gap nor an overlap",
-                        index,
-                        index + 1
-                    );
-            }
-        }
-
-        ranges[^1]
-            .InclusiveMaximum.Should()
-            .Be(
-                long.MaxValue,
-                "the final partition is unbounded above, so a document created during the walk cannot "
-                    + "fall outside every range"
-            );
+        CursorContractSupport.AssertPartitionsCoverExactly(walkedPartitions, expectedIds, WalkContext);
     }
 
     /// <summary>

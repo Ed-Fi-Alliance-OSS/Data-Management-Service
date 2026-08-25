@@ -13,9 +13,12 @@ Feature: Partition sizing and multi-partition consumption
     ranges come back. With number=2 the computed size is ceiling(21/2) = 11, above the minimum, so
     exactly two come back.
 
-    The "at least two tokens" assertions are what prove the isolated environment actually reached DMS:
-    against the ordinary stack every request here would return a single unbounded range and the feature
-    would fail rather than pass vacuously.
+    Both counts are pinned exactly, in both directions. Every input the arithmetic reads is declared by
+    the environment file this lane deploys, so a range of accepted counts would let a sizing regression
+    that returned some other legal-looking number pass the one job that can observe sizing at all. The
+    lower bounds also prove the isolated environment really was reached: against the ordinary stack
+    every request here would return a single unbounded range, and the feature would fail rather than
+    pass vacuously.
 
         Background:
             Given the claimSet "EdFiSandbox" is authorized with namespacePrefixes "uri://ed-fi.org"
@@ -48,8 +51,8 @@ Feature: Partition sizing and multi-partition consumption
               # The default count: three ranges, walked one after another.
              When the partitions of "/ed-fi/schools" are requested
              Then it should respond with 200
-              And at least 2 partition tokens were returned
-              And at most 10 partition tokens were returned
+              And at least 3 partition tokens were returned
+              And at most 3 partition tokens were returned
              When every returned partition is walked with page size 2
              Then the walk returned 21 documents with no duplicates
               And the walk returned exactly these "schoolId" values

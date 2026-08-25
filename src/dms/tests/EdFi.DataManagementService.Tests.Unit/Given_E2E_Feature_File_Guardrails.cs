@@ -133,19 +133,25 @@ public class Given_E2E_Feature_File_Guardrails
     public void It_runs_every_dedicated_sizing_scenario_in_its_own_lane_without_a_shard_tag()
     {
         // A @CursorPartitionSizing scenario is run by its own job, which filters on that tag and points
-        // at the small-page-size environment file. It must not also carry a shard tag: the sharded lane
-        // runs against the default environment, where the collection it seeds is a single partition and
-        // its multi-partition assertions would fail.
+        // at the small-page-size environment file. It must not carry a tag that would enlist it in any
+        // other lane. Both other lanes deploy the default environment, where the collection it seeds is
+        // a single partition and its multi-partition assertions would fail: @e2e-ci-shard-N puts it in
+        // the sharded default-version lane, and @StandardVersion-<NN> puts it in a per-version lane.
         string[] offendingScenarios = EnumerateScenariosWithTags(_dmsFeaturesDirectory)
             .Where(s => s.Tags.Contains(DedicatedSizingLaneTag, StringComparer.OrdinalIgnoreCase))
-            .Where(s => s.Tags.Any(t => t.StartsWith(E2EShardTagPrefix, StringComparison.OrdinalIgnoreCase)))
+            .Where(s =>
+                s.Tags.Any(t =>
+                    t.StartsWith(E2EShardTagPrefix, StringComparison.OrdinalIgnoreCase)
+                    || t.StartsWith(StandardVersionTagPrefix, StringComparison.OrdinalIgnoreCase)
+                )
+            )
             .Select(s => $"{s.RelativePath}:{s.LineNumber} ({s.Title})")
             .ToArray();
 
         offendingScenarios
             .Should()
             .BeEmpty(
-                "each @CursorPartitionSizing scenario must carry no @e2e-ci-shard-N tag, since it runs in its own lane against a differently configured deployment"
+                "each @CursorPartitionSizing scenario must carry neither an @e2e-ci-shard-N nor a @StandardVersion-<NN> tag, since it runs in its own lane against a differently configured deployment"
             );
     }
 
