@@ -55,7 +55,6 @@ public sealed class Given_DocumentCacheAdminMutatingCommandRequests
 
         built.Should().BeTrue(failure);
         commandRequest!.CommandName.Should().Be(commandName);
-        commandRequest.RequestType.Should().Be(expectedRequestType);
         commandRequest.Request.Should().BeOfType(expectedRequestType);
         commandRequest.TargetKey.Should().Be(DocumentCacheTargetKey.Create("TenantA", 7));
         RequestConfirmation(commandRequest.Request).Should().Be(expectedConfirmation);
@@ -198,6 +197,41 @@ public sealed class Given_DocumentCacheAdminMutatingCommandRequests
             .Should()
             .BeTrue(failure);
         request!.Request.Should().BeOfType<DocumentCacheOnlineCacheRebuildRequest>();
+    }
+
+    [Test]
+    public void It_rejects_json_request_payloads_that_do_not_match_the_selected_command_contract()
+    {
+        ParseResult parseResult = DocumentCacheAdminCommandSurface
+            .CreateRootCommand()
+            .Parse([
+                DocumentCacheAdminCommandSurface.RebuildOnlineCommandName,
+                DocumentCacheAdminCommandSurface.RequestJsonOptionName,
+                "-",
+            ]);
+        DocumentCacheTargetKey targetKey = DocumentCacheTargetKey.Create("", 1);
+        DocumentCacheAdminInvocationTarget invocationTarget = new(
+            targetKey,
+            new DocumentCacheAdminJsonRequest(
+                new DocumentCacheExplicitIntegrityScrubRequest(
+                    DocumentCacheAdministrativeTargetKey.FromTargetKey(targetKey),
+                    expectedPhysicalSourceFingerprint: null,
+                    DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub
+                )
+            )
+        );
+
+        bool built = DocumentCacheAdminMutatingCommandRequestBuilder.TryBuild(
+            parseResult,
+            invocationTarget,
+            out DocumentCacheAdminMutatingCommandRequest? request,
+            out string? failure
+        );
+
+        built.Should().BeFalse();
+        request.Should().BeNull();
+        failure.Should().Contain(nameof(DocumentCacheExplicitIntegrityScrubRequest));
+        failure.Should().Contain(nameof(DocumentCacheOnlineCacheRebuildRequest));
     }
 
     private static ParseResult ParseMutatingCommand(

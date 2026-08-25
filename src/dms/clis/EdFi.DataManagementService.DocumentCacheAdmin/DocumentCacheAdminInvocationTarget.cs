@@ -167,6 +167,7 @@ internal static class DocumentCacheAdminInvocationTargetParser
             !DocumentCacheAdminJsonRequestParser.TryParse(
                 parseResult.CommandResult.Command.Name,
                 requestJson,
+                out DocumentCacheTargetKey? targetKey,
                 out DocumentCacheAdminJsonRequest? jsonRequest,
                 out failure
             )
@@ -175,7 +176,11 @@ internal static class DocumentCacheAdminInvocationTargetParser
             return false;
         }
 
-        invocationTarget = new DocumentCacheAdminInvocationTarget(jsonRequest!.TargetKey, jsonRequest);
+        invocationTarget = new DocumentCacheAdminInvocationTarget(
+            targetKey
+                ?? throw new InvalidOperationException("Request JSON parsing succeeded without a target."),
+            jsonRequest
+        );
         return true;
     }
 

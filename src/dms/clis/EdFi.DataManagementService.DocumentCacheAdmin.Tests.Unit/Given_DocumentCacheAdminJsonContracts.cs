@@ -40,8 +40,7 @@ public sealed class Given_DocumentCacheAdminJsonContracts
 
         parsed.Should().BeTrue(failure);
         invocationTarget!.TargetKey.Should().Be(DocumentCacheTargetKey.Create("", 1));
-        invocationTarget.JsonRequest.Should().NotBeNull();
-        invocationTarget.JsonRequest!.Request.Should().BeOfType<DocumentCacheAdminStatusRequest>();
+        invocationTarget.JsonRequest.Should().BeNull();
     }
 
     [Test]
@@ -69,7 +68,7 @@ public sealed class Given_DocumentCacheAdminJsonContracts
 
         parsed.Should().BeTrue(failure);
         DocumentCacheOnlineCacheRebuildRequest request = invocationTarget!
-            .JsonRequest!.Request.Should()
+            .JsonRequest!.SharedRequest.Should()
             .BeOfType<DocumentCacheOnlineCacheRebuildRequest>()
             .Subject;
         request.TargetKey.TargetKey.Should().Be(DocumentCacheTargetKey.Create("TenantA", 7));
@@ -128,7 +127,7 @@ public sealed class Given_DocumentCacheAdminJsonContracts
         );
 
         parsed.Should().BeTrue(failure);
-        object request = invocationTarget!.JsonRequest!.Request;
+        object request = invocationTarget!.JsonRequest!.SharedRequest;
         request.Should().BeOfType(expectedRequestType);
         RequestConfirmation(request).Should().Be(expectedConfirmation);
         RequestOfflineWriterAdmission(request)!.Confirmed.Should().BeTrue();

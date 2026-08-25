@@ -38,7 +38,7 @@ internal sealed class DocumentCacheAdminMutatingCommandContract
         ArgumentNullException.ThrowIfNull(requestFactory);
 
         CommandName = commandName;
-        RequestType = requestType;
+        SharedRequestClrType = requestType;
         AdministrativeCommand = administrativeCommand;
         SharedContract = DocumentCacheAdministrativeCommandContracts.Get(administrativeCommand);
         _requestFactory = requestFactory;
@@ -46,7 +46,7 @@ internal sealed class DocumentCacheAdminMutatingCommandContract
 
     public string CommandName { get; }
 
-    public Type RequestType { get; }
+    public Type SharedRequestClrType { get; }
 
     public DocumentCacheAdministrativeCommand AdministrativeCommand { get; }
 
@@ -113,10 +113,10 @@ internal sealed class DocumentCacheAdminMutatingCommandContract
     private IDocumentCacheAdministrativeRequest ReadRequest(object request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if (!RequestType.IsInstanceOfType(request))
+        if (!SharedRequestClrType.IsInstanceOfType(request))
         {
             throw new ArgumentException(
-                $"Request must be a '{RequestType.FullName}' instance for command '{CommandName}'.",
+                $"Request must be a '{SharedRequestClrType.FullName}' instance for command '{CommandName}'.",
                 nameof(request)
             );
         }
@@ -129,6 +129,39 @@ internal sealed class DocumentCacheAdminMutatingCommandContract
             );
     }
 
+    public bool TryCreateCommandRequest(
+        object? request,
+        [NotNullWhen(true)] out DocumentCacheAdminMutatingCommandRequest? commandRequest,
+        out string? failure
+    )
+    {
+        commandRequest = null;
+        failure = null;
+
+        if (request is null)
+        {
+            failure = $"Request JSON must contain a shared administrative request for '{CommandName}'.";
+            return false;
+        }
+
+        if (!SharedRequestClrType.IsInstanceOfType(request))
+        {
+            failure =
+                $"Request JSON object type '{request.GetType().FullName}' does not match command '{CommandName}' expected request type '{SharedRequestClrType.FullName}'.";
+            return false;
+        }
+
+        if (request is not IDocumentCacheAdministrativeRequest administrativeRequest)
+        {
+            failure =
+                $"Request JSON object type '{request.GetType().FullName}' must implement '{typeof(IDocumentCacheAdministrativeRequest).FullName}'.";
+            return false;
+        }
+
+        commandRequest = new(CommandName, request, administrativeRequest.TargetKey.TargetKey);
+        return true;
+    }
+
     public DocumentCacheAdminMutatingCommandRequest CreateCommandRequest(
         DocumentCacheTargetKey targetKey,
         DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint,
@@ -136,7 +169,7 @@ internal sealed class DocumentCacheAdminMutatingCommandContract
     )
     {
         object request = CreateRequest(targetKey, expectedPhysicalSourceFingerprint, offlineWriterAdmission);
-        return new(CommandName, RequestType, request, ReadTargetKey(request).TargetKey);
+        return new(CommandName, request, ReadTargetKey(request).TargetKey);
     }
 }
 

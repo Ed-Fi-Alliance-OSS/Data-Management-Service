@@ -139,8 +139,8 @@ public sealed class Given_DocumentCacheAdminTargetResolution
         );
 
         parsed.Should().BeTrue(failure);
-        invocationTarget!.JsonRequest.Should().NotBeNull();
-        invocationTarget.TargetKey.Should().Be(DocumentCacheTargetKey.Create("TenantA", 7));
+        invocationTarget!.TargetKey.Should().Be(DocumentCacheTargetKey.Create("TenantA", 7));
+        invocationTarget.JsonRequest.Should().BeNull();
     }
 
     [Test]

@@ -55,7 +55,7 @@ internal sealed class DocumentCacheAdminMutatingCommandDispatcher(
             DocumentCacheInternalOnlyCacheAheadRecoveryRequest request =>
                 internalOnlyCacheAheadRecoveryCommand.ExecuteAsync(request, cancellationToken),
             _ => throw new InvalidOperationException(
-                $"Unsupported DocumentCache mutating request type '{commandRequest.RequestType.FullName}'."
+                $"Unsupported DocumentCache mutating request type '{commandRequest.Request.GetType().FullName}'."
             ),
         };
     }

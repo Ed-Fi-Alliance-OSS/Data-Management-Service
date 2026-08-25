@@ -10,14 +10,7 @@ using EdFi.DataManagementService.Core.DocumentCache;
 
 namespace EdFi.DataManagementService.DocumentCacheAdmin;
 
-internal sealed record DocumentCacheAdminStatusRequest(DocumentCacheTargetKey TargetKey);
-
-internal sealed record DocumentCacheAdminJsonRequest(
-    string CommandName,
-    Type RequestType,
-    object Request,
-    DocumentCacheTargetKey TargetKey
-);
+internal sealed record DocumentCacheAdminJsonRequest(object SharedRequest);
 
 internal static class DocumentCacheAdminJsonSerializer
 {
@@ -40,6 +33,7 @@ internal static class DocumentCacheAdminJsonRequestParser
     public static bool TryParse(
         string commandName,
         string requestJson,
+        out DocumentCacheTargetKey? targetKey,
         out DocumentCacheAdminJsonRequest? request,
         out string? failure
     )
@@ -47,6 +41,7 @@ internal static class DocumentCacheAdminJsonRequestParser
         ArgumentException.ThrowIfNullOrWhiteSpace(commandName);
         ArgumentNullException.ThrowIfNull(requestJson);
 
+        targetKey = null;
         request = null;
         failure = null;
 
@@ -81,17 +76,25 @@ internal static class DocumentCacheAdminJsonRequestParser
                 DocumentCacheAdminCommandSurface.StatusCommandName,
                 StringComparison.Ordinal
             )
-                ? TryParseStatusRequest(document.RootElement, out request, out failure)
-                : TryParseMutatingRequest(commandName, document.RootElement, out request, out failure);
+                ? TryParseStatusRequest(document.RootElement, out targetKey, out request, out failure)
+                : TryParseMutatingRequest(
+                    commandName,
+                    document.RootElement,
+                    out targetKey,
+                    out request,
+                    out failure
+                );
         }
     }
 
     private static bool TryParseStatusRequest(
         JsonElement rootElement,
+        out DocumentCacheTargetKey? targetKey,
         out DocumentCacheAdminJsonRequest? request,
         out string? failure
     )
     {
+        targetKey = null;
         request = null;
         failure = null;
 
@@ -110,31 +113,31 @@ internal static class DocumentCacheAdminJsonRequestParser
         }
 
         if (
-            !TryReadTargetKey(rootProperties["targetKey"], out DocumentCacheTargetKey? targetKey, out failure)
+            !TryReadTargetKey(
+                rootProperties["targetKey"],
+                out DocumentCacheTargetKey? parsedTargetKey,
+                out failure
+            )
         )
         {
             return false;
         }
 
-        DocumentCacheTargetKey validTargetKey =
-            targetKey
+        targetKey =
+            parsedTargetKey
             ?? throw new InvalidOperationException("Target key validation succeeded without a target.");
-        request = new DocumentCacheAdminJsonRequest(
-            DocumentCacheAdminCommandSurface.StatusCommandName,
-            typeof(DocumentCacheAdminStatusRequest),
-            new DocumentCacheAdminStatusRequest(validTargetKey),
-            validTargetKey
-        );
         return true;
     }
 
     private static bool TryParseMutatingRequest(
         string commandName,
         JsonElement rootElement,
+        out DocumentCacheTargetKey? targetKey,
         out DocumentCacheAdminJsonRequest? request,
         out string? failure
     )
     {
+        targetKey = null;
         request = null;
         failure = null;
 
@@ -157,7 +160,10 @@ internal static class DocumentCacheAdminJsonRequestParser
         object? sharedRequest;
         try
         {
-            sharedRequest = rootElement.Deserialize(contract.RequestType, _mutatingRequestJsonOptions);
+            sharedRequest = rootElement.Deserialize(
+                contract.SharedRequestClrType,
+                _mutatingRequestJsonOptions
+            );
         }
         catch (JsonException exception)
         {
@@ -172,7 +178,7 @@ internal static class DocumentCacheAdminJsonRequestParser
 
         if (sharedRequest is null)
         {
-            failure = $"Request JSON could not be deserialized as '{contract.RequestType.Name}'.";
+            failure = $"Request JSON could not be deserialized as '{contract.SharedRequestClrType.Name}'.";
             return false;
         }
 
@@ -181,12 +187,8 @@ internal static class DocumentCacheAdminJsonRequestParser
             return false;
         }
 
-        request = new DocumentCacheAdminJsonRequest(
-            commandName,
-            contract.RequestType,
-            sharedRequest,
-            contract.ReadTargetKey(sharedRequest).TargetKey
-        );
+        targetKey = contract.ReadTargetKey(sharedRequest).TargetKey;
+        request = new DocumentCacheAdminJsonRequest(sharedRequest);
         return true;
     }
 

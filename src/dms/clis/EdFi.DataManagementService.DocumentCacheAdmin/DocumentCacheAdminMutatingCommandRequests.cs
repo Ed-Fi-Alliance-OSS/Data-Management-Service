@@ -12,7 +12,6 @@ namespace EdFi.DataManagementService.DocumentCacheAdmin;
 
 internal sealed record DocumentCacheAdminMutatingCommandRequest(
     string CommandName,
-    Type RequestType,
     object Request,
     DocumentCacheTargetKey TargetKey
 );
@@ -46,19 +45,11 @@ internal static class DocumentCacheAdminMutatingCommandRequestBuilder
 
         if (invocationTarget.JsonRequest is { } jsonRequest)
         {
-            if (!string.Equals(jsonRequest.CommandName, commandName, StringComparison.Ordinal))
-            {
-                failure = $"Request JSON command '{jsonRequest.CommandName}' does not match '{commandName}'.";
-                return false;
-            }
-
-            commandRequest = new(
-                commandName,
-                jsonRequest.RequestType,
-                jsonRequest.Request,
-                jsonRequest.TargetKey
+            return contract.TryCreateCommandRequest(
+                jsonRequest.SharedRequest,
+                out commandRequest,
+                out failure
             );
-            return true;
         }
 
         if (!TryReadExpectedConfirmation(parseResult, contract, out failure))

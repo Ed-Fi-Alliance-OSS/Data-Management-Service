@@ -159,8 +159,8 @@ public sealed class Given_DocumentCacheAdminParserAndContractUnitTests
 
         parsed.Should().BeTrue(failure);
         invocationTarget!.JsonRequest.Should().NotBeNull();
-        invocationTarget.JsonRequest!.Request.Should().BeOfType(expectedRequestType);
-        invocationTarget.JsonRequest.TargetKey.Should().Be(DocumentCacheTargetKey.Create("", 1));
+        invocationTarget.JsonRequest!.SharedRequest.Should().BeOfType(expectedRequestType);
+        invocationTarget.TargetKey.Should().Be(DocumentCacheTargetKey.Create("", 1));
     }
 
     [TestCase(
