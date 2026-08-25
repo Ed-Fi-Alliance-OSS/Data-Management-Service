@@ -43,8 +43,10 @@ public sealed class Given_Postgresql_CursorPagingExecution : PostgresqlApiIntegr
         CursorPagingExecutionScenario.It_enters_a_cursor_walk_from_a_traditional_page(Harness);
 
     [Test]
-    public Task It_withholds_a_continuation_from_a_windowed_traditional_page() =>
-        CursorPagingExecutionScenario.It_withholds_a_continuation_from_a_windowed_traditional_page(Harness);
+    public Task It_continues_a_windowed_traditional_page_on_its_content_version_anchor() =>
+        CursorPagingExecutionScenario.It_continues_a_windowed_traditional_page_on_its_content_version_anchor(
+            Harness
+        );
 
     [Test]
     public Task It_emits_bounded_telemetry_across_a_cursor_walk() =>

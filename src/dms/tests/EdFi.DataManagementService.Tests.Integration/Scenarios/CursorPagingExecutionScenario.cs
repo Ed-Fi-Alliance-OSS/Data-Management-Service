@@ -123,29 +123,55 @@ internal static class CursorPagingExecutionScenario
 
     /// <summary>
     /// A traditional page over a max-bearing change-version window is ordered by <c>ContentVersion</c>,
-    /// so the highest <c>DocumentId</c> it selected does not describe where the page ended and cannot
-    /// anchor a continuation. The page is still served; only the header is withheld.
+    /// so the continuation it hands out is anchored on that column and marked as such. The page is
+    /// served and continued, in the anchor's own units, rather than served without a continuation.
     /// </summary>
-    public static async Task It_withholds_a_continuation_from_a_windowed_traditional_page(
+    /// <remarks>
+    /// The marker is what makes the range interpretable: a token stores no filters, so without it this
+    /// range would be replayed as a <c>DocumentId</c> window and skip qualifying rows. The walk below
+    /// carries the same <c>maxChangeVersion</c>, which is the only way the token is replayable.
+    /// </remarks>
+    public static async Task It_continues_a_windowed_traditional_page_on_its_content_version_anchor(
         ApiIntegrationHarness harness
     )
     {
         ArgumentNullException.ThrowIfNull(harness);
 
-        await SeedMergeItemsAsync(harness, "windowed-suppression");
+        await SeedMergeItemsAsync(harness, "windowed-continuation");
+
+        string window = $"maxChangeVersion={UnreachableMaxChangeVersion}";
 
         var (windowedIds, windowedToken) = await ReadPageAsync(
             harness,
-            $"{MergeItemsEndpoint}?limit=2&maxChangeVersion={UnreachableMaxChangeVersion}"
+            $"{MergeItemsEndpoint}?limit=2&{window}"
         );
 
         windowedIds.Should().NotBeEmpty("the window includes every seeded document");
-        windowedToken.Should().BeNull();
+        windowedToken
+            .Should()
+            .NotBeNull("a windowed page selects keys and reports their ContentVersion maximum");
 
-        // The same request without the window does continue, so the suppression above is the window's
-        // effect rather than an empty selection or a missing feature.
-        var (_, unwindowedToken) = await ReadPageAsync(harness, $"{MergeItemsEndpoint}?limit=2");
-        unwindowedToken.Should().NotBeNull();
+        PageTokenCodec
+            .TryDecode(windowedToken, out _, out PageOrderingMode tokenOrderingMode)
+            .Should()
+            .BeTrue();
+        tokenOrderingMode
+            .Should()
+            .Be(
+                PageOrderingMode.ContentVersion,
+                "the token has to name the column its bounds are expressed in"
+            );
+
+        HashSet<string> returnedIds = [.. windowedIds];
+        var continued = await ContinueWalkAsync(
+            harness,
+            MergeItemsEndpoint,
+            windowedToken!,
+            returnedIds,
+            extraQuery: window
+        );
+
+        continued.Should().BeGreaterThan(0, "the token from a windowed page must advance the walk");
     }
 
     /// <summary>
@@ -581,21 +607,27 @@ internal static class CursorPagingExecutionScenario
         );
     }
 
+    /// <param name="extraQuery">
+    /// Query parameters every request of the walk repeats, for a walk whose token is only replayable
+    /// alongside them — a windowed token has to be replayed under the same window.
+    /// </param>
     private static async Task<int> ContinueWalkAsync(
         ApiIntegrationHarness harness,
         string endpoint,
         string pageToken,
-        HashSet<string> returnedIds
+        HashSet<string> returnedIds,
+        string? extraQuery = null
     )
     {
         var continued = 0;
         string? nextPageToken = pageToken;
+        string suffix = extraQuery is null ? string.Empty : $"&{extraQuery}";
 
         while (nextPageToken is not null && continued < MaximumWalkedPages)
         {
             var (pageIds, followingToken) = await ReadPageAsync(
                 harness,
-                $"{endpoint}?pageToken={Uri.EscapeDataString(nextPageToken)}&pageSize=2"
+                $"{endpoint}?pageToken={Uri.EscapeDataString(nextPageToken)}&pageSize=2{suffix}"
             );
 
             foreach (string id in pageIds)

@@ -69,6 +69,22 @@ public class QueryRequestHandlerTests
     }
 
     /// <summary>
+    /// The anchor stamped on the emitted continuation. A token names a range in one column's units, and
+    /// this is the only thing that says which, so it is read back through the codec for the same reason
+    /// the range is.
+    /// </summary>
+    internal static PageOrderingMode? DecodeNextPageTokenAnchor(RequestInfo requestInfo)
+    {
+        if (!requestInfo.FrontendResponse.Headers.TryGetValue("Next-Page-Token", out var nextPageToken))
+        {
+            return null;
+        }
+
+        PageTokenCodec.TryDecode(nextPageToken, out _, out var orderingMode).Should().BeTrue();
+        return orderingMode;
+    }
+
+    /// <summary>
     /// Collection paging reaches the backend as the typed choice request validation produced, and the
     /// page it selects comes back with a continuation the client can walk from.
     /// </summary>
@@ -131,9 +147,10 @@ public class QueryRequestHandlerTests
     }
 
     /// <summary>
-    /// One gate decides the continuation header for every GET-many response: the page selected keys,
-    /// and the maximum it selected can anchor a DocumentId continuation. Nothing about the response
-    /// body participates, and neither resource family has a rule of its own.
+    /// One gate decides the continuation header for every GET-many response: the page selected keys.
+    /// Nothing about the response body participates, neither resource family has a rule of its own, and
+    /// the ordering no longer withholds a token — the anchor the page was selected on is stamped onto
+    /// the token instead.
     /// </summary>
     [TestFixture]
     [Parallelizable]
@@ -235,17 +252,48 @@ public class QueryRequestHandlerTests
         }
 
         // A traditional page over a max-bearing change-version window really did select keys, and
-        // reports their maximum in ContentVersion. A token names a range without saying which key it is
-        // expressed in, so that maximum cannot be handed out until the token carries a marker.
+        // reports their maximum in ContentVersion. The token says so, which is what lets the range be
+        // handed out at all: replayed under the same window it resumes on the same column, and replayed
+        // under a different one it is rejected rather than read as a DocumentId range.
         [Test]
-        public async Task It_emits_no_continuation_when_the_page_cannot_anchor_one()
+        public async Task It_marks_a_windowed_traditional_continuation_with_the_content_version_anchor()
         {
             var requestInfo = RequestInfoWithRelationalMappingSet();
             requestInfo.PageOrderingMode = PageOrderingMode.ContentVersion;
 
             await ExecuteAsync(new QueryResult.QuerySuccess([], null, 2509L), requestInfo: requestInfo);
 
-            requestInfo.FrontendResponse.Headers.Should().NotContainKey("Next-Page-Token");
+            DecodeNextPageToken(requestInfo).Should().Be(new CursorRange(2510, long.MaxValue));
+            DecodeNextPageTokenAnchor(requestInfo).Should().Be(PageOrderingMode.ContentVersion);
+        }
+
+        // The unwindowed twin of the case above, so the marker is proven to follow the request's
+        // resolved anchor rather than being stamped the same way on every token.
+        [Test]
+        public async Task It_marks_an_unwindowed_continuation_with_the_document_id_anchor()
+        {
+            var requestInfo = await ExecuteAsync(new QueryResult.QuerySuccess([], null, 2509L));
+
+            DecodeNextPageTokenAnchor(requestInfo).Should().Be(PageOrderingMode.DocumentId);
+        }
+
+        // A windowed cursor page keeps its own upper bound, in the anchor's units, and carries the same
+        // marker forward — which is what keeps a walk that entered through a windowed partition inside
+        // that partition and replayable.
+        [Test]
+        public async Task It_marks_a_windowed_cursor_continuation_and_retains_its_upper_bound()
+        {
+            var requestInfo = RequestInfoWithRelationalMappingSet();
+            requestInfo.PageOrderingMode = PageOrderingMode.ContentVersion;
+
+            await ExecuteAsync(
+                new QueryResult.QuerySuccess([], null, 2509L),
+                new CollectionPaging.Cursor(new CursorRange(7, 4200), new PageSize(25)),
+                requestInfo
+            );
+
+            DecodeNextPageToken(requestInfo).Should().Be(new CursorRange(2510, 4200));
+            DecodeNextPageTokenAnchor(requestInfo).Should().Be(PageOrderingMode.ContentVersion);
         }
 
         [Test]
@@ -1517,7 +1565,7 @@ public class QueryRequestHandlerTests
             telemetry.Single.Outcome.Should().Be("success");
         }
 
-        // First of the three terminal-page boundaries: selection chose nothing, so there is nothing
+        // First of the two terminal-page boundaries: selection chose nothing, so there is nothing
         // after it.
         [Test]
         public async Task It_records_terminal_page_when_selection_chose_nothing()
@@ -1540,12 +1588,12 @@ public class QueryRequestHandlerTests
             telemetry.Single.Outcome.Should().Be("terminal_page");
         }
 
-        // Third, and the regression guard: a traditional page over a max-bearing change-version window
-        // is ordered by ContentVersion, is served with rows, and the client keeps paging it with limit
-        // and offset. It withholds a token without ending a walk, so reporting it as terminal would tell
-        // operators a healthy walk had stopped.
+        // The distinction the outcome now draws, on the page that used to be excused from it: a
+        // traditional page over a max-bearing change-version window is ordered by ContentVersion and
+        // hands out a token in its own anchor, so it is a healthy walk in progress and says so. The
+        // page is the same one that used to withhold a token and be reported as success anyway.
         [Test]
-        public async Task It_records_success_for_a_page_that_cannot_anchor_a_continuation()
+        public async Task It_records_success_for_a_windowed_page_that_hands_out_a_continuation()
         {
             var windowedRequestInfo = RequestInfoWithRelationalMappingSet();
             windowedRequestInfo.PageOrderingMode = PageOrderingMode.ContentVersion;
@@ -1555,9 +1603,26 @@ public class QueryRequestHandlerTests
                 requestInfo: windowedRequestInfo
             );
 
-            requestInfo.FrontendResponse.Headers.Should().NotContainKey("Next-Page-Token");
+            requestInfo.FrontendResponse.Headers.Should().ContainKey("Next-Page-Token");
             telemetry.Single.Outcome.Should().Be("success");
             telemetry.Single.Returned.Should().Be(4);
+        }
+
+        // The other half of that distinction, which the old flag blurred: the same windowed request on
+        // a page that selected nothing produces no token, and that really is the end of the walk.
+        [Test]
+        public async Task It_records_terminal_page_for_a_windowed_page_that_hands_out_none()
+        {
+            var windowedRequestInfo = RequestInfoWithRelationalMappingSet();
+            windowedRequestInfo.PageOrderingMode = PageOrderingMode.ContentVersion;
+
+            var (requestInfo, telemetry) = await ExecuteAsync(
+                new QueryResult.QuerySuccess([], null),
+                requestInfo: windowedRequestInfo
+            );
+
+            requestInfo.FrontendResponse.Headers.Should().NotContainKey("Next-Page-Token");
+            telemetry.Single.Outcome.Should().Be("terminal_page");
         }
 
         // Early-empty outranks the terminal-page question: no command was issued, so no command shape

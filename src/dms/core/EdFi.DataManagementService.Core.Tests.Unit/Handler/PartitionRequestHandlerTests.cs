@@ -70,7 +70,8 @@ public class PartitionRequestHandlerTests
     private static async Task<RequestInfo> Execute(
         Handler partitionQueryHandler,
         int? requestedPartitionCount = RequestedPartitionCount,
-        ICollectionPagingTelemetry? collectionPagingTelemetry = null
+        ICollectionPagingTelemetry? collectionPagingTelemetry = null,
+        PageOrderingMode orderingMode = PageOrderingMode.ContentVersion
     )
     {
         var serviceProvider = A.Fake<IServiceProvider>();
@@ -83,10 +84,10 @@ public class PartitionRequestHandlerTests
         requestInfo.QueryElements = _queryElements;
         requestInfo.ChangeVersionRange = _changeVersionRange;
 
-        // The anchor the validating middleware resolves for that max-bearing window. Set here rather
+        // The anchor the validating middleware resolves for that max-bearing window. Stated here rather
         // than left to the default because these tests build RequestInfo directly, and the assertion
         // that it crosses the seam has to be able to fail: DocumentId is the enum's zero value.
-        requestInfo.PageOrderingMode = PageOrderingMode.ContentVersion;
+        requestInfo.PageOrderingMode = orderingMode;
         requestInfo.FrontendRequest = requestInfo.FrontendRequest with { Tenant = TenantKey };
 
         await new PartitionRequestHandler(
@@ -123,6 +124,26 @@ public class PartitionRequestHandlerTests
             return ranges;
         }
 
+        /// <summary>
+        /// The anchor stamped on every emitted token. A partition token is walked by the same cursor
+        /// path a page token is, so the units its bounds are in have to travel with it.
+        /// </summary>
+        private static IReadOnlyList<PageOrderingMode> DecodePageTokenAnchors(RequestInfo requestInfo)
+        {
+            List<PageOrderingMode> orderingModes = [];
+
+            foreach (JsonNode? pageToken in requestInfo.FrontendResponse.Body!["pageTokens"]!.AsArray())
+            {
+                PageTokenCodec
+                    .TryDecode(pageToken!.GetValue<string>(), out _, out var orderingMode)
+                    .Should()
+                    .BeTrue();
+                orderingModes.Add(orderingMode);
+            }
+
+            return orderingModes;
+        }
+
         private static readonly CursorRange[] _ranges =
         [
             new(10, 199),
@@ -157,6 +178,38 @@ public class PartitionRequestHandlerTests
         public void It_round_trips_every_range_through_the_codec()
         {
             DecodePageTokens(_requestInfo).Should().Equal(_ranges);
+        }
+
+        /// <summary>
+        /// Every token, not the first: a client walks each partition independently, so one unmarked or
+        /// wrongly marked token would break exactly one slice of the walk and no other.
+        /// </summary>
+        [Test]
+        public void It_marks_every_token_of_a_windowed_response_with_the_content_version_anchor()
+        {
+            DecodePageTokenAnchors(_requestInfo)
+                .Should()
+                .AllBeEquivalentTo(PageOrderingMode.ContentVersion)
+                .And.HaveCount(_ranges.Length);
+        }
+
+        /// <summary>
+        /// The same boundaries under a request that resolved the <c>DocumentId</c> anchor — an
+        /// unwindowed request, or a windowed one on a deployment running with the page-ordering kill
+        /// switch on. The marker follows the request's resolved anchor rather than being a constant.
+        /// </summary>
+        [Test]
+        public async Task It_marks_every_token_of_a_document_id_anchored_response()
+        {
+            RequestInfo requestInfo = await Execute(
+                new Handler(new PartitionResult.PartitionSuccess(_ranges)),
+                orderingMode: PageOrderingMode.DocumentId
+            );
+
+            DecodePageTokenAnchors(requestInfo)
+                .Should()
+                .AllBeEquivalentTo(PageOrderingMode.DocumentId)
+                .And.HaveCount(_ranges.Length);
         }
 
         // A boundary set is not a page: it has no total count and no successor.
