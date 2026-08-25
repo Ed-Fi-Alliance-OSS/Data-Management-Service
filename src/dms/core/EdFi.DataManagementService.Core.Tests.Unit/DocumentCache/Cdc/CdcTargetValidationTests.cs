@@ -63,6 +63,21 @@ public class Given_CdcTargetValidator
         result.Target!.TenantKey.Should().Be("district-a");
     }
 
+    [Test]
+    public void It_rejects_a_missing_tenant_key_without_default_mapping()
+    {
+        CdcTargetValidationResult result = CdcTargetValidator.Validate(ValidInput with { TenantKey = null });
+
+        result.Succeeded.Should().BeFalse();
+        result.Target.Should().BeNull();
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Category == CdcDiagnosticCategory.MissingRequiredField
+                && diagnostic.Path == "$.tenantKey"
+            );
+    }
+
     [TestCase(null)]
     [TestCase("")]
     [TestCase("0")]

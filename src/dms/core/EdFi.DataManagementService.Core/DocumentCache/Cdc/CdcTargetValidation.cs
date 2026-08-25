@@ -177,12 +177,12 @@ public static class CdcTargetValidator
         return diagnostics.ToValidationResult();
     }
 
-    public static string MapE18TenantKeyToBindingTenantKey(string? tenantKey) =>
-        string.IsNullOrEmpty(tenantKey) ? DefaultBindingTenantKey : tenantKey;
+    public static string? MapE18TenantKeyToBindingTenantKey(string? tenantKey) =>
+        tenantKey == string.Empty ? DefaultBindingTenantKey : tenantKey;
 
     private static string? ValidateTenantKey(string? tenantKey, CdcDiagnosticCollector diagnostics)
     {
-        string normalizedTenantKey = MapE18TenantKeyToBindingTenantKey(tenantKey);
+        string? normalizedTenantKey = MapE18TenantKeyToBindingTenantKey(tenantKey);
         return CdcKafkaSafeTokenValidator.Validate(
             normalizedTenantKey,
             "$.tenantKey",

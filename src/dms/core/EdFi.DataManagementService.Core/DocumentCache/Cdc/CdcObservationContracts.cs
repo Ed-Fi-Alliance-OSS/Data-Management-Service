@@ -916,9 +916,15 @@ public static class CdcProjectionCorrelationObservationValidator
             return;
         }
 
-        string bindingTenantKey = CdcTargetValidator.MapE18TenantKeyToBindingTenantKey(
+        string? bindingTenantKey = CdcTargetValidator.MapE18TenantKeyToBindingTenantKey(
             e18TargetKey.TenantKey
         );
+        if (bindingTenantKey is null)
+        {
+            diagnostics.MissingRequiredField("$.e18TargetKey.tenantKey", "tenantKey");
+            return;
+        }
+
         string dataStoreId = e18TargetKey.DataStoreId.ToString(CultureInfo.InvariantCulture);
         if (
             !string.Equals(bindingTenantKey, expectedTargetIdentity.TenantKey, StringComparison.Ordinal)

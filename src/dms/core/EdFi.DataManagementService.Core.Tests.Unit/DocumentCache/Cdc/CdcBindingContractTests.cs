@@ -139,6 +139,25 @@ public class Given_CdcBindingContract
     }
 
     [Test]
+    public void It_rejects_null_tenant_keys_during_binding_contract_validation()
+    {
+        CdcContractValidationResult result = CdcBindingValidator.Validate(
+            SampleBinding with
+            {
+                TenantKey = null!,
+            }
+        );
+
+        result.Succeeded.Should().BeFalse();
+        result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Category == CdcDiagnosticCategory.MissingRequiredField
+                && diagnostic.Path == "$.tenantKey"
+            );
+    }
+
+    [Test]
     public void It_serializes_adoption_and_cleanup_proof_structural_contracts_without_live_verification_fields()
     {
         CdcAdoptionProof adoptionProof = new(
