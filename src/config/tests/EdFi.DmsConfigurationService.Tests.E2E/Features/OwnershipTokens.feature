@@ -177,51 +177,58 @@ Feature: OwnershipTokens endpoints
             Given a POST request is made to "/v3/ownershipTokens" with
                   """
                   {
-                    "description": "Zzz Zebra Token"
+                    "description": "District Token"
                   }
                   """
               And the response location id is captured as "zebraOwnershipTokenId"
               And a POST request is made to "/v3/ownershipTokens" with
                   """
                   {
-                    "description": "Zzx Apple Token"
+                    "description": "School Token"
                   }
                   """
               And the response location id is captured as "appleOwnershipTokenId"
               And a POST request is made to "/v3/ownershipTokens" with
                   """
                   {
-                    "description": "Zzy Banana Token"
+                    "description": "Staff Token"
                   }
                   """
               And the response location id is captured as "bananaOwnershipTokenId"
-             When a GET request is made to "/v3/ownershipTokens?orderBy=description&direction=desc&limit=2&offset=0"
+              And a POST request is made to "/v3/ownershipTokens" with
+                  """
+                  {
+                    "description": "Read Token"
+                  }
+                  """
+              And the response location id is captured as "readOwnershipTokenId"
+             When a GET request is made to "/v3/ownershipTokens?orderBy=id&direction=desc&limit=2&offset=0"
              Then it should respond with 200
               And the response body is
                   """
                   [
                     {
-                      "id": {zebraOwnershipTokenId},
-                      "description": "Zzz Zebra Token"
+                      "id": {readOwnershipTokenId},
+                      "description": "Read Token"
                     },
                     {
                       "id": {bananaOwnershipTokenId},
-                      "description": "Zzy Banana Token"
+                      "description": "Staff Token"
                     }
                   ]
                   """
-             When a GET request is made to "/v3/ownershipTokens?orderBy=description&direction=desc&limit=2&offset=2"
+             When a GET request is made to "/v3/ownershipTokens?orderBy=id&direction=desc&limit=2&offset=2"
              Then it should respond with 200
               And the response body is
                   """
                   [
                     {
                       "id": {appleOwnershipTokenId},
-                      "description": "Zzx Apple Token"
+                      "description": "School Token"
                     },
                     {
-                      "id": {readOwnershipTokenId},
-                      "description": "Read Token"
+                      "id": {zebraOwnershipTokenId},
+                      "description": "District Token"
                     }
                   ]
                   """
