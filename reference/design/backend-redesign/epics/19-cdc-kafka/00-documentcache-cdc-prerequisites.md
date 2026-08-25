@@ -129,9 +129,9 @@ document first and keep this story as the work package and evidence owner.
   enum strings for every new JSON-facing contract in this story. Do not serialize numeric
   enum values or rely on implementation type names as wire values.
 - Pin one lower-camel v1 contract family for the CDC status, admission,
-  retry-classifier, binding-state, binding, and incident models owned by DMS-1319. 19-04
-  owns transport and operator command wiring, but consumes and serializes these DTOs
-  unchanged rather than defining a second operator-facing shape.
+  retry-classifier, binding-state, binding, incident, normalized observation, and proof
+  models owned by DMS-1319. 19-04 owns transport and operator command wiring, but consumes
+  and serializes these DTOs unchanged rather than defining a second operator-facing shape.
 - The shared CDC target identity object contains `deploymentKey`, `tenantKey`,
   `dataStoreId`, `instanceKey`, `generation`, and `provider`. `cdcComponent` contains
   `state`, `category`, `observedAt`, and `message`; component `state` values are
@@ -162,6 +162,60 @@ document first and keep this story as the work package and evidence owner.
   and `incident`. `state` values are `bindingPresent`, `bindingMissing`,
   `bindingMismatch`, and `incidentLatched`.
 
+### Normalized Observation Contracts
+
+- DMS-1319 owns stable lower-camel JSON DTOs for every normalized observation it evaluates,
+  not the raw acquisition payloads. Pin DTOs for initial provisioning proof, initial
+  eligibility, projection-status correlation, provider setup, Kafka policy, Connect
+  offset-store policy, connector configuration, connector runtime, connector offset,
+  connector lag, provider barrier, and source-history continuity observations.
+- 19-01's stable `CdcProviderSetupResult` is the provider-setup source contract. DMS-1319
+  may wrap or project it for operation/source correlation but must not redefine provider
+  manifests. 19-04 owns raw Kafka, ACL, Connect REST, and operator-command wire shapes, then
+  maps them into DMS-1319 observation DTOs before invoking status, admission, retry, or
+  continuity logic.
+- Every DMS-1319-owned normalized observation uses the common envelope:
+  `contractVersion`, `operationId`, `observedAt`, `targetIdentity`, `provider`,
+  `physicalSourceFingerprint`, and `diagnostics`. `contractVersion` is required and must be
+  `1`; `operationId`, `targetIdentity`, and `provider` are required; `observedAt` is a
+  required UTC timestamp; `physicalSourceFingerprint` is required when the source is known
+  and otherwise `null`, which maps that observation to `unknown`.
+- The projection-correlation observation adds `projectionObservedAt`, `e18TargetKey`,
+  `correlationState`, `operationalHealthStatus`, `operationalHealthReason`,
+  `caughtUpStatus`, `caughtUpReason`, `queuePresence`, and `enqueueFailureCategories`.
+  `correlationState` values are `matched`, `targetMismatch`, `providerMismatch`,
+  `sourceMismatch`, `unavailable`, and `invalidPayload`; E18 enum values are copied from
+  the 18-06 contract.
+- The provider-setup observation adds `setupMode`, `setupOutcome`,
+  `artifactInventoryState`, `grantInventoryState`, `sourceInventoryState`,
+  `heartbeatState`, and `providerHistoryState`. `setupMode` values are
+  `initialCreateOrExactMatch` and `validateOnly`; `setupOutcome` values are `satisfied`,
+  `invalid`, and `unknown`; and the state fields use `matched`, `mismatched`, `missing`,
+  `unknown`, and `notApplicable`.
+- The Kafka-policy observation adds `policyState`, `durabilityProfile`, `publicTopic`,
+  `progressTopic`, `schemaHistoryTopic`, `publicTopicAcls`, `progressTopicAcls`,
+  `schemaHistoryTopicAcls`, and `recordSizePolicy`. `policyState` values are `satisfied`,
+  `invalid`, and `unknown`; PostgreSQL uses `null` for SQL Server-only schema-history
+  fields.
+- The Connect offset-store policy observation adds `workerKey`, `offsetStorageTopic`,
+  `policyState`, `cleanupPolicy`, `replicationFactor`, `minInSyncReplicas`, and
+  `aclState`.
+- The connector-configuration observation adds `connectorName`, `configurationState`,
+  `topicPrefix`, `taskCount`, `transformState`, `converterState`, `producerOverrideState`,
+  `heartbeatState`, `sourceIncludeListState`, `offsetState`, and `schemaHistoryState`.
+  `configurationState` values are `matched`, `invalid`, and `unknown`.
+- The connector-runtime observation adds `connectorName`, `connectorState`, `taskCount`,
+  `runningTaskCount`, `soleTaskState`, `snapshotState`, `lastErrorCategory`, and
+  `lastErrorObservedAt`. Connector and task state values are `running`, `paused`, `failed`,
+  `stopped`, `unassigned`, and `unknown`; `snapshotState` values are `notStarted`,
+  `running`, `completed`, `notApplicable`, and `unknown`.
+- The connector-lag observation adds `lagState`, `currentLagMilliseconds`,
+  `thresholdMilliseconds`, `p50LagMilliseconds`, `p95LagMilliseconds`, and
+  `p99LagMilliseconds`. `lagState` values are `withinThreshold`, `exceeded`, and
+  `unknown`.
+- Required strings are non-empty after validation. Nullable scalar fields are allowed only
+  where the field is provider-inapplicable or the observation state is `unknown`.
+
 ### Binding State Store and Incident Latch
 
 - Define one deployment-owned state-store abstraction with these guarded operations:
@@ -169,6 +223,11 @@ document first and keep this story as the work package and evidence owner.
   bindings under a deployment key, latch source-history loss, import an operator-supplied
   verified binding record, and delete state only after caller-proved governed-artifact
   cleanup.
+- Keep individual state-store operation results as internal strongly typed service results,
+  not stable 19-04 JSON contracts. The stable JSON contracts owned by DMS-1319 are
+  binding-state, incident, admission, retry, status, normalized observation, adoption proof,
+  and cleanup proof DTOs. 19-04 maps internal create/read/exact-match/list/latch/import and
+  delete-after-cleanup outcomes into those stable DTOs plus diagnostics.
 - The create operation is atomic create-or-exact-match. If the record already exists and
   every immutable field matches, return the existing record. If any immutable field differs,
   return a binding-mismatch result and do not rewrite the record.
@@ -192,6 +251,20 @@ document first and keep this story as the work package and evidence owner.
   read-back exact-match validation. Updating immutable binding files in place is not a
   supported repair. Production implementations expose the same semantics through their
   durable state backend with atomic create or compare-and-set.
+- Treat malformed, unreadable, duplicate, or permission-denied local binding or incident
+  files as operation-level state-store failures. A read or exact-match for the affected
+  identity returns a state-store failure diagnostic with `localStateUnavailable`; status and
+  retry map that to `unknown` with `statusObservationUnavailable` and fail closed. Do not
+  report `bindingMismatch` unless a valid binding file was parsed and its immutable fields
+  differ. Do not report `incidentLatched` unless a valid incident file was parsed for the
+  exact binding identity and generation.
+- Duplicate JSON properties, duplicate files for the same identity, case-colliding paths,
+  symlinks, unexpected non-regular files, and permission-denied paths are local state-store
+  failures, not repairable mismatches. A deployment-key list operation fails as a whole when
+  any binding or incident file under that deployment key cannot be validated. Returning a
+  partial list could hide a binding or terminal incident; a later operator diagnostic
+  command may expose partial filesystem details, but that is not the state-store API
+  consumed by status, admission, or retry logic.
 - The source-history incident file is absent until terminal loss is latched. Latching is
   idempotent false-to-true for one complete binding identity and generation. Later
   validation, provider-artifact recreation, offset mutation, or a healthy-looking lag
@@ -210,16 +283,26 @@ document first and keep this story as the work package and evidence owner.
   and nullable fields for unavailable facts. It never stores raw source partition JSON,
   database/catalog/server names, source UUIDs, connection strings, credentials, or raw
   exception text.
-- Import/adoption callers must supply an `AdoptionProof` with `contractVersion: 1`,
-  operation id, UTC verification time, the complete binding record to import, and a
-  bounded verification summary asserting exact live match for the physical-source
-  fingerprint, provider artifacts, connector, connector configuration, topics, ACLs,
-  offsets, and source-history continuity.
-- Delete-after-cleanup callers must supply a `CleanupProof` with `contractVersion: 1`,
-  operation id, UTC verification time, binding identity, cleanup mode, and the complete
-  binding-derived governed-artifact inventory with each artifact marked `deleted` or
-  `notFound`. An explicit retain decision is not a delete-after-cleanup path; if any
-  governed artifact is retained, retain binding and incident state with it.
+- Import/adoption callers must supply a lower-camel v1 `AdoptionProof` DTO with
+  `contractVersion`, `operationId`, `verifiedAt`, `binding`, and
+  `verificationResults[]`. `verificationResults[]` must contain exactly one result for
+  each `verificationKind`: `physicalSource`, `providerArtifacts`, `connector`,
+  `connectorConfig`, `kafkaTopics`, `kafkaAcls`, `connectOffsets`, and
+  `sourceHistoryContinuity`. Each result has `verificationKind`, `state`, and bounded
+  `evidenceSummary`; the only accepted state for import is `exactMatch`.
+- Delete-after-cleanup callers must supply a lower-camel v1 `CleanupProof` DTO with
+  `contractVersion`, `operationId`, `verifiedAt`, `bindingIdentity`,
+  `cleanupMode: "retireBindingGeneration"`, and `governedArtifacts[]`. Each artifact has
+  `artifactKind`, `artifactName`, `cleanupState`, and bounded `evidenceSummary`.
+  `cleanupState` values are `deleted` and `notFound`; retained artifacts are not a
+  delete-after-cleanup path.
+- Required cleanup `artifactKind` values are `kafkaConnectConnector`,
+  `connectSourceOffsets`, `publicTopic`, `progressTopic`, `publicTopicAcls`,
+  `progressTopicAcls`, `postgresqlPublication`, `postgresqlLogicalSlot`,
+  `sqlServerCdcGatingRole`, `sqlServerCaptureInstanceDocument`,
+  `sqlServerCaptureInstanceDocumentCache`, `sqlServerCaptureInstanceCdcHeartbeat`,
+  `schemaHistoryTopic`, and `schemaHistoryTopicAcls`, with only the provider-applicable
+  artifacts required for a given binding.
 - Deleting binding state is permitted only after the caller proves that the connector,
   offsets, topics, ACLs, provider capture artifacts, and provider-history artifacts
   governed by that binding were deleted in the required order or do not exist. If any
@@ -230,6 +313,11 @@ document first and keep this story as the work package and evidence owner.
   authorization, signatures, platform purge evidence, and live provider/Kafka/Connect
   verification as opaque evidence produced by 19-04 or 19-07 and does not query external
   systems itself.
+- Proof-validation failure diagnostics use these lower-camel categories:
+  `malformedProof`, `invalidContractVersion`, `invalidOperationId`, `invalidTimestamp`,
+  `bindingIdentityMismatch`, `verificationIncomplete`, `inventoryIncomplete`,
+  `unexpectedArtifact`, `duplicateArtifact`, `artifactNameMismatch`,
+  `artifactNotRemoved`, and `unsafeEvidence`.
 - A crash may leave an unused binding record. That is a safe retry state, not automatic
   cleanup authority. Automatic deletion of a binding record while any governed artifact may
   survive is prohibited.
@@ -319,6 +407,41 @@ document first and keep this story as the work package and evidence owner.
   Projection operational-health failure and projection caught-up failure are separate
   categories. Queue presence makes CDC not ready only where readiness requires caught-up;
   it does not make ordinary canonical API health fail.
+- Map observations to components with one rule: exact-match affirmative evidence becomes
+  component `state: "satisfied"` and `category: "none"`; authoritative invalid or
+  mismatched evidence becomes `state: "notSatisfied"` with the most specific blocking
+  category; unavailable, stale, mismatched-operation, malformed, or out-of-order evidence
+  becomes `state: "unknown"` with `category: "statusObservationUnavailable"` unless the
+  evidence proves a more specific binding, source, or source-history failure.
+- E18 projection maps to `projection`. A matched source with
+  `operationalHealth.status: "operational"` and `caughtUp.status: "caughtUp"` is
+  satisfied. Non-operational E18 status maps to `projectionNonOperational`; matched
+  operational status with non-empty queue maps to `projectionBacklog` where caught-up is
+  required; E18 unknown, invalid payload, operation mismatch, or stale observation maps to
+  `statusObservationUnavailable`; provider/source mismatch maps to `sourceMismatch`.
+- Represent E18 `enqueueFailures` as projection-component diagnostics only. Do not add a
+  separate DMS-1319 component or blocking category for retained enqueue-failure events, and
+  do not fold retained enqueue failures into `statusObservationUnavailable`. Authoritative
+  E18 operational-health and caught-up values remain the only projection readiness inputs.
+  If an enqueue artifact problem also makes E18 report non-operational status, DMS-1319
+  maps that status to `projectionNonOperational`; if E18 remains operational and caught up,
+  retained enqueue-failure diagnostics do not by themselves change CDC readiness.
+- DMS-1320 provider setup maps to `providerSetup`: satisfied setup is satisfied; setup
+  mismatches or missing required provider artifacts before admission are
+  `providerSetupInvalid`; provider-history unavailability maps to source-history `unknown`
+  with `providerHistoryUnknown`; and provider-history loss evidence maps through the
+  source-history classifier. Kafka topic, ACL, durability, and record-size failures map to
+  `kafkaPolicyInvalid`; shared offset-store policy or ACL failures map to
+  `connectOffsetStoreInvalid`; connector live-configuration drift maps to
+  `connectorConfigInvalid`; a missing, paused, failed, stopped, or non-sole running task
+  maps to `connectorNotRunning`; incomplete snapshot evidence maps to
+  `snapshotIncomplete`; connector lag over threshold maps to `lagExceeded`; provider
+  barrier not yet crossed maps to `providerBarrierNotReached`; terminal continuity loss or
+  a valid incident latch maps to `sourceHistoryLost`.
+- Target readiness is `notReady` when any component is `notSatisfied`, otherwise `unknown`
+  when any required component is `unknown`, otherwise `ready`. Select
+  `primaryBlockingCategory` with the precedence listed above. Aggregate readiness remains
+  the deterministic reduction over target results.
 - Every typed observation consumed by DMS-1319 includes `contractVersion`, `operationId`,
   UTC `observedAt`, normalized target identity, provider, and physical-source fingerprint
   when the source is known. DMS-1319 enforces same-operation correlation rather than a
@@ -373,6 +496,22 @@ document first and keep this story as the work package and evidence owner.
   `ed-fi-dms-connect-source-partition-v1\0<provider>\0<canonical-source-partition-json>`,
   where the canonical JSON includes the raw SQL Server database value only inside the hash
   input.
+- `connectSourcePartitionHash` uses one DMS-1319-owned canonical JSON encoder. The
+  canonical source-partition JSON is UTF-8, minified, object-only, and contains no extra
+  properties. PostgreSQL renders properties in this exact order:
+  `{"server":"<topicPrefix>"}`. SQL Server renders properties in this exact order:
+  `{"database":"<rawDatabaseName>","server":"<topicPrefix>"}`. Strings are escaped with
+  `System.Text.Json`/`Utf8JsonWriter` default string escaping; the raw SQL Server database
+  value is used only as this hash input and must not be serialized elsewhere.
+- Source-partition hash conformance vectors are:
+  - provider `postgresql`, canonical JSON `{"server":"edfi.dms"}`:
+    `sha256:9605ac115e4c82a0a9f1b2e7e0687c09fce12c699903be5189c8527efa3d2f40`;
+  - provider `sqlserver`, canonical JSON
+    `{"database":"EdFi_DMS_CDC","server":"edfi.dms"}`:
+    `sha256:678792175a93a7e810f3904d8d8e42e654289b147c3313a5c6d6a5c6593beab2`; and
+  - provider `sqlserver`, raw database value `EdFi "DMS"\CDC`, canonical JSON
+    `{"database":"EdFi \"DMS\"\\CDC","server":"edfi.dms"}`:
+    `sha256:d4391b11394929abaabadbf53d9a8c3a9c420f91302573966ceeaf12b591fa2a`.
 - Implement one source-history continuity adapter per provider that consumes the exact
   binding-derived artifacts and committed source offset. Its result is `healthy`,
   `unknown`, or `lost`. `unknown` covers temporary inability to prove continuity and keeps
@@ -415,10 +554,15 @@ document first and keep this story as the work package and evidence owner.
   after enablement uses `schemaHistoryMissing`; an empty SQL Server history topic when
   retained offsets exist uses `schemaHistoryEmptyWithRetainedOffset`; and proven removal
   of a required schema-history record uses `schemaHistoryRequiredRecordLost`.
-- Before initial connector admission, missing, unreadable, or nonconforming SQL Server
-  schema history is a non-latching setup/readiness failure. After initial enablement,
-  missing history, empty history when retained offsets exist, or proven truncation of
-  required history latches `sourceHistoryLost`. Temporary unreadability, ACL drift,
+- SQL Server schema-history observations include `enablementPhase` with enum values
+  `beforeInitialAdmission` and `afterInitialAdmission`. 19-04 supplies it with the
+  schema-history evidence, and DMS-1319 validates that it matches the current
+  admission/status workflow.
+- Before initial connector admission, missing, unreadable, empty, or nonconforming SQL
+  Server schema history is a non-latching setup/readiness failure. After initial
+  enablement, missing history, empty history when retained offsets exist, or proven
+  truncation of a required history record returns the matching terminal source-history
+  incident candidate and latches `sourceHistoryLost`. Temporary unreadability, ACL drift,
   retention-policy drift, or unavailable evidence without proof of lost required history is
   a non-latching `unknown`, `kafkaPolicyInvalid`, or `connectorConfigInvalid` readiness
   failure until a continuity check proves actual loss.
@@ -430,12 +574,12 @@ document first and keep this story as the work package and evidence owner.
   canonical write admission closed. DMS-1319 does not accept an operator assertion or an
   existing-database schema inspection as proof of v1 first-time CDC eligibility.
 - The classifier receives a trusted `InitialCdcProvisioningProof` object with
-  `contractVersion: 1`, normalized target identity, provider, setup-controller run id,
-  `databaseCreationMode: "createdForInitialCdcProvisioning"`,
+  `contractVersion: 1`, `proofId`, `operationId`, normalized target identity, provider,
+  setup-controller run id, `databaseCreationMode: "createdForInitialCdcProvisioning"`,
   `writeAdmissionState: "closedNeverOpened"`, and UTC `issuedAt`. DMS-1319 validates the
-  structure, enum values, version, non-empty run id, and target/provider match, then still
-  performs source resolution and empty canonical/cache/work checks before binding creation.
-  It treats proof provenance as trusted input from 19-04.
+  structure, enum values, version, non-empty `proofId`, non-empty run id, operation id, and
+  target/provider match, then still performs source resolution and empty canonical/cache/work
+  checks before binding creation. It treats proof provenance as trusted input from 19-04.
 - Before binding creation, the classifier rejects an unbound target when canonical,
   cache, or work tables are nonempty, or when the current source cannot be resolved. Do not
   create a binding and then discover that the database is ineligible.
@@ -451,14 +595,17 @@ document first and keep this story as the work package and evidence owner.
   creation, while the trusted write-admission proof still says writes have never opened.
   That observation contains `contractVersion`, `operationId`, `observedAt`,
   `durableObservedAt`, normalized target identity, provider, physical-source fingerprint,
-  setup-controller run id, write-admission proof id,
+  setup-controller run id, `writeAdmissionProofId`,
   `consistencyScope: "singleProviderTransaction"`, lifecycle state, cache-ahead latch
   state, `canonicalRowsPresent`, `cacheRowsPresent`, `workRowsPresent`, and an opaque
-  provider consistency token for diagnostics. DMS-1319 validates the operation/proof ids,
-  target/provider/source match, known lifecycle/latch values, and all three row-presence
-  booleans; it rejects before binding creation unless the source is resolved,
-  lifecycle/latch observations are authoritative, and canonical, cache, and work rows are
-  all absent.
+  provider consistency token for diagnostics. DMS-1319 requires
+  `writeAdmissionProofId == proof.proofId`, both DTO `operationId` values equal to the
+  current classifier operation, and matching setup-controller run id, target, and provider.
+  A mismatch rejects before binding creation as `rejectNotInitialWorkflow` with sanitized
+  diagnostics. DMS-1319 also validates source match, known lifecycle/latch values, and all
+  three row-presence booleans; it rejects before binding creation unless the source is
+  resolved, lifecycle/latch observations are authoritative, and canonical, cache, and work
+  rows are all absent.
 - Binding reservation precedes guarded tracking activation and all external CDC artifacts.
   The guarded activation itself is the 18-04 command contract; DMS-1319 classifies and
   records state, but does not duplicate the provider table locks or lifecycle mutation.
@@ -483,6 +630,30 @@ document first and keep this story as the work package and evidence owner.
   sanitized messages. Do not log or serialize credentials, connection strings, document
   payloads, raw student data, tenant display names, source UUIDs, raw server/catalog names,
   Kafka security settings, or unsanitized provider exception text.
+- Use one bounded lower-camel diagnostic item shape everywhere: `code`, `category`,
+  `severity`, `component`, `observedAt`, `message`, `artifactKind`, `artifactName`,
+  `expected`, `observed`, and `retryable`. `code`, `category`, `severity`, `component`,
+  `observedAt`, `message`, and `retryable` are required. `artifactKind`, `artifactName`,
+  `expected`, and `observed` are nullable sanitized strings.
+- `severity` values are `info`, `warning`, and `error`. `component` values are `binding`,
+  `projection`, `providerSetup`, `providerBarrier`, `sourceHistory`, `kafkaPolicy`,
+  `connectOffsetStore`, `connectorConfig`, `connectorRuntime`, `lag`, `stateStore`,
+  `proofValidation`, `observationValidation`, `admission`, and `retry`.
+- Cap every `diagnostics[]` array at 16 items. Cap `message` at 512 characters and all
+  other diagnostic strings at 256 characters after sanitization. Order diagnostics by the
+  component precedence used for status components, then by `observedAt`, then by `code`,
+  `artifactKind`, and `artifactName`. When truncation is needed, keep the highest-priority
+  diagnostics and append a final `diagnosticsTruncated` item whose `observed` value is the
+  omitted count.
+- Diagnostic `category` values are the blocking categories from the status contract plus
+  `malformedProof`, `invalidContractVersion`, `invalidOperationId`, `invalidTimestamp`,
+  `bindingIdentityMismatch`, `verificationIncomplete`, `inventoryIncomplete`,
+  `unexpectedArtifact`, `duplicateArtifact`, `artifactNameMismatch`, `artifactNotRemoved`,
+  `unsafeEvidence`, `malformedObservation`, `staleObservation`, `operationMismatch`,
+  `targetMismatch`, `providerMismatch`, `futureObservedAt`, `missingRequiredField`,
+  `invalidEnumValue`, `localStateUnavailable`, and `diagnosticsTruncated`. Use specific
+  `code` values from the same lower-camel vocabulary when no narrower implementation code
+  is needed.
 - Metrics may label provider, readiness state, component category, safe deployment key,
   opaque instance key, generation, and outcome. Do not label metrics with `DocumentUuid`,
   `DocumentId`, connector error text, topic consumer group supplied by an external
@@ -501,13 +672,15 @@ document first and keep this story as the work package and evidence owner.
 - State-store and lifecycle tests cover the binding and incident transitions in the
   referenced design sections.
 - JSON serialization tests pin the lower-camel v1 status, admission, retry-classifier,
-  binding-state, persisted binding, and incident DTO shapes, including enum string values,
-  required `contractVersion` fields, and exact-match behavior for missing, extra, or
-  differently valued binding fields.
+  binding-state, persisted binding, incident, normalized observation, adoption proof,
+  cleanup proof, and diagnostic DTO shapes, including enum string values, required
+  `contractVersion` fields, and exact-match behavior for missing, extra, or differently
+  valued binding fields.
 - State-store tests cover local path validation and lookup for valid tokens, invalid
   path-like tokens, deterministic lookup, no cross-key collision, adoption proof
-  validation, cleanup proof validation, and delete rejection when any governed artifact is
-  retained.
+  validation, cleanup proof validation, malformed/unreadable/duplicate local-state
+  failures, all-or-fail deployment-key listing, and delete rejection when any governed
+  artifact is retained.
 - Artifact-name helper tests cover deterministic output, provider-specific identifier
   limits/sanitization, generation isolation, and the complete name inventory consumed by
   19-01, 19-02, and 19-04.
@@ -516,11 +689,22 @@ document first and keep this story as the work package and evidence owner.
   artifact-kind strings, Kafka/Connect 249-character failure behavior, and topic-prefix
   reconstruction from persisted `topicName`.
 - PostgreSQL and SQL Server adapter tests cover position, continuity, and failure
-  classifications.
+  classifications. Use live PostgreSQL only for `pg_current_wal_lsn()` capture,
+  logical slot/publication metadata reads, retained-WAL range interpretation, and
+  provider-specific continuity observations that cannot be represented without a server.
+  Use live SQL Server only for heartbeat CDC after-image barrier capture, 10-byte LSN
+  normalization from provider rows, capture-instance/job metadata reads, retained min/max
+  LSN interpretation, and provider-specific continuity observations.
 - Offset observation tests cover normalized 19-04 offset inputs, PostgreSQL `lsnProc`, SQL
   Server `commitLsn`/`changeLsn`/`eventSerialNo`, source-partition hash generation, and
   exclusion of the sensitive SQL Server database value from serialized state,
   diagnostics, logs, and metrics.
+- Pure tests with fake 19-01/19-04 observations cover Connect offset parsing,
+  source-partition hash conformance, blocking-category precedence, source-history
+  `healthy`/`unknown`/`lost` classification matrices, incident-candidate creation, latch
+  behavior, status aggregation, and retry/admission classification. Broker-backed Connect
+  REST, topic/ACL, schema-history topic, and full orchestration evidence belongs to 19-04
+  through 19-06.
 - Status tests cover the complete design-owned readiness input matrix and aggregation.
 - Status tests cover the deterministic blocking-category precedence, aggregate
   `ready`/`notReady`/`unknown` reduction, same-operation observation freshness,
@@ -544,250 +728,8 @@ document first and keep this story as the work package and evidence owner.
 - DMS projection implementation is assigned to E18.
 - Provider object provisioning, connector rendering, and Connect REST orchestration are
   assigned to 19-01, 19-02, and 19-04.
-
-## Clarifying Questions and Answers
-
-### Questions 1
-
-1. `InitialCdcEligibilityObservation` refers to a write-admission proof id, but `InitialCdcProvisioningProof` does not list one; should the proof include a stable `proofId`, and should DMS-1319 require both `operationId` and `proofId` correlation during eligibility validation?
-2. Which status/admission input observations from 19-01, 19-02, and 19-04 are stable DMS-1319-owned lower-camel JSON DTOs now, especially `providerSetup`, `kafkaPolicy`, `connectOffsetStore`, `connectorConfig`, `connectorRuntime`, and `lag`, versus internal evaluator inputs whose wire shapes are owned by 19-04?
-3. What exact canonicalization and conformance vectors should DMS-1319 use for `connectSourcePartitionHash`, including PostgreSQL versus SQL Server source-partition shapes, property ordering, escaping, and proof that the raw SQL Server database value appears only inside the hash input?
-4. For SQL Server source-history continuity, what explicit input tells the classifier whether missing, empty, unreadable, or truncated schema-history evidence is a pre-initial-admission non-latching setup failure versus a post-enablement terminal incident candidate?
-5. What exact v1 JSON shape and enum vocabulary should `AdoptionProof`, `CleanupProof`, and the governed-artifact inventory use, including `cleanupMode`, artifact-kind names, per-artifact `deleted`/`notFound` evidence, and validation failure results?
-6. Should DMS-1319 define stable result DTOs and enum values for each state-store operation (`create`, `read`, `exactMatch`, `list`, `latch`, `import`, and `deleteAfterCleanup`) for 19-04 serialization, or are those internal service results with only binding-state, incident, admission, retry, and status DTOs as stable JSON contracts?
-7. Which DMS-1319 acceptance tests must use live PostgreSQL and SQL Server databases for provider barrier and source-history adapters, and which may remain pure parser/comparer fixtures or fake provider-metadata observations because 19-01 and 19-04 own setup and orchestration?
-
-### Answers 1
-
-1. Yes. Add `proofId` and `operationId` to `InitialCdcProvisioningProof`. `proofId`
-   is a non-empty opaque identifier minted by the trusted setup controller for one
-   closed-never-opened write-admission proof. `InitialCdcEligibilityObservation`
-   keeps `writeAdmissionProofId`, and DMS-1319 must require
-   `writeAdmissionProofId == proof.proofId`, both DTO `operationId` values equal to
-   the current classifier operation, and matching setup-controller run id, target, and
-   provider. A mismatch rejects before binding creation as `rejectNotInitialWorkflow`
-   with sanitized diagnostics.
-2. DMS-1319 should own stable lower-camel JSON DTOs for every normalized observation it
-   evaluates, not the raw acquisition payloads. Pin DTOs for initial provisioning proof,
-   initial eligibility, projection-status correlation, provider setup, Kafka policy,
-   Connect offset-store policy, connector configuration, connector runtime,
-   connector offset, connector lag, provider barrier, and source-history continuity
-   observations. 19-01's stable `CdcProviderSetupResult` is the provider-setup source
-   contract; DMS-1319 may wrap or project it for operation/source correlation but should
-   not redefine provider manifests. 19-04 owns raw Kafka, ACL, Connect REST, and
-   operator-command wire shapes, then maps them into these DMS-1319 observation DTOs
-   before invoking status, admission, retry, or continuity logic.
-3. `connectSourcePartitionHash` should use one DMS-1319-owned canonical JSON encoder.
-   The canonical source-partition JSON is UTF-8, minified, object-only, with no extra
-   properties. PostgreSQL renders properties in this exact order:
-   `{"server":"<topicPrefix>"}`. SQL Server renders properties in this exact order:
-   `{"database":"<rawDatabaseName>","server":"<topicPrefix>"}`. Strings are escaped with
-   `System.Text.Json`/`Utf8JsonWriter` default string escaping; the raw SQL Server
-   database value is used only as this hash input and must not be serialized elsewhere.
-   The hash payload is exactly UTF-8
-   `ed-fi-dms-connect-source-partition-v1\0<provider>\0<canonical-source-partition-json>`.
-   Conformance vectors:
-   - provider `postgresql`, canonical JSON `{"server":"edfi.dms"}`:
-     `sha256:9605ac115e4c82a0a9f1b2e7e0687c09fce12c699903be5189c8527efa3d2f40`
-   - provider `sqlserver`, canonical JSON
-     `{"database":"EdFi_DMS_CDC","server":"edfi.dms"}`:
-     `sha256:678792175a93a7e810f3904d8d8e42e654289b147c3313a5c6d6a5c6593beab2`
-   - provider `sqlserver`, raw database value `EdFi "DMS"\CDC`, canonical JSON
-     `{"database":"EdFi \"DMS\"\\CDC","server":"edfi.dms"}`:
-     `sha256:d4391b11394929abaabadbf53d9a8c3a9c420f91302573966ceeaf12b591fa2a`
-4. Add a SQL Server schema-history observation field named `enablementPhase` with enum
-   values `beforeInitialAdmission` and `afterInitialAdmission`. 19-04 supplies it with
-   the schema-history evidence, and DMS-1319 validates that it matches the current
-   admission/status workflow. In `beforeInitialAdmission`, missing, empty, unreadable,
-   or nonconforming schema-history evidence is a non-latching setup/readiness failure. In
-   `afterInitialAdmission`, missing history, empty history when retained offsets exist,
-   or proven truncation of a required history record returns the matching terminal
-   source-history incident candidate; temporary unreadability remains `unknown`.
-5. Pin `AdoptionProof` as a lower-camel v1 DTO with `contractVersion`, `operationId`,
-   `verifiedAt`, `binding`, and `verificationResults[]`. `verificationResults[]` must
-   contain exactly one result for each `verificationKind`: `physicalSource`,
-   `providerArtifacts`, `connector`, `connectorConfig`, `kafkaTopics`, `kafkaAcls`,
-   `connectOffsets`, and `sourceHistoryContinuity`. Each result has
-   `verificationKind`, `state`, and bounded `evidenceSummary`; the only accepted state
-   for import is `exactMatch`.
-
-   Pin `CleanupProof` as a lower-camel v1 DTO with `contractVersion`, `operationId`,
-   `verifiedAt`, `bindingIdentity`, `cleanupMode: "retireBindingGeneration"`, and
-   `governedArtifacts[]`. Each artifact has `artifactKind`, `artifactName`,
-   `cleanupState`, and bounded `evidenceSummary`. `cleanupState` values are `deleted`
-   and `notFound`; retained artifacts are not a delete-after-cleanup path. Required
-   `artifactKind` values are `kafkaConnectConnector`, `connectSourceOffsets`,
-   `publicTopic`, `progressTopic`, `publicTopicAcls`, `progressTopicAcls`,
-   `postgresqlPublication`, `postgresqlLogicalSlot`,
-   `sqlServerCdcGatingRole`, `sqlServerCaptureInstanceDocument`,
-   `sqlServerCaptureInstanceDocumentCache`,
-   `sqlServerCaptureInstanceCdcHeartbeat`, `schemaHistoryTopic`, and
-   `schemaHistoryTopicAcls`, with only the provider-applicable artifacts required for a
-   given binding. Validation failure diagnostics should use these lower-camel categories:
-   `malformedProof`, `invalidContractVersion`, `invalidOperationId`,
-   `invalidTimestamp`, `bindingIdentityMismatch`, `verificationIncomplete`,
-   `inventoryIncomplete`, `unexpectedArtifact`, `duplicateArtifact`,
-   `artifactNameMismatch`, `artifactNotRemoved`, and `unsafeEvidence`.
-6. Keep individual state-store operation results as internal strongly typed service
-   results, not stable 19-04 JSON contracts. The stable JSON contracts owned by DMS-1319
-   are binding-state, incident, admission, retry, status, the normalized observation DTOs,
-   and the proof DTOs above. 19-04 should serialize operator responses by mapping
-   internal create/read/exact-match/list/latch/import/delete-after-cleanup outcomes into
-   those stable DTOs plus diagnostics, rather than exposing a second state-store result
-   contract.
-7. DMS-1319 must use live provider integration tests only where the adapter reads or
-   normalizes provider state directly. Use live PostgreSQL for `pg_current_wal_lsn()`
-   capture, logical slot/publication metadata reads, retained-WAL range interpretation,
-   and provider-specific continuity observations that cannot be represented without a
-   server. Use live SQL Server for heartbeat CDC after-image barrier capture,
-   10-byte LSN normalization from provider rows, capture-instance/job metadata reads,
-   retained min/max LSN interpretation, and provider-specific continuity observations.
-   Keep Connect offset parsing, source-partition hash conformance, blocking-category
-   precedence, source-history `healthy`/`unknown`/`lost` classification matrices,
-   incident-candidate creation, latch behavior, status aggregation, and retry/admission
-   classification as pure tests with fake 19-01/19-04 observations. Broker-backed
-   Connect REST, topic/ACL, schema-history topic, and full orchestration evidence belongs
-   to 19-04 through 19-06.
-
-### Questions 2
-
-1. For the DMS-1319-owned normalized observation DTOs that are not already fully shaped here, especially projection-status correlation, provider setup, Kafka policy, Connect offset-store policy, connector configuration, connector runtime, and connector lag, what exact lower-camel fields, required/nullable rules, and enum values should v1 serialization fixtures pin?
-2. What are the exact mapping rules from E18 projection status, DMS-1320 `CdcProviderSetupResult`, and 19-04 Kafka/Connect observations into DMS-1319 component `state`, component `category`, target `readiness`, and `primaryBlockingCategory` values?
-3. What exact `diagnostics[]` item shape, maximum counts/string lengths, ordering rules, and diagnostic code/category vocabulary should status, admission, retry, binding-state, proof-validation, and observation-validation DTOs use?
-4. How should DMS-1319 represent E18 `enqueueFailures` in combined CDC status: as a distinct component or blocking category, as projection-component diagnostics only, or folded into `projectionNonOperational` or `statusObservationUnavailable`?
-5. For malformed, unreadable, duplicate, or permission-denied local binding/incident files, should state-store read, list, exact-match, status, and retry classify them as `bindingMismatch`, `incidentLatched`, `statusObservationUnavailable`, or operation-level failures, and should one bad file fail a deployment-key list operation?
-6. Does DMS-1319 own any v1 source-replacement or generation-reservation contract for the 19-04 guarded source-replacement workflow, including `SourceIdentity` rotation proof, or is source replacement out of scope beyond ordinary create/exact-match binding plus adoption and cleanup proof handling?
-
-### Answers 2
-
-1. Pin one common observation envelope for every DMS-1319-owned normalized observation:
-   `contractVersion`, `operationId`, `observedAt`, `targetIdentity`, `provider`,
-   `physicalSourceFingerprint`, and `diagnostics`. `contractVersion` is required and must
-   be `1`; `operationId`, `targetIdentity`, and `provider` are required; `observedAt` is a
-   required UTC timestamp; `physicalSourceFingerprint` is required when the source is known
-   and otherwise `null`, which maps that observation to `unknown`.
-
-   Pin these concrete lower-camel DTOs on top of that envelope. Projection correlation:
-   `projectionObservedAt`, `e18TargetKey`, `correlationState`, `operationalHealthStatus`,
-   `operationalHealthReason`, `caughtUpStatus`, `caughtUpReason`, `queuePresence`, and
-   `enqueueFailureCategories`. `correlationState` values are `matched`,
-   `targetMismatch`, `providerMismatch`, `sourceMismatch`, `unavailable`, and
-   `invalidPayload`; E18 enum values are copied from the 18-06 contract. Provider setup:
-   `setupMode`, `setupOutcome`, `artifactInventoryState`, `grantInventoryState`,
-   `sourceInventoryState`, `heartbeatState`, and `providerHistoryState`; `setupMode`
-   values are `initialCreateOrExactMatch` and `validateOnly`, `setupOutcome` values are
-   `satisfied`, `invalid`, and `unknown`, and the state fields use `matched`,
-   `mismatched`, `missing`, `unknown`, and `notApplicable`. Kafka policy:
-   `policyState`, `durabilityProfile`, `publicTopic`, `progressTopic`,
-   `schemaHistoryTopic`, `publicTopicAcls`, `progressTopicAcls`,
-   `schemaHistoryTopicAcls`, and `recordSizePolicy`; `policyState` values are
-   `satisfied`, `invalid`, and `unknown`, and PostgreSQL uses `null` for SQL Server-only
-   schema-history fields. Connect offset-store policy: `workerKey`,
-   `offsetStorageTopic`, `policyState`, `cleanupPolicy`, `replicationFactor`,
-   `minInSyncReplicas`, and `aclState`. Connector configuration: `connectorName`,
-   `configurationState`, `topicPrefix`, `taskCount`, `transformState`, `converterState`,
-   `producerOverrideState`, `heartbeatState`, `sourceIncludeListState`, `offsetState`,
-   and `schemaHistoryState`; `configurationState` values are `matched`, `invalid`, and
-   `unknown`. Connector runtime: `connectorName`, `connectorState`, `taskCount`,
-   `runningTaskCount`, `soleTaskState`, `snapshotState`, `lastErrorCategory`, and
-   `lastErrorObservedAt`; connector and task state values are `running`, `paused`,
-   `failed`, `stopped`, `unassigned`, and `unknown`, and `snapshotState` values are
-   `notStarted`, `running`, `completed`, `notApplicable`, and `unknown`. Connector lag:
-   `lagState`, `currentLagMilliseconds`, `thresholdMilliseconds`,
-   `p50LagMilliseconds`, `p95LagMilliseconds`, and `p99LagMilliseconds`; `lagState`
-   values are `withinThreshold`, `exceeded`, and `unknown`. Required strings are
-   non-empty after validation. Nullable scalar fields are allowed only where the field is
-   provider-inapplicable or the observation state is `unknown`.
-2. Map observations to components with one rule: exact-match affirmative evidence becomes
-   component `state: "satisfied"` and `category: "none"`; authoritative invalid or
-   mismatched evidence becomes `state: "notSatisfied"` with the most specific blocking
-   category; unavailable, stale, mismatched-operation, malformed, or out-of-order evidence
-   becomes `state: "unknown"` with `category: "statusObservationUnavailable"` unless the
-   evidence proves a more specific binding, source, or source-history failure.
-
-   E18 projection maps to `projection`. A matched source with
-   `operationalHealth.status: "operational"` and `caughtUp.status: "caughtUp"` is
-   satisfied. Non-operational E18 status maps to `projectionNonOperational`; matched
-   operational status with non-empty queue maps to `projectionBacklog` where caught-up is
-   required; E18 unknown, invalid payload, operation mismatch, or stale observation maps
-   to `statusObservationUnavailable`; provider/source mismatch maps to `sourceMismatch`.
-   DMS-1320 provider setup maps to `providerSetup`: satisfied setup is satisfied, setup
-   mismatches or missing required provider artifacts before admission are
-   `providerSetupInvalid`, provider-history unavailability maps to source-history
-   `unknown` with `providerHistoryUnknown`, and provider-history loss evidence maps through
-   the source-history classifier. Kafka topic, ACL, durability, and record-size failures
-   map to `kafkaPolicyInvalid`; shared offset-store policy or ACL failures map to
-   `connectOffsetStoreInvalid`; connector live-configuration drift maps to
-   `connectorConfigInvalid`; a missing, paused, failed, stopped, or non-sole running task
-   maps to `connectorNotRunning`; incomplete snapshot evidence maps to
-   `snapshotIncomplete`; connector lag over threshold maps to `lagExceeded`; provider
-   barrier not yet crossed maps to `providerBarrierNotReached`; terminal continuity loss
-   or a valid incident latch maps to `sourceHistoryLost`.
-
-   Target readiness is `notReady` when any component is `notSatisfied`, otherwise
-   `unknown` when any required component is `unknown`, otherwise `ready`. Select
-   `primaryBlockingCategory` with the precedence already listed in this story. Aggregate
-   readiness remains the deterministic reduction over target results.
-3. Use one bounded lower-camel diagnostic item shape everywhere:
-   `code`, `category`, `severity`, `component`, `observedAt`, `message`, `artifactKind`,
-   `artifactName`, `expected`, `observed`, and `retryable`. `code`, `category`,
-   `severity`, `component`, `observedAt`, `message`, and `retryable` are required.
-   `artifactKind`, `artifactName`, `expected`, and `observed` are nullable sanitized
-   strings. `severity` values are `info`, `warning`, and `error`; `component` values are
-   `binding`, `projection`, `providerSetup`, `providerBarrier`, `sourceHistory`,
-   `kafkaPolicy`, `connectOffsetStore`, `connectorConfig`, `connectorRuntime`, `lag`,
-   `stateStore`, `proofValidation`, `observationValidation`, `admission`, and `retry`.
-
-   Cap every `diagnostics[]` array at 16 items. Cap `message` at 512 characters and all
-   other diagnostic strings at 256 characters after sanitization. Order diagnostics by the
-   component precedence used for status components, then by `observedAt`, then by `code`,
-   `artifactKind`, and `artifactName`. When truncation is needed, keep the highest-priority
-   diagnostics and append a final `diagnosticsTruncated` item whose `observed` value is
-   the omitted count.
-
-   `category` values are the blocking categories from the status contract plus
-   `malformedProof`, `invalidContractVersion`, `invalidOperationId`, `invalidTimestamp`,
-   `bindingIdentityMismatch`, `verificationIncomplete`, `inventoryIncomplete`,
-   `unexpectedArtifact`, `duplicateArtifact`, `artifactNameMismatch`,
-   `artifactNotRemoved`, `unsafeEvidence`, `malformedObservation`, `staleObservation`,
-   `operationMismatch`, `targetMismatch`, `providerMismatch`, `futureObservedAt`,
-   `missingRequiredField`, `invalidEnumValue`, `localStateUnavailable`, and
-   `diagnosticsTruncated`. Use specific `code` values from the same lower-camel vocabulary
-   when no narrower implementation code is needed; do not expose provider exception text,
-   credentials, connection strings, raw source partitions, source UUIDs, raw server or
-   database names, document payloads, or tenant display names.
-4. Represent E18 `enqueueFailures` as projection-component diagnostics only. Do not add a
-   separate DMS-1319 component or blocking category for retained enqueue-failure events,
-   and do not fold retained enqueue failures into `statusObservationUnavailable`.
-   Authoritative E18 operational-health and caught-up values remain the only projection
-   readiness inputs. If an enqueue artifact problem also makes E18 report
-   non-operational status, DMS-1319 maps that status to `projectionNonOperational`; if E18
-   remains operational and caught up, retained enqueue-failure diagnostics do not by
-   themselves change CDC readiness.
-5. Treat malformed, unreadable, duplicate, or permission-denied local binding or incident
-   files as operation-level state-store failures. A read or exact-match for the affected
-   identity returns a state-store failure diagnostic with `localStateUnavailable`; status
-   and retry map that to `unknown` with `statusObservationUnavailable` and fail closed.
-   Do not report `bindingMismatch` unless a valid binding file was parsed and its immutable
-   fields differ. Do not report `incidentLatched` unless a valid incident file was parsed
-   for the exact binding identity and generation. Duplicate JSON properties, duplicate
-   files for the same identity, case-colliding paths, symlinks, unexpected non-regular
-   files, and permission-denied paths are local state-store failures, not repairable
-   mismatches.
-
-   A deployment-key list operation must fail as a whole when any binding or incident file
-   under that deployment key cannot be validated. Returning a partial list could hide a
-   binding or terminal incident, so the normal list contract is all-or-fail with bounded
-   diagnostics. A later operator diagnostic command may expose partial filesystem details,
-   but that is not the state-store API consumed by status, admission, or retry logic.
-6. DMS-1319 does not own a special v1 source-replacement, generation-reservation, or
-   `SourceIdentity` rotation-proof contract. Source replacement orchestration is owned by
-   19-04. DMS-1319 supplies only the ordinary immutable binding create-or-exact-match
-   operation for a caller-selected positive generation and current physical-source
-   fingerprint, plus adoption proof, cleanup proof, status, retry, and incident-latch
-   handling. It validates that the supplied generation is positive and either absent or an
-   exact binding match; it does not mint, reserve, or relate generations and does not
-   certify that a `SourceIdentity` rotation workflow was performed. If 19-04 implements
-   guarded source replacement in v1, it should define the rotation proof and generation
-   selection in that story and then call the existing DMS-1319 binding operation with the
-   resulting new fingerprint and generation.
+- DMS-1319 does not own a special v1 source-replacement, generation-reservation, or
+  `SourceIdentity` rotation-proof contract. Source replacement orchestration is owned by
+  19-04. If 19-04 implements guarded source replacement in v1, it defines the rotation
+  proof and generation selection, then calls the existing DMS-1319 binding operation with
+  the resulting new fingerprint and generation.
