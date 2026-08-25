@@ -20,14 +20,8 @@ internal static class DocumentCacheAdminServiceCollectionExtensions
     public static IServiceCollection AddDocumentCacheAdminRuntimeServices(
         this IServiceCollection services,
         IConfiguration configuration,
-        ILogger logger
-    ) => AddDocumentCacheAdminRuntimeServices(services, configuration, logger, invocationTarget: null);
-
-    public static IServiceCollection AddDocumentCacheAdminRuntimeServices(
-        this IServiceCollection services,
-        IConfiguration configuration,
         ILogger logger,
-        DocumentCacheTargetKey? invocationTarget
+        DocumentCacheTargetKey? invocationTarget = null
     )
     {
         ArgumentNullException.ThrowIfNull(services);

@@ -359,8 +359,7 @@ public sealed class Given_DocumentCacheAdminInProcessCommandRunner
     private static ParseResult ParseCommand(string commandName, params string[] args) =>
         DocumentCacheAdminCommandSurface.CreateRootCommand().Parse([commandName, .. args]);
 
-    private static DocumentCacheAdminInvocationTarget InvocationTarget() =>
-        new(TargetKey, DocumentCacheAdminInvocationTargetSource.Options);
+    private static DocumentCacheAdminInvocationTarget InvocationTarget() => new(TargetKey);
 
     private static ServiceProvider CreateDispatcherServiceProvider(
         IDocumentCacheAdministrativeCommandRunner commandRunner

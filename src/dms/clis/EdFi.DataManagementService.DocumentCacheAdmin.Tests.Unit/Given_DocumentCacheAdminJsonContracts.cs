@@ -442,10 +442,7 @@ public sealed class Given_DocumentCacheAdminJsonContracts
 
         int exitCode = await DocumentCacheAdminCommandExecutor.ExecuteAsync(
             parseResult,
-            new DocumentCacheAdminInvocationTarget(
-                DocumentCacheTargetKey.Create("", 1),
-                DocumentCacheAdminInvocationTargetSource.Options
-            ),
+            new DocumentCacheAdminInvocationTarget(DocumentCacheTargetKey.Create("", 1)),
             serviceProvider,
             output
         );

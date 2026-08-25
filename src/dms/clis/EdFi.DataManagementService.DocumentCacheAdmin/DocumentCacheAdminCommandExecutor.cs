@@ -693,7 +693,7 @@ internal static class DocumentCacheAdminCommandExecutor
                 .ConfigureAwait(false);
             if (resolution.Outcome != DocumentCacheAdminTargetResolutionOutcome.Completed)
             {
-                return CreateTargetResolutionFailureStatusResponse(resolution);
+                return CreateTargetResolutionFailureStatusResponse(targetKey, resolution);
             }
         }
 
@@ -706,6 +706,7 @@ internal static class DocumentCacheAdminCommandExecutor
     }
 
     private static DocumentCacheStatusResponse CreateTargetResolutionFailureStatusResponse(
+        DocumentCacheTargetKey targetKey,
         DocumentCacheAdminTargetResolutionResult resolution
     )
     {
@@ -728,7 +729,7 @@ internal static class DocumentCacheAdminCommandExecutor
             observedAt,
             [
                 new DocumentCacheStatusTarget(
-                    DocumentCacheStatusTargetKey.FromTargetKey(resolution.TargetKey),
+                    DocumentCacheStatusTargetKey.FromTargetKey(targetKey),
                     targetGeneration: null,
                     observedAt,
                     durableObservedAt: null,

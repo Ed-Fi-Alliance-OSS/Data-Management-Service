@@ -9,15 +9,8 @@ using EdFi.DataManagementService.Core.Configuration;
 
 namespace EdFi.DataManagementService.DocumentCacheAdmin;
 
-internal enum DocumentCacheAdminInvocationTargetSource
-{
-    Options,
-    RequestJson,
-}
-
 internal sealed record DocumentCacheAdminInvocationTarget(
     DocumentCacheTargetKey TargetKey,
-    DocumentCacheAdminInvocationTargetSource Source,
     DocumentCacheAdminJsonRequest? JsonRequest = null
 );
 
@@ -104,13 +97,7 @@ internal static class DocumentCacheAdminInvocationTargetParser
             return false;
         }
 
-        return TryCreateInvocationTarget(
-            tenantKey,
-            dataStoreId.Value,
-            DocumentCacheAdminInvocationTargetSource.Options,
-            out invocationTarget,
-            out failure
-        );
+        return TryCreateInvocationTarget(tenantKey, dataStoreId.Value, out invocationTarget, out failure);
     }
 
     private static bool TryParseRequestJsonTarget(
@@ -188,18 +175,13 @@ internal static class DocumentCacheAdminInvocationTargetParser
             return false;
         }
 
-        invocationTarget = new DocumentCacheAdminInvocationTarget(
-            jsonRequest!.TargetKey,
-            DocumentCacheAdminInvocationTargetSource.RequestJson,
-            jsonRequest
-        );
+        invocationTarget = new DocumentCacheAdminInvocationTarget(jsonRequest!.TargetKey, jsonRequest);
         return true;
     }
 
     private static bool TryCreateInvocationTarget(
         string? tenantKey,
         long dataStoreId,
-        DocumentCacheAdminInvocationTargetSource source,
         out DocumentCacheAdminInvocationTarget? invocationTarget,
         out string? failure
     )
@@ -220,7 +202,7 @@ internal static class DocumentCacheAdminInvocationTargetParser
             return false;
         }
 
-        invocationTarget = new DocumentCacheAdminInvocationTarget(targetKey, source);
+        invocationTarget = new DocumentCacheAdminInvocationTarget(targetKey);
         return true;
     }
 

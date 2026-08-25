@@ -158,7 +158,7 @@ public sealed class Given_DocumentCacheAdminParserAndContractUnitTests
         );
 
         parsed.Should().BeTrue(failure);
-        invocationTarget!.Source.Should().Be(DocumentCacheAdminInvocationTargetSource.RequestJson);
+        invocationTarget!.JsonRequest.Should().NotBeNull();
         invocationTarget.JsonRequest!.Request.Should().BeOfType(expectedRequestType);
         invocationTarget.JsonRequest.TargetKey.Should().Be(DocumentCacheTargetKey.Create("", 1));
     }
@@ -256,10 +256,7 @@ public sealed class Given_DocumentCacheAdminParserAndContractUnitTests
                 "1",
                 DocumentCacheAdminCommandSurface.JsonOptionName
             ),
-            new DocumentCacheAdminInvocationTarget(
-                DocumentCacheTargetKey.Create("", 1),
-                DocumentCacheAdminInvocationTargetSource.Options
-            ),
+            new DocumentCacheAdminInvocationTarget(DocumentCacheTargetKey.Create("", 1)),
             serviceProvider,
             stdout,
             stderr

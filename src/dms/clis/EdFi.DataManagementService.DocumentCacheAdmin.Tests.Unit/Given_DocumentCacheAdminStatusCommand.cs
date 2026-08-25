@@ -172,7 +172,7 @@ public sealed class Given_DocumentCacheAdminStatusCommand
             .Parse([DocumentCacheAdminCommandSurface.StatusCommandName, .. args]);
 
     private static DocumentCacheAdminInvocationTarget InvocationTarget() =>
-        new(DocumentCacheTargetKey.Create("", 1), DocumentCacheAdminInvocationTargetSource.Options);
+        new(DocumentCacheTargetKey.Create("", 1));
 
     private static DocumentCacheStatusResponse StatusResponse() =>
         new(
@@ -324,7 +324,6 @@ public sealed class Given_DocumentCacheAdminStatusCommand
             return Task.FromResult(
                 new DocumentCacheAdminTargetResolutionResult(
                     DocumentCacheAdminTargetResolutionOutcome.UnexpectedTargetMembership,
-                    targetKey,
                     registrySnapshot,
                     "DocumentCache target registry did not contain exactly the invocation target."
                 )

@@ -307,7 +307,7 @@ public sealed class Given_DocumentCacheAdminProcessFailures
         DocumentCacheAdminCommandSurface.CreateRootCommand().Parse([commandName, .. args]);
 
     private static DocumentCacheAdminInvocationTarget InvocationTarget() =>
-        new(DocumentCacheTargetKey.Create("", 1), DocumentCacheAdminInvocationTargetSource.Options);
+        new(DocumentCacheTargetKey.Create("", 1));
 
     private static JsonObject ParseSingleJsonResult(StringWriter stdout)
     {

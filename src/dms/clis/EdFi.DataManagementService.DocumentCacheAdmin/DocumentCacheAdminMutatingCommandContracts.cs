@@ -214,8 +214,6 @@ internal static class DocumentCacheAdminMutatingCommandContracts
         ),
     };
 
-    public static IEnumerable<string> CommandNames => MutatingContracts.Keys;
-
     public static bool TryGet(
         string commandName,
         [NotNullWhen(true)] out DocumentCacheAdminMutatingCommandContract? contract

@@ -200,7 +200,7 @@ public sealed class Given_DocumentCacheAdminLoggingAndTelemetry
         DocumentCacheAdminCommandSurface.CreateRootCommand().Parse([commandName, .. args]);
 
     private static DocumentCacheAdminInvocationTarget InvocationTarget(string tenantKey) =>
-        new(DocumentCacheTargetKey.Create(tenantKey, 1), DocumentCacheAdminInvocationTargetSource.Options);
+        new(DocumentCacheTargetKey.Create(tenantKey, 1));
 
     private sealed class SuccessfulProjectionSupervisor(DocumentCacheTargetKey targetKey)
         : IDocumentCacheProjectionSupervisor

@@ -28,7 +28,6 @@
         <InternalsVisibleTo Include="EdFi.DataManagementService.Core.Tests.Unit" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Postgresql" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Mssql" />
-        <InternalsVisibleTo Include="EdFi.DataManagementService.DocumentCacheAdmin" />
         <InternalsVisibleTo Include="dms-document-cache" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit" />

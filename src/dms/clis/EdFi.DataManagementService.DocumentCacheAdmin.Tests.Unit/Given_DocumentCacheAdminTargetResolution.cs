@@ -36,7 +36,7 @@ public sealed class Given_DocumentCacheAdminTargetResolution
         );
 
         parsed.Should().BeTrue(failure);
-        invocationTarget!.Source.Should().Be(DocumentCacheAdminInvocationTargetSource.Options);
+        invocationTarget!.JsonRequest.Should().BeNull();
         invocationTarget.TargetKey.Should().Be(DocumentCacheTargetKey.Create(string.Empty, 7));
     }
 
@@ -139,7 +139,7 @@ public sealed class Given_DocumentCacheAdminTargetResolution
         );
 
         parsed.Should().BeTrue(failure);
-        invocationTarget!.Source.Should().Be(DocumentCacheAdminInvocationTargetSource.RequestJson);
+        invocationTarget!.JsonRequest.Should().NotBeNull();
         invocationTarget.TargetKey.Should().Be(DocumentCacheTargetKey.Create("TenantA", 7));
     }
 
@@ -305,7 +305,6 @@ public sealed class Given_DocumentCacheAdminTargetResolution
         DocumentCacheAdminTargetResolutionResult result = await resolver.ResolveAsync(targetKey);
 
         result.Outcome.Should().Be(DocumentCacheAdminTargetResolutionOutcome.Completed);
-        result.TargetKey.Should().Be(targetKey);
         result.RegistrySnapshot.Should().BeSameAs(registrySnapshot);
         result.FailureMessage.Should().BeNull();
         A.CallTo(() =>
@@ -336,7 +335,6 @@ public sealed class Given_DocumentCacheAdminTargetResolution
         DocumentCacheAdminTargetResolutionResult result = await resolver.ResolveAsync(targetKey);
 
         result.Outcome.Should().Be(DocumentCacheAdminTargetResolutionOutcome.UnexpectedTargetMembership);
-        result.TargetKey.Should().Be(targetKey);
         result.RegistrySnapshot.Should().BeSameAs(registrySnapshot);
         result.FailureMessage.Should().Contain("exactly the invocation target");
     }
