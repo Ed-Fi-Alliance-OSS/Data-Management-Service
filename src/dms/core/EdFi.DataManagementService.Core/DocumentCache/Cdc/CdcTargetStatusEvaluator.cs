@@ -41,26 +41,6 @@ public static class CdcTargetStatusEvaluator
 {
     private const int MaximumDiagnostics = 16;
 
-    private static readonly CdcBlockingCategory[] BlockingPrecedence =
-    [
-        CdcBlockingCategory.BindingMissing,
-        CdcBlockingCategory.BindingMismatch,
-        CdcBlockingCategory.SourceMismatch,
-        CdcBlockingCategory.SourceHistoryLost,
-        CdcBlockingCategory.ProjectionNonOperational,
-        CdcBlockingCategory.ProviderSetupInvalid,
-        CdcBlockingCategory.KafkaPolicyInvalid,
-        CdcBlockingCategory.ConnectOffsetStoreInvalid,
-        CdcBlockingCategory.ConnectorConfigInvalid,
-        CdcBlockingCategory.ConnectorNotRunning,
-        CdcBlockingCategory.SnapshotIncomplete,
-        CdcBlockingCategory.ProjectionBacklog,
-        CdcBlockingCategory.ProviderHistoryUnknown,
-        CdcBlockingCategory.ProviderBarrierNotReached,
-        CdcBlockingCategory.LagExceeded,
-        CdcBlockingCategory.StatusObservationUnavailable,
-    ];
-
     public static CdcTargetStatus Evaluate(CdcTargetStatusEvaluationInput input)
     {
         ArgumentNullException.ThrowIfNull(input);
@@ -113,7 +93,7 @@ public static class CdcTargetStatusEvaluator
         );
         CdcComponent lag = EvaluateLag(input.Lag, context, diagnostics);
 
-        ComponentSnapshot[] components =
+        CdcComponentStatus[] components =
         [
             Snapshot(binding.Component),
             Snapshot(projection),
@@ -129,8 +109,8 @@ public static class CdcTargetStatusEvaluator
 
         return new(
             input.TargetIdentity,
-            DetermineReadiness(components),
-            SelectPrimaryBlockingCategory(components),
+            CdcStatusEvaluationRules.DetermineTargetReadiness(components),
+            CdcStatusEvaluationRules.SelectTargetPrimaryBlockingCategory(components),
             binding.Component,
             projection,
             providerSetup,
@@ -1055,50 +1035,10 @@ public static class CdcTargetStatusEvaluator
         || observation.OffsetState == state
         || observation.SchemaHistoryState == state;
 
-    private static CdcReadiness DetermineReadiness(IReadOnlyList<ComponentSnapshot> components)
-    {
-        if (components.Any(component => component.State == CdcComponentState.NotSatisfied))
-        {
-            return CdcReadiness.NotReady;
-        }
-
-        if (components.Any(component => component.State == CdcComponentState.Unknown))
-        {
-            return CdcReadiness.Unknown;
-        }
-
-        return CdcReadiness.Ready;
-    }
-
-    private static CdcBlockingCategory SelectPrimaryBlockingCategory(
-        IReadOnlyList<ComponentSnapshot> components
-    )
-    {
-        CdcBlockingCategory notSatisfiedCategory = BlockingPrecedence.FirstOrDefault(
-            category =>
-                components.Any(component =>
-                    component.State == CdcComponentState.NotSatisfied && component.Category == category
-                ),
-            CdcBlockingCategory.None
-        );
-        if (notSatisfiedCategory != CdcBlockingCategory.None)
-        {
-            return notSatisfiedCategory;
-        }
-
-        return BlockingPrecedence.FirstOrDefault(
-            category =>
-                components.Any(component =>
-                    component.State == CdcComponentState.Unknown && component.Category == category
-                ),
-            CdcBlockingCategory.None
-        );
-    }
-
-    private static ComponentSnapshot Snapshot(CdcComponent component) =>
+    private static CdcComponentStatus Snapshot(CdcComponent component) =>
         new(component.State, component.Category);
 
-    private static ComponentSnapshot Snapshot(CdcSourceHistoryComponent component) =>
+    private static CdcComponentStatus Snapshot(CdcSourceHistoryComponent component) =>
         new(component.State, component.Category);
 
     private static void AddDiagnostics(
@@ -1125,6 +1065,4 @@ public static class CdcTargetStatusEvaluator
         CdcBinding? Binding,
         CdcIncident? ValidIncident
     );
-
-    private sealed record ComponentSnapshot(CdcComponentState State, CdcBlockingCategory Category);
 }
