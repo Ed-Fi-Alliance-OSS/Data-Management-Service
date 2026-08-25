@@ -620,7 +620,8 @@ public static class CdcSourceHistoryContinuityClassifier
         }
 
         AddDiagnostics(diagnostics, input.SqlServerSchemaHistory.Diagnostics);
-        if (!Enum.IsDefined(input.SqlServerSchemaHistory.EnablementPhase))
+        bool enablementPhaseDefined = Enum.IsDefined(input.SqlServerSchemaHistory.EnablementPhase);
+        if (!enablementPhaseDefined)
         {
             diagnostics.InvalidEnumValue(
                 "$.sqlServerSchemaHistory.enablementPhase",
@@ -628,7 +629,8 @@ public static class CdcSourceHistoryContinuityClassifier
             );
         }
 
-        if (!Enum.IsDefined(input.SqlServerSchemaHistory.State))
+        bool stateDefined = Enum.IsDefined(input.SqlServerSchemaHistory.State);
+        if (!stateDefined)
         {
             diagnostics.InvalidEnumValue(
                 "$.sqlServerSchemaHistory.state",
@@ -636,18 +638,27 @@ public static class CdcSourceHistoryContinuityClassifier
             );
         }
 
-        if (diagnostics.HasDiagnostics && !Enum.IsDefined(input.SqlServerSchemaHistory.State))
+        if (!enablementPhaseDefined || !stateDefined)
         {
-            return UnknownWithMetadata(
+            return Unknown(
                 input,
                 observedAt,
                 diagnostics,
-                CdcProvider.SqlServer,
-                inventory,
-                expectedSourcePartitionHash,
-                position,
-                input.ProviderHistory,
-                [CdcIncidentUnavailableFact.SchemaHistory]
+                input.ProviderHistory?.ProviderArtifactState ?? CdcProviderArtifactContinuityState.ExactMatch,
+                input.ProviderHistory?.RetainedRangeState
+                    ?? CdcProviderRetainedRangeState.CoversCommittedOffset,
+                BuildPositionMetadata(
+                    CdcProvider.SqlServer,
+                    inventory,
+                    expectedSourcePartitionHash,
+                    position,
+                    input.ProviderHistory,
+                    [CdcIncidentUnavailableFact.SchemaHistory]
+                ),
+                enablementPhaseDefined
+                    ? input.SqlServerSchemaHistory.EnablementPhase
+                    : CdcSqlServerSchemaHistoryEnablementPhase.AfterInitialAdmission,
+                CdcSqlServerSchemaHistoryState.Unknown
             );
         }
 

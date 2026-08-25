@@ -105,6 +105,70 @@ public class Given_CdcSourceHistoryContinuityClassifier
     }
 
     [Test]
+    public void It_reports_unknown_when_sql_server_schema_history_phase_is_unsupported_with_valid_state()
+    {
+        CdcBinding binding = CdcContinuityFixture.CreateBinding(CdcProvider.SqlServer);
+        CdcSourceHistoryClassificationResult result = CdcSourceHistoryContinuityClassifier.Evaluate(
+            CdcContinuityFixture.CreateInput(binding) with
+            {
+                SqlServerSchemaHistory = new(
+                    (CdcSqlServerSchemaHistoryEnablementPhase)999,
+                    CdcSqlServerSchemaHistoryState.Valid
+                ),
+            }
+        );
+
+        result.Observation.Continuity.Should().Be(CdcSourceHistoryContinuity.Unknown);
+        result
+            .Observation.SchemaHistoryEnablementPhase.Should()
+            .Be(CdcSqlServerSchemaHistoryEnablementPhase.AfterInitialAdmission);
+        result.Observation.SchemaHistoryState.Should().Be(CdcSqlServerSchemaHistoryState.Unknown);
+        result
+            .Observation.PositionEvidence!.UnavailableFacts.Should()
+            .Contain(CdcIncidentUnavailableFact.SchemaHistory);
+        result
+            .Observation.Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CdcDiagnosticCategory.InvalidEnumValue
+                && diagnostic.Path == "$.sqlServerSchemaHistory.enablementPhase"
+            );
+        result.IncidentCandidate.Should().BeNull();
+        ValidateObservation(result.Observation, binding).Succeeded.Should().BeTrue();
+    }
+
+    [Test]
+    public void It_reports_unknown_when_sql_server_schema_history_state_is_unsupported()
+    {
+        CdcBinding binding = CdcContinuityFixture.CreateBinding(CdcProvider.SqlServer);
+        CdcSourceHistoryClassificationResult result = CdcSourceHistoryContinuityClassifier.Evaluate(
+            CdcContinuityFixture.CreateInput(binding) with
+            {
+                SqlServerSchemaHistory = new(
+                    CdcSqlServerSchemaHistoryEnablementPhase.AfterInitialAdmission,
+                    (CdcSqlServerSchemaHistoryState)999
+                ),
+            }
+        );
+
+        result.Observation.Continuity.Should().Be(CdcSourceHistoryContinuity.Unknown);
+        result
+            .Observation.SchemaHistoryEnablementPhase.Should()
+            .Be(CdcSqlServerSchemaHistoryEnablementPhase.AfterInitialAdmission);
+        result.Observation.SchemaHistoryState.Should().Be(CdcSqlServerSchemaHistoryState.Unknown);
+        result
+            .Observation.PositionEvidence!.UnavailableFacts.Should()
+            .Contain(CdcIncidentUnavailableFact.SchemaHistory);
+        result
+            .Observation.Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CdcDiagnosticCategory.InvalidEnumValue
+                && diagnostic.Path == "$.sqlServerSchemaHistory.state"
+            );
+        result.IncidentCandidate.Should().BeNull();
+        ValidateObservation(result.Observation, binding).Succeeded.Should().BeTrue();
+    }
+
+    [Test]
     public void It_classifies_negative_sql_server_event_serial_as_malformed_connector_offset()
     {
         CdcBinding binding = CdcContinuityFixture.CreateBinding(CdcProvider.SqlServer);
@@ -191,6 +255,51 @@ public class Given_CdcSourceHistoryContinuityClassifier
 public class Given_CdcContinuityIncidentClassifier
 {
     private static readonly DateTimeOffset Now = CdcContinuityFixture.ObservedAt.AddMinutes(1);
+
+    [Test]
+    public void It_reports_unknown_without_incident_when_sql_server_schema_history_phase_is_unsupported_with_terminal_state()
+    {
+        CdcBinding binding = CdcContinuityFixture.CreateBinding(CdcProvider.SqlServer);
+        CdcSourceHistoryClassificationResult result = CdcSourceHistoryContinuityClassifier.Evaluate(
+            CdcContinuityFixture.CreateInput(binding) with
+            {
+                SqlServerSchemaHistory = new(
+                    (CdcSqlServerSchemaHistoryEnablementPhase)999,
+                    CdcSqlServerSchemaHistoryState.Missing
+                ),
+            }
+        );
+
+        result.Observation.Continuity.Should().Be(CdcSourceHistoryContinuity.Unknown);
+        result.Observation.IncidentFailureCategory.Should().BeNull();
+        result
+            .Observation.SchemaHistoryEnablementPhase.Should()
+            .Be(CdcSqlServerSchemaHistoryEnablementPhase.AfterInitialAdmission);
+        result.Observation.SchemaHistoryState.Should().Be(CdcSqlServerSchemaHistoryState.Unknown);
+        result
+            .Observation.PositionEvidence!.UnavailableFacts.Should()
+            .Contain(CdcIncidentUnavailableFact.SchemaHistory);
+        result
+            .Observation.Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CdcDiagnosticCategory.InvalidEnumValue
+                && diagnostic.Path == "$.sqlServerSchemaHistory.enablementPhase"
+            );
+        result.IncidentCandidate.Should().BeNull();
+        CdcSourceHistoryObservationValidator
+            .ValidateForBinding(
+                result.Observation,
+                binding,
+                new(
+                    CdcContinuityFixture.OperationId,
+                    binding.ToTargetIdentity(),
+                    binding.PhysicalSourceFingerprint,
+                    Now
+                )
+            )
+            .Succeeded.Should()
+            .BeTrue();
+    }
 
     private static IEnumerable<TestCaseData> TerminalIncidentCases()
     {
