@@ -3275,7 +3275,12 @@ public static class CdcSourceHistoryObservationValidator
             return;
         }
 
-        ValidatePositionEvidenceShape(observation.PositionEvidence, observation.Provider, diagnostics);
+        ValidatePositionEvidenceShape(
+            observation.PositionEvidence,
+            observation.Provider,
+            observation,
+            diagnostics
+        );
         ValidateRetainedRangeEvidence(
             observation.PositionEvidence,
             observation.Provider,
@@ -3292,6 +3297,7 @@ public static class CdcSourceHistoryObservationValidator
     private static void ValidatePositionEvidenceShape(
         CdcIncidentPositionMetadata positionEvidence,
         CdcProvider provider,
+        CdcSourceHistoryObservation observation,
         CdcDiagnosticCollector diagnostics
     )
     {
@@ -3337,16 +3343,19 @@ public static class CdcSourceHistoryObservationValidator
             false,
             diagnostics
         );
-        ValidateProviderPositionFields(positionEvidence, provider, diagnostics);
+        ValidateProviderPositionFields(positionEvidence, provider, observation, diagnostics);
         ValidateUnavailableFacts(positionEvidence.UnavailableFacts, diagnostics);
     }
 
     private static void ValidateProviderPositionFields(
         CdcIncidentPositionMetadata positionEvidence,
         CdcProvider provider,
+        CdcSourceHistoryObservation observation,
         CdcDiagnosticCollector diagnostics
     )
     {
+        bool providerPositionRequired = RequiresProviderPosition(observation);
+
         switch (provider)
         {
             case CdcProvider.Postgresql:
@@ -3354,7 +3363,7 @@ public static class CdcSourceHistoryObservationValidator
                     positionEvidence.LsnProc,
                     "$.positionEvidence.lsnProc",
                     "lsnProc",
-                    true,
+                    providerPositionRequired,
                     diagnostics
                 );
                 ValidateProviderInapplicable(
@@ -3383,19 +3392,27 @@ public static class CdcSourceHistoryObservationValidator
                     "lsnProc",
                     diagnostics
                 );
-                Add(
-                    CdcSqlServerProviderPositionParser.ParseLsn(
-                        positionEvidence.CommitLsn,
-                        "$.positionEvidence.commitLsn"
-                    )
-                );
-                Add(
-                    CdcSqlServerProviderPositionParser.ParseLsn(
-                        positionEvidence.ChangeLsn,
-                        "$.positionEvidence.changeLsn"
-                    )
-                );
-                if (positionEvidence.EventSerialNo is null)
+                if (providerPositionRequired || positionEvidence.CommitLsn is not null)
+                {
+                    Add(
+                        CdcSqlServerProviderPositionParser.ParseLsn(
+                            positionEvidence.CommitLsn,
+                            "$.positionEvidence.commitLsn"
+                        )
+                    );
+                }
+
+                if (providerPositionRequired || positionEvidence.ChangeLsn is not null)
+                {
+                    Add(
+                        CdcSqlServerProviderPositionParser.ParseLsn(
+                            positionEvidence.ChangeLsn,
+                            "$.positionEvidence.changeLsn"
+                        )
+                    );
+                }
+
+                if (providerPositionRequired && positionEvidence.EventSerialNo is null)
                 {
                     diagnostics.MissingRequiredField("$.positionEvidence.eventSerialNo", "eventSerialNo");
                 }
@@ -3411,6 +3428,16 @@ public static class CdcSourceHistoryObservationValidator
             }
         }
     }
+
+    private static bool RequiresProviderPosition(CdcSourceHistoryObservation observation) =>
+        observation.Continuity == CdcSourceHistoryContinuity.Healthy
+        || observation.IncidentFailureCategory
+            is CdcIncidentFailureCategory.ProviderArtifactMissing
+                or CdcIncidentFailureCategory.ProviderArtifactRecreated
+                or CdcIncidentFailureCategory.RetainedHistoryGap
+                or CdcIncidentFailureCategory.SchemaHistoryMissing
+                or CdcIncidentFailureCategory.SchemaHistoryEmptyWithRetainedOffset
+                or CdcIncidentFailureCategory.SchemaHistoryRequiredRecordLost;
 
     private static void ValidateRetainedRangeEvidence(
         CdcIncidentPositionMetadata positionEvidence,
