@@ -208,6 +208,23 @@ Describe "Snapshot query map covers PostgreSQL routine security" {
         $script:queryMap["06-sequence"] | Should -Match "sequenceowner"
     }
 
+    It "captures whether a table privilege was granted WITH GRANT OPTION" {
+        # The same privilege_type with the grant option is a wider grant, and sections 15 and 16
+        # already carry grantability for routines and schemas; a table grant that gained it would
+        # otherwise compare equal to one that did not.
+        $script:queryMap["10-grant"] | Should -Match "'\|grantable=' \|\| is_grantable" -Because "grant option drift must be visible in the row"
+        $script:queryMap["10-grant"] | Should -Match "(?s)ORDER BY .*, is_grantable;" -Because "the flag must take part in the total order"
+    }
+
+    It "captures who granted a table privilege" {
+        # PostgreSQL records the grantor in every ACL entry, and step 5b runs its REVOKEs as the owner
+        # role precisely so that grantor matches a fresh deployment. Two grants alike in table, grantee,
+        # privilege and grant option but not in grantor are two grants, as sections 15 and 16 already
+        # read them for routines and schemas.
+        $script:queryMap["10-grant"] | Should -Match "'\|grantor=' \|\| grantor" -Because "grantor drift must be visible in the row"
+        $script:queryMap["10-grant"] | Should -Match "(?s)ORDER BY .*privilege_type, grantor, is_grantable;" -Because "the grantor must take part in the total order"
+    }
+
     It "distinguishes an absent ACL from an explicitly granted identical one" {
         # Guards against over-normalizing: a routine whose ACL was never set and one explicitly
         # granted the same privileges are not the same object, and after expansion they would read
@@ -238,6 +255,9 @@ Describe "Snapshot query map covers PostgreSQL routine security" {
 Describe "Schema compare fails on restored security drift" -Skip:(-not $script:pgFixtureEnabled) {
     BeforeAll {
         $script:ownerRole = "dms_nr_fixture_owner"
+        # A second role that holds SELECT WITH GRANT OPTION, so a grant can be recorded with a grantor
+        # other than the superuser and only the grantor differs between two databases.
+        $script:grantorRole = "dms_nr_fixture_grantor"
         $script:fixtureDatabase = @(
             "dms_nr_fx_base",
             "dms_nr_fx_clone",
@@ -250,7 +270,7 @@ Describe "Schema compare fails on restored security drift" -Skip:(-not $script:p
             foreach ($name in $script:fixtureDatabase) {
                 docker exec $script:container dropdb -U $script:pgUser --maintenance-db=postgres --if-exists -- $name 2>&1 | Out-Null
             }
-            Invoke-FixtureSql -DatabaseName "postgres" -Sql "DROP ROLE IF EXISTS $script:ownerRole;"
+            Invoke-FixtureSql -DatabaseName "postgres" -Sql "DROP ROLE IF EXISTS $script:ownerRole; DROP ROLE IF EXISTS $script:grantorRole;"
         }
 
         # The shape every fixture database shares. Sections 11 and 12 read dms."EffectiveSchema" and
@@ -306,7 +326,7 @@ GRANT USAGE ON SCHEMA dms TO $script:ownerRole;
 "@
 
         Remove-Fixture
-        Invoke-FixtureSql -DatabaseName "postgres" -Sql "CREATE ROLE $script:ownerRole NOLOGIN;"
+        Invoke-FixtureSql -DatabaseName "postgres" -Sql "CREATE ROLE $script:ownerRole NOLOGIN; CREATE ROLE $script:grantorRole NOLOGIN;"
         foreach ($name in $script:fixtureDatabase) {
             $created = docker exec $script:container createdb -U $script:pgUser --maintenance-db=postgres -- $name 2>&1
             if ($LASTEXITCODE -ne 0) { throw "could not create fixture database '$name': $created" }
@@ -373,6 +393,52 @@ GRANT USAGE ON SCHEMA dms TO $script:ownerRole;
         }
         finally {
             Invoke-FixtureSql -DatabaseName "dms_nr_fx_clone" -Sql "GRANT USAGE ON SCHEMA dms TO $script:ownerRole;"
+        }
+    }
+
+    It "fails when a table grant differs only in its grant option" {
+        # Both databases hold the same SELECT grant; only the clone's carries WITH GRANT OPTION.
+        # Section 10 has to read that as a difference, and the diff has to say which side may re-grant.
+        Invoke-FixtureSql -DatabaseName "dms_nr_fx_base" -Sql "GRANT SELECT ON dms.""SchemaComponent"" TO $script:ownerRole;"
+        Invoke-FixtureSql -DatabaseName "dms_nr_fx_clone" -Sql "GRANT SELECT ON dms.""SchemaComponent"" TO $script:ownerRole WITH GRANT OPTION;"
+        try {
+            $result = Invoke-Compare -DatabaseName @("dms_nr_fx_base", "dms_nr_fx_clone")
+            $result.Failed | Should -BeTrue -Because "a grant option is a wider privilege and must fail the compare: $($result.Output)"
+            $result.Diff | Should -Match "`t10-grant\|grant\|dms\.SchemaComponent\|$script:ownerRole\|SELECT\|grantor=$script:pgUser\|grantable=NO" -Because "the diff must show the plain grant: $($result.Diff)"
+            $result.Diff | Should -Match "`t10-grant\|grant\|dms\.SchemaComponent\|$script:ownerRole\|SELECT\|grantor=$script:pgUser\|grantable=YES" -Because "the diff must show the grant option: $($result.Diff)"
+        }
+        finally {
+            foreach ($name in @("dms_nr_fx_base", "dms_nr_fx_clone")) {
+                Invoke-FixtureSql -DatabaseName $name -Sql "REVOKE SELECT ON dms.""SchemaComponent"" FROM $script:ownerRole;"
+            }
+        }
+    }
+
+    It "fails when a table grant differs only in who granted it" {
+        # Step 5b runs its REVOKEs as the owner role precisely so the recorded grantor matches a fresh
+        # deployment; a section that keyed a grant by table, grantee, privilege and grant option alone
+        # would read two grants from different grantors as one. Both databases give the grantor role
+        # USAGE on the schema and SELECT WITH GRANT OPTION on the table, and the owner role SELECT --
+        # from the superuser on the base, from the grantor role on the clone -- so the only difference
+        # is the grantor recorded on the owner role's grant.
+        foreach ($name in @("dms_nr_fx_base", "dms_nr_fx_clone")) {
+            Invoke-FixtureSql -DatabaseName $name -Sql "GRANT USAGE ON SCHEMA dms TO $script:grantorRole; GRANT SELECT ON dms.""SchemaComponent"" TO $script:grantorRole WITH GRANT OPTION;"
+        }
+        Invoke-FixtureSql -DatabaseName "dms_nr_fx_base" -Sql "GRANT SELECT ON dms.""SchemaComponent"" TO $script:ownerRole;"
+        Invoke-FixtureSql -DatabaseName "dms_nr_fx_clone" -Sql "SET ROLE $script:grantorRole; GRANT SELECT ON dms.""SchemaComponent"" TO $script:ownerRole; RESET ROLE;"
+        try {
+            $result = Invoke-Compare -DatabaseName @("dms_nr_fx_base", "dms_nr_fx_clone")
+            $result.Failed | Should -BeTrue -Because "a different grantor is a different grant: $($result.Output)"
+            $result.Diff | Should -Match "`t10-grant\|grant\|dms\.SchemaComponent\|$script:ownerRole\|SELECT\|grantor=$script:pgUser\|grantable=NO" -Because "the base's grant came from the superuser: $($result.Diff)"
+            $result.Diff | Should -Match "`t10-grant\|grant\|dms\.SchemaComponent\|$script:ownerRole\|SELECT\|grantor=$script:grantorRole\|grantable=NO" -Because "the clone's grant came from the grantor role: $($result.Diff)"
+            $result.Diff | Should -Not -Match "\|$script:grantorRole\|SELECT\|" -Because "the grantor role's own grant is the same on both sides and must not read as drift: $($result.Diff)"
+        }
+        finally {
+            # Revoking the grantor role's privilege cascades to the grant it made; the superuser's grant
+            # to the owner role on the base is revoked on its own.
+            foreach ($name in @("dms_nr_fx_base", "dms_nr_fx_clone")) {
+                Invoke-FixtureSql -DatabaseName $name -Sql "REVOKE SELECT ON dms.""SchemaComponent"" FROM $script:grantorRole CASCADE; REVOKE SELECT ON dms.""SchemaComponent"" FROM $script:ownerRole; REVOKE USAGE ON SCHEMA dms FROM $script:grantorRole;"
+            }
         }
     }
 
@@ -494,6 +560,15 @@ Describe "Restore recipe repairs the security metadata the compare checks" {
         }
     }
 
+    # The two cases below pin the README's REPAIR_SQL block to the emitter's Phase 9, statement for
+    # statement and in order. When Phase 9 changes in CoreDdlEmitter -- a new grant, a renamed role, a
+    # reordered revoke -- they fail on purpose, and loosening them is not the fix. The coupling has to be
+    # settled deliberately: the restore recipe is valid only against the DMS revision the artifact
+    # records, so either the README block is updated to the new Phase 9 verbatim alongside an artifact
+    # re-published from a deployment at that revision, or the recipe keeps its block and states that it
+    # targets the recorded revision only, with the new DDL reached through the copy-forward rather than
+    # a restore. In either case regenerate the authoritative fixture (pgsql.sql) rather than editing it,
+    # and re-run the live dump -> restore -> repair -> compare Describe below before publishing.
     It "re-applies every statement of the DDL's Security and Grants phase and nothing else" {
         $script:securityPhase | Should -Not -BeNullOrEmpty -Because "the authoritative fixture must carry a Phase 9"
         $ddlStatement = @(Get-SecurityStatement -Sql $script:securityPhase | Select-Object -Unique)
@@ -658,6 +733,30 @@ Describe "Restore recipe content gate checks every sequence the copied data draw
         $script:recipe | Should -Match "#\s+Expect: NOTICE: restore verified: all $written published values and invariants match"
         $script:recipe | Should -Match "This block compares $written values"
     }
+
+    It "verifies the projection lifecycle singleton at the values the copy tool asserts" {
+        # Row counts on DocumentProjectionWork and DocumentCache say the queues are empty; they say
+        # nothing about dms."DocumentCacheState", the singleton that tells DMS whether a projection is
+        # running. Provisioning seeds it Disabled with no cache-ahead recovery pending, and
+        # Copy-NorthridgeDataForward.ps1 asserts exactly that at every checkpoint, so the gate holds the
+        # restored artifact to the same two literals -- read from the copy tool, not restated -- and to
+        # exactly one row.
+        $copyTool = Get-Content -Raw -LiteralPath (Join-Path $script:northridgeRoot "Copy-NorthridgeDataForward.ps1")
+        $lifecycle = [regex]::Match($copyTool, 'CacheStateLifecycle\s*=\s*"(?<v>[^"]+)"').Groups["v"].Value
+        $recovery = [regex]::Match($copyTool, 'CacheAheadRecovery\s*=\s*"(?<v>[^"]+)"').Groups["v"].Value
+        $lifecycle | Should -Not -BeNullOrEmpty -Because "the copy tool's expected lifecycle state must have been read"
+        $recovery | Should -Not -BeNullOrEmpty -Because "the copy tool's expected recovery flag must have been read"
+
+        $script:contentGateSql | Should -Match ([regex]::Escape("SELECT 'dms.""DocumentCacheState"" rows', '1',")) -Because "exactly one lifecycle row"
+        $script:contentGateSql | Should -Match ([regex]::Escape('(SELECT COUNT(*)::text FROM dms."DocumentCacheState")'))
+        $script:contentGateSql | Should -Match ([regex]::Escape("SELECT 'dms.""DocumentCacheState"".""ProjectionLifecycleState""', '$lifecycle',")) -Because "the gate must want the copy tool's lifecycle state"
+        $script:contentGateSql | Should -Match ([regex]::Escape('(SELECT "ProjectionLifecycleState" FROM dms."DocumentCacheState" WHERE "StateId" = 1)'))
+        $script:contentGateSql | Should -Match ([regex]::Escape("SELECT 'dms.""DocumentCacheState"".""CacheAheadRecoveryRequired""', '$recovery',")) -Because "the gate must want the copy tool's recovery flag"
+        $script:contentGateSql | Should -Match ([regex]::Escape('(SELECT "CacheAheadRecoveryRequired"::text FROM dms."DocumentCacheState" WHERE "StateId" = 1)'))
+        # The prose wraps across comment lines, so the two words are matched separately.
+        $script:recipe | Should -Match "nine dms tables" -Because "the prose counts the tables the block reads"
+        $script:recipe | Should -Not -Match "eight dms tables"
+    }
 }
 
 Describe "Restore recipe: a bare restore fails the compare and step 5b repairs it" -Skip:(-not $script:pgFixtureEnabled) {
@@ -694,7 +793,7 @@ Describe "Restore recipe: a bare restore fails the compare and step 5b repairs i
 CREATE SCHEMA "dms";
 CREATE TABLE dms."EffectiveSchema"("EffectiveSchemaSingletonId" int PRIMARY KEY, "ApiSchemaFormatVersion" text, "EffectiveSchemaHash" text, "ResourceKeyCount" int, "ResourceKeySeedHash" bytea);
 CREATE TABLE dms."SchemaComponent"("EffectiveSchemaHash" text, "ProjectEndpointName" text, "ProjectName" text, "ProjectVersion" text, "IsExtensionProject" boolean);
-CREATE TABLE "dms"."DocumentCacheState"("StateId" smallint PRIMARY KEY, "ProjectionLifecycleState" varchar(16) NOT NULL, CONSTRAINT "CK_DocumentCacheState_Lifecycle" CHECK ("ProjectionLifecycleState" IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking')));
+CREATE TABLE "dms"."DocumentCacheState"("StateId" smallint PRIMARY KEY, "ProjectionLifecycleState" varchar(16) NOT NULL, "CacheAheadRecoveryRequired" boolean NOT NULL DEFAULT false, CONSTRAINT "CK_DocumentCacheState_Lifecycle" CHECK ("ProjectionLifecycleState" IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking')));
 CREATE TABLE "dms"."DocumentProjectionWork"("DocumentProjectionWorkId" bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, "DocumentId" bigint NOT NULL);
 CREATE FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"() RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog AS `$func`$ BEGIN RETURN NULL; END `$func`$;
 CREATE FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"() RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog AS `$func`$ BEGIN RETURN NULL; END `$func`$;
@@ -723,6 +822,24 @@ $script:securityPhase
             if ($LASTEXITCODE -ne 0) {
                 throw "the recipe's repair block failed against '$DatabaseName' (exit $LASTEXITCODE): $($output -join [Environment]::NewLine)"
             }
+        }
+
+        # Step 6's three DocumentCacheState checks, each as the got-expression the recipe runs and the
+        # value it wants, read from the gate SQL so the live case below evaluates the recipe's own text.
+        $script:lifecycleCheck = @([regex]::Matches($script:contentGateSql,
+                "(?m)^\s*UNION ALL SELECT '(?<item>dms\.""DocumentCacheState""[^']*)', '(?<want>[^']*)',\r?\n\s*(?<got>\(SELECT [^\r\n]*DocumentCacheState[^\r\n]*\))\s*$"))
+
+        # Which of the three checks would report a mismatch against the deployed fixture as it stands.
+        function script:Get-LifecycleMismatch {
+            $mismatch = [ordered]@{}
+            foreach ($check in $script:lifecycleCheck) {
+                $sql = "SELECT (" + $check.Groups["got"].Value + ") IS DISTINCT FROM '" + $check.Groups["want"].Value + "';"
+                $answer = $sql | docker exec -i $script:container psql -U $script:pgUser -d dms_nr_fx_deployed `
+                    -v ON_ERROR_STOP=1 -tA 2>&1
+                if ($LASTEXITCODE -ne 0) { throw "could not evaluate '$sql': $answer" }
+                $mismatch[$check.Groups["item"].Value] = ((($answer | Out-String).Trim()) -eq "t")
+            }
+            return $mismatch
         }
     }
 
@@ -782,6 +899,36 @@ ALTER TABLE "dms"."DocumentCacheState" ADD CONSTRAINT "CK_DocumentCacheState_Lif
 ALTER TABLE "dms"."DocumentCacheState" DROP CONSTRAINT "CK_DocumentCacheState_Lifecycle";
 ALTER TABLE "dms"."DocumentCacheState" ADD CONSTRAINT "CK_DocumentCacheState_Lifecycle" CHECK ("ProjectionLifecycleState" IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking'));
 "@
+        }
+    }
+
+    It "reads the projection lifecycle singleton in step 6, so a missing row and a wrong value are mismatches" {
+        # Step 6 holds dms."DocumentCacheState" to exactly one row, Disabled, with no cache-ahead
+        # recovery pending. Each state the gate has to tell apart is put into the deployed fixture and
+        # the recipe's own three expressions are asked whether they would report it: no row must
+        # mismatch on all three rather than pass on NULL, the seeded row must match on all three, a row
+        # mid-rebuild must mismatch on both values, and a second row must fail the singleton count.
+        $script:lifecycleCheck.Count | Should -Be 3 -Because "rows, lifecycle state and recovery flag"
+        $table = '"dms"."DocumentCacheState"'
+        $column = '("StateId", "ProjectionLifecycleState", "CacheAheadRecoveryRequired")'
+        Invoke-FixtureSql -DatabaseName "dms_nr_fx_deployed" -Sql "DELETE FROM $table;"
+        try {
+            @((Get-LifecycleMismatch).Values) | Should -Not -Contain $false -Because "with no row every check must mismatch, not pass on NULL"
+
+            Invoke-FixtureSql -DatabaseName "dms_nr_fx_deployed" -Sql "INSERT INTO $table $column VALUES (1, 'Disabled', false);"
+            @((Get-LifecycleMismatch).Values) | Should -Not -Contain $true -Because "the seeded singleton is what the artifact ships"
+
+            Invoke-FixtureSql -DatabaseName "dms_nr_fx_deployed" -Sql "UPDATE $table SET ""ProjectionLifecycleState"" = 'Rebuilding', ""CacheAheadRecoveryRequired"" = true;"
+            $mismatch = Get-LifecycleMismatch
+            $mismatch['dms."DocumentCacheState" rows'] | Should -BeFalse -Because "one row is still one row"
+            $mismatch['dms."DocumentCacheState"."ProjectionLifecycleState"'] | Should -BeTrue -Because "a projection mid-rebuild is not the shipped state"
+            $mismatch['dms."DocumentCacheState"."CacheAheadRecoveryRequired"'] | Should -BeTrue -Because "pending recovery is not the shipped state"
+
+            Invoke-FixtureSql -DatabaseName "dms_nr_fx_deployed" -Sql "INSERT INTO $table $column VALUES (2, 'Disabled', false);"
+            (Get-LifecycleMismatch)['dms."DocumentCacheState" rows'] | Should -BeTrue -Because "a second row is not the singleton"
+        }
+        finally {
+            Invoke-FixtureSql -DatabaseName "dms_nr_fx_deployed" -Sql "DELETE FROM $table;"
         }
     }
 }

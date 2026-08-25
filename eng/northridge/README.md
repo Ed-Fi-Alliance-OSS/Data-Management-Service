@@ -198,11 +198,14 @@ pwsh -NoProfile -File ./bootstrap-local-dms.ps1 -DatabaseEngine postgresql -Iden
 # 5. Stop the applications, set the deployment aside, then restore. Nothing may hold a connection
 #    during the rename or the restore.
 #    Read the live values rather than assuming defaults. The superuser name is one of them:
-#    postgresql.yml sets POSTGRES_USER: ${POSTGRES_USER:-postgres}, so it is a supported
-#    override, and the repository's own scripts resolve it rather than assuming the default. A
-#    stack that uses one must not meet a hard-coded superuser here, nor a `username=postgres`
-#    in the connection string built in step 9 -- the first fails outright, and the second
-#    registers a data store that saves cleanly and cannot connect.
+#    postgresql.yml sets POSTGRES_USER: ${POSTGRES_USER:-postgres}, so the container accepts an
+#    override, and this recipe reads whatever the running container was given rather than adding a
+#    hard-coded copy of its own -- here, and in the connection string built in step 9, where a
+#    wrong name registers a data store that saves cleanly and cannot connect. This is not a claim
+#    that the stack supports another superuser end to end: .env.example and the compose defaults
+#    still build the DMS and CMS connection strings with `username=postgres`, so the bootstrap in
+#    step 4 works only with the default today. Reading the value keeps this recipe correct for the
+#    stack it actually finds, and keeps it from becoming one more place that has to change.
 DB=$(docker exec dms-postgresql printenv POSTGRES_DB_NAME)
 DBUSER=$(docker exec dms-postgresql printenv POSTGRES_USER)
 test -n "$DB" -a -n "$DBUSER" || \
@@ -347,8 +350,8 @@ docker exec dms-postgresql dropdb -U "$DBUSER" --maintenance-db=postgres -- "$RE
 echo "schema compare PASS: the restored artifact is the deployed schema, ownership and privileges included"
 
 # 6. Verify the restore by content as well as by status. A clean exit says the archive was applied;
-#    it does not say the database holds the published dataset. This block compares 19 values across
-#    eight dms tables, the three sequences the copied data draws from -- with the CollectionItemId
+#    it does not say the database holds the published dataset. This block compares 22 values across
+#    nine dms tables, the three sequences the copied data draws from -- with the CollectionItemId
 #    high-water mark taken over every collection table that holds the column -- the table inventory
 #    of all four DMS-owned schemas and the referential closure, and raises on the first
 #    disagreement, so it either passes or stops the recipe. A value that is missing rather than wrong
@@ -412,6 +415,17 @@ BEGIN
                (SELECT COUNT(*)::text FROM dms."DocumentProjectionWork")
         UNION ALL SELECT 'dms."DocumentCache" rows', '0',
                (SELECT COUNT(*)::text FROM dms."DocumentCache")
+        -- The projection lifecycle singleton, at the values provisioning seeds and the copy tool
+        -- asserts at every checkpoint: exactly one row, Disabled, with no cache-ahead recovery
+        -- pending. Empty queues above say nothing about it, and a restore carrying a producer
+        -- mid-rebuild, or a hand-edited state, would pass every row count and start DMS into a
+        -- projection it must not run.
+        UNION ALL SELECT 'dms."DocumentCacheState" rows', '1',
+               (SELECT COUNT(*)::text FROM dms."DocumentCacheState")
+        UNION ALL SELECT 'dms."DocumentCacheState"."ProjectionLifecycleState"', 'Disabled',
+               (SELECT "ProjectionLifecycleState" FROM dms."DocumentCacheState" WHERE "StateId" = 1)
+        UNION ALL SELECT 'dms."DocumentCacheState"."CacheAheadRecoveryRequired"', 'false',
+               (SELECT "CacheAheadRecoveryRequired"::text FROM dms."DocumentCacheState" WHERE "StateId" = 1)
         UNION ALL SELECT 'dms."Descriptor" rows', '2968',
                (SELECT COUNT(*)::text FROM dms."Descriptor")
         UNION ALL SELECT 'dms base tables', '10',
@@ -476,22 +490,22 @@ BEGIN
                  WHERE q.seqrelid = 'dms."CollectionItemIdSequence"'::regclass)
       ) t;
 
-    IF checked <> 19 THEN
-        RAISE EXCEPTION 'only % of 19 checks ran, so this proves nothing; the block itself is broken', checked;
+    IF checked <> 22 THEN
+        RAISE EXCEPTION 'only % of 22 checks ran, so this proves nothing; the block itself is broken', checked;
     END IF;
 
     IF mismatch IS NOT NULL THEN
         RAISE EXCEPTION E'the restored database does not match the published artifact:\n  %', mismatch;
     END IF;
 
-    RAISE NOTICE 'restore verified: all 19 published values and invariants match';
+    RAISE NOTICE 'restore verified: all 22 published values and invariants match';
 END $$;
 SQL
 then
   echo "step 6 failed: the restored database is not the published dataset -- start again from step 4"
   exit 1
 fi
-#    Expect: NOTICE: restore verified: all 19 published values and invariants match
+#    Expect: NOTICE: restore verified: all 22 published values and invariants match
 
 # 7. REQUIRED: install your own OpenIddict signing key.
 #    The artifact carries the producer's dmscs."OpenIddictKey" row, whose private key is encrypted
@@ -619,17 +633,44 @@ CLIENT_SECRET_MAX=$(echo "$CMSENV" | sed -n 's/^IdentitySettings__ClientSecretVa
 test -n "$ADMIN_SECRET" -a -n "$CLIENT_SECRET_MIN" -a -n "$CLIENT_SECRET_MAX" || \
   { echo "could not read the CMS client secret and its validation bounds from ed-fi-api-config-service"; exit 1; }
 
-curl -s -X POST "$CMS/connect/register" -H "Content-Type: application/x-www-form-urlencoded" \
-  --data-urlencode "ClientId=restore-admin" \
-  --data-urlencode "ClientSecret=$ADMIN_SECRET" \
-  --data-urlencode "DisplayName=Restore Admin" > /dev/null
-T=$(curl -s -X POST "$CMS/connect/token" -H "Content-Type: application/x-www-form-urlencoded" \
-  --data-urlencode "client_id=restore-admin" \
-  --data-urlencode "client_secret=$ADMIN_SECRET" \
-  --data-urlencode "grant_type=client_credentials" \
-  --data-urlencode "scope=edfi_admin_api/full_access" \
-  | sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-test -n "$T" || { echo "no token: step 7 did not take effect"; exit 1; }
+#    The registration and every token request carry a client secret. A curl argument list is visible
+#    to every process on the host for as long as curl runs, so those calls are made by pwsh instead:
+#    the secret travels in the environment of that one process, under CMS_SECRET, and
+#    Invoke-WebRequest encodes the form itself. Both helpers assert the status -- registration
+#    answers 200 with a title, a token request 200 with access_token -- and print the status and
+#    body to stderr on anything else, so a failed registration is reported as one instead of
+#    surfacing a step later as a token that never came. Each request is capped at 60 s, so a service
+#    that accepts the connection and never answers stops the recipe rather than hanging it. The token
+#    is written without a trailing newline so a Windows shell cannot hand the header a stray carriage
+#    return.
+CMS_REGISTER() { # CMS_REGISTER <client-id> <display-name>; the secret is read from CMS_SECRET
+  CMS="$CMS" CLIENT_ID="$1" DISPLAY_NAME="$2" CMS_SECRET="$CMS_SECRET" pwsh -NoProfile -Command '
+    $response = Invoke-WebRequest -Method Post -Uri "$env:CMS/connect/register" -SkipHttpErrorCheck -TimeoutSec 60 `
+      -ContentType "application/x-www-form-urlencoded" `
+      -Body @{ ClientId = $env:CLIENT_ID; ClientSecret = $env:CMS_SECRET; DisplayName = $env:DISPLAY_NAME }
+    if ([int]$response.StatusCode -ne 200) {
+      [Console]::Error.WriteLine("registering $env:CLIENT_ID answered HTTP $([int]$response.StatusCode): $($response.Content)")
+      exit 1
+    }
+  '
+}
+CMS_TOKEN() { # CMS_TOKEN <client-id> <scope>; the secret is read from CMS_SECRET; prints the token
+  CMS="$CMS" CLIENT_ID="$1" SCOPE="$2" CMS_SECRET="$CMS_SECRET" pwsh -NoProfile -Command '
+    $response = Invoke-WebRequest -Method Post -Uri "$env:CMS/connect/token" -SkipHttpErrorCheck -TimeoutSec 60 `
+      -ContentType "application/x-www-form-urlencoded" `
+      -Body @{ grant_type = "client_credentials"; client_id = $env:CLIENT_ID; client_secret = $env:CMS_SECRET; scope = $env:SCOPE }
+    $token = if ([int]$response.StatusCode -eq 200) { ($response.Content | ConvertFrom-Json).access_token } else { "" }
+    if ([string]::IsNullOrWhiteSpace($token)) {
+      [Console]::Error.WriteLine("token for $env:CLIENT_ID answered HTTP $([int]$response.StatusCode): $($response.Content)")
+      exit 1
+    }
+    [Console]::Out.Write($token)
+  '
+}
+CMS_SECRET="$ADMIN_SECRET"
+CMS_REGISTER restore-admin "Restore Admin" || { echo "restore-admin was not registered, so nothing else in step 9 can succeed"; exit 1; }
+T=$(CMS_TOKEN restore-admin edfi_admin_api/full_access) || \
+  { echo "no token for restore-admin -- an HTTP 500 naming the private key above means step 7 did not take effect"; exit 1; }
 
 PW=$(docker exec dms-postgresql printenv POSTGRES_PASSWORD)
 test -n "$PW" -a -n "$DB" -a -n "$DBUSER" || { echo "could not read the database password, name and user from the container"; exit 1; }
@@ -740,11 +781,9 @@ pwsh -NoProfile -File ./setup-openiddict.ps1 -InsertData \
 #     namespace claim come back identical rather than approximately.
 
 #     Prove it before starting DMS: the credentials DMS will present must actually mint a token.
-CT=$(curl -s -X POST "$CMS/connect/token" -H "Content-Type: application/x-www-form-urlencoded" \
-  --data-urlencode "client_id=$CID" --data-urlencode "client_secret=$CSEC" \
-  --data-urlencode "grant_type=client_credentials" --data-urlencode "scope=$CSCOPE" \
-  | sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-test -n "$CT" || { echo "the DMS-to-CMS client cannot mint a token; DMS would start and fail to read claim sets"; exit 1; }
+CMS_SECRET="$CSEC"
+CT=$(CMS_TOKEN "$CID" "$CSCOPE") || \
+  { echo "the DMS-to-CMS client cannot mint a token; DMS would start and fail to read claim sets"; exit 1; }
 echo "DMS-to-CMS client '$CID' recreated with your secret and verified"
 
 # 11. Now start DMS. A cached first-use validation failure is NOT cleared by re-provisioning, so if
@@ -774,12 +813,8 @@ KEY=$(echo "$APP" | sed -n 's/.*"key"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p
 SEC=$(echo "$APP" | sed -n 's/.*"secret"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
 test -n "$KEY" -a -n "$SEC" || { echo "no credentials issued: $APP"; exit 1; }
 
-DT=$(curl -s -X POST "$CMS/connect/token" -H "Content-Type: application/x-www-form-urlencoded" \
-  --data-urlencode "client_id=$KEY" --data-urlencode "client_secret=$SEC" \
-  --data-urlencode "grant_type=client_credentials" \
-  --data-urlencode "scope=edfi_admin_api/full_access" \
-  | sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-test -n "$DT" || { echo "no DMS token minted"; exit 1; }
+CMS_SECRET="$SEC"
+DT=$(CMS_TOKEN "$KEY" edfi_admin_api/full_access) || { echo "no DMS token minted"; exit 1; }
 
 #     The read that proves the dataset is being served. Send a real token: an absent or malformed
 #     one answers 401, which tells you nothing about the data.
@@ -857,7 +892,7 @@ Every published artifact records the following, on its ticket and in this direct
 | `ResourceKey` rows | 351 |
 | `dms."Descriptor"` rows | 2,968 |
 | `ChangeVersionSequence` | 21,553,810, equal to `MAX("IdentityVersion")` |
-| Reconciliation evidence | The full per-resource output is **not** summarised in this file, and is not committed (see **Never commit**). The evidence set is the files written by the scripts plus the transcripts captured by the run: the two per-resource count CSVs from `Get-DmsResourceCount.ps1` count mode, one per engine; the captured transcript from that script's reconcile mode; the gap-document CSV passed to `Add-NorthridgeGapDocument.ps1 -OutputPath`; `rowcount.<source>-vs-<target>.tsv`; `restore-list.<target>.txt`; `restore-list.descriptor.txt`; `restore-output.<target>.txt`; the `checkpoint.<name>.<target>.txt` series; and `schema-snapshot.<database>.txt`. `schema-diff.<left>-vs-<right>.txt` exists only for a failing schema compare; a passing compare is represented by the PASS transcript and matching snapshots. That set belongs with the ticket as attachments rather than in this repository. DMS-1406 carries the summary comment for this artifact; the file set named here is what has to accompany it, and a reader who cannot find these files has not been given the reconciliation |
+| Reconciliation evidence | The full per-resource output is **not** summarised in this file, and is not committed (see **Never commit**). The evidence set is the files written by the scripts plus the transcripts captured by the run: the two per-resource count CSVs from `Get-DmsResourceCount.ps1` count mode, one per engine; the captured transcript from that script's reconcile mode; the gap-document CSV passed to `Add-NorthridgeGapDocument.ps1 -OutputPath`; `rowcount.<source>-vs-<target>.tsv`; `restore-list.<target>.txt`; `restore-list.descriptor.txt`; `restore-output.<target>.txt`; the `checkpoint.<name>.<target>.txt` series; and `schema-snapshot.<database>.txt` -- or `schema-snapshot.<position>.<database>.txt`, the form `Compare-DmsSchemaSnapshot.ps1` writes when the two compared names differ only in case, so the files stay distinct on a case-insensitive file system. `schema-diff.<left>-vs-<right>.txt` exists only for a failing schema compare; a passing compare is represented by the PASS transcript and matching snapshots. That set belongs with the ticket as attachments rather than in this repository. DMS-1406 carries the summary comment for this artifact; the file set named here is what has to accompany it, and a reader who cannot find these files has not been given the reconciliation |
 
 Validation, all on the restored artifact rather than on the database that produced it: the
 startup-computed `EffectiveSchemaHash` equals the value stored in `dms.EffectiveSchema` and equals the

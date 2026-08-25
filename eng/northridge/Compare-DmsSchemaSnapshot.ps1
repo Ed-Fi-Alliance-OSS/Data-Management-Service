@@ -347,11 +347,16 @@ WHERE schemaname IN ($SchemaList)
 ORDER BY schemaname, viewname;
 "@
 
+        # grantor and is_grantable are part of the row, as they are of every PostgreSQL ACL entry: the
+        # same privilege_type from another grantor is another grant -- the DDL revokes as the owner role
+        # so the recorded grantor matches a fresh deployment -- and granted WITH GRANT OPTION it is a
+        # wider one. Sections 15 and 16 read both for routines and schemas.
         "10-grant"      = @"
 SELECT 'grant|' || table_schema || '.' || table_name || '|' || grantee || '|' || privilege_type
+    || '|grantor=' || grantor || '|grantable=' || is_grantable
 FROM information_schema.role_table_grants
 WHERE table_schema IN ($SchemaList)
-ORDER BY table_schema, table_name, grantee, privilege_type;
+ORDER BY table_schema, table_name, grantee, privilege_type, grantor, is_grantable;
 "@
 
         # The fingerprint rows are part of the schema contract, not incidental data: a hand-edited

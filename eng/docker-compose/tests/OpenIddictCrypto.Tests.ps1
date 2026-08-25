@@ -730,9 +730,44 @@ Describe "Northridge PostgreSQL restore recipe identity handoff" {
         $script:NorthridgeActiveRecipe | Should -Match 'ADMIN_SECRET=\$\(echo "\$CMSENV" \| sed -n ''s/\^IdentitySettings__ClientSecret=//p''\)'
         $script:NorthridgeActiveRecipe | Should -Match 'CLIENT_SECRET_MIN=\$\(echo "\$CMSENV" \| sed -n ''s/\^IdentitySettings__ClientSecretValidation__MinimumLength=//p''\)'
         $script:NorthridgeActiveRecipe | Should -Match 'CLIENT_SECRET_MAX=\$\(echo "\$CMSENV" \| sed -n ''s/\^IdentitySettings__ClientSecretValidation__MaximumLength=//p''\)'
-        $script:NorthridgeActiveRecipe | Should -Match '--data-urlencode "ClientSecret=\$ADMIN_SECRET"'
-        $script:NorthridgeActiveRecipe | Should -Match '--data-urlencode "client_secret=\$ADMIN_SECRET"'
+        # The live secret reaches CMS through the pwsh helpers, as the environment of that one process:
+        # CMS_SECRET is set from the value read above, and the helpers send $env:CMS_SECRET.
+        $script:NorthridgeActiveRecipe | Should -Match '(?m)^CMS_SECRET="\$ADMIN_SECRET"$'
+        $script:NorthridgeActiveRecipe | Should -Match '(?m)^CMS_REGISTER restore-admin "Restore Admin" \|\| \{ [^}]*; exit 1; \}$'
+        $script:NorthridgeActiveRecipe | Should -Match '(?m)^T=\$\(CMS_TOKEN restore-admin edfi_admin_api/full_access\) \|\| \\$'
+        $script:NorthridgeActiveRecipe | Should -Match 'ClientSecret = \$env:CMS_SECRET'
+        $script:NorthridgeActiveRecipe | Should -Match 'client_secret = \$env:CMS_SECRET'
         $script:NorthridgeActiveRecipe | Should -Not -Match 'ValidClientSecret1234567890!Abcd'
+    }
+
+    It "keeps every client secret out of curl's argument list and reports a failed registration as one" {
+        # A curl argument list is readable by every process on the host while curl runs. Every call that
+        # carries a client secret -- the registration and the three token requests -- goes through the
+        # pwsh helpers, which read the secret from their own environment; and the registration asserts
+        # its status and prints the body, so a 4xx/5xx there stops the recipe instead of surfacing at the
+        # token check as a misleading signing-key failure.
+        $script:NorthridgeActiveRecipe | Should -Not -Match '(?im)^[^\n]*\bcurl\b[^\n]*secret=' -Because "no curl invocation may carry a secret in its arguments"
+        $script:NorthridgeActiveRecipe | Should -Not -Match '(?i)--data-urlencode "[^"]*secret='
+        @([regex]::Matches($script:NorthridgeActiveRecipe, '(?m)^CMS_SECRET="\$(ADMIN_SECRET|CSEC|SEC)"$')).Count | Should -Be 3 -Because "each secret is scoped to CMS_SECRET from a variable the recipe already holds"
+        @([regex]::Matches($script:NorthridgeActiveRecipe, '(?m)^\w+=\$\(CMS_TOKEN ')).Count | Should -Be 3 -Because "restore-admin, the DMS-to-CMS client and the consumer's client each mint one token"
+        @([regex]::Matches($script:NorthridgeActiveRecipe, '(?m)^CMS_REGISTER ')).Count | Should -Be 1
+
+        $register = [regex]::Match($script:NorthridgeRecipe, '(?ms)^CMS_REGISTER\(\) \{.*?^\}').Value
+        $register | Should -Not -BeNullOrEmpty -Because "the recipe must define CMS_REGISTER"
+        $register | Should -Match 'Invoke-WebRequest -Method Post -Uri "\$env:CMS/connect/register" -SkipHttpErrorCheck'
+        $register | Should -Match '\[int\]\$response\.StatusCode -ne 200'
+        $register | Should -Match '\$\(\$response\.Content\)' -Because "the failure message must carry the body CMS answered with"
+        $register | Should -Match '(?m)^\s+exit 1$'
+        $register | Should -Match '-TimeoutSec [1-9]\d*' -Because "the request replaced a curl call and must not hang on a service that accepts and never answers"
+        $register | Should -Not -Match 'curl'
+
+        $token = [regex]::Match($script:NorthridgeRecipe, '(?ms)^CMS_TOKEN\(\) \{.*?^\}').Value
+        $token | Should -Not -BeNullOrEmpty -Because "the recipe must define CMS_TOKEN"
+        $token | Should -Match 'Invoke-WebRequest -Method Post -Uri "\$env:CMS/connect/token" -SkipHttpErrorCheck'
+        $token | Should -Match '\[int\]\$response\.StatusCode -eq 200'
+        $token | Should -Match '\$\(\$response\.Content\)'
+        $token | Should -Match '-TimeoutSec [1-9]\d*' -Because "the request replaced a curl call and must not hang on a service that accepts and never answers"
+        $token | Should -Not -Match 'curl'
     }
 
     It "passes the live PostgreSQL user, roles and client-secret bounds into setup-openiddict" {
@@ -782,9 +817,11 @@ Describe "Northridge PostgreSQL restore recipe identity handoff" {
         # The key material does not outlive the step, on the success path or the failure path.
         @([regex]::Matches($step7, 'rm -f "\$ART/newkey\.sql" "\$ART/newkey-insert\.sql"')).Count | Should -BeGreaterOrEqual 2
 
-        # The token check stays, after the replacement, as the second proof rather than the only one.
-        $tokenCheckAt = $script:NorthridgeRecipe.IndexOf('test -n "$T" || { echo "no token: step 7 did not take effect"; exit 1; }')
+        # The token check stays, after the replacement, as the second proof rather than the only one,
+        # and its failure text still points at this step.
+        $tokenCheckAt = $script:NorthridgeRecipe.IndexOf('T=$(CMS_TOKEN restore-admin edfi_admin_api/full_access) || \')
         $tokenCheckAt | Should -BeGreaterThan $script:NorthridgeRecipe.IndexOf("# 8. REQUIRED")
+        $script:NorthridgeRecipe.Substring($tokenCheckAt, 300) | Should -Match 'step 7 did not take effect'
     }
 
     It "guards the DMS-to-CMS client replacement so a failed delete or insert stops the recipe" {

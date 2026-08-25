@@ -553,3 +553,51 @@ Describe "Restore recipe resolves the service ports and bounds every wait" {
         $script:activeRecipe | Should -Not -Match 'http://localhost:\d+/data/'
     }
 }
+
+Describe "Copy-NorthridgeDataForward.ps1 stamp distributions cover every sampled table or fail" {
+    BeforeAll {
+        . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:copyScript -FunctionName "ConvertTo-StampDistributionMap")))
+        $script:stampTable = @("dms.Document", "edfi.Student", "edfi.School")
+        $script:stampRow = @(
+            "dms.Document|3|1|9|1|9|a|b|a|b|a|b",
+            "edfi.School|2|1|9|a|b",
+            "edfi.Student|5|1|9|a|b"
+        )
+    }
+
+    It "maps one row per table, keyed ordinally, and tolerates psql's trailing empty element" {
+        $map = ConvertTo-StampDistributionMap -Row ($script:stampRow + "") -ExpectedTable $script:stampTable
+        $map.Count | Should -Be 3
+        $map.Comparer | Should -Be ([System.StringComparer]::Ordinal)
+        $map["edfi.Student"] | Should -Be "5|1|9|a|b"
+        $map["dms.Document"] | Should -Be "3|1|9|1|9|a|b|a|b|a|b"
+    }
+
+    It "refuses a row without a separator rather than dropping it" {
+        # The false pass: a malformed row was skipped, the table dropped out of both maps at once, and
+        # absence compared equal to absence.
+        { ConvertTo-StampDistributionMap -Row ($script:stampRow + "edfi.Broken") -ExpectedTable ($script:stampTable + "edfi.Broken") } |
+            Should -Throw "*'edfi.Broken' has no table name before its first separator*"
+        { ConvertTo-StampDistributionMap -Row ($script:stampRow + "|orphan") -ExpectedTable $script:stampTable } |
+            Should -Throw "*has no table name before its first separator*"
+    }
+
+    It "refuses a parsed set that does not cover exactly the requested tables" {
+        # The false pass: the comparison count was read from whatever parsed, so a table that produced no
+        # row was reported as compared by not being reported at all.
+        { ConvertTo-StampDistributionMap -Row $script:stampRow[0..1] -ExpectedTable $script:stampTable } |
+            Should -Throw "*Missing: edfi.Student. Unexpected: none.*"
+        { ConvertTo-StampDistributionMap -Row @() -ExpectedTable $script:stampTable } |
+            Should -Throw "*covers 0 table(s) for 3 requested. Missing: dms.Document, edfi.School, edfi.Student.*"
+        { ConvertTo-StampDistributionMap -Row ($script:stampRow + "edfi.Extra|1|1|1|a|b") -ExpectedTable $script:stampTable } |
+            Should -Throw "*Missing: none. Unexpected: edfi.Extra.*"
+        { ConvertTo-StampDistributionMap -Row ($script:stampRow + "edfi.School|9|9|9|x|y") -ExpectedTable $script:stampTable } |
+            Should -Throw "*reported 'edfi.School' twice*"
+    }
+
+    It "is what Get-StampDistribution returns, over dms.Document and every sampled table" {
+        $text = Get-ScriptFunctionText -ScriptPath $script:copyScript -FunctionName "Get-StampDistribution"
+        $text | Should -Match 'return ConvertTo-StampDistributionMap -Row @\(\$rows\) -ExpectedTable \(@\("dms\.Document"\) \+ \$SampleTable\)'
+        $text | Should -Not -Match 'IndexOf\("\|"\)' -Because "no parsing may remain outside the helper that fails closed"
+    }
+}

@@ -929,6 +929,51 @@ ORDER BY f.child_schema, f.child_table, f.conname;
     return ,$failure
 }
 
+# One row per requested table, or the comparison is not the one the plan announced. A row without the
+# separator is refused rather than skipped, because a skipped row is a table that dropped out of both
+# maps at once and compared equal by absence; and the parsed set is held to the requested set, because
+# a table that produced no row -- or a row for a table nobody asked about -- means the union did not
+# run the way it was built.
+function ConvertTo-StampDistributionMap {
+    [CmdletBinding()]
+    [OutputType([System.Collections.Generic.Dictionary[string, string]])]
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Row,
+        [Parameter(Mandatory)] [string[]] $ExpectedTable
+    )
+
+    # Ordinal, like every other map keyed by a table name here: a hashtable literal would read two
+    # tables differing only in case as one and compare the wrong distributions to each other.
+    $map = [System.Collections.Generic.Dictionary[string, string]]::new([System.StringComparer]::Ordinal)
+    foreach ($item in $Row) {
+        $text = ([string]$item).Trim()
+        # psql --tuples-only can end its output with an empty element; that is not a row.
+        if ([string]::IsNullOrWhiteSpace($text)) { continue }
+
+        $separatorIndex = $text.IndexOf("|")
+        if ($separatorIndex -lt 1) {
+            throw "Stamp distribution row '$text' has no table name before its first separator; refusing to drop it, because a dropped row compares equal by absence."
+        }
+
+        $name = $text.Substring(0, $separatorIndex)
+        if ($map.ContainsKey($name)) {
+            throw "Stamp distribution reported '$name' twice; the union produced a row the comparison cannot attribute."
+        }
+        $map[$name] = $text.Substring($separatorIndex + 1)
+    }
+
+    $expected = [System.Collections.Generic.HashSet[string]]::new([string[]]$ExpectedTable, [System.StringComparer]::Ordinal)
+    $missing = @($ExpectedTable | Where-Object { -not $map.ContainsKey($_) } | Sort-Object)
+    $unexpected = @($map.Keys | Where-Object { -not $expected.Contains($_) } | Sort-Object)
+    if ($missing.Count -gt 0 -or $unexpected.Count -gt 0) {
+        $missingText = if ($missing.Count -gt 0) { $missing -join ', ' } else { 'none' }
+        $unexpectedText = if ($unexpected.Count -gt 0) { $unexpected -join ', ' } else { 'none' }
+        throw "Stamp distribution covers $($map.Count) table(s) for $($ExpectedTable.Count) requested. Missing: $missingText. Unexpected: $unexpectedText."
+    }
+
+    return $map
+}
+
 # Row counts cannot see a rewritten stamp: the trigger that would corrupt these values updates rows in
 # place, leaving the count identical. Comparing the distribution is what detects it.
 function Get-StampDistribution {
@@ -962,18 +1007,7 @@ function Get-StampDistribution {
     $rows = Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser `
         -DatabaseName $DatabaseName -Sql $sql
 
-    # Ordinal, like every other map keyed by a table name here: a hashtable literal would read two
-    # tables differing only in case as one and compare the wrong distributions to each other.
-    $map = [System.Collections.Generic.Dictionary[string, string]]::new([System.StringComparer]::Ordinal)
-    foreach ($row in $rows) {
-        $text = ([string]$row).Trim()
-        $separatorIndex = $text.IndexOf("|")
-        if ($separatorIndex -gt 0) {
-            $map[$text.Substring(0, $separatorIndex)] = $text.Substring($separatorIndex + 1)
-        }
-    }
-
-    return $map
+    return ConvertTo-StampDistributionMap -Row @($rows) -ExpectedTable (@("dms.Document") + $SampleTable)
 }
 
 # pg_restore's -n and -t filters are OR-ed within each kind and AND-ed across kinds, so together they

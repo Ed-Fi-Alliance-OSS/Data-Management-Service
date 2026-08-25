@@ -545,6 +545,13 @@ Describe "Shared Compose resolution and safe provider builder (DMS-1284)" {
             )
         }
 
+        AfterEach {
+            # No case in this Context may leave script-scope state behind for the next one: the lifted
+            # Get-EffectiveConnectionString reads $script:ConnectionStringWasProvided when it exists, so
+            # a value left over from one test would change what a later test certifies.
+            Remove-Variable -Name ConnectionStringWasProvided -Scope Script -ErrorAction SilentlyContinue
+        }
+
         It "PostgreSQL: a user and database name carrying delimiters reach psql intact" {
             # The start scripts' shape: -EnvironmentFile is passed, so the parameter group is what the
             # connection string is built from, and the string is then read back to address psql.
@@ -564,17 +571,31 @@ Describe "Shared Compose resolution and safe provider builder (DMS-1284)" {
 
         It "PostgreSQL: ENV:-indirected values carrying delimiters resolve and survive" {
             # The real -InitDb shape: DbName arrives as ENV:DMS_CONFIG_DATABASE_NAME and is resolved
-            # inside Build-ConnectionString, so the resolved value takes the same quoting path.
-            Remove-Item Env:DMS1406_PG_USER, Env:DMS1406_PG_DB -ErrorAction SilentlyContinue
-            $EnvironmentFile = "./.env"
-            $envValues = @{ DMS1406_PG_USER = 'nr;owner=x'; DMS1406_PG_DB = 'cfg;db' }
+            # inside Build-ConnectionString, so the resolved value takes the same quoting path. An
+            # ambient value of either probe name would win over the env file (Compose precedence), so
+            # both are cleared for the test and put back afterwards.
+            $probeName = @("DMS1406_PG_USER", "DMS1406_PG_DB")
+            $prior = @{}
+            foreach ($name in $probeName) {
+                if (Test-Path "Env:$name") { $prior[$name] = (Get-Item "Env:$name").Value }
+                Remove-Item "Env:$name" -ErrorAction SilentlyContinue
+            }
+            try {
+                $EnvironmentFile = "./.env"
+                $envValues = @{ DMS1406_PG_USER = 'nr;owner=x'; DMS1406_PG_DB = 'cfg;db' }
 
-            $read = Get-ConnectionStringValue -DbType "Postgresql" -ConnectionString (
-                Get-EffectiveConnectionString -ConnectionString "" -DbType "Postgresql" -DbHost "dms-postgresql" -DbPort "5432" `
-                    -DbName "ENV:DMS1406_PG_DB" -DbUser "ENV:DMS1406_PG_USER")
+                $read = Get-ConnectionStringValue -DbType "Postgresql" -ConnectionString (
+                    Get-EffectiveConnectionString -ConnectionString "" -DbType "Postgresql" -DbHost "dms-postgresql" -DbPort "5432" `
+                        -DbName "ENV:DMS1406_PG_DB" -DbUser "ENV:DMS1406_PG_USER")
 
-            $read.User | Should -BeExactly 'nr;owner=x'
-            $read.Database | Should -BeExactly 'cfg;db'
+                $read.User | Should -BeExactly 'nr;owner=x'
+                $read.Database | Should -BeExactly 'cfg;db'
+            }
+            finally {
+                foreach ($name in $probeName) {
+                    if ($prior.ContainsKey($name)) { Set-Item "Env:$name" -Value $prior[$name] }
+                }
+            }
         }
 
         It "PostgreSQL: the default connection string and plain values read back unchanged" {
@@ -613,13 +634,17 @@ Describe "Shared Compose resolution and safe provider builder (DMS-1284)" {
             }
         }
 
-        It "SQL Server: the PostgreSQL default connection string is ignored when the caller did not provide one" {
-            # setup-openiddict.ps1 carries a PostgreSQL-shaped default connection string for its
-            # default provider. A SQL Server caller that relies on -DbHost/-DbPort/-DbName/-DbUser
-            # must not feed that default Host/Port/Username string to SqlConnectionStringBuilder.
-            $EnvironmentFile = ""
+        It "SQL Server: with the env file every documented caller passes, the parameter group is used and the PostgreSQL default connection string is never consulted" {
+            # setup-openiddict.ps1 carries a PostgreSQL-shaped default -ConnectionString for bare
+            # PostgreSQL use. Every documented caller -- the three start scripts and the Northridge
+            # recipe's step 10 -- passes -EnvironmentFile, and that is the path certified here: the
+            # default string is present, as it is whenever a caller does not pass -ConnectionString, and
+            # a SQL Server caller's string still comes from -DbHost/-DbPort/-DbName/-DbUser rather than
+            # from Host/Port/Username keywords SqlConnectionStringBuilder would reject. The script's
+            # fallback for a caller with no env file at all is not certified, because no documented
+            # caller reaches it.
+            $EnvironmentFile = "./.env"
             $envValues = @{}
-            $script:ConnectionStringWasProvided = $false
 
             $connectionString = Get-EffectiveConnectionString `
                 -ConnectionString "Host=localhost;Port=5435;Database=edfi_datamanagementservice;Username=postgres;" `
