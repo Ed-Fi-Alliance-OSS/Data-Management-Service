@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using Dapper;
+using DbUp.Engine.Output;
 using EdFi.DmsConfigurationService.Backend.Deploy;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
@@ -253,17 +254,23 @@ public class Given_a_legacy_DataStoreDerivative_SqlServer_upgrade
         // sibling and both providers assert the same totals.
         int paddedId = await InsertDerivativeAsync(connection, _fourthDataStoreId, "Snapshot ");
 
+        int lastInvalidId = 0;
         for (int row = 0; row < 30; row++)
         {
-            await InsertDerivativeAsync(connection, _firstDataStoreId, WidestInvalidType(row));
+            lastInvalidId = await InsertDerivativeAsync(
+                connection,
+                _firstDataStoreId,
+                WidestInvalidType(row)
+            );
         }
 
+        int lastDuplicateId = 0;
         int[] duplicateHosts = [_firstDataStoreId, _secondDataStoreId, _thirdDataStoreId];
         foreach (int dataStoreId in duplicateHosts)
         {
             for (int row = 0; row < 10; row++)
             {
-                await InsertDerivativeAsync(connection, dataStoreId, "Snapshot");
+                lastDuplicateId = await InsertDerivativeAsync(connection, dataStoreId, "Snapshot");
             }
         }
 
@@ -286,8 +293,36 @@ public class Given_a_legacy_DataStoreDerivative_SqlServer_upgrade
         message
             .Length.Should()
             .BeLessThanOrEqualTo(
-                2048,
-                "the tuple budget is computed before the lists are built, so the message never needs truncating"
+                2047,
+                "THROW delivers at most 2047 characters; the bounded @message variable makes this "
+                    + "assertion true on its own, so the remediation assertions above are what actually "
+                    + "detect truncation"
+            );
+
+        // The thrown error is a bounded sample by design. These offenders sit past the cap, so the
+        // only place they can be found is the deploy log, which is the channel an operator reads
+        // when the upgrade fails.
+        string scriptOutput = _scriptOutput.Output;
+        string lastDuplicateTuple = $"({_thirdDataStoreId}, Snapshot, {lastDuplicateId})";
+        string lastInvalidTuple = $"({lastInvalidId}, {_firstDataStoreId}, '{WidestInvalidType(29)}')";
+
+        message.Should().NotContain(lastDuplicateTuple, "this offender is beyond the thrown sample's cap");
+        message.Should().NotContain(lastInvalidTuple, "this offender is beyond the thrown sample's cap");
+
+        scriptOutput
+            .Should()
+            .Contain(lastDuplicateTuple, "every duplicate tuple reaches the operator through the deploy log");
+        scriptOutput
+            .Should()
+            .Contain(
+                lastInvalidTuple,
+                "every invalid-type tuple reaches the operator through the deploy log"
+            );
+        scriptOutput
+            .Should()
+            .Contain(
+                $"({paddedId}, {_fourthDataStoreId}, 'Snapshot ')",
+                "the quoted trailing space survives the log channel too"
             );
     }
 
@@ -389,7 +424,15 @@ public class Given_a_legacy_DataStoreDerivative_SqlServer_upgrade
             new { Name = name }
         ) > 0;
 
-    private DatabaseDeployResult Deploy() => new Deploy.DatabaseDeploy().DeployDatabase(_connectionString);
+    private ScriptOutputCapture _scriptOutput = new();
+
+    private DatabaseDeployResult Deploy()
+    {
+        _scriptOutput = new ScriptOutputCapture();
+        return new Deploy.DatabaseDeploy { ScriptOutputLog = _scriptOutput }.DeployDatabase(
+            _connectionString
+        );
+    }
 
     private void DeploySuccessfully()
     {
@@ -461,4 +504,29 @@ public class Given_a_legacy_DataStoreDerivative_SqlServer_upgrade
           AND index_column_info.is_included_column = 0
         ORDER BY index_column_info.key_ordinal;
         """;
+
+    /// <summary>
+    /// Captures the script output DbUp writes for every result set an upgrade script returns. The
+    /// complete offender lists travel through this channel because they cannot fit in the thrown
+    /// error, so a test can only prove they reach the operator by reading the deploy log.
+    /// </summary>
+    private sealed class ScriptOutputCapture : IUpgradeLog
+    {
+        private readonly List<string> _lines = [];
+
+        public string Output => string.Join(Environment.NewLine, _lines);
+
+        public void WriteInformation(string format, params object[] args) => Append(format, args);
+
+        public void WriteWarning(string format, params object[] args) => Append(format, args);
+
+        public void WriteError(string format, params object[] args) => Append(format, args);
+
+        /// <summary>
+        /// DbUp passes result-set rows through with no arguments, so the row text is never treated
+        /// as a format string and a brace in the data cannot break the capture.
+        /// </summary>
+        private void Append(string format, object[] args) =>
+            _lines.Add(args.Length == 0 ? format : string.Format(format, args));
+    }
 }

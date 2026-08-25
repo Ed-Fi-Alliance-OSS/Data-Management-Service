@@ -19,7 +19,7 @@
 -- The invalid-type preflight below negates this same expression, so a value the check constraint
 -- would reject is always diagnosed by the preflight first.
 
-DECLARE @messageLimit INT = 2048;
+DECLARE @messageLimit INT = 2047;
 DECLARE @markerReserve INT = 30;
 DECLARE @remediation NVARCHAR(400) =
     N'Correct an invalid DerivativeType with PUT /v3/dataStoreDerivatives/{id}, or remove an unwanted row with DELETE /v3/dataStoreDerivatives/{id}, then retry the upgrade. Allowed values are exactly ''Snapshot'' and ''ReadReplica''.';
@@ -33,10 +33,13 @@ DECLARE @duplicateHeader NVARCHAR(200);
 DECLARE @invalidHeader NVARCHAR(200);
 DECLARE @conditions INT;
 DECLARE @perCondition INT;
--- Declared at the thrown limit rather than MAX, so an assembly bug surfaces as a loud truncation
--- error instead of silently shortening the diagnostics. Character counts throughout use
--- DATALENGTH/2, never LEN, because LEN ignores trailing spaces and would undercount.
-DECLARE @message NVARCHAR(2048) = N'';
+-- Declared at the thrown limit. That limit is a silent one in both directions: assigning a longer
+-- string to a declared NVARCHAR(n) truncates without raising, and THROW itself delivers at most
+-- 2047 characters. Nothing reports an over-long message, so the tuple budget computed below is the
+-- only thing keeping the thrown text whole, and the result sets emitted above are what guarantee
+-- every offender is still reported. Character counts throughout use DATALENGTH/2, never LEN,
+-- because LEN ignores trailing spaces and would undercount.
+DECLARE @message NVARCHAR(2047) = N'';
 
 -- Duplicate detection deliberately uses the plain columns, which is the equality the unique
 -- constraint itself will apply, including the case and padding insensitivity of the column's own
@@ -58,6 +61,33 @@ WHERE NOT (
     (DerivativeType COLLATE Latin1_General_100_BIN2 = N'Snapshot' AND DATALENGTH(DerivativeType) = 16)
     OR (DerivativeType COLLATE Latin1_General_100_BIN2 = N'ReadReplica' AND DATALENGTH(DerivativeType) = 22)
 );
+
+-- The thrown error carries only a bounded sample, because THROW delivers at most 2047 characters.
+-- These two statements carry the complete offender sets instead. DbUp's LogScriptOutput writes
+-- every result set a script returns to the deployment log, and it does so as the reader is
+-- consumed, so rows emitted here reach the operator even though the batch aborts below. On a
+-- conforming database both statements return no rows. Ordering is deterministic and the tuple
+-- shapes match the thrown diagnostics exactly.
+SELECT CONCAT(N'(', candidate.DataStoreId, N', ', candidate.DerivativeType, N', ', candidate.Id, N')')
+    AS DuplicateDataStoreDerivative
+FROM dmscs.DataStoreDerivative candidate
+WHERE EXISTS (
+    SELECT 1
+    FROM dmscs.DataStoreDerivative other
+    WHERE other.DataStoreId = candidate.DataStoreId
+      AND other.DerivativeType = candidate.DerivativeType
+      AND other.Id <> candidate.Id
+)
+ORDER BY candidate.DataStoreId, candidate.DerivativeType, candidate.Id;
+
+SELECT CONCAT(N'(', Id, N', ', DataStoreId, N', ''', DerivativeType, N''')')
+    AS InvalidDataStoreDerivativeType
+FROM dmscs.DataStoreDerivative
+WHERE NOT (
+    (DerivativeType COLLATE Latin1_General_100_BIN2 = N'Snapshot' AND DATALENGTH(DerivativeType) = 16)
+    OR (DerivativeType COLLATE Latin1_General_100_BIN2 = N'ReadReplica' AND DATALENGTH(DerivativeType) = 22)
+)
+ORDER BY Id;
 
 IF @duplicateTotal > 0 OR @invalidTotal > 0
 BEGIN

@@ -14,6 +14,35 @@
 -- octet_length makes the stored-length contract explicit so trailing whitespace is rejected. The
 -- invalid-type preflight below negates this same expression, so a value the check constraint would
 -- reject is always diagnosed by the preflight first.
+-- The thrown error carries only a bounded sample, because SQL Server's THROW delivers at most 2047
+-- characters and the two engines keep one diagnostic contract. These two statements carry the
+-- complete offender sets instead. DbUp's LogScriptOutput writes every result set a script returns
+-- to the deployment log, and it does so as the reader is consumed, so rows emitted here reach the
+-- operator even though the statement that follows aborts the upgrade. A RAISE NOTICE would not:
+-- notices are not part of a result set and never reach the DbUp log. On a conforming database both
+-- statements return no rows. Ordering is deterministic and the tuple shapes match the thrown
+-- diagnostics exactly.
+SELECT format('(%s, %s, %s)', candidate."DataStoreId", candidate."DerivativeType", candidate."Id")
+    AS "DuplicateDataStoreDerivative"
+FROM "dmscs"."DataStoreDerivative" candidate
+WHERE EXISTS (
+    SELECT 1
+    FROM "dmscs"."DataStoreDerivative" other
+    WHERE other."DataStoreId" = candidate."DataStoreId"
+      AND other."DerivativeType" = candidate."DerivativeType"
+      AND other."Id" <> candidate."Id"
+)
+ORDER BY candidate."DataStoreId", candidate."DerivativeType", candidate."Id";
+
+SELECT format('(%s, %s, ''%s'')', "Id", "DataStoreId", "DerivativeType")
+    AS "InvalidDataStoreDerivativeType"
+FROM "dmscs"."DataStoreDerivative"
+WHERE NOT (
+    ("DerivativeType" COLLATE "C" = 'Snapshot' AND octet_length("DerivativeType") = 8)
+    OR ("DerivativeType" COLLATE "C" = 'ReadReplica' AND octet_length("DerivativeType") = 11)
+)
+ORDER BY "Id";
+
 DO $$
 DECLARE
     message_limit CONSTANT INT := 2048;
