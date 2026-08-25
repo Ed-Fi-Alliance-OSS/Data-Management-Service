@@ -7,6 +7,7 @@ using System.Buffers;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using EdFi.DataManagementService.Core.Configuration;
@@ -520,6 +521,12 @@ public static class CdcSourcePartitionHashCalculator
 {
     private const string PayloadPrefix = "ed-fi-dms-connect-source-partition-v1";
 
+    // Pinned to DMS-1319 hash vectors; this JSON is hash input only and is never emitted.
+    private static readonly JsonWriterOptions SourcePartitionJsonWriterOptions = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
     public static CdcSourcePartitionHashResult ComputePostgresql(string? topicPrefix) =>
         Compute(CdcProvider.Postgresql, topicPrefix, null);
 
@@ -588,7 +595,7 @@ public static class CdcSourcePartitionHashCalculator
     private static byte[] EncodePostgresqlSourcePartition(string topicPrefix)
     {
         ArrayBufferWriter<byte> buffer = new();
-        using Utf8JsonWriter writer = new(buffer);
+        using Utf8JsonWriter writer = new(buffer, SourcePartitionJsonWriterOptions);
         writer.WriteStartObject();
         writer.WriteString("server", topicPrefix);
         writer.WriteEndObject();
@@ -600,7 +607,7 @@ public static class CdcSourcePartitionHashCalculator
     private static byte[] EncodeSqlServerSourcePartition(string topicPrefix, string rawCatalogName)
     {
         ArrayBufferWriter<byte> buffer = new();
-        using Utf8JsonWriter writer = new(buffer);
+        using Utf8JsonWriter writer = new(buffer, SourcePartitionJsonWriterOptions);
         writer.WriteStartObject();
         writer.WriteString("database", rawCatalogName);
         writer.WriteString("server", topicPrefix);
