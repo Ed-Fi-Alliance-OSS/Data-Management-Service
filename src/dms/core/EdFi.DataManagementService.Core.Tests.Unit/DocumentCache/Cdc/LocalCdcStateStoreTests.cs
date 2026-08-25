@@ -458,6 +458,48 @@ public class Given_LocalCdcStateStore
     }
 
     [Test]
+    public async Task It_rejects_nested_duplicate_json_properties_in_persisted_incidents()
+    {
+        string incidentJson = CdcJsonContract.Serialize(CreateIncident(SampleBinding));
+        string duplicateBindingIdentityJson = ReplaceRequired(
+            incidentJson,
+            "\"physicalSourceFingerprint\":\"sha256:8caa6b0ad6db6f60d8d7ce6e78d1e76094e2241678c6f241670319ab60810851\"",
+            "\"physicalSourceFingerprint\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"physicalSourceFingerprint\":\"sha256:8caa6b0ad6db6f60d8d7ce6e78d1e76094e2241678c6f241670319ab60810851\""
+        );
+        string duplicatePositionMetadataJson = ReplaceRequired(
+            incidentJson,
+            "\"providerArtifactName\":\"edfi_dms_dms_local_data_store_1_g1_slot\"",
+            "\"providerArtifactName\":\"unexpected-artifact\",\"providerArtifactName\":\"edfi_dms_dms_local_data_store_1_g1_slot\""
+        );
+
+        CdcStateStoreFailure bindingIdentityFailure = await ReadPersistedIncidentFailureAsync(
+            duplicateBindingIdentityJson
+        );
+        CdcStateStoreFailure positionMetadataFailure = await ReadPersistedIncidentFailureAsync(
+            duplicatePositionMetadataJson
+        );
+
+        bindingIdentityFailure
+            .Should()
+            .Match<CdcStateStoreFailure>(failure =>
+                failure.Kind == CdcStateStoreFailureKind.InvalidPersistedIncident
+                && failure.Diagnostics.Any(diagnostic =>
+                    diagnostic.Category == CdcDiagnosticCategory.MalformedPayload
+                    && diagnostic.Path == "$.bindingIdentity.physicalSourceFingerprint"
+                )
+            );
+        positionMetadataFailure
+            .Should()
+            .Match<CdcStateStoreFailure>(failure =>
+                failure.Kind == CdcStateStoreFailureKind.InvalidPersistedIncident
+                && failure.Diagnostics.Any(diagnostic =>
+                    diagnostic.Category == CdcDiagnosticCategory.MalformedPayload
+                    && diagnostic.Path == "$.positionMetadata.providerArtifactName"
+                )
+            );
+    }
+
+    [Test]
     public async Task It_rejects_symlink_state_files_and_permits_permission_fallback_when_modes_are_unsupported()
     {
         using TempCdcStateRoot tempRoot = new();
@@ -633,6 +675,35 @@ public class Given_LocalCdcStateStore
                 ))
                 .ToArray()
         );
+    }
+
+    private static async Task<CdcStateStoreFailure> ReadPersistedIncidentFailureAsync(string incidentJson)
+    {
+        using TempCdcStateRoot tempRoot = new();
+        LocalCdcBindingStateStore store = new(tempRoot.Path);
+
+        await store.CreateBindingIfAbsentAsync(SampleBinding, CancellationToken.None);
+        string incidentPath = tempRoot.IncidentPath(SampleBinding);
+        Directory.CreateDirectory(Path.GetDirectoryName(incidentPath)!);
+        await File.WriteAllTextAsync(incidentPath, incidentJson);
+
+        CdcReadBindingStateStoreResult readResult = await store.ReadBindingAsync(
+            SampleBinding.ToBindingIdentity(),
+            CancellationToken.None
+        );
+
+        return readResult
+            .Should()
+            .BeOfType<CdcReadBindingStateStoreResult.StateStoreFailure>()
+            .Subject.Failure;
+    }
+
+    private static string ReplaceRequired(string source, string oldValue, string newValue)
+    {
+        int index = source.IndexOf(oldValue, StringComparison.Ordinal);
+        index.Should().BeGreaterThanOrEqualTo(0);
+
+        return string.Concat(source.AsSpan(0, index), newValue, source.AsSpan(index + oldValue.Length));
     }
 
     private sealed class TempCdcStateRoot : IDisposable

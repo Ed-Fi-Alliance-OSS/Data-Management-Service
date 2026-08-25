@@ -830,7 +830,7 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             return LocalBindingFileReadResult.Failed(FileSystemFailure(filePath, "read binding state"));
         }
 
-        IReadOnlyList<CdcDiagnostic> duplicateDiagnostics = DetectDuplicateRootProperties(json, "binding");
+        IReadOnlyList<CdcDiagnostic> duplicateDiagnostics = DetectDuplicateProperties(json, "binding");
         if (duplicateDiagnostics.Count != 0)
         {
             return LocalBindingFileReadResult.Failed(
@@ -934,7 +934,7 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             return LocalIncidentFileReadResult.Failed(FileSystemFailure(filePath, "read incident state"));
         }
 
-        IReadOnlyList<CdcDiagnostic> duplicateDiagnostics = DetectDuplicateRootProperties(json, "incident");
+        IReadOnlyList<CdcDiagnostic> duplicateDiagnostics = DetectDuplicateProperties(json, "incident");
         if (duplicateDiagnostics.Count != 0)
         {
             return LocalIncidentFileReadResult.Failed(
@@ -1224,10 +1224,7 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         await writer.WriteAsync(payload.AsMemory(), cancellationToken);
     }
 
-    private static IReadOnlyList<CdcDiagnostic> DetectDuplicateRootProperties(
-        string json,
-        string contractName
-    )
+    private static IReadOnlyList<CdcDiagnostic> DetectDuplicateProperties(string json, string contractName)
     {
         CdcDiagnosticCollector diagnostics = new();
         try
@@ -1241,26 +1238,7 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
                 }
             );
 
-            if (document.RootElement.ValueKind != JsonValueKind.Object)
-            {
-                return [];
-            }
-
-            HashSet<string> rootProperties = new(StringComparer.Ordinal);
-            foreach (
-                string propertyName in document
-                    .RootElement.EnumerateObject()
-                    .Select(property => property.Name)
-            )
-            {
-                if (!rootProperties.Add(propertyName))
-                {
-                    diagnostics.MalformedPayload(
-                        $"$.{propertyName}",
-                        $"CDC persisted {contractName} state contains duplicate JSON property."
-                    );
-                }
-            }
+            DetectDuplicateProperties(document.RootElement, "$", contractName, diagnostics);
         }
         catch (JsonException)
         {
@@ -1269,6 +1247,67 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
 
         return diagnostics.Diagnostics;
     }
+
+    private static void DetectDuplicateProperties(
+        JsonElement element,
+        string path,
+        string contractName,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                DetectDuplicateObjectProperties(element, path, contractName, diagnostics);
+                break;
+            case JsonValueKind.Array:
+                int index = 0;
+                foreach (JsonElement item in element.EnumerateArray())
+                {
+                    DetectDuplicateProperties(item, $"{path}[{index}]", contractName, diagnostics);
+                    index++;
+                }
+                break;
+        }
+    }
+
+    private static void DetectDuplicateObjectProperties(
+        JsonElement element,
+        string path,
+        string contractName,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        HashSet<string> propertyNames = new(StringComparer.Ordinal);
+        foreach (JsonProperty property in element.EnumerateObject())
+        {
+            string propertyPath = AppendJsonPathProperty(path, property.Name);
+            if (!propertyNames.Add(property.Name))
+            {
+                diagnostics.MalformedPayload(
+                    propertyPath,
+                    $"CDC persisted {contractName} state contains duplicate JSON property."
+                );
+            }
+
+            DetectDuplicateProperties(property.Value, propertyPath, contractName, diagnostics);
+        }
+    }
+
+    private static string AppendJsonPathProperty(string path, string propertyName) =>
+        IsSimpleJsonPathProperty(propertyName)
+            ? $"{path}.{propertyName}"
+            : $"{path}['{EscapeJsonPathProperty(propertyName)}']";
+
+    private static bool IsSimpleJsonPathProperty(string propertyName) =>
+        propertyName.Length != 0
+        && (char.IsAsciiLetter(propertyName[0]) || propertyName[0] == '_')
+        && propertyName.Skip(1).All(character => char.IsAsciiLetterOrDigit(character) || character == '_');
+
+    private static string EscapeJsonPathProperty(string propertyName) =>
+        propertyName
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("'", "\\'", StringComparison.Ordinal);
 
     private static bool TryParseGenerationFileName(string filePath, out long generation)
     {
