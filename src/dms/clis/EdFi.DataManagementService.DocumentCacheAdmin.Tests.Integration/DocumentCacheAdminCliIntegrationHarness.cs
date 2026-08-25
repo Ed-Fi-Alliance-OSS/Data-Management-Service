@@ -17,6 +17,7 @@ using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
+using Microsoft.Data.SqlClient;
 using Npgsql;
 using NpgsqlTypes;
 
@@ -289,6 +290,65 @@ internal sealed class DocumentCacheAdminCliStateInspector(
             );
     }
 
+    public async Task SetMssqlReadCommittedSnapshotAsync(bool enabled)
+    {
+        MssqlGeneratedDdlTestDatabase database = RequireMssqlDatabase();
+        SqlConnection.ClearAllPools();
+
+        string quotedDatabaseName = MssqlTestDatabaseHelper.QuoteIdentifier(database.DatabaseName);
+        string enabledSql = enabled ? "ON" : "OFF";
+
+        await MssqlTestDatabaseHelper.ExecuteAdminNonQueryAsync(
+            $"""
+            ALTER DATABASE {quotedDatabaseName}
+            SET READ_COMMITTED_SNAPSHOT {enabledSql} WITH ROLLBACK IMMEDIATE;
+            """
+        );
+
+        SqlConnection.ClearAllPools();
+    }
+
+    public Task<bool> ReadMssqlReadCommittedSnapshotEnabledAsync()
+    {
+        MssqlGeneratedDdlTestDatabase database = RequireMssqlDatabase();
+
+        return ReadMssqlAdminBitAsync(
+            $"""
+            SELECT CONVERT(int, [is_read_committed_snapshot_on])
+            FROM [sys].[databases]
+            WHERE [name] = N'{MssqlTestDatabaseHelper.EscapeSqlLiteral(database.DatabaseName)}';
+            """
+        );
+    }
+
+    public async Task SetMssqlNestedTriggersAsync(bool enabled)
+    {
+        RequireMssqlDatabase();
+        int enabledValue = enabled ? 1 : 0;
+
+        await MssqlTestDatabaseHelper.ExecuteAdminNonQueryAsync(
+            $"""
+            EXEC sp_configure 'nested triggers', {enabledValue};
+            RECONFIGURE;
+            """
+        );
+
+        SqlConnection.ClearAllPools();
+    }
+
+    public Task<bool> ReadMssqlNestedTriggersEnabledAsync()
+    {
+        RequireMssqlDatabase();
+
+        return ReadMssqlAdminBitAsync(
+            """
+            SELECT CONVERT(int, [value_in_use])
+            FROM [sys].[configurations]
+            WHERE [name] = N'nested triggers';
+            """
+        );
+    }
+
     public async Task<DocumentCacheAdminCliSeededDocument> InsertPostgresqlCanonicalDocumentAsync(
         long contentVersion = 10
     )
@@ -538,6 +598,22 @@ internal sealed class DocumentCacheAdminCliStateInspector(
     private PostgresqlGeneratedDdlTestDatabase RequirePostgresqlDatabase() =>
         postgresqlDatabase
         ?? throw new InvalidOperationException("This helper is only available for PostgreSQL targets.");
+
+    private MssqlGeneratedDdlTestDatabase RequireMssqlDatabase() =>
+        mssqlDatabase
+        ?? throw new InvalidOperationException("This helper is only available for SQL Server targets.");
+
+    private static async Task<bool> ReadMssqlAdminBitAsync(string sql)
+    {
+        await using SqlConnection connection = new(BaselineDatabaseConfiguration.MssqlAdminConnectionString!);
+        await connection.OpenAsync();
+
+        await using SqlCommand command = connection.CreateCommand();
+        command.CommandText = sql;
+
+        object? value = await command.ExecuteScalarAsync();
+        return value is not null && value != DBNull.Value && Convert.ToInt32(value) == 1;
+    }
 
     private async Task<IReadOnlyDictionary<string, object?>> QuerySingleRowAsync(
         string postgresqlSql,
