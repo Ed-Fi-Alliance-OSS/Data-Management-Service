@@ -96,6 +96,11 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
     /// and authorization the paged modes use. Partition boundary planning consumes this relation and
     /// applies its own row numbering, so the result is not a hydration keyset.
     /// </summary>
+    /// <param name="orderingMode">
+    /// The anchor Core resolved for this request, forwarded so partition boundaries are cut on the same
+    /// key a page of the same request seeks. Boundaries cut on a different key than the page a client
+    /// replays them as would overlap and leave rows in no partition.
+    /// </param>
     public bool TryPlanCandidates(
         DbTableModel rootTable,
         RelationalQueryPreprocessingResult preprocessingResult,
@@ -103,16 +108,14 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         out string? emptyPageReason,
         Func<PreprocessedRelationalQueryElement, QueryComparisonOperator>? comparisonOperatorResolver = null,
         PageDocumentIdAuthorizationSpec? authorization = null,
-        ChangeVersionRange? changeVersionRange = null
+        ChangeVersionRange? changeVersionRange = null,
+        PageOrderingMode orderingMode = PageOrderingMode.DocumentId
     )
     {
         plannedCandidates = PlanOrEmptyPage(
             rootTable,
             preprocessingResult,
-            // Boundaries anchor on DocumentId until this planner takes the request's anchor and
-            // forwards it. Stated as a literal rather than left to a default so the one site that has
-            // to change is the one a reader lands on.
-            PageCandidateModePlanning.ForUnpagedCandidates(PageOrderingMode.DocumentId),
+            PageCandidateModePlanning.ForUnpagedCandidates(orderingMode),
             authorization,
             out emptyPageReason,
             comparisonOperatorResolver,

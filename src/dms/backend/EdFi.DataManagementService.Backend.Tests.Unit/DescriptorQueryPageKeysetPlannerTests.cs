@@ -990,6 +990,30 @@ public class Given_DescriptorQueryPageKeysetPlanner
         unpaged.Plan.PageDocumentIdSql.Should().NotContain("TOP (");
     }
 
+    [TestCase(PageOrderingMode.DocumentId, "r.[DocumentId]")]
+    [TestCase(PageOrderingMode.ContentVersion, "r.[ContentVersion]")]
+    public void It_should_compile_the_unpaged_descriptor_candidate_relation_against_the_requested_anchor(
+        PageOrderingMode orderingMode,
+        string expectedProjection
+    )
+    {
+        // Descriptor partition boundaries are cut on whatever this relation projects, so the anchor the
+        // request resolved has to survive the trip through the planner. Discarding it here still
+        // compiles and still selects the right rows; it just cuts boundaries on a key no descriptor page
+        // of the same request seeks on, which a client cannot replay.
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Mssql);
+
+        var unpaged = planner.PlanCandidates(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            CreateParityPreprocessingResult(),
+            changeVersionRange: new ChangeVersionRange(100L, 200L),
+            orderingMode: orderingMode
+        );
+
+        unpaged.Plan.PageDocumentIdSql.Should().StartWith($"SELECT {expectedProjection}");
+    }
+
     [TestCase("pageSize")]
     [TestCase("cursorMin")]
     [TestCase("cursorMax")]

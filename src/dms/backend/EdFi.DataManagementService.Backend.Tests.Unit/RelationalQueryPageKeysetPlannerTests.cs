@@ -647,6 +647,34 @@ public class Given_RelationalQueryPageKeysetPlanner
         }
     }
 
+    [TestCase(PageOrderingMode.DocumentId, "r.\"DocumentId\"")]
+    [TestCase(PageOrderingMode.ContentVersion, "r.\"ContentVersion\"")]
+    public void It_should_compile_the_unpaged_candidate_relation_against_the_requested_anchor(
+        PageOrderingMode orderingMode,
+        string expectedProjection
+    )
+    {
+        // Partition boundaries are cut on whatever this relation projects, so the anchor the request
+        // resolved has to survive the trip through the planner. Discarding it here still compiles and
+        // still selects the right rows; it just cuts boundaries on a key no page of the same request
+        // seeks on, which a client cannot replay.
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        planner
+            .TryPlanCandidates(
+                CreateRootTable(),
+                CreateParityPreprocessingResult(),
+                out var unpaged,
+                out _,
+                changeVersionRange: new ChangeVersionRange(100L, 200L),
+                orderingMode: orderingMode
+            )
+            .Should()
+            .BeTrue();
+
+        unpaged!.Plan.PageDocumentIdSql.Should().StartWith($"SELECT {expectedProjection}");
+    }
+
     [Test]
     public void It_should_bind_the_cursor_range_and_page_size_as_int64_values()
     {

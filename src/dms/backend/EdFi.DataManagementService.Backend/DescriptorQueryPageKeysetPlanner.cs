@@ -58,6 +58,11 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
     /// request matches nothing. A descriptor <c>TryPlanCandidates</c> could therefore never return
     /// <see langword="false" />. <c>DescriptorReadHandler</c> is the model for the required caller shape.
     /// </remarks>
+    /// <param name="orderingMode">
+    /// The anchor Core resolved for this request, forwarded so descriptor partition boundaries are cut
+    /// on the same key a descriptor page of the same request seeks. Boundaries cut on a different key
+    /// than the page a client replays them as would overlap and leave rows in no partition.
+    /// </param>
     /// <exception cref="ArgumentException">
     /// Thrown when <paramref name="preprocessingResult" /> is not in the continue state.
     /// </exception>
@@ -66,17 +71,15 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
         QualifiedResourceName requestResource,
         DescriptorQueryPreprocessingResult preprocessingResult,
         PageDocumentIdAuthorizationSpec? authorization = null,
-        ChangeVersionRange? changeVersionRange = null
+        ChangeVersionRange? changeVersionRange = null,
+        PageOrderingMode orderingMode = PageOrderingMode.DocumentId
     )
     {
         return PlanCandidates(
             mappingSet,
             requestResource,
             preprocessingResult,
-            // Boundaries anchor on DocumentId until this planner takes the request's anchor and
-            // forwards it. Stated as a literal rather than left to a default so the one site that has
-            // to change is the one a reader lands on.
-            PageCandidateModePlanning.ForUnpagedCandidates(PageOrderingMode.DocumentId),
+            PageCandidateModePlanning.ForUnpagedCandidates(orderingMode),
             authorization,
             changeVersionRange
         );

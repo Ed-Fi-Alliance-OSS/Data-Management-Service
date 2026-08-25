@@ -1722,7 +1722,8 @@ public sealed class RelationalDocumentStoreRepository(
                     out _,
                     comparisonOperatorResolver: null,
                     authorization: partitionAuthorization,
-                    changeVersionRange: partitionRequest.ChangeVersionRange
+                    changeVersionRange: partitionRequest.ChangeVersionRange,
+                    orderingMode: partitionRequest.PageOrderingMode
                 ) || plannedCandidates is null
             )
             {

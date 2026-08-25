@@ -1260,7 +1260,8 @@ internal sealed class DescriptorReadHandler(
                 request.Resource,
                 preprocessingResult,
                 authorizationSpec,
-                request.ChangeVersionRange
+                request.ChangeVersionRange,
+                request.PageOrderingMode
             );
 
             partitionPlan = new PartitionWindowPlanner(dialect).Plan(
