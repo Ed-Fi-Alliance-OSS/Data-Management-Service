@@ -5024,6 +5024,10 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
         success.HighestSelectedDocumentId.Should().Be(2509L);
         success.EdfiDocs.Should().BeEmpty();
+
+        // Selection ran and chose a keyset; only hydration came back empty. Reporting this as a skipped
+        // selection would claim no database work was done for a page that issued its command.
+        success.SelectionSkipped.Should().BeFalse();
     }
 
     // A traditional page over a max-bearing change-version window is ordered by ContentVersion, so its
@@ -5306,6 +5310,9 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
 
         success.EdfiDocs.Should().BeEmpty();
         success.TotalCount.Should().Be(0);
+
+        // Planning proved the value cannot match, so no selection command was built.
+        success.SelectionSkipped.Should().BeTrue();
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
@@ -5496,7 +5503,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.QueryDocuments(queryRequest);
 
-        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0));
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0) { SelectionSkipped = true });
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
@@ -5537,7 +5544,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.QueryDocuments(queryRequest);
 
-        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0));
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0) { SelectionSkipped = true });
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
@@ -6034,7 +6041,11 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.QueryDocuments(queryRequest);
 
-        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], totalCount ? 0 : null));
+        result
+            .Should()
+            .BeEquivalentTo(
+                new QueryResult.QuerySuccess([], totalCount ? 0 : null) { SelectionSkipped = true }
+            );
         A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
             .MustNotHaveHappened();
         A.CallTo(() =>
@@ -6894,7 +6905,11 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.QueryDocuments(queryRequest);
 
-        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], totalCount ? 0 : null));
+        result
+            .Should()
+            .BeEquivalentTo(
+                new QueryResult.QuerySuccess([], totalCount ? 0 : null) { SelectionSkipped = true }
+            );
         capturedValidationSql
             .Should()
             .ContainSingle(sql =>
@@ -6936,7 +6951,11 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.QueryDocuments(queryRequest);
 
-        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], totalCount ? 0 : null));
+        result
+            .Should()
+            .BeEquivalentTo(
+                new QueryResult.QuerySuccess([], totalCount ? 0 : null) { SelectionSkipped = true }
+            );
         A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
             .MustNotHaveHappened();
         A.CallTo(() =>
@@ -7744,7 +7763,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.QueryDocuments(queryRequest);
 
-        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0));
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0) { SelectionSkipped = true });
         capturedValidationSql
             .Should()
             .ContainSingle(sql =>
@@ -7799,7 +7818,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.QueryDocuments(queryRequest);
 
-        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0));
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0) { SelectionSkipped = true });
         capturedValidationSql
             .Should()
             .ContainSingle(sql =>
@@ -8376,7 +8395,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.QueryDocuments(queryRequest);
 
-        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], null));
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], null) { SelectionSkipped = true });
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
@@ -8442,7 +8461,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.QueryDocuments(queryRequest);
 
-        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], null));
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], null) { SelectionSkipped = true });
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
@@ -8604,7 +8623,11 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.QueryDocuments(queryRequest);
 
-        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], totalCount ? 0 : null));
+        result
+            .Should()
+            .BeEquivalentTo(
+                new QueryResult.QuerySuccess([], totalCount ? 0 : null) { SelectionSkipped = true }
+            );
         readAccelerationCoordinator.QueryAttempts.Should().Be(1);
         readAccelerationCoordinator.SelectedQueryRequest.Should().BeNull();
         readAccelerationCoordinator.SelectedQueryCandidatePage.Should().BeNull();
@@ -8685,6 +8708,9 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.QueryDocuments(queryRequest);
 
+        // The candidate command executed and matched nothing, which is not the same fact as a
+        // short-circuit that issued no command at all. The default false on the expected result is the
+        // assertion; without it a shape-based classification of this page would go unnoticed.
         result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], totalCount ? 7 : null));
         readAccelerationCoordinator.QueryAttempts.Should().Be(1);
         readAccelerationCoordinator.SelectedQueryRequest.Should().BeNull();
@@ -8750,7 +8776,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.QueryDocuments(queryRequest);
 
-        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0));
+        result.Should().BeEquivalentTo(new QueryResult.QuerySuccess([], 0) { SelectionSkipped = true });
         A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
             .MustHaveHappenedOnceExactly();
         A.CallTo(() =>

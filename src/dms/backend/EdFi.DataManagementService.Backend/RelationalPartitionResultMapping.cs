@@ -34,8 +34,12 @@ internal static class RelationalPartitionResultMapping
         return queryResult switch
         {
             // Every empty success the shared path produces means no accessible candidates, which is the
-            // same thing an empty boundary set means.
-            QueryResult.QuerySuccess { EdfiDocs.Count: 0 } => new PartitionResult.PartitionSuccess([]),
+            // same thing an empty boundary set means. Whether selection was skipped carries across with
+            // it: a partition request short-circuited inside the shared authorization resolution issued
+            // no boundary command, and restating it as an executed empty result would claim database
+            // work that never happened.
+            QueryResult.QuerySuccess { EdfiDocs.Count: 0 } emptySuccess =>
+                new PartitionResult.PartitionSuccess([]) { SelectionSkipped = emptySuccess.SelectionSkipped },
 
             QueryResult.QueryFailureNotImplemented notImplemented =>
                 new PartitionResult.PartitionFailureNotImplemented(notImplemented.FailureMessage),

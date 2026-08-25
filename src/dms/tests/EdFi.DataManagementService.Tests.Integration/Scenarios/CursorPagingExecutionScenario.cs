@@ -3,11 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Paging;
+using EdFi.DataManagementService.Core.Telemetry;
 using FluentAssertions;
 
 namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
@@ -54,6 +56,21 @@ internal static class CursorPagingExecutionScenario
     /// exhaust this and fail with the pages it did retrieve rather than hanging.
     /// </summary>
     private const int MaximumWalkedPages = 25;
+
+    /// <summary>
+    /// The database commands one cursor page is allowed to cost.
+    /// </summary>
+    /// <remarks>
+    /// An absolute literal from the design rather than a figure captured from a run: a baseline captured
+    /// from this same build would carry whatever extra command the instrumentation added, so both sides
+    /// would move together and the assertion could never fail for the reason it exists. The design fixes
+    /// it instead — a cursor page uses the existing single-command page-keyset architecture and adds no
+    /// database command, transaction, or roundtrip. The fixtures binding this scenario grant
+    /// <c>NoFurtherAuthorizationRequired</c>, so the design's one documented exception — a view-based
+    /// authorization strategy whose custom-view validation probe runs as a second command — does not
+    /// apply, and raising this number is a visible, deliberate edit in review.
+    /// </remarks>
+    private const int CursorPageDatabaseCommands = 1;
 
     public static async Task It_walks_a_regular_resource_collection_by_cursor(ApiIntegrationHarness harness)
     {
@@ -129,6 +146,394 @@ internal static class CursorPagingExecutionScenario
         // effect rather than an empty selection or a missing feature.
         var (_, unwindowedToken) = await ReadPageAsync(harness, $"{MergeItemsEndpoint}?limit=2");
         unwindowedToken.Should().NotBeNull();
+    }
+
+    /// <summary>
+    /// What the collection-paging metric reports for a real cursor read, and what that read is allowed to
+    /// cost. The provider dimension is proven from a live connection rather than from a dialect literal,
+    /// which is the only place it can be: nothing in Core can tell which engine actually answered.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Both paging modes are read, in the order a client meets them: a traditional first page carrying a
+    /// total count, then the cursor pages the continuation it hands back leads to. That entry request is
+    /// what covers the traditional mode and the <c>page_with_count</c> shape here rather than only in a
+    /// handler test, and it is the only place the cost of compiling a count into the selection command is
+    /// measured instead of asserted.
+    /// </para>
+    /// <para>
+    /// Both resource kinds are read, because the seam that carries the single command differs between
+    /// them — a regular-resource page is a hydration while a descriptor page is a command-executor
+    /// command — and the quantity the design constrains is the total, not the split. Asserting the split
+    /// would pass on one kind and fail on the other for a reason that is not a defect.
+    /// </para>
+    /// <para>
+    /// The command counters are snapshotted immediately around each asserted request, so the seeding
+    /// traffic above is excluded. That is request isolation, not a baseline: the expected value is the
+    /// design literal and is never read from a run.
+    /// </para>
+    /// </remarks>
+    public static async Task It_emits_bounded_telemetry_across_a_cursor_walk(
+        ApiIntegrationHarness harness,
+        string expectedProvider
+    )
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedProvider);
+
+        ApiIntegrationQueryRecorder recorder =
+            harness.QueryRecorder
+            ?? throw new InvalidOperationException(
+                "This scenario counts database commands and requires CaptureQueryPlans."
+            );
+
+        await SeedMergeItemsAsync(harness, "telemetry");
+        await SeedDescriptorsAsync(harness, "telemetry");
+
+        // Encoded by the codec that decodes it, so the entry token is decodable by construction.
+        string entryToken = PageTokenCodec.Encode(CursorRange.From(1));
+        string tokenParameter = $"pageToken={Uri.EscapeDataString(entryToken)}&pageSize=2";
+
+        using var metrics = CollectionPagingMetricCollector.Start();
+
+        // Where a client enters the walk: a traditional first page that also asks for a total count. This
+        // is the only request in the suite that reports the traditional mode and the count shape, and the
+        // only one that measures what that shape costs. page_with_count is published as "compiled a total
+        // count into the same command", so a change that answered the count with a second query would
+        // make that definition false and double the cost of the shape operators are told to hold to its
+        // own latency objective — while every other assertion here, none of which asks for a count,
+        // stayed green.
+        metrics.Clear();
+        int commandsBefore = recorder.DatabaseCommands;
+
+        using (
+            HttpResponseMessage response = await harness.HttpClient.GetAsync(
+                $"{MergeItemsEndpoint}?limit=2&totalCount=true"
+            )
+        )
+        {
+            string body = await response.Content.ReadAsStringAsync();
+            int databaseCommands = recorder.DatabaseCommands - commandsBefore;
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            response.Content.Headers.ContentType!.MediaType.Should().Be(StandardJsonContentType);
+            JsonNode.Parse(body)!.AsArray().Should().HaveCount(2);
+
+            // The count this request asked for is served, and the page still offers the continuation that
+            // lets the client switch to token paging — so the outcome below is success rather than a walk
+            // reported as already ended.
+            int totalCount = int.Parse(
+                response.Headers.GetValues("Total-Count").Single(),
+                CultureInfo.InvariantCulture
+            );
+            totalCount
+                .Should()
+                .BeGreaterThanOrEqualTo(
+                    SeededDocumentCount,
+                    "the count describes the whole collection this scenario seeded, not the page"
+                );
+            response.Headers.GetValues(NextPageTokenHeaderName).Should().ContainSingle();
+
+            databaseCommands
+                .Should()
+                .Be(
+                    CursorPageDatabaseCommands,
+                    "a total count is compiled into the selection command rather than answered by a "
+                        + "second one, which is what command_category=page_with_count reports"
+                );
+        }
+
+        metrics.AssertSinglePage(
+            expectedProvider,
+            CollectionPagingTelemetryLabel.TraditionalPagingMode,
+            CollectionPagingTelemetryLabel.PageWithCountCommandCategory,
+            CollectionPagingTelemetryLabel.SuccessOutcome,
+            expectedRequestedPageSize: 2,
+            expectedReturnedPageSize: 2
+        );
+
+        // A regular-resource cursor page, asserted on the raw response so the instrumentation is shown to
+        // change nothing a client can observe: same status, same media type, a continuation, and no
+        // Total-Count on a request that asked for no count.
+        metrics.Clear();
+        commandsBefore = recorder.DatabaseCommands;
+
+        using (
+            HttpResponseMessage response = await harness.HttpClient.GetAsync(
+                $"{MergeItemsEndpoint}?{tokenParameter}"
+            )
+        )
+        {
+            string body = await response.Content.ReadAsStringAsync();
+            int databaseCommands = recorder.DatabaseCommands - commandsBefore;
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            response.Content.Headers.ContentType!.MediaType.Should().Be(StandardJsonContentType);
+            response.Headers.Contains("Total-Count").Should().BeFalse();
+            response.Headers.GetValues(NextPageTokenHeaderName).Should().ContainSingle();
+            JsonNode.Parse(body)!.AsArray().Should().HaveCount(2);
+
+            databaseCommands
+                .Should()
+                .Be(
+                    CursorPageDatabaseCommands,
+                    "a cursor page adds no database command, and the metric describing it must not "
+                        + "be answered with an extra query"
+                );
+        }
+
+        metrics.AssertSinglePage(
+            expectedProvider,
+            CollectionPagingTelemetryLabel.CursorPagingMode,
+            CollectionPagingTelemetryLabel.PageCommandCategory,
+            CollectionPagingTelemetryLabel.SuccessOutcome,
+            expectedRequestedPageSize: 2,
+            expectedReturnedPageSize: 2
+        );
+
+        // The descriptor page: the same one command, carried by the other seam.
+        metrics.Clear();
+        commandsBefore = recorder.DatabaseCommands;
+
+        var descriptorPage = await ReadPageAsync(harness, $"{DescriptorEndpoint}?{tokenParameter}");
+
+        (recorder.DatabaseCommands - commandsBefore).Should().Be(CursorPageDatabaseCommands);
+        descriptorPage.PageIds.Should().HaveCount(2);
+        metrics.AssertSinglePage(
+            expectedProvider,
+            CollectionPagingTelemetryLabel.CursorPagingMode,
+            CollectionPagingTelemetryLabel.PageCommandCategory,
+            CollectionPagingTelemetryLabel.SuccessOutcome,
+            expectedRequestedPageSize: 2,
+            expectedReturnedPageSize: 2
+        );
+
+        // Walking to the end. Each page is classified from what the response itself did with the
+        // continuation, so the page that ends the walk is the one — and the only one — reported as
+        // terminal, and no page of the walk costs more than one command however deep it is.
+        string? pageToken = entryToken;
+        CollectionPagingMeasurement? lastPage = null;
+        var walkedPages = 0;
+
+        while (pageToken is not null && walkedPages < MaximumWalkedPages)
+        {
+            metrics.Clear();
+            commandsBefore = recorder.DatabaseCommands;
+
+            var walked = await ReadPageAsync(
+                harness,
+                $"{MergeItemsEndpoint}?pageToken={Uri.EscapeDataString(pageToken)}&pageSize=2"
+            );
+
+            (recorder.DatabaseCommands - commandsBefore).Should().Be(CursorPageDatabaseCommands);
+
+            walkedPages++;
+            lastPage = metrics.AssertSinglePage(
+                expectedProvider,
+                CollectionPagingTelemetryLabel.CursorPagingMode,
+                CollectionPagingTelemetryLabel.PageCommandCategory,
+                walked.NextPageToken is null
+                    ? CollectionPagingTelemetryLabel.TerminalPageOutcome
+                    : CollectionPagingTelemetryLabel.SuccessOutcome,
+                expectedRequestedPageSize: 2,
+                expectedReturnedPageSize: walked.PageIds.Count
+            );
+
+            pageToken = walked.NextPageToken;
+        }
+
+        pageToken
+            .Should()
+            .BeNull($"a cursor walk of '{MergeItemsEndpoint}' must end within {MaximumWalkedPages} pages");
+        lastPage!
+            .Outcome.Should()
+            .Be(
+                CollectionPagingTelemetryLabel.TerminalPageOutcome,
+                "a walk that ran out of documents ended, and the metric must say so rather than "
+                    + "reporting one more served page"
+            );
+    }
+
+    /// <summary>
+    /// The one outcome whose name is a claim about database work. <c>early_empty</c> reports that the API
+    /// answered without issuing a selection command, and this is where that claim is measured rather than
+    /// stated.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A descriptor <c>id</c> filter carrying something that is not a UUID cannot match any row, and the
+    /// API determines that from the value alone. So the page is answered with no candidate selection at
+    /// all, which is what makes zero the expected count here where every other telemetry case in this
+    /// suite costs exactly one. A later change that answered this short-circuit with a real command — an
+    /// added probe, a reordered authorization check — would keep every other assertion in this suite
+    /// green while making the outcome name false, and this is the only case that would fail.
+    /// </para>
+    /// <para>
+    /// The collection is seeded first even though the filter matches none of it. Without the seed the
+    /// empty page and the zero count would both be statements about an empty database rather than about
+    /// the short-circuit, which is the property under test.
+    /// </para>
+    /// <para>
+    /// The descriptor endpoint carries this case because it is the one this fixture's ApiSchema gives an
+    /// <c>id</c> query field to. The regular resource here declares no query fields at all, so the same
+    /// request against it would be refused as an unknown field and never reach a selection decision.
+    /// </para>
+    /// </remarks>
+    public static async Task It_records_an_early_empty_without_a_database_command(
+        ApiIntegrationHarness harness,
+        string expectedProvider
+    )
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedProvider);
+
+        ApiIntegrationQueryRecorder recorder =
+            harness.QueryRecorder
+            ?? throw new InvalidOperationException(
+                "This scenario counts database commands and requires CaptureQueryPlans."
+            );
+
+        await SeedDescriptorsAsync(harness, "early-empty");
+
+        // Encoded by the codec that decodes it, so the entry token is decodable by construction.
+        string entryToken = PageTokenCodec.Encode(CursorRange.From(1));
+
+        using var metrics = CollectionPagingMetricCollector.Start();
+
+        metrics.Clear();
+        int commandsBefore = recorder.DatabaseCommands;
+
+        using (
+            HttpResponseMessage response = await harness.HttpClient.GetAsync(
+                $"{DescriptorEndpoint}?pageToken={Uri.EscapeDataString(entryToken)}&pageSize=2"
+                    + "&id=not-a-uuid"
+            )
+        )
+        {
+            string body = await response.Content.ReadAsStringAsync();
+            int databaseCommands = recorder.DatabaseCommands - commandsBefore;
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            response.Content.Headers.ContentType!.MediaType.Should().Be(StandardJsonContentType);
+            JsonNode.Parse(body)!.AsArray().Should().BeEmpty();
+
+            // Nothing was selected, so there is no key to anchor a continuation on and the walk ends
+            // here. A short-circuit that offered a continuation would send a client back for a page the
+            // API already knows cannot exist.
+            response.Headers.Contains(NextPageTokenHeaderName).Should().BeFalse();
+
+            databaseCommands
+                .Should()
+                .Be(
+                    0,
+                    "early_empty reports that no selection command was issued, so any count above zero "
+                        + "would make the outcome name false"
+                );
+        }
+
+        metrics.AssertSinglePage(
+            expectedProvider,
+            CollectionPagingTelemetryLabel.CursorPagingMode,
+            CollectionPagingTelemetryLabel.NoCommandCategory,
+            CollectionPagingTelemetryLabel.EarlyEmptyOutcome,
+            expectedRequestedPageSize: 2,
+            expectedReturnedPageSize: 0
+        );
+    }
+
+    /// <summary>
+    /// What a request the API refuses contributes: one count, and nothing else.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The only outcome emitted from a middleware rather than a handler, through the one interface method
+    /// that records no duration, and the only one whose whole measurement set is a single counter. Every
+    /// other case in this suite reaches the meter through a handler, so none of them would notice a
+    /// rejection that stopped being counted, started carrying a duration, or contributed a page size —
+    /// and the aggregation guidance treats <c>validation_rejected</c> as a share of counted traffic,
+    /// which a duration sample of a few microseconds or a phantom size sample would both distort.
+    /// </para>
+    /// <para>
+    /// Both paging modes are exercised because the mode of a rejected request is read from the query
+    /// string, not from request state: <c>RequestInfo.CollectionPaging</c> is assigned only at the
+    /// accepting exit, so a rejected cursor request still carries the traditional default and reporting
+    /// from request state would file every one of them as traditional traffic. A unit test can only
+    /// assert that against a hand-built request; here the query string is the one the client sent.
+    /// </para>
+    /// <para>
+    /// The provider is the point of running this end to end at all. It is read from the resolved mapping
+    /// set, and the documentation publishes <c>unknown</c> as a server assembly fault that is not a
+    /// bucket to chart — a claim that rests entirely on mapping-set resolution running ahead of paging
+    /// validation in the composed pipeline. The middleware's own tests assign that mapping set
+    /// themselves, so this is the only place that ordering is actually exercised.
+    /// </para>
+    /// </remarks>
+    public static async Task It_records_a_validation_rejection_without_reaching_the_backend(
+        ApiIntegrationHarness harness,
+        string expectedProvider
+    )
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedProvider);
+
+        ApiIntegrationQueryRecorder recorder =
+            harness.QueryRecorder
+            ?? throw new InvalidOperationException(
+                "This scenario counts database commands and requires CaptureQueryPlans."
+            );
+
+        using var metrics = CollectionPagingMetricCollector.Start();
+
+        // A traditional fault: a negative limit. Neither cursor parameter is present, so the request is
+        // counted as the traditional traffic it is.
+        await AssertRejectionIsCountedAsync(
+            harness,
+            recorder,
+            metrics,
+            $"{MergeItemsEndpoint}?limit=-1",
+            expectedProvider,
+            CollectionPagingTelemetryLabel.TraditionalPagingMode
+        );
+
+        // A cursor fault: a page size with no token to apply it to. The request never reaches the
+        // accepting exit, so nothing assigned it a paging mode - and it must still be counted as cursor.
+        await AssertRejectionIsCountedAsync(
+            harness,
+            recorder,
+            metrics,
+            $"{MergeItemsEndpoint}?pageSize=2",
+            expectedProvider,
+            CollectionPagingTelemetryLabel.CursorPagingMode
+        );
+    }
+
+    private static async Task AssertRejectionIsCountedAsync(
+        ApiIntegrationHarness harness,
+        ApiIntegrationQueryRecorder recorder,
+        CollectionPagingMetricCollector metrics,
+        string requestUri,
+        string expectedProvider,
+        string expectedPagingMode
+    )
+    {
+        metrics.Clear();
+        int commandsBefore = recorder.DatabaseCommands;
+
+        using (HttpResponseMessage response = await harness.HttpClient.GetAsync(requestUri))
+        {
+            string body = await response.Content.ReadAsStringAsync();
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, body);
+            (recorder.DatabaseCommands - commandsBefore)
+                .Should()
+                .Be(
+                    0,
+                    "paging validation answers the request before the handler runs, so a rejection "
+                        + "reaches no backend seam at all"
+                );
+        }
+
+        metrics.AssertSingleValidationRejection(expectedProvider, expectedPagingMode);
     }
 
     private static async Task<CursorWalk> WalkFromFirstPageAsync(

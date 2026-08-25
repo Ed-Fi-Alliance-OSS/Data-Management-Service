@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Startup;
+using EdFi.DataManagementService.Core.Telemetry;
 using EdFi.DataManagementService.Core.Tests.Unit.Handler;
 using FakeItEasy;
 using FluentAssertions;
@@ -86,6 +87,15 @@ public static class TestHelper
         services.AddTransient<ILogger<ResolveMappingSetMiddleware>>(_ =>
             NullLogger<ResolveMappingSetMiddleware>.Instance
         );
+    }
+
+    /// <summary>
+    /// Registers the collection-paging telemetry the query and partitions pipelines resolve, for tests
+    /// composing those pipelines where the emitted metrics are not under test.
+    /// </summary>
+    public static void AddCollectionPagingTelemetry(IServiceCollection services)
+    {
+        services.AddSingleton<ICollectionPagingTelemetry>(NoOpCollectionPagingTelemetry.Instance);
     }
 
     /// <summary>

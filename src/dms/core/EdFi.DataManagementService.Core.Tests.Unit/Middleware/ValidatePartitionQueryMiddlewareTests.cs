@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -11,6 +12,9 @@ using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Telemetry;
+using EdFi.DataManagementService.Core.Tests.Unit.Handler;
+using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -82,13 +86,20 @@ public class ValidatePartitionQueryMiddlewareTests
         return requestInfo;
     }
 
-    private static async Task<RequestInfo> Execute(params (string Key, string Value)[] queryParameters)
+    private static Task<RequestInfo> Execute(params (string Key, string Value)[] queryParameters) =>
+        Execute(collectionPagingTelemetry: null, queryParameters);
+
+    private static async Task<RequestInfo> Execute(
+        ICollectionPagingTelemetry? collectionPagingTelemetry,
+        params (string Key, string Value)[] queryParameters
+    )
     {
         RequestInfo requestInfo = RequestInfoFor(queryParameters);
 
         IPipelineStep middleware = new ValidatePartitionQueryMiddleware(
             NullLogger.Instance,
-            DefaultPartitionCount
+            DefaultPartitionCount,
+            collectionPagingTelemetry ?? NoOpCollectionPagingTelemetry.Instance
         );
 
         await middleware.Execute(requestInfo, NullNext);
@@ -384,7 +395,11 @@ public class ValidatePartitionQueryMiddlewareTests
             RequestInfo requestInfo = RequestInfoFor(("number", "4"));
             var reachedNext = false;
 
-            await new ValidatePartitionQueryMiddleware(NullLogger.Instance, DefaultPartitionCount).Execute(
+            await new ValidatePartitionQueryMiddleware(
+                NullLogger.Instance,
+                DefaultPartitionCount,
+                NoOpCollectionPagingTelemetry.Instance
+            ).Execute(
                 requestInfo,
                 () =>
                 {
@@ -395,6 +410,102 @@ public class ValidatePartitionQueryMiddlewareTests
 
             reachedNext.Should().BeTrue();
             requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
+    /// <summary>
+    /// What a request this step answers contributes to the collection-paging metric.
+    /// </summary>
+    /// <remarks>
+    /// The paging mode is the partition literal on every exit, because this step is composed only into
+    /// the partitions pipeline. Unlike the GET-many validator it has no second construction site to
+    /// isolate.
+    /// </remarks>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Collection_Paging_Telemetry_For_A_Rejection : ValidatePartitionQueryMiddlewareTests
+    {
+        private static async Task<RecordingCollectionPagingTelemetry> ExecuteRecording(
+            params (string Key, string Value)[] queryParameters
+        )
+        {
+            RecordingCollectionPagingTelemetry telemetry = new();
+
+            RequestInfo requestInfo = RequestInfoFor(queryParameters);
+            requestInfo.MappingSet = RelationalWriteSeamFixture
+                .Create()
+                .CreateSupportedMappingSet(SqlDialect.Mssql);
+
+            await new ValidatePartitionQueryMiddleware(
+                NullLogger.Instance,
+                DefaultPartitionCount,
+                telemetry
+            ).Execute(requestInfo, NullNext);
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+
+            return telemetry;
+        }
+
+        private static readonly TestCaseData[] _rejections =
+        [
+            new TestCaseData(new[] { ("number", "0") }).SetName("{m}(partition count fault)"),
+            new TestCaseData(new[] { ("minChangeVersion", "abc") }).SetName("{m}(change-version fault)"),
+            new TestCaseData(new[] { ("notAField", "1") }).SetName("{m}(unknown query field)"),
+            new TestCaseData(new[] { ("schoolId", "not-a-number") }).SetName("{m}(invalid filter value)"),
+        ];
+
+        [TestCaseSource(nameof(_rejections))]
+        public async Task It_counts_every_rejecting_exit_exactly_once(
+            (string Key, string Value)[] queryParameters
+        )
+        {
+            RecordingCollectionPagingTelemetry telemetry = await ExecuteRecording(queryParameters);
+
+            CollectionPagingMeasurement measurement = telemetry.Single;
+
+            measurement.Kind.Should().Be(CollectionPagingMeasurementKind.ValidationRejected);
+            measurement.PagingMode.Should().Be("partition");
+            measurement.CommandCategory.Should().Be("none");
+            measurement.Provider.Should().Be("sqlserver");
+            measurement.Outcome.Should().Be("validation_rejected");
+        }
+
+        // Nothing executed, so a duration sample would report the cost of parsing a query string as a
+        // boundary-command latency.
+        [Test]
+        public async Task It_records_no_duration_or_counts_for_a_rejection()
+        {
+            RecordingCollectionPagingTelemetry telemetry = await ExecuteRecording(("number", "0"));
+
+            telemetry.Single.Duration.Should().BeNull();
+            telemetry.Single.Requested.Should().BeNull();
+            telemetry.Single.Returned.Should().BeNull();
+        }
+
+        [Test]
+        public async Task It_counts_nothing_for_a_request_it_accepts()
+        {
+            RecordingCollectionPagingTelemetry telemetry = new();
+
+            RequestInfo requestInfo = await Execute(telemetry, ("number", "4"));
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            telemetry.Measurements.Should().BeEmpty();
+        }
+
+        // Counting runs ahead of the rejection this step answers with, so a measurement callback that
+        // throws would replace a 400 naming the bad parameter with a system error naming nothing.
+        [Test]
+        public async Task It_still_answers_the_rejection_when_recording_throws()
+        {
+            RequestInfo requestInfo = await Execute(new ThrowingCollectionPagingTelemetry(), ("number", "0"));
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            requestInfo
+                .FrontendResponse.Body!.ToJsonString()
+                .Should()
+                .Contain("Number of partitions must be between 1 and 200.");
         }
     }
 }

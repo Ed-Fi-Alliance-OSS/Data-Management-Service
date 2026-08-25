@@ -90,7 +90,36 @@ public partial class Given_DescriptorReadHandler
 
         var result = await sut.HandlePartitionsAsync(CreatePartitionRequest(SqlDialect.Pgsql));
 
-        result.Should().BeOfType<PartitionResult.PartitionSuccess>().Which.Ranges.Should().BeEmpty();
+        var success = result.Should().BeOfType<PartitionResult.PartitionSuccess>().Subject;
+
+        success.Ranges.Should().BeEmpty();
+
+        // The boundary command ran and found no starts, so this empty result is executed rather than
+        // short-circuited.
+        success.SelectionSkipped.Should().BeFalse();
+        commandExecutor.Commands.Should().ContainSingle();
+    }
+
+    // Preprocessing proves an id filter cannot name a descriptor before a boundary statement is built,
+    // so the request costs no command and reports as a skipped selection.
+    [Test]
+    public async Task It_returns_no_ranges_without_a_command_when_preprocessing_proves_the_id_filter_matches_nothing()
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var sut = CreateHandler(commandExecutor);
+
+        var result = await sut.HandlePartitionsAsync(
+            CreatePartitionRequest(
+                SqlDialect.Pgsql,
+                queryElements: [new QueryElement("id", [new JsonPath("$.id")], "not-a-guid", "string")]
+            )
+        );
+
+        var success = result.Should().BeOfType<PartitionResult.PartitionSuccess>().Subject;
+
+        success.Ranges.Should().BeEmpty();
+        success.SelectionSkipped.Should().BeTrue();
+        commandExecutor.Commands.Should().BeEmpty();
     }
 
     [Test]

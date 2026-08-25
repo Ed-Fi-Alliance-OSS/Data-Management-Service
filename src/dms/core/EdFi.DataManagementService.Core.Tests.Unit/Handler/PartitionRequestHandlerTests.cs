@@ -9,14 +9,18 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Handler;
+using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
+using EdFi.DataManagementService.Core.Telemetry;
+using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using Polly;
+using Polly.CircuitBreaker;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
@@ -65,7 +69,8 @@ public class PartitionRequestHandlerTests
 
     private static async Task<RequestInfo> Execute(
         Handler partitionQueryHandler,
-        int? requestedPartitionCount = RequestedPartitionCount
+        int? requestedPartitionCount = RequestedPartitionCount,
+        ICollectionPagingTelemetry? collectionPagingTelemetry = null
     )
     {
         var serviceProvider = A.Fake<IServiceProvider>();
@@ -82,7 +87,8 @@ public class PartitionRequestHandlerTests
         await new PartitionRequestHandler(
             NullLogger.Instance,
             ResiliencePipeline.Empty,
-            MaximumPageSize
+            MaximumPageSize,
+            collectionPagingTelemetry ?? NoOpCollectionPagingTelemetry.Instance
         ).Execute(requestInfo, NullNext);
 
         return requestInfo;
@@ -312,6 +318,393 @@ public class PartitionRequestHandlerTests
 
             await action.Should().ThrowAsync<InvalidOperationException>();
             handler.CallCount.Should().Be(0);
+        }
+    }
+
+    /// <summary>
+    /// What each partitions outcome contributes to the collection-paging metric.
+    /// </summary>
+    /// <remarks>
+    /// There is no terminal-page outcome here: a boundary set has no successor, so the continuation
+    /// question a GET-many page answers does not arise.
+    /// </remarks>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Collection_Paging_Telemetry_For_Partitions : PartitionRequestHandlerTests
+    {
+        /// <summary>
+        /// A count distinct from <see cref="RequestedPartitionCount" />, standing for the configured
+        /// default the validating middleware substitutes when a request names none. The handler sees
+        /// only the resolved value, so this is what "requested" means for such a request.
+        /// </summary>
+        private const int ResolvedDefaultPartitionCount = 4;
+
+        private sealed class ThrowingHandler(Exception fault) : IPartitionQueryHandler
+        {
+            public Task<PartitionResult> QueryPartitions(
+                IPartitionRequest partitionRequest,
+                CancellationToken cancellationToken = default
+            ) => throw fault;
+        }
+
+        private static async Task<RecordingCollectionPagingTelemetry> ExecuteAsync(
+            PartitionResult result,
+            int? requestedPartitionCount = RequestedPartitionCount
+        )
+        {
+            RecordingCollectionPagingTelemetry telemetry = new();
+
+            await Execute(new Handler(result), requestedPartitionCount, telemetry);
+
+            return telemetry;
+        }
+
+        private static async Task<(
+            Exception? Fault,
+            RecordingCollectionPagingTelemetry Telemetry
+        )> ExecuteThrowingAsync(Exception fault, CancellationToken requestCancellationToken = default)
+        {
+            RecordingCollectionPagingTelemetry telemetry = new();
+            var serviceProvider = A.Fake<IServiceProvider>();
+            A.CallTo(() => serviceProvider.GetService(typeof(IPartitionQueryHandler)))
+                .Returns(new ThrowingHandler(fault));
+
+            RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            requestInfo.RequestedPartitionCount = RequestedPartitionCount;
+            requestInfo.RequestCancellationToken = requestCancellationToken;
+
+            try
+            {
+                await new PartitionRequestHandler(
+                    NullLogger.Instance,
+                    ResiliencePipeline.Empty,
+                    MaximumPageSize,
+                    telemetry
+                ).Execute(requestInfo, NullNext);
+
+                return (null, telemetry);
+            }
+            catch (Exception caught)
+            {
+                return (caught, telemetry);
+            }
+        }
+
+        [Test]
+        public async Task It_records_a_calculated_boundary_set()
+        {
+            RecordingCollectionPagingTelemetry telemetry = await ExecuteAsync(
+                new PartitionResult.PartitionSuccess([
+                    new CursorRange(1, 99),
+                    new CursorRange(100, long.MaxValue),
+                ])
+            );
+
+            CollectionPagingMeasurement measurement = telemetry.Single;
+
+            measurement.Kind.Should().Be(CollectionPagingMeasurementKind.Partitions);
+            measurement.PagingMode.Should().Be("partition");
+            measurement.CommandCategory.Should().Be("boundary");
+            measurement.Provider.Should().Be("postgresql");
+            measurement.Outcome.Should().Be("success");
+            measurement.Requested.Should().Be(RequestedPartitionCount);
+            measurement.Returned.Should().Be(2);
+            measurement.Duration.Should().NotBeNull().And.BeGreaterThanOrEqualTo(TimeSpan.Zero);
+        }
+
+        // The boundary command executed and found no starts. That is a success with a returned count of
+        // zero, and it must not be reported as the short-circuit that issued no command at all.
+        [Test]
+        public async Task It_records_an_executed_empty_boundary_set_as_success()
+        {
+            RecordingCollectionPagingTelemetry telemetry = await ExecuteAsync(
+                new PartitionResult.PartitionSuccess([])
+            );
+
+            telemetry.Single.Outcome.Should().Be("success");
+            telemetry.Single.CommandCategory.Should().Be("boundary");
+            telemetry.Single.Returned.Should().Be(0);
+        }
+
+        [Test]
+        public async Task It_records_a_skipped_selection_as_early_empty()
+        {
+            RecordingCollectionPagingTelemetry telemetry = await ExecuteAsync(
+                new PartitionResult.PartitionSuccess([]) { SelectionSkipped = true }
+            );
+
+            telemetry.Single.Outcome.Should().Be("early_empty");
+            telemetry.Single.CommandCategory.Should().Be("none");
+            telemetry.Single.Returned.Should().Be(0);
+        }
+
+        // The companion to the case above: both halves of what early_empty asserts are checked, not the
+        // flag alone. A success carrying ranges was calculated by a boundary command whatever the flag
+        // says, so it is reported as the boundary work it did rather than as a skipped selection.
+        [Test]
+        public async Task It_does_not_record_early_empty_for_a_skipped_selection_that_returned_ranges()
+        {
+            RecordingCollectionPagingTelemetry telemetry = await ExecuteAsync(
+                new PartitionResult.PartitionSuccess([new CursorRange(1, long.MaxValue)])
+                {
+                    SelectionSkipped = true,
+                }
+            );
+
+            telemetry.Single.Outcome.Should().Be("success");
+            telemetry.Single.CommandCategory.Should().Be("boundary");
+            telemetry.Single.Returned.Should().Be(1);
+        }
+
+        private static readonly TestCaseData[] _failureOutcomes =
+        [
+            new TestCaseData(
+                new PartitionResult.PartitionFailureNotImplemented("no capability"),
+                "not_implemented"
+            ).SetName("{m}(not_implemented)"),
+            new TestCaseData(
+                new PartitionResult.PartitionFailureSecurityConfiguration(["bad metadata"]),
+                "security_configuration"
+            ).SetName("{m}(security_configuration)"),
+            new TestCaseData(
+                new PartitionResult.PartitionFailureNamespaceNotAuthorized(
+                    new NamespaceAuthorizationFailure(
+                        NamespaceAuthorizationFailureKind.NoPrefixesConfigured,
+                        NamespaceAuthorizationFailureValueSource.Stored,
+                        EmittedAuth1Index: 0,
+                        AuthorizationStrategyNameConstants.NamespaceBased,
+                        []
+                    )
+                ),
+                "not_authorized"
+            ).SetName("{m}(not_authorized)"),
+            new TestCaseData(new PartitionResult.PartitionFailureRetryable(), "retry_exhausted").SetName(
+                "{m}(retry_exhausted)"
+            ),
+            new TestCaseData(new PartitionResult.UnknownPartitionFailure("boom"), "unknown_failure").SetName(
+                "{m}(unknown_failure)"
+            ),
+        ];
+
+        [TestCaseSource(nameof(_failureOutcomes))]
+        public async Task It_records_every_failure_with_no_command_category(
+            PartitionResult failure,
+            string expectedOutcome
+        )
+        {
+            RecordingCollectionPagingTelemetry telemetry = await ExecuteAsync(failure);
+
+            CollectionPagingMeasurement measurement = telemetry.Single;
+
+            measurement.Outcome.Should().Be(expectedOutcome);
+            measurement.CommandCategory.Should().Be("none");
+            measurement.Returned.Should().BeNull();
+            measurement.Requested.Should().Be(RequestedPartitionCount);
+        }
+
+        [Test]
+        public async Task It_records_an_execution_exception_and_still_propagates_it()
+        {
+            InvalidOperationException fault = new("custom view is not conforming");
+
+            var (caught, telemetry) = await ExecuteThrowingAsync(fault);
+
+            caught.Should().BeSameAs(fault);
+            telemetry.Single.Outcome.Should().Be("execution_exception");
+            telemetry.Single.CommandCategory.Should().Be("none");
+            telemetry.Single.Returned.Should().BeNull();
+        }
+
+        // The GET-many twin of this runs in QueryRequestHandlerTests. Both are pinned because the
+        // breaker is one shared pipeline instance: when it opens, /partitions is refused alongside
+        // GET-many, and each handler classifies that refusal in its own catch.
+        [Test]
+        public async Task It_records_an_execution_exception_when_the_circuit_is_open()
+        {
+            RecordingCollectionPagingTelemetry telemetry = new();
+            CircuitBreakerManualControl manualControl = new();
+            ResiliencePipeline openCircuit = new ResiliencePipelineBuilder()
+                .AddCircuitBreaker(new CircuitBreakerStrategyOptions { ManualControl = manualControl })
+                .Build();
+
+            await manualControl.IsolateAsync();
+
+            var serviceProvider = A.Fake<IServiceProvider>();
+            A.CallTo(() => serviceProvider.GetService(typeof(IPartitionQueryHandler)))
+                .Returns(
+                    new ThrowingHandler(
+                        new InvalidOperationException("The partition handler must not be reached.")
+                    )
+                );
+
+            RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            requestInfo.RequestedPartitionCount = RequestedPartitionCount;
+
+            var execute = async () =>
+                await new PartitionRequestHandler(
+                    NullLogger.Instance,
+                    openCircuit,
+                    MaximumPageSize,
+                    telemetry
+                ).Execute(requestInfo, NullNext);
+
+            // The breaker's own exception rather than the backend's: the boundary command was refused
+            // before it reached the database.
+            await execute.Should().ThrowAsync<BrokenCircuitException>();
+
+            CollectionPagingMeasurement measurement = telemetry.Single;
+
+            measurement.Outcome.Should().Be("execution_exception");
+            measurement.CommandCategory.Should().Be("none");
+            measurement.Returned.Should().BeNull();
+            measurement.Requested.Should().Be(RequestedPartitionCount);
+        }
+
+        [Test]
+        public async Task It_records_nothing_when_the_request_token_was_cancelled()
+        {
+            using CancellationTokenSource cancellationSource = new();
+            await cancellationSource.CancelAsync();
+
+            var (caught, telemetry) = await ExecuteThrowingAsync(
+                new OperationCanceledException(cancellationSource.Token),
+                cancellationSource.Token
+            );
+
+            caught.Should().BeOfType<OperationCanceledException>();
+            telemetry.Measurements.Should().BeEmpty();
+        }
+
+        [Test]
+        public async Task It_records_an_execution_exception_for_a_cancellation_the_request_did_not_ask_for()
+        {
+            var (caught, telemetry) = await ExecuteThrowingAsync(new OperationCanceledException());
+
+            caught.Should().BeOfType<OperationCanceledException>();
+            telemetry.Single.Outcome.Should().Be("execution_exception");
+        }
+
+        // The count a request omitted is the configured default the validating middleware substituted,
+        // which is what the client will be served and therefore what it asked for.
+        [Test]
+        public async Task It_records_the_validated_count_the_middleware_resolved()
+        {
+            RecordingCollectionPagingTelemetry telemetry = await ExecuteAsync(
+                new PartitionResult.PartitionSuccess([new CursorRange(1, long.MaxValue)]),
+                requestedPartitionCount: ResolvedDefaultPartitionCount
+            );
+
+            telemetry.Single.Requested.Should().Be(ResolvedDefaultPartitionCount);
+            telemetry.Single.Returned.Should().Be(1);
+        }
+
+        [TestCase(SqlDialect.Pgsql, "postgresql")]
+        [TestCase(SqlDialect.Mssql, "sqlserver")]
+        public async Task It_reports_the_provider_of_the_resolved_mapping_set(
+            SqlDialect dialect,
+            string expectedProvider
+        )
+        {
+            RecordingCollectionPagingTelemetry telemetry = new();
+            var serviceProvider = A.Fake<IServiceProvider>();
+            A.CallTo(() => serviceProvider.GetService(typeof(IPartitionQueryHandler)))
+                .Returns(new Handler(new PartitionResult.PartitionSuccess([new CursorRange(1, 99)])));
+
+            RequestInfo requestInfo = No.RequestInfo();
+            requestInfo.MappingSet = RelationalWriteSeamFixture.Create().CreateSupportedMappingSet(dialect);
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            requestInfo.RequestedPartitionCount = RequestedPartitionCount;
+
+            await new PartitionRequestHandler(
+                NullLogger.Instance,
+                ResiliencePipeline.Empty,
+                MaximumPageSize,
+                telemetry
+            ).Execute(requestInfo, NullNext);
+
+            CollectionPagingMeasurement measurement = telemetry.Single;
+
+            measurement.Provider.Should().Be(expectedProvider);
+            measurement.PagingMode.Should().Be("partition");
+            measurement.CommandCategory.Should().Be("boundary");
+            measurement.Outcome.Should().Be("success");
+            measurement.Requested.Should().Be(RequestedPartitionCount);
+            measurement.Returned.Should().Be(1);
+        }
+
+        [Test]
+        public async Task It_leaves_the_response_exactly_as_it_would_be_without_instrumentation()
+        {
+            RecordingCollectionPagingTelemetry telemetry = new();
+
+            RequestInfo requestInfo = await Execute(
+                new Handler(
+                    new PartitionResult.PartitionSuccess([
+                        new CursorRange(1, 99),
+                        new CursorRange(100, long.MaxValue),
+                    ])
+                ),
+                RequestedPartitionCount,
+                telemetry
+            );
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(200);
+            requestInfo.FrontendResponse.ContentType.Should().Be("application/json");
+            requestInfo.FrontendResponse.Body!["pageTokens"]!.AsArray().Should().HaveCount(2);
+            requestInfo.FrontendResponse.Headers.Should().BeEmpty();
+            telemetry.Single.Outcome.Should().Be("success");
+        }
+
+        // The other half of "instrumentation must not participate": recording runs after the response is
+        // assembled, so a measurement callback that throws would discard a boundary set the request had
+        // already earned and answer a system error instead.
+        [Test]
+        public async Task It_serves_the_boundary_set_when_recording_throws()
+        {
+            RequestInfo requestInfo = await Execute(
+                new Handler(
+                    new PartitionResult.PartitionSuccess([
+                        new CursorRange(1, 99),
+                        new CursorRange(100, long.MaxValue),
+                    ])
+                ),
+                RequestedPartitionCount,
+                new ThrowingCollectionPagingTelemetry()
+            );
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(200);
+            requestInfo.FrontendResponse.Body!["pageTokens"]!.AsArray().Should().HaveCount(2);
+        }
+
+        // The execution-exception emission runs from inside a catch that is about to rethrow. A telemetry
+        // fault there would replace the fault being reported, which is exactly the diagnosis that catch
+        // exists to preserve.
+        [Test]
+        public async Task It_propagates_the_execution_fault_when_recording_throws()
+        {
+            InvalidOperationException executionFault = new("A configured custom view is not conforming.");
+
+            var serviceProvider = A.Fake<IServiceProvider>();
+            A.CallTo(() => serviceProvider.GetService(typeof(IPartitionQueryHandler)))
+                .Returns(new ThrowingHandler(executionFault));
+
+            RequestInfo requestInfo = RequestInfoWithRelationalMappingSet();
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            requestInfo.RequestedPartitionCount = RequestedPartitionCount;
+
+            Func<Task> execute = () =>
+                new PartitionRequestHandler(
+                    NullLogger.Instance,
+                    ResiliencePipeline.Empty,
+                    MaximumPageSize,
+                    new ThrowingCollectionPagingTelemetry()
+                ).Execute(requestInfo, NullNext);
+
+            (await execute.Should().ThrowAsync<InvalidOperationException>())
+                .Which.Should()
+                .BeSameAs(executionFault);
         }
     }
 }

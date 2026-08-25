@@ -18,6 +18,7 @@ using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Telemetry;
 using EdFi.DataManagementService.Core.Validation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -298,11 +299,16 @@ internal class ApiService : IApiService
             new ValidateQueryMiddleware(
                 _logger,
                 _appSettings.Value.MaximumPageSize,
-                _cursorParametersRecognized: true
+                _cursorParametersRecognized: true,
+                _serviceProvider.GetRequiredService<ICollectionPagingTelemetry>()
             ),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
-            new QueryRequestHandler(_logger, _resiliencePipeline),
+            new QueryRequestHandler(
+                _logger,
+                _resiliencePipeline,
+                _serviceProvider.GetRequiredService<ICollectionPagingTelemetry>()
+            ),
         ]);
 
         return new PipelineProvider(steps);
@@ -331,10 +337,19 @@ internal class ApiService : IApiService
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
             ),
-            new ValidatePartitionQueryMiddleware(_logger, _appSettings.Value.DefaultPartitionCount),
+            new ValidatePartitionQueryMiddleware(
+                _logger,
+                _appSettings.Value.DefaultPartitionCount,
+                _serviceProvider.GetRequiredService<ICollectionPagingTelemetry>()
+            ),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
-            new PartitionRequestHandler(_logger, _resiliencePipeline, _appSettings.Value.MaximumPageSize),
+            new PartitionRequestHandler(
+                _logger,
+                _resiliencePipeline,
+                _appSettings.Value.MaximumPageSize,
+                _serviceProvider.GetRequiredService<ICollectionPagingTelemetry>()
+            ),
         ]);
 
         return new PipelineProvider(steps);
@@ -452,10 +467,14 @@ internal class ApiService : IApiService
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
             ),
+            // Change Query endpoints do not page by cursor at all — they read PaginationParameters
+            // directly — so a /deletes?limit=abc fault is not a collection-paging event, and counting it
+            // would pollute a metric that describes live collection reads.
             new ValidateQueryMiddleware(
                 _logger,
                 _appSettings.Value.MaximumPageSize,
-                _cursorParametersRecognized: false
+                _cursorParametersRecognized: false,
+                NoOpCollectionPagingTelemetry.Instance
             ),
             new ValidateTrackedChangeQueryMiddleware(_logger),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),

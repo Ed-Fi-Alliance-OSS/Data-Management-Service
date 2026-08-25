@@ -1,0 +1,551 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Collections.Frozen;
+using System.Diagnostics;
+using System.Diagnostics.Metrics;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Utilities;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+
+namespace EdFi.DataManagementService.Core.Telemetry;
+
+/// <summary>
+/// The complete set of allowed dimension values for collection-paging metrics.
+/// </summary>
+/// <remarks>
+/// Every tag value is one of these constants, which is what keeps tag-set cardinality bounded and keeps
+/// request data out of the metric. Nothing derived from a request — resource name, tenant key, namespace,
+/// client identity, filter names or values, page-token text, decoded cursor bounds, candidate
+/// identifiers, or exception text — may become a label. The per-dimension sets at the foot of this class
+/// are how that is enforced rather than merely intended.
+/// </remarks>
+internal static class CollectionPagingTelemetryLabel
+{
+    // paging_mode
+    public const string TraditionalPagingMode = "traditional";
+    public const string CursorPagingMode = "cursor";
+    public const string PartitionPagingMode = "partition";
+
+    // command_category — the selection command shape a produced result was built around.
+    public const string PageCommandCategory = "page";
+    public const string PageWithCountCommandCategory = "page_with_count";
+    public const string BoundaryCommandCategory = "boundary";
+    public const string NoCommandCategory = "none";
+
+    // provider
+    public const string PostgresqlProvider = "postgresql";
+    public const string SqlServerProvider = "sqlserver";
+    public const string UnknownProvider = "unknown";
+
+    // outcome
+    public const string SuccessOutcome = "success";
+    public const string TerminalPageOutcome = "terminal_page";
+    public const string EarlyEmptyOutcome = "early_empty";
+    public const string ValidationRejectedOutcome = "validation_rejected";
+    public const string NotAuthorizedOutcome = "not_authorized";
+    public const string NotImplementedOutcome = "not_implemented";
+    public const string SecurityConfigurationOutcome = "security_configuration";
+    public const string RetryExhaustedOutcome = "retry_exhausted";
+    public const string UnknownFailureOutcome = "unknown_failure";
+    public const string ExecutionExceptionOutcome = "execution_exception";
+
+    /// <summary>
+    /// The values each dimension allows, which is the bound the metric contract actually rests on.
+    /// </summary>
+    /// <remarks>
+    /// Cardinality is bounded because these sets are closed, not because a label happens to be short or
+    /// free of control characters. Checking membership is therefore what makes the published claim — that
+    /// the number of distinct dimension combinations cannot grow with traffic, with the size of the data,
+    /// or with the number of clients — a property of this component rather than only of its call sites.
+    /// Each set is one dimension rather than one flat set of every constant, so a label that is bounded
+    /// but belongs to another dimension is refused too.
+    /// </remarks>
+    public static readonly FrozenSet<string> PagingModes = new[]
+    {
+        TraditionalPagingMode,
+        CursorPagingMode,
+        PartitionPagingMode,
+    }.ToFrozenSet(StringComparer.Ordinal);
+
+    public static readonly FrozenSet<string> CommandCategories = new[]
+    {
+        PageCommandCategory,
+        PageWithCountCommandCategory,
+        BoundaryCommandCategory,
+        NoCommandCategory,
+    }.ToFrozenSet(StringComparer.Ordinal);
+
+    public static readonly FrozenSet<string> Providers = new[]
+    {
+        PostgresqlProvider,
+        SqlServerProvider,
+        UnknownProvider,
+    }.ToFrozenSet(StringComparer.Ordinal);
+
+    public static readonly FrozenSet<string> Outcomes = new[]
+    {
+        SuccessOutcome,
+        TerminalPageOutcome,
+        EarlyEmptyOutcome,
+        ValidationRejectedOutcome,
+        NotAuthorizedOutcome,
+        NotImplementedOutcome,
+        SecurityConfigurationOutcome,
+        RetryExhaustedOutcome,
+        UnknownFailureOutcome,
+        ExecutionExceptionOutcome,
+    }.ToFrozenSet(StringComparer.Ordinal);
+}
+
+/// <summary>
+/// The four dimensions carried by every collection-paging measurement.
+/// </summary>
+/// <remarks>
+/// A single context type shared by regular resources and descriptors: their execution semantics are
+/// equivalent, so nothing in the contract splits the two apart.
+/// </remarks>
+internal sealed record CollectionPagingTelemetryContext
+{
+    /// <summary>
+    /// How much of a refused label reaches the exception message. A label no dimension set contains is by
+    /// definition not one of the constants, so it may be arbitrary caller data on its way into a log.
+    /// </summary>
+    private const int MaxRefusedLabelLength = 64;
+
+    private CollectionPagingTelemetryContext(
+        string pagingMode,
+        string commandCategory,
+        string provider,
+        string outcome
+    )
+    {
+        PagingMode = RequireAllowedLabel(
+            pagingMode,
+            CollectionPagingTelemetryLabel.PagingModes,
+            nameof(pagingMode)
+        );
+        CommandCategory = RequireAllowedLabel(
+            commandCategory,
+            CollectionPagingTelemetryLabel.CommandCategories,
+            nameof(commandCategory)
+        );
+        Provider = RequireAllowedLabel(provider, CollectionPagingTelemetryLabel.Providers, nameof(provider));
+        Outcome = RequireAllowedLabel(outcome, CollectionPagingTelemetryLabel.Outcomes, nameof(outcome));
+    }
+
+    public string PagingMode { get; }
+
+    public string CommandCategory { get; }
+
+    public string Provider { get; }
+
+    public string Outcome { get; }
+
+    /// <summary>
+    /// A context for a GET-many request whose paging mode was resolved.
+    /// </summary>
+    public static CollectionPagingTelemetryContext ForPaging(
+        CollectionPaging paging,
+        string commandCategory,
+        SqlDialect? dialect,
+        string outcome
+    ) => ForPagingMode(PagingModeLabel(paging), commandCategory, dialect, outcome);
+
+    /// <summary>
+    /// A context built from an already-chosen paging-mode label, for the partition operation and for a
+    /// rejected request whose paging mode was never assigned.
+    /// </summary>
+    /// <remarks>
+    /// No presence guard here. Every label reaches <see cref="RequireAllowedLabel" />, which refuses a
+    /// missing one along with any value its dimension's set does not contain, so a check here would
+    /// restate that one and would have to be kept in step with it.
+    /// </remarks>
+    public static CollectionPagingTelemetryContext ForPagingMode(
+        string pagingMode,
+        string commandCategory,
+        SqlDialect? dialect,
+        string outcome
+    ) => new(pagingMode, commandCategory, ProviderLabel(dialect), outcome);
+
+    public TagList ToTags()
+    {
+        return
+        [
+            new("paging_mode", PagingMode),
+            new("command_category", CommandCategory),
+            new("provider", Provider),
+            new("outcome", Outcome),
+        ];
+    }
+
+    internal static string PagingModeLabel(CollectionPaging paging)
+    {
+        ArgumentNullException.ThrowIfNull(paging);
+
+        return paging switch
+        {
+            CollectionPaging.Traditional => CollectionPagingTelemetryLabel.TraditionalPagingMode,
+            CollectionPaging.Cursor => CollectionPagingTelemetryLabel.CursorPagingMode,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(paging),
+                paging,
+                "Unsupported collection paging mode."
+            ),
+        };
+    }
+
+    /// <summary>
+    /// The provider label, <c>unknown</c> only when the request was answered before mapping-set
+    /// resolution.
+    /// </summary>
+    internal static string ProviderLabel(SqlDialect? dialect) =>
+        dialect switch
+        {
+            null => CollectionPagingTelemetryLabel.UnknownProvider,
+            SqlDialect.Pgsql => CollectionPagingTelemetryLabel.PostgresqlProvider,
+            SqlDialect.Mssql => CollectionPagingTelemetryLabel.SqlServerProvider,
+            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported SQL dialect."),
+        };
+
+    /// <summary>
+    /// The label, when it is one <paramref name="allowed" /> contains.
+    /// </summary>
+    /// <remarks>
+    /// Membership, not shape. A label outside the set is refused rather than reshaped into something
+    /// emittable, because sanitizing and truncating bound a label's length and that is not the property
+    /// this metric needs: a caller passing a resource name, a tenant key, or an exception category would
+    /// still add one tag set per distinct value, which is exactly the unbounded growth the bounded
+    /// dimension set exists to prevent. Refusing also removes the substitution that used to stand in for
+    /// an unusable label, which emitted the provider constant on whichever dimension was empty and could
+    /// therefore put <c>unknown</c> on a dimension that does not allow it.
+    /// <para>
+    /// Every emission site records inside a guard that logs and swallows, so a refused label costs one
+    /// measurement and a warning rather than a poisoned metric.
+    /// </para>
+    /// </remarks>
+    private static string RequireAllowedLabel(string value, FrozenSet<string> allowed, string parameterName)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException("Metric label must be present.", parameterName);
+        }
+
+        if (!allowed.Contains(value))
+        {
+            throw new ArgumentException(
+                $"Metric label '{DescribeRefused(value)}' is not one of the bounded values this dimension "
+                    + "allows.",
+                parameterName
+            );
+        }
+
+        return value;
+    }
+
+    /// <summary>
+    /// A refused label rendered safe for the message it is about to appear in: sanitized against
+    /// structured-log template injection, then bounded so an arbitrarily long one cannot be echoed whole.
+    /// </summary>
+    private static string DescribeRefused(string value)
+    {
+        string sanitized = LoggingSanitizer.SanitizeForLogging(value);
+
+        return sanitized.Length <= MaxRefusedLabelLength ? sanitized : sanitized[..MaxRefusedLabelLength];
+    }
+}
+
+/// <summary>
+/// Records bounded metrics for the three live collection-read shapes: traditional paging, cursor paging,
+/// and partition planning.
+/// </summary>
+/// <remarks>
+/// Page-size instruments are recorded only for GET-many and partition-count instruments only for
+/// <c>/partitions</c>, so neither histogram mixes two units of measure. Duration is recorded only where
+/// backend execution was attempted, which is why a validation rejection has its own method rather than a
+/// duration argument callers would have to zero out.
+/// </remarks>
+internal interface ICollectionPagingTelemetry
+{
+    /// <summary>
+    /// Records a classified GET-many outcome.
+    /// </summary>
+    /// <param name="returnedPageSize">
+    /// The number of documents in the response, or null when no page was produced. Null suppresses the
+    /// returned-page-size measurement so a failure never contributes a zero to that histogram.
+    /// </param>
+    void RecordPage(
+        CollectionPagingTelemetryContext context,
+        TimeSpan duration,
+        int requestedPageSize,
+        int? returnedPageSize
+    );
+
+    /// <summary>
+    /// Records a classified <c>/partitions</c> outcome.
+    /// </summary>
+    /// <param name="returnedPartitionCount">
+    /// The number of boundary ranges produced, or null when no boundary set was produced.
+    /// </param>
+    void RecordPartitions(
+        CollectionPagingTelemetryContext context,
+        TimeSpan duration,
+        int requestedPartitionCount,
+        int? returnedPartitionCount
+    );
+
+    /// <summary>
+    /// Records a request answered by parameter validation. No duration is recorded: nothing executed, so
+    /// a microsecond-scale sample would distort the duration distribution.
+    /// </summary>
+    void RecordValidationRejected(CollectionPagingTelemetryContext context);
+}
+
+/// <summary>
+/// Validates arguments exactly as the recording implementation does and emits nothing.
+/// </summary>
+/// <remarks>
+/// Wired explicitly at the Change Query construction of the shared query-validation middleware, whose
+/// endpoints do not page by cursor and are therefore not collection-paging events. Validating
+/// identically is what keeps that wiring from hiding an argument fault that would surface in production.
+/// <para>
+/// The two measurement methods repeat their checks rather than sharing a helper between them. A shared
+/// one has to name its parameters something neither caller uses, and the resulting
+/// <see cref="ArgumentException.ParamName" /> would then differ from the one the recording
+/// implementation reports for the very same bad argument — which is exactly the parity this type
+/// exists to hold. The tests assert that name on both implementations through one shared assertion.
+/// </para>
+/// </remarks>
+internal sealed class NoOpCollectionPagingTelemetry : ICollectionPagingTelemetry
+{
+    public static NoOpCollectionPagingTelemetry Instance { get; } = new();
+
+    private NoOpCollectionPagingTelemetry() { }
+
+    public void RecordPage(
+        CollectionPagingTelemetryContext context,
+        TimeSpan duration,
+        int requestedPageSize,
+        int? returnedPageSize
+    )
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        CollectionPagingTelemetry.RequireNonNegativeMilliseconds(duration);
+        CollectionPagingTelemetry.RequireNonNegativeCount(requestedPageSize, nameof(requestedPageSize));
+        CollectionPagingTelemetry.RequireNonNegativeCount(returnedPageSize, nameof(returnedPageSize));
+    }
+
+    public void RecordPartitions(
+        CollectionPagingTelemetryContext context,
+        TimeSpan duration,
+        int requestedPartitionCount,
+        int? returnedPartitionCount
+    )
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        CollectionPagingTelemetry.RequireNonNegativeMilliseconds(duration);
+        CollectionPagingTelemetry.RequireNonNegativeCount(
+            requestedPartitionCount,
+            nameof(requestedPartitionCount)
+        );
+        CollectionPagingTelemetry.RequireNonNegativeCount(
+            returnedPartitionCount,
+            nameof(returnedPartitionCount)
+        );
+    }
+
+    public void RecordValidationRejected(CollectionPagingTelemetryContext context) =>
+        ArgumentNullException.ThrowIfNull(context);
+}
+
+internal sealed class CollectionPagingTelemetry : ICollectionPagingTelemetry
+{
+    internal const string MeterName = "EdFi.DataManagementService.CollectionPaging";
+    internal const string RequestCounterName = "edfi.dms.collection_paging.requests";
+    internal const string DurationName = "edfi.dms.collection_paging.duration";
+    internal const string RequestedPageSizeName = "edfi.dms.collection_paging.page_size.requested";
+    internal const string ReturnedPageSizeName = "edfi.dms.collection_paging.page_size.returned";
+    internal const string RequestedPartitionCountName =
+        "edfi.dms.collection_paging.partition_count.requested";
+    internal const string ReturnedPartitionCountName = "edfi.dms.collection_paging.partition_count.returned";
+
+    private static readonly Meter SharedMeter = new(MeterName);
+
+    private readonly Counter<long> _requestCounter;
+    private readonly Histogram<double> _duration;
+    private readonly Histogram<int> _requestedPageSize;
+    private readonly Histogram<int> _returnedPageSize;
+    private readonly Histogram<int> _requestedPartitionCount;
+    private readonly Histogram<int> _returnedPartitionCount;
+    private readonly ILogger<CollectionPagingTelemetry> _logger;
+
+    public CollectionPagingTelemetry(ILogger<CollectionPagingTelemetry>? logger = null)
+        : this(SharedMeter, logger) { }
+
+    internal CollectionPagingTelemetry(Meter meter, ILogger<CollectionPagingTelemetry>? logger = null)
+    {
+        ArgumentNullException.ThrowIfNull(meter);
+
+        _logger = logger ?? NullLogger<CollectionPagingTelemetry>.Instance;
+        _requestCounter = meter.CreateCounter<long>(
+            RequestCounterName,
+            unit: "{request}",
+            description: "Collection read requests by paging mode, command category, provider, and outcome."
+        );
+        _duration = meter.CreateHistogram<double>(
+            DurationName,
+            unit: "ms",
+            description: "Collection read duration where backend execution was attempted."
+        );
+        _requestedPageSize = meter.CreateHistogram<int>(
+            RequestedPageSizeName,
+            unit: "{item}",
+            description: "Page size a collection read requested."
+        );
+        _returnedPageSize = meter.CreateHistogram<int>(
+            ReturnedPageSizeName,
+            unit: "{item}",
+            description: "Page size a collection read returned."
+        );
+        _requestedPartitionCount = meter.CreateHistogram<int>(
+            RequestedPartitionCountName,
+            unit: "{partition}",
+            description: "Partition count a partition request asked for."
+        );
+        _returnedPartitionCount = meter.CreateHistogram<int>(
+            ReturnedPartitionCountName,
+            unit: "{partition}",
+            description: "Partition count a partition request returned."
+        );
+    }
+
+    public void RecordPage(
+        CollectionPagingTelemetryContext context,
+        TimeSpan duration,
+        int requestedPageSize,
+        int? returnedPageSize
+    )
+    {
+        // Every argument is validated before the first instrument is touched, so a bad call emits
+        // nothing at all rather than the leading part of a measurement set.
+        ArgumentNullException.ThrowIfNull(context);
+
+        double milliseconds = RequireNonNegativeMilliseconds(duration);
+        RequireNonNegativeCount(requestedPageSize, nameof(requestedPageSize));
+        RequireNonNegativeCount(returnedPageSize, nameof(returnedPageSize));
+
+        TagList tags = context.ToTags();
+
+        _duration.Record(milliseconds, tags);
+        _requestedPageSize.Record(requestedPageSize, tags);
+
+        if (returnedPageSize is { } returned)
+        {
+            _returnedPageSize.Record(returned, tags);
+        }
+
+        // Counted last, after every measurement it accounts for. Validating up front closes the
+        // partial-set hole for an argument fault but not for the other way a call can stop halfway: an
+        // instrument invokes whatever measurement callbacks the host has subscribed, synchronously on
+        // this thread, and the operator guidance for these metrics asks for exactly such a subscriber.
+        // Counting first would let one of those throw after the counter had already moved, leaving a
+        // counted request carrying no duration - and the published aggregation intent reads `requests`
+        // as the validation rejections plus the duration samples. Counting last inverts which side the
+        // loss falls on: a request may go uncounted, but a counted one was measured.
+        _requestCounter.Add(1, tags);
+
+        LogDebug("page", context);
+    }
+
+    public void RecordPartitions(
+        CollectionPagingTelemetryContext context,
+        TimeSpan duration,
+        int requestedPartitionCount,
+        int? returnedPartitionCount
+    )
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        double milliseconds = RequireNonNegativeMilliseconds(duration);
+        RequireNonNegativeCount(requestedPartitionCount, nameof(requestedPartitionCount));
+        RequireNonNegativeCount(returnedPartitionCount, nameof(returnedPartitionCount));
+
+        TagList tags = context.ToTags();
+
+        _duration.Record(milliseconds, tags);
+        _requestedPartitionCount.Record(requestedPartitionCount, tags);
+
+        if (returnedPartitionCount is { } returned)
+        {
+            _returnedPartitionCount.Record(returned, tags);
+        }
+
+        // Counted last, for the reason given in RecordPage.
+        _requestCounter.Add(1, tags);
+
+        LogDebug("partitions", context);
+    }
+
+    public void RecordValidationRejected(CollectionPagingTelemetryContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        _requestCounter.Add(1, context.ToTags());
+        LogDebug("validation-rejected", context);
+    }
+
+    private void LogDebug(string metric, CollectionPagingTelemetryContext context)
+    {
+        if (!_logger.IsEnabled(LogLevel.Debug))
+        {
+            return;
+        }
+
+        _logger.LogDebug(
+            "Collection paging telemetry recorded {Metric}. PagingMode {PagingMode}; commandCategory {CommandCategory}; provider {Provider}; outcome {Outcome}.",
+            metric,
+            context.PagingMode,
+            context.CommandCategory,
+            context.Provider,
+            context.Outcome
+        );
+    }
+
+    internal static double RequireNonNegativeMilliseconds(TimeSpan duration)
+    {
+        if (duration < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(duration),
+                duration,
+                "Duration must be nonnegative."
+            );
+        }
+
+        return duration.TotalMilliseconds;
+    }
+
+    internal static void RequireNonNegativeCount(int count, string parameterName)
+    {
+        if (count < 0)
+        {
+            throw new ArgumentOutOfRangeException(parameterName, count, "Count must be nonnegative.");
+        }
+    }
+
+    /// <summary>
+    /// Validates an optional count. Null means the measurement is not recorded, which is a legitimate
+    /// state rather than a missing argument.
+    /// </summary>
+    internal static void RequireNonNegativeCount(int? count, string parameterName)
+    {
+        if (count is { } value)
+        {
+            RequireNonNegativeCount(value, parameterName);
+        }
+    }
+}
