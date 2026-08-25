@@ -276,12 +276,30 @@ internal class QueryRequestHandler(
             ? CollectionPagingTelemetryLabel.PageWithCountCommandCategory
             : CollectionPagingTelemetryLabel.PageCommandCategory;
         string outcome =
-            success.AllowsDocumentIdContinuation && !nextPageTokenProduced
+            CanAnchorAContinuation(requestInfo) && !nextPageTokenProduced
                 ? CollectionPagingTelemetryLabel.TerminalPageOutcome
                 : CollectionPagingTelemetryLabel.SuccessOutcome;
 
         return (commandCategory, outcome, returnedPageSize);
     }
+
+    /// <summary>
+    /// Whether a page of this request may hand out a continuation token at all, independent of whether
+    /// it selected anything to anchor one on.
+    /// </summary>
+    /// <remarks>
+    /// A continuation token names a range but does not yet say which key that range is expressed in, so
+    /// only a page ordered by DocumentId can be continued: a token taken from a ContentVersion-ordered
+    /// traditional page would be replayed as a DocumentId range and skip qualifying rows. Such a page is
+    /// served with rows and the client keeps paging it with limit and offset, so it is also
+    /// <c>success</c> rather than <c>terminal_page</c> — reporting it as an ended walk would tell
+    /// operators a healthy walk had stopped. Read from the request's resolved anchor rather than carried
+    /// on the result, so the two sites that need it cannot disagree. Both the gate and this distinction
+    /// disappear once the token carries an ordering marker of its own.
+    /// </remarks>
+    private static bool CanAnchorAContinuation(RequestInfo requestInfo) =>
+        requestInfo.CollectionPaging is CollectionPaging.Cursor
+        || requestInfo.PageOrderingMode is PageOrderingMode.DocumentId;
 
     /// <summary>
     /// Every failure carries no command category. Core cannot prove, for most of them, whether a
@@ -360,12 +378,12 @@ internal class QueryRequestHandler(
     {
         nextPageToken = null;
 
-        if (success.HighestSelectedDocumentId is not { } highestSelectedDocumentId)
+        if (success.HighestSelectedAnchor is not { } highestSelectedAnchor)
         {
             return false;
         }
 
-        if (!success.AllowsDocumentIdContinuation)
+        if (!CanAnchorAContinuation(requestInfo))
         {
             return false;
         }
@@ -378,7 +396,7 @@ internal class QueryRequestHandler(
             : long.MaxValue;
 
         return PageTokenCodec.TryCreateNextPageToken(
-                highestSelectedDocumentId,
+                highestSelectedAnchor,
                 inclusiveMaximum,
                 out nextPageToken
             ) && nextPageToken is not null;

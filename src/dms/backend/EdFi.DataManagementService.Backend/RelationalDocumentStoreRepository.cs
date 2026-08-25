@@ -1263,13 +1263,7 @@ public sealed class RelationalDocumentStoreRepository(
             throw new CustomViewAuthorizationValidationException(ex);
         }
 
-        return BuildQuerySuccess(
-            queryRequest,
-            preparation.Resource,
-            preparation.ReadPlan,
-            hydratedPage,
-            preparation.OrderingMode
-        );
+        return BuildQuerySuccess(queryRequest, preparation.Resource, preparation.ReadPlan, hydratedPage);
     }
 
     private async Task<RelationalQueryPreparationResult> PrepareQueryReadAsync(
@@ -1849,13 +1843,8 @@ public sealed class RelationalDocumentStoreRepository(
                             "query candidate selection"
                         )
                         : null,
-                    candidatePage.ContinuationBoundary.SelectedMaximum
+                    candidatePage.HighestSelectedAnchor
                 )
-                {
-                    AllowsDocumentIdContinuation = candidatePage
-                        .ContinuationBoundary
-                        .AllowsDocumentIdContinuation,
-                }
             );
         }
 
@@ -1864,7 +1853,6 @@ public sealed class RelationalDocumentStoreRepository(
             fallbackCancellationToken =>
                 HydrateSelectedQueryCandidatePageAsync(
                     queryRequest,
-                    preparation.OrderingMode,
                     preparation.Resource,
                     preparation.ReadPlan,
                     preparation.Authorization?.CustomViewChecks,
@@ -1876,7 +1864,6 @@ public sealed class RelationalDocumentStoreRepository(
 
     private async Task<QueryResult> HydrateSelectedQueryCandidatePageAsync(
         IQueryRequest queryRequest,
-        PageOrderingMode orderingMode,
         QualifiedResourceName resource,
         ResourceReadPlan readPlan,
         IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck>? customViewChecks,
@@ -1911,7 +1898,7 @@ public sealed class RelationalDocumentStoreRepository(
         hydratedPage = hydratedPage with
         {
             TotalCount = candidatePage.TotalCount,
-            HighestSelectedAnchor = candidatePage.ContinuationBoundary.SelectedMaximum,
+            HighestSelectedAnchor = candidatePage.HighestSelectedAnchor,
         };
 
         if (!SelectedQueryCandidatePageStillMatches(candidatePage, hydratedPage.DocumentMetadata))
@@ -1919,7 +1906,7 @@ public sealed class RelationalDocumentStoreRepository(
             return await QueryDocumentsRelationalAsync(queryRequest, cancellationToken).ConfigureAwait(false);
         }
 
-        return BuildQuerySuccess(queryRequest, resource, readPlan, hydratedPage, orderingMode);
+        return BuildQuerySuccess(queryRequest, resource, readPlan, hydratedPage);
     }
 
     private static bool SelectedQueryCandidatePageStillMatches(
@@ -2041,10 +2028,14 @@ public sealed class RelationalDocumentStoreRepository(
     {
         ArgumentNullException.ThrowIfNull(reader);
 
-        // The keyset materialization returns the ids it selected, ahead of every other result set. The
+        // The keyset materialization returns the keys it selected, ahead of every other result set. The
         // boundary is taken from them rather than from the candidates below, so it stays the keys
         // selection chose even when a row is deleted before the metadata select reaches it.
-        long? selectedMaximum = await ReadSelectedDocumentIdMaximumAsync(reader, cancellationToken)
+        long? selectedMaximum = await ReadSelectedAnchorMaximumAsync(
+                reader,
+                orderingMode is PageOrderingMode.ContentVersion,
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         if (!await reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
@@ -2087,35 +2078,50 @@ public sealed class RelationalDocumentStoreRepository(
         return new DocumentCacheReadAccelerationCandidatePage(
             candidates,
             totalCount,
-            PageContinuationBoundary.For(paging, orderingMode, selectedMaximum),
+            selectedMaximum,
             IncludesTotalCount: paging.IncludesTotalCount
         );
     }
 
     /// <summary>
-    /// Reads the selected page keyset ids from the current result set and returns the maximum, or
-    /// <see langword="null"/> when the selection was empty. Taken across every returned row because
-    /// neither <c>RETURNING</c> nor <c>OUTPUT</c> promises an order.
+    /// Reads the selected page keyset from the current result set and returns the maximum value of its
+    /// continuation anchor, or <see langword="null"/> when the selection was empty. Taken across every
+    /// returned row because neither <c>RETURNING</c> nor <c>OUTPUT</c> promises an order.
     /// </summary>
-    private static async Task<long?> ReadSelectedDocumentIdMaximumAsync(
+    /// <remarks>
+    /// A <c>ContentVersion</c>-anchored selection projects the anchor as a second column, so the ordinal
+    /// follows the anchor. This is the read-acceleration twin of the hydration reader, over the
+    /// candidate-metadata batch rather than the hydration batch.
+    /// </remarks>
+    private static async Task<long?> ReadSelectedAnchorMaximumAsync(
         IRelationalCommandReader reader,
+        bool carriesAnchorColumn,
         CancellationToken cancellationToken
     )
     {
+        var anchorOrdinal = carriesAnchorColumn ? SelectedAnchorOrdinal : SelectedDocumentIdOrdinal;
         long? selectedMaximum = null;
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            var selectedDocumentId = reader.GetFieldValue<long>(0);
+            var selectedAnchor = reader.GetFieldValue<long>(anchorOrdinal);
 
-            if (selectedMaximum is null || selectedDocumentId > selectedMaximum)
+            if (selectedMaximum is null || selectedAnchor > selectedMaximum)
             {
-                selectedMaximum = selectedDocumentId;
+                selectedMaximum = selectedAnchor;
             }
         }
 
         return selectedMaximum;
     }
+
+    /// <summary>
+    /// Ordinals in the selected page keyset result set. <c>DocumentId</c> is always first; the anchor
+    /// follows it only on a <c>ContentVersion</c>-anchored page.
+    /// </summary>
+    private const int SelectedDocumentIdOrdinal = 0;
+
+    private const int SelectedAnchorOrdinal = 1;
 
     private static async Task<long> ReadCandidatePageTotalCountAsync(
         IRelationalCommandReader reader,
@@ -5887,8 +5893,7 @@ public sealed class RelationalDocumentStoreRepository(
         IQueryRequest relationalQueryRequest,
         QualifiedResourceName resource,
         ResourceReadPlan readPlan,
-        HydratedPage hydratedPage,
-        PageOrderingMode orderingMode
+        HydratedPage hydratedPage
     )
     {
         ArgumentNullException.ThrowIfNull(relationalQueryRequest);
@@ -5936,14 +5941,9 @@ public sealed class RelationalDocumentStoreRepository(
         }
 
         // The selected-keyset boundary passes through unchanged, including when the body above came back
-        // empty: it describes what page selection chose, not what survived to hydration. Whether it may
-        // anchor a continuation is a separate fact, decided from the ordering the page was selected with.
-        var continuationBoundary = PageContinuationBoundary.For(
-            relationalQueryRequest.Paging,
-            orderingMode,
-            hydratedPage.HighestSelectedAnchor
-        );
-
+        // empty: it describes what page selection chose, not what survived to hydration. It is already
+        // expressed in the key the page was ordered by, because selection carried that key out with the
+        // ids, so there is nothing further to qualify it with here.
         return new QueryResult.QuerySuccess(
             edfiDocs,
             relationalQueryRequest.Paging.IncludesTotalCount
@@ -5953,11 +5953,8 @@ public sealed class RelationalDocumentStoreRepository(
                     "query hydration"
                 )
                 : null,
-            continuationBoundary.SelectedMaximum
-        )
-        {
-            AllowsDocumentIdContinuation = continuationBoundary.AllowsDocumentIdContinuation,
-        };
+            hydratedPage.HighestSelectedAnchor
+        );
     }
 
     private static WritePrecondition NormalizeWritePrecondition(WritePrecondition? writePrecondition) =>

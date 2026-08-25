@@ -674,13 +674,12 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
 
             walkedDocumentIds.AddRange(_recorder.PageMaterializedDocumentIds);
 
-            if (success.HighestSelectedDocumentId is not { } highestSelectedDocumentId)
+            if (success.HighestSelectedAnchor is not { } highestSelectedDocumentId)
             {
                 success.EdfiDocs.Should().BeEmpty();
                 break;
             }
 
-            success.AllowsDocumentIdContinuation.Should().BeTrue();
             range = new CursorRange(highestSelectedDocumentId + 1, range.InclusiveMaximum);
         }
 
@@ -693,7 +692,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         var success = (QueryResult.QuerySuccess)
             await ExecuteCursorQueryAsync(CursorRange.From(1), pageSize: 1, traceId: "pg-cursor-size-1");
 
-        success.HighestSelectedDocumentId.Should().Be(_persistedSchoolsInDocumentOrder[0].DocumentId);
+        success.HighestSelectedAnchor.Should().Be(_persistedSchoolsInDocumentOrder[0].DocumentId);
         AssertPageMaterialization(_persistedSchoolsInDocumentOrder[0].DocumentId);
     }
 
@@ -707,7 +706,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
                 traceId: "pg-cursor-size-max"
             );
 
-        success.HighestSelectedDocumentId.Should().Be(_persistedSchoolsInDocumentOrder[^1].DocumentId);
+        success.HighestSelectedAnchor.Should().Be(_persistedSchoolsInDocumentOrder[^1].DocumentId);
         AssertPageMaterialization([
             .. _persistedSchoolsInDocumentOrder.Select(static school => school.DocumentId),
         ]);
@@ -720,7 +719,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         var success = (QueryResult.QuerySuccess)
             await ExecuteCursorQueryAsync(CursorRange.From(1), pageSize: 0, traceId: "pg-cursor-size-0");
 
-        success.HighestSelectedDocumentId.Should().BeNull();
+        success.HighestSelectedAnchor.Should().BeNull();
         success.EdfiDocs.Should().BeEmpty();
     }
 
@@ -737,7 +736,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
                 traceId: "pg-cursor-inverted"
             );
 
-        success.HighestSelectedDocumentId.Should().BeNull();
+        success.HighestSelectedAnchor.Should().BeNull();
         success.EdfiDocs.Should().BeEmpty();
     }
 
@@ -762,7 +761,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
                 traceId: "pg-cursor-unstored-bounds"
             );
 
-        success.HighestSelectedDocumentId.Should().Be(lastDocumentId);
+        success.HighestSelectedAnchor.Should().Be(lastDocumentId);
         AssertPageMaterialization(storedDocumentIds);
     }
 
@@ -780,7 +779,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
                 traceId: "pg-cursor-excludes-below-minimum"
             );
 
-        success.HighestSelectedDocumentId.Should().Be(_persistedSchoolsInDocumentOrder[^1].DocumentId);
+        success.HighestSelectedAnchor.Should().Be(_persistedSchoolsInDocumentOrder[^1].DocumentId);
         AssertPageMaterialization([
             .. _persistedSchoolsInDocumentOrder.Skip(1).Select(static school => school.DocumentId),
         ]);
@@ -807,7 +806,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
                 ]
             );
 
-        success.HighestSelectedDocumentId.Should().Be(targetSchool.DocumentId);
+        success.HighestSelectedAnchor.Should().Be(targetSchool.DocumentId);
         AssertPageMaterialization(targetSchool.DocumentId);
     }
 
@@ -827,8 +826,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
                 changeVersionRange: new ChangeVersionRange(lowestContentVersion, null)
             );
 
-        success.HighestSelectedDocumentId.Should().Be(_persistedSchoolsInDocumentOrder[^1].DocumentId);
-        success.AllowsDocumentIdContinuation.Should().BeTrue();
+        success.HighestSelectedAnchor.Should().Be(_persistedSchoolsInDocumentOrder[^1].DocumentId);
     }
 
     // A max-bearing window keeps the DocumentId ordering a cursor page always uses, so the page it
@@ -848,19 +846,20 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
                 changeVersionRange: new ChangeVersionRange(null, highestContentVersion)
             );
 
-        success.HighestSelectedDocumentId.Should().Be(_persistedSchoolsInDocumentOrder[^1].DocumentId);
-        success.AllowsDocumentIdContinuation.Should().BeTrue();
+        success.HighestSelectedAnchor.Should().Be(_persistedSchoolsInDocumentOrder[^1].DocumentId);
         AssertSingleQueryHydration().Plan.PageDocumentIdSql.Should().Contain("@cursorMin");
     }
 
-    // A traditional page over the same window is ordered by ContentVersion, so it reports the maximum it
-    // really selected while refusing to let a DocumentId continuation be anchored on it.
+    // A traditional page over the same window is ordered by ContentVersion, so the maximum it reports is
+    // that window's highest ContentVersion and not a DocumentId at all.
     [Test]
-    public async Task It_reports_a_boundary_without_continuation_for_a_windowed_traditional_page()
+    public async Task It_reports_a_content_version_boundary_for_a_windowed_traditional_page()
     {
-        var highestContentVersion = _persistedSchoolsInDocumentOrder.Max(static school =>
-            school.ContentVersion
-        );
+        // Read fresh rather than from the seeded snapshot: other cases in this fixture update a school,
+        // which moves its ContentVersion without moving its DocumentId, so only the live values bound
+        // the window this page is selected over.
+        var currentSchools = await ReadPersistedSchoolsInDocumentOrderAsync();
+        var highestContentVersion = currentSchools.Max(static school => school.ContentVersion);
 
         var success = (QueryResult.QuerySuccess)
             await ExecuteQueryAsync(
@@ -869,11 +868,11 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
                 offset: 0,
                 totalCount: false,
                 traceId: "pg-traditional-max-window",
-                changeVersionRange: new ChangeVersionRange(null, highestContentVersion)
+                changeVersionRange: new ChangeVersionRange(null, highestContentVersion),
+                pageOrderingMode: PageOrderingMode.ContentVersion
             );
 
-        success.HighestSelectedDocumentId.Should().NotBeNull();
-        success.AllowsDocumentIdContinuation.Should().BeFalse();
+        success.HighestSelectedAnchor.Should().Be(highestContentVersion);
     }
 
     // The boundary set must be anchored on identifiers the caller can actually reach, and every range

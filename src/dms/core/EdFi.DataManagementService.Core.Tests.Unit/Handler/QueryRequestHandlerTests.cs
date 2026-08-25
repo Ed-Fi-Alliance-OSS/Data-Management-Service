@@ -234,14 +234,16 @@ public class QueryRequestHandlerTests
             requestInfo.FrontendResponse.Headers.Should().NotContainKey("Next-Page-Token");
         }
 
-        // A page ordered by something other than DocumentId really did select keys, and reports their
-        // maximum, but that maximum does not say where the page ended, so it cannot anchor a walk.
+        // A traditional page over a max-bearing change-version window really did select keys, and
+        // reports their maximum in ContentVersion. A token names a range without saying which key it is
+        // expressed in, so that maximum cannot be handed out until the token carries a marker.
         [Test]
         public async Task It_emits_no_continuation_when_the_page_cannot_anchor_one()
         {
-            var requestInfo = await ExecuteAsync(
-                new QueryResult.QuerySuccess([], null, 2509L) { AllowsDocumentIdContinuation = false }
-            );
+            var requestInfo = RequestInfoWithRelationalMappingSet();
+            requestInfo.PageOrderingMode = PageOrderingMode.ContentVersion;
+
+            await ExecuteAsync(new QueryResult.QuerySuccess([], null, 2509L), requestInfo: requestInfo);
 
             requestInfo.FrontendResponse.Headers.Should().NotContainKey("Next-Page-Token");
         }
@@ -1545,11 +1547,12 @@ public class QueryRequestHandlerTests
         [Test]
         public async Task It_records_success_for_a_page_that_cannot_anchor_a_continuation()
         {
+            var windowedRequestInfo = RequestInfoWithRelationalMappingSet();
+            windowedRequestInfo.PageOrderingMode = PageOrderingMode.ContentVersion;
+
             var (requestInfo, telemetry) = await ExecuteAsync(
-                new QueryResult.QuerySuccess(Documents(4), null, 2509L)
-                {
-                    AllowsDocumentIdContinuation = false,
-                }
+                new QueryResult.QuerySuccess(Documents(4), null, 2509L),
+                requestInfo: windowedRequestInfo
             );
 
             requestInfo.FrontendResponse.Headers.Should().NotContainKey("Next-Page-Token");

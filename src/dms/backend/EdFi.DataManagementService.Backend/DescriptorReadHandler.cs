@@ -577,17 +577,10 @@ internal sealed class DescriptorReadHandler(
 
         var rowsPage = (DescriptorQueryCandidateSelectionReadResult.CandidatePage)candidateReadResult;
 
-        // Built ahead of the empty check so both branches report the same continuation facts. A
-        // selection that returned nothing is still a selection that ran under an ordering, and a
-        // traditional page over a max-bearing change-version window cannot anchor a DocumentId
-        // continuation whether or not it selected rows. Deciding it in only the non-empty branch would
-        // leave the empty one on the permissive default and answer the same request differently from
-        // the regular-resource path.
-        var continuationBoundary = PageContinuationBoundary.For(
-            request.Paging,
-            request.PageOrderingMode,
-            SelectedMaximumOf(rowsPage.Page.Rows)
-        );
+        // Built ahead of the empty check so both branches report the same boundary. A selection that
+        // returned nothing is still a selection that ran, and deciding the boundary in only the
+        // non-empty branch would answer the same request differently from the regular-resource path.
+        var highestSelectedAnchor = SelectedMaximumOf(rowsPage.Page.Rows, request.PageOrderingMode);
 
         if (rowsPage.Page.Rows.Count == 0)
         {
@@ -600,18 +593,15 @@ internal sealed class DescriptorReadHandler(
                         "descriptor query"
                     )
                     : null,
-                continuationBoundary.SelectedMaximum
-            )
-            {
-                AllowsDocumentIdContinuation = continuationBoundary.AllowsDocumentIdContinuation,
-            };
+                highestSelectedAnchor
+            );
 
             return new DocumentCacheReadAccelerationQuerySelectionResult.Complete(relationalSuccess);
         }
 
         var candidatePage = CreateDescriptorReadAccelerationCandidatePage(
             rowsPage.Page,
-            continuationBoundary,
+            highestSelectedAnchor,
             request.Paging.IncludesTotalCount
         );
 
@@ -1306,10 +1296,29 @@ internal sealed class DescriptorReadHandler(
     /// orders ascending today, but a boundary that depended on that could not survive an ordering
     /// change, and the maximum costs the same either way.
     /// </summary>
-    private static long? SelectedMaximumOf(IReadOnlyList<IDescriptorReadCandidateMetadata> descriptorRows) =>
-        descriptorRows.Count == 0
-            ? null
+    /// <summary>
+    /// The maximum continuation-anchor value among the selected descriptor rows, or
+    /// <see langword="null"/> when the page selected none.
+    /// </summary>
+    /// <remarks>
+    /// The units follow the anchor the request resolved, exactly as they do for a regular resource.
+    /// Descriptors need no SQL change to report either one: the rows selection returns already carry
+    /// both <c>DocumentId</c> and <c>ContentVersion</c>, so this only has to take the right column.
+    /// </remarks>
+    private static long? SelectedMaximumOf(
+        IReadOnlyList<IDescriptorReadCandidateMetadata> descriptorRows,
+        PageOrderingMode orderingMode
+    )
+    {
+        if (descriptorRows.Count == 0)
+        {
+            return null;
+        }
+
+        return orderingMode is PageOrderingMode.ContentVersion
+            ? descriptorRows.Max(static descriptorRow => descriptorRow.ContentVersion)
             : descriptorRows.Max(static descriptorRow => descriptorRow.DocumentId);
+    }
 
     /// <summary>
     /// Plans the single-record custom-view checks descriptor GET-by-id executes, or reports the
@@ -1688,21 +1697,13 @@ internal sealed class DescriptorReadHandler(
     /// cache-accelerated path selects candidates and retrieves rows separately, but it admits a page
     /// only when every selected candidate is still present and unchanged, and otherwise re-reads through
     /// the uncached path — so a page that lost rows between selection and retrieval never arrives here
-    /// with a short row set that would understate the boundary and stall the walk. Whether the maximum
-    /// may anchor a continuation is a separate fact, decided from the ordering the page was selected
-    /// with through the same helper the regular-resource path uses.
+    /// with a short row set that would understate the boundary and stall the walk.
     /// </remarks>
     private QueryResult.QuerySuccess MaterializeDescriptorQuerySuccess(
         DescriptorQueryRequest request,
         DescriptorQueryRowsPage queryRowsPage
     )
     {
-        var continuationBoundary = PageContinuationBoundary.For(
-            request.Paging,
-            request.PageOrderingMode,
-            SelectedMaximumOf(queryRowsPage.Rows)
-        );
-
         return new QueryResult.QuerySuccess(
             MaterializeDescriptorQueryDocuments(request, queryRowsPage.Rows),
             request.Paging.IncludesTotalCount
@@ -1712,11 +1713,8 @@ internal sealed class DescriptorReadHandler(
                     "descriptor query"
                 )
                 : null,
-            continuationBoundary.SelectedMaximum
-        )
-        {
-            AllowsDocumentIdContinuation = continuationBoundary.AllowsDocumentIdContinuation,
-        };
+            SelectedMaximumOf(queryRowsPage.Rows, request.PageOrderingMode)
+        );
     }
 
     private JsonArray MaterializeDescriptorQueryDocuments(
@@ -1758,13 +1756,13 @@ internal sealed class DescriptorReadHandler(
 
     private static DocumentCacheReadAccelerationCandidatePage CreateDescriptorReadAccelerationCandidatePage(
         DescriptorQueryCandidatePage queryRowsPage,
-        PageContinuationBoundary continuationBoundary,
+        long? highestSelectedAnchor,
         bool includesTotalCount
     ) =>
         new(
             [.. queryRowsPage.Rows.Select(CreateDescriptorReadAccelerationCandidate)],
             queryRowsPage.TotalCount,
-            continuationBoundary,
+            highestSelectedAnchor,
             IncludesTotalCount: includesTotalCount
         );
 

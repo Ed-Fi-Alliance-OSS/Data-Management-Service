@@ -505,22 +505,8 @@ public class Given_DocumentCacheReadLookup
         );
 
         DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
-            QueryRequest(
-                new DocumentCacheReadAccelerationCandidatePage(
-                    [first, second],
-                    2,
-                    new PageContinuationBoundary(346, AllowsDocumentIdContinuation: true),
-                    true
-                )
-            ),
-            QuerySelection(
-                new DocumentCacheReadAccelerationCandidatePage(
-                    [first, second],
-                    2,
-                    new PageContinuationBoundary(346, AllowsDocumentIdContinuation: true),
-                    true
-                )
-            ),
+            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
+            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
             ExecutionContext()
         );
 
@@ -556,22 +542,8 @@ public class Given_DocumentCacheReadLookup
         );
 
         DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
-            QueryRequest(
-                new DocumentCacheReadAccelerationCandidatePage(
-                    [first, second],
-                    2,
-                    new PageContinuationBoundary(346, AllowsDocumentIdContinuation: true),
-                    true
-                )
-            ),
-            QuerySelection(
-                new DocumentCacheReadAccelerationCandidatePage(
-                    [first, second],
-                    2,
-                    new PageContinuationBoundary(346, AllowsDocumentIdContinuation: true),
-                    true
-                )
-            ),
+            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
+            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
             ExecutionContext()
         );
 
@@ -609,22 +581,8 @@ public class Given_DocumentCacheReadLookup
         );
 
         DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
-            QueryRequest(
-                new DocumentCacheReadAccelerationCandidatePage(
-                    [first, second],
-                    2,
-                    new PageContinuationBoundary(346, AllowsDocumentIdContinuation: true),
-                    true
-                )
-            ),
-            QuerySelection(
-                new DocumentCacheReadAccelerationCandidatePage(
-                    [first, second],
-                    2,
-                    new PageContinuationBoundary(346, AllowsDocumentIdContinuation: true),
-                    true
-                )
-            ),
+            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
+            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
             ExecutionContext()
         );
 
@@ -692,22 +650,8 @@ public class Given_DocumentCacheReadLookup
         );
 
         DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
-            QueryRequest(
-                new DocumentCacheReadAccelerationCandidatePage(
-                    [first, second],
-                    2,
-                    new PageContinuationBoundary(346, AllowsDocumentIdContinuation: true),
-                    true
-                )
-            ),
-            QuerySelection(
-                new DocumentCacheReadAccelerationCandidatePage(
-                    [first, second],
-                    2,
-                    new PageContinuationBoundary(346, AllowsDocumentIdContinuation: true),
-                    true
-                )
-            ),
+            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
+            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
             ExecutionContext()
         );
 
@@ -746,22 +690,8 @@ public class Given_DocumentCacheReadLookup
         );
 
         DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
-            QueryRequest(
-                new DocumentCacheReadAccelerationCandidatePage(
-                    [first, second],
-                    2,
-                    new PageContinuationBoundary(346, AllowsDocumentIdContinuation: true),
-                    true
-                )
-            ),
-            QuerySelection(
-                new DocumentCacheReadAccelerationCandidatePage(
-                    [first, second],
-                    2,
-                    new PageContinuationBoundary(346, AllowsDocumentIdContinuation: true),
-                    true
-                )
-            ),
+            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
+            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
             ExecutionContext()
         );
 
@@ -813,22 +743,8 @@ public class Given_DocumentCacheReadLookup
         );
 
         DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
-            QueryRequest(
-                new DocumentCacheReadAccelerationCandidatePage(
-                    [first, second],
-                    2,
-                    new PageContinuationBoundary(346, AllowsDocumentIdContinuation: true),
-                    true
-                )
-            ),
-            QuerySelection(
-                new DocumentCacheReadAccelerationCandidatePage(
-                    [first, second],
-                    2,
-                    new PageContinuationBoundary(346, AllowsDocumentIdContinuation: true),
-                    true
-                )
-            ),
+            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
+            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
             ExecutionContext()
         );
 
@@ -863,22 +779,8 @@ public class Given_DocumentCacheReadLookup
         );
 
         DocumentCacheReadLookupResult<QueryResult> result = await adapter.TryQueryAsync(
-            QueryRequest(
-                new DocumentCacheReadAccelerationCandidatePage(
-                    [first, second],
-                    2,
-                    new PageContinuationBoundary(346, AllowsDocumentIdContinuation: true),
-                    true
-                )
-            ),
-            QuerySelection(
-                new DocumentCacheReadAccelerationCandidatePage(
-                    [first, second],
-                    2,
-                    new PageContinuationBoundary(346, AllowsDocumentIdContinuation: true),
-                    true
-                )
-            ),
+            QueryRequest(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
+            QuerySelection(new DocumentCacheReadAccelerationCandidatePage([first, second], 2, 346, true)),
             ExecutionContext()
         );
 

@@ -172,12 +172,12 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var cachedResult = new QueryResult.QuerySuccess(
             [JsonNode.Parse("""{"id":"old-cache"}""")!],
             1,
-            HighestSelectedDocumentId: 345
+            HighestSelectedAnchor: 345
         );
         var fallbackResult = new QueryResult.QuerySuccess(
             [JsonNode.Parse("""{"id":"selected-store"}""")!],
             1,
-            HighestSelectedDocumentId: 345
+            HighestSelectedAnchor: 345
         );
         var lookupAdapter = new RecordingLookupAdapter
         {
@@ -270,7 +270,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var fallbackResult = new QueryResult.QuerySuccess(
             [JsonNode.Parse("""{"id":"relational"}""")!],
             1,
-            HighestSelectedDocumentId: 345
+            HighestSelectedAnchor: 345
         );
         var sut = CreateCoordinatorForTargetResolutionScenario(
             scenario,
@@ -533,7 +533,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
                 new JsonObject { ["id"] = SecondDocumentUuid.Value.ToString() },
             ],
             2,
-            HighestSelectedDocumentId: 346
+            HighestSelectedAnchor: 346
         );
         var lookupAdapter = new RecordingLookupAdapter
         {
@@ -671,7 +671,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var cachedResult = new QueryResult.QuerySuccess(
             [JsonNode.Parse("""{"id":"cached"}""")!],
             2,
-            HighestSelectedDocumentId: null
+            HighestSelectedAnchor: null
         );
         var lookupAdapter = new RecordingLookupAdapter
         {
@@ -695,11 +695,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         );
 
         result.Should().BeSameAs(cachedResult);
-        result
-            .Should()
-            .BeOfType<QueryResult.QuerySuccess>()
-            .Which.HighestSelectedDocumentId.Should()
-            .BeNull();
+        result.Should().BeOfType<QueryResult.QuerySuccess>().Which.HighestSelectedAnchor.Should().BeNull();
         lookupAdapter.QueryAttempts.Should().Be(1);
         lookupAdapter.LastQueryCandidateSelection!.AuthorizedCandidatePage.Should().Be(candidatePage);
         lookupAdapter.LastQueryTargetContext.Should().BeSameAs(executionContext);
@@ -712,7 +708,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var fallbackResult = new QueryResult.QuerySuccess(
             [JsonNode.Parse("""{"id":"relational"}""")!],
             2,
-            HighestSelectedDocumentId: null
+            HighestSelectedAnchor: null
         );
         var lookupAdapter = new RecordingLookupAdapter
         {
@@ -739,11 +735,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         );
 
         result.Should().BeSameAs(fallbackResult);
-        result
-            .Should()
-            .BeOfType<QueryResult.QuerySuccess>()
-            .Which.HighestSelectedDocumentId.Should()
-            .BeNull();
+        result.Should().BeOfType<QueryResult.QuerySuccess>().Which.HighestSelectedAnchor.Should().BeNull();
         lookupAdapter.QueryAttempts.Should().Be(1);
     }
 
@@ -761,7 +753,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var fallbackResult = new QueryResult.QuerySuccess(
             [new JsonObject { ["id"] = DocumentUuid.Value.ToString() }],
             1,
-            HighestSelectedDocumentId: 345
+            HighestSelectedAnchor: 345
         );
         var lookupAdapter = new RecordingLookupAdapter
         {
@@ -1304,7 +1296,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
                 new JsonObject { ["id"] = SecondDocumentUuid.Value.ToString() },
             ],
             2,
-            HighestSelectedDocumentId: 346
+            HighestSelectedAnchor: 346
         );
         var materializer = new RecordingMaterializer
         {
@@ -1359,7 +1351,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
                 new JsonObject { ["id"] = SecondDocumentUuid.Value.ToString() },
             ],
             2,
-            HighestSelectedDocumentId: 346
+            HighestSelectedAnchor: 346
         );
         var materializer = new RecordingMaterializer
         {
@@ -1423,7 +1415,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
                 new JsonObject { ["id"] = SecondDocumentUuid.Value.ToString() },
             ],
             2,
-            HighestSelectedDocumentId: 346
+            HighestSelectedAnchor: 346
         );
         using var cancellationSource = new CancellationTokenSource();
         var materializer = new RecordingMaterializer
@@ -1615,7 +1607,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var fallbackResult = new QueryResult.QuerySuccess(
             [new JsonObject { ["id"] = DocumentUuid.Value.ToString() }],
             1,
-            HighestSelectedDocumentId: 345
+            HighestSelectedAnchor: 345
         );
         var lookupAdapter = new RecordingLookupAdapter
         {
@@ -1692,7 +1684,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var fallbackResult = new QueryResult.QuerySuccess(
             [new JsonObject { ["id"] = SecondDocumentUuid.Value.ToString() }],
             2,
-            HighestSelectedDocumentId: 346
+            HighestSelectedAnchor: 346
         );
         var lookupAdapter = new RecordingLookupAdapter
         {
@@ -1726,7 +1718,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var fallbackResult = new QueryResult.QuerySuccess(
             [new JsonObject { ["id"] = SecondDocumentUuid.Value.ToString() }],
             2,
-            HighestSelectedDocumentId: 346
+            HighestSelectedAnchor: 346
         );
         var lookupAdapter = new RecordingLookupAdapter
         {
@@ -1757,7 +1749,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var fallbackResult = new QueryResult.QuerySuccess(
             [new JsonObject { ["id"] = DocumentUuid.Value.ToString() }],
             1,
-            HighestSelectedDocumentId: 345
+            HighestSelectedAnchor: 345
         );
         var lookupAdapter = new RecordingLookupAdapter
         {
@@ -1826,7 +1818,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
                 new JsonObject { ["id"] = SecondDocumentUuid.Value.ToString() },
             ],
             2,
-            HighestSelectedDocumentId: 346
+            HighestSelectedAnchor: 346
         );
         var lookupAdapter = new RecordingLookupAdapter
         {
@@ -1915,7 +1907,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var fallbackResult = new QueryResult.QuerySuccess(
             [new JsonObject { ["id"] = SecondDocumentUuid.Value.ToString() }],
             2,
-            HighestSelectedDocumentId: 346
+            HighestSelectedAnchor: 346
         );
         var lookupAdapter = new RecordingLookupAdapter
         {
@@ -2043,7 +2035,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var fallbackResult = new QueryResult.QuerySuccess(
             [new JsonObject { ["id"] = DocumentUuid.Value.ToString() }],
             1,
-            HighestSelectedDocumentId: 345
+            HighestSelectedAnchor: 345
         );
         var lookupAdapter = new RecordingLookupAdapter
         {
@@ -2089,7 +2081,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var fallbackResult = new QueryResult.QuerySuccess(
             [new JsonObject { ["id"] = SecondDocumentUuid.Value.ToString() }],
             2,
-            HighestSelectedDocumentId: 346
+            HighestSelectedAnchor: 346
         );
         var lookupAdapter = new RecordingLookupAdapter
         {
@@ -2201,7 +2193,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var fallbackResult = new QueryResult.QuerySuccess(
             [new JsonObject { ["id"] = DocumentUuid.Value.ToString() }],
             1,
-            HighestSelectedDocumentId: 345
+            HighestSelectedAnchor: 345
         );
         var lookupAdapter = new RecordingLookupAdapter
         {
@@ -2494,7 +2486,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
                 new JsonObject { ["id"] = SecondDocumentUuid.Value.ToString() },
             ],
             2,
-            HighestSelectedDocumentId: 346
+            HighestSelectedAnchor: 346
         );
         using var cancellationSource = new CancellationTokenSource();
         var materializationAttempts = 0;
@@ -2546,7 +2538,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var fallbackResult = new QueryResult.QuerySuccess(
             [new JsonObject { ["id"] = DocumentUuid.Value.ToString() }],
             1,
-            HighestSelectedDocumentId: 345
+            HighestSelectedAnchor: 345
         );
         var materializer = new RecordingMaterializer { DelayUntilCancellation = TimeSpan.FromSeconds(30) };
         var writer = new RecordingCacheWriter();
@@ -2912,7 +2904,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         new(
             candidates ?? [Candidate()],
             totalCount,
-            new PageContinuationBoundary(highestSelectedDocumentId, AllowsDocumentIdContinuation: true),
+            highestSelectedDocumentId,
             includesTotalCount ?? (totalCount is not null)
         );
 
