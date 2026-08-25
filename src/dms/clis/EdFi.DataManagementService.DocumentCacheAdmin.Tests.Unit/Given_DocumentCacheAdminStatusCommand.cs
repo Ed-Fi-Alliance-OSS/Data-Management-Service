@@ -160,10 +160,14 @@ public sealed class Given_DocumentCacheAdminStatusCommand
         statusService.EvaluationModes.Should().BeEmpty();
     }
 
-    [Test]
-    public async Task It_enforces_target_resolution_failure_before_status_pipeline()
+    [TestCase(UnexpectedMembershipSnapshot.Empty)]
+    [TestCase(UnexpectedMembershipSnapshot.WrongTarget)]
+    [TestCase(UnexpectedMembershipSnapshot.MultipleTargets)]
+    public async Task It_treats_unexpected_target_membership_as_status_pipeline_failure(
+        UnexpectedMembershipSnapshot snapshotKind
+    )
     {
-        UnexpectedMembershipTargetResolver targetResolver = new();
+        SnapshotTargetResolver targetResolver = new(UnexpectedRegistrySnapshot(snapshotKind));
         ScriptedDocumentCacheStatusService statusService = new(
             (_, _) =>
                 throw new AssertionException("Status pipeline must not run after target resolution fails.")
@@ -187,10 +191,60 @@ public sealed class Given_DocumentCacheAdminStatusCommand
             stderr
         );
 
-        exitCode.Should().Be(DocumentCacheAdminExitCodes.Success);
+        exitCode.Should().Be(DocumentCacheAdminExitCodes.FailedNoMutation);
         targetResolver.ResolveCount.Should().Be(1);
         statusService.EvaluationModes.Should().BeEmpty();
+        stdout.ToString().Should().BeEmpty();
+        stderr.ToString().Should().Contain("status failed before a complete status document");
+        stderr.ToString().Should().Contain("exactly the invocation target");
+    }
 
+    [Test]
+    public async Task It_serializes_unresolved_status_data_from_a_matching_one_target_registry()
+    {
+        DocumentCacheTargetKey targetKey = DocumentCacheTargetKey.Create("", 1);
+        SnapshotTargetResolver targetResolver = new(
+            new DocumentCacheTargetRegistrySnapshot(
+                [
+                    DocumentCacheTargetObservation.Unresolved(
+                        targetKey,
+                        DocumentCacheTargetEffectiveSettings.FromOptions(new DocumentCacheOptions()),
+                        retryState: null,
+                        diagnostics: []
+                    ),
+                ],
+                ObservedAt
+            )
+        );
+        ScriptedDocumentCacheStatusService statusService = new(_ =>
+            Task.FromResult(UnresolvedStatusResponse())
+        );
+        await using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddSingleton<IDocumentCacheAdminTargetResolver>(targetResolver)
+            .AddSingleton<IDocumentCacheStatusService>(statusService)
+            .BuildServiceProvider();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+
+        int exitCode = await DocumentCacheAdminCommandExecutor.ExecuteAsync(
+            ParseStatusCommand(
+                DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
+                "1",
+                DocumentCacheAdminCommandSurface.JsonOptionName
+            ),
+            InvocationTarget(),
+            serviceProvider,
+            stdout,
+            stderr
+        );
+
+        exitCode.Should().Be(DocumentCacheAdminExitCodes.Success);
+        targetResolver.ResolveCount.Should().Be(1);
+        statusService
+            .EvaluationModes.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(DocumentCacheStatusEvaluationMode.StandaloneDirectObservation);
         JsonObject root = JsonNode.Parse(stdout.ToString())!.AsObject();
         JsonObject target = root["targets"]![0]!.AsObject();
         target["targetKey"]!["dataStoreId"]!.GetValue<long>().Should().Be(1);
@@ -309,8 +363,145 @@ public sealed class Given_DocumentCacheAdminStatusCommand
             ]
         );
 
+    private static DocumentCacheStatusResponse UnresolvedStatusResponse()
+    {
+        string message = "DocumentCache target was not resolved by the shared registry.";
+        var notObservedInventory = new DocumentCacheStatusInventoryComponent(
+            DocumentCacheStatusInventoryStatus.NotObserved,
+            DocumentCacheStatusInventoryReason.None,
+            message: null
+        );
+        var unknownProviderPrerequisite = new DocumentCacheStatusProviderPrerequisiteComponent(
+            DocumentCacheStatusProviderPrerequisiteStatus.Unknown,
+            DocumentCacheStatusProviderPrerequisiteReason.None,
+            message: null
+        );
+
+        return new(
+            ObservedAt,
+            [
+                new DocumentCacheStatusTarget(
+                    DocumentCacheStatusTargetKey.FromTargetKey(DocumentCacheTargetKey.Create("", 1)),
+                    targetGeneration: null,
+                    ObservedAt,
+                    durableObservedAt: null,
+                    provider: null,
+                    physicalSourceFingerprint: null,
+                    new DocumentCacheStatusResolutionComponent(
+                        DocumentCacheStatusResolutionStatus.Unresolved,
+                        DocumentCacheStatusResolutionReason.TargetNotFound,
+                        ObservedAt,
+                        message
+                    ),
+                    new DocumentCacheStatusEligibilityComponent(
+                        DocumentCacheStatusEligibilityStatus.Unknown,
+                        DocumentCacheStatusReason.UnresolvedTarget,
+                        message
+                    ),
+                    new DocumentCacheStatusInventoryComponentGroup(
+                        observedAt: null,
+                        notObservedInventory,
+                        notObservedInventory,
+                        notObservedInventory,
+                        notObservedInventory,
+                        new DocumentCacheStatusEnqueueTriggerComponent(
+                            DocumentCacheStatusEnqueueTriggerStatus.NotObserved,
+                            DocumentCacheStatusInventoryReason.None,
+                            message: null
+                        )
+                    ),
+                    new DocumentCacheStatusProviderPrerequisitesComponent(
+                        DocumentCacheStatusProviderPrerequisiteStatus.Unknown,
+                        DocumentCacheStatusProviderPrerequisiteReason.None,
+                        observedAt: null,
+                        unknownProviderPrerequisite,
+                        unknownProviderPrerequisite
+                    ),
+                    new DocumentCacheStatusLifecycleComponent(
+                        DocumentCacheStatusLifecycleState.Unknown,
+                        DocumentCacheStatusAvailability.Unknown,
+                        message
+                    ),
+                    new DocumentCacheStatusCacheAheadComponent(
+                        DocumentCacheStatusCacheAheadState.Unknown,
+                        recoveryRequired: null,
+                        message
+                    ),
+                    new DocumentCacheOperationalHealthComponent(
+                        DocumentCacheOperationalHealthStatus.Unknown,
+                        DocumentCacheStatusReason.UnresolvedTarget,
+                        message
+                    ),
+                    new DocumentCacheCaughtUpComponent(
+                        DocumentCacheCaughtUpStatus.Unknown,
+                        DocumentCacheStatusReason.UnresolvedTarget,
+                        message
+                    ),
+                    new DocumentCacheStatusQueueSummary(
+                        DocumentCacheStatusQueuePresence.Unavailable,
+                        oldestWorkFirstEnqueuedAt: null,
+                        oldestWorkAgeSeconds: null,
+                        DocumentCacheStatusBacklogEstimate.Unavailable
+                    ),
+                    new DocumentCacheStatusExecutionStateComponent(
+                        DocumentCacheStatusExecutionState.NotObserved,
+                        observedAt: null,
+                        activeWorkers: null,
+                        concurrencySlotsUsed: null,
+                        targetBackoffUntil: null,
+                        lastSuccessfulWorkAt: null,
+                        lastFailureAt: null,
+                        message
+                    ),
+                    activeCommand: null,
+                    lastEndedDiagnostic: null,
+                    new DocumentCacheStatusDiagnosticWindow<DocumentCacheStatusTargetDiagnosticEvent>([
+                        new DocumentCacheStatusTargetDiagnosticEvent(
+                            ObservedAt,
+                            DocumentCacheStatusTargetDiagnosticCategory.TargetResolution,
+                            message
+                        ),
+                    ]),
+                    new DocumentCacheStatusDiagnosticWindow<DocumentCacheStatusDocumentDiagnosticEvent>(),
+                    new DocumentCacheStatusDiagnosticWindow<DocumentCacheStatusPoisonTraversalDiagnosticEvent>(),
+                    DocumentCacheStatusEffectiveSettings.FromEffectiveSettings(
+                        DocumentCacheTargetEffectiveSettings.FromOptions(new DocumentCacheOptions())
+                    ),
+                    new DocumentCacheStatusEnqueueFailures()
+                ),
+            ]
+        );
+    }
+
     private static DocumentCacheStatusInventoryComponent ValidInventory() =>
         new(DocumentCacheStatusInventoryStatus.Valid, DocumentCacheStatusInventoryReason.None, message: null);
+
+    private static DocumentCacheTargetRegistrySnapshot UnexpectedRegistrySnapshot(
+        UnexpectedMembershipSnapshot snapshotKind
+    )
+    {
+        DocumentCacheTargetObservation unexpectedTarget = DocumentCacheTargetObservation.Configured(
+            DocumentCacheTargetKey.Create("TenantB", 2),
+            DocumentCacheTargetEffectiveSettings.FromOptions(new DocumentCacheOptions())
+        );
+
+        ImmutableArray<DocumentCacheTargetObservation> targets = snapshotKind switch
+        {
+            UnexpectedMembershipSnapshot.Empty => [],
+            UnexpectedMembershipSnapshot.WrongTarget => [unexpectedTarget],
+            UnexpectedMembershipSnapshot.MultipleTargets =>
+            [
+                DocumentCacheTargetObservation.Configured(
+                    DocumentCacheTargetKey.Create("", 1),
+                    DocumentCacheTargetEffectiveSettings.FromOptions(new DocumentCacheOptions())
+                ),
+                unexpectedTarget,
+            ],
+            _ => throw new ArgumentOutOfRangeException(nameof(snapshotKind), snapshotKind, null),
+        };
+
+        return new(targets, ObservedAt);
+    }
 
     private sealed class ScriptedDocumentCacheStatusService(
         Func<
@@ -341,7 +532,15 @@ public sealed class Given_DocumentCacheAdminStatusCommand
         }
     }
 
-    private sealed class UnexpectedMembershipTargetResolver : IDocumentCacheAdminTargetResolver
+    public enum UnexpectedMembershipSnapshot
+    {
+        Empty,
+        WrongTarget,
+        MultipleTargets,
+    }
+
+    private sealed class SnapshotTargetResolver(DocumentCacheTargetRegistrySnapshot registrySnapshot)
+        : IDocumentCacheAdminTargetResolver
     {
         public int ResolveCount { get; private set; }
 
@@ -352,18 +551,9 @@ public sealed class Given_DocumentCacheAdminStatusCommand
         {
             cancellationToken.ThrowIfCancellationRequested();
             ResolveCount++;
-            DocumentCacheTargetObservation unexpectedTarget = DocumentCacheTargetObservation.Configured(
-                DocumentCacheTargetKey.Create("TenantB", 2),
-                DocumentCacheTargetEffectiveSettings.FromOptions(new DocumentCacheOptions())
-            );
-            DocumentCacheTargetRegistrySnapshot registrySnapshot = new([unexpectedTarget], ObservedAt);
 
             return Task.FromResult(
-                new DocumentCacheAdminTargetResolutionResult(
-                    DocumentCacheAdminTargetResolutionOutcome.UnexpectedTargetMembership,
-                    registrySnapshot,
-                    "DocumentCache target registry did not contain exactly the invocation target."
-                )
+                DocumentCacheAdminTargetResolutionResult.FromSnapshot(targetKey, registrySnapshot)
             );
         }
     }
