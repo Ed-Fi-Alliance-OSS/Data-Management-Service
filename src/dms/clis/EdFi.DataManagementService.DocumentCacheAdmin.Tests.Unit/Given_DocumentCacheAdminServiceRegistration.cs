@@ -36,7 +36,8 @@ public sealed class Given_DocumentCacheAdminServiceRegistration
         services.AddLogging();
         services.AddDocumentCacheAdminRuntimeServices(
             CreateConfiguration(datastore),
-            new LoggerConfiguration().CreateLogger()
+            new LoggerConfiguration().CreateLogger(),
+            DocumentCacheTargetKey.Create(string.Empty, 1)
         );
 
         services
@@ -161,8 +162,6 @@ public sealed class Given_DocumentCacheAdminServiceRegistration
                     ["ConfigurationServiceSettings:Scope"] = "scope",
                     ["ConfigurationServiceSettings:EncryptionKey"] =
                         "TestEncryptionKey123456789012345678901234567890",
-                    ["DataManagement:DocumentCache:Targets:0:TenantKey"] = string.Empty,
-                    ["DataManagement:DocumentCache:Targets:0:DataStoreId"] = "1",
                 }
             )
             .Build();

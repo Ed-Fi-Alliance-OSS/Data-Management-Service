@@ -8,7 +8,6 @@ using System.CommandLine.Help;
 using System.CommandLine.Parsing;
 using System.Globalization;
 using System.Text.Json;
-using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 
 namespace EdFi.DataManagementService.DocumentCacheAdmin;
@@ -50,10 +49,6 @@ internal static class DocumentCacheAdminCommandSurface
         "DataManagement:DocumentCache:Status:StatusObservationTimeout";
     public const string StatusEndpointTimeoutConfigurationKey =
         "DataManagement:DocumentCache:Status:EndpointTimeout";
-    public const string TargetTenantKeyConfigurationKey = "DataManagement:DocumentCache:Targets:0:TenantKey";
-    public const string TargetDataStoreIdConfigurationKey =
-        "DataManagement:DocumentCache:Targets:0:DataStoreId";
-
     public const string DefaultCommandTimeoutSeconds = "86400";
     public const string DefaultStatusObservationTimeoutSeconds = "5";
     public const string DefaultStatusTimeoutSeconds = "30";
@@ -93,14 +88,6 @@ internal static class DocumentCacheAdminCommandSurface
 
     public static IReadOnlyDictionary<string, string?> CreateConfigurationOverrides(ParseResult parseResult)
     {
-        return CreateConfigurationOverrides(parseResult, targetKey: null);
-    }
-
-    public static IReadOnlyDictionary<string, string?> CreateConfigurationOverrides(
-        ParseResult parseResult,
-        DocumentCacheTargetKey? targetKey
-    )
-    {
         ArgumentNullException.ThrowIfNull(parseResult);
 
         Dictionary<string, string?> overrides = [];
@@ -125,14 +112,6 @@ internal static class DocumentCacheAdminCommandSurface
         {
             overrides[AdministrationWorkflowTimeoutConfigurationKey] = ToConfigurationTimeSpanValue(
                 parseResult.GetRequiredValue<string>(CommandTimeoutSecondsOptionName)
-            );
-        }
-
-        if (targetKey is not null)
-        {
-            overrides[TargetTenantKeyConfigurationKey] = targetKey.TenantKey;
-            overrides[TargetDataStoreIdConfigurationKey] = targetKey.DataStoreId.ToString(
-                CultureInfo.InvariantCulture
             );
         }
 

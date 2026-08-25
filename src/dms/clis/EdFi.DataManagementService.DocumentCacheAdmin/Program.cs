@@ -70,7 +70,7 @@ try
     IConfigurationRoot configuration;
     try
     {
-        configuration = DocumentCacheAdminConfiguration.Build(parseResult, validInvocationTarget.TargetKey);
+        configuration = DocumentCacheAdminConfiguration.Build(parseResult);
     }
     catch (Exception exception) when (IsConfigurationBuildFailure(exception))
     {

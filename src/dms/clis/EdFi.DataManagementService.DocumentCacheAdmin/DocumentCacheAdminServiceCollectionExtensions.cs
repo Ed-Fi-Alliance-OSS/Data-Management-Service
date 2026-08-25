@@ -21,12 +21,13 @@ internal static class DocumentCacheAdminServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration,
         ILogger logger,
-        DocumentCacheTargetKey? invocationTarget = null
+        DocumentCacheTargetKey invocationTarget
     )
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(invocationTarget);
 
         services.AddOptions<AppSettings>().Bind(configuration.GetSection("AppSettings"));
 
@@ -41,20 +42,17 @@ internal static class DocumentCacheAdminServiceCollectionExtensions
             .AddDmsDocumentCacheTargetRegistry(configuration)
             .AddDocumentCacheProjectionSupervisor(registerHostedService: false);
 
-        if (invocationTarget is not null)
+        services.Configure<DocumentCacheOptions>(options =>
         {
-            services.Configure<DocumentCacheOptions>(options =>
-            {
-                options.Targets =
-                [
-                    new DocumentCacheTargetOptions
-                    {
-                        TenantKey = invocationTarget.TenantKey,
-                        DataStoreId = invocationTarget.DataStoreId,
-                    },
-                ];
-            });
-        }
+            options.Targets =
+            [
+                new DocumentCacheTargetOptions
+                {
+                    TenantKey = invocationTarget.TenantKey,
+                    DataStoreId = invocationTarget.DataStoreId,
+                },
+            ];
+        });
 
         services.AddSingleton<IDocumentCacheAdminTargetResolver, DocumentCacheAdminTargetResolver>();
         services.AddSingleton<

@@ -4,17 +4,15 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.CommandLine;
-using EdFi.DataManagementService.Core.Configuration;
 using Microsoft.Extensions.Configuration;
 
 namespace EdFi.DataManagementService.DocumentCacheAdmin;
 
 internal static class DocumentCacheAdminConfiguration
 {
-    public static IConfigurationRoot Build(ParseResult parseResult, DocumentCacheTargetKey targetKey)
+    public static IConfigurationRoot Build(ParseResult parseResult)
     {
         ArgumentNullException.ThrowIfNull(parseResult);
-        ArgumentNullException.ThrowIfNull(targetKey);
 
         string? environmentName = GetEnvironmentName(parseResult);
         string? settingsPath = parseResult.GetValue<string?>(
@@ -36,7 +34,7 @@ internal static class DocumentCacheAdminConfiguration
 
         builder.AddEnvironmentVariables();
         builder.AddInMemoryCollection(
-            DocumentCacheAdminCommandSurface.CreateConfigurationOverrides(parseResult, targetKey)
+            DocumentCacheAdminCommandSurface.CreateConfigurationOverrides(parseResult)
         );
 
         return builder.Build();

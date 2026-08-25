@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.DocumentCacheAdmin;
 using FakeItEasy;
@@ -143,7 +144,8 @@ public sealed class Given_DocumentCacheAdminRuntimeSchemaBootstrap
         services.AddLogging();
         services.AddDocumentCacheAdminRuntimeServices(
             CreateConfiguration(datastore),
-            new LoggerConfiguration().CreateLogger()
+            new LoggerConfiguration().CreateLogger(),
+            DocumentCacheTargetKey.Create(string.Empty, 1)
         );
         services.Replace(ServiceDescriptor.Singleton(CreateApiSchemaProvider()));
 
@@ -178,8 +180,6 @@ public sealed class Given_DocumentCacheAdminRuntimeSchemaBootstrap
                     ["ConfigurationServiceSettings:Scope"] = "scope",
                     ["ConfigurationServiceSettings:EncryptionKey"] =
                         "TestEncryptionKey123456789012345678901234567890",
-                    ["DataManagement:DocumentCache:Targets:0:TenantKey"] = string.Empty,
-                    ["DataManagement:DocumentCache:Targets:0:DataStoreId"] = "1",
                 }
             )
             .Build();

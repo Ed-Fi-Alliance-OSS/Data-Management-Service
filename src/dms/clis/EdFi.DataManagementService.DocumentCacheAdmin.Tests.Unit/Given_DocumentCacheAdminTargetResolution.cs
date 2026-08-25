@@ -195,7 +195,7 @@ public sealed class Given_DocumentCacheAdminTargetResolution
     }
 
     [Test]
-    public void It_maps_the_invocation_target_to_configuration_overrides()
+    public void It_maps_only_non_target_command_line_values_to_configuration_overrides()
     {
         RootCommand rootCommand = DocumentCacheAdminCommandSurface.CreateRootCommand();
         var parseResult = rootCommand.Parse([
@@ -209,20 +209,16 @@ public sealed class Given_DocumentCacheAdminTargetResolution
         ]);
 
         IReadOnlyDictionary<string, string?> overrides =
-            DocumentCacheAdminCommandSurface.CreateConfigurationOverrides(
-                parseResult,
-                DocumentCacheTargetKey.Create("TenantA", 7)
-            );
+            DocumentCacheAdminCommandSurface.CreateConfigurationOverrides(parseResult);
 
         overrides[DocumentCacheAdminCommandSurface.AppSettingsDatastoreConfigurationKey]
             .Should()
             .Be(DocumentCacheAdminCommandSurface.MssqlAppSettingsDatastoreValue);
-        overrides[DocumentCacheAdminCommandSurface.TargetTenantKeyConfigurationKey].Should().Be("TenantA");
-        overrides[DocumentCacheAdminCommandSurface.TargetDataStoreIdConfigurationKey].Should().Be("7");
+        overrides.Keys.Should().NotContain(key => key.Contains("Targets", StringComparison.Ordinal));
     }
 
     [Test]
-    public void It_loads_settings_environment_and_invocation_target_configuration()
+    public void It_loads_settings_environment_and_keeps_target_configuration_unchanged()
     {
         string tempDirectory = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
         Directory.CreateDirectory(tempDirectory);
@@ -263,18 +259,11 @@ public sealed class Given_DocumentCacheAdminTargetResolution
                 "TenantA",
             ]);
 
-            IConfiguration configuration = DocumentCacheAdminConfiguration.Build(
-                parseResult,
-                DocumentCacheTargetKey.Create("TenantA", 7)
-            );
+            IConfiguration configuration = DocumentCacheAdminConfiguration.Build(parseResult);
 
             configuration["AppSettings:Datastore"].Should().Be("postgresql");
-            configuration[DocumentCacheAdminCommandSurface.TargetTenantKeyConfigurationKey]
-                .Should()
-                .Be("TenantA");
-            configuration[DocumentCacheAdminCommandSurface.TargetDataStoreIdConfigurationKey]
-                .Should()
-                .Be("7");
+            configuration["DataManagement:DocumentCache:Targets:0:TenantKey"].Should().Be("ConfiguredTenant");
+            configuration["DataManagement:DocumentCache:Targets:0:DataStoreId"].Should().Be("99");
         }
         finally
         {
