@@ -78,6 +78,7 @@ public static class DmsCoreServiceExtensions
             )
             .AddSingleton<EffectiveSchemaSetBuilder>()
             .AddSingleton<IEffectiveSchemaSetProvider, EffectiveSchemaSetProvider>()
+            .AddSingleton<IEffectiveSchemaBootstrapper, EffectiveSchemaBootstrapper>()
             // Startup orchestration
             .AddSingleton<DmsStartupOrchestrator>()
             .AddSingleton<IDmsStartupTask, ValidateDatabaseFingerprintReaderRegistrationTask>()

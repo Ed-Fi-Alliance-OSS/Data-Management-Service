@@ -4,9 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.CommandLine;
-using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Core.ApiSchema;
-using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.DocumentCacheAdmin;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -96,7 +93,10 @@ try
 
     try
     {
-        await InitializeRuntimeSchemaAsync(serviceProvider, processCancellationSource.Token);
+        await DocumentCacheAdminRuntimeInitializer.InitializeAsync(
+            serviceProvider,
+            processCancellationSource.Token
+        );
     }
     catch (Exception exception) when (IsServiceConfigurationFailure(exception))
     {
@@ -190,56 +190,6 @@ static bool IsConfigurationBuildFailure(Exception exception) =>
 
 static bool IsServiceConfigurationFailure(Exception exception) =>
     exception is InvalidOperationException or ArgumentException or FormatException;
-
-static async Task InitializeRuntimeSchemaAsync(
-    ServiceProvider serviceProvider,
-    CancellationToken cancellationToken
-)
-{
-    cancellationToken.ThrowIfCancellationRequested();
-
-    var apiSchemaProvider = serviceProvider.GetRequiredService<IApiSchemaProvider>();
-    var rawNodes = apiSchemaProvider.GetApiSchemaNodes();
-    if (!apiSchemaProvider.IsSchemaValid)
-    {
-        throw new InvalidOperationException(
-            $"API schema validation failed with {apiSchemaProvider.ApiSchemaFailures.Count} error(s)."
-        );
-    }
-
-    var inputNormalizer = serviceProvider.GetRequiredService<IApiSchemaInputNormalizer>();
-    var normalizationResult = inputNormalizer.Normalize(rawNodes);
-    var normalizedNodes = normalizationResult switch
-    {
-        ApiSchemaNormalizationResult.SuccessResult success => success.NormalizedNodes,
-        ApiSchemaNormalizationResult.MissingOrMalformedProjectSchemaResult failure =>
-            throw new InvalidOperationException(
-                $"Schema normalization failed for '{failure.SchemaSource}': {failure.Details}"
-            ),
-        ApiSchemaNormalizationResult.ApiSchemaVersionMismatchResult failure =>
-            throw new InvalidOperationException(
-                $"apiSchemaVersion mismatch in '{failure.SchemaSource}': expected '{failure.ExpectedVersion}', got '{failure.ActualVersion}'"
-            ),
-        ApiSchemaNormalizationResult.ProjectEndpointNameCollisionResult failure =>
-            throw new InvalidOperationException(
-                $"Duplicate projectEndpointName(s) found: {string.Join("; ", failure.Collisions.Select(c => $"'{c.ProjectEndpointName}' in [{string.Join(", ", c.ConflictingSources)}]"))}"
-            ),
-        _ => throw new InvalidOperationException("Unknown schema normalization result."),
-    };
-
-    var effectiveSchemaSet = serviceProvider
-        .GetRequiredService<EffectiveSchemaSetBuilder>()
-        .Build(normalizedNodes);
-    serviceProvider.GetRequiredService<IEffectiveSchemaSetProvider>().Initialize(effectiveSchemaSet);
-
-    IRuntimeMappingSetCompiler runtimeCompiler =
-        serviceProvider.GetServices<IRuntimeMappingSetCompiler>().SingleOrDefault()
-        ?? throw new InvalidOperationException("No runtime mapping-set compiler is configured.");
-    MappingSetKey mappingSetKey = runtimeCompiler.GetCurrentKey();
-    _ = await serviceProvider
-        .GetRequiredService<IMappingSetProvider>()
-        .GetOrCreateAsync(mappingSetKey, cancellationToken);
-}
 
 static Task WriteConfigurationFailureAsync(Exception exception) =>
     Console.Error.WriteLineAsync(

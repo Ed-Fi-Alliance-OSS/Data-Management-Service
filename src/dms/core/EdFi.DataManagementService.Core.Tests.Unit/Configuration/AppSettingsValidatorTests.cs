@@ -107,6 +107,14 @@ public class Given_The_App_Settings_Validator
 public class Given_Default_App_Settings
 {
     [Test]
+    public void It_defaults_the_maximum_page_size_to_500()
+    {
+        new AppSettings { AllowIdentityUpdateOverrides = string.Empty }
+            .MaximumPageSize.Should()
+            .Be(500);
+    }
+
+    [Test]
     public void It_defaults_the_partition_count_to_ten()
     {
         new AppSettings { AllowIdentityUpdateOverrides = string.Empty }
@@ -115,7 +123,15 @@ public class Given_Default_App_Settings
     }
 
     [Test]
-    public void It_shares_one_literal_between_the_property_default_and_the_constant()
+    public void It_shares_one_literal_between_the_maximum_page_size_property_default_and_the_constant()
+    {
+        new AppSettings { AllowIdentityUpdateOverrides = string.Empty }
+            .MaximumPageSize.Should()
+            .Be(AppSettings.MaximumPageSizeDefault);
+    }
+
+    [Test]
+    public void It_shares_one_literal_between_the_partition_count_property_default_and_the_constant()
     {
         new AppSettings { AllowIdentityUpdateOverrides = string.Empty }
             .DefaultPartitionCount.Should()

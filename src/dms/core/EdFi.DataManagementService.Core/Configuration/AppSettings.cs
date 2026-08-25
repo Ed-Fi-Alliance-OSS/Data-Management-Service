@@ -8,6 +8,11 @@ namespace EdFi.DataManagementService.Core.Configuration;
 public class AppSettings
 {
     /// <summary>
+    /// The default maximum page size applied when a GET-many request omits its page size.
+    /// </summary>
+    public const int MaximumPageSizeDefault = 500;
+
+    /// <summary>
     /// The default desired partition count applied when a /partitions request omits its count.
     /// </summary>
     public const int DefaultPartitionCountDefault = 10;
@@ -31,7 +36,7 @@ public class AppSettings
     /// <summary>
     /// Indicates the maximum number of items that should be returned in the results
     /// </summary>
-    public int MaximumPageSize { get; set; }
+    public int MaximumPageSize { get; set; } = MaximumPageSizeDefault;
 
     /// <summary>
     /// The desired partition count applied when a /partitions request omits its count.
