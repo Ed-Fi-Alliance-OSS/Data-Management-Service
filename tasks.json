@@ -124,7 +124,7 @@
       "dotnet run --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- rebuild-online --data-store-id 1; test $? -eq 64",
       "dotnet run --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- activate-offline --data-store-id 1 --confirm offlineActivation; test $? -eq 64"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "administrative-command-execution",

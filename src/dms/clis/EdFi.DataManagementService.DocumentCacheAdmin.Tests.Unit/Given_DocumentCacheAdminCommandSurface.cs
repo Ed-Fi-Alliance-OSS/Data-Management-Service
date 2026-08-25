@@ -157,7 +157,7 @@ public sealed class Given_DocumentCacheAdminCommandSurface
             .Should()
             .Be(DocumentCacheAdminCommandSurface.DefaultStatusTimeoutSeconds);
         rootCommand
-            .Parse(DocumentCacheAdminCommandSurface.RebuildOnlineCommandName)
+            .Parse(ValidMutatingArgs(DocumentCacheAdminCommandSurface.RebuildOnlineCommandName))
             .GetRequiredValue<string>(DocumentCacheAdminCommandSurface.CommandTimeoutSecondsOptionName)
             .Should()
             .Be(DocumentCacheAdminCommandSurface.DefaultCommandTimeoutSeconds);
@@ -170,7 +170,10 @@ public sealed class Given_DocumentCacheAdminCommandSurface
     {
         RootCommand rootCommand = DocumentCacheAdminCommandSurface.CreateRootCommand();
 
-        rootCommand.Parse([commandName, optionName, "1.25"]).Errors.Should().BeEmpty();
+        rootCommand
+            .Parse(ArgsWithOptionalConfirmation(commandName, optionName, "1.25"))
+            .Errors.Should()
+            .BeEmpty();
     }
 
     [TestCase("0")]
@@ -200,7 +203,10 @@ public sealed class Given_DocumentCacheAdminCommandSurface
     {
         RootCommand rootCommand = DocumentCacheAdminCommandSurface.CreateRootCommand();
 
-        rootCommand.Parse([commandName, optionName, "1"]).Errors.Should().NotBeEmpty();
+        rootCommand
+            .Parse(ArgsWithOptionalConfirmation(commandName, optionName, "1"))
+            .Errors.Should()
+            .NotBeEmpty();
     }
 
     [Test]
@@ -246,7 +252,7 @@ public sealed class Given_DocumentCacheAdminCommandSurface
         IReadOnlyDictionary<string, string?> overrides =
             DocumentCacheAdminCommandSurface.CreateConfigurationOverrides(
                 rootCommand.Parse([
-                    DocumentCacheAdminCommandSurface.RebuildOnlineCommandName,
+                    .. ValidMutatingArgs(DocumentCacheAdminCommandSurface.RebuildOnlineCommandName),
                     "--command-timeout-seconds",
                     "1.5",
                     "--datastore",
@@ -274,4 +280,20 @@ public sealed class Given_DocumentCacheAdminCommandSurface
 
     private static IEnumerable<string> AllOptionNames(Command command) =>
         command.Options.Select(option => option.Name).Concat(command.Subcommands.SelectMany(AllOptionNames));
+
+    private static string[] ArgsWithOptionalConfirmation(
+        string commandName,
+        string optionName,
+        string optionValue
+    ) =>
+        DocumentCacheAdminCommandSurface.IsMutatingCommand(commandName)
+            ? [.. ValidMutatingArgs(commandName), optionName, optionValue]
+            : [commandName, optionName, optionValue];
+
+    private static string[] ValidMutatingArgs(string commandName) =>
+        [
+            commandName,
+            DocumentCacheAdminCommandSurface.ConfirmOptionName,
+            DocumentCacheAdminCommandSurface.ExpectedConfirmationOptionValue(commandName),
+        ];
 }

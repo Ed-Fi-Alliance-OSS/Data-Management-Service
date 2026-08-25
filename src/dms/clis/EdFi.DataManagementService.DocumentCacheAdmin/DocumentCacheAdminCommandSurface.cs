@@ -7,7 +7,9 @@ using System.CommandLine;
 using System.CommandLine.Help;
 using System.CommandLine.Parsing;
 using System.Globalization;
+using System.Text.Json;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
 
 namespace EdFi.DataManagementService.DocumentCacheAdmin;
 
@@ -55,6 +57,7 @@ internal static class DocumentCacheAdminCommandSurface
     public const string DefaultCommandTimeoutSeconds = "86400";
     public const string DefaultStatusObservationTimeoutSeconds = "5";
     public const string DefaultStatusTimeoutSeconds = "30";
+    public const string OfflineWriterAdmissionClosedAndDrainedOptionValue = "closedAndDrained";
 
     private static readonly HashSet<string> MutatingCommandNames =
     [
@@ -65,6 +68,38 @@ internal static class DocumentCacheAdminCommandSurface
         ScrubCommandName,
         RecoverCacheAheadCommandName,
     ];
+
+    private static readonly IReadOnlyDictionary<
+        string,
+        DocumentCacheAdministrativeCommandConfirmation
+    > ConfirmationByCommandName = new Dictionary<string, DocumentCacheAdministrativeCommandConfirmation>(
+        StringComparer.Ordinal
+    )
+    {
+        [ActivateNewEmptyCommandName] = DocumentCacheAdministrativeCommandConfirmation.NewEmptyActivation,
+        [ActivateOfflineCommandName] = DocumentCacheAdministrativeCommandConfirmation.OfflineActivation,
+        [DeactivateOfflineCommandName] = DocumentCacheAdministrativeCommandConfirmation.OfflineDeactivation,
+        [RebuildOnlineCommandName] = DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild,
+        [ScrubCommandName] = DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub,
+        [RecoverCacheAheadCommandName] =
+            DocumentCacheAdministrativeCommandConfirmation.InternalCacheAheadRecovery,
+    };
+
+    private static readonly IReadOnlyDictionary<
+        string,
+        DocumentCacheOfflineWriterAdmissionConfirmation
+    > OfflineWriterAdmissionConfirmationByCommandName = new Dictionary<
+        string,
+        DocumentCacheOfflineWriterAdmissionConfirmation
+    >(StringComparer.Ordinal)
+    {
+        [ActivateOfflineCommandName] =
+            DocumentCacheOfflineWriterAdmissionConfirmation.OfflineActivationWritersClosedAndDrained,
+        [DeactivateOfflineCommandName] =
+            DocumentCacheOfflineWriterAdmissionConfirmation.OfflineDeactivationWritersClosedAndDrained,
+        [RecoverCacheAheadCommandName] =
+            DocumentCacheOfflineWriterAdmissionConfirmation.InternalOnlyCacheAheadRecoveryWritersClosedAndDrained,
+    };
 
     public static RootCommand CreateRootCommand()
     {
@@ -159,6 +194,29 @@ internal static class DocumentCacheAdminCommandSurface
             is ActivateOfflineCommandName
                 or DeactivateOfflineCommandName
                 or RecoverCacheAheadCommandName;
+
+    public static bool TryGetExpectedConfirmation(
+        string commandName,
+        out DocumentCacheAdministrativeCommandConfirmation confirmation
+    ) => ConfirmationByCommandName.TryGetValue(commandName, out confirmation);
+
+    public static bool TryGetExpectedOfflineWriterAdmissionConfirmation(
+        string commandName,
+        out DocumentCacheOfflineWriterAdmissionConfirmation confirmation
+    ) => OfflineWriterAdmissionConfirmationByCommandName.TryGetValue(commandName, out confirmation);
+
+    public static string ExpectedConfirmationOptionValue(string commandName)
+    {
+        if (!TryGetExpectedConfirmation(commandName, out var confirmation))
+        {
+            throw new ArgumentException(
+                $"Command '{commandName}' does not have an expected confirmation.",
+                nameof(commandName)
+            );
+        }
+
+        return ToLowerCamelName(confirmation);
+    }
 
     public static bool TryParsePositiveSeconds(string? value, out TimeSpan timeSpan)
     {
@@ -257,11 +315,14 @@ internal static class DocumentCacheAdminCommandSurface
     private static Command CreateMutatingCommand(string name, string description)
     {
         var command = new Command(name, description);
+
         AddTargetOptions(command);
         command.Options.Add(CreateRequestJsonOption());
-        command.Options.Add(
-            new Option<string?>(ConfirmOptionName) { Description = "Command confirmation token" }
-        );
+        var confirmOption = new Option<string?>(ConfirmOptionName)
+        {
+            Description = "Command confirmation token",
+        };
+        command.Options.Add(confirmOption);
         command.Options.Add(
             new Option<string?>(ExpectedPhysicalSourceFingerprintOptionName)
             {
@@ -278,14 +339,14 @@ internal static class DocumentCacheAdminCommandSurface
 
         if (RequiresOfflineWriterAdmission(name))
         {
-            command.Options.Add(
-                new Option<string?>(OfflineWriterAdmissionOptionName)
-                {
-                    Description = "Offline writer admission acknowledgement",
-                }
-            );
+            var offlineWriterAdmissionOption = new Option<string?>(OfflineWriterAdmissionOptionName)
+            {
+                Description = "Offline writer admission acknowledgement",
+            };
+            command.Options.Add(offlineWriterAdmissionOption);
         }
 
+        command.Validators.Add(result => ValidateMutatingCommandOptions(result, name));
         command.SetAction(ExecuteCommandSurfaceOnly);
         return command;
     }
@@ -347,6 +408,80 @@ internal static class DocumentCacheAdminCommandSurface
         return DocumentCacheAdminExitCodes.Success;
     }
 
+    private static void ValidateMutatingCommandOptions(CommandResult result, string commandName)
+    {
+        if (GetSpecifiedOption(result, RequestJsonOptionName) is not null)
+        {
+            return;
+        }
+
+        string expectedConfirmation = ExpectedConfirmationOptionValue(commandName);
+        ValidateRequiredExactOption(result, ConfirmOptionName, expectedConfirmation, "confirmation token");
+
+        if (RequiresOfflineWriterAdmission(commandName))
+        {
+            ValidateRequiredExactOption(
+                result,
+                OfflineWriterAdmissionOptionName,
+                OfflineWriterAdmissionClosedAndDrainedOptionValue,
+                "offline writer admission acknowledgement"
+            );
+        }
+
+        OptionResult? fingerprintResult = GetSpecifiedOption(
+            result,
+            ExpectedPhysicalSourceFingerprintOptionName
+        );
+        if (fingerprintResult is null)
+        {
+            return;
+        }
+
+        string? fingerprint = fingerprintResult.GetValueOrDefault<string?>();
+        try
+        {
+            _ = new DocumentCachePhysicalSourceFingerprint(fingerprint ?? string.Empty);
+        }
+        catch (ArgumentException)
+        {
+            result.AddError(
+                $"{ExpectedPhysicalSourceFingerprintOptionName} must use the canonical sha256 lowercase hexadecimal format."
+            );
+        }
+    }
+
+    private static void ValidateRequiredExactOption(
+        CommandResult result,
+        string optionName,
+        string expectedValue,
+        string valueDescription
+    )
+    {
+        OptionResult? optionResult = GetSpecifiedOption(result, optionName);
+        if (optionResult is null)
+        {
+            result.AddError($"{optionName} is required and must be '{expectedValue}'.");
+            return;
+        }
+
+        if (optionResult.Errors.Any())
+        {
+            return;
+        }
+
+        string? suppliedValue = optionResult.GetValueOrDefault<string?>();
+        if (!string.Equals(suppliedValue, expectedValue, StringComparison.Ordinal))
+        {
+            result.AddError($"{optionName} must be the exact {valueDescription} '{expectedValue}'.");
+        }
+    }
+
+    private static OptionResult? GetSpecifiedOption(SymbolResult symbolResult, string optionName)
+    {
+        OptionResult? optionResult = symbolResult.GetResult(optionName) as OptionResult;
+        return optionResult is { Implicit: false } ? optionResult : null;
+    }
+
     private static string ToAppSettingsDatastoreValue(string datastore) =>
         string.Equals(datastore, SqlServerDatastoreOptionValue, StringComparison.Ordinal)
             ? MssqlAppSettingsDatastoreValue
@@ -363,4 +498,7 @@ internal static class DocumentCacheAdminCommandSurface
 
         return timeSpan.ToString("c", CultureInfo.InvariantCulture);
     }
+
+    private static string ToLowerCamelName<TEnum>(TEnum value)
+        where TEnum : struct, Enum => JsonNamingPolicy.CamelCase.ConvertName(value.ToString());
 }

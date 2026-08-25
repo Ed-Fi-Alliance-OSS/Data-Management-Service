@@ -78,6 +78,24 @@ internal static class DocumentCacheAdminCommandExecutor
             }
         }
 
+        if (
+            DocumentCacheAdminCommandSurface.IsMutatingCommand(parseResult.CommandResult.Command.Name)
+            && !DocumentCacheAdminMutatingCommandRequestBuilder.TryBuild(
+                parseResult,
+                invocationTarget,
+                out _,
+                out string? failure
+            )
+        )
+        {
+            if (standardError is not null)
+            {
+                await standardError.WriteLineAsync(failure).ConfigureAwait(false);
+            }
+
+            return DocumentCacheAdminExitCodes.ArgumentError;
+        }
+
         return await parseResult.InvokeAsync().ConfigureAwait(false);
     }
 
