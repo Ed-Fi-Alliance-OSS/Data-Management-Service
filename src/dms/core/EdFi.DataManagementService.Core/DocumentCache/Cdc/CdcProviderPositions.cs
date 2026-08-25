@@ -259,10 +259,12 @@ public sealed record CdcSqlServerProviderPosition(
     ulong EventSerialNo
 )
 {
+    public const long HeartbeatAfterImageEventSerialNo = 2;
+
     public static CdcSqlServerProviderPosition HeartbeatAfterImage(
         CdcSqlServerLsn commitLsn,
         CdcSqlServerLsn changeLsn
-    ) => new(commitLsn, changeLsn, 2);
+    ) => new(commitLsn, changeLsn, HeartbeatAfterImageEventSerialNo);
 
     public int CompareTo(CdcSqlServerProviderPosition other)
     {

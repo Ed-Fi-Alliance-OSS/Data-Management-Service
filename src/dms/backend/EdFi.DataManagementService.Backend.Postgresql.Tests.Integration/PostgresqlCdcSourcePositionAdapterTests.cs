@@ -240,7 +240,6 @@ public class Given_PostgresqlCdcSourcePositionAdapter
                 capture = CoreCdc.CdcProviderBarrierCaptureResult.SqlServerSuccess(
                     "00000000:016b6c50:0001",
                     "00000000:016b6c50:0002",
-                    2,
                     ProjectionCaughtUpObservedAt.AddSeconds(1)
                 );
                 break;

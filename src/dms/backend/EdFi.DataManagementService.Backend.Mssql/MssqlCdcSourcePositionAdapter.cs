@@ -17,7 +17,6 @@ internal sealed class MssqlCdcSourcePositionAdapter(
 ) : ICdcProviderSourcePositionAdapter
 {
     private const string HeartbeatSequencePath = "$.sqlServerHeartbeatSequence";
-    private const long HeartbeatAfterImageEventSerialNo = 2;
 
     private readonly IDocumentCacheProviderCommandTimeoutClassifier _timeoutClassifier =
         timeoutClassifier ?? throw new ArgumentNullException(nameof(timeoutClassifier));
@@ -95,7 +94,6 @@ internal sealed class MssqlCdcSourcePositionAdapter(
                         return CdcProviderBarrierCaptureResult.SqlServerSuccess(
                             commitLsn.Lsn.Value.ToString(),
                             changeLsn.Lsn.Value.ToString(),
-                            HeartbeatAfterImageEventSerialNo,
                             UtcNow()
                         );
                     }
@@ -330,8 +328,7 @@ internal sealed class MssqlCdcSourcePositionAdapter(
             BEGIN
                 SELECT TOP (1)
                     [__$start_lsn],
-                    [__$seqval],
-                    CONVERT(bigint, [HeartbeatSequence]) AS [HeartbeatSequence]
+                    [__$seqval]
                 FROM cdc.fn_cdc_get_all_changes_{captureInstanceName}(@from_lsn, @to_lsn, N'all')
                 WHERE CONVERT(int, [__$operation]) = 4
                   AND CONVERT(bigint, [HeartbeatSequence]) > @heartbeatSequence
@@ -350,7 +347,7 @@ internal sealed class MssqlCdcSourcePositionAdapter(
             return null;
         }
 
-        return new((byte[])reader["__$start_lsn"], (byte[])reader["__$seqval"], reader.GetInt64(2));
+        return new((byte[])reader["__$start_lsn"], (byte[])reader["__$seqval"]);
     }
 
     private static string? ResolveHeartbeatCaptureInstanceName(
@@ -440,9 +437,5 @@ internal sealed class MssqlCdcSourcePositionAdapter(
         }
     }
 
-    private sealed record SqlServerHeartbeatAfterImage(
-        byte[] StartLsn,
-        byte[] SeqVal,
-        long HeartbeatSequence
-    );
+    private sealed record SqlServerHeartbeatAfterImage(byte[] StartLsn, byte[] SeqVal);
 }

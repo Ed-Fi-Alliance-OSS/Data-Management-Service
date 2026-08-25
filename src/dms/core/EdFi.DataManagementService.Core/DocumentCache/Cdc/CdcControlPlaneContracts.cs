@@ -146,7 +146,6 @@ public sealed record CdcProviderBarrierCaptureResult
     public static CdcProviderBarrierCaptureResult SqlServerSuccess(
         string sqlServerCommitLsn,
         string sqlServerChangeLsn,
-        long sqlServerEventSerialNo,
         DateTimeOffset barrierCapturedAt
     )
     {
@@ -158,7 +157,7 @@ public sealed record CdcProviderBarrierCaptureResult
             null,
             sqlServerCommitLsn,
             sqlServerChangeLsn,
-            sqlServerEventSerialNo,
+            CdcSqlServerProviderPosition.HeartbeatAfterImageEventSerialNo,
             barrierCapturedAt,
             []
         );
