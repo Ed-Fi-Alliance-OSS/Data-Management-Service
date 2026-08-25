@@ -113,6 +113,57 @@ public class Given_PostgresqlCdcSourcePositionAdapter
     }
 
     [Test]
+    public async Task It_timestamps_the_barrier_after_the_wal_query_completes()
+    {
+        CoreCdc.CdcBinding binding = await BuildBindingAsync();
+        CoreCdc.CdcArtifactInventory inventory = BuildInventory();
+        string connectionString = BuildSingleConnectionPoolConnectionString();
+
+        await using NpgsqlConnection heldConnection = await _dataSourceCache
+            .GetOrCreate(connectionString)
+            .OpenConnectionAsync();
+
+        DateTimeOffset captureStartedAt = ProjectionCaughtUpObservedAt.AddMilliseconds(100);
+        DateTimeOffset projectionCaughtUpDuringCapture = captureStartedAt.AddSeconds(1);
+        DateTimeOffset barrierAcceptedAt = projectionCaughtUpDuringCapture.AddSeconds(1);
+
+        _timeProvider.Set(captureStartedAt);
+        Task<PostgresqlCdcProviderBarrierCaptureResult> captureTask = _adapter.CaptureBarrierAsync(
+            new(connectionString, binding)
+        );
+
+        (await Task.WhenAny(captureTask, Task.Delay(TimeSpan.FromMilliseconds(100))))
+            .Should()
+            .NotBe(captureTask, "the held single-connection pool should block the WAL query");
+
+        _timeProvider.Set(barrierAcceptedAt);
+        await heldConnection.DisposeAsync();
+        PostgresqlCdcProviderBarrierCaptureResult capture = await captureTask.WaitAsync(
+            TimeSpan.FromSeconds(10)
+        );
+        CoreCdc.CdcPostgresqlWalPosition capturedPosition = ParsePostgresqlLsn(capture.PostgresqlBarrierLsn!);
+
+        _timeProvider.Set(barrierAcceptedAt.AddSeconds(1));
+        CoreCdc.CdcConnectorOffsetObservation connectorOffset = BuildConnectorOffset(
+            binding,
+            inventory,
+            unchecked((long)capturedPosition.Value)
+        );
+
+        _timeProvider.Set(barrierAcceptedAt.AddSeconds(2));
+        CoreCdc.CdcProviderBarrierObservation observation = _adapter.ObserveProviderBarrier(
+            new(OperationId(), binding, projectionCaughtUpDuringCapture, capture, connectorOffset)
+        );
+
+        capture.Succeeded.Should().BeTrue();
+        capture.BarrierCapturedAt.Should().Be(barrierAcceptedAt);
+        capture.BarrierCapturedAt.Should().BeAfter(projectionCaughtUpDuringCapture);
+        observation.BarrierState.Should().Be(CoreCdc.CdcProviderBarrierState.Reached);
+        observation.Diagnostics.Should().BeEmpty();
+        ValidateBarrierObservation(observation, binding).Succeeded.Should().BeTrue();
+    }
+
+    [Test]
     public async Task It_reports_not_reached_when_lsn_proc_is_behind_the_captured_barrier()
     {
         CoreCdc.CdcBinding binding = await BuildBindingAsync();
@@ -315,6 +366,19 @@ public class Given_PostgresqlCdcSourcePositionAdapter
                 new("dms-local", "edfi.dms", _database.DatabaseName, 1, CoreCdc.CdcProvider.Postgresql)
             )
             .Inventory!;
+
+    private string BuildSingleConnectionPoolConnectionString()
+    {
+        NpgsqlConnectionStringBuilder builder = new(_database.ConnectionString)
+        {
+            ApplicationName = $"EdFi.DMS.CdcBarrier.{Guid.NewGuid():N}",
+            MaxPoolSize = 1,
+            MinPoolSize = 0,
+            Pooling = true,
+        };
+
+        return builder.ConnectionString;
+    }
 
     private CoreCdc.CdcConnectorOffsetObservation BuildConnectorOffset(
         CoreCdc.CdcBinding binding,

@@ -188,13 +188,12 @@ internal sealed class PostgresqlCdcSourcePositionAdapter(
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.Binding);
 
-        DateTimeOffset capturedAt = UtcNow();
         CdcDiagnosticCollector diagnostics = new();
         ValidatePostgresqlBinding(request.Binding, "$.binding.provider", diagnostics);
 
         if (diagnostics.HasDiagnostics)
         {
-            return PostgresqlCdcProviderBarrierCaptureResult.Failure(capturedAt, diagnostics.Diagnostics);
+            return PostgresqlCdcProviderBarrierCaptureResult.Failure(UtcNow(), diagnostics.Diagnostics);
         }
 
         try
@@ -218,8 +217,8 @@ internal sealed class PostgresqlCdcSourcePositionAdapter(
             AddDiagnostics(diagnostics, parseResult.Diagnostics);
 
             return parseResult.Succeeded && lsn is not null
-                ? PostgresqlCdcProviderBarrierCaptureResult.Success(lsn, capturedAt)
-                : PostgresqlCdcProviderBarrierCaptureResult.Failure(capturedAt, diagnostics.Diagnostics);
+                ? PostgresqlCdcProviderBarrierCaptureResult.Success(lsn, UtcNow())
+                : PostgresqlCdcProviderBarrierCaptureResult.Failure(UtcNow(), diagnostics.Diagnostics);
         }
         catch (OperationCanceledException)
         {
