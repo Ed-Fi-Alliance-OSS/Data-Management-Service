@@ -7,6 +7,7 @@ using System.CommandLine;
 using EdFi.DataManagementService.DocumentCacheAdmin;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Serilog;
 using Serilog.Events;
@@ -46,7 +47,7 @@ try
         )
     )
     {
-        await Console.Error.WriteLineAsync(targetFailure);
+        await Console.Error.WriteLineAsync(DocumentCacheAdminOutput.SanitizeDiagnostic(targetFailure));
         return DocumentCacheAdminExitCodes.ArgumentError;
     }
 
@@ -98,7 +99,7 @@ catch (OperationCanceledException)
 catch (Exception exception)
 {
     await Console.Error.WriteLineAsync(
-        $"Unexpected DocumentCache administration CLI failure: {exception.Message}"
+        $"Unexpected DocumentCache administration CLI failure: {DocumentCacheAdminOutput.SanitizeDiagnostic(exception.Message)}"
     );
     return DocumentCacheAdminExitCodes.UnexpectedFailure;
 }
@@ -138,14 +139,7 @@ void ConfigureServices(
         }
     }
 
-    if (Console.IsOutputRedirected)
-    {
-        logConfiguration.WriteTo.Console(standardErrorFromLevel: LogEventLevel.Verbose);
-    }
-    else
-    {
-        logConfiguration.WriteTo.Console();
-    }
+    logConfiguration.WriteTo.Console(standardErrorFromLevel: LogEventLevel.Verbose);
 
     Log.Logger = logConfiguration.CreateLogger();
 
@@ -159,6 +153,7 @@ void ConfigureServices(
         loggingBuilder.ClearProviders();
         loggingBuilder.AddSerilog();
     });
+    services.TryAddSingleton<IDocumentCacheAdminCliTelemetry, DocumentCacheAdminCliTelemetry>();
 }
 
 static bool IsConfigurationBuildFailure(Exception exception) =>
@@ -175,4 +170,6 @@ static bool IsServiceConfigurationFailure(Exception exception) =>
     exception is InvalidOperationException or ArgumentException or FormatException;
 
 static Task WriteConfigurationFailureAsync(Exception exception) =>
-    Console.Error.WriteLineAsync($"DocumentCache configuration error: {exception.Message}");
+    Console.Error.WriteLineAsync(
+        $"DocumentCache configuration error: {DocumentCacheAdminOutput.SanitizeDiagnostic(exception.Message)}"
+    );

@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Serilog;
 
 namespace EdFi.DataManagementService.DocumentCacheAdmin;
@@ -64,6 +65,7 @@ internal static class DocumentCacheAdminServiceCollectionExtensions
             IDocumentCacheAdminMutatingCommandDispatcher,
             DocumentCacheAdminMutatingCommandDispatcher
         >();
+        services.TryAddSingleton<IDocumentCacheAdminCliTelemetry, DocumentCacheAdminCliTelemetry>();
 
         string datastore = configuration.GetSection("AppSettings:Datastore").Value ?? string.Empty;
         if (string.Equals(datastore, "postgresql", StringComparison.OrdinalIgnoreCase))

@@ -1,0 +1,305 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Collections.Immutable;
+using System.CommandLine;
+using System.Diagnostics.Metrics;
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.DocumentCacheAdmin;
+using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+
+namespace EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit;
+
+[TestFixture]
+[NonParallelizable]
+[Category("Logging")]
+[Category("Telemetry")]
+public sealed class Given_DocumentCacheAdminLoggingAndTelemetry
+{
+    private const string Fingerprint =
+        "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    [Test]
+    public async Task It_keeps_json_stdout_to_one_contract_document_when_cli_logs_are_enabled()
+    {
+        string tenantKey = "TenantSecretValue";
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        RecordingMutatingCommandDispatcher dispatcher = new(_ => CompletedResult(tenantKey));
+        using var loggerProvider = new TextWriterLoggerProvider(stderr);
+        await using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddLogging(loggingBuilder =>
+            {
+                loggingBuilder.ClearProviders();
+                loggingBuilder.SetMinimumLevel(LogLevel.Information);
+                loggingBuilder.AddProvider(loggerProvider);
+            })
+            .AddSingleton<IDocumentCacheAdminMutatingCommandDispatcher>(dispatcher)
+            .AddSingleton<IDocumentCacheAdminCliTelemetry, DocumentCacheAdminCliTelemetry>()
+            .BuildServiceProvider();
+
+        int exitCode = await DocumentCacheAdminCommandExecutor.ExecuteAsync(
+            ParseCommand(
+                DocumentCacheAdminCommandSurface.RebuildOnlineCommandName,
+                DocumentCacheAdminCommandSurface.TenantKeyOptionName,
+                tenantKey,
+                DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
+                "1",
+                DocumentCacheAdminCommandSurface.ConfirmOptionName,
+                "onlineCacheRebuild",
+                DocumentCacheAdminCommandSurface.JsonOptionName
+            ),
+            InvocationTarget(tenantKey),
+            serviceProvider,
+            stdout,
+            stderr
+        );
+
+        exitCode.Should().Be(DocumentCacheAdminExitCodes.Success);
+        string json = stdout.ToString();
+        json.TrimEnd().Should().NotContain("\n");
+        JsonNode.Parse(json).Should().NotBeNull();
+
+        string diagnostics = stderr.ToString();
+        diagnostics.Should().Contain("DocumentCacheAdminCommandStarted");
+        diagnostics.Should().Contain("DocumentCacheAdminCommandCompleted");
+        diagnostics.Should().Contain("target t1_");
+        diagnostics.Should().NotContain(tenantKey);
+        diagnostics.Should().NotContain(Fingerprint);
+    }
+
+    [Test]
+    public async Task It_bounds_human_output_without_raw_target_fingerprint_or_sensitive_diagnostics()
+    {
+        string tenantKey = "Tenant" + new string('A', 180) + "Secret";
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        RecordingMutatingCommandDispatcher dispatcher = new(_ =>
+            Result(
+                tenantKey,
+                "DocumentUuid 2f0bc840-763e-4e73-9ca3-fbbfc6de3ef1 StudentUniqueId 123456 Password=abc"
+            )
+        );
+        await using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddSingleton<IDocumentCacheAdminMutatingCommandDispatcher>(dispatcher)
+            .BuildServiceProvider();
+
+        int exitCode = await DocumentCacheAdminCommandExecutor.ExecuteAsync(
+            ParseCommand(
+                DocumentCacheAdminCommandSurface.RebuildOnlineCommandName,
+                DocumentCacheAdminCommandSurface.TenantKeyOptionName,
+                tenantKey,
+                DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
+                "1",
+                DocumentCacheAdminCommandSurface.ConfirmOptionName,
+                "onlineCacheRebuild"
+            ),
+            InvocationTarget(tenantKey),
+            serviceProvider,
+            stdout,
+            stderr
+        );
+
+        exitCode.Should().Be(DocumentCacheAdminExitCodes.Success);
+        string humanOutput = stdout.ToString();
+        humanOutput.Should().Contain("target=t1_");
+        humanOutput.Should().Contain("physicalSourceFingerprint=present");
+        humanOutput.Should().Contain("diagnostic redacted");
+        humanOutput.Should().NotContain(tenantKey);
+        humanOutput.Should().NotContain(Fingerprint);
+        humanOutput.Should().NotContain("DocumentUuid");
+        humanOutput.Should().NotContain("StudentUniqueId");
+        humanOutput.Should().NotContain("Password");
+        stderr.ToString().Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_records_cli_metrics_on_the_document_cache_meter_with_bounded_target_tags()
+    {
+        DocumentCacheAdminCliTelemetry
+            .MeterName.Should()
+            .Be("EdFi.DataManagementService.DocumentCacheProjection");
+        string meterName =
+            "EdFi.DataManagementService.DocumentCacheProjection.test." + Guid.NewGuid().ToString("N");
+        using var meter = new Meter(meterName);
+        List<MeasurementRecord> records = [];
+        using var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, meterListener) =>
+            {
+                if (instrument.Meter.Name == meterName)
+                {
+                    meterListener.EnableMeasurementEvents(instrument);
+                }
+            },
+        };
+        listener.SetMeasurementEventCallback<long>(
+            (instrument, measurement, tags, _) =>
+                records.Add(new MeasurementRecord(instrument.Name, measurement, TagsToArray(tags)))
+        );
+        listener.SetMeasurementEventCallback<double>(
+            (instrument, measurement, tags, _) =>
+                records.Add(new MeasurementRecord(instrument.Name, measurement, TagsToArray(tags)))
+        );
+        listener.Start();
+
+        string tenantKey = "TenantNameThatMustNotBecomeMetricLabel";
+        DocumentCacheTargetKey targetKey = DocumentCacheTargetKey.Create(tenantKey, 9);
+        var telemetry = new DocumentCacheAdminCliTelemetry(meter);
+        long startedAt = telemetry.RecordCommandAttempt(
+            DocumentCacheAdminCommandSurface.RebuildOnlineCommandName,
+            targetKey,
+            jsonOutput: true
+        );
+        telemetry.RecordCommandCompletion(
+            DocumentCacheAdminCommandSurface.RebuildOnlineCommandName,
+            targetKey,
+            jsonOutput: true,
+            DocumentCacheAdminExitCodes.RejectedNoMutation,
+            "RejectedNoMutation",
+            "ExpectedSourceMismatch",
+            startedAt
+        );
+
+        records
+            .Exists(record =>
+                record.Name == DocumentCacheAdminCliTelemetry.CommandAttemptCounterName
+                && record.TagValue("target")?.ToString()?.StartsWith("t1_", StringComparison.Ordinal) == true
+            )
+            .Should()
+            .BeTrue();
+        records
+            .Exists(record => record.Name == DocumentCacheAdminCliTelemetry.CommandCompletionCounterName)
+            .Should()
+            .BeTrue();
+        records
+            .Exists(record => record.Name == DocumentCacheAdminCliTelemetry.CommandDurationName)
+            .Should()
+            .BeTrue();
+        records
+            .SelectMany(record => record.Tags.Select(tag => tag.Value?.ToString() ?? string.Empty))
+            .Any(tag => tag.Contains(tenantKey, StringComparison.Ordinal))
+            .Should()
+            .BeFalse();
+    }
+
+    private static ParseResult ParseCommand(string commandName, params string[] args) =>
+        DocumentCacheAdminCommandSurface.CreateRootCommand().Parse([commandName, .. args]);
+
+    private static DocumentCacheAdminInvocationTarget InvocationTarget(string tenantKey) =>
+        new(DocumentCacheTargetKey.Create(tenantKey, 1), DocumentCacheAdminInvocationTargetSource.Options);
+
+    private static DocumentCacheAdministrativeCommandResult CompletedResult(string tenantKey) =>
+        Result(tenantKey, "diagnostic");
+
+    private static DocumentCacheAdministrativeCommandResult Result(string tenantKey, string diagnostic) =>
+        new(
+            DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+            new DocumentCacheAdministrativeTargetKey(tenantKey, 1),
+            DocumentCacheAdministrativeCommandStatus.Completed,
+            DocumentCacheAdministrativeCommandClassification.Succeeded,
+            mutated: true,
+            targetGeneration: 7,
+            physicalSourceFingerprint: new DocumentCachePhysicalSourceFingerprint(Fingerprint),
+            lifecycle: DocumentCacheLifecycleState.Tracking,
+            cacheAheadRecoveryRequired: false,
+            phaseDiagnostics:
+            [
+                new DocumentCacheAdministrativePhaseDiagnostic(
+                    DocumentCacheAdministrativeCommandPhase.Preflight,
+                    DocumentCacheAdministrativeCommandPhase.ResolveTarget,
+                    retryable: false,
+                    DocumentCacheAdministrativeDiagnosticCategory.CacheAheadLatchSet,
+                    ImmutableArray<long>.Empty,
+                    diagnostic
+                ),
+            ],
+            elapsedCommandTime: TimeSpan.FromSeconds(1.25)
+        );
+
+    private static KeyValuePair<string, object?>[] TagsToArray(
+        ReadOnlySpan<KeyValuePair<string, object?>> tags
+    )
+    {
+        var snapshot = new KeyValuePair<string, object?>[tags.Length];
+        for (int index = 0; index < tags.Length; index++)
+        {
+            snapshot[index] = tags[index];
+        }
+
+        return snapshot;
+    }
+
+    private sealed record MeasurementRecord(
+        string Name,
+        object Measurement,
+        KeyValuePair<string, object?>[] Tags
+    )
+    {
+        public object? TagValue(string name) =>
+            Array.Find(Tags, tag => string.Equals(tag.Key, name, StringComparison.Ordinal)).Value;
+    }
+
+    private sealed class RecordingMutatingCommandDispatcher(
+        Func<DocumentCacheAdminMutatingCommandRequest, DocumentCacheAdministrativeCommandResult> execute
+    ) : IDocumentCacheAdminMutatingCommandDispatcher
+    {
+        public Task<DocumentCacheAdministrativeCommandResult> ExecuteAsync(
+            DocumentCacheAdminMutatingCommandRequest commandRequest,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(execute(commandRequest));
+        }
+    }
+
+    private sealed class TextWriterLoggerProvider(TextWriter writer) : ILoggerProvider
+    {
+        private readonly object _gate = new();
+
+        public ILogger CreateLogger(string categoryName) => new TextWriterLogger(writer, _gate);
+
+        public void Dispose() { }
+    }
+
+    private sealed class TextWriterLogger(TextWriter writer, object gate) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Information;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            if (!IsEnabled(logLevel))
+            {
+                return;
+            }
+
+            lock (gate)
+            {
+                writer.WriteLine(formatter(state, exception));
+            }
+        }
+    }
+
+    private sealed class NullScope : IDisposable
+    {
+        public static NullScope Instance { get; } = new();
+
+        public void Dispose() { }
+    }
+}

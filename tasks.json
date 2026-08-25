@@ -178,7 +178,7 @@
       "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~Telemetry",
       "dotnet run --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- status --data-store-id 1 --json > /tmp/document-cache-status.json"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "packaging-build-script",
