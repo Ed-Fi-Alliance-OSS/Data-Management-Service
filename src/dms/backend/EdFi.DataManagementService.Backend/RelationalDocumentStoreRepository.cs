@@ -1911,7 +1911,7 @@ public sealed class RelationalDocumentStoreRepository(
         hydratedPage = hydratedPage with
         {
             TotalCount = candidatePage.TotalCount,
-            HighestSelectedDocumentId = candidatePage.ContinuationBoundary.SelectedMaximum,
+            HighestSelectedAnchor = candidatePage.ContinuationBoundary.SelectedMaximum,
         };
 
         if (!SelectedQueryCandidatePageStillMatches(candidatePage, hydratedPage.DocumentMetadata))
@@ -5941,7 +5941,7 @@ public sealed class RelationalDocumentStoreRepository(
         var continuationBoundary = PageContinuationBoundary.For(
             relationalQueryRequest.Paging,
             orderingMode,
-            hydratedPage.HighestSelectedDocumentId
+            hydratedPage.HighestSelectedAnchor
         );
 
         return new QueryResult.QuerySuccess(

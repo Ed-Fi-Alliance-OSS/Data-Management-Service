@@ -7,6 +7,7 @@ using System.Data;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Npgsql;
@@ -64,6 +65,53 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
         command.Parameters["@schoolYear"].Value.Should().Be(DBNull.Value);
         command.Parameters["@offset"].Value.Should().Be(0L);
         command.Parameters["@limit"].Value.Should().Be(25L);
+    }
+
+    [Test]
+    public void It_should_bind_the_same_parameters_under_either_anchor()
+    {
+        // The continuation anchor is a projected column, not a bound value, so an anchored keyset binds
+        // exactly what its unanchored twin binds. Asserted rather than assumed: an anchor that leaked
+        // into the parameter set would bind a name the compiled SQL never emits, and the shared binder
+        // fails the command at execution rather than at planning.
+        var plan = CreateQueryPlan(
+            pageParametersInOrder:
+            [
+                new QuerySqlParameter(QuerySqlParameterRole.CursorInclusiveMinimum, "cursorMin"),
+                new QuerySqlParameter(QuerySqlParameterRole.CursorInclusiveMaximum, "cursorMax"),
+                new QuerySqlParameter(QuerySqlParameterRole.PageSize, "pageSize"),
+            ],
+            totalCountParametersInOrder: null
+        );
+        var parameterValues = new Dictionary<string, object?>
+        {
+            ["cursorMin"] = 1L,
+            ["cursorMax"] = long.MaxValue,
+            ["pageSize"] = 25L,
+        };
+
+        var anchoredCommand = new RecordingDbCommand(new DataTable().CreateDataReader());
+        var unanchoredCommand = new RecordingDbCommand(new DataTable().CreateDataReader());
+
+        HydrationBatchBuilder.AddParameters(
+            anchoredCommand,
+            new PageKeysetSpec.Query(plan, parameterValues, PageOrderingMode.ContentVersion)
+        );
+        HydrationBatchBuilder.AddParameters(
+            unanchoredCommand,
+            new PageKeysetSpec.Query(plan, parameterValues)
+        );
+
+        anchoredCommand
+            .Parameters.Cast<IDataParameter>()
+            .Select(parameter => (parameter.ParameterName, parameter.Value))
+            .Should()
+            .Equal(
+                unanchoredCommand
+                    .Parameters.Cast<IDataParameter>()
+                    .Select(parameter => (parameter.ParameterName, parameter.Value))
+            );
+        anchoredCommand.Parameters.Contains("@ContentVersion").Should().BeFalse();
     }
 
     [Test]

@@ -39,37 +39,65 @@ public static class HydrationReader
     }
 
     /// <summary>
-    /// Reads the selected page keyset ids from the current result set and returns the maximum, or
-    /// <see langword="null"/> when the selection was empty.
+    /// Reads the selected page keyset from the current result set and returns the maximum value of its
+    /// continuation anchor, or <see langword="null"/> when the selection was empty.
     /// </summary>
     /// <remarks>
     /// Neither <c>RETURNING</c> nor <c>OUTPUT</c> promises an order, so the maximum is taken across
-    /// every returned row rather than from the first or last one.
+    /// every returned row rather than from the first or last one. That is what makes the widening to
+    /// two columns safe: the anchor's maximum is found the same way whichever row carries it.
     /// </remarks>
     /// <param name="reader">The data reader positioned at the selected keyset result set.</param>
+    /// <param name="carriesAnchorColumn">
+    /// Whether the materialization projected the anchor as a second column. Supplied by the caller from
+    /// the same keyset the batch was built from rather than inferred from the reader's shape: inferring
+    /// it would read <c>DocumentId</c> as the anchor if the projection ever narrowed, which is a wrong
+    /// continuation token rather than a failure.
+    /// </param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>The maximum selected <c>DocumentId</c>, or null when no id was selected.</returns>
-    public static async Task<long?> ReadSelectedDocumentIdMaximumAsync(
+    /// <returns>The maximum selected anchor value, or null when nothing was selected.</returns>
+    public static async Task<long?> ReadSelectedAnchorMaximumAsync(
         DbDataReader reader,
+        bool carriesAnchorColumn,
         CancellationToken ct
     )
     {
         ArgumentNullException.ThrowIfNull(reader);
 
+        var anchorOrdinal = carriesAnchorColumn ? AnchorColumnOrdinal : DocumentIdColumnOrdinal;
+
+        if (carriesAnchorColumn && reader.FieldCount <= AnchorColumnOrdinal)
+        {
+            throw new InvalidOperationException(
+                "Expected the selected page keyset result set to carry the continuation anchor as a "
+                    + $"second column, but it returned {reader.FieldCount.ToString(CultureInfo.InvariantCulture)} "
+                    + "column(s). The materialization SQL and this reader disagree about the keyset shape."
+            );
+        }
+
         long? selectedMaximum = null;
 
         while (await reader.ReadAsync(ct))
         {
-            var selectedDocumentId = reader.GetInt64(0);
+            var selectedAnchor = reader.GetInt64(anchorOrdinal);
 
-            if (selectedMaximum is null || selectedDocumentId > selectedMaximum)
+            if (selectedMaximum is null || selectedAnchor > selectedMaximum)
             {
-                selectedMaximum = selectedDocumentId;
+                selectedMaximum = selectedAnchor;
             }
         }
 
         return selectedMaximum;
     }
+
+    /// <summary>
+    /// Ordinals in the selected page keyset result set. <c>DocumentId</c> is always first; the anchor
+    /// follows it only on a <c>ContentVersion</c>-anchored page, where both are projected because
+    /// <c>DocumentId</c> feeds hydration and the anchor continues the walk.
+    /// </summary>
+    private const int DocumentIdColumnOrdinal = 0;
+
+    private const int AnchorColumnOrdinal = 1;
 
     /// <summary>
     /// Expected column count for the document metadata result set, defined by

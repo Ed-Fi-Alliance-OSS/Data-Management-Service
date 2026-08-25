@@ -610,65 +610,89 @@ public class Given_HydrationExecutor_Result_Set_Count_With_Selected_Ids
 
 /// <summary>
 /// Neither <c>RETURNING</c> nor <c>OUTPUT</c> promises an order, so the maximum is taken across every
-/// returned row.
+/// returned row. That is also what makes the widening to two columns safe: the anchor's maximum is
+/// found the same way whichever row happens to carry it.
 /// </summary>
 [TestFixture]
 public class Given_HydrationReader_With_A_Selected_Keyset_Result_Set
 {
+    private static async Task<long?> ReadMaximum(DataTable selectedKeys, bool carriesAnchorColumn = false)
+    {
+        using var reader = HydrationDescriptorResultTestHelper.CreateReader(selectedKeys);
+
+        return await HydrationReader.ReadSelectedAnchorMaximumAsync(
+            reader,
+            carriesAnchorColumn,
+            CancellationToken.None
+        );
+    }
+
     [Test]
     public async Task It_reads_the_maximum_from_descending_ids()
     {
-        using var reader = HydrationDescriptorResultTestHelper.CreateReader(
-            CreateSelectedIdsTable(2509L, 2508L, 7L)
-        );
-
-        var maximum = await HydrationReader.ReadSelectedDocumentIdMaximumAsync(
-            reader,
-            CancellationToken.None
-        );
-
-        maximum.Should().Be(2509L);
+        (await ReadMaximum(CreateSelectedIdsTable(2509L, 2508L, 7L))).Should().Be(2509L);
     }
 
     [Test]
     public async Task It_reads_the_maximum_from_shuffled_ids()
     {
-        using var reader = HydrationDescriptorResultTestHelper.CreateReader(
-            CreateSelectedIdsTable(11L, 2509L, 5L, 400L)
-        );
-
-        var maximum = await HydrationReader.ReadSelectedDocumentIdMaximumAsync(
-            reader,
-            CancellationToken.None
-        );
-
-        maximum.Should().Be(2509L);
+        (await ReadMaximum(CreateSelectedIdsTable(11L, 2509L, 5L, 400L))).Should().Be(2509L);
     }
 
     [Test]
     public async Task It_reads_a_single_id_as_the_maximum()
     {
-        using var reader = HydrationDescriptorResultTestHelper.CreateReader(CreateSelectedIdsTable(42L));
-
-        var maximum = await HydrationReader.ReadSelectedDocumentIdMaximumAsync(
-            reader,
-            CancellationToken.None
-        );
-
-        maximum.Should().Be(42L);
+        (await ReadMaximum(CreateSelectedIdsTable(42L))).Should().Be(42L);
     }
 
     [Test]
     public async Task It_reads_no_maximum_from_an_empty_selection()
     {
-        using var reader = HydrationDescriptorResultTestHelper.CreateReader(CreateSelectedIdsTable());
+        (await ReadMaximum(CreateSelectedIdsTable())).Should().BeNull();
+    }
 
-        var maximum = await HydrationReader.ReadSelectedDocumentIdMaximumAsync(
-            reader,
-            CancellationToken.None
-        );
+    [Test]
+    public async Task It_reads_the_anchor_maximum_rather_than_the_document_id_maximum()
+    {
+        // The two orders disagree on purpose: the highest DocumentId carries the lowest ContentVersion.
+        // Reading the wrong ordinal would still return a plausible number, and the walk would continue
+        // from a point in the wrong sequence entirely.
+        var selectedKeys = CreateAnchoredSelectedKeysTable((7L, 900L), (2509L, 100L), (400L, 550L));
 
-        maximum.Should().BeNull();
+        (await ReadMaximum(selectedKeys, carriesAnchorColumn: true)).Should().Be(900L);
+    }
+
+    [Test]
+    public async Task It_reads_the_anchor_maximum_without_depending_on_returned_row_order()
+    {
+        var ascending = CreateAnchoredSelectedKeysTable((1L, 100L), (2L, 550L), (3L, 900L));
+        var descending = CreateAnchoredSelectedKeysTable((3L, 900L), (2L, 550L), (1L, 100L));
+
+        (await ReadMaximum(ascending, carriesAnchorColumn: true)).Should().Be(900L);
+        (await ReadMaximum(descending, carriesAnchorColumn: true)).Should().Be(900L);
+    }
+
+    [Test]
+    public async Task It_reads_no_anchor_maximum_from_a_zero_size_anchored_page()
+    {
+        // A zero-size page returns an empty result set rather than none, so the read succeeds and
+        // reports no boundary — which is what ends the walk instead of failing it.
+        (await ReadMaximum(CreateAnchoredSelectedKeysTable(), carriesAnchorColumn: true))
+            .Should()
+            .BeNull();
+    }
+
+    [Test]
+    public async Task It_rejects_an_anchored_read_of_a_single_column_result_set()
+    {
+        // The materialization SQL and this reader both derive the shape from the keyset's anchor, so
+        // disagreement means one of them regressed. Failing loudly beats reading DocumentId as the
+        // anchor and handing the client a token in the wrong sequence.
+        var act = async () => await ReadMaximum(CreateSelectedIdsTable(42L), carriesAnchorColumn: true);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*continuation anchor as a second column*");
     }
 
     internal static DataTable CreateSelectedIdsTable(params long[] selectedDocumentIds)
@@ -679,6 +703,22 @@ public class Given_HydrationReader_With_A_Selected_Keyset_Result_Set
         foreach (var selectedDocumentId in selectedDocumentIds)
         {
             table.Rows.Add(selectedDocumentId);
+        }
+
+        return table;
+    }
+
+    internal static DataTable CreateAnchoredSelectedKeysTable(
+        params (long DocumentId, long ContentVersion)[] selectedKeys
+    )
+    {
+        var table = new DataTable();
+        table.Columns.Add("DocumentId", typeof(long));
+        table.Columns.Add("ContentVersion", typeof(long));
+
+        foreach (var selectedKey in selectedKeys)
+        {
+            table.Rows.Add(selectedKey.DocumentId, selectedKey.ContentVersion);
         }
 
         return table;
@@ -712,7 +752,7 @@ public class Given_HydrationExecutor_With_A_Selected_Keyset_Result_Set
             CreateChildTableRows((100L, 42L, 0, "Springfield"))
         );
 
-        result.HighestSelectedDocumentId.Should().Be(84L);
+        result.HighestSelectedAnchor.Should().Be(84L);
         result.DocumentMetadata.Should().HaveCount(2);
     }
 
@@ -726,7 +766,7 @@ public class Given_HydrationExecutor_With_A_Selected_Keyset_Result_Set
             CreateChildTableRows()
         );
 
-        result.HighestSelectedDocumentId.Should().Be(84L);
+        result.HighestSelectedAnchor.Should().Be(84L);
         result.DocumentMetadata.Should().BeEmpty();
         result.TableRowsInDependencyOrder.Should().OnlyContain(tableRows => tableRows.Rows.Count == 0);
     }
@@ -741,7 +781,46 @@ public class Given_HydrationExecutor_With_A_Selected_Keyset_Result_Set
             CreateChildTableRows()
         );
 
-        result.HighestSelectedDocumentId.Should().BeNull();
+        result.HighestSelectedAnchor.Should().BeNull();
+        result.DocumentMetadata.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_carries_the_content_version_maximum_for_an_anchored_page()
+    {
+        // The document ids and the content versions run in opposite directions, so a boundary of 46
+        // could only have come from the anchor column.
+        var result = await ExecuteAnchoredQueryHydrationAsync(
+            Given_HydrationReader_With_A_Selected_Keyset_Result_Set.CreateAnchoredSelectedKeysTable(
+                (84L, 44L),
+                (42L, 46L)
+            ),
+            CreateDocumentMetadataTable((42L, DocumentUuid, 46L, 45L), (84L, OtherDocumentUuid, 44L, 47L)),
+            CreateRootTableRows((42L, 255901), (84L, 255902)),
+            CreateChildTableRows((100L, 42L, 0, "Springfield"))
+        );
+
+        result.HighestSelectedAnchor.Should().Be(46L);
+        result.DocumentMetadata.Should().HaveCount(2);
+    }
+
+    [Test]
+    public async Task It_carries_the_content_version_maximum_when_every_selected_row_was_deleted()
+    {
+        // The concurrency case this whole indirection exists for. Nothing survives to hydrate, and the
+        // anchor still has to come back or the walk ends early and silently — an empty body with no
+        // continuation is indistinguishable from a finished walk.
+        var result = await ExecuteAnchoredQueryHydrationAsync(
+            Given_HydrationReader_With_A_Selected_Keyset_Result_Set.CreateAnchoredSelectedKeysTable(
+                (84L, 44L),
+                (42L, 46L)
+            ),
+            CreateDocumentMetadataTable(),
+            CreateRootTableRows(),
+            CreateChildTableRows()
+        );
+
+        result.HighestSelectedAnchor.Should().Be(46L);
         result.DocumentMetadata.Should().BeEmpty();
     }
 
@@ -773,7 +852,7 @@ public class Given_HydrationExecutor_With_A_Selected_Keyset_Result_Set
             CancellationToken.None
         );
 
-        result.HighestSelectedDocumentId.Should().BeNull();
+        result.HighestSelectedAnchor.Should().BeNull();
     }
 
     [Test]
@@ -808,17 +887,32 @@ public class Given_HydrationExecutor_With_A_Selected_Keyset_Result_Set
     private static readonly Guid DocumentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb");
     private static readonly Guid OtherDocumentUuid = Guid.Parse("cccccccc-4444-5555-6666-dddddddddddd");
 
-    private static Task<HydratedPage> ExecuteQueryHydrationAsync(params DataTable[] resultSets)
+    private static Task<HydratedPage> ExecuteQueryHydrationAsync(params DataTable[] resultSets) =>
+        ExecuteAsync(
+            Given_HydrationBatchBuilder_With_A_Query_Keyset_Materialization.CreateCursorKeyset(
+                SqlDialect.Pgsql,
+                25L
+            ),
+            resultSets
+        );
+
+    private static Task<HydratedPage> ExecuteAnchoredQueryHydrationAsync(params DataTable[] resultSets) =>
+        ExecuteAsync(
+            Given_HydrationBatchBuilder_With_A_Query_Keyset_Materialization.CreateAnchoredCursorKeyset(
+                SqlDialect.Pgsql,
+                25L
+            ),
+            resultSets
+        );
+
+    private static Task<HydratedPage> ExecuteAsync(PageKeysetSpec.Query keyset, params DataTable[] resultSets)
     {
         var command = new RecordingDbCommand(HydrationDescriptorResultTestHelper.CreateReader(resultSets));
 
         return HydrationExecutor.ExecuteAsync(
             new RecordingDbConnection(command),
             BuildTestReadPlan(SqlDialect.Pgsql),
-            Given_HydrationBatchBuilder_With_A_Query_Keyset_Materialization.CreateCursorKeyset(
-                SqlDialect.Pgsql,
-                25L
-            ),
+            keyset,
             SqlDialect.Pgsql,
             CancellationToken.None
         );

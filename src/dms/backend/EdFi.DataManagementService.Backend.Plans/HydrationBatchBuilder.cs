@@ -457,7 +457,7 @@ public static class HydrationBatchBuilder
     /// table DDL, the insert column list, and the returning clause all read this one predicate, because
     /// three separate decisions could disagree and name a column the keyset table does not have.
     /// </remarks>
-    private static bool CarriesSelectedAnchor(PageKeysetSpec spec) =>
+    internal static bool CarriesSelectedAnchor(PageKeysetSpec spec) =>
         spec is PageKeysetSpec.Query { OrderingMode: PageOrderingMode.ContentVersion };
 
     /// <summary>

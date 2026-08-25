@@ -1673,7 +1673,7 @@ public class Given_A_Pgsql_Query_Keyset_That_Returns_Its_Selected_Ids
             CancellationToken.None
         );
 
-        result.HighestSelectedDocumentId.Should().Be(SecondDocumentId);
+        result.HighestSelectedAnchor.Should().Be(SecondDocumentId);
         result
             .DocumentMetadata.Select(static documentMetadata => documentMetadata.DocumentId)
             .Should()
@@ -1693,7 +1693,7 @@ public class Given_A_Pgsql_Query_Keyset_That_Returns_Its_Selected_Ids
             CancellationToken.None
         );
 
-        result.HighestSelectedDocumentId.Should().BeNull();
+        result.HighestSelectedAnchor.Should().BeNull();
         result.DocumentMetadata.Should().BeEmpty();
     }
 
@@ -1710,7 +1710,7 @@ public class Given_A_Pgsql_Query_Keyset_That_Returns_Its_Selected_Ids
             CancellationToken.None
         );
 
-        result.HighestSelectedDocumentId.Should().BeNull();
+        result.HighestSelectedAnchor.Should().BeNull();
         result.DocumentMetadata.Should().BeEmpty();
     }
 
@@ -1764,7 +1764,7 @@ public class Given_A_Pgsql_Query_Keyset_That_Returns_Its_Selected_Ids
         );
 
         splicedBatches.Should().ContainSingle();
-        result.HighestSelectedDocumentId.Should().Be(ThirdDocumentId);
+        result.HighestSelectedAnchor.Should().Be(ThirdDocumentId);
         result.DocumentMetadata.Should().BeEmpty();
         result.TableRowsInDependencyOrder.Should().OnlyContain(tableRows => tableRows.Rows.Count == 0);
     }

@@ -4959,7 +4959,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             (345L, "Lincoln High")
         ) with
         {
-            HighestSelectedDocumentId = 2509L,
+            HighestSelectedAnchor = 2509L,
         };
 
         A.CallTo(() =>
@@ -5005,7 +5005,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         var queryRequest = CreateQueryRequest(mappingSet, [], totalCount: false);
         var hydratedPage = new HydratedPage(null, [], [new HydratedTableRows(readPlan.Model.Root, [])], [])
         {
-            HighestSelectedDocumentId = 2509L,
+            HighestSelectedAnchor = 2509L,
         };
 
         A.CallTo(() =>
@@ -5207,7 +5207,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             .Returns(
                 new HydratedPage(null, [], [new HydratedTableRows(readPlan.Model.Root, [])], [])
                 {
-                    HighestSelectedDocumentId = highestSelectedDocumentId,
+                    HighestSelectedAnchor = highestSelectedDocumentId,
                 }
             );
         A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))

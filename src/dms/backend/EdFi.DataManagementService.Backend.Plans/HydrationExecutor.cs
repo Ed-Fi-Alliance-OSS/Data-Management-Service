@@ -255,11 +255,17 @@ public static class HydrationExecutor
         //    The boundary describes the keys selection chose, so it is independent of what the
         //    metadata and table result sets below still find: every selected row may have been deleted
         //    between materialization and hydration, leaving a non-null boundary and an empty page.
-        long? highestSelectedDocumentId = null;
+        long? highestSelectedAnchor = null;
 
         if (keyset is PageKeysetSpec.Query)
         {
-            highestSelectedDocumentId = await HydrationReader.ReadSelectedDocumentIdMaximumAsync(reader, ct);
+            // The same predicate the batch builder emitted this result set from, so the ordinal read
+            // here cannot disagree with the column list that produced it.
+            highestSelectedAnchor = await HydrationReader.ReadSelectedAnchorMaximumAsync(
+                reader,
+                HydrationBatchBuilder.CarriesSelectedAnchor(keyset),
+                ct
+            );
 
             if (!await reader.NextResultAsync(ct))
             {
@@ -354,7 +360,7 @@ public static class HydrationExecutor
         return new HydratedPage(totalCount, documentMetadata, tableRows, descriptorRows)
         {
             DocumentReferenceLookup = documentReferenceLookup,
-            HighestSelectedDocumentId = highestSelectedDocumentId,
+            HighestSelectedAnchor = highestSelectedAnchor,
         };
     }
 

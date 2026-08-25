@@ -30,31 +30,31 @@ public class Given_A_Hydrated_Page
     [Test]
     public void It_has_no_selected_keyset_boundary_by_default()
     {
-        _page.HighestSelectedDocumentId.Should().BeNull();
+        _page.HighestSelectedAnchor.Should().BeNull();
     }
 
     [Test]
     public void It_accepts_a_selected_keyset_boundary()
     {
-        HydratedPage withBoundary = _page with { HighestSelectedDocumentId = 2509 };
+        HydratedPage withBoundary = _page with { HighestSelectedAnchor = 2509 };
 
-        withBoundary.HighestSelectedDocumentId.Should().Be(2509);
+        withBoundary.HighestSelectedAnchor.Should().Be(2509);
     }
 
     [Test]
     public void It_keeps_the_selected_keyset_boundary_independent_of_the_hydrated_body()
     {
-        HydratedPage withBoundary = _page with { HighestSelectedDocumentId = 2509 };
+        HydratedPage withBoundary = _page with { HighestSelectedAnchor = 2509 };
 
         withBoundary.DocumentMetadata.Should().BeEmpty();
-        withBoundary.HighestSelectedDocumentId.Should().Be(2509);
+        withBoundary.HighestSelectedAnchor.Should().Be(2509);
     }
 
     [Test]
     public void It_carries_the_boundary_as_a_nullable_long()
     {
         typeof(HydratedPage)
-            .GetProperty(nameof(HydratedPage.HighestSelectedDocumentId))!
+            .GetProperty(nameof(HydratedPage.HighestSelectedAnchor))!
             .PropertyType.Should()
             .Be<long?>();
     }
