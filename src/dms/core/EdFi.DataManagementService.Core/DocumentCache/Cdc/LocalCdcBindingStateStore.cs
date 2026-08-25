@@ -706,6 +706,12 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
                     return regularFileFailure;
                 }
 
+                CdcStateStoreFailure? permissionFailure = ValidateOwnerOnlyFilePermissions(incidentFile);
+                if (permissionFailure is not null)
+                {
+                    return permissionFailure;
+                }
+
                 if (!TryParseGenerationFileName(incidentFile, out long generation))
                 {
                     return CdcStateStoreFailure.LocalStateUnavailable(
@@ -887,6 +893,12 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         if (regularFileFailure is not null)
         {
             return LocalIncidentReadResult.Failed(regularFileFailure);
+        }
+
+        CdcStateStoreFailure? permissionFailure = ValidateOwnerOnlyFilePermissions(incidentPath.FilePath!);
+        if (permissionFailure is not null)
+        {
+            return LocalIncidentReadResult.Failed(permissionFailure);
         }
 
         LocalIncidentFileReadResult incidentRead = await ReadIncidentFileAsync(

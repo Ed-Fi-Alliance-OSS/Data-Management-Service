@@ -167,6 +167,7 @@ public class Given_CdcIncidentLatch
             tempRoot.IncidentPath(SampleBinding),
             CdcJsonContract.Serialize(invalidIncident)
         );
+        SetOwnerOnlyFilePermissionsIfSupported(tempRoot.IncidentPath(SampleBinding));
         CdcReadBindingStateStoreResult readBack = await store.ReadBindingAsync(
             SampleBinding.ToBindingIdentity(),
             CancellationToken.None
@@ -241,6 +242,18 @@ public class Given_CdcIncidentLatch
             "50",
             [CdcIncidentUnavailableFact.SchemaHistory]
         );
+
+    private static void SetOwnerOnlyFilePermissionsIfSupported(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+#pragma warning disable CA1416
+        File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+#pragma warning restore CA1416
+    }
 
     private sealed class TempCdcStateRoot : IDisposable
     {

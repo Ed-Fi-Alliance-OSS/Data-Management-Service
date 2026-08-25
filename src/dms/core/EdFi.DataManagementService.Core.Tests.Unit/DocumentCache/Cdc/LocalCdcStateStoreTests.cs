@@ -343,6 +343,77 @@ public class Given_LocalCdcStateStore
     }
 
     [Test]
+    public async Task It_rejects_existing_incident_files_without_validated_owner_only_permissions()
+    {
+        using TempCdcStateRoot tempRoot = new();
+        LocalCdcBindingStateStore writer = new(tempRoot.Path);
+        CdcIncident incident = CreateIncident(SampleBinding);
+
+        await writer.CreateBindingIfAbsentAsync(SampleBinding, CancellationToken.None);
+        await writer.LatchSourceHistoryLossAsync(incident, CancellationToken.None);
+
+        string incidentPath = tempRoot.IncidentPath(SampleBinding);
+        LocalCdcBindingStateStore reader = new(
+            tempRoot.Path,
+            new RejectingPathValidationCdcLocalStateStorePermissions(incidentPath)
+        );
+
+        CdcReadBindingStateStoreResult readResult = await reader.ReadBindingAsync(
+            SampleBinding.ToBindingIdentity(),
+            CancellationToken.None
+        );
+        CdcListBindingsStateStoreResult listResult = await reader.ListBindingsAsync(
+            SampleBinding.DeploymentKey,
+            CancellationToken.None
+        );
+
+        readResult
+            .Should()
+            .BeOfType<CdcReadBindingStateStoreResult.StateStoreFailure>()
+            .Subject.Failure.Should()
+            .Match<CdcStateStoreFailure>(failure =>
+                failure.Kind == CdcStateStoreFailureKind.LocalStateUnavailable
+                && failure.Diagnostics.Single().Path == incidentPath
+            );
+        listResult
+            .Should()
+            .BeOfType<CdcListBindingsStateStoreResult.StateStoreFailure>()
+            .Subject.Failure.Should()
+            .Match<CdcStateStoreFailure>(failure =>
+                failure.Kind == CdcStateStoreFailureKind.LocalStateUnavailable
+                && failure.Diagnostics.Single().Path == incidentPath
+            );
+    }
+
+    [Test]
+    public async Task It_validates_deployment_incident_file_permissions_before_parsing()
+    {
+        using TempCdcStateRoot tempRoot = new();
+        string incidentPath = tempRoot.IncidentPath(SampleBinding);
+        Directory.CreateDirectory(Path.GetDirectoryName(incidentPath)!);
+        await File.WriteAllTextAsync(incidentPath, CdcJsonContract.Serialize(CreateIncident(SampleBinding)));
+
+        LocalCdcBindingStateStore reader = new(
+            tempRoot.Path,
+            new RejectingPathValidationCdcLocalStateStorePermissions(incidentPath)
+        );
+
+        CdcListBindingsStateStoreResult listResult = await reader.ListBindingsAsync(
+            SampleBinding.DeploymentKey,
+            CancellationToken.None
+        );
+
+        listResult
+            .Should()
+            .BeOfType<CdcListBindingsStateStoreResult.StateStoreFailure>()
+            .Subject.Failure.Should()
+            .Match<CdcStateStoreFailure>(failure =>
+                failure.Kind == CdcStateStoreFailureKind.LocalStateUnavailable
+                && failure.Diagnostics.Single().Path == incidentPath
+            );
+    }
+
+    [Test]
     public async Task It_treats_contract_invalid_persisted_bindings_as_store_failures()
     {
         using TempCdcStateRoot tempRoot = new();
@@ -434,6 +505,7 @@ public class Given_LocalCdcStateStore
             orphanIncidentPath,
             CdcJsonContract.Serialize(CreateIncident(SampleBinding))
         );
+        SetOwnerOnlyFilePermissionsIfSupported(orphanIncidentPath);
         LocalCdcBindingStateStore orphanStore = new(orphanRoot.Path);
         CdcListBindingsStateStoreResult orphanList = await orphanStore.ListBindingsAsync(
             SampleBinding.DeploymentKey,
@@ -686,6 +758,7 @@ public class Given_LocalCdcStateStore
         string incidentPath = tempRoot.IncidentPath(SampleBinding);
         Directory.CreateDirectory(Path.GetDirectoryName(incidentPath)!);
         await File.WriteAllTextAsync(incidentPath, incidentJson);
+        SetOwnerOnlyFilePermissionsIfSupported(incidentPath);
 
         CdcReadBindingStateStoreResult readResult = await store.ReadBindingAsync(
             SampleBinding.ToBindingIdentity(),
@@ -696,6 +769,18 @@ public class Given_LocalCdcStateStore
             .Should()
             .BeOfType<CdcReadBindingStateStoreResult.StateStoreFailure>()
             .Subject.Failure;
+    }
+
+    private static void SetOwnerOnlyFilePermissionsIfSupported(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+#pragma warning disable CA1416
+        File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+#pragma warning restore CA1416
     }
 
     private static string ReplaceRequired(string source, string oldValue, string newValue)
@@ -781,6 +866,21 @@ public class Given_LocalCdcStateStore
 
         public CdcLocalStateStorePermissionResult ValidateOwnerOnlyFile(string path) =>
             CdcLocalStateStorePermissionResult.Failure("Injected file permission validation failure.");
+    }
+
+    private sealed class RejectingPathValidationCdcLocalStateStorePermissions(string failingPath)
+        : ICdcLocalStateStorePermissions
+    {
+        public CdcLocalStateStorePermissionResult ApplyOwnerOnlyDirectory(string path) =>
+            CdcLocalStateStorePermissionResult.Success;
+
+        public CdcLocalStateStorePermissionResult ApplyOwnerOnlyFile(string path) =>
+            CdcLocalStateStorePermissionResult.Success;
+
+        public CdcLocalStateStorePermissionResult ValidateOwnerOnlyFile(string path) =>
+            string.Equals(path, failingPath, StringComparison.Ordinal)
+                ? CdcLocalStateStorePermissionResult.Failure("Injected file permission validation failure.")
+                : CdcLocalStateStorePermissionResult.Success;
     }
 
     private sealed class FailingDeleteCdcLocalStateStoreFileSystem(string failingPath)
