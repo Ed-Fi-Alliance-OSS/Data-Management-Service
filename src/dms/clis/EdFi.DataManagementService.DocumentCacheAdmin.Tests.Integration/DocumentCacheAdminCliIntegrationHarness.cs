@@ -872,6 +872,14 @@ internal sealed class DocumentCacheAdminCliStateInspector(
             contentVersion
         );
 
+    public Task<DocumentCacheAdminCliPostgresqlDocumentCacheLockTransaction> BeginPostgresqlDocumentCacheLockTransactionAsync(
+        long documentId
+    ) =>
+        DocumentCacheAdminCliPostgresqlDocumentCacheLockTransaction.BeginAsync(
+            RequirePostgresqlDatabase().ConnectionString,
+            documentId
+        );
+
     public Task<DocumentCacheAdminCliMssqlInsertTransaction> BeginMssqlCanonicalInsertTransactionAsync(
         long contentVersion = 10
     ) =>
@@ -1140,6 +1148,86 @@ internal sealed class DocumentCacheAdminCliPostgresqlInsertTransaction : IAsyncD
             {
                 // Best-effort cleanup for a transaction already completed by the provider.
             }
+        }
+
+        await _transaction.DisposeAsync();
+        await _connection.DisposeAsync();
+    }
+}
+
+internal sealed class DocumentCacheAdminCliPostgresqlDocumentCacheLockTransaction : IAsyncDisposable
+{
+    private readonly NpgsqlConnection _connection;
+    private readonly NpgsqlTransaction _transaction;
+    private bool _disposed;
+
+    private DocumentCacheAdminCliPostgresqlDocumentCacheLockTransaction(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        _connection = connection;
+        _transaction = transaction;
+    }
+
+    public static async Task<DocumentCacheAdminCliPostgresqlDocumentCacheLockTransaction> BeginAsync(
+        string connectionString,
+        long documentId
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(documentId);
+
+        NpgsqlConnection connection = new(connectionString);
+        await connection.OpenAsync();
+        NpgsqlTransaction transaction = await connection.BeginTransactionAsync();
+
+        try
+        {
+            await using NpgsqlCommand command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                SELECT "DocumentId"
+                FROM "dms"."DocumentCache"
+                WHERE "DocumentId" = @documentId
+                FOR UPDATE;
+                """;
+            command.Parameters.Add(
+                new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = documentId }
+            );
+
+            object? result = await command.ExecuteScalarAsync();
+            if (result is null || result == DBNull.Value)
+            {
+                throw new InvalidOperationException("Expected a DocumentCache row to lock.");
+            }
+
+            return new(connection, transaction);
+        }
+        catch
+        {
+            await transaction.DisposeAsync();
+            await connection.DisposeAsync();
+            throw;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+
+        try
+        {
+            await _transaction.RollbackAsync();
+        }
+        catch (InvalidOperationException)
+        {
+            // Best-effort cleanup for a provider-released transaction.
         }
 
         await _transaction.DisposeAsync();

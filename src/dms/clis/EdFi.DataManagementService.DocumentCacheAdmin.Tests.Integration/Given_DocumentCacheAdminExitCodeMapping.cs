@@ -232,3 +232,109 @@ public sealed class Given_DocumentCacheAdminSessionLossExitCodes
         }
     }
 }
+
+[TestFixture]
+[Category("ProviderCommandTimeout")]
+public sealed class Given_DocumentCacheAdminProviderCommandTimeoutExitCodes
+{
+    [Test]
+    public async Task It_returns_failed_no_mutation_when_the_shared_runner_reports_provider_timeout_before_mutation()
+    {
+        (int exitCode, string jsonOutput) = await ExecuteWithResultAsync(
+            DocumentCacheAdministrativeCommandStatus.FailedNoMutation,
+            mutated: false
+        );
+
+        exitCode.Should().Be(DocumentCacheAdminExitCodes.FailedNoMutation);
+        jsonOutput.Should().Contain("\"status\":\"failedNoMutation\"");
+        jsonOutput.Should().Contain("\"classification\":\"providerCommandTimeout\"");
+        jsonOutput.Should().Contain("\"mutated\":false");
+    }
+
+    [Test]
+    public async Task It_returns_incomplete_retryable_when_the_shared_runner_reports_provider_timeout_after_mutation()
+    {
+        (int exitCode, string jsonOutput) = await ExecuteWithResultAsync(
+            DocumentCacheAdministrativeCommandStatus.IncompleteRetryable,
+            mutated: true
+        );
+
+        exitCode.Should().Be(DocumentCacheAdminExitCodes.IncompleteRetryable);
+        jsonOutput.Should().Contain("\"status\":\"incompleteRetryable\"");
+        jsonOutput.Should().Contain("\"classification\":\"providerCommandTimeout\"");
+        jsonOutput.Should().Contain("\"mutated\":true");
+    }
+
+    private static async Task<(int ExitCode, string JsonOutput)> ExecuteWithResultAsync(
+        DocumentCacheAdministrativeCommandStatus status,
+        bool mutated
+    )
+    {
+        ReturningMutatingCommandDispatcher dispatcher = new(Result(status, mutated));
+        await using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddSingleton<IDocumentCacheAdminMutatingCommandDispatcher>(dispatcher)
+            .BuildServiceProvider();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+
+        int exitCode = await DocumentCacheAdminCommandExecutor.ExecuteAsync(
+            ParseCommand(
+                DocumentCacheAdminCommandSurface.RebuildOnlineCommandName,
+                DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
+                "1",
+                DocumentCacheAdminCommandSurface.ConfirmOptionName,
+                "onlineCacheRebuild",
+                DocumentCacheAdminCommandSurface.JsonOptionName
+            ),
+            InvocationTarget(),
+            serviceProvider,
+            stdout,
+            stderr
+        );
+
+        stderr.ToString().Should().BeEmpty();
+        return (exitCode, stdout.ToString());
+    }
+
+    private static ParseResult ParseCommand(string commandName, params string[] args) =>
+        DocumentCacheAdminCommandSurface.CreateRootCommand().Parse([commandName, .. args]);
+
+    private static DocumentCacheAdminInvocationTarget InvocationTarget() =>
+        new(DocumentCacheTargetKey.Create("", 1), DocumentCacheAdminInvocationTargetSource.Options);
+
+    private static DocumentCacheAdministrativeCommandResult Result(
+        DocumentCacheAdministrativeCommandStatus status,
+        bool mutated
+    ) =>
+        new(
+            DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+            new DocumentCacheAdministrativeTargetKey("", 1),
+            status,
+            DocumentCacheAdministrativeCommandClassification.ProviderCommandTimeout,
+            mutated,
+            phaseDiagnostics:
+            [
+                new DocumentCacheAdministrativePhaseDiagnostic(
+                    DocumentCacheAdministrativeCommandPhase.SeedBaseline,
+                    DocumentCacheAdministrativeCommandPhase.Preflight,
+                    retryable: status == DocumentCacheAdministrativeCommandStatus.IncompleteRetryable,
+                    DocumentCacheAdministrativeDiagnosticCategory.ProviderCommandTimeout,
+                    ImmutableArray<long>.Empty,
+                    "typed provider timeout diagnostic"
+                ),
+            ]
+        );
+
+    private sealed class ReturningMutatingCommandDispatcher(DocumentCacheAdministrativeCommandResult result)
+        : IDocumentCacheAdminMutatingCommandDispatcher
+    {
+        public Task<DocumentCacheAdministrativeCommandResult> ExecuteAsync(
+            DocumentCacheAdminMutatingCommandRequest commandRequest,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(result);
+        }
+    }
+}

@@ -145,14 +145,14 @@ public class Given_DocumentCacheAdministrativeCommandRunner
     }
 
     [Test]
-    public async Task It_starts_the_workflow_timeout_only_after_mutex_acquisition()
+    public async Task It_bounds_mutex_acquisition_with_the_administration_workflow_timeout()
     {
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
             generation: 1,
-            workflowTimeout: TimeSpan.FromMilliseconds(250)
+            workflowTimeout: TimeSpan.FromMilliseconds(30)
         );
         DocumentCacheProjectionTargetRuntimeContext runtimeContext = RuntimeContext(executionContext);
-        var mutex = new RecordingAdministrativeMutex(acquireDelay: TimeSpan.FromMilliseconds(400));
+        var mutex = new RecordingAdministrativeMutex(acquireDelay: TimeSpan.FromMilliseconds(500));
         MutableTargetRegistry registry = RegistryFor(executionContext);
         DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
             registry,
@@ -165,9 +165,21 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             SucceedingWorkflow.Instance
         );
 
-        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
-        result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
-        result.ElapsedCommandTime.Should().NotBeNull();
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.MutexAcquisitionCancelled);
+        result.Mutated.Should().BeFalse();
+        result.ElapsedCommandTime.Should().BeNull();
+        result
+            .PhaseDiagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.AcquireMutex
+                && diagnostic.LastCompletedPhase == DocumentCacheAdministrativeCommandPhase.ResolveTarget
+                && diagnostic.DiagnosticCategory
+                    == DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionCancelled
+                && !diagnostic.Retryable
+            );
         mutex.AcquireCount.Should().Be(1);
     }
 

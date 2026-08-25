@@ -78,6 +78,69 @@ public sealed class Given_DocumentCacheAdminPostgresqlAdministrativeMutex
     }
 
     [Test]
+    [Category("Cancellation")]
+    public async Task It_returns_Cancellation_result_when_mutex_acquisition_wait_exceeds_command_timeout()
+    {
+        await using DocumentCacheAdminCliTarget target =
+            await DocumentCacheAdminCliTarget.CreatePostgresqlAsync();
+        DocumentCacheAdminCliPostgresqlInsertTransaction? blockingInsert =
+            await target.State.BeginPostgresqlCanonicalInsertTransactionAsync();
+
+        try
+        {
+            await using DocumentCacheAdminCliProcessHarness ownerHarness =
+                await DocumentCacheAdminCliProcessHarness.CreateAsync(target);
+            await using DocumentCacheAdminCliProcessHarness contenderHarness =
+                await DocumentCacheAdminCliProcessHarness.CreateAsync(target);
+
+            await using DocumentCacheAdminCliRunningProcess ownerProcess = StartActivateNewEmpty(
+                ownerHarness,
+                target
+            );
+            await WaitForAdministrativeMutexOwnerAsync(target, ownerProcess);
+
+            await using DocumentCacheAdminCliRunningProcess contenderProcess = StartScrub(
+                contenderHarness,
+                target,
+                commandTimeoutSeconds: "1"
+            );
+            await WaitForAdministrativeMutexWaiterAsync(target, contenderProcess);
+
+            DocumentCacheAdminCliProcessResult timeoutResult = await contenderProcess.WaitForExitAsync(
+                TimeSpan.FromSeconds(30)
+            );
+            JsonObject commandResult = DocumentCacheAdminCliCommandResultAssertions.AssertCommandResult(
+                timeoutResult,
+                target,
+                DocumentCacheAdminExitCodes.FailedNoMutation
+            );
+            commandResult["command"]!.GetValue<string>().Should().Be("explicitIntegrityScrub");
+            commandResult["status"]!.GetValue<string>().Should().Be("failedNoMutation");
+            commandResult["classification"]!.GetValue<string>().Should().Be("mutexAcquisitionCancelled");
+            commandResult["mutated"]!.GetValue<bool>().Should().BeFalse();
+            commandResult["elapsedCommandTimeSeconds"].Should().BeNull();
+            AssertPhaseDiagnostic(
+                commandResult,
+                expectedCategory: "mutexAcquisitionCancelled",
+                expectedPhase: "acquireMutex",
+                expectedRetryable: false
+            );
+
+            await blockingInsert.DisposeAsync();
+            blockingInsert = null;
+
+            AssertActivationSucceeded(await ownerProcess.WaitForExitAsync(TimeSpan.FromSeconds(60)), target);
+        }
+        finally
+        {
+            if (blockingInsert is not null)
+            {
+                await blockingInsert.DisposeAsync();
+            }
+        }
+    }
+
+    [Test]
     public async Task It_allows_different_physical_databases_on_the_same_cluster_to_administer_concurrently()
     {
         await using DocumentCacheAdminCliTarget blockedTarget =
@@ -141,6 +204,95 @@ public sealed class Given_DocumentCacheAdminPostgresqlAdministrativeMutex
         };
 
         return builder.ConnectionString;
+    }
+}
+
+[TestFixture]
+[NonParallelizable]
+[Category("PostgresqlIntegration")]
+[Category("RetryableIncomplete")]
+public sealed class Given_DocumentCacheAdminPostgresqlRetryableIncompleteWorkflows
+{
+    [Test]
+    public async Task It_serializes_retryable_incomplete_rebuild_result_and_reissue_resumes_the_workflow()
+    {
+        await using DocumentCacheAdminCliTarget target =
+            await DocumentCacheAdminCliTarget.CreatePostgresqlAsync();
+        DocumentCacheAdminCliSeededDocument document =
+            await target.State.InsertPostgresqlDescriptorDocumentAsync(
+                "RetryableIncomplete",
+                contentVersion: 31
+            );
+        await target.State.InsertPostgresqlDocumentCacheAsync(
+            document,
+            documentJson: """{"value":"stale-cache-before-timeout"}"""
+        );
+        await target.State.InsertPostgresqlProjectionWorkAsync(document);
+        await target.State.SetLifecycleAsync("Tracking", cacheAheadRecoveryRequired: false);
+
+        DocumentCacheAdminCliPostgresqlDocumentCacheLockTransaction? cacheLock =
+            await target.State.BeginPostgresqlDocumentCacheLockTransactionAsync(document.DocumentId);
+
+        try
+        {
+            await using DocumentCacheAdminCliProcessHarness harness =
+                await DocumentCacheAdminCliProcessHarness.CreateAsync(target);
+            await using DocumentCacheAdminCliRunningProcess timedOutProcess = StartRebuildOnline(
+                harness,
+                target,
+                commandTimeoutSeconds: "2"
+            );
+
+            await WaitForLifecycleStateAsync(target, timedOutProcess, "Resetting");
+            await Task.Delay(TimeSpan.FromMilliseconds(2500));
+            await cacheLock.DisposeAsync();
+            cacheLock = null;
+
+            DocumentCacheAdminCliProcessResult timedOutResult = await timedOutProcess.WaitForExitAsync(
+                TimeSpan.FromSeconds(60)
+            );
+            JsonObject incompleteResult = DocumentCacheAdminCliCommandResultAssertions.AssertCommandResult(
+                timedOutResult,
+                target,
+                DocumentCacheAdminExitCodes.IncompleteRetryable
+            );
+            incompleteResult["command"]!.GetValue<string>().Should().Be("onlineCacheRebuild");
+            incompleteResult["status"]!.GetValue<string>().Should().Be("incompleteRetryable");
+            incompleteResult["classification"]!.GetValue<string>().Should().Be("workflowTimeout");
+            incompleteResult["mutated"]!.GetValue<bool>().Should().BeTrue();
+            incompleteResult["lifecycle"]!.GetValue<string>().Should().Be("resetting");
+            AssertPhaseDiagnostic(
+                incompleteResult,
+                expectedCategory: "workflowTimeout",
+                expectedPhase: "clearCache",
+                expectedRetryable: true
+            );
+
+            DocumentCacheAdminCliProcessResult retryResult = await RunRebuildOnlineAsync(harness, target);
+            JsonObject completedResult = DocumentCacheAdminCliCommandResultAssertions.AssertCommandResult(
+                retryResult,
+                target,
+                DocumentCacheAdminExitCodes.Success
+            );
+            completedResult["status"]!.GetValue<string>().Should().Be("completed");
+            completedResult["classification"]!.GetValue<string>().Should().Be("succeeded");
+            completedResult["mutated"]!.GetValue<bool>().Should().BeTrue();
+            completedResult["lifecycle"]!.GetValue<string>().Should().Be("tracking");
+
+            DocumentCacheAdminCliLifecycleState lifecycle = await target.State.ReadLifecycleAsync();
+            lifecycle.ProjectionLifecycleState.Should().Be("Tracking");
+            lifecycle.CacheAheadRecoveryRequired.Should().BeFalse();
+            DocumentCacheAdminCliMutableCounts counts = await target.State.ReadMutableCountsAsync();
+            counts.DocumentCacheRows.Should().Be(1);
+            counts.WorkRows.Should().Be(0);
+        }
+        finally
+        {
+            if (cacheLock is not null)
+            {
+                await cacheLock.DisposeAsync();
+            }
+        }
     }
 }
 
@@ -341,7 +493,8 @@ file static class DocumentCacheAdminAdministrativeMutexConcurrencySupport
 
     public static DocumentCacheAdminCliRunningProcess StartScrub(
         DocumentCacheAdminCliProcessHarness harness,
-        DocumentCacheAdminCliTarget target
+        DocumentCacheAdminCliTarget target,
+        string commandTimeoutSeconds = "60"
     )
     {
         List<string> arguments =
@@ -352,10 +505,50 @@ file static class DocumentCacheAdminAdministrativeMutexConcurrencySupport
             "integrityScrub",
             DocumentCacheAdminCommandSurface.JsonOptionName,
             DocumentCacheAdminCommandSurface.CommandTimeoutSecondsOptionName,
-            "60",
+            commandTimeoutSeconds,
         ];
 
         return harness.Start([.. arguments]);
+    }
+
+    public static DocumentCacheAdminCliRunningProcess StartRebuildOnline(
+        DocumentCacheAdminCliProcessHarness harness,
+        DocumentCacheAdminCliTarget target,
+        string commandTimeoutSeconds = "60"
+    )
+    {
+        List<string> arguments =
+        [
+            DocumentCacheAdminCommandSurface.RebuildOnlineCommandName,
+            .. TargetArguments(target),
+            DocumentCacheAdminCommandSurface.ConfirmOptionName,
+            "onlineCacheRebuild",
+            DocumentCacheAdminCommandSurface.JsonOptionName,
+            DocumentCacheAdminCommandSurface.CommandTimeoutSecondsOptionName,
+            commandTimeoutSeconds,
+        ];
+
+        return harness.Start([.. arguments]);
+    }
+
+    public static Task<DocumentCacheAdminCliProcessResult> RunRebuildOnlineAsync(
+        DocumentCacheAdminCliProcessHarness harness,
+        DocumentCacheAdminCliTarget target,
+        string commandTimeoutSeconds = "60"
+    )
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+        ArgumentNullException.ThrowIfNull(target);
+
+        return harness.RunAsync([
+            DocumentCacheAdminCommandSurface.RebuildOnlineCommandName,
+            .. TargetArguments(target),
+            DocumentCacheAdminCommandSurface.ConfirmOptionName,
+            "onlineCacheRebuild",
+            DocumentCacheAdminCommandSurface.JsonOptionName,
+            DocumentCacheAdminCommandSurface.CommandTimeoutSecondsOptionName,
+            commandTimeoutSeconds,
+        ]);
     }
 
     public static async Task WaitForAdministrativeMutexOwnerAsync(
@@ -416,6 +609,48 @@ file static class DocumentCacheAdminAdministrativeMutexConcurrencySupport
                     + $"stderr:\n{result.StandardError}"
             );
         }
+    }
+
+    public static async Task WaitForLifecycleStateAsync(
+        DocumentCacheAdminCliTarget target,
+        DocumentCacheAdminCliRunningProcess process,
+        string lifecycleState
+    )
+    {
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        while (stopwatch.Elapsed < TimeSpan.FromSeconds(30))
+        {
+            DocumentCacheAdminCliLifecycleState state = await target.State.ReadLifecycleAsync();
+            if (string.Equals(state.ProjectionLifecycleState, lifecycleState, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            await FailIfExitedAsync(process, $"before lifecycle reached {lifecycleState}");
+            await Task.Delay(TimeSpan.FromMilliseconds(100));
+        }
+
+        Assert.Fail($"The CLI process did not move lifecycle to {lifecycleState} within 30 seconds.");
+    }
+
+    public static void AssertPhaseDiagnostic(
+        JsonObject commandResult,
+        string expectedCategory,
+        string expectedPhase,
+        bool expectedRetryable
+    )
+    {
+        JsonArray phaseDiagnostics = commandResult["phaseDiagnostics"]!.AsArray();
+        bool hasExpectedDiagnostic = phaseDiagnostics.Any(diagnostic =>
+        {
+            JsonObject? diagnosticObject = diagnostic as JsonObject;
+            return diagnosticObject is not null
+                && diagnosticObject["diagnosticCategory"]!.GetValue<string>() == expectedCategory
+                && diagnosticObject["currentPhase"]!.GetValue<string>() == expectedPhase
+                && diagnosticObject["retryable"]!.GetValue<bool>() == expectedRetryable;
+        });
+
+        hasExpectedDiagnostic.Should().BeTrue();
     }
 
     public static void AssertActivationSucceeded(

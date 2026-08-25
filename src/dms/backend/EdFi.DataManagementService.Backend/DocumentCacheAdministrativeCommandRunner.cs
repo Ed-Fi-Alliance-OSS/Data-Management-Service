@@ -523,13 +523,20 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
 
             DocumentCacheAdministrativeCommandExecutionId executionId =
                 DocumentCacheAdministrativeCommandExecutionId.New();
+            DateTimeOffset startedAt = timeProvider.GetUtcNow();
+            using CancellationTokenSource commandTimeout = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken
+            );
+            commandTimeout.CancelAfter(
+                targetContext.TargetExecutionContext.EffectiveSettings.AdministrationWorkflowTimeout
+            );
 
             IDocumentCacheAdministrativeMutexLease mutexLease;
             long mutexStartedAt = Stopwatch.GetTimestamp();
             try
             {
                 mutexLease = await administrativeMutex
-                    .AcquireAsync(targetContext.TargetExecutionContext.ConnectionInput, cancellationToken)
+                    .AcquireAsync(targetContext.TargetExecutionContext.ConnectionInput, commandTimeout.Token)
                     .ConfigureAwait(false);
                 RecordAdministrativeMutexOutcome(
                     request,
@@ -557,6 +564,28 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                         "DocumentCache administrative mutex acquisition was cancelled."
                     ),
                     targetContext
+                );
+                return classifiedResult;
+            }
+            catch (OperationCanceledException) when (commandTimeout.IsCancellationRequested)
+            {
+                RecordAdministrativeMutexOutcome(
+                    request,
+                    targetContext,
+                    DocumentCacheAdministrativeCommandClassification.MutexAcquisitionCancelled.ToString(),
+                    DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionCancelled,
+                    mutexStartedAt
+                );
+                classifiedResult = RecordAdministrativeCommandResult(
+                    CreateAcquireMutexFailure(
+                        request,
+                        targetContext,
+                        DocumentCacheAdministrativeCommandClassification.MutexAcquisitionCancelled,
+                        DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionCancelled,
+                        "DocumentCache administrative mutex acquisition exceeded the command timeout."
+                    ),
+                    targetContext,
+                    DocumentCacheAdministrativeCommandPhase.AcquireMutex
                 );
                 return classifiedResult;
             }
@@ -612,13 +641,6 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
 
             try
             {
-                using CancellationTokenSource workflowTimeout =
-                    CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                DateTimeOffset startedAt = timeProvider.GetUtcNow();
-                workflowTimeout.CancelAfter(
-                    targetContext.TargetExecutionContext.EffectiveSettings.AdministrationWorkflowTimeout
-                );
-
                 DocumentCacheAdministrativeCommandExecutionContext commandContext = new(
                     executionId,
                     request,
@@ -629,7 +651,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                     observationSink,
                     timeProvider,
                     startedAt,
-                    workflowTimeout.Token,
+                    commandTimeout.Token,
                     _telemetry,
                     _providerConcurrencyRetrySettings,
                     _writeExceptionClassifier
@@ -657,7 +679,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                                     )
                                     .ConfigureAwait(false);
                             },
-                            workflowTimeout.Token
+                            commandTimeout.Token
                         )
                         .ConfigureAwait(false);
 
@@ -675,7 +697,7 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                     );
                     return classifiedResult;
                 }
-                catch (OperationCanceledException) when (workflowTimeout.IsCancellationRequested)
+                catch (OperationCanceledException) when (commandTimeout.IsCancellationRequested)
                 {
                     classifiedResult = RecordAdministrativeCommandResult(
                         CreateWorkflowTimeoutResult(commandContext),
