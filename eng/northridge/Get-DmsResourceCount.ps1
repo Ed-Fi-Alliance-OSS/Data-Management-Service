@@ -19,10 +19,12 @@
     Count mode reads dms.Document joined to dms.ResourceKey, which is the same grouping on both
     engines, so the two sides are comparable by construction.
 
-    Reconcile mode refuses two ways of passing while proving nothing. An empty count set on either
-    side is rejected rather than reconciled, because two header-only files differ nowhere. And the
-    expected document and resource totals are required, because two count sets that agree with each
-    other are still only evidence about each other.
+    Reconcile mode refuses three ways of passing while proving nothing. One file passed as both sides
+    is rejected, because a count set reconciled against itself differs nowhere and hits every
+    expected total. An empty count set on either side is rejected rather than reconciled, because
+    two header-only files differ nowhere. And the expected document and resource totals are
+    required, because two count sets that agree with each other are still only evidence about each
+    other.
 
 .PARAMETER Engine
     Engine to count. 'postgresql' uses psql in a container; 'mssql' uses sqlcmd in a container.
@@ -218,6 +220,31 @@ function ConvertTo-CountRow {
     return $rows
 }
 
+# Reconcile mode's two paths have to name two files. The empty-set and expected-total checks cannot
+# see one file passed twice: it reconciles against itself with zero differences on every axis and
+# hits both totals, a PASS that says nothing about the other engine. Paths are compared after
+# resolution -- a relative spelling against an absolute one, a symbolic link against its target --
+# and without regard to case, because two spellings of one file are one file on Windows and macOS.
+# Two distinct files with identical contents are not this guard's concern: that is what a successful
+# reconciliation looks like.
+function Get-CanonicalFilePath {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)] [string] $Path)
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "Count set '$Path' does not exist or is not a file."
+    }
+
+    $item = Get-Item -LiteralPath $Path
+    $target = $item.ResolveLinkTarget($true)
+    if ($null -ne $target) {
+        return $target.FullName
+    }
+
+    return $item.FullName
+}
+
 if ($PSCmdlet.ParameterSetName -eq "Count") {
 
     if ([string]::IsNullOrWhiteSpace($Container)) {
@@ -258,6 +285,12 @@ if ($PSCmdlet.ParameterSetName -eq "Count") {
 }
 
 # ---------- Reconcile mode ----------
+
+$leftFile = Get-CanonicalFilePath -Path $LeftPath
+$rightFile = Get-CanonicalFilePath -Path $RightPath
+if ([string]::Equals($leftFile, $rightFile, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "-LeftPath and -RightPath both resolve to '$leftFile'. A count set reconciled against itself differs nowhere and proves nothing -- pass the other engine's count set."
+}
 
 # @() rather than the bare result: a header-only CSV imports as nothing at all, and the guard below
 # has to be able to read .Count on it. Two such files reconcile to zero differences on every axis,

@@ -49,8 +49,10 @@
     Database to snapshot. Repeat the parameter, or pass two values, to snapshot and then diff both.
 
 .PARAMETER OutputDirectory
-    Directory for the snapshot files. Use a location outside the repository: snapshots are generated
-    artifacts and must never be committed.
+    Directory for the snapshot files, one schema-snapshot.<database>.txt per database. Use a location
+    outside the repository: snapshots are generated artifacts and must never be committed. When the
+    two names differ only in case each file also carries its database's position, so the two stay
+    two files on a case-insensitive file system.
 
 .PARAMETER Container
     Name of the running PostgreSQL container.
@@ -208,6 +210,34 @@ ORDER BY nspname;
     # Ordinal comparison: a quoted PostgreSQL identifier is case-sensitive, so a schema that differs
     # only in case is a different schema and has to read as missing.
     return [string[]]@($Name | Where-Object { -not $present.Contains($_) })
+}
+
+# One snapshot file per database, keyed the way PostgreSQL names databases. A quoted identifier is
+# case-sensitive, so 'foo' and 'Foo' are two databases; a hashtable literal compares keys without
+# regard to case and would hold one entry for both, after which the diff would read one file twice
+# and report PASS -- the self-compare the distinct-name guard at the top refuses, reached by another
+# route. The file system can collapse the two names the same way: Windows and macOS name files
+# case-insensitively, so when the two names differ only in case each file also carries its
+# database's position in -Database, and the two paths differ on any file system.
+function Get-SnapshotPathMap {
+    [CmdletBinding()]
+    [OutputType([System.Collections.Generic.Dictionary[string, string]])]
+    param(
+        [Parameter(Mandatory)] [ValidateCount(1, 2)] [string[]] $DatabaseName,
+        [Parameter(Mandatory)] [string] $Directory
+    )
+
+    $caseCollision = $DatabaseName.Count -eq 2 -and
+        [string]::Equals($DatabaseName[0], $DatabaseName[1], [System.StringComparison]::OrdinalIgnoreCase)
+
+    $map = [System.Collections.Generic.Dictionary[string, string]]::new([System.StringComparer]::Ordinal)
+    for ($index = 0; $index -lt $DatabaseName.Count; $index++) {
+        $name = $DatabaseName[$index]
+        $fileName = if ($caseCollision) { "schema-snapshot.$($index + 1).$name.txt" } else { "schema-snapshot.$name.txt" }
+        $map[$name] = Join-Path -Path $Directory -ChildPath $fileName
+    }
+
+    return $map
 }
 
 # Each query is prefixed with a stable section label so the diff points at a kind of object rather
@@ -499,13 +529,12 @@ if (-not (Test-Path -LiteralPath $OutputDirectory)) {
     New-Item -Path $OutputDirectory -ItemType Directory -Force | Out-Null
 }
 
-$snapshotPath = @{}
+$snapshotPath = Get-SnapshotPathMap -DatabaseName $Database -Directory $OutputDirectory
 
 foreach ($databaseName in $Database) {
-    $path = Join-Path -Path $OutputDirectory -ChildPath "schema-snapshot.$databaseName.txt"
+    $path = $snapshotPath[$databaseName]
     $rowCount = Export-SchemaSnapshot -DatabaseName $databaseName -Path $path -QueryMap $queryMap `
         -ContainerName $Container -User $PostgresUser
-    $snapshotPath[$databaseName] = $path
     Write-Output "Captured $rowCount rows for '$databaseName' -> $path"
 }
 

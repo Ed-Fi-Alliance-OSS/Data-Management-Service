@@ -48,12 +48,32 @@ live scenarios build and drop their own databases, dump and restore one of them 
 flags to prove the compare fails before step 5b, passes after it and still fails a real constraint
 change, and use cluster roles, so they
 run only when `DMS_NORTHRIDGE_PG_FIXTURE_CONTAINER` names a **disposable** PostgreSQL container
-(with `DMS_NORTHRIDGE_PG_FIXTURE_USER` if its superuser is not `postgres`), and self-skip otherwise:
+(with `DMS_NORTHRIDGE_PG_FIXTURE_USER` if its superuser is not `postgres`), and self-skip otherwise.
+The stack's own `dms-postgresql` is not that container: the fixtures create and drop databases and
+cluster roles, and the `edfi_dms_enqueue_owner` role a bootstrapped stack owns objects through is
+exactly what they must not borrow. Start a throwaway one from the stack's own image instead, wait
+for it to accept connections, and remove it afterwards:
 
 ```powershell
-$env:DMS_NORTHRIDGE_PG_FIXTURE_CONTAINER = "dms-postgresql"
+docker run --rm -d --name nr-pg-fixture -e POSTGRES_PASSWORD=fixture postgres:16.8-alpine
+$deadline = (Get-Date).AddSeconds(60)
+while ($(docker exec nr-pg-fixture pg_isready -q -h localhost -U postgres 2>$null; $LASTEXITCODE) -ne 0) {
+    if ((Get-Date) -gt $deadline) { throw "nr-pg-fixture did not accept connections within 60 s" }
+    Start-Sleep -Seconds 1
+}
+$env:DMS_NORTHRIDGE_PG_FIXTURE_CONTAINER = "nr-pg-fixture"
 Invoke-Pester -Path ./tests/SchemaSnapshotSecurity.Tests.ps1 -Output Detailed
+docker rm -f nr-pg-fixture
 ```
+
+[`tests/NorthridgeFailClosedGuards.Tests.ps1`](./tests/NorthridgeFailClosedGuards.Tests.ps1) holds
+the four scripts and the recipe to the guards that stop a run from passing on nothing: two database
+names that differ only in case cannot collapse to one snapshot, one count file cannot be reconciled
+against itself, a `dms` base table on none of the copy tool's lists stops the copy before it loads, a
+target cannot be its own source or reference, a measured checkpoint value cannot lack an
+expectation, a deferred read is recorded with its final status, and the recipe reads the service
+ports from the containers and bounds every wait. It needs no database and runs in the same
+pull-request lane.
 
 ## Why the client tools run in containers
 
@@ -550,10 +570,41 @@ echo "SourceIdentity rotated to $NEW_SOURCE_ID"
 #    DMS_CONFIG_DATABASE_ENCRYPTION_KEY. Re-saving re-encrypts it with yours. The restore also
 #    replaced dmscs.OpenIddict*, so register the admin client AFTER the restore, not before.
 #    Skip this and DMS restart-loops with "Failed to decrypt the connection string".
-docker start ed-fi-api-config-service
-until [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8081/health)" = "200" ]; do sleep 3; done
+#
+#    The ports are read from the containers, not assumed. local-config.yml and local-dms.yml set each
+#    container's ASPNETCORE_HTTP_PORTS from DMS_CONFIG_ASPNETCORE_HTTP_PORTS and DMS_HTTP_PORTS
+#    respectively and publish that same number on 127.0.0.1, so the value inside the container is the
+#    host port -- the same two overrides eng/docker-compose/env-utility.psm1 resolves in
+#    Resolve-CmsBaseUrl and Resolve-DockerLocalDmsBaseUrl. A stack on other ports would otherwise meet
+#    a hard-coded 8081 here and wait on it forever. `docker inspect` reads a stopped container, which
+#    both still are.
+ENVOF() { docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$1"; }
+CMS_PORT=$(ENVOF ed-fi-api-config-service | sed -n 's/^ASPNETCORE_HTTP_PORTS=//p')
+DMS_PORT=$(ENVOF ed-fi-api | sed -n 's/^ASPNETCORE_HTTP_PORTS=//p')
+case "$CMS_PORT" in ''|*[!0-9]*) echo "could not read one numeric ASPNETCORE_HTTP_PORTS from ed-fi-api-config-service (got '$CMS_PORT')"; exit 1;; esac
+case "$DMS_PORT" in ''|*[!0-9]*) echo "could not read one numeric ASPNETCORE_HTTP_PORTS from ed-fi-api (got '$DMS_PORT')"; exit 1;; esac
+CMS="http://localhost:$CMS_PORT"
+DMS="http://localhost:$DMS_PORT"
 
-CMS=http://localhost:8081
+#    Every wait in this recipe is bounded. An open-ended `until` against a wrong port, a container that
+#    exited, or a service that never becomes healthy hangs a pasted recipe with nothing on the screen;
+#    this gives up after the stated number of seconds, shows the container's last log lines and stops.
+#    Each probe is capped as well (2 s to connect, 5 s in total), so a port that accepts the connection
+#    and never answers cannot hold one curl open past the counter.
+WAIT200() { # WAIT200 <url> <seconds> <container>
+  _waited=0
+  until [ "$(curl -s --connect-timeout 2 --max-time 5 -o /dev/null -w '%{http_code}' "$1")" = "200" ]; do
+    if [ "$_waited" -ge "$2" ]; then
+      echo "$3 did not answer 200 at $1 within $2 s -- check the port above and the container's logs:"
+      docker logs --tail 20 "$3"
+      return 1
+    fi
+    sleep 3; _waited=$((_waited + 3))
+  done
+}
+docker start ed-fi-api-config-service
+WAIT200 "$CMS/health" 300 ed-fi-api-config-service || exit 1
+echo "CMS healthy at $CMS"
 
 #    `restore-admin` is registered against YOUR CMS, so its secret has to satisfy that instance's
 #    IdentitySettings:ClientSecretValidation bounds -- which are configurable, so no literal secret
@@ -644,9 +695,8 @@ echo "data store re-saved -> HTTP 204"
 #     lucky, so this step is unconditional.
 #
 #     Read the credentials from the DMS container rather than from your env file: what has to exist in
-#     CMS is what DMS will actually send. `docker inspect` rather than `docker exec`, for the same
-#     reason as step 7 -- ed-fi-api is stopped until step 11.
-ENVOF() { docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$1"; }
+#     CMS is what DMS will actually send. `docker inspect` (ENVOF, from step 9) rather than
+#     `docker exec`, for the same reason as step 7 -- ed-fi-api is stopped until step 11.
 CID=$(ENVOF ed-fi-api | sed -n 's/^ConfigurationServiceSettings__ClientId=//p')
 CSEC=$(ENVOF ed-fi-api | sed -n 's/^ConfigurationServiceSettings__ClientSecret=//p')
 CSCOPE=$(ENVOF ed-fi-api | sed -n 's/^ConfigurationServiceSettings__Scope=//p')
@@ -700,8 +750,8 @@ echo "DMS-to-CMS client '$CID' recreated with your secret and verified"
 # 11. Now start DMS. A cached first-use validation failure is NOT cleared by re-provisioning, so if
 #     DMS was started too early, restart the container rather than re-running any provisioning step.
 docker start ed-fi-api
-until [ "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/health)" = "200" ]; do sleep 3; done
-echo "DMS healthy"
+WAIT200 "$DMS/health" 300 ed-fi-api || exit 1
+echo "DMS healthy at $DMS"
 
 # 12. Create your own DMS API client before reading data.
 #     A healthy DMS is not yet a readable one. The artifact carries the PRODUCER's vendor,
@@ -737,7 +787,7 @@ test -n "$DT" || { echo "no DMS token minted"; exit 1; }
 #     the status and the count are captured and compared to exact values rather than grepped for.
 SC=$(curl -s -D "$ART/smoke-headers.txt" -o "$ART/smoke-body.json" -w '%{http_code}' \
   -H "Authorization: Bearer $DT" \
-  "http://localhost:8080/data/ed-fi/students?limit=1&totalCount=true")
+  "$DMS/data/ed-fi/students?limit=1&totalCount=true")
 TC=$(grep -i '^total-count:' "$ART/smoke-headers.txt" | tail -1 | tr -d '\r' |
      sed 's/^[^:]*:[[:space:]]*//')
 if [ "$SC" != "200" ] || [ "$TC" != "21628" ]; then
@@ -802,6 +852,8 @@ Every published artifact records the following, on its ticket and in this direct
 | DMS revision built | `087eaa013df22a88d0046ac6f0e211bf47ec79e4` — the branch's merge base with `main` at publication. At the publication head `b303450ab5fd689526696cb088a76a90b7ef6c14` the branch's changes were confined to `eng/northridge/` (`git diff --name-only 087eaa013df22a88d0046ac6f0e211bf47ec79e4...b303450ab5fd689526696cb088a76a90b7ef6c14`), so the DMS that produced and served the dataset carried exactly that revision's `src/` source. Review hardening after publication added restore and OpenIddict tooling changes under `eng/docker-compose/`, but no DMS production `src/` code changed on this branch (`git diff --name-only origin/main...DMS-1406 -- src` is empty) |
 | Branch head at publication | `b303450ab5fd689526696cb088a76a90b7ef6c14` on `DMS-1406` — the workflow tooling and restore recipe as they stood when the artifact was uploaded |
 | `SourceIdentity` as shipped | `8b962de6-b979-49aa-bce0-ca59e0a1ad51` — rotate it (step 8); a consumer whose value still reads this has skipped the step |
+| Engine image | `postgres:16.8-alpine@sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0` — `eng/docker-compose/postgresql.yml` at the DMS revision built, unchanged at the publication head; the archive header reads `Dumped from database version: 16.8` and `Dumped by pg_dump version: 16.8` (`pg_restore -l`) |
+| `ResourceKeySeedHash` | `fae376b7b81722efe1878226a49200d74ae68febac7d21f5121a0824236e981b` — `dms."EffectiveSchema"` of the restored artifact and of the fresh same-revision deployment step 5c compares it against (section `11-fingerprint` of both snapshots), and asserted against the reference in every checkpoint record |
 | `ResourceKey` rows | 351 |
 | `dms."Descriptor"` rows | 2,968 |
 | `ChangeVersionSequence` | 21,553,810, equal to `MAX("IdentityVersion")` |

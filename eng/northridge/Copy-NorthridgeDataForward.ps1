@@ -36,7 +36,9 @@
     contents. Schema and table name filters cannot express that: pg_restore ORs -n against -n and -t
     against -t, then ANDs the two groups, so naming a table that exists in more than one selected
     schema pulls in every copy of it. tracked_changes_edfi.Descriptor and dms.Descriptor share a name,
-    which is exactly how dms.Descriptor reached a load that was supposed to exclude it.
+    which is exactly how dms.Descriptor reached a load that was supposed to exclude it. Those lists
+    stand in for discovery in the dms schema, so before the load they are held to the catalog of both
+    databases: every dms base table in either must be on exactly one of them, or the run stops.
 
     After the load, four things are asserted that a row-count reconciliation cannot see. Sequence
     positions, because a sequence left at its fresh-database value only surfaces as a collision on the
@@ -206,6 +208,23 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
+# Every pair of databases this script reads has to be two databases. A target measured against itself
+# as its own reference agrees with itself on the fingerprint and the cache state, and a target
+# reconciled against itself as its own source agrees with itself on every row count and every stamp
+# distribution: each is a PASS that proves nothing, and nothing below can tell it from a real one.
+# Ordinal, because a quoted PostgreSQL identifier is case-sensitive.
+$databaseByRole = [ordered]@{
+    "-TargetDatabase"    = $TargetDatabase
+    "-SourceDatabase"    = $SourceDatabase
+    "-ReferenceDatabase" = $ReferenceDatabase
+}
+foreach ($shared in @($databaseByRole.GetEnumerator() |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_.Value) } |
+            Group-Object -Property Value -CaseSensitive |
+            Where-Object { $_.Count -gt 1 })) {
+    throw "$(@($shared.Group | ForEach-Object { $_.Key }) -join ' and ') name the same database '$($shared.Name)'. A database measured or reconciled against itself agrees with itself on every value, which is a PASS that proves nothing; each role needs its own database."
+}
+
 # Provisioning-owned. Copying any of these is what would produce a hand-edited fingerprint or a stale
 # source identity, so they are named here and excluded by name, not by luck.
 $script:ProvisioningOwnedTable = @(
@@ -283,9 +302,12 @@ function Get-ScalarValue {
 function Get-DataTableList {
     [CmdletBinding()]
     [OutputType([string[]])]
-    param([Parameter(Mandatory)] [string] $DatabaseName)
+    param(
+        [Parameter(Mandatory)] [string] $DatabaseName,
+        [string[]] $Schema = $script:BulkSchema
+    )
 
-    $schemaLiteral = ($script:BulkSchema | ForEach-Object { "'$_'" }) -join ", "
+    $schemaLiteral = ($Schema | ForEach-Object { "'$_'" }) -join ", "
 
     $sql = @"
 SELECT table_schema || '.' || table_name
@@ -298,6 +320,74 @@ ORDER BY table_schema, table_name;
         -DatabaseName $DatabaseName -Sql $sql
 
     return [string[]]@($rows | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
+}
+
+# The dms schema is not discovered the way the bulk schemas are: its tables are named in the lists at
+# the top, because each is handled differently -- never copied, copied, or derived. A list is an
+# allow-list only while it is complete. A dms base table that exists in the catalog and is on none of
+# the lists is neither restored nor reconciled: the copy skips it, the row-count reconciliation never
+# asks about it, and the run prints PASS over a dataset with a hole in it. So the lists are held to
+# the catalog of both databases before anything is loaded: every dms base table in either must be on
+# exactly one list, and the tables that carry dataset rows must exist in both.
+function Get-DmsTableClassificationFailure {
+    [CmdletBinding()]
+    # Object[] rather than List[string]: the comma operator that stops an empty result unrolling to
+    # $null wraps the return, and the declared type has to match what callers actually receive.
+    [OutputType([System.Object[]])]
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $SourceTable,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $TargetTable
+    )
+
+    $failure = [System.Collections.Generic.List[string]]::new()
+
+    $classification = [ordered]@{
+        "provisioning-owned" = @($script:ProvisioningOwnedTable | ForEach-Object { "dms.$_" })
+        "copied data"        = @($script:DmsDataTable | ForEach-Object { "dms.$_" })
+        "derived"            = @("dms.$script:DmsDerivedTable")
+    }
+
+    # A name on two lists would be excluded by one and copied by the other, and which wins is not a
+    # question this script should have to answer.
+    $classOf = [System.Collections.Generic.Dictionary[string, string]]::new([System.StringComparer]::Ordinal)
+    foreach ($class in $classification.Keys) {
+        foreach ($table in $classification[$class]) {
+            if ($classOf.ContainsKey($table)) {
+                $failure.Add("$table is classified twice, as $($classOf[$table]) and as $class")
+                continue
+            }
+            $classOf[$table] = $class
+        }
+    }
+
+    # Ordinal throughout: a quoted PostgreSQL identifier is case-sensitive, so dms.document and
+    # dms.Document would be two tables, one of them unclassified.
+    $sourceSet = [System.Collections.Generic.HashSet[string]]::new([string[]]$SourceTable, [System.StringComparer]::Ordinal)
+    $targetSet = [System.Collections.Generic.HashSet[string]]::new([string[]]$TargetTable, [System.StringComparer]::Ordinal)
+    $catalogTable = [System.Collections.Generic.SortedSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($table in $SourceTable) { [void]$catalogTable.Add($table) }
+    foreach ($table in $TargetTable) { [void]$catalogTable.Add($table) }
+
+    foreach ($table in $catalogTable) {
+        if ($classOf.ContainsKey($table)) { continue }
+        $side = if ($sourceSet.Contains($table) -and $targetSet.Contains($table)) { "source and target" }
+        elseif ($sourceSet.Contains($table)) { "source" }
+        else { "target" }
+        $failure.Add("$table is a base table in the $side and is on none of the lists, so it would be neither copied nor reconciled")
+    }
+
+    # Provisioning-owned tables are not checked the other way: the source is an older schema and may
+    # lack a table provisioning creates today, and nothing is copied from them. The tables that carry
+    # dataset rows are checked on both sides, because a copied table absent from either is a copy that
+    # cannot happen or has nowhere to land.
+    foreach ($table in @($classification["copied data"]) + @($classification["derived"])) {
+        if (-not $sourceSet.Contains($table)) { $failure.Add("$table is not a base table in the source, so there is nothing to copy") }
+        if (-not $targetSet.Contains($table)) { $failure.Add("$table is not a base table in the target, so the copy has nowhere to land") }
+    }
+
+    # Comma operator: PowerShell unrolls an empty collection to $null on return, so a caller doing
+    # .Count on a clean result would fail -- a bug that can only fire when there is nothing to report.
+    return ,$failure
 }
 
 function Get-RowCountMap {
@@ -640,8 +730,11 @@ function Test-ReferentialIntegrity {
         # The row counts already measured on the target. A child table with no rows cannot hold a
         # violation, so its constraints are skipped -- and the skip is counted and printed, because a
         # sweep that quietly checked nothing would print what a clean one prints. A table the map does
-        # not mention is validated rather than skipped.
-        [Parameter(Mandatory)] [hashtable] $RowCount
+        # not mention is validated rather than skipped. IDictionary rather than hashtable: the caller
+        # passes an Ordinal dictionary, and a [hashtable] parameter would copy it into a Hashtable
+        # with a comparer of PowerShell's choosing; passing it through keeps one comparer for every
+        # map keyed by a table name.
+        [Parameter(Mandatory)] [System.Collections.IDictionary] $RowCount
     )
 
     $failure = [System.Collections.Generic.List[string]]::new()
@@ -703,7 +796,7 @@ function Test-ForeignKeyValidity {
     [OutputType([System.Object[]])]
     param(
         [Parameter(Mandatory)] [string] $DatabaseName,
-        [Parameter(Mandatory)] [hashtable] $RowCount
+        [Parameter(Mandatory)] [System.Collections.IDictionary] $RowCount
     )
 
     $failure = [System.Collections.Generic.List[string]]::new()
@@ -840,7 +933,7 @@ ORDER BY f.child_schema, f.child_table, f.conname;
 # place, leaving the count identical. Comparing the distribution is what detects it.
 function Get-StampDistribution {
     [CmdletBinding()]
-    [OutputType([hashtable])]
+    [OutputType([System.Collections.Generic.Dictionary[string, string]])]
     param(
         [Parameter(Mandatory)] [string] $DatabaseName,
         [Parameter(Mandatory)] [string[]] $SampleTable
@@ -869,7 +962,9 @@ function Get-StampDistribution {
     $rows = Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser `
         -DatabaseName $DatabaseName -Sql $sql
 
-    $map = @{}
+    # Ordinal, like every other map keyed by a table name here: a hashtable literal would read two
+    # tables differing only in case as one and compare the wrong distributions to each other.
+    $map = [System.Collections.Generic.Dictionary[string, string]]::new([System.StringComparer]::Ordinal)
     foreach ($row in $rows) {
         $text = ([string]$row).Trim()
         $separatorIndex = $text.IndexOf("|")
@@ -1066,7 +1161,12 @@ function Get-CheckpointExpectedValue {
         }
         "StagingSchemaPresent" { return "0" }
         "DocumentRow" { return [string]$ExpectedDocumentRow }
-        default { return "" }
+        default {
+            # Measure-Invariant and this switch are two lists that have to agree. A key measured there
+            # and not named here would be written to the record with a blank expected value, which is
+            # the shape of a check that never ran, so an unknown key stops the record instead.
+            throw "Measured value '$Key' has no expected value. Add it to Get-CheckpointExpectedValue and to Test-Invariant, or stop measuring it."
+        }
     }
 }
 
@@ -1166,6 +1266,7 @@ Write-Output "  target database   : $TargetDatabase"
 Write-Output "  bulk schemas      : $($script:BulkSchema -join ', ')"
 Write-Output "  dms tables copied : $($script:DmsDataTable -join ', ') and $script:DmsDerivedTable (derived)"
 Write-Output "  never copied      : $($script:ProvisioningOwnedTable -join ', ')"
+Write-Output "  dms table check   : every dms base table in source and target on exactly one of the lists above, before the load"
 Write-Output "  trigger handling  : pg_restore --data-only --disable-triggers (requires superuser)"
 Write-Output "  derived column    : dms.Descriptor.ResourceKeyId from dms.Document via $script:StagingSchema"
 Write-Output "  expected documents: $ExpectedDocumentCount"
@@ -1240,6 +1341,17 @@ if ($sourceOnlyTable.Count -gt 0 -or $targetOnlyTable.Count -gt 0) {
 
 Write-Output "  source and target bulk table sets are identical"
 $bulkTable = $sourceBulkTable
+
+# The dms schema is handled by name rather than discovered, so its lists are held to the catalog the
+# same way, on both databases and before the dump is copied in: a dms table on none of them would be
+# neither copied nor reconciled, and the run would print PASS over the hole.
+$sourceDmsTable = Get-DataTableList -DatabaseName $SourceDatabase -Schema @("dms")
+$targetDmsTable = Get-DataTableList -DatabaseName $TargetDatabase -Schema @("dms")
+$classificationFailure = Get-DmsTableClassificationFailure -SourceTable $sourceDmsTable -TargetTable $targetDmsTable
+if ($classificationFailure.Count -gt 0) {
+    throw "dms base tables are not fully classified between source '$SourceDatabase' and target '$TargetDatabase': $($classificationFailure -join '; '). Every dms base table must be named in this script as provisioning-owned, copied data or derived before the copy can be trusted."
+}
+Write-Output "  dms base tables classified exactly once: $($targetDmsTable.Count) in target, $($sourceDmsTable.Count) in source"
 
 $requestedTable = @($script:DmsDataTable | ForEach-Object { "dms.$_" }) + $bulkTable
 

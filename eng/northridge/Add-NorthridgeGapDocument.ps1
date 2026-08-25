@@ -118,6 +118,18 @@ function Get-GapDocumentManifest {
         }
     }
 
+    # The label is the key the final verification uses to find the body it sent, and the key of the
+    # result record. Two documents sharing one would make that lookup return both bodies and fail the
+    # comparison with a field diff that names the wrong cause. Uniqueness is checked without regard to
+    # case even though the lookup is case-sensitive: two labels a reader cannot tell apart in the
+    # record are one label.
+    $seenLabel = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($document in $manifest.documents) {
+        if (-not $seenLabel.Add([string]$document.label)) {
+            throw "Manifest '$Path' uses label '$($document.label)' more than once (compared without regard to case). Every document needs a label of its own."
+        }
+    }
+
     # Explicit ordering: a referenced document must exist before the document referencing it.
     return $manifest.documents | Sort-Object -Property { [int]$_.order }
 }
@@ -330,6 +342,11 @@ foreach ($row in $result) {
     $recheckStatus = [int]$recheck.StatusCode
     Write-Output ("  {0,-52} GET -> {1}" -f $row.Label, $recheckStatus)
 
+    # The record carries the final status. The GET recorded during the manifest tested an unfinished
+    # state, so a deferred 403 left there would read, in the evidence, as a failed read of a document
+    # this pass verified.
+    $row.GetStatus = $recheckStatus
+
     if ($recheckStatus -ne 200) {
         $failure.Add("$($row.Label): final GET-by-id returned $recheckStatus, expected 200")
         continue
@@ -339,7 +356,7 @@ foreach ($row in $result) {
     # mid-manifest comparison ran against an unfinished state, so treating an earlier match as
     # sufficient would leave the finished body unverified for exactly the documents that looked fine
     # at the wrong moment.
-    $sentBody = ($document | Where-Object { $_.label -eq $row.Label }).body
+    $sentBody = ($document | Where-Object { $_.label -ceq $row.Label }).body
     $mismatch = Compare-SentField -Sent $sentBody -Fetched ($recheck.Content | ConvertFrom-Json)
 
     if ($mismatch.Count -eq 0) {
