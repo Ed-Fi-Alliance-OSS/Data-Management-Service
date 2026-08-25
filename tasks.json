@@ -404,7 +404,7 @@
       "rg -n \"dms-document-cache|EdFi.Api.DocumentCacheAdmin|onlineCacheRebuild|internalCacheAheadRecovery|Exit code\" src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin docs reference/design/backend-redesign/epics",
       "dotnet run --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- --help"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "final-verification",
