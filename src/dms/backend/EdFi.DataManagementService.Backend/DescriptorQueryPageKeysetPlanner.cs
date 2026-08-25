@@ -73,7 +73,10 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
             mappingSet,
             requestResource,
             preprocessingResult,
-            PageCandidateModePlanning.ForUnpagedCandidates(),
+            // Boundaries anchor on DocumentId until this planner takes the request's anchor and
+            // forwards it. Stated as a literal rather than left to a default so the one site that has
+            // to change is the one a reader lands on.
+            PageCandidateModePlanning.ForUnpagedCandidates(PageOrderingMode.DocumentId),
             authorization,
             changeVersionRange
         );

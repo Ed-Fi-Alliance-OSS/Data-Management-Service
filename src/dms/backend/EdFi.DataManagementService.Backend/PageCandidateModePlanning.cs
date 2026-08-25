@@ -52,8 +52,10 @@ internal static class PageCandidateModePlanning
     /// </summary>
     /// <param name="paging">The Core paging choice.</param>
     /// <param name="orderingMode">
-    /// The page-selection ordering key. Applies to traditional paging only; a cursor page is always
-    /// ordered by <c>DocumentId</c> because its continuation token is anchored on that key.
+    /// The page-selection ordering key Core resolved, applied to every paging choice. A cursor page
+    /// takes it too: the bounds it seeks on are expressed in the anchor, and the token it hands back
+    /// carries that same anchor, so discarding it here would bound a page on one column and continue it
+    /// from another.
     /// </param>
     public static PlannedCandidateMode ForPaging(CollectionPaging paging, PageOrderingMode orderingMode)
     {
@@ -62,7 +64,7 @@ internal static class PageCandidateModePlanning
         return paging switch
         {
             CollectionPaging.Traditional traditional => ForTraditional(traditional, orderingMode),
-            CollectionPaging.Cursor cursor => ForCursor(cursor),
+            CollectionPaging.Cursor cursor => ForCursor(cursor, orderingMode),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(paging),
                 paging.GetType().Name,
@@ -72,19 +74,31 @@ internal static class PageCandidateModePlanning
     }
 
     /// <summary>
-    /// The unpaged candidate mode instance. Candidate planning reserves its parameter names against
-    /// filter collisions and partition-window compilation emits and binds them, so both read the same
-    /// instance: a second construction site could reserve names the emitted SQL never uses.
+    /// The unpaged candidate mode instance, and the single source of the parameter names that mode
+    /// owns. Candidate planning reserves those names against filter collisions and partition-window
+    /// compilation emits and binds them, so both read this one instance: a second construction site
+    /// could reserve names the emitted SQL never uses.
     /// </summary>
+    /// <remarks>
+    /// Carries the default <c>DocumentId</c> anchor. Anchoring is per request, so a plan takes its
+    /// anchor through <see cref="ForUnpagedCandidates" />, which copies this instance rather than
+    /// building a new one — the names stay tied to this declaration while only the anchor varies.
+    /// </remarks>
     public static PageCandidateMode.UnpagedCandidates UnpagedCandidatesMode { get; } = new();
 
     /// <summary>
-    /// Builds the unpaged candidate mode. It binds no values: its partition parameter names are
-    /// reserved against filter collisions, and partition-window SQL binds them when it emits them.
+    /// Builds the unpaged candidate mode for the supplied anchor. It binds no values: its partition
+    /// parameter names are reserved against filter collisions, and partition-window SQL binds them when
+    /// it emits them.
     /// </summary>
-    public static PlannedCandidateMode ForUnpagedCandidates()
+    /// <param name="orderingMode">
+    /// The anchor the consuming partition-window SQL will rank and cut boundaries on. Required rather
+    /// than defaulted, because boundaries cut on a different key than the page a client replays them as
+    /// would overlap and leave rows in no partition.
+    /// </param>
+    public static PlannedCandidateMode ForUnpagedCandidates(PageOrderingMode orderingMode)
     {
-        return Plan(UnpagedCandidatesMode, []);
+        return Plan(UnpagedCandidatesMode with { OrderingMode = orderingMode }, []);
     }
 
     private static PlannedCandidateMode ForTraditional(
@@ -109,9 +123,12 @@ internal static class PageCandidateModePlanning
         );
     }
 
-    private static PlannedCandidateMode ForCursor(CollectionPaging.Cursor cursor)
+    private static PlannedCandidateMode ForCursor(
+        CollectionPaging.Cursor cursor,
+        PageOrderingMode orderingMode
+    )
     {
-        var mode = new PageCandidateMode.Cursor();
+        var mode = new PageCandidateMode.Cursor(OrderingMode: orderingMode);
 
         return Plan(
             mode,

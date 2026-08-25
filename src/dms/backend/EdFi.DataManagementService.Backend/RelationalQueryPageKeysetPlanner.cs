@@ -109,7 +109,10 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         plannedCandidates = PlanOrEmptyPage(
             rootTable,
             preprocessingResult,
-            PageCandidateModePlanning.ForUnpagedCandidates(),
+            // Boundaries anchor on DocumentId until this planner takes the request's anchor and
+            // forwards it. Stated as a literal rather than left to a default so the one site that has
+            // to change is the one a reader lands on.
+            PageCandidateModePlanning.ForUnpagedCandidates(PageOrderingMode.DocumentId),
             authorization,
             out emptyPageReason,
             comparisonOperatorResolver,
