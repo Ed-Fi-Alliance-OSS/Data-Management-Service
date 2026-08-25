@@ -35,12 +35,14 @@ public class Given_CdcInitialEnableRetryClassifier
         result.Diagnostics.Should().BeEmpty();
     }
 
-    [Test]
-    public void It_rejects_pre_binding_when_source_resolution_is_not_proven()
+    [TestCase(null)]
+    [TestCase("")]
+    [TestCase(" ")]
+    public void It_rejects_pre_binding_when_source_resolution_is_not_proven(string? physicalSourceFingerprint)
     {
         CdcInitialEnablePreBindingEligibilityResult result =
             CdcInitialEnableRetryClassifier.EvaluatePreBindingEligibility(
-                PreBindingInput(Eligibility(CdcLifecycleState.Disabled), physicalSourceFingerprint: null)
+                PreBindingInput(Eligibility(CdcLifecycleState.Disabled), physicalSourceFingerprint)
             );
 
         result.CanCreateBinding.Should().BeFalse();
@@ -48,9 +50,13 @@ public class Given_CdcInitialEnableRetryClassifier
         result.Rejection!.RetryClassification.Should().Be(CdcRetryClassification.RejectNotInitialWorkflow);
         result.Rejection.Action.Should().Be(CdcRetryAction.RetireUnusedBindingAndReprovision);
         result
+            .Rejection.PrimaryBlockingCategory.Should()
+            .Be(CdcBlockingCategory.StatusObservationUnavailable);
+        result
             .Rejection.Diagnostics.Select(diagnostic => diagnostic.Category)
             .Should()
-            .Contain(CdcDiagnosticCategory.SourceMismatch);
+            .Contain(CdcDiagnosticCategory.StatusObservationUnavailable)
+            .And.NotContain(CdcDiagnosticCategory.SourceMismatch);
     }
 
     [Test]
@@ -79,15 +85,41 @@ public class Given_CdcInitialEnableRetryClassifier
         retry.Diagnostics.Should().BeEmpty();
     }
 
-    [Test]
-    public void It_rejects_exact_binding_retry_when_current_source_resolution_is_unavailable()
+    [TestCase(null)]
+    [TestCase("")]
+    [TestCase(" ")]
+    public void It_rejects_exact_binding_retry_when_current_source_resolution_is_unavailable(
+        string? physicalSourceFingerprint
+    )
     {
         CdcRetry retry = CdcInitialEnableRetryClassifier.EvaluateRetry(
-            RetryInput(Eligibility(CdcLifecycleState.Tracking), physicalSourceFingerprint: null)
+            RetryInput(
+                Eligibility(CdcLifecycleState.Tracking),
+                physicalSourceFingerprint: physicalSourceFingerprint
+            )
         );
 
         retry.RetryClassification.Should().Be(CdcRetryClassification.RejectNotInitialWorkflow);
         retry.Action.Should().Be(CdcRetryAction.RetireUnusedBindingAndReprovision);
+        retry.PrimaryBlockingCategory.Should().Be(CdcBlockingCategory.StatusObservationUnavailable);
+        retry
+            .Diagnostics.Select(diagnostic => diagnostic.Category)
+            .Should()
+            .Contain(CdcDiagnosticCategory.StatusObservationUnavailable)
+            .And.NotContain(CdcDiagnosticCategory.SourceMismatch);
+    }
+
+    [Test]
+    public void It_keeps_known_source_mismatches_specific()
+    {
+        CdcRetry retry = CdcInitialEnableRetryClassifier.EvaluateRetry(
+            RetryInput(
+                Eligibility(CdcLifecycleState.Tracking),
+                physicalSourceFingerprint: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            )
+        );
+
+        retry.RetryClassification.Should().Be(CdcRetryClassification.RejectNotInitialWorkflow);
         retry.PrimaryBlockingCategory.Should().Be(CdcBlockingCategory.StatusObservationUnavailable);
         retry
             .Diagnostics.Select(diagnostic => diagnostic.Category)

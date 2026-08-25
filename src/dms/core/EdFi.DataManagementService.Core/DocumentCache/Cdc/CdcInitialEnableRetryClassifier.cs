@@ -425,10 +425,14 @@ public static class CdcInitialEnableRetryClassifier
             diagnostics
         );
 
-        if (string.IsNullOrWhiteSpace(physicalSourceFingerprint))
+        string? currentPhysicalSourceFingerprint = string.IsNullOrWhiteSpace(physicalSourceFingerprint)
+            ? null
+            : physicalSourceFingerprint;
+
+        if (currentPhysicalSourceFingerprint is null)
         {
             diagnostics.Add(
-                CdcDiagnosticCategory.SourceMismatch,
+                CdcDiagnosticCategory.StatusObservationUnavailable,
                 "$.physicalSourceFingerprint",
                 "CDC initial-enable classification requires a resolved physical source fingerprint."
             );
@@ -437,7 +441,7 @@ public static class CdcInitialEnableRetryClassifier
         CdcObservationValidationContext context = new(
             operationId,
             targetIdentity,
-            physicalSourceFingerprint,
+            currentPhysicalSourceFingerprint,
             normalizedNowUtc
         );
 
