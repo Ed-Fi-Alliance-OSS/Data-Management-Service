@@ -164,7 +164,7 @@ public sealed class Given_DocumentCacheAdminPostgresqlRebuildOnline
         DocumentCacheAdminCliProcessResult result,
         DocumentCacheAdminCliTarget target,
         int expectedExitCode
-    ) => PostgresqlCommandResultAssertions.AssertCommandResult(result, target, expectedExitCode);
+    ) => DocumentCacheAdminCliCommandResultAssertions.AssertCommandResult(result, target, expectedExitCode);
 }
 
 [TestFixture]
@@ -344,10 +344,10 @@ public sealed class Given_DocumentCacheAdminPostgresqlScrub
         DocumentCacheAdminCliProcessResult result,
         DocumentCacheAdminCliTarget target,
         int expectedExitCode
-    ) => PostgresqlCommandResultAssertions.AssertCommandResult(result, target, expectedExitCode);
+    ) => DocumentCacheAdminCliCommandResultAssertions.AssertCommandResult(result, target, expectedExitCode);
 }
 
-internal static class PostgresqlCommandResultAssertions
+internal static class DocumentCacheAdminCliCommandResultAssertions
 {
     public static JsonObject AssertCommandResult(
         DocumentCacheAdminCliProcessResult result,

@@ -208,7 +208,7 @@ public sealed class Given_DocumentCacheAdminPostgresqlOfflineCommands
         string expectedJsonCommand
     )
     {
-        JsonObject commandResult = PostgresqlCommandResultAssertions.AssertCommandResult(
+        JsonObject commandResult = DocumentCacheAdminCliCommandResultAssertions.AssertCommandResult(
             result,
             target,
             DocumentCacheAdminExitCodes.RejectedNoMutation
@@ -288,7 +288,7 @@ public sealed class Given_DocumentCacheAdminPostgresqlCacheAheadRecovery
             )
         );
 
-        JsonObject commandResult = PostgresqlCommandResultAssertions.AssertCommandResult(
+        JsonObject commandResult = DocumentCacheAdminCliCommandResultAssertions.AssertCommandResult(
             result,
             target,
             DocumentCacheAdminExitCodes.RejectedNoMutation

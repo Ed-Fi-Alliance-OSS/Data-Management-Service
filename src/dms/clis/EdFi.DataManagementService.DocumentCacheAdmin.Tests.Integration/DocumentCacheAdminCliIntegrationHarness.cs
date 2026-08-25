@@ -387,6 +387,49 @@ internal sealed class DocumentCacheAdminCliStateInspector(
         return new(documentId, documentUuid, contentVersion);
     }
 
+    public async Task<DocumentCacheAdminCliSeededDocument> InsertMssqlCanonicalDocumentAsync(
+        long contentVersion = 10
+    )
+    {
+        MssqlGeneratedDdlTestDatabase database = RequireMssqlDatabase();
+        DateTime observedAt = DateTime.UtcNow;
+        Guid documentUuid = Guid.NewGuid();
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await database.QueryRowsAsync(
+            """
+            DECLARE @inserted TABLE ([DocumentId] bigint NOT NULL);
+
+            WITH [resource_key] AS (
+                SELECT TOP (1) [ResourceKeyId]
+                FROM [dms].[ResourceKey]
+                ORDER BY [ResourceKeyId]
+            )
+            INSERT INTO [dms].[Document] (
+                [DocumentUuid],
+                [ResourceKeyId],
+                [ContentVersion],
+                [ContentLastModifiedAt]
+            )
+            OUTPUT inserted.[DocumentId]
+            INTO @inserted
+            SELECT
+                @documentUuid,
+                [resource_key].[ResourceKeyId],
+                @contentVersion,
+                @observedAt
+            FROM [resource_key];
+
+            SELECT [DocumentId]
+            FROM @inserted;
+            """,
+            new SqlParameter("documentUuid", documentUuid),
+            new SqlParameter("contentVersion", contentVersion),
+            new SqlParameter("observedAt", observedAt)
+        );
+
+        long documentId = RequireInt64(rows.Single(), "DocumentId");
+        return new(documentId, documentUuid, contentVersion);
+    }
+
     public Task InsertPostgresqlDocumentCacheAsync(
         DocumentCacheAdminCliSeededDocument document,
         long? cacheContentVersion = null,
@@ -440,6 +483,53 @@ internal sealed class DocumentCacheAdminCliStateInspector(
             );
     }
 
+    public Task InsertMssqlDocumentCacheAsync(
+        DocumentCacheAdminCliSeededDocument document,
+        long? cacheContentVersion = null,
+        string documentJson = """{"seeded":true}"""
+    )
+    {
+        ArgumentNullException.ThrowIfNull(document);
+
+        return RequireMssqlDatabase()
+            .ExecuteNonQueryAsync(
+                """
+                INSERT INTO [dms].[DocumentCache] (
+                    [DocumentId],
+                    [DocumentUuid],
+                    [ProjectName],
+                    [ResourceName],
+                    [ResourceVersion],
+                    [ContentVersion],
+                    [StreamEtag],
+                    [LastModifiedAt],
+                    [DocumentJson],
+                    [ComputedAt]
+                )
+                SELECT
+                    [document].[DocumentId],
+                    [document].[DocumentUuid],
+                    [resource_key].[ProjectName],
+                    [resource_key].[ResourceName],
+                    [resource_key].[ResourceVersion],
+                    @contentVersion,
+                    @streamEtag,
+                    [document].[ContentLastModifiedAt],
+                    @documentJson,
+                    @computedAt
+                FROM [dms].[Document] AS [document]
+                INNER JOIN [dms].[ResourceKey] AS [resource_key]
+                    ON [resource_key].[ResourceKeyId] = [document].[ResourceKeyId]
+                WHERE [document].[DocumentId] = @documentId;
+                """,
+                new SqlParameter("documentId", document.DocumentId),
+                new SqlParameter("contentVersion", cacheContentVersion ?? document.ContentVersion),
+                new SqlParameter("streamEtag", $"cli-etag-{document.DocumentId}"),
+                new SqlParameter("documentJson", documentJson),
+                new SqlParameter("computedAt", DateTime.UtcNow)
+            );
+    }
+
     public Task InsertPostgresqlProjectionWorkAsync(
         DocumentCacheAdminCliSeededDocument document,
         DateTimeOffset? firstEnqueuedAt = null,
@@ -475,6 +565,38 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                 {
                     Value = enqueuedAt.AddSeconds(5),
                 }
+            );
+    }
+
+    public Task InsertMssqlProjectionWorkAsync(
+        DocumentCacheAdminCliSeededDocument document,
+        DateTime? firstEnqueuedAt = null,
+        long? requiredContentVersion = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(document);
+
+        DateTime enqueuedAt = firstEnqueuedAt ?? DateTime.UtcNow.AddMinutes(-5);
+        return RequireMssqlDatabase()
+            .ExecuteNonQueryAsync(
+                """
+                INSERT INTO [dms].[DocumentProjectionWork] (
+                    [DocumentId],
+                    [RequiredContentVersion],
+                    [FirstEnqueuedAt],
+                    [LastEnqueuedAt]
+                )
+                VALUES (
+                    @documentId,
+                    @requiredContentVersion,
+                    @firstEnqueuedAt,
+                    @lastEnqueuedAt
+                );
+                """,
+                new SqlParameter("documentId", document.DocumentId),
+                new SqlParameter("requiredContentVersion", requiredContentVersion ?? document.ContentVersion),
+                new SqlParameter("firstEnqueuedAt", enqueuedAt),
+                new SqlParameter("lastEnqueuedAt", enqueuedAt.AddSeconds(5))
             );
     }
 
@@ -550,8 +672,91 @@ internal sealed class DocumentCacheAdminCliStateInspector(
         return new(documentId, documentUuid, contentVersion);
     }
 
+    public async Task<DocumentCacheAdminCliSeededDocument> InsertMssqlDescriptorDocumentAsync(
+        string codeValue,
+        long contentVersion = 10
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(codeValue);
+
+        MssqlGeneratedDdlTestDatabase database = RequireMssqlDatabase();
+        DateTime observedAt = DateTime.UtcNow;
+        Guid documentUuid = Guid.NewGuid();
+        const string descriptorNamespace = "uri://ed-fi.org/SchoolTypeDescriptor";
+        string uri = $"{descriptorNamespace}#{codeValue}";
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await database.QueryRowsAsync(
+            """
+            DECLARE @inserted TABLE (
+                [DocumentId] bigint NOT NULL,
+                [ResourceKeyId] smallint NOT NULL,
+                [ContentVersion] bigint NOT NULL
+            );
+
+            WITH [resource_key] AS (
+                SELECT [ResourceKeyId]
+                FROM [dms].[ResourceKey]
+                WHERE [ProjectName] = N'Ed-Fi'
+                  AND [ResourceName] = N'SchoolTypeDescriptor'
+            )
+            INSERT INTO [dms].[Document] (
+                [DocumentUuid],
+                [ResourceKeyId],
+                [ContentVersion],
+                [ContentLastModifiedAt]
+            )
+            OUTPUT inserted.[DocumentId], inserted.[ResourceKeyId], inserted.[ContentVersion]
+            INTO @inserted
+            SELECT
+                @documentUuid,
+                [resource_key].[ResourceKeyId],
+                @contentVersion,
+                @observedAt
+            FROM [resource_key];
+
+            INSERT INTO [dms].[Descriptor] (
+                [DocumentId],
+                [ResourceKeyId],
+                [Namespace],
+                [CodeValue],
+                [ShortDescription],
+                [Discriminator],
+                [Uri],
+                [ContentVersion],
+                [ContentLastModifiedAt]
+            )
+            SELECT
+                [inserted_document].[DocumentId],
+                [inserted_document].[ResourceKeyId],
+                @namespace,
+                @codeValue,
+                @shortDescription,
+                N'SchoolTypeDescriptor',
+                @uri,
+                [inserted_document].[ContentVersion],
+                @observedAt
+            FROM @inserted AS [inserted_document];
+
+            SELECT [DocumentId]
+            FROM @inserted;
+            """,
+            new SqlParameter("documentUuid", documentUuid),
+            new SqlParameter("contentVersion", contentVersion),
+            new SqlParameter("observedAt", observedAt),
+            new SqlParameter("namespace", descriptorNamespace),
+            new SqlParameter("codeValue", codeValue),
+            new SqlParameter("shortDescription", codeValue),
+            new SqlParameter("uri", uri)
+        );
+
+        long documentId = RequireInt64(rows.Single(), "DocumentId");
+        return new(documentId, documentUuid, contentVersion);
+    }
+
     public Task ClearPostgresqlProjectionWorkAsync() =>
         RequirePostgresqlDatabase().ExecuteNonQueryAsync("""DELETE FROM "dms"."DocumentProjectionWork";""");
+
+    public Task ClearMssqlProjectionWorkAsync() =>
+        RequireMssqlDatabase().ExecuteNonQueryAsync("""DELETE FROM [dms].[DocumentProjectionWork];""");
 
     public async Task<IReadOnlyDictionary<long, long>> ReadPostgresqlWorkVersionsByDocumentIdAsync()
     {
@@ -570,6 +775,23 @@ internal sealed class DocumentCacheAdminCliStateInspector(
         );
     }
 
+    public async Task<IReadOnlyDictionary<long, long>> ReadMssqlWorkVersionsByDocumentIdAsync()
+    {
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await RequireMssqlDatabase()
+            .QueryRowsAsync(
+                """
+                SELECT [DocumentId], [RequiredContentVersion]
+                FROM [dms].[DocumentProjectionWork]
+                ORDER BY [DocumentId];
+                """
+            );
+
+        return rows.ToDictionary(
+            row => RequireInt64(row, "DocumentId"),
+            row => RequireInt64(row, "RequiredContentVersion")
+        );
+    }
+
     public async Task<IReadOnlyDictionary<long, string>> ReadPostgresqlCachedJsonByDocumentIdAsync()
     {
         IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await RequirePostgresqlDatabase()
@@ -578,6 +800,23 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                 SELECT "DocumentId", "DocumentJson"::text AS "DocumentJson"
                 FROM "dms"."DocumentCache"
                 ORDER BY "DocumentId";
+                """
+            );
+
+        return rows.ToDictionary(
+            row => RequireInt64(row, "DocumentId"),
+            row => RequireString(row, "DocumentJson")
+        );
+    }
+
+    public async Task<IReadOnlyDictionary<long, string>> ReadMssqlCachedJsonByDocumentIdAsync()
+    {
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await RequireMssqlDatabase()
+            .QueryRowsAsync(
+                """
+                SELECT [DocumentId], [DocumentJson] AS [DocumentJson]
+                FROM [dms].[DocumentCache]
+                ORDER BY [DocumentId];
                 """
             );
 
