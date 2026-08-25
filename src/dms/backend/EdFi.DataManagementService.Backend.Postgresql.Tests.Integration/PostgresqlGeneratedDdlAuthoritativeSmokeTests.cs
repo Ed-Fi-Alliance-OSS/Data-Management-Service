@@ -758,6 +758,12 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     public async Task It_should_stamp_content_only_updates_on_identity_propagation_tables()
     {
         var before = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        var schoolDocumentUuid = await GetDocumentUuidAsync(_seedData.SchoolDocumentId);
+        var beforeTrackedRows = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "School",
+            schoolDocumentUuid
+        );
 
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
@@ -771,13 +777,19 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         );
 
         var after = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        var afterTrackedRows = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "School",
+            schoolDocumentUuid
+        );
 
         after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
         after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
+        afterTrackedRows.Should().Be(beforeTrackedRows);
     }
 
     [Test]
-    public async Task It_should_stamp_root_identity_changes_as_content_updates()
+    public async Task It_should_update_referential_identities_and_stamp_content_on_concrete_abstract_root_identity_changes()
     {
         var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
         var educationOrganizationResourceKeyId = await GetResourceKeyIdAsync(
@@ -825,12 +837,6 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
         var before = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
         var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.SchoolDocumentId);
-        var schoolDocumentUuid = await GetDocumentUuidAsync(_seedData.SchoolDocumentId);
-        var beforeTrackedRows = await CountTrackedChangeRowsAsync(
-            "tracked_changes_edfi",
-            "School",
-            schoolDocumentUuid
-        );
         beforeRiRows.Should().Equal(expectedBeforeRiRows);
 
         await DelayForDistinctTimestampsAsync();
@@ -846,16 +852,10 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
         var after = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
         var afterRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.SchoolDocumentId);
-        var afterTrackedRows = await CountTrackedChangeRowsAsync(
-            "tracked_changes_edfi",
-            "School",
-            schoolDocumentUuid
-        );
 
         after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
         after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
         afterRiRows.Should().Equal(expectedAfterRiRows);
-        afterTrackedRows.Should().Be(beforeTrackedRows);
     }
 
     [Test]

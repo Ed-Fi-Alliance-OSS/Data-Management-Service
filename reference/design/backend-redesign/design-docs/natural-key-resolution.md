@@ -53,12 +53,11 @@ where the Configuration Service objects share the same physical database as DMS,
 
 The migration will be **code-only and re-provision-only**; no in-place upgrade scripts will be
 provided. Release review confirmed that mapping version `v2` has not been released as a supported
-database shape, so this remains a prerelease schema-shape change within the unreleased `v2` mapping
-line and does not bump `RelationalMappingVersion`. Databases provisioned from an earlier prerelease
-shape are not guaranteed to be mechanically rejected by the fingerprint check; environments must
-re-provision after picking up these changes. Once a mapping version has been released, later
-incompatible mapping changes must bump `RelationalMappingVersion` so stale released databases fail
-fast with the designed 503.
+database shape. These physical mapping changes therefore move the prerelease mapping line to `v3`.
+Databases provisioned from an earlier prerelease shape must re-provision after picking up these
+changes; the mapping-version mismatch rejects the stale shape. Once a mapping version has been
+released, later incompatible mapping changes must bump
+`RelationalMappingVersion` so stale released databases fail fast with the designed 503.
 
 The rollout is filed as epic DMS-1402 with fourteen stories, DMS-1443 through DMS-1456; this
 document refers to them by their stable local aliases T1–T14, defined in
@@ -1237,7 +1236,7 @@ a follow-on to be filed only on evidence and is not part of the T1–T14 rollout
   `DROP EXTENSION pgcrypto`; shared databases may still need the extension for CMS/OpenIddict key
   encryption.
 
-### To remain unchanged
+### Retained contracts
 
 `dms.Document` except for the narrow `UX_Document_DocumentId_ResourceKeyId` parent key used only by
 descriptor and abstract identity document/resource invariants (columns including
@@ -1262,7 +1261,7 @@ prerelease aggregate database shapes.
 Release review confirmed that `v2` has not been published as a supported database shape. This
 design therefore moves to the unreleased, re-provision-only `v3` aggregate. Current schema-hash
 expectations will be re-blessed as the physical changes land. Environments using an earlier
-prerelease `v2` shape must re-provision rather than rely on an in-place upgrade.
+prerelease `v2` shape must re-provision; the mapping-version mismatch rejects that stale shape.
 
 Rollback is a commit revert while `dms.ReferentialIdentity` remains fully maintained. Once
 descriptor writes stop maintaining RI rows, rollback to the RI resolver requires re-provisioning

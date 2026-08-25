@@ -452,16 +452,17 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
     [Test]
     public async Task It_composes_the_change_version_window_with_a_query_filter()
     {
-        // The window covers every seeded school; the scalar filter then narrows to one. A second
-        // query keeps the filter but shrinks the window below the match, proving both predicates apply.
-        var middleSchool = _persistedSchoolsInDocumentOrder[1];
+        // The window starts at a real row's version, and the scalar filter selects that same row.
+        // A second query keeps the filter but shrinks the window below the match, proving both
+        // predicates apply and that the lower bound is inclusive.
+        var firstSchool = _persistedSchoolsInDocumentOrder[0];
         var allVersionsWindow = new ChangeVersionRange(
-            _persistedSchoolsInDocumentOrder[0].ContentVersion - 1,
+            firstSchool.ContentVersion,
             _persistedSchoolsInDocumentOrder[^1].ContentVersion
         );
 
         var matchingResult = await ExecuteQueryAsync(
-            [CreateQueryElement("nameOfInstitution", "$.nameOfInstitution", middleSchool.NameOfInstitution)],
+            [CreateQueryElement("nameOfInstitution", "$.nameOfInstitution", firstSchool.NameOfInstitution)],
             limit: 25,
             offset: 0,
             totalCount: true,
@@ -475,17 +476,17 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         matchingSuccess.EdfiDocs[0]!["id"]!
             .GetValue<string>()
             .Should()
-            .Be(middleSchool.DocumentUuid.ToString());
+            .Be(firstSchool.DocumentUuid.ToString());
 
         _recorder.Reset();
 
         var excludedResult = await ExecuteQueryAsync(
-            [CreateQueryElement("nameOfInstitution", "$.nameOfInstitution", middleSchool.NameOfInstitution)],
+            [CreateQueryElement("nameOfInstitution", "$.nameOfInstitution", firstSchool.NameOfInstitution)],
             limit: 25,
             offset: 0,
             totalCount: true,
             traceId: "pg-query-change-version-composed-excluded",
-            changeVersionRange: new ChangeVersionRange(null, middleSchool.ContentVersion - 1)
+            changeVersionRange: new ChangeVersionRange(null, firstSchool.ContentVersion - 1)
         );
 
         var excludedSuccess = excludedResult.Should().BeOfType<QueryResult.QuerySuccess>().Subject;

@@ -1096,6 +1096,12 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
 
         var before = await GetDocumentStampStateAsync(schoolDocumentId);
+        var schoolDocumentUuid = await GetDocumentUuidAsync(schoolDocumentId);
+        var beforeTrackedRows = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "School",
+            schoolDocumentUuid
+        );
 
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
@@ -1109,9 +1115,15 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
 
         var after = await GetDocumentStampStateAsync(schoolDocumentId);
+        var afterTrackedRows = await CountTrackedChangeRowsAsync(
+            "tracked_changes_edfi",
+            "School",
+            schoolDocumentUuid
+        );
 
         after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
         after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
+        afterTrackedRows.Should().Be(beforeTrackedRows);
     }
 
     [Test]
