@@ -285,7 +285,7 @@
       "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter FullyQualifiedName~PostgresqlScrub",
       "dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheAdministrativeCommandRunner"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "offline-and-cache-ahead-recovery-tests",

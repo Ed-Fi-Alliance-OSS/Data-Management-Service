@@ -327,7 +327,11 @@ internal sealed class DocumentCacheAdminCliStateInspector(
         return new(documentId, documentUuid, contentVersion);
     }
 
-    public Task InsertPostgresqlDocumentCacheAsync(DocumentCacheAdminCliSeededDocument document)
+    public Task InsertPostgresqlDocumentCacheAsync(
+        DocumentCacheAdminCliSeededDocument document,
+        long? cacheContentVersion = null,
+        string documentJson = """{"seeded":true}"""
+    )
     {
         ArgumentNullException.ThrowIfNull(document);
 
@@ -352,7 +356,7 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                     resource_key."ProjectName",
                     resource_key."ResourceName",
                     resource_key."ResourceVersion",
-                    document."ContentVersion",
+                    @contentVersion,
                     @streamEtag,
                     document."ContentLastModifiedAt",
                     @documentJson::jsonb,
@@ -363,18 +367,23 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                 WHERE document."DocumentId" = @documentId;
                 """,
                 new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = document.DocumentId },
+                new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint)
+                {
+                    Value = cacheContentVersion ?? document.ContentVersion,
+                },
                 new NpgsqlParameter("streamEtag", NpgsqlDbType.Varchar)
                 {
                     Value = $"cli-etag-{document.DocumentId}",
                 },
-                new NpgsqlParameter("documentJson", NpgsqlDbType.Jsonb) { Value = """{"seeded":true}""" },
+                new NpgsqlParameter("documentJson", NpgsqlDbType.Jsonb) { Value = documentJson },
                 new NpgsqlParameter("computedAt", NpgsqlDbType.TimestampTz) { Value = DateTimeOffset.UtcNow }
             );
     }
 
     public Task InsertPostgresqlProjectionWorkAsync(
         DocumentCacheAdminCliSeededDocument document,
-        DateTimeOffset? firstEnqueuedAt = null
+        DateTimeOffset? firstEnqueuedAt = null,
+        long? requiredContentVersion = null
     )
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -399,7 +408,7 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                 new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = document.DocumentId },
                 new NpgsqlParameter("requiredContentVersion", NpgsqlDbType.Bigint)
                 {
-                    Value = document.ContentVersion,
+                    Value = requiredContentVersion ?? document.ContentVersion,
                 },
                 new NpgsqlParameter("firstEnqueuedAt", NpgsqlDbType.TimestampTz) { Value = enqueuedAt },
                 new NpgsqlParameter("lastEnqueuedAt", NpgsqlDbType.TimestampTz)
@@ -407,6 +416,115 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                     Value = enqueuedAt.AddSeconds(5),
                 }
             );
+    }
+
+    public async Task<DocumentCacheAdminCliSeededDocument> InsertPostgresqlDescriptorDocumentAsync(
+        string codeValue,
+        long contentVersion = 10
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(codeValue);
+
+        PostgresqlGeneratedDdlTestDatabase database = RequirePostgresqlDatabase();
+        DateTimeOffset observedAt = DateTimeOffset.UtcNow;
+        Guid documentUuid = Guid.NewGuid();
+        const string descriptorNamespace = "uri://ed-fi.org/SchoolTypeDescriptor";
+        string uri = $"{descriptorNamespace}#{codeValue}";
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await database.QueryRowsAsync(
+            """
+            WITH resource_key AS (
+                SELECT "ResourceKeyId"
+                FROM "dms"."ResourceKey"
+                WHERE "ProjectName" = 'Ed-Fi'
+                  AND "ResourceName" = 'SchoolTypeDescriptor'
+            ),
+            inserted_document AS (
+                INSERT INTO "dms"."Document" (
+                    "DocumentUuid",
+                    "ResourceKeyId",
+                    "ContentVersion",
+                    "ContentLastModifiedAt"
+                )
+                SELECT
+                    @documentUuid,
+                    resource_key."ResourceKeyId",
+                    @contentVersion,
+                    @observedAt
+                FROM resource_key
+                RETURNING "DocumentId", "ResourceKeyId", "ContentVersion"
+            )
+            INSERT INTO "dms"."Descriptor" (
+                "DocumentId",
+                "ResourceKeyId",
+                "Namespace",
+                "CodeValue",
+                "ShortDescription",
+                "Discriminator",
+                "Uri",
+                "ContentVersion",
+                "ContentLastModifiedAt"
+            )
+            SELECT
+                inserted_document."DocumentId",
+                inserted_document."ResourceKeyId",
+                @namespace,
+                @codeValue,
+                @shortDescription,
+                'SchoolTypeDescriptor',
+                @uri,
+                inserted_document."ContentVersion",
+                @observedAt
+            FROM inserted_document
+            RETURNING "DocumentId";
+            """,
+            new NpgsqlParameter("documentUuid", NpgsqlDbType.Uuid) { Value = documentUuid },
+            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion },
+            new NpgsqlParameter("observedAt", NpgsqlDbType.TimestampTz) { Value = observedAt },
+            new NpgsqlParameter("namespace", NpgsqlDbType.Varchar) { Value = descriptorNamespace },
+            new NpgsqlParameter("codeValue", NpgsqlDbType.Varchar) { Value = codeValue },
+            new NpgsqlParameter("shortDescription", NpgsqlDbType.Varchar) { Value = codeValue },
+            new NpgsqlParameter("uri", NpgsqlDbType.Varchar) { Value = uri }
+        );
+
+        long documentId = RequireInt64(rows.Single(), "DocumentId");
+        return new(documentId, documentUuid, contentVersion);
+    }
+
+    public Task ClearPostgresqlProjectionWorkAsync() =>
+        RequirePostgresqlDatabase().ExecuteNonQueryAsync("""DELETE FROM "dms"."DocumentProjectionWork";""");
+
+    public async Task<IReadOnlyDictionary<long, long>> ReadPostgresqlWorkVersionsByDocumentIdAsync()
+    {
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await RequirePostgresqlDatabase()
+            .QueryRowsAsync(
+                """
+                SELECT "DocumentId", "RequiredContentVersion"
+                FROM "dms"."DocumentProjectionWork"
+                ORDER BY "DocumentId";
+                """
+            );
+
+        return rows.ToDictionary(
+            row => RequireInt64(row, "DocumentId"),
+            row => RequireInt64(row, "RequiredContentVersion")
+        );
+    }
+
+    public async Task<IReadOnlyDictionary<long, string>> ReadPostgresqlCachedJsonByDocumentIdAsync()
+    {
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await RequirePostgresqlDatabase()
+            .QueryRowsAsync(
+                """
+                SELECT "DocumentId", "DocumentJson"::text AS "DocumentJson"
+                FROM "dms"."DocumentCache"
+                ORDER BY "DocumentId";
+                """
+            );
+
+        return rows.ToDictionary(
+            row => RequireInt64(row, "DocumentId"),
+            row => RequireString(row, "DocumentJson")
+        );
     }
 
     public Task<DocumentCacheAdminCliPostgresqlInsertTransaction> BeginPostgresqlCanonicalInsertTransactionAsync(
