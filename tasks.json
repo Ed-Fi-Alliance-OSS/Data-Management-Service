@@ -425,6 +425,6 @@
       "pwsh ./build-dms.ps1 Package -Configuration Release -PackageTarget All",
       "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj -c Release"
     ],
-    "completed": false
+    "completed": true
   }
 ]

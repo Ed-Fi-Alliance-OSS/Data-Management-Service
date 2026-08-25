@@ -113,3 +113,8 @@ Decisions: replace scaffold README with shipped operator docs; document package/
 Files changed: src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md; src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/Given_DocumentCacheAdminHelpAndDocumentation.cs; tasks.json; progress.txt
 Verification: dotnet csharpier format DocumentCacheAdmin and unit test dirs; dotnet test DocumentCacheAdmin.Tests.Unit --filter FullyQualifiedName~Help; rg documentation verification pattern; dotnet run DocumentCacheAdmin -- --help; dotnet test DocumentCacheAdmin.Tests.Unit; git diff --check.
 Notes: examples remain secret-safe with settings/environment only; E19 Kafka/source/topic/bootstrap/release pipeline work documented as out of scope. Next priority final-verification.
+Task completed: final-verification for reference/design/backend-redesign/epics/18-document-cache/09-documentcache-administration-cli.md
+Decisions: no code changes needed after final feedback loops; verified Release path, package build/smoke, and provider integration with local PostgreSQL and SQL Server 2025 available.
+Files changed: tasks.json; progress.txt
+Verification: dotnet csharpier format CLI/unit/integration dirs; dotnet build src/dms/EdFi.DataManagementService.sln -c Release; dotnet test DocumentCacheAdmin.Tests.Unit -c Release --no-build; Invoke-Pester DocumentCacheAdminPackageTarget.Tests.ps1; build-dms.ps1 Package -Configuration Release -PackageTarget All; Invoke-DocumentCacheAdminPackageSmoke.ps1; full DocumentCacheAdmin.Tests.Integration -c Release --no-build with PostgreSQL localhost:5435 and SQL Server localhost:14333; git diff --check.
+Notes: all CLI story tasks now completed; final integration passed 67 tests with no skips.
