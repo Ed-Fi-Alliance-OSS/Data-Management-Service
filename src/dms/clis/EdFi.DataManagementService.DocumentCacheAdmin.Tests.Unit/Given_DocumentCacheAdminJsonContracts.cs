@@ -225,6 +225,50 @@ public sealed class Given_DocumentCacheAdminJsonContracts
         failure.Should().NotBeNullOrWhiteSpace();
     }
 
+    [TestCaseSource(nameof(ExpectedRequestJsonInputFailures))]
+    public void It_rejects_expected_request_json_input_loading_failures_as_argument_errors(
+        Exception exception
+    )
+    {
+        var parseResult = ParseCommand(
+            DocumentCacheAdminCommandSurface.StatusCommandName,
+            DocumentCacheAdminCommandSurface.RequestJsonOptionName,
+            "bad-path"
+        );
+
+        bool parsed = DocumentCacheAdminInvocationTargetParser.TryParse(
+            parseResult,
+            _ => throw exception,
+            out DocumentCacheAdminInvocationTarget? invocationTarget,
+            out string? failure
+        );
+
+        parsed.Should().BeFalse();
+        invocationTarget.Should().BeNull();
+        failure.Should().Contain($"Unable to read {DocumentCacheAdminCommandSurface.RequestJsonOptionName}");
+        DocumentCacheAdminExitCodes.ArgumentError.Should().Be(64);
+    }
+
+    [TestCaseSource(nameof(UnexpectedRequestJsonInputFailures))]
+    public void It_does_not_swallow_unexpected_request_json_loader_failures(Exception exception)
+    {
+        var parseResult = ParseCommand(
+            DocumentCacheAdminCommandSurface.StatusCommandName,
+            DocumentCacheAdminCommandSurface.RequestJsonOptionName,
+            "bad-path"
+        );
+
+        Action action = () =>
+            DocumentCacheAdminInvocationTargetParser.TryParse(
+                parseResult,
+                _ => throw exception,
+                out _,
+                out _
+            );
+
+        action.Should().Throw<Exception>().Where(thrown => ReferenceEquals(thrown, exception));
+    }
+
     [TestCase(
         """
             {
@@ -419,6 +463,26 @@ public sealed class Given_DocumentCacheAdminJsonContracts
 
     private static ParseResult ParseCommand(params string[] args) =>
         DocumentCacheAdminCommandSurface.CreateRootCommand().Parse(args);
+
+    private static IEnumerable<TestCaseData> ExpectedRequestJsonInputFailures()
+    {
+        yield return new TestCaseData(new ArgumentException("Null character in path.")).SetName(
+            "ArgumentException_invalid_path_syntax"
+        );
+        yield return new TestCaseData(
+            new NotSupportedException("The given path's format is not supported.")
+        ).SetName("NotSupportedException_unsupported_path_format");
+        yield return new TestCaseData(new ObjectDisposedException("stdin")).SetName(
+            "ObjectDisposedException_text_reader_failure"
+        );
+    }
+
+    private static IEnumerable<TestCaseData> UnexpectedRequestJsonInputFailures()
+    {
+        yield return new TestCaseData(new NullReferenceException("loader bug")).SetName(
+            "NullReferenceException"
+        );
+    }
 
     private static DocumentCacheAdministrativeCommandConfirmation? RequestConfirmation(object request) =>
         request switch

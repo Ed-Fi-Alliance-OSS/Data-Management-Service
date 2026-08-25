@@ -169,7 +169,7 @@ internal static class DocumentCacheAdminInvocationTargetParser
         {
             requestJson = requestJsonLoader(requestJsonPath);
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        catch (Exception exception) when (IsExpectedRequestJsonInputFailure(exception))
         {
             failure =
                 $"Unable to read {DocumentCacheAdminCommandSurface.RequestJsonOptionName} input: {exception.Message}";
@@ -229,4 +229,12 @@ internal static class DocumentCacheAdminInvocationTargetParser
         OptionResult? optionResult = parseResult.GetResult(optionName) as OptionResult;
         return optionResult is { Implicit: false } ? optionResult : null;
     }
+
+    private static bool IsExpectedRequestJsonInputFailure(Exception exception) =>
+        exception
+            is IOException
+                or UnauthorizedAccessException
+                or NotSupportedException
+                or ObjectDisposedException
+        || exception is ArgumentException and not ArgumentNullException and not ArgumentOutOfRangeException;
 }

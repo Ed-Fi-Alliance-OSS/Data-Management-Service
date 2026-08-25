@@ -53,6 +53,29 @@ public sealed class Given_DocumentCacheAdminStartupExitCodes
     }
 
     [Test]
+    public async Task It_keeps_stdout_empty_for_json_request_input_loading_failures()
+    {
+        string missingRequestPath = Path.Combine(
+            Path.GetTempPath(),
+            $"{Guid.NewGuid():N}-missing-document-cache-admin-request.json"
+        );
+
+        ProcessResult result = await RunDocumentCacheAdminAsync(
+            DocumentCacheAdminCommandSurface.StatusCommandName,
+            DocumentCacheAdminCommandSurface.RequestJsonOptionName,
+            missingRequestPath,
+            DocumentCacheAdminCommandSurface.JsonOptionName
+        );
+
+        result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.ArgumentError);
+        result.StandardOutput.Should().BeEmpty();
+        result
+            .StandardError.Should()
+            .Contain($"Unable to read {DocumentCacheAdminCommandSurface.RequestJsonOptionName} input");
+        result.StandardError.Should().NotContain("Unexpected DocumentCache administration CLI failure");
+    }
+
+    [Test]
     public async Task It_returns_argument_error_with_usage_when_human_command_line_is_invalid()
     {
         ProcessResult result = await RunDocumentCacheAdminAsync(
