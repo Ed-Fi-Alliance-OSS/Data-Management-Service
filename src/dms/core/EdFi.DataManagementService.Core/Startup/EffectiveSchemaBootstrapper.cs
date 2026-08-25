@@ -25,52 +25,30 @@ internal sealed class EffectiveSchemaBootstrapper(
     private readonly EffectiveSchemaSetBuilder _effectiveSchemaSetBuilder = effectiveSchemaSetBuilder;
     private readonly ILogger _logger = logger;
 
-    public Task InitializeAsync(CancellationToken cancellationToken) =>
-        EffectiveSchemaBootstrapperCore.InitializeAsync(
-            _apiSchemaProvider,
-            _effectiveApiSchemaProvider,
-            _effectiveSchemaSetProvider,
-            _inputNormalizer,
-            _effectiveSchemaSetBuilder,
-            _logger,
-            cancellationToken
-        );
-}
-
-internal static class EffectiveSchemaBootstrapperCore
-{
-    internal static Task InitializeAsync(
-        IApiSchemaProvider apiSchemaProvider,
-        IEffectiveApiSchemaProvider effectiveApiSchemaProvider,
-        IEffectiveSchemaSetProvider effectiveSchemaSetProvider,
-        IApiSchemaInputNormalizer inputNormalizer,
-        EffectiveSchemaSetBuilder effectiveSchemaSetBuilder,
-        ILogger logger,
-        CancellationToken cancellationToken
-    )
+    public Task InitializeAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        logger.LogInformation("Loading API schemas from configured source");
+        _logger.LogInformation("Loading API schemas from configured source");
 
         ApiSchemaDocumentNodes rawNodes;
         try
         {
-            rawNodes = apiSchemaProvider.GetApiSchemaNodes();
+            rawNodes = _apiSchemaProvider.GetApiSchemaNodes();
         }
         catch (Exception ex)
         {
-            logger.LogCritical(ex, "Failed to load API schemas. DMS cannot start without valid schemas.");
+            _logger.LogCritical(ex, "Failed to load API schemas. DMS cannot start without valid schemas.");
             throw new InvalidOperationException("API schema loading failed", ex);
         }
 
-        if (!apiSchemaProvider.IsSchemaValid)
+        if (!_apiSchemaProvider.IsSchemaValid)
         {
-            var failures = apiSchemaProvider.ApiSchemaFailures;
-            logger.LogCritical("API schema validation failed with {FailureCount} error(s)", failures.Count);
+            var failures = _apiSchemaProvider.ApiSchemaFailures;
+            _logger.LogCritical("API schema validation failed with {FailureCount} error(s)", failures.Count);
             foreach (var failure in failures)
             {
-                logger.LogCritical(
+                _logger.LogCritical(
                     "Schema validation failure: [{Type}] {Message}",
                     failure.FailureType,
                     failure.Message
@@ -81,12 +59,12 @@ internal static class EffectiveSchemaBootstrapperCore
             );
         }
 
-        logger.LogInformation("API schemas loaded and validated successfully");
+        _logger.LogInformation("API schemas loaded and validated successfully");
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        logger.LogDebug("Normalizing schema inputs");
-        var normalizationResult = inputNormalizer.Normalize(rawNodes);
+        _logger.LogDebug("Normalizing schema inputs");
+        var normalizationResult = _inputNormalizer.Normalize(rawNodes);
         var normalizedNodes = normalizationResult switch
         {
             ApiSchemaNormalizationResult.SuccessResult success => success.NormalizedNodes,
@@ -107,15 +85,15 @@ internal static class EffectiveSchemaBootstrapperCore
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        logger.LogDebug("Building effective schema set");
-        var effectiveSchemaSet = effectiveSchemaSetBuilder.Build(normalizedNodes);
+        _logger.LogDebug("Building effective schema set");
+        var effectiveSchemaSet = _effectiveSchemaSetBuilder.Build(normalizedNodes);
         var effectiveSchemaInfo = effectiveSchemaSet.EffectiveSchema;
 
-        logger.LogInformation("Effective schema hash: {Hash}", effectiveSchemaInfo.EffectiveSchemaHash);
+        _logger.LogInformation("Effective schema hash: {Hash}", effectiveSchemaInfo.EffectiveSchemaHash);
 
         if (effectiveSchemaInfo.ResourceKeyCount > 0)
         {
-            logger.LogInformation(
+            _logger.LogInformation(
                 "Resource key seeds: {SeedCount} entries, hash: {Hash}",
                 effectiveSchemaInfo.ResourceKeyCount,
                 Convert.ToHexStringLower(effectiveSchemaInfo.ResourceKeySeedHash)
@@ -124,11 +102,11 @@ internal static class EffectiveSchemaBootstrapperCore
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        logger.LogInformation("Building effective schema and priming caches");
-        effectiveSchemaSetProvider.Initialize(effectiveSchemaSet);
-        effectiveApiSchemaProvider.Initialize(normalizedNodes);
+        _logger.LogInformation("Building effective schema and priming caches");
+        _effectiveSchemaSetProvider.Initialize(effectiveSchemaSet);
+        _effectiveApiSchemaProvider.Initialize(normalizedNodes);
 
-        logger.LogInformation("Effective API schema initialization complete");
+        _logger.LogInformation("Effective API schema initialization complete");
 
         return Task.CompletedTask;
     }
