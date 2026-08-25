@@ -29,9 +29,7 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
     public async Task It_invokes_the_mutating_dispatcher_with_the_shared_request_and_writes_json_result()
     {
         RecordingMutatingCommandDispatcher dispatcher = new(_ => CompletedResult());
-        RecordingProjectionSupervisor projectionSupervisor = new(MatchingRegistrySnapshot());
         await using ServiceProvider serviceProvider = new ServiceCollection()
-            .AddSingleton<IDocumentCacheProjectionSupervisor>(projectionSupervisor)
             .AddSingleton<IDocumentCacheAdminMutatingCommandDispatcher>(dispatcher)
             .BuildServiceProvider();
         using var stdout = new StringWriter();
@@ -53,7 +51,6 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
         );
 
         exitCode.Should().Be(DocumentCacheAdminExitCodes.Success);
-        projectionSupervisor.RefreshCount.Should().Be(1);
         DocumentCacheAdminMutatingCommandRequest commandRequest = dispatcher
             .Requests.Should()
             .ContainSingle()
@@ -80,9 +77,7 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
             "Mutating target-context creation requested a mapping set."
         );
         FixedRuntimeMappingSetCompiler runtimeCompiler = new(SqlDialect.Pgsql);
-        RecordingProjectionSupervisor projectionSupervisor = new(MatchingRegistrySnapshot());
         await using ServiceProvider serviceProvider = new ServiceCollection()
-            .AddSingleton<IDocumentCacheProjectionSupervisor>(projectionSupervisor)
             .AddSingleton(A.Fake<IDocumentCacheMaterializer>())
             .AddSingleton(A.Fake<IDocumentCacheWriter>())
             .AddSingleton(A.Fake<IDocumentCacheProjectionObservationSink>())
@@ -112,7 +107,6 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
         );
 
         exitCode.Should().Be(DocumentCacheAdminExitCodes.UnexpectedFailure);
-        projectionSupervisor.RefreshCount.Should().Be(1);
         runtimeCompiler.GetCurrentKeyCount.Should().Be(1);
         runtimeCompiler.CompileCount.Should().Be(0);
         mappingSetProvider.GetOrCreateCount.Should().Be(1);
@@ -152,9 +146,7 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
     )
     {
         RecordingMutatingCommandDispatcher dispatcher = new(_ => Result(status, classification, mutated));
-        RecordingProjectionSupervisor projectionSupervisor = new(MatchingRegistrySnapshot());
         await using ServiceProvider serviceProvider = new ServiceCollection()
-            .AddSingleton<IDocumentCacheProjectionSupervisor>(projectionSupervisor)
             .AddSingleton<IDocumentCacheAdminMutatingCommandDispatcher>(dispatcher)
             .BuildServiceProvider();
         using var stdout = new StringWriter();
@@ -175,7 +167,6 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
         );
 
         exitCode.Should().Be(expectedExitCode);
-        projectionSupervisor.RefreshCount.Should().Be(1);
         stdout.ToString().Should().Contain($"status={status} classification={classification}");
         stderr.ToString().Should().BeEmpty();
     }
@@ -207,14 +198,10 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
     }
 
     [Test]
-    public async Task It_enforces_target_resolution_failure_before_mutating_dispatch()
+    public async Task It_writes_the_shared_runner_target_resolution_result_returned_by_dispatcher()
     {
-        RecordingProjectionSupervisor projectionSupervisor = new(UnexpectedRegistrySnapshot());
-        RecordingMutatingCommandDispatcher dispatcher = new(_ =>
-            throw new AssertionException("Dispatcher must not run after target resolution fails.")
-        );
+        RecordingMutatingCommandDispatcher dispatcher = new(_ => TargetNotConfiguredResult());
         await using ServiceProvider serviceProvider = new ServiceCollection()
-            .AddSingleton<IDocumentCacheProjectionSupervisor>(projectionSupervisor)
             .AddSingleton<IDocumentCacheAdminMutatingCommandDispatcher>(dispatcher)
             .BuildServiceProvider();
         using var stdout = new StringWriter();
@@ -236,8 +223,7 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
         );
 
         exitCode.Should().Be(DocumentCacheAdminExitCodes.RejectedNoMutation);
-        projectionSupervisor.RefreshCount.Should().Be(1);
-        dispatcher.Requests.Should().BeEmpty();
+        dispatcher.Requests.Should().ContainSingle();
 
         JsonObject result = JsonNode.Parse(stdout.ToString())!.AsObject();
         result["command"]!.GetValue<string>().Should().Be("onlineCacheRebuild");
@@ -250,13 +236,10 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
 
     [Test]
     [Category("Timeout")]
-    public async Task It_applies_command_timeout_before_mutating_target_resolution_completes()
+    public async Task It_passes_command_timeout_to_mutating_dispatcher_and_writes_shared_timeout_result()
     {
-        ThrowingMutatingCommandDispatcher dispatcher = new(
-            new AssertionException("Dispatcher must not run after target resolution times out.")
-        );
+        TimeoutAwareMutatingCommandDispatcher dispatcher = new();
         await using ServiceProvider serviceProvider = new ServiceCollection()
-            .AddSingleton<IDocumentCacheProjectionSupervisor>(new DelayingProjectionSupervisor())
             .AddSingleton<IDocumentCacheAdminMutatingCommandDispatcher>(dispatcher)
             .BuildServiceProvider();
         using var stdout = new StringWriter();
@@ -280,6 +263,7 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
         );
 
         exitCode.Should().Be(DocumentCacheAdminExitCodes.FailedNoMutation);
+        dispatcher.CancellationObserved.Should().BeTrue();
         string json = stdout.ToString();
         json.Should().Contain("\"classification\":\"workflowTimeout\"");
         json.Should().Contain("\"currentPhase\":\"resolveTarget\"");
@@ -291,28 +275,6 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
 
     private static DocumentCacheAdminInvocationTarget InvocationTarget() =>
         new(DocumentCacheTargetKey.Create("", 1));
-
-    private static DocumentCacheTargetRegistrySnapshot MatchingRegistrySnapshot() =>
-        new(
-            [
-                DocumentCacheTargetObservation.Configured(
-                    DocumentCacheTargetKey.Create("", 1),
-                    DocumentCacheTargetEffectiveSettings.FromOptions(new DocumentCacheOptions())
-                ),
-            ],
-            DateTimeOffset.UtcNow
-        );
-
-    private static DocumentCacheTargetRegistrySnapshot UnexpectedRegistrySnapshot() =>
-        new(
-            [
-                DocumentCacheTargetObservation.Configured(
-                    DocumentCacheTargetKey.Create("TenantB", 2),
-                    DocumentCacheTargetEffectiveSettings.FromOptions(new DocumentCacheOptions())
-                ),
-            ],
-            DateTimeOffset.UtcNow
-        );
 
     private static DocumentCacheAdministrativeCommandResult CompletedResult() =>
         Result(
@@ -348,6 +310,26 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
                 ),
             ],
             elapsedCommandTime: TimeSpan.FromSeconds(1.25)
+        );
+
+    private static DocumentCacheAdministrativeCommandResult TargetNotConfiguredResult() =>
+        new(
+            DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+            new DocumentCacheAdministrativeTargetKey("", 1),
+            DocumentCacheAdministrativeCommandStatus.RejectedNoMutation,
+            DocumentCacheAdministrativeCommandClassification.TargetNotConfigured,
+            mutated: false,
+            phaseDiagnostics:
+            [
+                new DocumentCacheAdministrativePhaseDiagnostic(
+                    DocumentCacheAdministrativeCommandPhase.ResolveTarget,
+                    lastCompletedPhase: null,
+                    retryable: false,
+                    DocumentCacheAdministrativeDiagnosticCategory.TargetNotConfigured,
+                    ImmutableArray<long>.Empty,
+                    "DocumentCache target registry did not contain exactly the invocation target."
+                ),
+            ]
         );
 
     private sealed class TargetContextCreatingDispatcher(
@@ -411,44 +393,45 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
         }
     }
 
-    private sealed class RecordingProjectionSupervisor(DocumentCacheTargetRegistrySnapshot registrySnapshot)
-        : IDocumentCacheProjectionSupervisor
+    private sealed class TimeoutAwareMutatingCommandDispatcher : IDocumentCacheAdminMutatingCommandDispatcher
     {
-        public int RefreshCount { get; private set; }
+        public bool CancellationObserved { get; private set; }
 
-        public ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> CurrentTargetContexts => [];
-
-        public Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
-            DocumentCacheTargetRefreshReason reason,
-            CancellationToken cancellationToken = default
-        )
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            RefreshCount++;
-            return Task.FromResult(registrySnapshot);
-        }
-    }
-
-    private sealed class DelayingProjectionSupervisor : IDocumentCacheProjectionSupervisor
-    {
-        public ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> CurrentTargetContexts => [];
-
-        public async Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
-            DocumentCacheTargetRefreshReason reason,
-            CancellationToken cancellationToken = default
-        )
-        {
-            await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
-            throw new AssertionException("Target resolution should be cancelled by the command timeout.");
-        }
-    }
-
-    private sealed class ThrowingMutatingCommandDispatcher(Exception exception)
-        : IDocumentCacheAdminMutatingCommandDispatcher
-    {
-        public Task<DocumentCacheAdministrativeCommandResult> ExecuteAsync(
+        public async Task<DocumentCacheAdministrativeCommandResult> ExecuteAsync(
             DocumentCacheAdminMutatingCommandRequest commandRequest,
             CancellationToken cancellationToken = default
-        ) => Task.FromException<DocumentCacheAdministrativeCommandResult>(exception);
+        )
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+                throw new AssertionException("Dispatcher should observe the command timeout.");
+            }
+            catch (OperationCanceledException)
+            {
+                CancellationObserved = true;
+                return WorkflowTimeoutResult();
+            }
+        }
+
+        private static DocumentCacheAdministrativeCommandResult WorkflowTimeoutResult() =>
+            new(
+                DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
+                new DocumentCacheAdministrativeTargetKey("", 1),
+                DocumentCacheAdministrativeCommandStatus.FailedNoMutation,
+                DocumentCacheAdministrativeCommandClassification.WorkflowTimeout,
+                mutated: false,
+                phaseDiagnostics:
+                [
+                    new DocumentCacheAdministrativePhaseDiagnostic(
+                        DocumentCacheAdministrativeCommandPhase.ResolveTarget,
+                        lastCompletedPhase: null,
+                        retryable: false,
+                        DocumentCacheAdministrativeDiagnosticCategory.WorkflowTimeout,
+                        ImmutableArray<long>.Empty,
+                        "Administrative workflow timeout expired before durable mutation."
+                    ),
+                ]
+            );
     }
 }
