@@ -398,6 +398,7 @@ internal class QueryRequestHandler(
         return PageTokenCodec.TryCreateNextPageToken(
                 highestSelectedAnchor,
                 inclusiveMaximum,
+                requestInfo.PageOrderingMode,
                 out nextPageToken
             ) && nextPageToken is not null;
     }

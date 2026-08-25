@@ -64,7 +64,7 @@ public class QueryRequestHandlerTests
             return null;
         }
 
-        PageTokenCodec.TryDecode(nextPageToken, out var range).Should().BeTrue();
+        PageTokenCodec.TryDecode(nextPageToken, out var range, out _).Should().BeTrue();
         return range;
     }
 

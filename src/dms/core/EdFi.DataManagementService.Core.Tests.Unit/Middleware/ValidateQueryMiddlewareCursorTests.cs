@@ -30,7 +30,10 @@ public class ValidateQueryMiddlewareCursorTests
     private const int MaximumPageSize = 500;
     private const string TraceId = "cursor-trace-id";
 
-    private static readonly string ValidToken = PageTokenCodec.Encode(new CursorRange(7, 42));
+    private static readonly string ValidToken = PageTokenCodec.Encode(
+        new CursorRange(7, 42),
+        PageOrderingMode.DocumentId
+    );
 
     /// <summary>
     /// A resource with one query field, so the unknown-query-field loop runs for real and can prove

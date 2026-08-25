@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -116,7 +117,7 @@ internal class PartitionRequestHandler(
 
         requestInfo.FrontendResponse = partitionResult switch
         {
-            PartitionSuccess success => CreateSuccessResponse(success),
+            PartitionSuccess success => CreateSuccessResponse(success, requestInfo.PageOrderingMode),
             PartitionFailureNotImplemented failure => new FrontendResponse(
                 StatusCode: 501,
                 Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
@@ -285,13 +286,21 @@ internal class PartitionRequestHandler(
     /// <c>Total-Count</c> and no <c>Next-Page-Token</c>, because a boundary set is not a page and has
     /// no successor.
     /// </summary>
-    private static FrontendResponse CreateSuccessResponse(PartitionSuccess success)
+    /// <remarks>
+    /// Every token is stamped with the anchor the boundaries were computed against, so a client
+    /// replaying one against a different change-version window is rejected rather than served bounds
+    /// read from the wrong column.
+    /// </remarks>
+    private static FrontendResponse CreateSuccessResponse(
+        PartitionSuccess success,
+        PageOrderingMode orderingMode
+    )
     {
         JsonArray pageTokens = [];
 
         foreach (var range in success.Ranges)
         {
-            pageTokens.Add(PageTokenCodec.Encode(range));
+            pageTokens.Add(PageTokenCodec.Encode(range, orderingMode));
         }
 
         return new FrontendResponse(

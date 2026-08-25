@@ -19,7 +19,10 @@ public class CursorRequestValidatorTests
     /// <summary>
     /// A token the codec actually produces, so decoding is exercised rather than stubbed.
     /// </summary>
-    private static readonly string ValidToken = PageTokenCodec.Encode(new CursorRange(1, 100));
+    private static readonly string ValidToken = PageTokenCodec.Encode(
+        new CursorRange(1, 100),
+        PageOrderingMode.DocumentId
+    );
 
     private const string UndecodableToken = "!!!";
 
@@ -398,7 +401,9 @@ public class CursorRequestValidatorTests
         [Test]
         public void It_accepts_a_range_that_is_unbounded_above()
         {
-            PagingFrom(("pageToken", PageTokenCodec.Encode(CursorRange.From(42))))
+            PagingFrom(
+                ("pageToken", PageTokenCodec.Encode(CursorRange.From(42), PageOrderingMode.DocumentId))
+            )
                 .Range.Should()
                 .Be(new CursorRange(42, long.MaxValue));
         }

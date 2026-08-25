@@ -130,7 +130,7 @@ internal static class CursorRequestValidator
         // Phase 0, token decode. An undecodable token makes every rule that reasons about a valid
         // token meaningless.
         if (
-            !PageTokenCodec.TryDecode(queryParameters[PageTokenParameter], out CursorRange? range)
+            !PageTokenCodec.TryDecode(queryParameters[PageTokenParameter], out CursorRange? range, out _)
             || range is null
         )
         {

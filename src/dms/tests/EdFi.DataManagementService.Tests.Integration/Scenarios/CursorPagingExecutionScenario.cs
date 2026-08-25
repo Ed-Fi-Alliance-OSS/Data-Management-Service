@@ -191,7 +191,7 @@ internal static class CursorPagingExecutionScenario
         await SeedDescriptorsAsync(harness, "telemetry");
 
         // Encoded by the codec that decodes it, so the entry token is decodable by construction.
-        string entryToken = PageTokenCodec.Encode(CursorRange.From(1));
+        string entryToken = PageTokenCodec.Encode(CursorRange.From(1), PageOrderingMode.DocumentId);
         string tokenParameter = $"pageToken={Uri.EscapeDataString(entryToken)}&pageSize=2";
 
         using var metrics = CollectionPagingMetricCollector.Start();
@@ -396,7 +396,7 @@ internal static class CursorPagingExecutionScenario
         await SeedDescriptorsAsync(harness, "early-empty");
 
         // Encoded by the codec that decodes it, so the entry token is decodable by construction.
-        string entryToken = PageTokenCodec.Encode(CursorRange.From(1));
+        string entryToken = PageTokenCodec.Encode(CursorRange.From(1), PageOrderingMode.DocumentId);
 
         using var metrics = CollectionPagingMetricCollector.Start();
 
@@ -544,7 +544,7 @@ internal static class CursorPagingExecutionScenario
     {
         // Encoded by the codec that decodes it, so the entry token is decodable by construction rather
         // than by a transcription of the transport encoding happening to stay in step with it.
-        string entryToken = PageTokenCodec.Encode(CursorRange.From(1));
+        string entryToken = PageTokenCodec.Encode(CursorRange.From(1), PageOrderingMode.DocumentId);
 
         HashSet<string> returnedIds = [];
         var pages = 0;
@@ -637,7 +637,7 @@ internal static class CursorPagingExecutionScenario
 
         string nextPageToken = headerValues.Single();
         PageTokenCodec
-            .TryDecode(nextPageToken, out var range)
+            .TryDecode(nextPageToken, out var range, out _)
             .Should()
             .BeTrue("an emitted continuation must decode through the codec that produced it");
         range!.InclusiveMinimum.Should().BePositive("a continuation resumes after the keys just selected");

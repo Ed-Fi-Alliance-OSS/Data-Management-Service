@@ -113,7 +113,10 @@ public class PartitionRequestHandlerTests
 
             foreach (JsonNode? pageToken in requestInfo.FrontendResponse.Body!["pageTokens"]!.AsArray())
             {
-                PageTokenCodec.TryDecode(pageToken!.GetValue<string>(), out var range).Should().BeTrue();
+                PageTokenCodec
+                    .TryDecode(pageToken!.GetValue<string>(), out var range, out _)
+                    .Should()
+                    .BeTrue();
                 ranges.Add(range!);
             }
 

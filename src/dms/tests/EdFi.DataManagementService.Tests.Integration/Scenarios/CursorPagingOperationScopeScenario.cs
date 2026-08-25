@@ -108,7 +108,7 @@ internal static class CursorPagingOperationScopeScenario
         // Encoded by the codec that decodes it, so the token is decodable by construction rather than
         // by a transcription of the transport encoding happening to stay in step with it. The upper
         // bound is open, so the seeded school is inside the range whatever identity it received.
-        string pageToken = PageTokenCodec.Encode(CursorRange.From(1));
+        string pageToken = PageTokenCodec.Encode(CursorRange.From(1), PageOrderingMode.DocumentId);
 
         var response = await harness.HttpClient.GetAsync(
             $"{SchoolsEndpoint}?pageToken={Uri.EscapeDataString(pageToken)}&pageSize={WellFormedPageSize}"
@@ -125,7 +125,7 @@ internal static class CursorPagingOperationScopeScenario
             .BeTrue("a page that selected keys must carry a continuation");
 
         PageTokenCodec
-            .TryDecode(nextPageTokenValues!.Single(), out var nextRange)
+            .TryDecode(nextPageTokenValues!.Single(), out var nextRange, out _)
             .Should()
             .BeTrue("the emitted continuation must decode through the codec that produced it");
 
