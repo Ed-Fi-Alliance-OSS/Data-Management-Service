@@ -35,6 +35,12 @@ public record DataStoreDerivativeInsertResult
     public record FailureForeignKeyViolation() : DataStoreDerivativeInsertResult();
 
     /// <summary>
+    /// The data store already has a derivative of this type
+    /// </summary>
+    public record FailureDuplicateDataStoreDerivative(int DataStoreId, string DerivativeType)
+        : DataStoreDerivativeInsertResult();
+
+    /// <summary>
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : DataStoreDerivativeInsertResult();
@@ -89,6 +95,12 @@ public record DataStoreDerivativeUpdateResult
     /// Update failed due to foreign key violation (invalid DataStoreId)
     /// </summary>
     public record FailureForeignKeyViolation() : DataStoreDerivativeUpdateResult();
+
+    /// <summary>
+    /// The target data store already has a derivative of this type
+    /// </summary>
+    public record FailureDuplicateDataStoreDerivative(int DataStoreId, string DerivativeType)
+        : DataStoreDerivativeUpdateResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught

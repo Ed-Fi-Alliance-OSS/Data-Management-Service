@@ -56,6 +56,34 @@ public class DataStoreDerivativeTests : DatabaseTest
         );
     }
 
+    private async Task<int> InsertParentDataStore(string name)
+    {
+        var instanceResult = await _instanceRepository.InsertDataStore(
+            new DataStoreInsertCommand
+            {
+                DataStoreType = "Production",
+                Name = name,
+                ConnectionString = "Server=parent;Database=ParentDb;",
+            }
+        );
+
+        return instanceResult.Should().BeOfType<DataStoreInsertResult.Success>().Subject.Id;
+    }
+
+    private async Task<int> InsertDerivative(int dataStoreId, string derivativeType)
+    {
+        var insertResult = await _repository.InsertDataStoreDerivative(
+            new DataStoreDerivativeInsertCommand
+            {
+                DataStoreId = dataStoreId,
+                DerivativeType = derivativeType,
+                ConnectionString = $"Server={derivativeType};Database={derivativeType}Db;",
+            }
+        );
+
+        return insertResult.Should().BeOfType<DataStoreDerivativeInsertResult.Success>().Subject.Id;
+    }
+
     [TestFixture]
     public class Given_insert_data_store_derivative : DataStoreDerivativeTests
     {
@@ -894,6 +922,207 @@ public class DataStoreDerivativeTests : DatabaseTest
             var singleTenantRepository = CreateDerivativeRepository(new TenantContextProvider());
             var result = await singleTenantRepository.GetDataStoreDerivative(_tenantADerivativeId);
             result.Should().BeOfType<DataStoreDerivativeGetResult.FailureNotFound>();
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_data_store_with_both_derivative_types : DataStoreDerivativeTests
+    {
+        private int _dataStoreId;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _dataStoreId = await InsertParentDataStore("Both Types Parent Instance");
+
+            await InsertDerivative(_dataStoreId, "Snapshot");
+            await InsertDerivative(_dataStoreId, "ReadReplica");
+        }
+
+        [Test]
+        public async Task It_should_store_one_derivative_of_each_type()
+        {
+            var getResult = await _repository.GetDataStoreDerivativesByDataStore(_dataStoreId);
+
+            string[] expectedDerivativeTypes = ["ReadReplica", "Snapshot"];
+
+            var derivatives = getResult
+                .Should()
+                .BeOfType<DataStoreDerivativeQueryByDataStoreResult.Success>()
+                .Subject.DataStoreDerivativeResponses;
+            derivatives
+                .Select(derivative => derivative.DerivativeType)
+                .Should()
+                .BeEquivalentTo(expectedDerivativeTypes);
+        }
+    }
+
+    [TestFixture]
+    public class Given_insert_of_a_duplicate_derivative_type : DataStoreDerivativeTests
+    {
+        private int _dataStoreId;
+        private DataStoreDerivativeInsertResult _duplicateResult = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _dataStoreId = await InsertParentDataStore("Duplicate Insert Parent Instance");
+            await InsertDerivative(_dataStoreId, "Snapshot");
+
+            _duplicateResult = await _repository.InsertDataStoreDerivative(
+                new DataStoreDerivativeInsertCommand
+                {
+                    DataStoreId = _dataStoreId,
+                    DerivativeType = "Snapshot",
+                    ConnectionString = "Server=second;Database=SecondDb;",
+                }
+            );
+        }
+
+        [Test]
+        public void It_should_return_failure_duplicate_data_store_derivative() =>
+            _duplicateResult
+                .Should()
+                .BeOfType<DataStoreDerivativeInsertResult.FailureDuplicateDataStoreDerivative>();
+
+        [Test]
+        public void It_should_carry_the_conflicting_data_store_and_derivative_type()
+        {
+            var duplicate = _duplicateResult
+                .Should()
+                .BeOfType<DataStoreDerivativeInsertResult.FailureDuplicateDataStoreDerivative>()
+                .Subject;
+
+            duplicate.DataStoreId.Should().Be(_dataStoreId);
+            duplicate.DerivativeType.Should().Be("Snapshot");
+        }
+
+        [Test]
+        public async Task It_should_leave_only_the_original_derivative()
+        {
+            var getResult = await _repository.GetDataStoreDerivativesByDataStore(_dataStoreId);
+
+            getResult
+                .Should()
+                .BeOfType<DataStoreDerivativeQueryByDataStoreResult.Success>()
+                .Subject.DataStoreDerivativeResponses.Should()
+                .HaveCount(1);
+        }
+    }
+
+    [TestFixture]
+    public class Given_update_changing_derivative_type_to_an_existing_sibling : DataStoreDerivativeTests
+    {
+        private int _dataStoreId;
+        private int _replicaId;
+        private DataStoreDerivativeUpdateResult _updateResult = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _dataStoreId = await InsertParentDataStore("Update Type Conflict Parent Instance");
+            await InsertDerivative(_dataStoreId, "Snapshot");
+            _replicaId = await InsertDerivative(_dataStoreId, "ReadReplica");
+
+            _updateResult = await _repository.UpdateDataStoreDerivative(
+                new DataStoreDerivativeUpdateCommand
+                {
+                    Id = _replicaId,
+                    DataStoreId = _dataStoreId,
+                    DerivativeType = "Snapshot",
+                    ConnectionString = "Server=conflict;Database=ConflictDb;",
+                }
+            );
+        }
+
+        [Test]
+        public void It_should_return_failure_duplicate_data_store_derivative() =>
+            _updateResult
+                .Should()
+                .BeOfType<DataStoreDerivativeUpdateResult.FailureDuplicateDataStoreDerivative>();
+
+        [Test]
+        public void It_should_carry_the_conflicting_data_store_and_derivative_type()
+        {
+            var duplicate = _updateResult
+                .Should()
+                .BeOfType<DataStoreDerivativeUpdateResult.FailureDuplicateDataStoreDerivative>()
+                .Subject;
+
+            duplicate.DataStoreId.Should().Be(_dataStoreId);
+            duplicate.DerivativeType.Should().Be("Snapshot");
+        }
+
+        [Test]
+        public async Task It_should_leave_the_derivative_type_unchanged()
+        {
+            var getResult = await _repository.GetDataStoreDerivative(_replicaId);
+
+            getResult
+                .Should()
+                .BeOfType<DataStoreDerivativeGetResult.Success>()
+                .Subject.DataStoreDerivativeResponse.DerivativeType.Should()
+                .Be("ReadReplica");
+        }
+    }
+
+    [TestFixture]
+    public class Given_update_moving_a_derivative_to_a_data_store_that_already_has_the_type
+        : DataStoreDerivativeTests
+    {
+        private int _targetDataStoreId;
+        private int _sourceDataStoreId;
+        private int _movedDerivativeId;
+        private DataStoreDerivativeUpdateResult _updateResult = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _targetDataStoreId = await InsertParentDataStore("Move Conflict Target Instance");
+            _sourceDataStoreId = await InsertParentDataStore("Move Conflict Source Instance");
+
+            await InsertDerivative(_targetDataStoreId, "Snapshot");
+            _movedDerivativeId = await InsertDerivative(_sourceDataStoreId, "Snapshot");
+
+            _updateResult = await _repository.UpdateDataStoreDerivative(
+                new DataStoreDerivativeUpdateCommand
+                {
+                    Id = _movedDerivativeId,
+                    DataStoreId = _targetDataStoreId,
+                    DerivativeType = "Snapshot",
+                    ConnectionString = "Server=moved;Database=MovedDb;",
+                }
+            );
+        }
+
+        [Test]
+        public void It_should_return_failure_duplicate_data_store_derivative() =>
+            _updateResult
+                .Should()
+                .BeOfType<DataStoreDerivativeUpdateResult.FailureDuplicateDataStoreDerivative>();
+
+        [Test]
+        public void It_should_carry_the_target_data_store_and_derivative_type()
+        {
+            var duplicate = _updateResult
+                .Should()
+                .BeOfType<DataStoreDerivativeUpdateResult.FailureDuplicateDataStoreDerivative>()
+                .Subject;
+
+            duplicate.DataStoreId.Should().Be(_targetDataStoreId);
+            duplicate.DerivativeType.Should().Be("Snapshot");
+        }
+
+        [Test]
+        public async Task It_should_leave_the_derivative_on_its_original_data_store()
+        {
+            var getResult = await _repository.GetDataStoreDerivative(_movedDerivativeId);
+
+            getResult
+                .Should()
+                .BeOfType<DataStoreDerivativeGetResult.Success>()
+                .Subject.DataStoreDerivativeResponse.DataStoreId.Should()
+                .Be(_sourceDataStoreId);
         }
     }
 }
