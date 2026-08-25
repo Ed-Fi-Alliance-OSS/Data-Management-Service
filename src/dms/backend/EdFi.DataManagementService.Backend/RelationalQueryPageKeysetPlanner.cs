@@ -232,7 +232,7 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         );
         var sqlPlan = _sqlCompiler.Compile(querySpec);
 
-        return new CandidateQueryPlan(sqlPlan, parameterValues);
+        return new CandidateQueryPlan(sqlPlan, parameterValues, plannedMode.OrderingMode);
     }
 
     private static PlannedPredicate? PlanPredicate(

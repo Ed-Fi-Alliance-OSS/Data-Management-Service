@@ -144,7 +144,7 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
             changeVersionRange
         );
 
-        return new CandidateQueryPlan(sqlPlan, parameterValues);
+        return new CandidateQueryPlan(sqlPlan, parameterValues, plannedMode.OrderingMode);
     }
 
     /// <summary>

@@ -16,9 +16,16 @@ namespace EdFi.DataManagementService.Backend;
 /// </summary>
 /// <param name="Plan">The compiled candidate SQL plan.</param>
 /// <param name="ParameterValues">Values for every parameter the plan binds.</param>
+/// <param name="OrderingMode">
+/// The anchor this relation was compiled against, and therefore the column it projects. Carried on the
+/// plan rather than supplied again by whoever consumes it: partition-window compilation names this
+/// column in its ranking, sizing, and boundary projection, and a second copy of the anchor could
+/// disagree with the one the relation was actually compiled with.
+/// </param>
 internal sealed record CandidateQueryPlan(
     PageDocumentIdSqlPlan Plan,
-    IReadOnlyDictionary<string, object?> ParameterValues
+    IReadOnlyDictionary<string, object?> ParameterValues,
+    PageOrderingMode OrderingMode
 );
 
 /// <summary>
@@ -34,10 +41,15 @@ internal sealed record CandidateQueryPlan(
 /// filter parameter that does not actually collide with anything this query emits, which would change
 /// the SQL of a mode that has no stake in the name.
 /// </param>
+/// <param name="OrderingMode">
+/// The anchor <paramref name="Mode" /> carries, surfaced here so a planner can stamp it onto the
+/// compiled plan without re-inspecting which candidate mode it happens to be holding.
+/// </param>
 internal readonly record struct PlannedCandidateMode(
     PageCandidateMode Mode,
     IReadOnlyList<KeyValuePair<string, object?>> ParameterValues,
-    IReadOnlyList<string> OwnedParameterNames
+    IReadOnlyList<string> OwnedParameterNames,
+    PageOrderingMode OrderingMode
 );
 
 /// <summary>
@@ -98,7 +110,17 @@ internal static class PageCandidateModePlanning
     /// </param>
     public static PlannedCandidateMode ForUnpagedCandidates(PageOrderingMode orderingMode)
     {
-        return Plan(UnpagedCandidatesMode with { OrderingMode = orderingMode }, []);
+        return Plan(UnpagedCandidatesModeFor(orderingMode), orderingMode, []);
+    }
+
+    /// <summary>
+    /// The unpaged candidate mode carrying the supplied anchor. The single site that re-anchors
+    /// <see cref="UnpagedCandidatesMode" />, so the mode a candidate relation is compiled with and the
+    /// mode the partition-boundary statement is compiled with are the same construction.
+    /// </summary>
+    public static PageCandidateMode.UnpagedCandidates UnpagedCandidatesModeFor(PageOrderingMode orderingMode)
+    {
+        return UnpagedCandidatesMode with { OrderingMode = orderingMode };
     }
 
     private static PlannedCandidateMode ForTraditional(
@@ -113,6 +135,7 @@ internal static class PageCandidateModePlanning
 
         return Plan(
             mode,
+            orderingMode,
             [
                 new(mode.OffsetParameterName, (long)(traditional.Parameters.Offset ?? 0)),
                 new(
@@ -132,6 +155,7 @@ internal static class PageCandidateModePlanning
 
         return Plan(
             mode,
+            orderingMode,
             [
                 new(mode.InclusiveMinimumParameterName, cursor.Range.InclusiveMinimum),
                 new(mode.InclusiveMaximumParameterName, cursor.Range.InclusiveMaximum),
@@ -147,9 +171,15 @@ internal static class PageCandidateModePlanning
     /// </summary>
     private static PlannedCandidateMode Plan(
         PageCandidateMode mode,
+        PageOrderingMode orderingMode,
         IReadOnlyList<KeyValuePair<string, object?>> parameterValues
     )
     {
-        return new PlannedCandidateMode(mode, parameterValues, PageCandidateModeParameters.OwnedNames(mode));
+        return new PlannedCandidateMode(
+            mode,
+            parameterValues,
+            PageCandidateModeParameters.OwnedNames(mode),
+            orderingMode
+        );
     }
 }

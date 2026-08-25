@@ -131,5 +131,18 @@ public class PartitionRangeAssemblerTests
 
             assemble.Should().Throw<ArgumentException>().WithMessage("*ascending*");
         }
+
+        [Test]
+        public void It_rejects_a_repeated_content_version_start()
+        {
+            // Under a ContentVersion anchor the strictly-ascending guard also carries that anchor's
+            // uniqueness assumption. Boundaries are cut at row numbers, so two candidates stamped at the
+            // same change version would put 250 at two boundaries and leave an inverted range between
+            // them. The change-version sequence assigns a distinct value per document write, so this
+            // rejects an upstream invariant break rather than an unusual input.
+            Action assemble = () => PartitionRangeAssembler.ToInclusiveRanges([100L, 250L, 250L]);
+
+            assemble.Should().Throw<ArgumentException>().WithMessage("*ascending*");
+        }
     }
 }

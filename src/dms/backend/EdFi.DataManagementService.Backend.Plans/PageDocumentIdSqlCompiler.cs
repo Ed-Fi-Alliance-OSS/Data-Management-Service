@@ -644,8 +644,14 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// Every mode resolves through here, so ordering, bounds, and projection cannot name different
     /// columns for one plan. Core resolves which anchor a request gets; this only maps that choice to a
     /// column name.
+    /// <para>
+    /// <see cref="PartitionWindowSqlCompiler" /> resolves through here too, rather than repeating the
+    /// mapping. It ranks and cuts boundaries over the single column an unpaged candidate relation
+    /// projects, so a second mapping that drifted from this one would name a column that relation does
+    /// not have.
+    /// </para>
     /// </remarks>
-    private static string ResolveOrderingColumnName(PageCandidateMode mode) =>
+    internal static string ResolveOrderingColumnName(PageCandidateMode mode) =>
         ResolveOrderingMode(mode) switch
         {
             PageOrderingMode.DocumentId => DocumentIdColumnName,
