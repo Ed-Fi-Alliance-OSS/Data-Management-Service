@@ -85,7 +85,7 @@ public class Given_PostgresqlCdcSourcePositionAdapter
         CoreCdc.CdcBinding binding = await BuildBindingAsync();
         CoreCdc.CdcArtifactInventory inventory = BuildInventory();
 
-        PostgresqlCdcProviderBarrierCaptureResult capture = await _adapter.CaptureBarrierAsync(
+        CoreCdc.CdcProviderBarrierCaptureResult capture = await _adapter.CaptureBarrierAsync(
             new(_database.ConnectionString, binding)
         );
         CoreCdc.CdcPostgresqlWalPosition capturedPosition = ParsePostgresqlLsn(capture.PostgresqlBarrierLsn!);
@@ -127,7 +127,7 @@ public class Given_PostgresqlCdcSourcePositionAdapter
         DateTimeOffset barrierAcceptedAt = projectionCaughtUpDuringCapture.AddSeconds(1);
 
         _timeProvider.Set(captureStartedAt);
-        Task<PostgresqlCdcProviderBarrierCaptureResult> captureTask = _adapter.CaptureBarrierAsync(
+        Task<CoreCdc.CdcProviderBarrierCaptureResult> captureTask = _adapter.CaptureBarrierAsync(
             new(connectionString, binding)
         );
 
@@ -137,7 +137,7 @@ public class Given_PostgresqlCdcSourcePositionAdapter
 
         _timeProvider.Set(barrierAcceptedAt);
         await heldConnection.DisposeAsync();
-        PostgresqlCdcProviderBarrierCaptureResult capture = await captureTask.WaitAsync(
+        CoreCdc.CdcProviderBarrierCaptureResult capture = await captureTask.WaitAsync(
             TimeSpan.FromSeconds(10)
         );
         CoreCdc.CdcPostgresqlWalPosition capturedPosition = ParsePostgresqlLsn(capture.PostgresqlBarrierLsn!);
@@ -168,7 +168,7 @@ public class Given_PostgresqlCdcSourcePositionAdapter
         CoreCdc.CdcBinding binding = await BuildBindingAsync();
         CoreCdc.CdcArtifactInventory inventory = BuildInventory();
 
-        PostgresqlCdcProviderBarrierCaptureResult capture = await _adapter.CaptureBarrierAsync(
+        CoreCdc.CdcProviderBarrierCaptureResult capture = await _adapter.CaptureBarrierAsync(
             new(_database.ConnectionString, binding)
         );
         CoreCdc.CdcPostgresqlWalPosition capturedPosition = ParsePostgresqlLsn(capture.PostgresqlBarrierLsn!);

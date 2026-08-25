@@ -10,81 +10,6 @@ using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend.Mssql;
 
-internal sealed record MssqlCdcProviderBarrierCaptureRequest(string ConnectionString, CdcBinding Binding)
-{
-    public TimeSpan CommandTimeout { get; init; } = TimeSpan.FromSeconds(30);
-
-    public TimeSpan CaptureWaitTimeout { get; init; } = TimeSpan.FromSeconds(45);
-
-    public TimeSpan PollInterval { get; init; } = TimeSpan.FromMilliseconds(500);
-}
-
-internal sealed record MssqlCdcProviderBarrierCaptureResult
-{
-    private MssqlCdcProviderBarrierCaptureResult(
-        string? sqlServerCommitLsn,
-        string? sqlServerChangeLsn,
-        long? sqlServerEventSerialNo,
-        DateTimeOffset barrierCapturedAt,
-        IReadOnlyList<CdcDiagnostic> diagnostics
-    )
-    {
-        SqlServerCommitLsn = sqlServerCommitLsn;
-        SqlServerChangeLsn = sqlServerChangeLsn;
-        SqlServerEventSerialNo = sqlServerEventSerialNo;
-        BarrierCapturedAt = barrierCapturedAt;
-        Diagnostics = diagnostics;
-    }
-
-    public string? SqlServerCommitLsn { get; }
-
-    public string? SqlServerChangeLsn { get; }
-
-    public long? SqlServerEventSerialNo { get; }
-
-    public DateTimeOffset BarrierCapturedAt { get; }
-
-    public IReadOnlyList<CdcDiagnostic> Diagnostics { get; }
-
-    public bool Succeeded =>
-        SqlServerCommitLsn is not null
-        && SqlServerChangeLsn is not null
-        && SqlServerEventSerialNo is not null
-        && Diagnostics.Count == 0;
-
-    public static MssqlCdcProviderBarrierCaptureResult Success(
-        string sqlServerCommitLsn,
-        string sqlServerChangeLsn,
-        long sqlServerEventSerialNo,
-        DateTimeOffset barrierCapturedAt
-    )
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(sqlServerCommitLsn);
-        ArgumentException.ThrowIfNullOrWhiteSpace(sqlServerChangeLsn);
-
-        return new(sqlServerCommitLsn, sqlServerChangeLsn, sqlServerEventSerialNo, barrierCapturedAt, []);
-    }
-
-    public static MssqlCdcProviderBarrierCaptureResult Failure(
-        DateTimeOffset barrierCapturedAt,
-        IReadOnlyList<CdcDiagnostic> diagnostics
-    )
-    {
-        ArgumentNullException.ThrowIfNull(diagnostics);
-
-        return new(null, null, null, barrierCapturedAt, diagnostics);
-    }
-}
-
-internal sealed record MssqlCdcProviderBarrierObservationRequest(
-    string OperationId,
-    CdcBinding Binding,
-    DateTimeOffset ProjectionCaughtUpObservedAt,
-    MssqlCdcProviderBarrierCaptureResult CapturedBarrier,
-    CdcConnectorOffsetObservation ConnectorOffset,
-    string? ExpectedConnectSourcePartitionHash = null
-);
-
 internal sealed class MssqlCdcSourcePositionAdapter(
     IDocumentCacheProviderCommandTimeoutClassifier timeoutClassifier,
     TimeProvider timeProvider,
@@ -103,68 +28,8 @@ internal sealed class MssqlCdcSourcePositionAdapter(
 
     CdcProvider ICdcProviderSourcePositionAdapter.Provider => CdcProvider.SqlServer;
 
-    async Task<CdcProviderBarrierCaptureResult> ICdcProviderSourcePositionAdapter.CaptureBarrierAsync(
+    public async Task<CdcProviderBarrierCaptureResult> CaptureBarrierAsync(
         CdcProviderBarrierCaptureRequest request,
-        CancellationToken cancellationToken
-    )
-    {
-        ArgumentNullException.ThrowIfNull(request);
-
-        MssqlCdcProviderBarrierCaptureResult result = await CaptureBarrierAsync(
-                new(request.ConnectionString, request.Binding)
-                {
-                    CommandTimeout = request.CommandTimeout,
-                    CaptureWaitTimeout = request.CaptureWaitTimeout,
-                    PollInterval = request.PollInterval,
-                },
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        return result.Succeeded
-            ? CdcProviderBarrierCaptureResult.SqlServerSuccess(
-                result.SqlServerCommitLsn!,
-                result.SqlServerChangeLsn!,
-                result.SqlServerEventSerialNo!.Value,
-                result.BarrierCapturedAt
-            )
-            : CdcProviderBarrierCaptureResult.Failure(
-                CdcProvider.SqlServer,
-                result.BarrierCapturedAt,
-                result.Diagnostics
-            );
-    }
-
-    CdcProviderBarrierObservation ICdcProviderSourcePositionAdapter.ObserveProviderBarrier(
-        CdcProviderBarrierObservationRequest request
-    )
-    {
-        ArgumentNullException.ThrowIfNull(request);
-
-        return ObserveProviderBarrier(
-            new(
-                request.OperationId,
-                request.Binding,
-                request.ProjectionCaughtUpObservedAt,
-                ToMssqlCaptureResult(request.CapturedBarrier),
-                request.ConnectorOffset,
-                request.ExpectedConnectSourcePartitionHash
-            )
-        );
-    }
-
-    Task<CdcSourceHistoryClassificationResult> ICdcProviderSourcePositionAdapter.ObserveSourceHistoryAsync(
-        CdcSourceHistoryObservationRequest request,
-        CancellationToken cancellationToken
-    )
-    {
-        ArgumentNullException.ThrowIfNull(request);
-
-        return ObserveSourceHistoryAsync(request, cancellationToken);
-    }
-
-    public async Task<MssqlCdcProviderBarrierCaptureResult> CaptureBarrierAsync(
-        MssqlCdcProviderBarrierCaptureRequest request,
         CancellationToken cancellationToken = default
     )
     {
@@ -181,7 +46,11 @@ internal sealed class MssqlCdcSourcePositionAdapter(
         );
         if (diagnostics.HasDiagnostics || heartbeatCaptureInstanceName is null)
         {
-            return MssqlCdcProviderBarrierCaptureResult.Failure(capturedAt, diagnostics.Diagnostics);
+            return CdcProviderBarrierCaptureResult.Failure(
+                CdcProvider.SqlServer,
+                capturedAt,
+                diagnostics.Diagnostics
+            );
         }
 
         try
@@ -223,7 +92,7 @@ internal sealed class MssqlCdcSourcePositionAdapter(
 
                     if (commitLsn.Lsn is not null && changeLsn.Lsn is not null && !diagnostics.HasDiagnostics)
                     {
-                        return MssqlCdcProviderBarrierCaptureResult.Success(
+                        return CdcProviderBarrierCaptureResult.SqlServerSuccess(
                             commitLsn.Lsn.Value.ToString(),
                             changeLsn.Lsn.Value.ToString(),
                             HeartbeatAfterImageEventSerialNo,
@@ -231,7 +100,11 @@ internal sealed class MssqlCdcSourcePositionAdapter(
                         );
                     }
 
-                    return MssqlCdcProviderBarrierCaptureResult.Failure(UtcNow(), diagnostics.Diagnostics);
+                    return CdcProviderBarrierCaptureResult.Failure(
+                        CdcProvider.SqlServer,
+                        UtcNow(),
+                        diagnostics.Diagnostics
+                    );
                 }
 
                 await Task.Delay(request.PollInterval, cancellationToken).ConfigureAwait(false);
@@ -241,7 +114,11 @@ internal sealed class MssqlCdcSourcePositionAdapter(
                 HeartbeatSequencePath,
                 "CDC SQL Server provider barrier capture timed out waiting for heartbeat after-image."
             );
-            return MssqlCdcProviderBarrierCaptureResult.Failure(UtcNow(), diagnostics.Diagnostics);
+            return CdcProviderBarrierCaptureResult.Failure(
+                CdcProvider.SqlServer,
+                UtcNow(),
+                diagnostics.Diagnostics
+            );
         }
         catch (OperationCanceledException)
         {
@@ -249,7 +126,11 @@ internal sealed class MssqlCdcSourcePositionAdapter(
                 HeartbeatSequencePath,
                 "CDC SQL Server provider barrier capture was cancelled."
             );
-            return MssqlCdcProviderBarrierCaptureResult.Failure(UtcNow(), diagnostics.Diagnostics);
+            return CdcProviderBarrierCaptureResult.Failure(
+                CdcProvider.SqlServer,
+                UtcNow(),
+                diagnostics.Diagnostics
+            );
         }
         catch (Exception exception) when (_timeoutClassifier.IsProviderCommandTimeout(exception))
         {
@@ -258,7 +139,11 @@ internal sealed class MssqlCdcSourcePositionAdapter(
                 HeartbeatSequencePath,
                 "CDC SQL Server provider barrier capture timed out."
             );
-            return MssqlCdcProviderBarrierCaptureResult.Failure(UtcNow(), diagnostics.Diagnostics);
+            return CdcProviderBarrierCaptureResult.Failure(
+                CdcProvider.SqlServer,
+                UtcNow(),
+                diagnostics.Diagnostics
+            );
         }
         catch (Exception exception)
         {
@@ -267,13 +152,15 @@ internal sealed class MssqlCdcSourcePositionAdapter(
                 HeartbeatSequencePath,
                 "CDC SQL Server provider barrier capture failed."
             );
-            return MssqlCdcProviderBarrierCaptureResult.Failure(UtcNow(), diagnostics.Diagnostics);
+            return CdcProviderBarrierCaptureResult.Failure(
+                CdcProvider.SqlServer,
+                UtcNow(),
+                diagnostics.Diagnostics
+            );
         }
     }
 
-    public CdcProviderBarrierObservation ObserveProviderBarrier(
-        MssqlCdcProviderBarrierObservationRequest request
-    )
+    public CdcProviderBarrierObservation ObserveProviderBarrier(CdcProviderBarrierObservationRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.Binding);
@@ -283,6 +170,7 @@ internal sealed class MssqlCdcSourcePositionAdapter(
         CdcDiagnosticCollector diagnostics = new();
         ValidateSqlServerBinding(request.Binding, "$.binding.provider", diagnostics);
         AddDiagnostics(diagnostics, request.CapturedBarrier.Diagnostics);
+        ValidateSqlServerCaptureResult(request.CapturedBarrier, "$.capturedBarrier.provider", diagnostics);
 
         CdcContractValidationResult connectorOffsetValidation =
             CdcConnectorOffsetObservationValidator.ValidateForBinding(
@@ -395,44 +283,6 @@ internal sealed class MssqlCdcSourcePositionAdapter(
         );
     }
 
-    private static MssqlCdcProviderBarrierCaptureResult ToMssqlCaptureResult(
-        CdcProviderBarrierCaptureResult captureResult
-    )
-    {
-        ArgumentNullException.ThrowIfNull(captureResult);
-
-        if (
-            captureResult.Provider == CdcProvider.SqlServer
-            && captureResult.SqlServerCommitLsn is not null
-            && captureResult.SqlServerChangeLsn is not null
-            && captureResult.SqlServerEventSerialNo is not null
-            && captureResult.Diagnostics.Count == 0
-        )
-        {
-            return MssqlCdcProviderBarrierCaptureResult.Success(
-                captureResult.SqlServerCommitLsn,
-                captureResult.SqlServerChangeLsn,
-                captureResult.SqlServerEventSerialNo.Value,
-                captureResult.BarrierCapturedAt
-            );
-        }
-
-        return MssqlCdcProviderBarrierCaptureResult.Failure(
-            captureResult.BarrierCapturedAt,
-            captureResult.Provider == CdcProvider.SqlServer
-                ? captureResult.Diagnostics
-                :
-                [
-                    .. captureResult.Diagnostics,
-                    new(
-                        CdcDiagnosticCategory.ProviderMismatch,
-                        "$.capturedBarrier.provider",
-                        "CDC provider barrier capture result provider did not match SQL Server."
-                    ),
-                ]
-        );
-    }
-
     private static async Task<long> ReadHeartbeatSequenceAsync(
         SqlConnection connection,
         TimeSpan commandTimeout,
@@ -522,6 +372,22 @@ internal sealed class MssqlCdcSourcePositionAdapter(
                 CdcDiagnosticCategory.ProviderMismatch,
                 path,
                 "CDC SQL Server source-position adapter requires a SQL Server binding."
+            );
+        }
+    }
+
+    private static void ValidateSqlServerCaptureResult(
+        CdcProviderBarrierCaptureResult captureResult,
+        string path,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (captureResult.Provider != CdcProvider.SqlServer)
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.ProviderMismatch,
+                path,
+                "CDC provider barrier capture result provider did not match SQL Server."
             );
         }
     }

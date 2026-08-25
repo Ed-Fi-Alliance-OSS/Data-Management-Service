@@ -88,7 +88,7 @@ public class Given_MssqlCdcSourcePositionAdapter
         CoreCdc.CdcArtifactInventory inventory = BuildInventory();
         CdcProviderSetupResult setup = await CreateProviderArtifactsAsync(binding, inventory);
 
-        MssqlCdcProviderBarrierCaptureResult capture = await CaptureBarrierWithHeartbeatAsync(
+        CoreCdc.CdcProviderBarrierCaptureResult capture = await CaptureBarrierWithHeartbeatAsync(
             binding,
             setup.HeartbeatActionQuery!.Sql
         );
@@ -134,7 +134,7 @@ public class Given_MssqlCdcSourcePositionAdapter
         CoreCdc.CdcArtifactInventory inventory = BuildInventory();
         CdcProviderSetupResult setup = await CreateProviderArtifactsAsync(binding, inventory);
 
-        MssqlCdcProviderBarrierCaptureResult capture = await CaptureBarrierWithHeartbeatAsync(
+        CoreCdc.CdcProviderBarrierCaptureResult capture = await CaptureBarrierWithHeartbeatAsync(
             binding,
             setup.HeartbeatActionQuery!.Sql
         );
@@ -199,7 +199,7 @@ public class Given_MssqlCdcSourcePositionAdapter
         CoreCdc.CdcBinding binding = await BuildBindingAsync();
         CoreCdc.CdcArtifactInventory inventory = BuildInventory();
         CdcProviderSetupResult setup = await CreateProviderArtifactsAsync(binding, inventory);
-        MssqlCdcProviderBarrierCaptureResult capture = await CaptureBarrierWithHeartbeatAsync(
+        CoreCdc.CdcProviderBarrierCaptureResult capture = await CaptureBarrierWithHeartbeatAsync(
             binding,
             setup.HeartbeatActionQuery!.Sql
         );
@@ -238,7 +238,7 @@ public class Given_MssqlCdcSourcePositionAdapter
         CoreCdc.CdcBinding binding = await BuildBindingAsync();
         CoreCdc.CdcArtifactInventory inventory = BuildInventory();
         CdcProviderSetupResult setup = await CreateProviderArtifactsAsync(binding, inventory);
-        MssqlCdcProviderBarrierCaptureResult capture = await CaptureBarrierWithHeartbeatAsync(
+        CoreCdc.CdcProviderBarrierCaptureResult capture = await CaptureBarrierWithHeartbeatAsync(
             binding,
             setup.HeartbeatActionQuery!.Sql
         );
@@ -279,7 +279,7 @@ public class Given_MssqlCdcSourcePositionAdapter
         CoreCdc.CdcBinding binding = await BuildBindingAsync();
         CoreCdc.CdcArtifactInventory inventory = BuildInventory();
         CdcProviderSetupResult setup = await CreateProviderArtifactsAsync(binding, inventory);
-        MssqlCdcProviderBarrierCaptureResult capture = await CaptureBarrierWithHeartbeatAsync(
+        CoreCdc.CdcProviderBarrierCaptureResult capture = await CaptureBarrierWithHeartbeatAsync(
             binding,
             setup.HeartbeatActionQuery!.Sql
         );
@@ -325,7 +325,7 @@ public class Given_MssqlCdcSourcePositionAdapter
         CoreCdc.CdcBinding binding = await BuildBindingAsync();
         CoreCdc.CdcArtifactInventory inventory = BuildInventory();
         CdcProviderSetupResult setup = await CreateProviderArtifactsAsync(binding, inventory);
-        MssqlCdcProviderBarrierCaptureResult capture = await CaptureBarrierWithHeartbeatAsync(
+        CoreCdc.CdcProviderBarrierCaptureResult capture = await CaptureBarrierWithHeartbeatAsync(
             binding,
             setup.HeartbeatActionQuery!.Sql
         );
@@ -398,7 +398,7 @@ public class Given_MssqlCdcSourcePositionAdapter
         CoreCdc.CdcBinding binding = await BuildBindingAsync();
         CoreCdc.CdcArtifactInventory inventory = BuildInventory();
         CdcProviderSetupResult setup = await CreateProviderArtifactsAsync(binding, inventory);
-        MssqlCdcProviderBarrierCaptureResult capture = await CaptureBarrierWithHeartbeatAsync(
+        CoreCdc.CdcProviderBarrierCaptureResult capture = await CaptureBarrierWithHeartbeatAsync(
             binding,
             setup.HeartbeatActionQuery!.Sql
         );
@@ -442,7 +442,7 @@ public class Given_MssqlCdcSourcePositionAdapter
         CoreCdc.CdcBinding binding = await BuildBindingAsync();
         CoreCdc.CdcArtifactInventory inventory = BuildInventory();
         CdcProviderSetupResult setup = await CreateProviderArtifactsAsync(binding, inventory);
-        MssqlCdcProviderBarrierCaptureResult capture = await CaptureBarrierWithHeartbeatAsync(
+        CoreCdc.CdcProviderBarrierCaptureResult capture = await CaptureBarrierWithHeartbeatAsync(
             binding,
             setup.HeartbeatActionQuery!.Sql
         );
@@ -584,13 +584,13 @@ public class Given_MssqlCdcSourcePositionAdapter
         );
     }
 
-    private async Task<MssqlCdcProviderBarrierCaptureResult> CaptureBarrierWithHeartbeatAsync(
+    private async Task<CoreCdc.CdcProviderBarrierCaptureResult> CaptureBarrierWithHeartbeatAsync(
         CoreCdc.CdcBinding binding,
         string heartbeatActionSql
     )
     {
         using CancellationTokenSource cancellation = new(TimeSpan.FromSeconds(60));
-        Task<MssqlCdcProviderBarrierCaptureResult> captureTask = _adapter.CaptureBarrierAsync(
+        Task<CoreCdc.CdcProviderBarrierCaptureResult> captureTask = _adapter.CaptureBarrierAsync(
             new(_database.ConnectionString, binding)
             {
                 CaptureWaitTimeout = TimeSpan.FromSeconds(30),
@@ -604,7 +604,7 @@ public class Given_MssqlCdcSourcePositionAdapter
             cancellation.Token
         );
 
-        MssqlCdcProviderBarrierCaptureResult capture = await captureTask;
+        CoreCdc.CdcProviderBarrierCaptureResult capture = await captureTask;
         await heartbeatTask;
         capture.Diagnostics.Should().BeEmpty();
 
