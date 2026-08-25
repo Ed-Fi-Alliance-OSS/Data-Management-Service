@@ -402,7 +402,6 @@ public sealed record CdcProviderSetupObservation(
     [property: JsonRequired] CdcProviderSetupState GrantInventoryState,
     [property: JsonRequired] CdcProviderSetupState SourceInventoryState,
     [property: JsonRequired] CdcProviderSetupState HeartbeatState,
-    [property: JsonRequired] CdcProviderSetupState ProviderHistoryState,
     [property: JsonRequired] IReadOnlyList<CdcDiagnostic> Diagnostics
 ) : ICdcObservationContract;
 
@@ -1099,7 +1098,6 @@ public static class CdcProviderSetupObservationValidator
         ValidateSetupState(observation.GrantInventoryState, "$.grantInventoryState", diagnostics);
         ValidateSetupState(observation.SourceInventoryState, "$.sourceInventoryState", diagnostics);
         ValidateSetupState(observation.HeartbeatState, "$.heartbeatState", diagnostics);
-        ValidateSetupState(observation.ProviderHistoryState, "$.providerHistoryState", diagnostics);
         ValidateOutcomeStateConsistency(observation, diagnostics);
 
         return diagnostics.ToValidationResult();

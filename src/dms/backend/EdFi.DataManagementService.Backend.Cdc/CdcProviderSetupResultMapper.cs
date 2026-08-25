@@ -68,7 +68,6 @@ public static class CdcProviderSetupResultMapper
                 MapGrantInventoryState(result),
                 MapSourceInventoryState(result),
                 MapHeartbeatState(result),
-                MapProviderHistoryState(providerHistory),
                 diagnostics
             ),
             providerHistory
@@ -550,36 +549,6 @@ public static class CdcProviderSetupResultMapper
                 .Select(artifact => artifact.State),
             defaultWhenEmpty: CoreCdc.CdcProviderSetupState.Matched
         );
-
-    private static CoreCdc.CdcProviderSetupState MapProviderHistoryState(
-        CoreCdc.CdcProviderSourceHistoryEvidence providerHistory
-    )
-    {
-        if (providerHistory.ProviderArtifactState == CoreCdc.CdcProviderArtifactContinuityState.Missing)
-        {
-            return CoreCdc.CdcProviderSetupState.Missing;
-        }
-
-        if (
-            providerHistory.ProviderArtifactState == CoreCdc.CdcProviderArtifactContinuityState.Recreated
-            || providerHistory.RetainedRangeState == CoreCdc.CdcProviderRetainedRangeState.Gap
-        )
-        {
-            return CoreCdc.CdcProviderSetupState.Mismatched;
-        }
-
-        if (
-            providerHistory.ProviderArtifactState == CoreCdc.CdcProviderArtifactContinuityState.Unknown
-            || providerHistory.RetainedRangeState == CoreCdc.CdcProviderRetainedRangeState.Unknown
-            || providerHistory.SqlServerJobs?.HasUnknownJob == true
-            || providerHistory.SqlServerJobs?.HasStoppedOrFailedJob == true
-        )
-        {
-            return CoreCdc.CdcProviderSetupState.Unknown;
-        }
-
-        return CoreCdc.CdcProviderSetupState.Matched;
-    }
 
     private static CoreCdc.CdcProviderSetupState ReduceArtifactState(
         IEnumerable<CdcProviderArtifactState> states,

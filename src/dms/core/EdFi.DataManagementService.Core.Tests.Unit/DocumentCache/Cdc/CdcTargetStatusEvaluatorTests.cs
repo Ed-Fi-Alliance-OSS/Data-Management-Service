@@ -41,40 +41,6 @@ public class Given_CdcTargetStatusEvaluator
         status.Diagnostics.Should().BeEmpty();
     }
 
-    [TestCase(CdcProviderSetupState.Unknown)]
-    [TestCase(CdcProviderSetupState.Missing)]
-    [TestCase(CdcProviderSetupState.Mismatched)]
-    public void It_keeps_provider_history_availability_on_the_source_history_component(
-        CdcProviderSetupState providerHistoryState
-    )
-    {
-        CdcBinding binding = CdcTargetStatusFixture.CreateBinding();
-
-        CdcTargetStatus status = CdcTargetStatusEvaluator.Evaluate(
-            CdcTargetStatusFixture.ValidInput(binding) with
-            {
-                ProviderSetup = CdcTargetStatusFixture.ProviderSetup(binding) with
-                {
-                    ProviderHistoryState = providerHistoryState,
-                },
-                SourceHistory = CdcTargetStatusFixture.SourceHistoryProviderHistoryUnknown(binding),
-            }
-        );
-
-        status.Readiness.Should().Be(CdcReadiness.Unknown);
-        status.PrimaryBlockingCategory.Should().Be(CdcBlockingCategory.ProviderHistoryUnknown);
-        status.ProviderSetup.State.Should().Be(CdcComponentState.Satisfied);
-        status.ProviderSetup.Category.Should().Be(CdcBlockingCategory.None);
-        status.SourceHistory.State.Should().Be(CdcComponentState.Unknown);
-        status.SourceHistory.Category.Should().Be(CdcBlockingCategory.ProviderHistoryUnknown);
-        status
-            .Diagnostics.Select(diagnostic => diagnostic.Category)
-            .Should()
-            .Contain(CdcDiagnosticCategory.ProviderHistoryUnknown)
-            .And.NotContain(CdcDiagnosticCategory.ProviderSetupInvalid)
-            .And.NotContain(CdcDiagnosticCategory.InvalidObservation);
-    }
-
     [Test]
     public void It_treats_missing_current_source_fingerprint_as_unavailable_status_evidence()
     {
@@ -500,7 +466,6 @@ internal static class CdcTargetStatusFixture
             SourceFingerprint,
             CdcProviderSetupMode.ValidateOnly,
             CdcProviderSetupOutcome.Satisfied,
-            CdcProviderSetupState.Matched,
             CdcProviderSetupState.Matched,
             CdcProviderSetupState.Matched,
             CdcProviderSetupState.Matched,

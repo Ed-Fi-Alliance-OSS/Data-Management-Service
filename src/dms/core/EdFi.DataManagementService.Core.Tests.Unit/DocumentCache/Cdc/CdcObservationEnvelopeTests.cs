@@ -44,7 +44,6 @@ public class Given_CdcObservationEnvelope
             CdcProviderSetupState.Matched,
             CdcProviderSetupState.Matched,
             CdcProviderSetupState.Matched,
-            CdcProviderSetupState.NotApplicable,
             []
         );
 
@@ -64,7 +63,8 @@ public class Given_CdcObservationEnvelope
         root["provider"]!.GetValue<string>().Should().Be("postgresql");
         root["setupMode"]!.GetValue<string>().Should().Be("initialCreateOrExactMatch");
         root["setupOutcome"]!.GetValue<string>().Should().Be("satisfied");
-        root["providerHistoryState"]!.GetValue<string>().Should().Be("notApplicable");
+        string retiredProviderHistoryMember = "provider" + "HistoryState";
+        root.Should().NotContainKey(retiredProviderHistoryMember);
         json.Should().NotContain("manifestPayload");
         json.Should().NotContain("connectionString");
         json.Should().NotContain("databaseName");
@@ -78,38 +78,6 @@ public class Given_CdcObservationEnvelope
         );
 
         readResult.Succeeded.Should().BeTrue();
-        validationResult.Succeeded.Should().BeTrue();
-    }
-
-    [TestCase(CdcProviderSetupState.Unknown)]
-    [TestCase(CdcProviderSetupState.Missing)]
-    [TestCase(CdcProviderSetupState.Mismatched)]
-    public void It_validates_satisfied_provider_setup_when_only_provider_history_is_unavailable(
-        CdcProviderSetupState providerHistoryState
-    )
-    {
-        CdcProviderSetupObservation observation = new(
-            CdcJsonContract.CurrentContractVersion,
-            OperationId,
-            ObservedAt,
-            TargetIdentity,
-            CdcProvider.Postgresql,
-            SourceFingerprint,
-            CdcProviderSetupMode.ValidateOnly,
-            CdcProviderSetupOutcome.Satisfied,
-            CdcProviderSetupState.Matched,
-            CdcProviderSetupState.Matched,
-            CdcProviderSetupState.Matched,
-            CdcProviderSetupState.Matched,
-            providerHistoryState,
-            []
-        );
-
-        CdcContractValidationResult validationResult = CdcProviderSetupObservationValidator.Validate(
-            observation,
-            Context
-        );
-
         validationResult.Succeeded.Should().BeTrue();
     }
 
@@ -128,7 +96,6 @@ public class Given_CdcObservationEnvelope
             "sha256:9caa6b0ad6db6f60d8d7ce6e78d1e76094e2241678c6f241670319ab60810851",
             CdcProviderSetupMode.ValidateOnly,
             CdcProviderSetupOutcome.Unknown,
-            CdcProviderSetupState.Unknown,
             CdcProviderSetupState.Unknown,
             CdcProviderSetupState.Unknown,
             CdcProviderSetupState.Unknown,
