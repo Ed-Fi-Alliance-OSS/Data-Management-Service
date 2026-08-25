@@ -318,7 +318,7 @@ public class Given_DocumentCache_Target_Resolution_Composition
     }
 
     [Test]
-    public async Task It_retries_failed_disabled_initialization_on_same_signature_and_replaces_when_connection_changes()
+    public async Task It_keeps_failed_initialization_ineligible_until_replacement_context_is_created()
     {
         using CompositionFixture fixture = CompositionFixture.Create(
             RelationalProviderToken.SqlServer,
@@ -370,14 +370,13 @@ public class Given_DocumentCache_Target_Resolution_Composition
             DocumentCacheTargetRefreshReason.CmsRefreshNotification
         );
 
-        DocumentCacheTargetObservation sameSignatureObservation = sameSignatureRefresh.Targets.Single();
-        sameSignatureObservation.Generation!.Value.Should().Be(1);
-        sameSignatureObservation.EligibilityState.Should().Be(DocumentCacheTargetEligibilityState.Eligible);
-        fixture
-            .Registry.CurrentRuntimeSnapshot.GetExecutionContext(_defaultTargetKey)!
-            .ConnectionInput.Value.Should()
-            .Be("same-connection");
-        fixture.ProviderAdapter.InitializationPrerequisiteCallCount("same-connection").Should().Be(2);
+        sameSignatureRefresh.Targets.Single().Generation!.Value.Should().Be(1);
+        sameSignatureRefresh
+            .Targets.Single()
+            .EligibilityState.Should()
+            .Be(DocumentCacheTargetEligibilityState.Ineligible);
+        fixture.Registry.CurrentRuntimeSnapshot.GetExecutionContext(_defaultTargetKey).Should().BeNull();
+        fixture.ProviderAdapter.InitializationPrerequisiteCallCount("same-connection").Should().Be(1);
 
         fixture.ProviderAdapter.SetObservation(
             "replacement-connection",
@@ -394,7 +393,7 @@ public class Given_DocumentCache_Target_Resolution_Composition
         );
 
         DocumentCacheTargetRegistrySnapshot replacementRefresh = await fixture.Registry.RefreshAsync(
-            DocumentCacheTargetRefreshReason.CmsRefreshNotification
+            DocumentCacheTargetRefreshReason.SupervisorTriggered
         );
 
         DocumentCacheTargetObservation replacementObservation = replacementRefresh.Targets.Single();

@@ -659,7 +659,7 @@ public class DocumentCacheTargetRegistryTests
         }
 
         [Test]
-        public async Task It_retries_recoverable_SqlServerDocumentCachePrerequisite_failures_without_replacing_the_generation()
+        public async Task It_keeps_recoverable_SqlServerDocumentCachePrerequisite_failures_until_replacement_metadata_changes()
         {
             RegistryFixture fixture = new(Targets: [("TenantA", 7)]);
             fixture.ContextBuilder.QueueProviderPrerequisiteFailure(DocumentCacheLifecycleState.Disabled);
@@ -671,7 +671,11 @@ public class DocumentCacheTargetRegistryTests
                 DocumentCacheTargetRefreshReason.Startup
             );
 
-            DocumentCacheTargetRegistrySnapshot retrySnapshot = await fixture.Registry.RefreshAsync(
+            fixture.DataStoreProvider.QueueLoadResult(
+                "TenantA",
+                CreateDataStore(7, "connection-a", RelationalProviderToken.SqlServer)
+            );
+            DocumentCacheTargetRegistrySnapshot sameSignatureSnapshot = await fixture.Registry.RefreshAsync(
                 DocumentCacheTargetRefreshReason.SupervisorTriggered
             );
 
@@ -681,19 +685,40 @@ public class DocumentCacheTargetRegistryTests
                 .ContainSingle(diagnostic =>
                     diagnostic.Category == DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed
                 );
-            DocumentCacheTargetObservation retriedObservation = retrySnapshot.Targets.Single();
-            retriedObservation.EligibilityState.Should().Be(DocumentCacheTargetEligibilityState.Eligible);
-            retriedObservation.Generation!.Value.Should().Be(1);
-            fixture.ContextBuilder.BuildCalls.Select(call => call.Generation.Value).Should().Equal(1, 1);
+            DocumentCacheTargetObservation sameSignatureObservation = sameSignatureSnapshot.Targets.Single();
+            sameSignatureObservation
+                .EligibilityState.Should()
+                .Be(DocumentCacheTargetEligibilityState.Ineligible);
+            sameSignatureObservation.Generation!.Value.Should().Be(1);
+            fixture.ContextBuilder.BuildCalls.Select(call => call.Generation.Value).Should().Equal(1);
+            fixture.Registry.CurrentRuntimeSnapshot.GetExecutionContext(_tenantTargetKey).Should().BeNull();
+
+            fixture.DataStoreProvider.QueueLoadResult(
+                "TenantA",
+                CreateDataStore(7, "connection-b", RelationalProviderToken.SqlServer)
+            );
+            DocumentCacheTargetRegistrySnapshot replacementSnapshot = await fixture.Registry.RefreshAsync(
+                DocumentCacheTargetRefreshReason.SupervisorTriggered
+            );
+
+            DocumentCacheTargetObservation replacementObservation = replacementSnapshot.Targets.Single();
+            replacementObservation.EligibilityState.Should().Be(DocumentCacheTargetEligibilityState.Eligible);
+            replacementObservation.Generation!.Value.Should().Be(2);
+            replacementObservation
+                .Diagnostics.Should()
+                .Contain(diagnostic =>
+                    diagnostic.Category == DocumentCacheTargetDiagnosticCategory.TargetReplaced
+                );
+            fixture.ContextBuilder.BuildCalls.Select(call => call.Generation.Value).Should().Equal(1, 2);
             fixture
                 .Registry.CurrentRuntimeSnapshot.GetExecutionContext(
                     _tenantTargetKey,
-                    new DocumentCacheTargetContextGeneration(1)
+                    new DocumentCacheTargetContextGeneration(2)
                 )
                 .Should()
                 .NotBeNull();
-            fixture.DataStoreProvider.LoadDataStoreCalls.Should().Equal("TenantA");
-            fixture.DataStoreProvider.RefreshIfExpiredCalls.Should().Equal("TenantA");
+            fixture.DataStoreProvider.LoadDataStoreCalls.Should().Equal("TenantA", "TenantA", "TenantA");
+            fixture.DataStoreProvider.RefreshIfExpiredCalls.Should().BeEmpty();
         }
 
         [Test]

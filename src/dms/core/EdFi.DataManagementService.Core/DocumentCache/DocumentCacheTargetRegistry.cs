@@ -333,10 +333,7 @@ public sealed class DocumentCacheTargetRegistry(
             .Where(targetKey =>
                 string.Equals(GetProviderTenantKey(targetKey), tenantKey, StringComparison.OrdinalIgnoreCase)
             )
-            .Any(targetKey =>
-                _targetStates[targetKey].StableObservation.ResolutionState
-                != DocumentCacheTargetResolutionState.Resolved
-            );
+            .Any(targetKey => RequiresExplicitLoadForSupervisor(_targetStates[targetKey]));
     }
 
     private void LogTenantRefreshFailure(Exception exception)
@@ -376,10 +373,7 @@ public sealed class DocumentCacheTargetRegistry(
             DocumentCacheTargetContextGeneration reusableGeneration = previousState
                 .StableObservation
                 .Generation!;
-            if (
-                previousState.ProviderMetadataStatus != resolvedDataStore.RelationalProviderMetadataStatus
-                || ShouldRetryReusableGeneration(previousState.StableObservation)
-            )
+            if (previousState.ProviderMetadataStatus != resolvedDataStore.RelationalProviderMetadataStatus)
             {
                 DocumentCacheTargetContextBuildResult refreshedBuildResult = await targetContextBuilder
                     .BuildAsync(targetKey, resolvedDataStore, reusableGeneration, cancellationToken)
@@ -606,7 +600,17 @@ public sealed class DocumentCacheTargetRegistry(
 
     private static string GetProviderTenantKey(DocumentCacheTargetKey targetKey) => targetKey.TenantKey;
 
-    private static bool ShouldRetryReusableGeneration(DocumentCacheTargetObservation observation)
+    private static bool RequiresExplicitLoadForSupervisor(TargetState targetState)
+    {
+        if (targetState.StableObservation.ResolutionState != DocumentCacheTargetResolutionState.Resolved)
+        {
+            return true;
+        }
+
+        return HasRecoverableInitializationFailure(targetState.StableObservation);
+    }
+
+    private static bool HasRecoverableInitializationFailure(DocumentCacheTargetObservation observation)
     {
         if (
             observation.ResolutionState != DocumentCacheTargetResolutionState.Resolved
