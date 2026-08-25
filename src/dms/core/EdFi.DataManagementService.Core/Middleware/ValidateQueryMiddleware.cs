@@ -31,13 +31,28 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// faults are therefore not collection-paging events. A required parameter makes that second site a
 /// compile error that forces an explicit choice, where a default would quietly pick one.
 /// </param>
+/// <param name="_useLegacyDocumentIdOrderingForChangeQueries">
+/// The deployment-wide kill switch that restores <c>DocumentId</c> page-selection ordering for every
+/// change-version window. Supplied at composition rather than read here, so the configured value
+/// enters request handling at the pipeline that serves the request.
+/// </param>
 internal class ValidateQueryMiddleware(
     ILogger _logger,
     int _maximumPageSize,
     bool _cursorParametersRecognized,
-    ICollectionPagingTelemetry _collectionPagingTelemetry
+    ICollectionPagingTelemetry _collectionPagingTelemetry,
+    bool _useLegacyDocumentIdOrderingForChangeQueries
 ) : IPipelineStep
 {
+    /// <summary>
+    /// Resolves the page anchor from the request's change-version window. Core owns that resolution
+    /// because both sides of the request need the anchor and there is only one rule: this step stamps
+    /// it on the request, and the backend compiles page selection against the column it names.
+    /// </summary>
+    private readonly ChangeQueryPageOrderingPolicy _orderingPolicy = new(
+        _useLegacyDocumentIdOrderingForChangeQueries
+    );
+
     /// <summary>
     /// The paging names this operation parses and excludes from filter matching. Spelled from the
     /// constants the cursor validator reads, because <see cref="Paging.PartitionRequestValidator" />
@@ -140,6 +155,22 @@ internal class ValidateQueryMiddleware(
             );
         }
 
+        // The change-version window is parsed ahead of every paging check because the page anchor is
+        // resolved from it, and cursor validation needs the anchor: a continuation token carries the
+        // anchor it was issued for, and a token whose anchor disagrees with this request's window is
+        // not replayable. Only the parsing moves. This result's errors are still reported from the
+        // position they were reported from before - after cursor and traditional pagination faults -
+        // so the messages a client sees, and their precedence, are unchanged.
+        ChangeVersionValidationResult changeVersionResult = ChangeVersionParameterValidator.Validate(
+            requestInfo.FrontendRequest.QueryParameters
+        );
+
+        // Resolved from the parsed window rather than from parameter presence: '?maxChangeVersion='
+        // parses to null, so it is not a max-bearing window and does not move the anchor. An
+        // unparseable maximum parses to null for the same reason, which makes the anchor of a request
+        // rejected below deterministic rather than dependent on the faulty value.
+        PageOrderingMode pageOrderingMode = _orderingPolicy.ResolveForLiveQuery(changeVersionResult.Range);
+
         // A request that supplied either cursor parameter is validated by the cursor precedence.
         // Everything else keeps the traditional parsing and its existing messages. Both paths answer
         // a pagination fault with the parameter-validation shell, matching ODS/API.
@@ -190,10 +221,6 @@ internal class ValidateQueryMiddleware(
             collectionPaging = new CollectionPaging.Traditional(requestInfo.PaginationParameters);
         }
 
-        ChangeVersionValidationResult changeVersionResult = ChangeVersionParameterValidator.Validate(
-            requestInfo.FrontendRequest.QueryParameters
-        );
-
         if (changeVersionResult.Errors.Count > 0)
         {
             _logger.LogDebug(
@@ -205,7 +232,11 @@ internal class ValidateQueryMiddleware(
             return;
         }
 
+        // The window and the anchor it resolves to are assigned together: the anchor is a function of
+        // the window, so a request carrying one without the other would describe a page selection that
+        // cannot exist.
         requestInfo.ChangeVersionRange = changeVersionResult.Range;
+        requestInfo.PageOrderingMode = pageOrderingMode;
 
         // Pagination parameters are matched case-sensitively, consistent with how they are
         // parsed above; change-version parameters are matched case-insensitively, consistent

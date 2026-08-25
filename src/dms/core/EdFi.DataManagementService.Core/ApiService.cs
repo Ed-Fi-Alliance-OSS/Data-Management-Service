@@ -300,7 +300,8 @@ internal class ApiService : IApiService
                 _logger,
                 _appSettings.Value.MaximumPageSize,
                 _cursorParametersRecognized: true,
-                _serviceProvider.GetRequiredService<ICollectionPagingTelemetry>()
+                _serviceProvider.GetRequiredService<ICollectionPagingTelemetry>(),
+                _appSettings.Value.UseLegacyDocumentIdOrderingForChangeQueries
             ),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
@@ -340,7 +341,8 @@ internal class ApiService : IApiService
             new ValidatePartitionQueryMiddleware(
                 _logger,
                 _appSettings.Value.DefaultPartitionCount,
-                _serviceProvider.GetRequiredService<ICollectionPagingTelemetry>()
+                _serviceProvider.GetRequiredService<ICollectionPagingTelemetry>(),
+                _appSettings.Value.UseLegacyDocumentIdOrderingForChangeQueries
             ),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
@@ -467,14 +469,19 @@ internal class ApiService : IApiService
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
             ),
+            // This composition takes part in neither the collection-paging metric nor page anchoring.
             // Change Query endpoints do not page by cursor at all — they read PaginationParameters
             // directly — so a /deletes?limit=abc fault is not a collection-paging event, and counting it
-            // would pollute a metric that describes live collection reads.
+            // would pollute a metric that describes live collection reads. The resolved page anchor is
+            // inert for the same reason: a tracked-change request travels on its own contract, which
+            // carries no anchor. The configured ordering value is still supplied rather than
+            // hard-coded, so no composition can resolve the anchor by a different rule than the others.
             new ValidateQueryMiddleware(
                 _logger,
                 _appSettings.Value.MaximumPageSize,
                 _cursorParametersRecognized: false,
-                NoOpCollectionPagingTelemetry.Instance
+                NoOpCollectionPagingTelemetry.Instance,
+                _appSettings.Value.UseLegacyDocumentIdOrderingForChangeQueries
             ),
             new ValidateTrackedChangeQueryMiddleware(_logger),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),

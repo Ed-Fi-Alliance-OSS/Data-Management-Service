@@ -142,6 +142,16 @@ internal class RequestInfo(
     public ChangeVersionRange ChangeVersionRange { get; set; } = ChangeVersionRange.None;
 
     /// <summary>
+    /// The page anchor: the ordering key a page's cursor bounds, a partition's boundaries, and the
+    /// continuation token this request's response emits are all expressed in. Resolved from
+    /// <see cref="ChangeVersionRange"/> by ValidateQueryMiddleware or
+    /// ValidatePartitionQueryMiddleware, alongside the window it is a function of, so a request
+    /// cannot carry one without the other. PageOrderingMode.DocumentId on every other pipeline,
+    /// which have no anchored page selection to describe.
+    /// </summary>
+    public PageOrderingMode PageOrderingMode { get; set; } = PageOrderingMode.DocumentId;
+
+    /// <summary>
     /// The parsed resource-scoped Change Query operation for /deletes or /keyChanges.
     /// Null outside the tracked Change Query pipeline.
     /// </summary>

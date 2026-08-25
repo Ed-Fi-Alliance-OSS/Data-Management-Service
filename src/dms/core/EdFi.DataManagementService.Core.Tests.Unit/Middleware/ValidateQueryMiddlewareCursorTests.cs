@@ -168,6 +168,21 @@ public class ValidateQueryMiddlewareCursorTests
             );
         }
 
+        /// <summary>
+        /// The change-version window is parsed ahead of cursor validation, because the page anchor is
+        /// resolved from it, but its errors are still reported behind a cursor fault. Both families
+        /// answer with this same shell, so the reported message is the only thing separating
+        /// "answered here" from "answered by the window".
+        /// </summary>
+        [Test]
+        public async Task It_reports_only_the_cursor_fault_when_the_window_is_also_invalid()
+        {
+            AssertParameterValidationShell(
+                await Execute(true, ("pageToken", "!!!"), ("minChangeVersion", "abc")),
+                CursorRequestValidator.InvalidPageToken
+            );
+        }
+
         [Test]
         public async Task It_leaves_collection_paging_unapplied()
         {
@@ -368,6 +383,32 @@ public class ValidateQueryMiddlewareCursorTests
             RequestInfo requestInfo = await Execute(true, ("pageToken", ValidToken));
 
             requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+
+        /// <summary>
+        /// The anchor a cursor walk's bounds are expressed in reaches request state alongside the
+        /// decoded range, so the compiler and the token emitter read one resolution rather than each
+        /// deriving their own.
+        /// </summary>
+        [Test]
+        public async Task It_carries_the_content_version_anchor_of_a_windowed_walk()
+        {
+            RequestInfo requestInfo = await Execute(
+                true,
+                ("pageToken", ValidToken),
+                ("maxChangeVersion", "200")
+            );
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.ContentVersion);
+        }
+
+        [Test]
+        public async Task It_carries_the_document_id_anchor_of_an_unwindowed_walk()
+        {
+            RequestInfo requestInfo = await Execute(true, ("pageToken", ValidToken));
+
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
         }
 
         /// <summary>
