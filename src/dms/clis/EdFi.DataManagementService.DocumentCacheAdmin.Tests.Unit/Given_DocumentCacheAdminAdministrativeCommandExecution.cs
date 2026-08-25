@@ -61,6 +61,8 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
         root["command"]!.GetValue<string>().Should().Be("onlineCacheRebuild");
         root["status"]!.GetValue<string>().Should().Be("completed");
         root["classification"]!.GetValue<string>().Should().Be("succeeded");
+        root.Should().NotContainKey("elapsedCommandTime");
+        root["elapsedCommandTimeSeconds"]!.GetValue<double>().Should().Be(1.25);
         root.Should().NotContainKey("result");
         stderr.ToString().Should().BeEmpty();
     }

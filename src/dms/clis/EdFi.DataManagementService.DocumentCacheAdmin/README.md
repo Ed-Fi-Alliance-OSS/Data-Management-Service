@@ -85,7 +85,9 @@ dms-document-cache status --request-json status-target.json --settings ./appsett
 
 All commands support `--json`. In JSON mode, stdout contains exactly one shared contract
 document and no prose. Logs, warnings, progress, and sanitized diagnostics go to stderr or
-configured log sinks.
+configured log sinks. Status effective settings and administrative command durations use
+numeric `*Seconds` JSON fields; administrative command results expose elapsed workflow time
+as `elapsedCommandTimeSeconds`.
 
 ## Options
 

@@ -553,6 +553,54 @@ public sealed class DocumentCacheOfflineWriterAdmissionJsonConverter
         JsonNamingPolicy.CamelCase.ConvertName(confirmation.ToString());
 }
 
+public sealed class DocumentCacheNullableTimeSpanSecondsJsonConverter : JsonConverter<TimeSpan?>
+{
+    public override TimeSpan? Read(
+        ref Utf8JsonReader reader,
+        Type typeToConvert,
+        JsonSerializerOptions options
+    )
+    {
+        if (reader.TokenType is JsonTokenType.Null)
+        {
+            return null;
+        }
+
+        if (reader.TokenType is not JsonTokenType.Number || !reader.TryGetDouble(out double seconds))
+        {
+            throw new JsonException("Duration must be a numeric seconds value.");
+        }
+
+        if (double.IsNaN(seconds) || double.IsInfinity(seconds))
+        {
+            throw new JsonException("Duration must be a finite numeric seconds value.");
+        }
+
+        try
+        {
+            return TimeSpan.FromSeconds(seconds);
+        }
+        catch (ArgumentOutOfRangeException exception)
+        {
+            throw new JsonException(
+                "Duration seconds value is outside the supported TimeSpan range.",
+                exception
+            );
+        }
+    }
+
+    public override void Write(Utf8JsonWriter writer, TimeSpan? value, JsonSerializerOptions options)
+    {
+        if (value is null)
+        {
+            writer.WriteNullValue();
+            return;
+        }
+
+        writer.WriteNumberValue(DocumentCacheStatusDuration.Seconds(value.Value));
+    }
+}
+
 public sealed record DocumentCacheAdministrativeCommandResult
 {
     private const string DefaultNoMutationMessage =
@@ -688,7 +736,8 @@ public sealed record DocumentCacheAdministrativeCommandResult
     [JsonPropertyOrder(11)]
     public DocumentCacheOfflineWriterAdmissionConfirmation? OfflineWriterAdmission { get; }
 
-    [JsonPropertyName("elapsedCommandTime")]
+    [JsonPropertyName("elapsedCommandTimeSeconds")]
+    [JsonConverter(typeof(DocumentCacheNullableTimeSpanSecondsJsonConverter))]
     [JsonPropertyOrder(12)]
     public TimeSpan? ElapsedCommandTime { get; }
 

@@ -441,7 +441,7 @@
       "dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~Json",
       "dotnet run --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- rebuild-online --data-store-id 1 --confirm onlineCacheRebuild --json"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "json-request-offline-admission-contract",

@@ -355,7 +355,7 @@ public class DocumentCacheAdministrativeContractsTests
                     "cacheAheadRecoveryRequired",
                     "phaseDiagnostics",
                     "offlineWriterAdmission",
-                    "elapsedCommandTime"
+                    "elapsedCommandTimeSeconds"
                 );
             root["command"]!.GetValue<string>().Should().Be("offlineActivation");
             root["status"]!.GetValue<string>().Should().Be("incompleteRetryable");
@@ -383,7 +383,12 @@ public class DocumentCacheAdministrativeContractsTests
                 .GetValue<string>()
                 .Should()
                 .Be("offlineActivationWritersClosedAndDrained");
-            root["elapsedCommandTime"]!.GetValue<string>().Should().Be("00:03:00");
+            root.Should().NotContainKey("elapsedCommandTime");
+            root["elapsedCommandTimeSeconds"]!.GetValue<double>().Should().Be(180);
+
+            DocumentCacheAdministrativeCommandResult deserialized =
+                JsonSerializer.Deserialize<DocumentCacheAdministrativeCommandResult>(json)!;
+            deserialized.ElapsedCommandTime.Should().Be(TimeSpan.FromMinutes(3));
 
             JsonObject targetKey = root["targetKey"]!.AsObject();
             targetKey["tenantKey"]!.GetValue<string>().Should().Be("");
