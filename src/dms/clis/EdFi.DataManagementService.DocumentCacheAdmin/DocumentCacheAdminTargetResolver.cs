@@ -16,7 +16,6 @@ internal enum DocumentCacheAdminTargetResolutionOutcome
 
 internal sealed record DocumentCacheAdminTargetResolutionResult(
     DocumentCacheAdminTargetResolutionOutcome Outcome,
-    DocumentCacheTargetRegistrySnapshot RegistrySnapshot,
     string? FailureMessage
 )
 {
@@ -35,14 +34,12 @@ internal sealed record DocumentCacheAdminTargetResolutionResult(
         {
             return new DocumentCacheAdminTargetResolutionResult(
                 DocumentCacheAdminTargetResolutionOutcome.UnexpectedTargetMembership,
-                registrySnapshot,
                 UnexpectedTargetMembershipMessage
             );
         }
 
         return new DocumentCacheAdminTargetResolutionResult(
             DocumentCacheAdminTargetResolutionOutcome.Completed,
-            registrySnapshot,
             FailureMessage: null
         );
     }

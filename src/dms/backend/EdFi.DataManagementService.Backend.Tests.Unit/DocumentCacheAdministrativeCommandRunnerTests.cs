@@ -1443,7 +1443,7 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         DocumentCacheProjectionObservationSnapshot snapshot = observationStore.CurrentSnapshot;
         snapshot.ActiveAdministrativeCommands.Should().BeEmpty();
         DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot endedDiagnostic =
-            snapshot.GetCurrentGenerationLastEndedAdministrativeCommandDiagnostic(TargetKey)!;
+            snapshot.GetCurrentGenerationEndedAdministrativeCommandDiagnostic(TargetKey)!;
         endedDiagnostic.Should().NotBeNull();
         endedDiagnostic.Outcome.Should().Be(DocumentCacheAdministrativeCommandEndedOutcome.Succeeded);
         endedDiagnostic.Phase.Should().Be(DocumentCacheAdministrativeCommandPhase.Complete);

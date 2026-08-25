@@ -23,10 +23,6 @@ using DocumentCacheCurrentTargetHealthSnapshots = System.Collections.Immutable.I
     EdFi.DataManagementService.Backend.DocumentCacheProjectionTargetContextKey,
     EdFi.DataManagementService.Backend.DocumentCacheProjectionTargetHealthSnapshot
 >;
-using DocumentCacheLastEndedAdministrativeCommandDiagnosticSnapshots = System.Collections.Immutable.ImmutableDictionary<
-    EdFi.DataManagementService.Core.Configuration.DocumentCacheTargetKey,
-    EdFi.DataManagementService.Backend.DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot
->;
 using DocumentCacheLastEndedTargetDiagnosticSnapshots = System.Collections.Immutable.ImmutableDictionary<
     EdFi.DataManagementService.Core.Configuration.DocumentCacheTargetKey,
     EdFi.DataManagementService.Backend.DocumentCacheProjectionTargetEndedDiagnosticSnapshot
@@ -963,8 +959,7 @@ public sealed record DocumentCacheProjectionObservationSnapshot
         DocumentCacheLastEndedTargetDiagnosticSnapshots lastEndedTargetDiagnostics,
         DocumentCacheActiveAdministrativeCommandSnapshots activeAdministrativeCommands,
         DocumentCacheCurrentGenerationActiveAdministrativeCommandSnapshots currentGenerationActiveAdministrativeCommands,
-        DocumentCacheLastEndedAdministrativeCommandDiagnosticSnapshots lastEndedAdministrativeCommandDiagnostics,
-        DocumentCacheCurrentGenerationEndedAdministrativeCommandDiagnosticSnapshots currentGenerationLastEndedAdministrativeCommandDiagnostics,
+        DocumentCacheCurrentGenerationEndedAdministrativeCommandDiagnosticSnapshots currentGenerationEndedAdministrativeCommandDiagnostics,
         DateTimeOffset observedAt
     )
     {
@@ -978,13 +973,10 @@ public sealed record DocumentCacheProjectionObservationSnapshot
         CurrentGenerationActiveAdministrativeCommands =
             currentGenerationActiveAdministrativeCommands
             ?? throw new ArgumentNullException(nameof(currentGenerationActiveAdministrativeCommands));
-        LastEndedAdministrativeCommandDiagnostics =
-            lastEndedAdministrativeCommandDiagnostics
-            ?? throw new ArgumentNullException(nameof(lastEndedAdministrativeCommandDiagnostics));
-        CurrentGenerationLastEndedAdministrativeCommandDiagnostics =
-            currentGenerationLastEndedAdministrativeCommandDiagnostics
+        CurrentGenerationEndedAdministrativeCommandDiagnostics =
+            currentGenerationEndedAdministrativeCommandDiagnostics
             ?? throw new ArgumentNullException(
-                nameof(currentGenerationLastEndedAdministrativeCommandDiagnostics)
+                nameof(currentGenerationEndedAdministrativeCommandDiagnostics)
             );
         ObservedAt = observedAt;
     }
@@ -997,9 +989,7 @@ public sealed record DocumentCacheProjectionObservationSnapshot
 
     public DocumentCacheCurrentGenerationActiveAdministrativeCommandSnapshots CurrentGenerationActiveAdministrativeCommands { get; }
 
-    public DocumentCacheLastEndedAdministrativeCommandDiagnosticSnapshots LastEndedAdministrativeCommandDiagnostics { get; }
-
-    public DocumentCacheCurrentGenerationEndedAdministrativeCommandDiagnosticSnapshots CurrentGenerationLastEndedAdministrativeCommandDiagnostics { get; }
+    public DocumentCacheCurrentGenerationEndedAdministrativeCommandDiagnosticSnapshots CurrentGenerationEndedAdministrativeCommandDiagnostics { get; }
 
     public DateTimeOffset ObservedAt { get; }
 
@@ -1052,43 +1042,13 @@ public sealed record DocumentCacheProjectionObservationSnapshot
             : null;
     }
 
-    public DocumentCacheAdministrativeCommandObservationSnapshot? GetActiveCommand(
-        DocumentCacheTargetKey targetKey,
-        DocumentCacheTargetContextGeneration generation
-    )
-    {
-        ArgumentNullException.ThrowIfNull(targetKey);
-        ArgumentNullException.ThrowIfNull(generation);
-
-        return ActiveAdministrativeCommands
-            .Values.Where(snapshot =>
-                snapshot.TargetKey.Equals(targetKey) && snapshot.TargetGeneration == generation
-            )
-            .OrderByDescending(snapshot => snapshot.ObservedAt)
-            .FirstOrDefault();
-    }
-
-    public DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot? GetLastEndedAdministrativeCommandDiagnostic(
+    public DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot? GetCurrentGenerationEndedAdministrativeCommandDiagnostic(
         DocumentCacheTargetKey targetKey
     )
     {
         ArgumentNullException.ThrowIfNull(targetKey);
 
-        return LastEndedAdministrativeCommandDiagnostics.TryGetValue(
-            targetKey,
-            out DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot? snapshot
-        )
-            ? snapshot
-            : null;
-    }
-
-    public DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot? GetCurrentGenerationLastEndedAdministrativeCommandDiagnostic(
-        DocumentCacheTargetKey targetKey
-    )
-    {
-        ArgumentNullException.ThrowIfNull(targetKey);
-
-        return CurrentGenerationLastEndedAdministrativeCommandDiagnostics.TryGetValue(
+        return CurrentGenerationEndedAdministrativeCommandDiagnostics.TryGetValue(
             targetKey,
             out DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot? snapshot
         )
@@ -1249,7 +1209,6 @@ public sealed class DocumentCacheProjectionObservationStore
                     _lastEndedTargets,
                     activeCommands,
                     currentGenerationActiveCommands,
-                    _lastEndedCommands,
                     currentGenerationLastEndedCommands,
                     _timeProvider.GetUtcNow()
                 );

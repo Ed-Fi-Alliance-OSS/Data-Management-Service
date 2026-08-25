@@ -294,7 +294,6 @@ public sealed class Given_DocumentCacheAdminTargetResolution
         DocumentCacheAdminTargetResolutionResult result = await resolver.ResolveAsync(targetKey);
 
         result.Outcome.Should().Be(DocumentCacheAdminTargetResolutionOutcome.Completed);
-        result.RegistrySnapshot.Should().BeSameAs(registrySnapshot);
         result.FailureMessage.Should().BeNull();
         A.CallTo(() =>
                 registry.RefreshAsync(DocumentCacheTargetRefreshReason.Startup, A<CancellationToken>._)
@@ -324,7 +323,6 @@ public sealed class Given_DocumentCacheAdminTargetResolution
         DocumentCacheAdminTargetResolutionResult result = await resolver.ResolveAsync(targetKey);
 
         result.Outcome.Should().Be(DocumentCacheAdminTargetResolutionOutcome.UnexpectedTargetMembership);
-        result.RegistrySnapshot.Should().BeSameAs(registrySnapshot);
         result.FailureMessage.Should().Contain("exactly the invocation target");
     }
 }

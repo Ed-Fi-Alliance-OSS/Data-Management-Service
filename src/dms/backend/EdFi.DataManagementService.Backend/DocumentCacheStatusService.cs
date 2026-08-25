@@ -696,7 +696,7 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             ToExecutionStateComponent(targetHealth),
             ToActiveCommand(GetCurrentGenerationActiveCommand(targetObservation, projectionSnapshot)),
             ToLastEndedDiagnostic(
-                GetCurrentGenerationLastEndedAdministrativeCommandDiagnostic(
+                GetCurrentGenerationEndedAdministrativeCommandDiagnostic(
                     targetObservation,
                     projectionSnapshot
                 )
@@ -825,15 +825,10 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         DocumentCacheAdministrativeCommandObservationSnapshot? snapshot =
             projectionSnapshot.GetCurrentGenerationActiveCommand(targetObservation.TargetKey);
 
-        if (snapshot?.TargetGeneration == targetObservation.Generation)
-        {
-            return snapshot;
-        }
-
-        return projectionSnapshot.GetActiveCommand(targetObservation.TargetKey, targetObservation.Generation);
+        return snapshot?.TargetGeneration == targetObservation.Generation ? snapshot : null;
     }
 
-    private static DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot? GetCurrentGenerationLastEndedAdministrativeCommandDiagnostic(
+    private static DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot? GetCurrentGenerationEndedAdministrativeCommandDiagnostic(
         DocumentCacheTargetObservation targetObservation,
         DocumentCacheProjectionObservationSnapshot projectionSnapshot
     )
@@ -844,18 +839,9 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         }
 
         DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot? snapshot =
-            projectionSnapshot.GetCurrentGenerationLastEndedAdministrativeCommandDiagnostic(
+            projectionSnapshot.GetCurrentGenerationEndedAdministrativeCommandDiagnostic(
                 targetObservation.TargetKey
             );
-
-        if (snapshot?.TargetGeneration == targetObservation.Generation)
-        {
-            return snapshot;
-        }
-
-        snapshot = projectionSnapshot.GetLastEndedAdministrativeCommandDiagnostic(
-            targetObservation.TargetKey
-        );
 
         return snapshot?.TargetGeneration == targetObservation.Generation ? snapshot : null;
     }

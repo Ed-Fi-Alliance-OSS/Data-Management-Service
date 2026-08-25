@@ -404,13 +404,11 @@ public class Given_DocumentCacheStatusService
     }
 
     [Test]
-    public async Task It_reports_process_local_command_observations_in_standalone_mode_without_runtime_health()
+    public async Task It_reports_process_local_command_observations_for_observed_current_generation_in_standalone_mode()
     {
         DocumentCacheTargetObservation target = ResolvedTarget(DocumentCacheTargetKey.Create("", 1));
         StaticTargetRegistry registry = new([target], [ExecutionContext(target)]);
-        DocumentCacheProjectionObservationStore observationStore = new(
-            new FixedTimeProvider(ProcessObservedAt)
-        );
+        DocumentCacheProjectionObservationStore observationStore = ObservationStore(target);
         DocumentCacheAdministrativeCommandExecutionId activeExecutionId = new(
             Guid.Parse("11111111-2222-3333-4444-555555555555")
         );
@@ -448,7 +446,7 @@ public class Given_DocumentCacheStatusService
             .ContainSingle()
             .Which;
 
-        statusTarget.ExecutionState.Status.Should().Be(DocumentCacheStatusExecutionState.NotObserved);
+        statusTarget.ExecutionState.Status.Should().Be(DocumentCacheStatusExecutionState.WaitingForPoll);
         statusTarget.ActiveCommand.Should().NotBeNull();
         statusTarget
             .ActiveCommand!.Command.Should()
@@ -457,8 +455,8 @@ public class Given_DocumentCacheStatusService
         statusTarget
             .LastEndedDiagnostic!.Command.Should()
             .Be(DocumentCacheAdministrativeCommand.OnlineCacheRebuild);
-        statusTarget.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.RuntimeNotObserved);
-        statusTarget.CaughtUp.Reason.Should().Be(DocumentCacheStatusReason.RuntimeNotObserved);
+        statusTarget.OperationalHealth.Status.Should().Be(DocumentCacheOperationalHealthStatus.Operational);
+        statusTarget.CaughtUp.Status.Should().Be(DocumentCacheCaughtUpStatus.CaughtUp);
     }
 
     [Test]

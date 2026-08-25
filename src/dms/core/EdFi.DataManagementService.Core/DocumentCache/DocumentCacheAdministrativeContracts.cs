@@ -237,8 +237,6 @@ public static class DocumentCacheAdministrativeCommandContracts
         ),
     };
 
-    public static IEnumerable<DocumentCacheAdministrativeCommandContract> All => _contracts.Values;
-
     public static bool TryGet(
         DocumentCacheAdministrativeCommand command,
         [NotNullWhen(true)] out DocumentCacheAdministrativeCommandContract? contract
