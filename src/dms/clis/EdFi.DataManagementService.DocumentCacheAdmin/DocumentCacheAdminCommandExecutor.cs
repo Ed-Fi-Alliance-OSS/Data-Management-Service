@@ -6,6 +6,7 @@
 using System.CommandLine;
 using System.CommandLine.Parsing;
 using System.Globalization;
+using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using Microsoft.Extensions.DependencyInjection;
@@ -161,6 +162,9 @@ internal static class DocumentCacheAdminCommandExecutor
 
             try
             {
+                await ResolveMutatingTargetAsync(commandRequest!, serviceProvider, cancellationToken)
+                    .ConfigureAwait(false);
+
                 DocumentCacheAdministrativeCommandResult result = await dispatcher
                     .ExecuteAsync(commandRequest!, cancellationToken)
                     .ConfigureAwait(false);
@@ -220,6 +224,32 @@ internal static class DocumentCacheAdminCommandExecutor
         }
 
         return await parseResult.InvokeAsync().ConfigureAwait(false);
+    }
+
+    private static async Task ResolveMutatingTargetAsync(
+        DocumentCacheAdminMutatingCommandRequest commandRequest,
+        IServiceProvider serviceProvider,
+        CancellationToken cancellationToken
+    )
+    {
+        IDocumentCacheProjectionSupervisor? projectionSupervisor =
+            serviceProvider.GetService<IDocumentCacheProjectionSupervisor>();
+        if (projectionSupervisor is not null)
+        {
+            await projectionSupervisor
+                .RefreshAsync(DocumentCacheTargetRefreshReason.Startup, cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        IDocumentCacheAdminTargetResolver? targetResolver =
+            serviceProvider.GetService<IDocumentCacheAdminTargetResolver>();
+        if (targetResolver is not null)
+        {
+            await targetResolver
+                .ResolveAsync(commandRequest.TargetKey, cancellationToken)
+                .ConfigureAwait(false);
+        }
     }
 
     private static async Task WriteHumanStatusAsync(

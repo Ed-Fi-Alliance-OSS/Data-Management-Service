@@ -17,6 +17,8 @@ using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
+using Npgsql;
+using NpgsqlTypes;
 
 namespace EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration;
 
@@ -194,6 +196,22 @@ internal sealed class DocumentCacheAdminCliStateInspector(
         return new(RequireInt64(row, "DocumentCacheRows"), RequireInt64(row, "DocumentProjectionWorkRows"));
     }
 
+    public async Task<long> ReadCanonicalDocumentCountAsync()
+    {
+        IReadOnlyDictionary<string, object?> row = await QuerySingleRowAsync(
+            """
+            SELECT COUNT(*) AS "DocumentRows"
+            FROM dms."Document"
+            """,
+            """
+            SELECT COUNT(*) AS [DocumentRows]
+            FROM [dms].[Document]
+            """
+        );
+
+        return RequireInt64(row, "DocumentRows");
+    }
+
     public async Task<DateTime?> ReadOldestWorkFirstEnqueuedAtAsync()
     {
         IReadOnlyDictionary<string, object?> row = await QuerySingleRowAsync(
@@ -235,6 +253,173 @@ internal sealed class DocumentCacheAdminCliStateInspector(
         Guid sourceIdentity = RequireGuid(row, "SourceIdentity");
         return DocumentCachePhysicalSourceFingerprintCalculator.Compute(providerToken, sourceIdentity).Value;
     }
+
+    public Task SetLifecycleAsync(string lifecycleState, bool cacheAheadRecoveryRequired)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(lifecycleState);
+
+        return postgresqlDatabase is not null
+            ? postgresqlDatabase.ExecuteNonQueryAsync(
+                """
+                UPDATE "dms"."DocumentCacheState"
+                SET "ProjectionLifecycleState" = @lifecycleState,
+                    "CacheAheadRecoveryRequired" = @cacheAheadRecoveryRequired
+                WHERE "StateId" = 1;
+                """,
+                new NpgsqlParameter("lifecycleState", NpgsqlDbType.Varchar) { Value = lifecycleState },
+                new NpgsqlParameter("cacheAheadRecoveryRequired", NpgsqlDbType.Boolean)
+                {
+                    Value = cacheAheadRecoveryRequired,
+                }
+            )
+            : (
+                mssqlDatabase ?? throw new InvalidOperationException("No target database is configured.")
+            ).ExecuteNonQueryAsync(
+                """
+                UPDATE [dms].[DocumentCacheState]
+                SET [ProjectionLifecycleState] = @lifecycleState,
+                    [CacheAheadRecoveryRequired] = @cacheAheadRecoveryRequired
+                WHERE [StateId] = 1;
+                """,
+                new Microsoft.Data.SqlClient.SqlParameter("lifecycleState", lifecycleState),
+                new Microsoft.Data.SqlClient.SqlParameter(
+                    "cacheAheadRecoveryRequired",
+                    cacheAheadRecoveryRequired
+                )
+            );
+    }
+
+    public async Task<DocumentCacheAdminCliSeededDocument> InsertPostgresqlCanonicalDocumentAsync(
+        long contentVersion = 10
+    )
+    {
+        PostgresqlGeneratedDdlTestDatabase database = RequirePostgresqlDatabase();
+        DateTimeOffset observedAt = DateTimeOffset.UtcNow;
+        Guid documentUuid = Guid.NewGuid();
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await database.QueryRowsAsync(
+            """
+            WITH resource_key AS (
+                SELECT "ResourceKeyId"
+                FROM "dms"."ResourceKey"
+                ORDER BY "ResourceKeyId"
+                LIMIT 1
+            )
+            INSERT INTO "dms"."Document" (
+                "DocumentUuid",
+                "ResourceKeyId",
+                "ContentVersion",
+                "ContentLastModifiedAt"
+            )
+            SELECT
+                @documentUuid,
+                resource_key."ResourceKeyId",
+                @contentVersion,
+                @observedAt
+            FROM resource_key
+            RETURNING "DocumentId";
+            """,
+            new NpgsqlParameter("documentUuid", NpgsqlDbType.Uuid) { Value = documentUuid },
+            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion },
+            new NpgsqlParameter("observedAt", NpgsqlDbType.TimestampTz) { Value = observedAt }
+        );
+
+        long documentId = RequireInt64(rows.Single(), "DocumentId");
+        return new(documentId, documentUuid, contentVersion);
+    }
+
+    public Task InsertPostgresqlDocumentCacheAsync(DocumentCacheAdminCliSeededDocument document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+
+        return RequirePostgresqlDatabase()
+            .ExecuteNonQueryAsync(
+                """
+                INSERT INTO "dms"."DocumentCache" (
+                    "DocumentId",
+                    "DocumentUuid",
+                    "ProjectName",
+                    "ResourceName",
+                    "ResourceVersion",
+                    "ContentVersion",
+                    "StreamEtag",
+                    "LastModifiedAt",
+                    "DocumentJson",
+                    "ComputedAt"
+                )
+                SELECT
+                    document."DocumentId",
+                    document."DocumentUuid",
+                    resource_key."ProjectName",
+                    resource_key."ResourceName",
+                    resource_key."ResourceVersion",
+                    document."ContentVersion",
+                    @streamEtag,
+                    document."ContentLastModifiedAt",
+                    @documentJson::jsonb,
+                    @computedAt
+                FROM "dms"."Document" AS document
+                INNER JOIN "dms"."ResourceKey" AS resource_key
+                    ON resource_key."ResourceKeyId" = document."ResourceKeyId"
+                WHERE document."DocumentId" = @documentId;
+                """,
+                new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = document.DocumentId },
+                new NpgsqlParameter("streamEtag", NpgsqlDbType.Varchar)
+                {
+                    Value = $"cli-etag-{document.DocumentId}",
+                },
+                new NpgsqlParameter("documentJson", NpgsqlDbType.Jsonb) { Value = """{"seeded":true}""" },
+                new NpgsqlParameter("computedAt", NpgsqlDbType.TimestampTz) { Value = DateTimeOffset.UtcNow }
+            );
+    }
+
+    public Task InsertPostgresqlProjectionWorkAsync(
+        DocumentCacheAdminCliSeededDocument document,
+        DateTimeOffset? firstEnqueuedAt = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(document);
+
+        DateTimeOffset enqueuedAt = firstEnqueuedAt ?? DateTimeOffset.UtcNow.AddMinutes(-5);
+        return RequirePostgresqlDatabase()
+            .ExecuteNonQueryAsync(
+                """
+                INSERT INTO "dms"."DocumentProjectionWork" (
+                    "DocumentId",
+                    "RequiredContentVersion",
+                    "FirstEnqueuedAt",
+                    "LastEnqueuedAt"
+                )
+                VALUES (
+                    @documentId,
+                    @requiredContentVersion,
+                    @firstEnqueuedAt,
+                    @lastEnqueuedAt
+                );
+                """,
+                new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = document.DocumentId },
+                new NpgsqlParameter("requiredContentVersion", NpgsqlDbType.Bigint)
+                {
+                    Value = document.ContentVersion,
+                },
+                new NpgsqlParameter("firstEnqueuedAt", NpgsqlDbType.TimestampTz) { Value = enqueuedAt },
+                new NpgsqlParameter("lastEnqueuedAt", NpgsqlDbType.TimestampTz)
+                {
+                    Value = enqueuedAt.AddSeconds(5),
+                }
+            );
+    }
+
+    public Task<DocumentCacheAdminCliPostgresqlInsertTransaction> BeginPostgresqlCanonicalInsertTransactionAsync(
+        long contentVersion = 10
+    ) =>
+        DocumentCacheAdminCliPostgresqlInsertTransaction.BeginAsync(
+            RequirePostgresqlDatabase().ConnectionString,
+            contentVersion
+        );
+
+    private PostgresqlGeneratedDdlTestDatabase RequirePostgresqlDatabase() =>
+        postgresqlDatabase
+        ?? throw new InvalidOperationException("This helper is only available for PostgreSQL targets.");
 
     private async Task<IReadOnlyDictionary<string, object?>> QuerySingleRowAsync(
         string postgresqlSql,
@@ -303,6 +488,115 @@ internal sealed record DocumentCacheAdminCliLifecycleState(
 );
 
 internal sealed record DocumentCacheAdminCliMutableCounts(long DocumentCacheRows, long WorkRows);
+
+internal sealed record DocumentCacheAdminCliSeededDocument(
+    long DocumentId,
+    Guid DocumentUuid,
+    long ContentVersion
+);
+
+internal sealed class DocumentCacheAdminCliPostgresqlInsertTransaction : IAsyncDisposable
+{
+    private readonly NpgsqlConnection _connection;
+    private readonly NpgsqlTransaction _transaction;
+    private bool _completed;
+
+    private DocumentCacheAdminCliPostgresqlInsertTransaction(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        long documentId
+    )
+    {
+        _connection = connection;
+        _transaction = transaction;
+        DocumentId = documentId;
+    }
+
+    public long DocumentId { get; }
+
+    public static async Task<DocumentCacheAdminCliPostgresqlInsertTransaction> BeginAsync(
+        string connectionString,
+        long contentVersion
+    )
+    {
+        NpgsqlConnection connection = new(connectionString);
+        await connection.OpenAsync();
+        NpgsqlTransaction transaction = await connection.BeginTransactionAsync();
+
+        try
+        {
+            await using NpgsqlCommand command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                WITH resource_key AS (
+                    SELECT "ResourceKeyId"
+                    FROM "dms"."ResourceKey"
+                    ORDER BY "ResourceKeyId"
+                    LIMIT 1
+                )
+                INSERT INTO "dms"."Document" (
+                    "DocumentUuid",
+                    "ResourceKeyId",
+                    "ContentVersion",
+                    "ContentLastModifiedAt"
+                )
+                SELECT
+                    @documentUuid,
+                    resource_key."ResourceKeyId",
+                    @contentVersion,
+                    @observedAt
+                FROM resource_key
+                RETURNING "DocumentId";
+                """;
+            command.Parameters.Add(
+                new NpgsqlParameter("documentUuid", NpgsqlDbType.Uuid) { Value = Guid.NewGuid() }
+            );
+            command.Parameters.Add(
+                new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion }
+            );
+            command.Parameters.Add(
+                new NpgsqlParameter("observedAt", NpgsqlDbType.TimestampTz) { Value = DateTimeOffset.UtcNow }
+            );
+
+            object? result = await command.ExecuteScalarAsync();
+            long documentId = result is not null
+                ? Convert.ToInt64(result, CultureInfo.InvariantCulture)
+                : throw new InvalidOperationException("Expected inserted DocumentId.");
+
+            return new(connection, transaction, documentId);
+        }
+        catch
+        {
+            await transaction.DisposeAsync();
+            await connection.DisposeAsync();
+            throw;
+        }
+    }
+
+    public async Task CommitAsync()
+    {
+        await _transaction.CommitAsync();
+        _completed = true;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (!_completed)
+        {
+            try
+            {
+                await _transaction.RollbackAsync();
+            }
+            catch (InvalidOperationException)
+            {
+                // Best-effort cleanup for a transaction already completed by the provider.
+            }
+        }
+
+        await _transaction.DisposeAsync();
+        await _connection.DisposeAsync();
+    }
+}
 
 internal sealed class DocumentCacheAdminCliProcessHarness : IAsyncDisposable
 {
