@@ -120,6 +120,28 @@ Describe "DocumentCacheAdmin package target" {
         $commandsByTarget["DocumentCacheAdmin"] | Should -Be @("BuildDocumentCacheAdminPackage")
     }
 
+    It "preserves the existing API package builder behavior" {
+        $builder = Get-ScriptFunctionAst -FunctionName "BuildApiPackage"
+        $builderCommands = Get-InvokedCommandName -FunctionAst $builder
+
+        $builderCommands | Should -Contain "RunNuGetPack"
+        $builderCommands | Should -Not -Contain "DotNetClean"
+        $builderCommands | Should -Not -Contain "Restore"
+        $builderCommands | Should -Not -Contain "Compile"
+        $builderCommands | Should -Not -Contain "PublishApi"
+        $builderCommands | Should -Not -Contain "PublishCliApiDownloader"
+        $builder.Extent.Text | Should -Not -BeLike '*$schemaDownloaderProjectName/publish*'
+    }
+
+    It "preserves the existing SchemaTools no-build package builder behavior" {
+        $builder = Get-ScriptFunctionAst -FunctionName "BuildSchemaToolsPackage"
+
+        $builder.Extent.Text | Should -Not -BeLike '*dotnet restore*'
+        $builder.Extent.Text | Should -BeLike '*dotnet pack $projectPath*'
+        $builder.Extent.Text | Should -BeLike '*--no-build*'
+        $builder.Extent.Text | Should -BeLike '*--no-restore*'
+    }
+
     It "packs the DocumentCacheAdmin tool project as EdFi.Api.DocumentCacheAdmin" {
         $builder = Get-ScriptFunctionAst -FunctionName "BuildDocumentCacheAdminPackage"
         $builderCommands = Get-InvokedCommandName -FunctionAst $builder
@@ -127,6 +149,8 @@ Describe "DocumentCacheAdmin package target" {
         $builderCommands | Should -Contain "dotnet"
         $builder.Extent.Text | Should -BeLike '*$clisRoot/$documentCacheAdminProjectName/$documentCacheAdminProjectName.csproj*'
         $builder.Extent.Text | Should -BeLike '*$PSScriptRoot/$documentCacheAdminPackageName.$DMSVersion.nupkg*'
+        $builder.Extent.Text | Should -BeLike '*dotnet restore $projectPath*'
+        $builder.Extent.Text | Should -BeLike '*dotnet pack $projectPath*'
         $builder.Extent.Text | Should -BeLike '*-p:PackageVersion=$DMSVersion*'
     }
 

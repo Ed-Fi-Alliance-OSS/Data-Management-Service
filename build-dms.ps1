@@ -1778,19 +1778,7 @@ function BuildApiPackage {
     $mainPath = "$applicationRoot/$projectName"
     $projectPath = "$mainPath/$projectName.csproj"
     $nugetSpecPath = "$mainPath/publish/$projectName.nuspec"
-    $schemaDownloaderPublishPath = "$clisRoot/$schemaDownloaderProjectName/publish"
     $expectedPackagePath = "$PSScriptRoot/$packageName.$DMSVersion.nupkg"
-
-    if (-not (Test-Path $nugetSpecPath) -or -not (Test-Path $schemaDownloaderPublishPath)) {
-        Write-Info "API package publish output not found. Building and publishing API and bundled CLI before packaging."
-
-        SetDMSAssemblyInfo
-        DotNetClean
-        Restore
-        Compile
-        PublishApi
-        PublishCliApiDownloader
-    }
 
     if (Test-Path $expectedPackagePath) {
         Remove-Item -LiteralPath $expectedPackagePath -ErrorAction Stop
@@ -1814,13 +1802,9 @@ function BuildSchemaToolsPackage {
             Remove-Item -LiteralPath $expectedPackagePath -ErrorAction Stop
         }
 
-        $restoreArgs = @()
-        if ($LockedMode) { $restoreArgs += "--locked-mode" }
-
-        dotnet restore $projectPath --verbosity:normal @restoreArgs
-
         dotnet pack $projectPath `
             -c $Configuration `
+            --no-build `
             --no-restore `
             --output $PSScriptRoot `
             -p:PackageVersion=$DMSVersion
