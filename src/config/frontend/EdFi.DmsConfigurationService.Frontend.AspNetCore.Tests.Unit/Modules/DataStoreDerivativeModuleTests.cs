@@ -643,5 +643,42 @@ public class DataStoreDerivativeModuleTests
                 (await response.Content.ReadAsStringAsync()).Should().NotContain(submitted);
             }
         }
+
+        /// <summary>
+        /// The move this validation has to leave open: the client that read a derivative writes back
+        /// the fields it changed and leaves the connection string out, and the repository is asked to
+        /// keep what is stored. Whether the stored bytes actually survive is a repository concern and
+        /// is covered by the backend integration tests.
+        /// </summary>
+        [Test]
+        public async Task It_accepts_an_update_that_leaves_the_connection_string_out()
+        {
+            using var client = SetUpClient();
+
+            DataStoreDerivativeUpdateCommand? received = null;
+            A.CallTo(() => _repository.UpdateDataStoreDerivative(A<DataStoreDerivativeUpdateCommand>._))
+                .Invokes((DataStoreDerivativeUpdateCommand command) => received = command)
+                .Returns(new DataStoreDerivativeUpdateResult.Success());
+
+            var response = await client.PutAsync(
+                "/v3/dataStoreDerivatives/1",
+                new StringContent(
+                    """
+                    {
+                        "id": 1,
+                        "dataStoreId": 1,
+                        "derivativeType": "Snapshot"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            received.Should().NotBeNull();
+            received!.ConnectionString.Should().BeNull();
+            received.DerivativeType.Should().Be("Snapshot");
+        }
     }
 }

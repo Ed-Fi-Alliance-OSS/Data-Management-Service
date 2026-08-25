@@ -1125,4 +1125,92 @@ public class DataStoreDerivativeTests : DatabaseTest
                 .Be(_sourceDataStoreId);
         }
     }
+
+    /// <summary>
+    /// A get returns the stored cipher text and the write path refuses cipher text, so leaving the
+    /// field out of an update is how a client keeps the connection string it cannot resend. The
+    /// stored bytes have to come through that update untouched.
+    /// </summary>
+    [TestFixture]
+    public class Given_update_data_store_derivative_without_a_connection_string : DataStoreDerivativeTests
+    {
+        private const string OriginalConnectionString = "Server=replica;Database=ReplicaDb;";
+
+        private int _dataStoreId;
+        private int _derivativeId;
+        private string _storedValueBeforeUpdate = null!;
+        private string _storedValueAfterUpdate = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var instanceResult = await _instanceRepository.InsertDataStore(
+                new DataStoreInsertCommand
+                {
+                    DataStoreType = "Development",
+                    Name = "Parent Instance",
+                    ConnectionString = "Server=parent;Database=ParentDb;",
+                }
+            );
+            instanceResult.Should().BeOfType<DataStoreInsertResult.Success>();
+            _dataStoreId = ((DataStoreInsertResult.Success)instanceResult).Id;
+
+            var insertResult = await _repository.InsertDataStoreDerivative(
+                new DataStoreDerivativeInsertCommand
+                {
+                    DataStoreId = _dataStoreId,
+                    DerivativeType = "ReadReplica",
+                    ConnectionString = OriginalConnectionString,
+                }
+            );
+            insertResult.Should().BeOfType<DataStoreDerivativeInsertResult.Success>();
+            _derivativeId = ((DataStoreDerivativeInsertResult.Success)insertResult).Id;
+
+            _storedValueBeforeUpdate = await StoredConnectionString(_derivativeId);
+
+            var updateResult = await _repository.UpdateDataStoreDerivative(
+                new DataStoreDerivativeUpdateCommand
+                {
+                    Id = _derivativeId,
+                    DataStoreId = _dataStoreId,
+                    DerivativeType = "Snapshot",
+                    ConnectionString = null,
+                }
+            );
+            updateResult.Should().BeOfType<DataStoreDerivativeUpdateResult.Success>();
+
+            _storedValueAfterUpdate = await StoredConnectionString(_derivativeId);
+        }
+
+        private async Task<string> StoredConnectionString(int id)
+        {
+            var getResult = await _repository.GetDataStoreDerivative(id);
+            getResult.Should().BeOfType<DataStoreDerivativeGetResult.Success>();
+
+            string? storedValue = ((DataStoreDerivativeGetResult.Success)getResult)
+                .DataStoreDerivativeResponse
+                .ConnectionString;
+            storedValue.Should().NotBeNullOrEmpty();
+            return storedValue!;
+        }
+
+        [Test]
+        public void It_leaves_the_stored_cipher_text_unchanged() =>
+            _storedValueAfterUpdate.Should().Be(_storedValueBeforeUpdate);
+
+        [Test]
+        public void It_still_decrypts_to_the_original_connection_string() =>
+            AssertIsValidEncryptedBase64(_storedValueAfterUpdate, OriginalConnectionString);
+
+        [Test]
+        public async Task It_applies_the_other_changes()
+        {
+            var getResult = await _repository.GetDataStoreDerivative(_derivativeId);
+            getResult.Should().BeOfType<DataStoreDerivativeGetResult.Success>();
+
+            ((DataStoreDerivativeGetResult.Success)getResult)
+                .DataStoreDerivativeResponse.DerivativeType.Should()
+                .Be("Snapshot");
+        }
+    }
 }
