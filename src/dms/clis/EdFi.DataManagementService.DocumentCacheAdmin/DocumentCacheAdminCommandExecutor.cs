@@ -187,6 +187,23 @@ internal static class DocumentCacheAdminCommandExecutor
                 );
             }
 
+            IDocumentCacheProjectionSupervisor? projectionSupervisor =
+                serviceProvider.GetService<IDocumentCacheProjectionSupervisor>();
+            if (projectionSupervisor is null)
+            {
+                await WriteErrorAsync(
+                        standardError,
+                        "DocumentCache projection supervisor runtime services are not configured for this invocation."
+                    )
+                    .ConfigureAwait(false);
+
+                return CompleteCommand(
+                    DocumentCacheAdminExitCodes.ConfigurationError,
+                    "configurationError",
+                    "runtimeServicesMissing"
+                );
+            }
+
             using DocumentCacheAdminTimeoutScope commandTimeout = DocumentCacheAdminTimeoutScope.Start(
                 parseResult,
                 DocumentCacheAdminCommandSurface.CommandTimeoutSecondsOptionName,
@@ -198,7 +215,7 @@ internal static class DocumentCacheAdminCommandExecutor
             {
                 targetResolutionResult = await ResolveMutatingTargetAsync(
                         mutatingCommandRequest,
-                        serviceProvider,
+                        projectionSupervisor,
                         commandTimeout.Token
                     )
                     .ConfigureAwait(false);
@@ -327,30 +344,19 @@ internal static class DocumentCacheAdminCommandExecutor
 
     private static async Task<DocumentCacheAdministrativeCommandResult?> ResolveMutatingTargetAsync(
         DocumentCacheAdminMutatingCommandRequest commandRequest,
-        IServiceProvider serviceProvider,
+        IDocumentCacheProjectionSupervisor projectionSupervisor,
         CancellationToken cancellationToken
     )
     {
-        IDocumentCacheAdminTargetResolver? targetResolver =
-            serviceProvider.GetService<IDocumentCacheAdminTargetResolver>();
-        if (targetResolver is not null)
-        {
-            DocumentCacheAdminTargetResolutionResult resolution = await targetResolver
-                .ResolveAsync(commandRequest.TargetKey, cancellationToken)
-                .ConfigureAwait(false);
-            if (resolution.Outcome != DocumentCacheAdminTargetResolutionOutcome.Completed)
-            {
-                return CreateTargetResolutionRejectedResult(commandRequest, resolution);
-            }
-        }
+        DocumentCacheTargetRegistrySnapshot registrySnapshot = await projectionSupervisor
+            .RefreshAsync(DocumentCacheTargetRefreshReason.Startup, cancellationToken)
+            .ConfigureAwait(false);
 
-        IDocumentCacheProjectionSupervisor? projectionSupervisor =
-            serviceProvider.GetService<IDocumentCacheProjectionSupervisor>();
-        if (projectionSupervisor is not null)
+        DocumentCacheAdminTargetResolutionResult resolution =
+            DocumentCacheAdminTargetResolutionResult.FromSnapshot(commandRequest.TargetKey, registrySnapshot);
+        if (resolution.Outcome != DocumentCacheAdminTargetResolutionOutcome.Completed)
         {
-            await projectionSupervisor
-                .RefreshAsync(DocumentCacheTargetRefreshReason.Startup, cancellationToken)
-                .ConfigureAwait(false);
+            return CreateTargetResolutionRejectedResult(commandRequest, resolution);
         }
 
         return null;

@@ -320,16 +320,12 @@ public sealed class Given_DocumentCacheAdminStatusCommand
                 DocumentCacheTargetEffectiveSettings.FromOptions(new DocumentCacheOptions())
             );
             DocumentCacheTargetRegistrySnapshot registrySnapshot = new([unexpectedTarget], ObservedAt);
-            DocumentCacheTargetRuntimeSnapshot runtimeSnapshot = new([], ObservedAt);
 
             return Task.FromResult(
                 new DocumentCacheAdminTargetResolutionResult(
                     DocumentCacheAdminTargetResolutionOutcome.UnexpectedTargetMembership,
                     targetKey,
-                    Observation: null,
-                    ExecutionContext: null,
                     registrySnapshot,
-                    runtimeSnapshot,
                     "DocumentCache target registry did not contain exactly the invocation target."
                 )
             );

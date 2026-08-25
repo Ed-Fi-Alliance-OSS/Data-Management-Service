@@ -17,21 +17,38 @@ internal enum DocumentCacheAdminTargetResolutionOutcome
 internal sealed record DocumentCacheAdminTargetResolutionResult(
     DocumentCacheAdminTargetResolutionOutcome Outcome,
     DocumentCacheTargetKey TargetKey,
-    DocumentCacheTargetObservation? Observation,
-    DocumentCacheTargetExecutionContext? ExecutionContext,
     DocumentCacheTargetRegistrySnapshot RegistrySnapshot,
-    DocumentCacheTargetRuntimeSnapshot RuntimeSnapshot,
     string? FailureMessage
 )
 {
-    public bool HasCompleteObservation =>
-        Outcome == DocumentCacheAdminTargetResolutionOutcome.Completed && Observation is not null;
+    private const string UnexpectedTargetMembershipMessage =
+        "DocumentCache target registry did not contain exactly the invocation target.";
 
-    public bool CanAttemptMutation =>
-        Observation is not null
-        && Observation.ResolutionState == DocumentCacheTargetResolutionState.Resolved
-        && Observation.EligibilityState == DocumentCacheTargetEligibilityState.Eligible
-        && ExecutionContext is not null;
+    public static DocumentCacheAdminTargetResolutionResult FromSnapshot(
+        DocumentCacheTargetKey targetKey,
+        DocumentCacheTargetRegistrySnapshot registrySnapshot
+    )
+    {
+        ArgumentNullException.ThrowIfNull(targetKey);
+        ArgumentNullException.ThrowIfNull(registrySnapshot);
+
+        if (registrySnapshot.Targets.Length != 1 || !registrySnapshot.Targets[0].TargetKey.Equals(targetKey))
+        {
+            return new DocumentCacheAdminTargetResolutionResult(
+                DocumentCacheAdminTargetResolutionOutcome.UnexpectedTargetMembership,
+                targetKey,
+                registrySnapshot,
+                UnexpectedTargetMembershipMessage
+            );
+        }
+
+        return new DocumentCacheAdminTargetResolutionResult(
+            DocumentCacheAdminTargetResolutionOutcome.Completed,
+            targetKey,
+            registrySnapshot,
+            FailureMessage: null
+        );
+    }
 }
 
 internal interface IDocumentCacheAdminTargetResolver
@@ -55,34 +72,7 @@ internal sealed class DocumentCacheAdminTargetResolver(IDocumentCacheTargetRegis
         DocumentCacheTargetRegistrySnapshot registrySnapshot = await targetRegistry
             .RefreshAsync(DocumentCacheTargetRefreshReason.Startup, cancellationToken)
             .ConfigureAwait(false);
-        DocumentCacheTargetRuntimeSnapshot runtimeSnapshot = targetRegistry.CurrentRuntimeSnapshot;
 
-        if (registrySnapshot.Targets.Length != 1 || !registrySnapshot.Targets[0].TargetKey.Equals(targetKey))
-        {
-            return new DocumentCacheAdminTargetResolutionResult(
-                DocumentCacheAdminTargetResolutionOutcome.UnexpectedTargetMembership,
-                targetKey,
-                Observation: null,
-                ExecutionContext: null,
-                registrySnapshot,
-                runtimeSnapshot,
-                "DocumentCache target registry did not contain exactly the invocation target."
-            );
-        }
-
-        DocumentCacheTargetObservation observation = registrySnapshot.Targets[0];
-        DocumentCacheTargetExecutionContext? executionContext = observation.Generation is null
-            ? runtimeSnapshot.GetExecutionContext(targetKey)
-            : runtimeSnapshot.GetExecutionContext(targetKey, observation.Generation);
-
-        return new DocumentCacheAdminTargetResolutionResult(
-            DocumentCacheAdminTargetResolutionOutcome.Completed,
-            targetKey,
-            observation,
-            executionContext,
-            registrySnapshot,
-            runtimeSnapshot,
-            FailureMessage: null
-        );
+        return DocumentCacheAdminTargetResolutionResult.FromSnapshot(targetKey, registrySnapshot);
     }
 }

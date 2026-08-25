@@ -7,6 +7,7 @@ using System.Collections.Immutable;
 using System.CommandLine;
 using System.Diagnostics.Metrics;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.DocumentCacheAdmin;
@@ -40,6 +41,9 @@ public sealed class Given_DocumentCacheAdminLoggingAndTelemetry
                 loggingBuilder.SetMinimumLevel(LogLevel.Information);
                 loggingBuilder.AddProvider(loggerProvider);
             })
+            .AddSingleton<IDocumentCacheProjectionSupervisor>(
+                new SuccessfulProjectionSupervisor(DocumentCacheTargetKey.Create(tenantKey, 1))
+            )
             .AddSingleton<IDocumentCacheAdminMutatingCommandDispatcher>(dispatcher)
             .AddSingleton<IDocumentCacheAdminCliTelemetry, DocumentCacheAdminCliTelemetry>()
             .BuildServiceProvider();
@@ -87,6 +91,9 @@ public sealed class Given_DocumentCacheAdminLoggingAndTelemetry
             )
         );
         await using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddSingleton<IDocumentCacheProjectionSupervisor>(
+                new SuccessfulProjectionSupervisor(DocumentCacheTargetKey.Create(tenantKey, 1))
+            )
             .AddSingleton<IDocumentCacheAdminMutatingCommandDispatcher>(dispatcher)
             .BuildServiceProvider();
 
@@ -194,6 +201,31 @@ public sealed class Given_DocumentCacheAdminLoggingAndTelemetry
 
     private static DocumentCacheAdminInvocationTarget InvocationTarget(string tenantKey) =>
         new(DocumentCacheTargetKey.Create(tenantKey, 1), DocumentCacheAdminInvocationTargetSource.Options);
+
+    private sealed class SuccessfulProjectionSupervisor(DocumentCacheTargetKey targetKey)
+        : IDocumentCacheProjectionSupervisor
+    {
+        public ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> CurrentTargetContexts => [];
+
+        public Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
+            DocumentCacheTargetRefreshReason reason,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(
+                new DocumentCacheTargetRegistrySnapshot(
+                    [
+                        DocumentCacheTargetObservation.Configured(
+                            targetKey,
+                            DocumentCacheTargetEffectiveSettings.FromOptions(new DocumentCacheOptions())
+                        ),
+                    ],
+                    DateTimeOffset.UtcNow
+                )
+            );
+        }
+    }
 
     private static DocumentCacheAdministrativeCommandResult CompletedResult(string tenantKey) =>
         Result(tenantKey, "diagnostic");

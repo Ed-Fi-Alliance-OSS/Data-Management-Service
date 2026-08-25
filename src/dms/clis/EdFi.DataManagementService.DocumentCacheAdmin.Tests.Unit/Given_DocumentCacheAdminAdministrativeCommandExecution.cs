@@ -27,7 +27,9 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
     public async Task It_invokes_the_mutating_dispatcher_with_the_shared_request_and_writes_json_result()
     {
         RecordingMutatingCommandDispatcher dispatcher = new(_ => CompletedResult());
+        RecordingProjectionSupervisor projectionSupervisor = new(MatchingRegistrySnapshot());
         await using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddSingleton<IDocumentCacheProjectionSupervisor>(projectionSupervisor)
             .AddSingleton<IDocumentCacheAdminMutatingCommandDispatcher>(dispatcher)
             .BuildServiceProvider();
         using var stdout = new StringWriter();
@@ -49,6 +51,7 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
         );
 
         exitCode.Should().Be(DocumentCacheAdminExitCodes.Success);
+        projectionSupervisor.RefreshCount.Should().Be(1);
         DocumentCacheAdminMutatingCommandRequest commandRequest = dispatcher
             .Requests.Should()
             .ContainSingle()
@@ -100,7 +103,9 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
     )
     {
         RecordingMutatingCommandDispatcher dispatcher = new(_ => Result(status, classification, mutated));
+        RecordingProjectionSupervisor projectionSupervisor = new(MatchingRegistrySnapshot());
         await using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddSingleton<IDocumentCacheProjectionSupervisor>(projectionSupervisor)
             .AddSingleton<IDocumentCacheAdminMutatingCommandDispatcher>(dispatcher)
             .BuildServiceProvider();
         using var stdout = new StringWriter();
@@ -121,6 +126,7 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
         );
 
         exitCode.Should().Be(expectedExitCode);
+        projectionSupervisor.RefreshCount.Should().Be(1);
         stdout.ToString().Should().Contain($"status={status} classification={classification}");
         stderr.ToString().Should().BeEmpty();
     }
@@ -154,13 +160,11 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
     [Test]
     public async Task It_enforces_target_resolution_failure_before_mutating_dispatch()
     {
-        UnexpectedMembershipTargetResolver targetResolver = new();
-        RecordingProjectionSupervisor projectionSupervisor = new();
+        RecordingProjectionSupervisor projectionSupervisor = new(UnexpectedRegistrySnapshot());
         RecordingMutatingCommandDispatcher dispatcher = new(_ =>
             throw new AssertionException("Dispatcher must not run after target resolution fails.")
         );
         await using ServiceProvider serviceProvider = new ServiceCollection()
-            .AddSingleton<IDocumentCacheAdminTargetResolver>(targetResolver)
             .AddSingleton<IDocumentCacheProjectionSupervisor>(projectionSupervisor)
             .AddSingleton<IDocumentCacheAdminMutatingCommandDispatcher>(dispatcher)
             .BuildServiceProvider();
@@ -183,8 +187,7 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
         );
 
         exitCode.Should().Be(DocumentCacheAdminExitCodes.RejectedNoMutation);
-        targetResolver.ResolveCount.Should().Be(1);
-        projectionSupervisor.RefreshCount.Should().Be(0);
+        projectionSupervisor.RefreshCount.Should().Be(1);
         dispatcher.Requests.Should().BeEmpty();
 
         JsonObject result = JsonNode.Parse(stdout.ToString())!.AsObject();
@@ -204,7 +207,7 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
             new AssertionException("Dispatcher must not run after target resolution times out.")
         );
         await using ServiceProvider serviceProvider = new ServiceCollection()
-            .AddSingleton<IDocumentCacheAdminTargetResolver>(new DelayingTargetResolver())
+            .AddSingleton<IDocumentCacheProjectionSupervisor>(new DelayingProjectionSupervisor())
             .AddSingleton<IDocumentCacheAdminMutatingCommandDispatcher>(dispatcher)
             .BuildServiceProvider();
         using var stdout = new StringWriter();
@@ -239,6 +242,28 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
 
     private static DocumentCacheAdminInvocationTarget InvocationTarget() =>
         new(DocumentCacheTargetKey.Create("", 1), DocumentCacheAdminInvocationTargetSource.Options);
+
+    private static DocumentCacheTargetRegistrySnapshot MatchingRegistrySnapshot() =>
+        new(
+            [
+                DocumentCacheTargetObservation.Configured(
+                    DocumentCacheTargetKey.Create("", 1),
+                    DocumentCacheTargetEffectiveSettings.FromOptions(new DocumentCacheOptions())
+                ),
+            ],
+            DateTimeOffset.UtcNow
+        );
+
+    private static DocumentCacheTargetRegistrySnapshot UnexpectedRegistrySnapshot() =>
+        new(
+            [
+                DocumentCacheTargetObservation.Configured(
+                    DocumentCacheTargetKey.Create("TenantB", 2),
+                    DocumentCacheTargetEffectiveSettings.FromOptions(new DocumentCacheOptions())
+                ),
+            ],
+            DateTimeOffset.UtcNow
+        );
 
     private static DocumentCacheAdministrativeCommandResult CompletedResult() =>
         Result(
@@ -295,40 +320,8 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
         }
     }
 
-    private sealed class UnexpectedMembershipTargetResolver : IDocumentCacheAdminTargetResolver
-    {
-        public int ResolveCount { get; private set; }
-
-        public Task<DocumentCacheAdminTargetResolutionResult> ResolveAsync(
-            DocumentCacheTargetKey targetKey,
-            CancellationToken cancellationToken = default
-        )
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            ResolveCount++;
-            DateTimeOffset observedAt = DateTimeOffset.UtcNow;
-            DocumentCacheTargetObservation unexpectedTarget = DocumentCacheTargetObservation.Configured(
-                DocumentCacheTargetKey.Create("TenantB", 2),
-                DocumentCacheTargetEffectiveSettings.FromOptions(new DocumentCacheOptions())
-            );
-            DocumentCacheTargetRegistrySnapshot registrySnapshot = new([unexpectedTarget], observedAt);
-            DocumentCacheTargetRuntimeSnapshot runtimeSnapshot = new([], observedAt);
-
-            return Task.FromResult(
-                new DocumentCacheAdminTargetResolutionResult(
-                    DocumentCacheAdminTargetResolutionOutcome.UnexpectedTargetMembership,
-                    targetKey,
-                    Observation: null,
-                    ExecutionContext: null,
-                    registrySnapshot,
-                    runtimeSnapshot,
-                    "DocumentCache target registry did not contain exactly the invocation target."
-                )
-            );
-        }
-    }
-
-    private sealed class RecordingProjectionSupervisor : IDocumentCacheProjectionSupervisor
+    private sealed class RecordingProjectionSupervisor(DocumentCacheTargetRegistrySnapshot registrySnapshot)
+        : IDocumentCacheProjectionSupervisor
     {
         public int RefreshCount { get; private set; }
 
@@ -341,14 +334,16 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
         {
             cancellationToken.ThrowIfCancellationRequested();
             RefreshCount++;
-            return Task.FromResult(new DocumentCacheTargetRegistrySnapshot([], DateTimeOffset.UtcNow));
+            return Task.FromResult(registrySnapshot);
         }
     }
 
-    private sealed class DelayingTargetResolver : IDocumentCacheAdminTargetResolver
+    private sealed class DelayingProjectionSupervisor : IDocumentCacheProjectionSupervisor
     {
-        public async Task<DocumentCacheAdminTargetResolutionResult> ResolveAsync(
-            DocumentCacheTargetKey targetKey,
+        public ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> CurrentTargetContexts => [];
+
+        public async Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
+            DocumentCacheTargetRefreshReason reason,
             CancellationToken cancellationToken = default
         )
         {

@@ -21,14 +21,14 @@ namespace EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit;
 public sealed class Given_DocumentCacheAdminProcessFailures
 {
     [Test]
-    public async Task It_returns_failed_no_mutation_json_when_pre_dispatch_target_resolution_is_cancelled()
+    public async Task It_returns_failed_no_mutation_json_when_pre_dispatch_refresh_is_cancelled()
     {
-        CancellableTargetResolver targetResolver = new();
+        CancellableProjectionSupervisor projectionSupervisor = new();
         ThrowingMutatingCommandDispatcher dispatcher = new(
             new AssertionException("Dispatcher must not run after target preparation cancellation.")
         );
         await using ServiceProvider serviceProvider = new ServiceCollection()
-            .AddSingleton<IDocumentCacheAdminTargetResolver>(targetResolver)
+            .AddSingleton<IDocumentCacheProjectionSupervisor>(projectionSupervisor)
             .AddSingleton<IDocumentCacheAdminMutatingCommandDispatcher>(dispatcher)
             .BuildServiceProvider();
         using var stdout = new StringWriter();
@@ -53,7 +53,7 @@ public sealed class Given_DocumentCacheAdminProcessFailures
         );
 
         exitCode.Should().Be(DocumentCacheAdminExitCodes.FailedNoMutation);
-        targetResolver.ResolveCount.Should().Be(1);
+        projectionSupervisor.RefreshCount.Should().Be(1);
         JsonObject result = ParseSingleJsonResult(stdout);
         result["status"]!.GetValue<string>().Should().Be("failedNoMutation");
         result["classification"]!.GetValue<string>().Should().Be("cancellationBeforeMutation");
@@ -108,14 +108,16 @@ public sealed class Given_DocumentCacheAdminProcessFailures
     }
 
     [Test]
-    public async Task It_returns_failed_no_mutation_json_when_pre_dispatch_target_resolution_fails()
+    public async Task It_returns_failed_no_mutation_json_when_pre_dispatch_refresh_fails()
     {
-        ThrowingTargetResolver targetResolver = new(new InvalidOperationException("provider refresh failed"));
+        ThrowingProjectionSupervisor projectionSupervisor = new(
+            new InvalidOperationException("provider refresh failed")
+        );
         ThrowingMutatingCommandDispatcher dispatcher = new(
             new AssertionException("Dispatcher must not run after target preparation failure.")
         );
         await using ServiceProvider serviceProvider = new ServiceCollection()
-            .AddSingleton<IDocumentCacheAdminTargetResolver>(targetResolver)
+            .AddSingleton<IDocumentCacheProjectionSupervisor>(projectionSupervisor)
             .AddSingleton<IDocumentCacheAdminMutatingCommandDispatcher>(dispatcher)
             .BuildServiceProvider();
         using var stdout = new StringWriter();
@@ -137,7 +139,7 @@ public sealed class Given_DocumentCacheAdminProcessFailures
         );
 
         exitCode.Should().Be(DocumentCacheAdminExitCodes.FailedNoMutation);
-        targetResolver.ResolveCount.Should().Be(1);
+        projectionSupervisor.RefreshCount.Should().Be(1);
         JsonObject result = ParseSingleJsonResult(stdout);
         result["command"]!.GetValue<string>().Should().Be("explicitIntegrityScrub");
         result["status"]!.GetValue<string>().Should().Be("failedNoMutation");
@@ -202,6 +204,7 @@ public sealed class Given_DocumentCacheAdminProcessFailures
     {
         ThrowingMutatingCommandDispatcher dispatcher = new(new InvalidOperationException("boom"));
         await using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddSingleton<IDocumentCacheProjectionSupervisor>(new SuccessfulProjectionSupervisor())
             .AddSingleton<IDocumentCacheAdminMutatingCommandDispatcher>(dispatcher)
             .BuildServiceProvider();
         using var stdout = new StringWriter();
@@ -237,6 +240,7 @@ public sealed class Given_DocumentCacheAdminProcessFailures
             )
         );
         await using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddSingleton<IDocumentCacheProjectionSupervisor>(new SuccessfulProjectionSupervisor())
             .AddSingleton<IDocumentCacheAdminMutatingCommandDispatcher>(dispatcher)
             .BuildServiceProvider();
         using var stdout = new StringWriter();
@@ -273,6 +277,7 @@ public sealed class Given_DocumentCacheAdminProcessFailures
             )
         );
         await using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddSingleton<IDocumentCacheProjectionSupervisor>(new SuccessfulProjectionSupervisor())
             .AddSingleton<IDocumentCacheAdminMutatingCommandDispatcher>(dispatcher)
             .BuildServiceProvider();
         using var stdout = new StringWriter();
@@ -339,34 +344,29 @@ public sealed class Given_DocumentCacheAdminProcessFailures
             ]
         );
 
-    private sealed class CancellableTargetResolver : IDocumentCacheAdminTargetResolver
+    private sealed class SuccessfulProjectionSupervisor : IDocumentCacheProjectionSupervisor
     {
-        public int ResolveCount { get; private set; }
+        public ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> CurrentTargetContexts => [];
 
-        public Task<DocumentCacheAdminTargetResolutionResult> ResolveAsync(
-            DocumentCacheTargetKey targetKey,
+        public Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
+            DocumentCacheTargetRefreshReason reason,
             CancellationToken cancellationToken = default
         )
         {
-            ResolveCount++;
             cancellationToken.ThrowIfCancellationRequested();
-            throw new AssertionException("Target resolution should observe caller cancellation.");
+            return Task.FromResult(MatchingRegistrySnapshot());
         }
-    }
 
-    private sealed class ThrowingTargetResolver(Exception exception) : IDocumentCacheAdminTargetResolver
-    {
-        public int ResolveCount { get; private set; }
-
-        public Task<DocumentCacheAdminTargetResolutionResult> ResolveAsync(
-            DocumentCacheTargetKey targetKey,
-            CancellationToken cancellationToken = default
-        )
-        {
-            ResolveCount++;
-            cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromException<DocumentCacheAdminTargetResolutionResult>(exception);
-        }
+        private static DocumentCacheTargetRegistrySnapshot MatchingRegistrySnapshot() =>
+            new(
+                [
+                    DocumentCacheTargetObservation.Configured(
+                        DocumentCacheTargetKey.Create("", 1),
+                        DocumentCacheTargetEffectiveSettings.FromOptions(new DocumentCacheOptions())
+                    ),
+                ],
+                DateTimeOffset.UtcNow
+            );
     }
 
     private sealed class CancellableProjectionSupervisor : IDocumentCacheProjectionSupervisor

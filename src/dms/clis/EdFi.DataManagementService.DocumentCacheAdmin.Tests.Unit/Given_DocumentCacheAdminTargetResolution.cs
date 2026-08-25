@@ -294,22 +294,20 @@ public sealed class Given_DocumentCacheAdminTargetResolution
         );
         DateTimeOffset observedAt = DateTimeOffset.UtcNow;
         DocumentCacheTargetRegistrySnapshot registrySnapshot = new([observation], observedAt);
-        DocumentCacheTargetRuntimeSnapshot runtimeSnapshot = new([], observedAt);
         IDocumentCacheTargetRegistry registry = A.Fake<IDocumentCacheTargetRegistry>();
         A.CallTo(() =>
                 registry.RefreshAsync(DocumentCacheTargetRefreshReason.Startup, A<CancellationToken>._)
             )
             .Returns(Task.FromResult(registrySnapshot));
-        A.CallTo(() => registry.CurrentRuntimeSnapshot).Returns(runtimeSnapshot);
 
         var resolver = new DocumentCacheAdminTargetResolver(registry);
 
         DocumentCacheAdminTargetResolutionResult result = await resolver.ResolveAsync(targetKey);
 
         result.Outcome.Should().Be(DocumentCacheAdminTargetResolutionOutcome.Completed);
-        result.Observation.Should().BeSameAs(observation);
-        result.ExecutionContext.Should().BeNull();
-        result.CanAttemptMutation.Should().BeFalse();
+        result.TargetKey.Should().Be(targetKey);
+        result.RegistrySnapshot.Should().BeSameAs(registrySnapshot);
+        result.FailureMessage.Should().BeNull();
         A.CallTo(() =>
                 registry.RefreshAsync(DocumentCacheTargetRefreshReason.Startup, A<CancellationToken>._)
             )
@@ -327,20 +325,19 @@ public sealed class Given_DocumentCacheAdminTargetResolution
         );
         DateTimeOffset observedAt = DateTimeOffset.UtcNow;
         DocumentCacheTargetRegistrySnapshot registrySnapshot = new([observation], observedAt);
-        DocumentCacheTargetRuntimeSnapshot runtimeSnapshot = new([], observedAt);
         IDocumentCacheTargetRegistry registry = A.Fake<IDocumentCacheTargetRegistry>();
         A.CallTo(() =>
                 registry.RefreshAsync(DocumentCacheTargetRefreshReason.Startup, A<CancellationToken>._)
             )
             .Returns(Task.FromResult(registrySnapshot));
-        A.CallTo(() => registry.CurrentRuntimeSnapshot).Returns(runtimeSnapshot);
 
         var resolver = new DocumentCacheAdminTargetResolver(registry);
 
         DocumentCacheAdminTargetResolutionResult result = await resolver.ResolveAsync(targetKey);
 
         result.Outcome.Should().Be(DocumentCacheAdminTargetResolutionOutcome.UnexpectedTargetMembership);
-        result.HasCompleteObservation.Should().BeFalse();
+        result.TargetKey.Should().Be(targetKey);
+        result.RegistrySnapshot.Should().BeSameAs(registrySnapshot);
         result.FailureMessage.Should().Contain("exactly the invocation target");
     }
 }

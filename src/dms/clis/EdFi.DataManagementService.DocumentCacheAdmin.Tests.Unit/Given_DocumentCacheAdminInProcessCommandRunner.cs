@@ -396,6 +396,9 @@ public sealed class Given_DocumentCacheAdminInProcessCommandRunner
             IDocumentCacheDownstreamPublicationHistoryProvider,
             ThrowingDownstreamPublicationHistoryProvider
         >();
+        services.AddSingleton<IDocumentCacheProjectionSupervisor>(
+            new StubProjectionSupervisor([], CreateConfiguredRegistrySnapshot(TargetKey))
+        );
         services.AddSingleton<IDocumentCacheBaselineSeeder, ThrowingBaselineSeeder>();
         services.AddSingleton<IDocumentCacheAdministrativeDrainer, ThrowingAdministrativeDrainer>();
         services.AddSingleton<
@@ -515,8 +518,16 @@ public sealed class Given_DocumentCacheAdminInProcessCommandRunner
         public ServiceProvider BuildServiceProvider()
         {
             DocumentCacheProjectionObservationStore observationStore = new(new FixedTimeProvider(ObservedAt));
+            DocumentCacheProjectionTargetRuntimeContext runtimeContext = CreateRuntimeContext(
+                _executionContext,
+                observationStore
+            );
+            StubProjectionSupervisor projectionSupervisor = new(
+                [runtimeContext],
+                CreateEligibleRegistrySnapshot(_executionContext)
+            );
             DocumentCacheAdministrativeCommandRunner runner = new(
-                new StubProjectionSupervisor([CreateRuntimeContext(_executionContext, observationStore)]),
+                projectionSupervisor,
                 new StubTargetRegistry(_executionContext),
                 new RecordingAdministrativeMutex(),
                 Primitives,
@@ -528,6 +539,7 @@ public sealed class Given_DocumentCacheAdminInProcessCommandRunner
 
             ServiceCollection services = new();
             services.AddSingleton<IDocumentCacheAdministrativeCommandRunner>(runner);
+            services.AddSingleton<IDocumentCacheProjectionSupervisor>(projectionSupervisor);
             services.AddSingleton<IDocumentCacheDownstreamPublicationHistoryProvider>(
                 _downstreamHistoryProvider
             );
@@ -604,6 +616,10 @@ public sealed class Given_DocumentCacheAdminInProcessCommandRunner
                 observationSink
             );
 
+        private static DocumentCacheTargetRegistrySnapshot CreateEligibleRegistrySnapshot(
+            DocumentCacheTargetExecutionContext executionContext
+        ) => new([CreateEligibleObservation(executionContext)], ObservedAt);
+
         private static DocumentCacheMaterializationTargetContext MaterializationTargetContext() =>
             new(
                 new DocumentCacheProjectionTargetKey(
@@ -646,6 +662,25 @@ public sealed class Given_DocumentCacheAdminInProcessCommandRunner
         }
     }
 
+    private static DocumentCacheTargetRegistrySnapshot CreateConfiguredRegistrySnapshot(
+        DocumentCacheTargetKey targetKey
+    ) => new([DocumentCacheTargetObservation.Configured(targetKey, EffectiveSettings())], ObservedAt);
+
+    private static DocumentCacheTargetObservation CreateEligibleObservation(
+        DocumentCacheTargetExecutionContext executionContext
+    ) =>
+        DocumentCacheTargetObservation.ResolvedEligible(
+            executionContext.TargetKey,
+            executionContext.EffectiveSettings,
+            executionContext.Generation,
+            executionContext.ProviderToken,
+            executionContext.PhysicalSourceFingerprint,
+            executionContext.Lifecycle,
+            executionContext.Inventory,
+            executionContext.EnqueueTrigger,
+            executionContext.SqlServerPrerequisites
+        );
+
     private sealed class StubTargetRegistry(DocumentCacheTargetExecutionContext executionContext)
         : IDocumentCacheTargetRegistry
     {
@@ -663,25 +698,11 @@ public sealed class Given_DocumentCacheAdminInProcessCommandRunner
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(CurrentSnapshot);
         }
-
-        private static DocumentCacheTargetObservation CreateEligibleObservation(
-            DocumentCacheTargetExecutionContext executionContext
-        ) =>
-            DocumentCacheTargetObservation.ResolvedEligible(
-                executionContext.TargetKey,
-                executionContext.EffectiveSettings,
-                executionContext.Generation,
-                executionContext.ProviderToken,
-                executionContext.PhysicalSourceFingerprint,
-                executionContext.Lifecycle,
-                executionContext.Inventory,
-                executionContext.EnqueueTrigger,
-                executionContext.SqlServerPrerequisites
-            );
     }
 
     private sealed class StubProjectionSupervisor(
-        IEnumerable<DocumentCacheProjectionTargetRuntimeContext> contexts
+        IEnumerable<DocumentCacheProjectionTargetRuntimeContext> contexts,
+        DocumentCacheTargetRegistrySnapshot registrySnapshot
     ) : IDocumentCacheProjectionSupervisor, IDocumentCacheProjectionRetainedTargetContextReleaser
     {
         public ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> CurrentTargetContexts { get; } =
@@ -690,7 +711,11 @@ public sealed class Given_DocumentCacheAdminInProcessCommandRunner
         public Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
             DocumentCacheTargetRefreshReason reason,
             CancellationToken cancellationToken = default
-        ) => throw new NotSupportedException();
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(registrySnapshot);
+        }
 
         public Task ReleaseRetainedCommandOwnedTargetContextAsync(
             DocumentCacheProjectionTargetRuntimeContext targetContext,
