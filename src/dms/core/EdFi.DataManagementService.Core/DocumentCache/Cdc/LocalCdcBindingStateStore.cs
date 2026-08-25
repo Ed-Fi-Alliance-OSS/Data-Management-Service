@@ -16,6 +16,7 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
     private readonly CdcStateStorePathResolver _pathResolver;
     private readonly ICdcLocalStateStorePermissions _permissions;
     private readonly ICdcLocalStateStoreFileSystem _fileSystem;
+    private readonly TimeProvider _timeProvider;
 
     public LocalCdcBindingStateStore(string rootPath = DefaultRootPath)
         : this(rootPath, CdcLocalStateStorePermissions.Current) { }
@@ -28,13 +29,23 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         ICdcLocalStateStorePermissions permissions,
         ICdcLocalStateStoreFileSystem fileSystem
     )
+        : this(rootPath, permissions, fileSystem, TimeProvider.System) { }
+
+    internal LocalCdcBindingStateStore(
+        string rootPath,
+        ICdcLocalStateStorePermissions permissions,
+        ICdcLocalStateStoreFileSystem fileSystem,
+        TimeProvider timeProvider
+    )
     {
         ArgumentNullException.ThrowIfNull(permissions);
         ArgumentNullException.ThrowIfNull(fileSystem);
+        ArgumentNullException.ThrowIfNull(timeProvider);
 
         _pathResolver = new(rootPath);
         _permissions = permissions;
         _fileSystem = fileSystem;
+        _timeProvider = timeProvider;
     }
 
     public async Task<CdcCreateBindingStateStoreResult> CreateBindingIfAbsentAsync(
@@ -873,7 +884,7 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         );
     }
 
-    private static async Task<LocalBindingFileReadResult> ReadBindingFileAsync(
+    private async Task<LocalBindingFileReadResult> ReadBindingFileAsync(
         string filePath,
         CancellationToken cancellationToken
     )
@@ -992,10 +1003,7 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             : LocalIncidentReadResult.Failed(validationFailure);
     }
 
-    private static CdcStateStoreFailure? ValidateIncidentForBindingState(
-        CdcIncident incident,
-        CdcBinding binding
-    )
+    private CdcStateStoreFailure? ValidateIncidentForBindingState(CdcIncident incident, CdcBinding binding)
     {
         if (incident.BindingIdentity != binding.ToCompleteBindingIdentity())
         {
@@ -1022,7 +1030,7 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             ]);
     }
 
-    private static async Task<LocalIncidentFileReadResult> ReadIncidentFileAsync(
+    private async Task<LocalIncidentFileReadResult> ReadIncidentFileAsync(
         string filePath,
         CancellationToken cancellationToken
     )
@@ -1055,7 +1063,7 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
 
         CdcContractValidationResult validationResult = CdcIncidentValidator.Validate(
             readResult.Contract!,
-            DateTimeOffset.UtcNow
+            ObservedAt()
         );
 
         return validationResult.Succeeded
@@ -1149,7 +1157,7 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         return null;
     }
 
-    private static CdcStateStoreFailure? CheckCaseCollision(string parentDirectory, string segment)
+    private CdcStateStoreFailure? CheckCaseCollision(string parentDirectory, string segment)
     {
         try
         {
@@ -1176,7 +1184,7 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         return null;
     }
 
-    private static IReadOnlyList<string>? EnumerateFileSystemEntries(
+    private IReadOnlyList<string>? EnumerateFileSystemEntries(
         string directoryPath,
         out CdcStateStoreFailure? failure
     )
@@ -1433,12 +1441,9 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             && generation > 0;
     }
 
-    private static CdcStateStoreFailure? ValidateIncidentInput(CdcIncident incident)
+    private CdcStateStoreFailure? ValidateIncidentInput(CdcIncident incident)
     {
-        CdcContractValidationResult validationResult = CdcIncidentValidator.Validate(
-            incident,
-            DateTimeOffset.UtcNow
-        );
+        CdcContractValidationResult validationResult = CdcIncidentValidator.Validate(incident, ObservedAt());
 
         return validationResult.Succeeded
             ? null
@@ -1454,12 +1459,12 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             : CdcStateStoreFailure.InvalidOperation(validationResult.Diagnostics);
     }
 
-    private static CdcStateStoreFailure? ValidateIncidentForBinding(CdcIncident incident, CdcBinding binding)
+    private CdcStateStoreFailure? ValidateIncidentForBinding(CdcIncident incident, CdcBinding binding)
     {
         CdcContractValidationResult validationResult = CdcIncidentValidator.ValidateForBinding(
             incident,
             binding,
-            DateTimeOffset.UtcNow
+            ObservedAt()
         );
 
         return validationResult.Succeeded
@@ -1467,11 +1472,11 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             : CdcStateStoreFailure.InvalidOperation(validationResult.Diagnostics);
     }
 
-    private static CdcStateStoreFailure? ValidateAdoptionProof(CdcAdoptionProof proof)
+    private CdcStateStoreFailure? ValidateAdoptionProof(CdcAdoptionProof proof)
     {
         CdcContractValidationResult validationResult = CdcAdoptionProofValidator.Validate(
             proof,
-            DateTimeOffset.UtcNow
+            ObservedAt()
         );
 
         return validationResult.Succeeded
@@ -1479,11 +1484,11 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             : CdcStateStoreFailure.InvalidOperation(validationResult.Diagnostics);
     }
 
-    private static CdcStateStoreFailure? ValidateCleanupProofStructure(CdcCleanupProof proof)
+    private CdcStateStoreFailure? ValidateCleanupProofStructure(CdcCleanupProof proof)
     {
         CdcContractValidationResult validationResult = CdcCleanupProofValidator.ValidateStructure(
             proof,
-            DateTimeOffset.UtcNow
+            ObservedAt()
         );
 
         return validationResult.Succeeded
@@ -1491,15 +1496,12 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             : CdcStateStoreFailure.InvalidOperation(validationResult.Diagnostics);
     }
 
-    private static CdcStateStoreFailure? ValidateCleanupProofForBinding(
-        CdcCleanupProof proof,
-        CdcBinding binding
-    )
+    private CdcStateStoreFailure? ValidateCleanupProofForBinding(CdcCleanupProof proof, CdcBinding binding)
     {
         CdcContractValidationResult validationResult = CdcCleanupProofValidator.Validate(
             proof,
             binding,
-            DateTimeOffset.UtcNow
+            ObservedAt()
         );
 
         return validationResult.Succeeded
@@ -1507,7 +1509,7 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             : CdcStateStoreFailure.InvalidOperation(validationResult.Diagnostics);
     }
 
-    private static CdcStateStoreFailure? ValidateCleanupProofForCompleteBindingIdentity(
+    private CdcStateStoreFailure? ValidateCleanupProofForCompleteBindingIdentity(
         CdcCleanupProof proof,
         CdcCompleteBindingIdentity completeIdentity
     )
@@ -1515,7 +1517,7 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         CdcContractValidationResult validationResult = CdcCleanupProofValidator.Validate(
             proof,
             completeIdentity,
-            DateTimeOffset.UtcNow
+            ObservedAt()
         );
 
         return validationResult.Succeeded
@@ -1605,8 +1607,14 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             $"CDC persisted {contractName} identity does not match the {expectedLocation}."
         );
 
-    private static CdcStateStoreFailure FileSystemFailure(string path, string action) =>
-        CdcStateStoreFailure.LocalStateUnavailable(path, $"CDC local state store could not {action}.");
+    private CdcStateStoreFailure FileSystemFailure(string path, string action) =>
+        CdcStateStoreFailure.LocalStateUnavailable(
+            path,
+            $"CDC local state store could not {action}.",
+            ObservedAt()
+        );
+
+    private DateTimeOffset ObservedAt() => _timeProvider.GetUtcNow().ToUniversalTime();
 
     private static bool IsSymbolicLink(FileSystemInfo info) =>
         info.LinkTarget is not null || (info.Attributes & FileAttributes.ReparsePoint) != 0;

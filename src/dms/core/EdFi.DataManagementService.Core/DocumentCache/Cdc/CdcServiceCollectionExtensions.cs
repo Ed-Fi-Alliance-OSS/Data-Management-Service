@@ -35,7 +35,9 @@ public static class CdcServiceCollectionExtensions
 
                 return new LocalCdcBindingStateStore(
                     options.RootPath,
-                    serviceProvider.GetRequiredService<ICdcLocalStateStorePermissions>()
+                    serviceProvider.GetRequiredService<ICdcLocalStateStorePermissions>(),
+                    CdcLocalStateStoreFileSystem.Current,
+                    serviceProvider.GetRequiredService<TimeProvider>()
                 );
             })
         );

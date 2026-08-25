@@ -82,7 +82,7 @@ public static class CdcSourceHistoryContinuityClassifier
         CdcBinding binding = input.Binding;
         DateTimeOffset observedAt = input.ObservedAt.ToUniversalTime();
         DateTimeOffset nowUtc = input.NowUtc.ToUniversalTime();
-        CdcDiagnosticCollector diagnostics = new();
+        CdcDiagnosticCollector diagnostics = new(observedAt);
         AddDiagnostics(diagnostics, input.Diagnostics);
 
         CdcArtifactNameResult artifactNameResult = CdcArtifactNameGenerator.RecoverFromBinding(binding);
@@ -324,7 +324,7 @@ public static class CdcSourceHistoryContinuityClassifier
 
         AddDiagnostics(diagnostics, input.ConnectorOffset.Diagnostics);
 
-        CdcDiagnosticCollector envelopeDiagnostics = new();
+        CdcDiagnosticCollector envelopeDiagnostics = new(observedAt);
         CdcObservationValidationRules.ValidateEnvelope(
             input.ConnectorOffset,
             new(input.OperationId, binding.ToTargetIdentity(), binding.PhysicalSourceFingerprint, nowUtc),
@@ -357,7 +357,7 @@ public static class CdcSourceHistoryContinuityClassifier
             );
         }
 
-        CdcDiagnosticCollector sourcePartitionHashDiagnostics = new();
+        CdcDiagnosticCollector sourcePartitionHashDiagnostics = new(observedAt);
         if (
             !ValidateExpectedSourcePartitionHash(
                 input.ConnectorOffset.ConnectSourcePartitionHash,

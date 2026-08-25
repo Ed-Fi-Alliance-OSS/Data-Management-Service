@@ -205,18 +205,19 @@ internal sealed class CdcBindingLifecycleService(ICdcBindingStateStore stateStor
     {
         ArgumentNullException.ThrowIfNull(mismatch);
 
+        DateTimeOffset observedAt = ObservedAt();
         return new(
             CdcJsonContract.CurrentContractVersion,
-            ObservedAt(),
+            observedAt,
             CdcControlPlaneOperationStatus.BindingMismatch,
             new(
                 CdcJsonContract.CurrentContractVersion,
-                ObservedAt(),
+                observedAt,
                 CdcBindingState.BindingMismatch,
                 mismatch.PersistedBinding,
                 null
             ),
-            CreateMismatchDiagnostics(mismatch)
+            CreateMismatchDiagnostics(mismatch, observedAt)
         );
     }
 
@@ -250,23 +251,29 @@ internal sealed class CdcBindingLifecycleService(ICdcBindingStateStore stateStor
         );
     }
 
-    private CdcBindingLifecycleResult StateStoreUnavailable(string message) =>
-        new(
+    private CdcBindingLifecycleResult StateStoreUnavailable(string message)
+    {
+        DateTimeOffset observedAt = ObservedAt();
+        return new(
             CdcJsonContract.CurrentContractVersion,
-            ObservedAt(),
+            observedAt,
             CdcControlPlaneOperationStatus.StateStoreUnavailable,
             null,
-            [new(CdcDiagnosticCategory.LocalStateUnavailable, "$", message)]
+            [new(CdcDiagnosticCategory.LocalStateUnavailable, observedAt, "$", message)]
         );
+    }
 
-    private CdcBindingLifecycleListResult ListStateStoreUnavailable(string message) =>
-        new(
+    private CdcBindingLifecycleListResult ListStateStoreUnavailable(string message)
+    {
+        DateTimeOffset observedAt = ObservedAt();
+        return new(
             CdcJsonContract.CurrentContractVersion,
-            ObservedAt(),
+            observedAt,
             CdcControlPlaneOperationStatus.StateStoreUnavailable,
             [],
-            [new(CdcDiagnosticCategory.LocalStateUnavailable, "$", message)]
+            [new(CdcDiagnosticCategory.LocalStateUnavailable, observedAt, "$", message)]
         );
+    }
 
     private CdcBindingStateContract ToContract(CdcStoredBindingState state)
     {
@@ -281,10 +288,14 @@ internal sealed class CdcBindingLifecycleService(ICdcBindingStateStore stateStor
         );
     }
 
-    private static IReadOnlyList<CdcDiagnostic> CreateMismatchDiagnostics(CdcBindingMismatch mismatch) =>
+    private static IReadOnlyList<CdcDiagnostic> CreateMismatchDiagnostics(
+        CdcBindingMismatch mismatch,
+        DateTimeOffset observedAt
+    ) =>
         mismatch
             .Differences.Select(difference => new CdcDiagnostic(
                 CdcDiagnosticCategory.BindingMismatch,
+                observedAt,
                 $"$.{difference.FieldName}",
                 "CDC persisted binding state does not exactly match the requested binding."
             ))

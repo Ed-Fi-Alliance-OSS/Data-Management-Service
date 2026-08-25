@@ -144,6 +144,7 @@ public class Given_CdcDiagnostic
         );
 
         diagnostic.Path.Should().Be("$.targetIdentity.provider");
+        diagnostic.Observed.Should().BeNull();
 
         JsonObject root = JsonNode
             .Parse(
@@ -152,7 +153,34 @@ public class Given_CdcDiagnostic
                 )
             )!
             .AsObject();
-        root["diagnostics"]![0]!.AsObject().Should().NotContainKey("path");
+        JsonObject serializedDiagnostic = root["diagnostics"]![0]!.AsObject();
+        serializedDiagnostic.Should().NotContainKey("path");
+        serializedDiagnostic["observed"]?.GetValue<string>().Should().BeNull();
+    }
+
+    [Test]
+    public void It_changes_only_the_internal_path_when_repathing_a_diagnostic()
+    {
+        CdcDiagnostic diagnostic = new(
+            "artifactNameMismatch",
+            CdcDiagnosticCategory.ArtifactNameMismatch,
+            CdcDiagnosticSeverity.Error,
+            CdcDiagnosticComponent.ProofValidation,
+            SampleObservedAt,
+            "CDC artifact mismatch.",
+            false,
+            artifactKind: "topic",
+            artifactName: "expected-topic",
+            expected: "expected-topic",
+            observed: "actual-topic"
+        );
+
+        CdcDiagnostic repathed = diagnostic.WithPath("$.cleanupProof.results[0].artifactName");
+
+        repathed.Path.Should().Be("$.cleanupProof.results[0].artifactName");
+        repathed.Observed.Should().Be("actual-topic");
+        repathed.Expected.Should().Be("expected-topic");
+        repathed.ObservedAt.Should().Be(SampleObservedAt);
     }
 
     private sealed record CdcDiagnosticContract(

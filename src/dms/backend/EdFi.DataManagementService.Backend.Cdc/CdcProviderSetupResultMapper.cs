@@ -76,6 +76,7 @@ public static class CdcProviderSetupResultMapper
     }
 
     public static CoreCdc.CdcProviderSourceHistoryEvidence ToProviderSourceHistoryEvidence(
+        DateTimeOffset observedAt,
         CoreCdc.CdcBinding binding,
         CdcProviderSetupResult result
     )
@@ -83,10 +84,11 @@ public static class CdcProviderSetupResultMapper
         ArgumentNullException.ThrowIfNull(binding);
         ArgumentNullException.ThrowIfNull(result);
 
+        DateTimeOffset normalizedObservedAt = observedAt.ToUniversalTime();
         return ToProviderSourceHistoryEvidence(
             binding,
             result,
-            MapDiagnostics(result.Diagnostics, DateTimeOffset.UtcNow)
+            MapDiagnostics(result.Diagnostics, normalizedObservedAt)
         );
     }
 

@@ -45,7 +45,7 @@ public static class CdcTargetStatusEvaluator
         ArgumentNullException.ThrowIfNull(input.TargetIdentity);
 
         DateTimeOffset observedAt = input.ObservedAt.ToUniversalTime();
-        CdcDiagnosticCollector diagnostics = new();
+        CdcDiagnosticCollector diagnostics = new(observedAt);
         AddDiagnostics(diagnostics, input.StateStoreDiagnostics);
 
         BindingEvaluation binding = EvaluateBindingState(input, observedAt, diagnostics);
@@ -160,7 +160,7 @@ public static class CdcTargetStatusEvaluator
         }
 
         CdcBindingStateContract bindingState = input.BindingState;
-        CdcDiagnosticCollector bindingDiagnostics = new();
+        CdcDiagnosticCollector bindingDiagnostics = new(observedAt);
 
         CdcObservationValidationRules.ValidateContractVersion(
             bindingState.ContractVersion,
@@ -183,7 +183,7 @@ public static class CdcTargetStatusEvaluator
 
         if (bindingState.Binding is not null)
         {
-            CdcDiagnosticCollector persistedBindingDiagnostics = new();
+            CdcDiagnosticCollector persistedBindingDiagnostics = new(observedAt);
             CdcProofValidationRules.ValidateBinding(
                 bindingState.Binding,
                 "$.bindingState.binding",

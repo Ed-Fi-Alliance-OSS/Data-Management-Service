@@ -48,7 +48,7 @@ public class Given_CdcProviderSetupResultMapper
         );
 
         CoreCdc.CdcProviderSourceHistoryEvidence providerHistory =
-            CdcProviderSetupResultMapper.ToProviderSourceHistoryEvidence(binding, setupResult);
+            CdcProviderSetupResultMapper.ToProviderSourceHistoryEvidence(ObservedAt, binding, setupResult);
 
         providerHistory
             .ProviderArtifactState.Should()
@@ -58,6 +58,35 @@ public class Given_CdcProviderSetupResultMapper
             .Be(CoreCdc.CdcProviderRetainedRangeState.CoversCommittedOffset);
         providerHistory.RetainedRangeStart.Should().Be("0/16B6C50");
         providerHistory.RetainedRangeEnd.Should().Be("0/16B6C60");
+    }
+
+    [Test]
+    public void It_maps_provider_diagnostics_with_the_explicit_observation_timestamp()
+    {
+        CoreCdc.CdcBinding binding = BuildBinding(CoreCdc.CdcProvider.Postgresql);
+        CdcProviderSetupResult setupResult = BuildSetupResult(CdcProvider.Postgresql, binding, [], []) with
+        {
+            Diagnostics =
+            [
+                new(
+                    "providerHistoryUnavailable",
+                    CdcProviderDiagnosticCategory.ProviderHistoryUnavailable,
+                    CdcProviderDiagnosticSeverity.Warning,
+                    CdcPrincipalKind.ConnectorPrincipal,
+                    CdcProviderArtifactKind.ProviderHistory,
+                    new CdcSafeName("postgresql_history"),
+                    null,
+                    "unavailable",
+                    null,
+                    CdcProviderRetryContinuityClassification.SourceHistoryUnknown
+                ),
+            ],
+        };
+
+        CoreCdc.CdcProviderSourceHistoryEvidence providerHistory =
+            CdcProviderSetupResultMapper.ToProviderSourceHistoryEvidence(ObservedAt, binding, setupResult);
+
+        providerHistory.Diagnostics.Should().ContainSingle().Which.ObservedAt.Should().Be(ObservedAt);
     }
 
     [Test]

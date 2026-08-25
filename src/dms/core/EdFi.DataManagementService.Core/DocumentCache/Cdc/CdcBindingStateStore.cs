@@ -78,10 +78,17 @@ internal sealed record CdcStateStoreFailure
     public IReadOnlyList<CdcDiagnostic> Diagnostics { get; }
 
     public static CdcStateStoreFailure LocalStateUnavailable(string path, string message) =>
+        LocalStateUnavailable(path, message, CdcDiagnostic.DefaultObservedAt);
+
+    public static CdcStateStoreFailure LocalStateUnavailable(
+        string path,
+        string message,
+        DateTimeOffset observedAt
+    ) =>
         new(
             CdcStateStoreFailureKind.LocalStateUnavailable,
             message,
-            [new(CdcDiagnosticCategory.LocalStateUnavailable, path, message)]
+            [new(CdcDiagnosticCategory.LocalStateUnavailable, observedAt, path, message)]
         );
 
     public static CdcStateStoreFailure InvalidPersistedBinding(IReadOnlyList<CdcDiagnostic> diagnostics) =>

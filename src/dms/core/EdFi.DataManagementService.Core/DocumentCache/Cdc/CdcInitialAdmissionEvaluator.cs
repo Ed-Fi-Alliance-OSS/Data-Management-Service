@@ -50,7 +50,7 @@ public static class CdcInitialAdmissionEvaluator
 
         DateTimeOffset observedAt = input.ObservedAt.ToUniversalTime();
         DateTimeOffset nowUtc = input.NowUtc.ToUniversalTime();
-        CdcDiagnosticCollector diagnostics = new();
+        CdcDiagnosticCollector diagnostics = new(observedAt);
 
         CdcObservationValidationRules.ValidateRequiredToken(
             input.OperationId,

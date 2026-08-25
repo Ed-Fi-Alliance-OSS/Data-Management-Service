@@ -254,7 +254,7 @@ public static class CdcInitialEnableRetryClassifier
             );
         }
 
-        CdcDiagnosticCollector bindingDiagnostics = new();
+        CdcDiagnosticCollector bindingDiagnostics = new(observedAt);
         CdcProofValidationRules.ValidateBinding(binding, "$.bindingState.binding", bindingDiagnostics);
         if (
             binding.ToTargetIdentity() != input.TargetIdentity
@@ -417,7 +417,7 @@ public static class CdcInitialEnableRetryClassifier
     )
     {
         DateTimeOffset normalizedNowUtc = nowUtc.ToUniversalTime();
-        CdcDiagnosticCollector diagnostics = new();
+        CdcDiagnosticCollector diagnostics = new(observedAt);
         CdcObservationValidationRules.ValidateTimestamp(
             observedAt,
             normalizedNowUtc,

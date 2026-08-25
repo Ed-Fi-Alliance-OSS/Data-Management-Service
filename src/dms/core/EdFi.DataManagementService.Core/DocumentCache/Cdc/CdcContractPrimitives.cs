@@ -364,6 +364,7 @@ public sealed record CdcComponent
 public sealed record CdcDiagnostic
 {
     private const int MaximumPathLength = 256;
+    public static readonly DateTimeOffset DefaultObservedAt = DateTimeOffset.UnixEpoch;
     public const int MaximumDiagnostics = 16;
     public const int MaximumMessageLength = 512;
     public const int MaximumTextLength = 256;
@@ -418,15 +419,22 @@ public sealed record CdcDiagnostic
     }
 
     public CdcDiagnostic(CdcDiagnosticCategory category, string path, string message)
+        : this(category, DefaultObservedAt, path, message) { }
+
+    public CdcDiagnostic(
+        CdcDiagnosticCategory category,
+        DateTimeOffset observedAt,
+        string path,
+        string message
+    )
         : this(
             ToLowerCamel(category),
             category,
             InferSeverity(category),
             InferComponent(category),
-            DateTimeOffset.UtcNow,
+            observedAt,
             message,
-            InferRetryable(category),
-            observed: path
+            InferRetryable(category)
         )
     {
         Path = NormalizePath(path);
@@ -469,7 +477,7 @@ public sealed record CdcDiagnostic
             ArtifactKind,
             ArtifactName,
             Expected,
-            path
+            Observed
         )
         {
             Path = NormalizePath(path),
@@ -669,6 +677,15 @@ public sealed record CdcContractReadResult<TContract>
 public sealed class CdcDiagnosticCollector
 {
     private readonly List<CdcDiagnostic> _diagnostics = [];
+    private readonly DateTimeOffset _observedAt;
+
+    public CdcDiagnosticCollector()
+        : this(CdcDiagnostic.DefaultObservedAt) { }
+
+    public CdcDiagnosticCollector(DateTimeOffset observedAt)
+    {
+        _observedAt = observedAt.ToUniversalTime();
+    }
 
     public IReadOnlyList<CdcDiagnostic> Diagnostics => CdcDiagnostic.NormalizeDiagnostics(_diagnostics);
 
@@ -682,7 +699,7 @@ public sealed class CdcDiagnosticCollector
     }
 
     public void Add(CdcDiagnosticCategory category, string path, string message) =>
-        _diagnostics.Add(new(category, path, message));
+        _diagnostics.Add(new(category, _observedAt, path, message));
 
     public void MissingRequiredField(string path, string fieldName) =>
         Add(CdcDiagnosticCategory.MissingRequiredField, path, $"Missing required field `{fieldName}`.");
