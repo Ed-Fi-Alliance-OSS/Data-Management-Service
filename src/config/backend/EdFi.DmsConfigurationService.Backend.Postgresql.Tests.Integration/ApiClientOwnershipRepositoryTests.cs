@@ -67,7 +67,7 @@ public class ApiClientOwnershipRepositoryTests : DatabaseTest
             get.Should().BeOfType<ApiClientOwnershipGetResult.Success>();
             var ownership = ((ApiClientOwnershipGetResult.Success)get).Ownership;
             ownership.CreatorOwnershipTokenId.Should().Be(creatorTokenId);
-            ownership.OwnershipTokenIds.Should().Equal(readTokenId1, readTokenId2);
+            ownership.OwnershipTokenIds.Should().Equal(readTokenId2, readTokenId1);
         }
 
         [Test]

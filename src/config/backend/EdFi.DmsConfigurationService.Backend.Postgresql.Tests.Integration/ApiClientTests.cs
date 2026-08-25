@@ -295,7 +295,7 @@ public class ApiClientTests : DatabaseTest
             result.Should().BeOfType<ApiClientGetResult.Success>();
             var response = ((ApiClientGetResult.Success)result).ApiClientResponse;
             response.CreatorOwnershipTokenId.Should().Be(_creatorTokenId);
-            response.OwnershipTokenIds.Should().Equal(_readTokenId1, _readTokenId2);
+            response.OwnershipTokenIds.Should().Equal(_readTokenId2, _readTokenId1);
         }
 
         [Test]
@@ -310,7 +310,7 @@ public class ApiClientTests : DatabaseTest
                 apiClient.Id == _configuredApiClientId
             );
             response.CreatorOwnershipTokenId.Should().Be(_creatorTokenId);
-            response.OwnershipTokenIds.Should().Equal(_readTokenId1, _readTokenId2);
+            response.OwnershipTokenIds.Should().Equal(_readTokenId2, _readTokenId1);
         }
 
         [Test]

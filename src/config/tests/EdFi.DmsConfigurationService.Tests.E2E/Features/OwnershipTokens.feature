@@ -97,21 +97,34 @@ Feature: OwnershipTokens endpoints
                     "dataStoreIds": [{dataStoreId}]
                   }
                   """
-             When a GET request is made to "/v3/apiClients?offset=0&limit=25"
+             When a GET request is made to "/v3/apiClients?applicationid={applicationId}&offset=0&limit=25"
              Then it should respond with 200
               And the response body is
                   """
-                  [{
-                    "id": {apiClientId},
-                    "applicationId": {applicationId},
-                    "clientId": "{clientId}",
-                    "clientUuid": "{clientUuid}",
-                    "name": "Ownership API Client",
-                    "isApproved": true,
-                    "creatorOwnershipTokenId": {creatorOwnershipTokenId},
-                    "ownershipTokenIds": [{readOwnershipTokenId}],
-                    "dataStoreIds": [{dataStoreId}]
-                  }]
+                  [
+                    {
+                      "id": "{ignore}",
+                      "applicationId": {applicationId},
+                      "clientId": "{ignore}",
+                      "clientUuid": "{ignore}",
+                      "name": "Ownership Application",
+                      "isApproved": true,
+                      "creatorOwnershipTokenId": null,
+                      "ownershipTokenIds": [],
+                      "dataStoreIds": [{dataStoreId}]
+                    },
+                    {
+                      "id": {apiClientId},
+                      "applicationId": {applicationId},
+                      "clientId": "{ignore}",
+                      "clientUuid": "{ignore}",
+                      "name": "Ownership API Client",
+                      "isApproved": true,
+                      "creatorOwnershipTokenId": {creatorOwnershipTokenId},
+                      "ownershipTokenIds": [{readOwnershipTokenId}],
+                      "dataStoreIds": [{dataStoreId}]
+                    }
+                  ]
                   """
 
         Scenario: 03 Reject API-client ownership replacement with mismatched route and body IDs
@@ -164,21 +177,21 @@ Feature: OwnershipTokens endpoints
             Given a POST request is made to "/v3/ownershipTokens" with
                   """
                   {
-                    "description": "Zebra Token"
+                    "description": "Zzz Zebra Token"
                   }
                   """
               And the response location id is captured as "zebraOwnershipTokenId"
               And a POST request is made to "/v3/ownershipTokens" with
                   """
                   {
-                    "description": "Apple Token"
+                    "description": "Zzx Apple Token"
                   }
                   """
               And the response location id is captured as "appleOwnershipTokenId"
               And a POST request is made to "/v3/ownershipTokens" with
                   """
                   {
-                    "description": "Banana Token"
+                    "description": "Zzy Banana Token"
                   }
                   """
               And the response location id is captured as "bananaOwnershipTokenId"
@@ -189,11 +202,11 @@ Feature: OwnershipTokens endpoints
                   [
                     {
                       "id": {zebraOwnershipTokenId},
-                      "description": "Zebra Token"
+                      "description": "Zzz Zebra Token"
                     },
                     {
                       "id": {bananaOwnershipTokenId},
-                      "description": "Banana Token"
+                      "description": "Zzy Banana Token"
                     }
                   ]
                   """
@@ -204,7 +217,7 @@ Feature: OwnershipTokens endpoints
                   [
                     {
                       "id": {appleOwnershipTokenId},
-                      "description": "Apple Token"
+                      "description": "Zzx Apple Token"
                     }
                   ]
                   """
