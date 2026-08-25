@@ -36,7 +36,7 @@ DECLARE @perCondition INT;
 -- Declared at the thrown limit. That limit is a silent one in both directions: assigning a longer
 -- string to a declared NVARCHAR(n) truncates without raising, and THROW itself delivers at most
 -- 2047 characters. Nothing reports an over-long message, so the tuple budget computed below is the
--- only thing keeping the thrown text whole, and the result sets emitted above are what guarantee
+-- only thing keeping the thrown text whole, and the result sets emitted below are what guarantee
 -- every offender is still reported. Character counts throughout use DATALENGTH/2, never LEN,
 -- because LEN ignores trailing spaces and would undercount.
 DECLARE @message NVARCHAR(2047) = N'';
