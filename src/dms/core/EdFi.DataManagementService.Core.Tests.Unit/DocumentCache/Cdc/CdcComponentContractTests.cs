@@ -91,7 +91,8 @@ public class Given_CdcComponentContract
         JsonObject root = JsonNode.Parse(CdcJsonContract.Serialize(contract))!.AsObject();
 
         root["diagnostics"]![0]!["category"]!.GetValue<string>().Should().Be("invalidEnumValue");
-        root["diagnostics"]![0]!["path"]!.GetValue<string>().Should().Be("$.provider");
+        root["diagnostics"]![0]!.AsObject().Should().NotContainKey("path");
+        root["diagnostics"]![0]!["component"]!.GetValue<string>().Should().Be("observationValidation");
         string message = root["diagnostics"]![0]!["message"]!.GetValue<string>();
         message.Should().NotContain("{");
         message.Should().NotContain("}");

@@ -34,8 +34,6 @@ public sealed record CdcInitialEnableRetryClassificationInput(
 
 public static class CdcInitialEnableRetryClassifier
 {
-    private const int MaximumDiagnostics = 16;
-
     public static CdcInitialEnablePreBindingEligibilityResult EvaluatePreBindingEligibility(
         CdcInitialEnablePreBindingEligibilityInput input
     )
@@ -55,7 +53,11 @@ public static class CdcInitialEnableRetryClassifier
         );
 
         CdcRetry? rejection = ClassifyPreBindingRejection(input, evidence, observedAt);
-        return new(rejection is null, rejection, LimitDiagnostics(evidence.Diagnostics.Diagnostics));
+        return new(
+            rejection is null,
+            rejection,
+            CdcDiagnostic.NormalizeDiagnostics(evidence.Diagnostics.Diagnostics)
+        );
     }
 
     public static CdcRetry EvaluateRetry(CdcInitialEnableRetryClassificationInput input)
@@ -508,7 +510,7 @@ public static class CdcInitialEnableRetryClassifier
             classification,
             ActionFor(classification),
             primaryBlockingCategory,
-            LimitDiagnostics(diagnostics.Diagnostics)
+            CdcDiagnostic.NormalizeDiagnostics(diagnostics.Diagnostics)
         );
 
     private static CdcRetryAction ActionFor(CdcRetryClassification classification) =>
@@ -531,9 +533,6 @@ public static class CdcInitialEnableRetryClassifier
             collector.Add(diagnostic);
         }
     }
-
-    private static IReadOnlyList<CdcDiagnostic> LimitDiagnostics(IReadOnlyList<CdcDiagnostic> diagnostics) =>
-        diagnostics.Take(MaximumDiagnostics).ToArray();
 
     private sealed record EvidenceEvaluation(
         InitialCdcEligibilityObservation? EligibilityObservation,

@@ -43,8 +43,6 @@ public sealed record CdcInitialAdmissionEvaluationInput(
 
 public static class CdcInitialAdmissionEvaluator
 {
-    private const int MaximumDiagnostics = 16;
-
     public static CdcAdmission Evaluate(CdcInitialAdmissionEvaluationInput input)
     {
         ArgumentNullException.ThrowIfNull(input);
@@ -151,7 +149,7 @@ public static class CdcInitialAdmissionEvaluator
             ToAdmissionState(readiness),
             CdcStatusEvaluationRules.SelectTargetPrimaryBlockingCategory(componentStatuses),
             steps,
-            LimitDiagnostics(diagnostics.Diagnostics)
+            CdcDiagnostic.NormalizeDiagnostics(diagnostics.Diagnostics)
         );
     }
 
@@ -477,15 +475,8 @@ public static class CdcInitialAdmissionEvaluator
         foreach (CdcDiagnostic diagnostic in diagnostics.Where(diagnostic => diagnostic is not null))
         {
             collector.Add(
-                new(
-                    diagnostic.Category,
-                    $"{prefix}{CdcProofValidationRules.TrimRootPath(diagnostic.Path)}",
-                    diagnostic.Message
-                )
+                diagnostic.WithPath($"{prefix}{CdcProofValidationRules.TrimRootPath(diagnostic.Path)}")
             );
         }
     }
-
-    private static IReadOnlyList<CdcDiagnostic> LimitDiagnostics(IReadOnlyList<CdcDiagnostic> diagnostics) =>
-        diagnostics.Take(MaximumDiagnostics).ToArray();
 }

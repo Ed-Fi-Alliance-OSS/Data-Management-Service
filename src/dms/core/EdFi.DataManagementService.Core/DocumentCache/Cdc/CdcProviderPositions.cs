@@ -483,13 +483,13 @@ public static class CdcSourcePartitionHashCalculator
 
     public static CdcSourcePartitionHashResult ComputeSqlServer(
         string? topicPrefix,
-        string? rawDatabaseName
-    ) => Compute(CdcProvider.SqlServer, topicPrefix, rawDatabaseName);
+        string? rawCatalogName
+    ) => Compute(CdcProvider.SqlServer, topicPrefix, rawCatalogName);
 
     public static CdcSourcePartitionHashResult Compute(
         CdcProvider provider,
         string? topicPrefix,
-        string? rawSqlServerDatabaseName
+        string? rawSqlServerCatalogName
     )
     {
         CdcDiagnosticCollector diagnostics = new();
@@ -511,7 +511,7 @@ public static class CdcSourcePartitionHashCalculator
             diagnostics
         );
 
-        if (provider == CdcProvider.SqlServer && string.IsNullOrEmpty(rawSqlServerDatabaseName))
+        if (provider == CdcProvider.SqlServer && string.IsNullOrEmpty(rawSqlServerCatalogName))
         {
             diagnostics.MissingRequiredField("$.database", "database");
         }
@@ -526,7 +526,7 @@ public static class CdcSourcePartitionHashCalculator
             CdcProvider.Postgresql => EncodePostgresqlSourcePartition(validatedTopicPrefix),
             CdcProvider.SqlServer => EncodeSqlServerSourcePartition(
                 validatedTopicPrefix,
-                rawSqlServerDatabaseName!
+                rawSqlServerCatalogName!
             ),
             _ => [],
         };
@@ -555,12 +555,12 @@ public static class CdcSourcePartitionHashCalculator
         return buffer.WrittenSpan.ToArray();
     }
 
-    private static byte[] EncodeSqlServerSourcePartition(string topicPrefix, string rawDatabaseName)
+    private static byte[] EncodeSqlServerSourcePartition(string topicPrefix, string rawCatalogName)
     {
         ArrayBufferWriter<byte> buffer = new();
         using Utf8JsonWriter writer = new(buffer, CanonicalJsonWriterOptions);
         writer.WriteStartObject();
-        writer.WriteString("database", rawDatabaseName);
+        writer.WriteString("database", rawCatalogName);
         writer.WriteString("server", topicPrefix);
         writer.WriteEndObject();
         writer.Flush();

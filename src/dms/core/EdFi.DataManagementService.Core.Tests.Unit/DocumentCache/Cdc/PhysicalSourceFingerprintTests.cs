@@ -14,7 +14,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.DocumentCache.Cdc;
 [Category("PhysicalSourceFingerprint")]
 public class Given_CdcPhysicalSourceFingerprintCalculator
 {
-    private static readonly Guid SourceIdentity = Guid.Parse("f81d4fae-7dec-11d0-a765-00a0c91e6bf6");
+    private static readonly Guid SourceId = Guid.Parse("f81d4fae-7dec-11d0-a765-00a0c91e6bf6");
 
     [TestCase(
         CdcProvider.Postgresql,
@@ -31,7 +31,7 @@ public class Given_CdcPhysicalSourceFingerprintCalculator
     {
         CdcPhysicalSourceFingerprintResult result = CdcPhysicalSourceFingerprintCalculator.Compute(
             provider,
-            SourceIdentity
+            SourceId
         );
 
         result.Succeeded.Should().BeTrue();

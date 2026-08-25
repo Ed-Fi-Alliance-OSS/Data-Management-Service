@@ -80,7 +80,7 @@ public class Given_CdcBindingExactMatch
     public void It_reports_missing_and_extra_persisted_fields()
     {
         string missingFieldJson = RemoveField("topicName");
-        string extraFieldJson = SetField("connectionString", "Server=localhost;Password=secret;");
+        string extraFieldJson = SetField("externalSecret", "server:localhost;pwd:secret;");
 
         CdcBindingExactMatchResult missingFieldResult = CdcBindingExactMatch.Compare(
             SampleBinding,
@@ -103,7 +103,7 @@ public class Given_CdcBindingExactMatch
             .Differences.Should()
             .ContainSingle(difference =>
                 difference.Kind == CdcBindingFieldDifferenceKind.ExtraField
-                && difference.FieldName == "connectionString"
+                && difference.FieldName == "externalSecret"
             );
     }
 

@@ -39,8 +39,6 @@ public sealed record CdcTargetStatusEvaluationInput(
 
 public static class CdcTargetStatusEvaluator
 {
-    private const int MaximumDiagnostics = 16;
-
     public static CdcTargetStatus Evaluate(CdcTargetStatusEvaluationInput input)
     {
         ArgumentNullException.ThrowIfNull(input);
@@ -121,7 +119,7 @@ public static class CdcTargetStatusEvaluator
             connectorConfig,
             connectorRuntime,
             lag,
-            LimitDiagnostics(diagnostics.Diagnostics)
+            CdcDiagnostic.NormalizeDiagnostics(diagnostics.Diagnostics)
         );
     }
 
@@ -1056,9 +1054,6 @@ public static class CdcTargetStatusEvaluator
             collector.Add(diagnostic);
         }
     }
-
-    private static IReadOnlyList<CdcDiagnostic> LimitDiagnostics(IReadOnlyList<CdcDiagnostic> diagnostics) =>
-        diagnostics.Take(MaximumDiagnostics).ToArray();
 
     private sealed record BindingEvaluation(
         CdcComponent Component,

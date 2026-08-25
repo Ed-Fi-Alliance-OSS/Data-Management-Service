@@ -30,13 +30,13 @@ public class Given_CdcSourcePartitionHash
     [TestCase("EdFi_DMS_CDC", "sha256:678792175a93a7e810f3904d8d8e42e654289b147c3313a5c6d6a5c6593beab2")]
     [TestCase("EdFi \"DMS\"\\CDC", "sha256:d4391b11394929abaabadbf53d9a8c3a9c420f91302573966ceeaf12b591fa2a")]
     public void It_computes_the_design_sql_server_source_partition_hash_vectors(
-        string rawDatabaseName,
+        string rawCatalogName,
         string expectedHash
     )
     {
         CdcSourcePartitionHashResult result = CdcSourcePartitionHashCalculator.ComputeSqlServer(
             "edfi.dms",
-            rawDatabaseName
+            rawCatalogName
         );
 
         result.Succeeded.Should().BeTrue();

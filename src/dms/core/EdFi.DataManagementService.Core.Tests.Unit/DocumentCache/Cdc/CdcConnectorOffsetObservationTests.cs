@@ -80,9 +80,9 @@ public class Given_CdcConnectorOffsetObservation
     {
         CdcBinding binding = CreateBinding(CdcProvider.SqlServer);
         CdcArtifactInventory inventory = CdcArtifactNameGenerator.RecoverFromBinding(binding).Inventory!;
-        string rawDatabaseName = "EdFi \"DMS\"\\CDC";
+        string rawCatalogName = "EdFi \"DMS\"\\CDC";
         string sourcePartitionHash = CdcSourcePartitionHashCalculator
-            .ComputeSqlServer(inventory.TopicPrefix, rawDatabaseName)
+            .ComputeSqlServer(inventory.TopicPrefix, rawCatalogName)
             .Hash!;
         CdcConnectorOffsetObservation observation = new(
             CdcJsonContract.CurrentContractVersion,
@@ -108,7 +108,7 @@ public class Given_CdcConnectorOffsetObservation
 
         json.Should().NotContain("EdFi");
         json.Should().NotContain("database");
-        json.Should().NotContain("rawDatabaseName");
+        json.Should().NotContain("rawCatalogName");
         json.Should().Contain("connectSourcePartitionHash");
 
         CdcContractValidationResult validationResult =

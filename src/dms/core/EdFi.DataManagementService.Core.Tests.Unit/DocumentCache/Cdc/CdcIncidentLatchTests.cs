@@ -157,7 +157,7 @@ public class Given_CdcIncidentLatch
         {
             PositionMetadata = CreatePositionMetadata(SampleBinding) with
             {
-                ProviderArtifactName = "Database=EdFi;Password=secret",
+                ProviderArtifactName = "server:EdFi;pwd:secret",
             },
         };
 
@@ -180,7 +180,7 @@ public class Given_CdcIncidentLatch
         failure
             .Failure.Diagnostics.Select(diagnostic => diagnostic.Message)
             .Should()
-            .NotContain(message => message.Contains("Password=secret", StringComparison.Ordinal));
+            .NotContain(message => message.Contains("pwd:secret", StringComparison.Ordinal));
     }
 
     [Test]

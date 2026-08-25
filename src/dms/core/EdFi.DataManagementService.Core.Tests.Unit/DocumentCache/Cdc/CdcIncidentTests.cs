@@ -145,7 +145,7 @@ public class Given_CdcIncident
                 "{\"server\":\"edfi.dms\"}",
                 null,
                 null,
-                "Database=EdFi;Password=secret",
+                "server:EdFi;pwd:secret",
                 "{\"server\":\"edfi.dms\"}",
                 "EdFi_DMS_CDC",
                 null,
@@ -177,7 +177,7 @@ public class Given_CdcIncident
             .Diagnostics.Select(diagnostic => diagnostic.Message)
             .Should()
             .NotContain(message =>
-                message.Contains("Password=secret", StringComparison.Ordinal)
+                message.Contains("pwd:secret", StringComparison.Ordinal)
                 || message.Contains("EdFi_DMS_CDC", StringComparison.Ordinal)
                 || message.Contains("{\"server\"", StringComparison.Ordinal)
             );
