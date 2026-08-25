@@ -239,6 +239,15 @@ internal static class CursorPublicContractScenario
     /// preservation claim without assuming an ordering the traditional contract does not spell out.
     /// <c>Total-Count</c> is asserted both present with the seeded count when it was requested and
     /// absent when it was not, so the header remains driven by the request rather than by the page.
+    ///
+    /// <para>
+    /// Where the continuation resumes is then pinned against the collection's own ordering rather than
+    /// by exclusion. The offset page and the page continued from it are required to be exactly the
+    /// collection after the one skipped document, in order: a token that resumed at the collection start
+    /// would repeat the skipped document, and one that resumed too late would omit a row, and neither is
+    /// distinguishable from a correct resumption by asking only that the continuation be non-empty,
+    /// disjoint from the offset page, and drawn from the seed.
+    /// </para>
     /// </remarks>
     public static async Task It_preserves_the_traditional_page_contract_and_adds_a_continuation(
         ApiIntegrationHarness harness
@@ -251,6 +260,17 @@ internal static class CursorPublicContractScenario
             "traditional-preservation",
             SeededDocumentCount
         );
+
+        // The ordering the offset is applied to, read from the collection itself so the resumption
+        // assertion below states where the continuation begins rather than assuming a seeding order.
+        var wholeCollection = await CursorContractSupport.ReadPageAsync(
+            harness,
+            $"{CursorContractSupport.MergeItemsEndpoint}?limit={SeededDocumentCount}"
+        );
+
+        wholeCollection
+            .DocumentIds.Should()
+            .BeEquivalentTo(seededIds, "the seed is the whole collection these pages are read against");
 
         var unoffsetPage = await CursorContractSupport.ReadPageAsync(
             harness,
@@ -287,15 +307,15 @@ internal static class CursorPublicContractScenario
             $"{CursorContractSupport.MergeItemsEndpoint}?pageToken={Uri.EscapeDataString(offsetPage.NextPageToken!)}&pageSize=2"
         );
 
-        continued
-            .DocumentIds.Should()
-            .NotBeEmpty("the continuation from an offset page resumes after it, not at the collection start");
-        continued
-            .DocumentIds.Should()
-            .NotIntersectWith(
-                offsetPage.DocumentIds,
-                "a continuation begins after the keys the page it came from selected"
+        string[] offsetPageThenContinuation = [.. offsetPage.DocumentIds, .. continued.DocumentIds];
+
+        offsetPageThenContinuation
+            .Should()
+            .Equal(
+                wholeCollection.DocumentIds.Skip(1),
+                "the continuation resumes immediately after the offset page, so the two together are "
+                    + "exactly the collection after the one skipped document, in order and with no "
+                    + "document repeated or dropped"
             );
-        seededIds.Should().Contain(continued.DocumentIds);
     }
 }
