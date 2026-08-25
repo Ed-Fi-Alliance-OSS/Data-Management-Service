@@ -7,6 +7,7 @@ using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core;
+using EdFi.DataManagementService.Core.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Serilog;
@@ -19,6 +20,13 @@ internal static class DocumentCacheAdminServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration,
         ILogger logger
+    ) => AddDocumentCacheAdminRuntimeServices(services, configuration, logger, invocationTarget: null);
+
+    public static IServiceCollection AddDocumentCacheAdminRuntimeServices(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        ILogger logger,
+        DocumentCacheTargetKey? invocationTarget
     )
     {
         ArgumentNullException.ThrowIfNull(services);
@@ -35,6 +43,23 @@ internal static class DocumentCacheAdminServiceCollectionExtensions
             .AddDmsConfigurationServiceDataStoreProvider(configuration)
             .AddDmsDocumentCacheTargetRegistry(configuration)
             .AddDocumentCacheProjectionSupervisor(registerHostedService: false);
+
+        if (invocationTarget is not null)
+        {
+            services.Configure<DocumentCacheOptions>(options =>
+            {
+                options.Targets =
+                [
+                    new DocumentCacheTargetOptions
+                    {
+                        TenantKey = invocationTarget.TenantKey,
+                        DataStoreId = invocationTarget.DataStoreId,
+                    },
+                ];
+            });
+        }
+
+        services.AddSingleton<IDocumentCacheAdminTargetResolver, DocumentCacheAdminTargetResolver>();
 
         string datastore = configuration.GetSection("AppSettings:Datastore").Value ?? string.Empty;
         if (string.Equals(datastore, "postgresql", StringComparison.OrdinalIgnoreCase))

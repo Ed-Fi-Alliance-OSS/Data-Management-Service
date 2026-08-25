@@ -118,6 +118,31 @@ public sealed class Given_DocumentCacheAdminServiceRegistration
             .Be(DocumentCacheTargetKey.Create(string.Empty, 1));
     }
 
+    [Test]
+    public void It_treats_the_invocation_target_as_the_only_document_cache_target()
+    {
+        IServiceCollection services = new ServiceCollection();
+        DocumentCacheTargetKey invocationTarget = DocumentCacheTargetKey.Create("TenantA", 7);
+
+        services.AddLogging();
+        services.AddDocumentCacheAdminRuntimeServices(
+            CreateConfigurationWithConfiguredTargets(),
+            new LoggerConfiguration().CreateLogger(),
+            invocationTarget
+        );
+
+        using ServiceProvider serviceProvider = services.BuildServiceProvider();
+
+        serviceProvider
+            .GetRequiredService<IOptions<DocumentCacheOptions>>()
+            .Value.GetTargetKeys()
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(invocationTarget);
+        serviceProvider.GetRequiredService<IDocumentCacheAdminTargetResolver>().Should().NotBeNull();
+    }
+
     private static IConfiguration CreateConfiguration(string datastore) =>
         new ConfigurationBuilder()
             .AddInMemoryCollection(
@@ -134,6 +159,28 @@ public sealed class Given_DocumentCacheAdminServiceRegistration
                         "TestEncryptionKey123456789012345678901234567890",
                     ["DataManagement:DocumentCache:Targets:0:TenantKey"] = string.Empty,
                     ["DataManagement:DocumentCache:Targets:0:DataStoreId"] = "1",
+                }
+            )
+            .Build();
+
+    private static IConfiguration CreateConfigurationWithConfiguredTargets() =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["AppSettings:Datastore"] = "postgresql",
+                    ["AppSettings:MaximumPageSize"] = "500",
+                    ["AppSettings:DefaultPartitionCount"] = "10",
+                    ["ConfigurationServiceSettings:BaseUrl"] = "https://cms.example.org",
+                    ["ConfigurationServiceSettings:ClientId"] = "client-id",
+                    ["ConfigurationServiceSettings:ClientSecret"] = "client-secret",
+                    ["ConfigurationServiceSettings:Scope"] = "scope",
+                    ["ConfigurationServiceSettings:EncryptionKey"] =
+                        "TestEncryptionKey123456789012345678901234567890",
+                    ["DataManagement:DocumentCache:Targets:0:TenantKey"] = "ConfiguredTenant",
+                    ["DataManagement:DocumentCache:Targets:0:DataStoreId"] = "1",
+                    ["DataManagement:DocumentCache:Targets:1:TenantKey"] = "OtherTenant",
+                    ["DataManagement:DocumentCache:Targets:1:DataStoreId"] = "2",
                 }
             )
             .Build();

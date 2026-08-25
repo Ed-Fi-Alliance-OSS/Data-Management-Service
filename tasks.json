@@ -65,7 +65,7 @@
       "dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCache",
       "dotnet run --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- status --data-store-id 0; test $? -eq 64"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "json-request-and-serialization-contracts",

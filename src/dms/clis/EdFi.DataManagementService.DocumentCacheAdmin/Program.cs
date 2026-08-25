@@ -24,13 +24,35 @@ try
         return DocumentCacheAdminExitCodes.ArgumentError;
     }
 
-    IConfigurationRoot configuration = new ConfigurationBuilder()
-        .AddEnvironmentVariables()
-        .AddInMemoryCollection(DocumentCacheAdminCommandSurface.CreateConfigurationOverrides(parseResult))
-        .Build();
+    if (DocumentCacheAdminCommandSurface.ShouldInvokeWithoutRuntime(parseResult))
+    {
+        return await parseResult.InvokeAsync();
+    }
+
+    if (
+        !DocumentCacheAdminInvocationTargetParser.TryParse(
+            parseResult,
+            Console.In,
+            out DocumentCacheAdminInvocationTarget? invocationTarget,
+            out string? targetFailure
+        )
+    )
+    {
+        await Console.Error.WriteLineAsync(targetFailure);
+        return DocumentCacheAdminExitCodes.ArgumentError;
+    }
+
+    DocumentCacheAdminInvocationTarget validInvocationTarget =
+        invocationTarget
+        ?? throw new InvalidOperationException("Invocation target parser succeeded without a target.");
+
+    IConfigurationRoot configuration = DocumentCacheAdminConfiguration.Build(
+        parseResult,
+        validInvocationTarget.TargetKey
+    );
 
     var serviceCollection = new ServiceCollection();
-    ConfigureServices(serviceCollection, configuration, verbose);
+    ConfigureServices(serviceCollection, configuration, verbose, validInvocationTarget.TargetKey);
     await using ServiceProvider serviceProvider = serviceCollection.BuildServiceProvider();
 
     int exitCode = await parseResult.InvokeAsync();
@@ -41,7 +63,12 @@ finally
     await Log.CloseAndFlushAsync();
 }
 
-void ConfigureServices(IServiceCollection services, IConfiguration configuration, bool enableVerbose)
+void ConfigureServices(
+    IServiceCollection services,
+    IConfiguration configuration,
+    bool enableVerbose,
+    EdFi.DataManagementService.Core.Configuration.DocumentCacheTargetKey invocationTarget
+)
 {
     var logConfiguration = new LoggerConfiguration().MinimumLevel.Is(
         enableVerbose ? LogEventLevel.Debug : LogEventLevel.Information
@@ -79,7 +106,7 @@ void ConfigureServices(IServiceCollection services, IConfiguration configuration
 
     if (!string.IsNullOrWhiteSpace(configuration.GetSection("AppSettings:Datastore").Value))
     {
-        services.AddDocumentCacheAdminRuntimeServices(configuration, Log.Logger);
+        services.AddDocumentCacheAdminRuntimeServices(configuration, Log.Logger, invocationTarget);
     }
 
     services.AddLogging(loggingBuilder =>

@@ -245,6 +245,7 @@ public sealed class DocumentCacheTargetRegistry(
                     ? await ResolveAfterSuccessfulTenantRefreshAsync(
                             targetKey,
                             previousState,
+                            reason,
                             cancellationToken
                         )
                         .ConfigureAwait(false)
@@ -335,7 +336,8 @@ public sealed class DocumentCacheTargetRegistry(
             )
             .Any(targetKey =>
                 _targetStates[targetKey].StableObservation.ResolutionState
-                != DocumentCacheTargetResolutionState.Resolved
+                    != DocumentCacheTargetResolutionState.Resolved
+                || CanForceLoadRecoverableReusableGeneration(_targetStates[targetKey].StableObservation)
             );
     }
 
@@ -351,6 +353,7 @@ public sealed class DocumentCacheTargetRegistry(
     private async Task<TargetState> ResolveAfterSuccessfulTenantRefreshAsync(
         DocumentCacheTargetKey targetKey,
         TargetState previousState,
+        DocumentCacheTargetRefreshReason reason,
         CancellationToken cancellationToken
     )
     {
@@ -378,7 +381,7 @@ public sealed class DocumentCacheTargetRegistry(
                 .Generation!;
             if (
                 previousState.ProviderMetadataStatus != resolvedDataStore.RelationalProviderMetadataStatus
-                || ShouldRetryReusableGeneration(previousState.StableObservation)
+                || ShouldRetryReusableGeneration(reason, previousState.StableObservation)
             )
             {
                 DocumentCacheTargetContextBuildResult refreshedBuildResult = await targetContextBuilder
@@ -606,7 +609,24 @@ public sealed class DocumentCacheTargetRegistry(
 
     private static string GetProviderTenantKey(DocumentCacheTargetKey targetKey) => targetKey.TenantKey;
 
-    private static bool ShouldRetryReusableGeneration(DocumentCacheTargetObservation observation)
+    private static bool ShouldRetryReusableGeneration(
+        DocumentCacheTargetRefreshReason reason,
+        DocumentCacheTargetObservation observation
+    )
+    {
+        if (reason != DocumentCacheTargetRefreshReason.SupervisorTriggered)
+        {
+            return false;
+        }
+
+        return HasRecoverableReusableGenerationFailure(observation);
+    }
+
+    private static bool CanForceLoadRecoverableReusableGeneration(
+        DocumentCacheTargetObservation observation
+    ) => HasRecoverableReusableGenerationFailure(observation);
+
+    private static bool HasRecoverableReusableGenerationFailure(DocumentCacheTargetObservation observation)
     {
         if (
             observation.ResolutionState != DocumentCacheTargetResolutionState.Resolved
