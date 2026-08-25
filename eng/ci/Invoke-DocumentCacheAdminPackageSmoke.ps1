@@ -137,6 +137,66 @@ function Get-ProjectProperty {
     return $node.InnerText
 }
 
+function Get-PackageEntryName {
+    param(
+        [string]
+        $PackagePath
+    )
+
+    $archive = [System.IO.Compression.ZipFile]::OpenRead($PackagePath)
+    try {
+        return @($archive.Entries | ForEach-Object { $_.FullName })
+    }
+    finally {
+        $archive.Dispose()
+    }
+}
+
+function Assert-PackageEntry {
+    param(
+        [string[]]
+        $Entries,
+
+        [string]
+        $ExpectedEntry,
+
+        [string]
+        $Context
+    )
+
+    if ($Entries -notcontains $ExpectedEntry) {
+        throw "$Context does not contain package entry '$ExpectedEntry'."
+    }
+}
+
+function Invoke-WithProcessEnvironment {
+    param(
+        [hashtable]
+        $Values,
+
+        [scriptblock]
+        $ScriptBlock
+    )
+
+    $previousValues = @{}
+    foreach ($name in $Values.Keys) {
+        $previousValues[$name] = [System.Environment]::GetEnvironmentVariable($name, "Process")
+    }
+
+    try {
+        foreach ($name in $Values.Keys) {
+            [System.Environment]::SetEnvironmentVariable($name, $Values[$name], "Process")
+        }
+
+        & $ScriptBlock
+    }
+    finally {
+        foreach ($name in $previousValues.Keys) {
+            [System.Environment]::SetEnvironmentVariable($name, $previousValues[$name], "Process")
+        }
+    }
+}
+
 [xml]$project = Get-Content -LiteralPath $projectPath -Raw
 $packageId = Get-ProjectProperty -Project $project -Name "PackageId"
 $toolCommandName = Get-ProjectProperty -Project $project -Name "ToolCommandName"
@@ -175,6 +235,20 @@ $packagePath = Join-Path $repoRoot "$packageId.$DMSVersion.nupkg"
 if (-not (Test-Path -LiteralPath $packagePath -PathType Leaf)) {
     throw "Expected generated package was not found: $packagePath"
 }
+
+$packageEntryNames = Get-PackageEntryName -PackagePath $packagePath
+Assert-PackageEntry `
+    -Entries $packageEntryNames `
+    -ExpectedEntry "tools/net10.0/any/ApiSchema/bootstrap-api-schema-manifest.json" `
+    -Context $packagePath
+Assert-PackageEntry `
+    -Entries $packageEntryNames `
+    -ExpectedEntry "tools/net10.0/any/ApiSchema/Packages/EdFi.DataStandard52.ApiSchema/ApiSchema.json" `
+    -Context $packagePath
+Assert-PackageEntry `
+    -Entries $packageEntryNames `
+    -ExpectedEntry "tools/net10.0/any/ApiSchema/Packages/EdFi.DataStandard52.TPDM.ApiSchema/ApiSchema.json" `
+    -Context $packagePath
 
 if (Test-Path -LiteralPath $ToolPath) {
     Remove-Item -LiteralPath $ToolPath -Recurse -Force -ErrorAction Stop
@@ -236,6 +310,44 @@ try {
     Assert-RequiredText -Text $rebuildHelp -Expected "$toolCommandName rebuild-online" -Context "$toolCommandName rebuild-online --help"
     Assert-RequiredText -Text $rebuildHelp -Expected "--confirm" -Context "$toolCommandName rebuild-online --help"
     Assert-RequiredText -Text $rebuildHelp -Expected "--command-timeout-seconds" -Context "$toolCommandName rebuild-online --help"
+
+    $bundledSchemaStatus = Invoke-WithProcessEnvironment `
+        -Values @{
+            "DOTNET_ENVIRONMENT" = ""
+            "ASPNETCORE_ENVIRONMENT" = ""
+            "AppSettings__AllowIdentityUpdateOverrides" = ""
+            "AppSettings__MaximumPageSize" = "500"
+            "AppSettings__DefaultPartitionCount" = "10"
+            "AppSettings__BypassAuthorization" = "true"
+            "AppSettings__UseApiSchemaPath" = "false"
+            "AppSettings__ApiSchemaPath" = $null
+            "ConfigurationServiceSettings__BaseUrl" = $null
+            "ConfigurationServiceSettings__ClientId" = $null
+            "ConfigurationServiceSettings__ClientSecret" = $null
+            "ConfigurationServiceSettings__Scope" = $null
+            "ConfigurationServiceSettings__EncryptionKey" = $null
+        } `
+        -ScriptBlock {
+            Invoke-CapturedNativeCommand `
+                -FilePath $toolExecutablePath `
+                -Arguments @(
+                    "status",
+                    "--data-store-id",
+                    "1",
+                    "--datastore",
+                    "postgresql",
+                    "--json",
+                    "--status-timeout-seconds",
+                    "1",
+                    "--status-observation-timeout-seconds",
+                    "0.1"
+                )
+        }
+    Assert-RequiredText -Text $bundledSchemaStatus -Expected '"status":"unresolved"' -Context "bundled schema status smoke"
+    Assert-RequiredText -Text $bundledSchemaStatus -Expected '"reason":"cmsUnavailable"' -Context "bundled schema status smoke"
+    if ($bundledSchemaStatus.Contains("bootstrap-api-schema-manifest", [System.StringComparison]::Ordinal)) {
+        throw "Bundled schema status smoke reported an ApiSchema manifest failure."
+    }
 }
 finally {
     if ($null -eq $previousNugetPackages) {

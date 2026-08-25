@@ -28,6 +28,8 @@
         <PackageReference Include="Serilog.Sinks.Console" />
         <PackageReference Include="Serilog.Sinks.File" />
         <PackageReference Include="System.CommandLine" />
+        <PackageReference Include="EdFi.DataStandard52.ApiSchema" GeneratePathProperty="true" />
+        <PackageReference Include="EdFi.DataStandard52.TPDM.ApiSchema" GeneratePathProperty="true" />
     </ItemGroup>
     <ItemGroup>
         <AssemblyAttribute Include="System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverageAttribute" />

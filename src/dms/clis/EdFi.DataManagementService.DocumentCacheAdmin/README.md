@@ -40,6 +40,11 @@ run. Connection strings, CMS credentials, client secrets, and other secrets must
 settings, environment variables, user secrets, or the deployment secret provider. The CLI
 does not expose secret-bearing command-line options.
 
+The tool package includes the default Ed-Fi ApiSchema workspace and uses it when
+`AppSettings:UseApiSchemaPath` is absent or `false`. Set `AppSettings:UseApiSchemaPath=true`
+and `AppSettings:ApiSchemaPath=<workspace>` only when the run must use an external
+bootstrap workspace with `bootstrap-api-schema-manifest.json`.
+
 Every invocation targets exactly one DocumentCache target:
 
 ```bash

@@ -462,6 +462,8 @@
           "EdFi.DataManagementService.Backend.Mssql": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.Postgresql": "[1.0.0, )",
           "EdFi.DataManagementService.Core": "[1.0.0, )",
+          "EdFi.DataStandard52.ApiSchema": "[1.0.333, )",
+          "EdFi.DataStandard52.TPDM.ApiSchema": "[1.0.333, )",
           "Microsoft.Extensions.Configuration": "[10.0.1, )",
           "Microsoft.Extensions.Configuration.EnvironmentVariables": "[10.0.1, )",
           "Microsoft.Extensions.Configuration.Json": "[10.0.1, )",
@@ -586,6 +588,18 @@
         "requested": "[4.0.0, )",
         "resolved": "4.0.0",
         "contentHash": "ssdML8g+JqdP2BbDxg/bqzUBz81RD3SCGAbop6qs+o1xCGPXnlCSNAOp22TDKTtFmHfp+sKSPuWL0JONf3fYYA=="
+      },
+      "EdFi.DataStandard52.ApiSchema": {
+        "type": "CentralTransitive",
+        "requested": "[1.0.333, )",
+        "resolved": "1.0.333",
+        "contentHash": "eSjrOzKptV1YYqoda/E7iUqzuEwbP2UsdUHNKpfJclY+e+Q2/SvGCJVBYhirSVxQA06Y03T3ssNr9PYeAWWqEA=="
+      },
+      "EdFi.DataStandard52.TPDM.ApiSchema": {
+        "type": "CentralTransitive",
+        "requested": "[1.0.333, )",
+        "resolved": "1.0.333",
+        "contentHash": "XzHgxRKPtynsubpNW3qyiMK9M1E1FqTJXRhNVLqRzfgLvjm//TB+x3rCoyVn61qRNSm1u7ydVYWQ8iPtaGxHUg=="
       },
       "FastGuid": {
         "type": "CentralTransitive",

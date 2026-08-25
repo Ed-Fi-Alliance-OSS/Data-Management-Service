@@ -2,6 +2,18 @@
   "version": 2,
   "dependencies": {
     "net10.0": {
+      "EdFi.DataStandard52.ApiSchema": {
+        "type": "Direct",
+        "requested": "[1.0.333, )",
+        "resolved": "1.0.333",
+        "contentHash": "eSjrOzKptV1YYqoda/E7iUqzuEwbP2UsdUHNKpfJclY+e+Q2/SvGCJVBYhirSVxQA06Y03T3ssNr9PYeAWWqEA=="
+      },
+      "EdFi.DataStandard52.TPDM.ApiSchema": {
+        "type": "Direct",
+        "requested": "[1.0.333, )",
+        "resolved": "1.0.333",
+        "contentHash": "XzHgxRKPtynsubpNW3qyiMK9M1E1FqTJXRhNVLqRzfgLvjm//TB+x3rCoyVn61qRNSm1u7ydVYWQ8iPtaGxHUg=="
+      },
       "Microsoft.CodeAnalysis.CSharp.CodeStyle": {
         "type": "Direct",
         "requested": "[4.12.0, )",
