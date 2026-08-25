@@ -25,7 +25,7 @@ and copying the data across -- never patching the published artifact.
 | Script | Purpose |
 | --- | --- |
 | [`Copy-NorthridgeDataForward.ps1`](./Copy-NorthridgeDataForward.ps1) | Copy dataset tables from a published dump into a freshly provisioned database, derive `dms.Descriptor.ResourceKeyId`, and assert the post-copy and checkpoint invariants |
-| [`Compare-DmsSchemaSnapshot.ps1`](./Compare-DmsSchemaSnapshot.ps1) | Capture a normalized catalog snapshot of a database and diff two snapshots |
+| [`Compare-DmsSchemaSnapshot.ps1`](./Compare-DmsSchemaSnapshot.ps1) | Capture a normalized catalog snapshot of a database -- structure, trigger state, ownership, privileges and routine security attributes -- and diff two snapshots |
 | [`Get-DmsResourceCount.ps1`](./Get-DmsResourceCount.ps1) | Per-resource document counts for PostgreSQL or SQL Server, and the both-direction reconciliation between two count sets |
 | [`Add-NorthridgeGapDocument.ps1`](./Add-NorthridgeGapDocument.ps1) | POST documents through the DMS API from a manifest and verify each with a GET-by-id |
 
@@ -34,6 +34,25 @@ host `psql`, `pg_restore`, `pg_dump`, or `sqlcmd` installation is required.
 `Add-NorthridgeGapDocument.ps1`, `Compare-DmsSchemaSnapshot.ps1` and `Copy-NorthridgeDataForward.ps1`
 support `-WhatIf` and print their plan without contacting a database. `Get-DmsResourceCount.ps1` does
 not: it has no `-WhatIf`, and never writes to a database -- only to its own output file.
+
+[`tests/SchemaSnapshotSecurity.Tests.ps1`](./tests/SchemaSnapshotSecurity.Tests.ps1) covers the part of
+`Compare-DmsSchemaSnapshot.ps1` that a restore can silently break, and the recipe step that puts it
+back. `pg_restore --no-owner --no-privileges` drops object ownership and every `GRANT`, and the DMS
+enqueue functions are `SECURITY DEFINER` owned by a dedicated role with `EXECUTE` revoked from
+`PUBLIC` -- `pg_get_functiondef` carries none of that, so a definition-only snapshot would report a
+restored database equivalent after it had lost the privilege boundary. Step 5b of the recipe
+re-applies the DDL's security block, and the suite checks that block statement by statement against
+the emitter's authoritative fixture, so a change to the DDL's grants fails a pull request before it
+can fail a restore. Its query-map and recipe coverage runs in the DMS pull-request Pester lane. Its
+live scenarios build and drop their own databases, dump and restore one of them with the recipe's
+flags to prove the compare fails before step 5b and passes after it, and use cluster roles, so they
+run only when `DMS_NORTHRIDGE_PG_FIXTURE_CONTAINER` names a **disposable** PostgreSQL container
+(with `DMS_NORTHRIDGE_PG_FIXTURE_USER` if its superuser is not `postgres`), and self-skip otherwise:
+
+```powershell
+$env:DMS_NORTHRIDGE_PG_FIXTURE_CONTAINER = "dms-postgresql"
+Invoke-Pester -Path ./tests/SchemaSnapshotSecurity.Tests.ps1 -Output Detailed
+```
 
 ## Why the client tools run in containers
 
@@ -75,7 +94,10 @@ conditional on your configuration differing from the producer's:
 3. rotating `dms.DataStoreIdentity.SourceIdentity` for a new writable restore (step 8).
 
 The checklist below includes the other required restore gates, including the producer-local
-Configuration Service rows that must be recreated before DMS can serve the restored database.
+Configuration Service rows that must be recreated before DMS can serve the restored database, and
+step 5b, which is mandatory for every consumer: the restore flags that let the archive land on your
+stack also drop the ownership and privilege metadata the DMS DDL sets on purpose, and step 5c is the
+proof that it was put back.
 
 ```shell
 DC=~/src/Data-Management-Service/eng/docker-compose   # your checkout
@@ -164,6 +186,18 @@ DBUSER=$(docker exec dms-postgresql printenv POSTGRES_USER)
 test -n "$DB" -a -n "$DBUSER" || \
   { echo "could not read the database name and superuser from the dms-postgresql container"; exit 1; }
 docker stop ed-fi-api ed-fi-api-config-service
+
+#    Dump the database step 4 deployed BEFORE it is dropped. Step 5c restores this dump beside the
+#    artifact, with the same flags and the same repair, and compares the two live databases: the
+#    bootstrap deployed the current DDL as $DBUSER on this cluster, so this is the reference a restore
+#    has to match -- structure, trigger state, ownership, privileges and routine security attributes
+#    -- and it is about to be replaced. A fresh deployment holds only seed rows; the dump takes
+#    seconds. The compare is meaningful only when the checkout is at the DMS revision the artifact
+#    records (see the Record below): a newer DDL differs on purpose, and the answer to that is the
+#    copy-forward, not a restore.
+docker exec dms-postgresql pg_dump -U "$DBUSER" -Fc -f /tmp/deployed.dump -- "$DB" || \
+  { echo "could not dump the deployed database; nothing was dropped -- start again from step 4"; exit 1; }
+
 docker cp "$DUMP" dms-postgresql:/tmp/nr.dump
 
 #    Recreated with dropdb/createdb rather than psql -c "DROP DATABASE ...", so the name travels
@@ -197,6 +231,96 @@ if grep -Eiq 'errors ignored on restore|pg_restore: error' "$ART/restore.log"; t
   exit 1
 fi
 echo "pg_restore finished with no reported errors"
+
+# 5b. REQUIRED: repair the PostgreSQL security metadata that --no-owner --no-privileges dropped.
+#     Those two flags are what let the archive land on YOUR stack: without --no-owner pg_restore
+#     issues ALTER ... OWNER TO the producer's superuser for every object, and without
+#     --no-privileges it replays the producer cluster's GRANT and REVOKE statements -- both name
+#     roles your cluster need not have, and under --exit-on-error either stops the restore. Every
+#     table, sequence, view and routine therefore comes back owned by $DBUSER with default
+#     privileges -- which is exactly what a fresh deployment by $DBUSER produces, for every object
+#     but the ones the DDL locks down on purpose. The document-projection enqueue functions are
+#     SECURITY DEFINER, owned by the dedicated edfi_dms_enqueue_owner role, with EXECUTE revoked
+#     from PUBLIC and from the deploying user; that role holds USAGE (not CREATE) on the dms schema,
+#     SELECT on dms."DocumentCacheState" and SELECT, INSERT, UPDATE on dms."DocumentProjectionWork".
+#     After a bare restore the same functions run as SECURITY DEFINER *as the superuser*, and every
+#     role in the cluster may execute them. That is a privilege boundary lost, and it is invisible
+#     to everything but the schema compare in 5c, which reads exactly these attributes.
+#
+#     The statements are Phase 9 ("Security and Grants") of the DMS PostgreSQL DDL, as emitted by
+#     CoreDdlEmitter.EmitPgsqlDocumentProjectionEnqueueSecurity, in the same order and run the same
+#     way -- the REVOKEs execute as the owner role, so the recorded grantor matches a fresh
+#     deployment byte for byte. The role is cluster-level and survived the dropdb above: the
+#     bootstrap in step 4 created it, and the guard refuses to run if it is missing rather than
+#     create a differently shaped one. tests/SchemaSnapshotSecurity.Tests.ps1 checks this block
+#     statement by statement against the emitter's authoritative fixture on every pull request, and
+#     runs dump -> bare restore -> this block -> compare live, so a change to the DDL's security
+#     block fails there before it can fail here. Written to a file because step 5c applies the same
+#     block to its reference database.
+cat > "$ART/repair.sql" <<'REPAIR_SQL'
+DO $$
+BEGIN
+    IF pg_catalog.to_regrole('edfi_dms_enqueue_owner') IS NULL THEN
+        RAISE EXCEPTION 'role edfi_dms_enqueue_owner does not exist in this cluster; the bootstrap in step 4 creates it -- start again from step 4';
+    END IF;
+END $$;
+GRANT CREATE ON SCHEMA "dms" TO "edfi_dms_enqueue_owner";
+ALTER FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"() OWNER TO "edfi_dms_enqueue_owner";
+ALTER FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"() OWNER TO "edfi_dms_enqueue_owner";
+REVOKE CREATE ON SCHEMA "dms" FROM "edfi_dms_enqueue_owner";
+GRANT USAGE ON SCHEMA "dms" TO "edfi_dms_enqueue_owner";
+SET ROLE "edfi_dms_enqueue_owner";
+REVOKE EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"() FROM SESSION_USER;
+REVOKE EXECUTE ON FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"() FROM SESSION_USER;
+RESET ROLE;
+REVOKE INSERT, UPDATE, DELETE ON TABLE "dms"."DocumentProjectionWork" FROM PUBLIC;
+GRANT SELECT ON TABLE "dms"."DocumentCacheState" TO "edfi_dms_enqueue_owner";
+GRANT SELECT, INSERT, UPDATE ON TABLE "dms"."DocumentProjectionWork" TO "edfi_dms_enqueue_owner";
+REPAIR_SQL
+#     -1 runs the file as one transaction and ON_ERROR_STOP aborts it at the first error, so a
+#     failure applies nothing and a re-run after a fix starts from the same state.
+docker exec -i dms-postgresql psql -U "$DBUSER" -d "$DB" -v ON_ERROR_STOP=1 -q -1 -f - < "$ART/repair.sql" || \
+  { echo "step 5b failed: the security metadata was not repaired, so this database is NOT the deployed schema -- start again from step 4"; exit 1; }
+echo "security metadata repaired"
+
+# 5c. Prove it. A restore of this artifact must be indistinguishable from a restore of a same-revision
+#     deployment, ownership and privileges included. The reference is the dump taken in step 5,
+#     restored beside the artifact with the same flags and repaired with the same block, and the
+#     compare runs the script's two-database mode against both live databases. The reference is a
+#     RESTORE rather than the deployment itself on purpose: pg_dump writes a CHECK constraint as
+#     pg_get_constraintdef renders it, and PostgreSQL re-parses (ARRAY[...])::text[] as
+#     ARRAY[(...)::text, ...] -- the same predicate, spelled differently -- so a restored database
+#     always differs from a deployment on dms.CK_DocumentCacheState_Lifecycle and on nothing else.
+#     Putting both sides through the same round trip removes that one artifact without excusing any
+#     row. What this cannot see is a repair block incomplete in the same way on both sides; that is
+#     what tests/SchemaSnapshotSecurity.Tests.ps1 pins against the emitter's fixture on every pull
+#     request. An artifact restore without 5b cannot pass here: with the block never written the
+#     reference cannot be repaired and the step stops; with the block applied to the reference alone
+#     the compare fails in sections 10, 14, 15 and 16 and names the objects. Runs before the content
+#     checks in step 6: a database holding every published row on a schema that is not the deployed
+#     one is still not a restore of this artifact.
+REF="${DB}_reference"
+docker exec dms-postgresql dropdb -U "$DBUSER" --maintenance-db=postgres --if-exists -- "$REF" || \
+  { echo "could not drop a stale reference database $REF"; exit 1; }
+docker exec dms-postgresql createdb -U "$DBUSER" --maintenance-db=postgres -- "$REF" || \
+  { echo "could not create the reference database $REF"; exit 1; }
+docker exec dms-postgresql pg_restore -U "$DBUSER" -d "$REF" --no-owner --no-privileges \
+  --exit-on-error /tmp/deployed.dump || { echo "could not restore the deployed dump as the reference"; exit 1; }
+docker exec -i dms-postgresql psql -U "$DBUSER" -d "$REF" -v ON_ERROR_STOP=1 -q -1 -f - < "$ART/repair.sql" || \
+  { echo "could not repair the reference database"; exit 1; }
+#     The names travel as environment variables, never pasted into the PowerShell command text --
+#     the same handoff step 9 uses, for the same reason. A failing compare writes
+#     $ART/schema/schema-diff.<db>-vs-<db>_reference.txt and names the section of every difference.
+if ! DB="$DB" REF="$REF" DBUSER="$DBUSER" ART="$ART" pwsh -NoProfile -Command \
+     '& ../northridge/Compare-DmsSchemaSnapshot.ps1 -Database $env:DB, $env:REF -OutputDirectory "$env:ART/schema" -PostgresUser $env:DBUSER'; then
+  echo "step 5c failed: the restored artifact is not a restore of the deployed schema -- see the diff named above; start again from step 4"
+  exit 1
+fi
+docker exec dms-postgresql dropdb -U "$DBUSER" --maintenance-db=postgres -- "$REF"
+docker exec -u 0 dms-postgresql rm -f /tmp/deployed.dump
+echo "schema compare PASS: the restored artifact is a restore of the deployed schema, ownership and privileges included"
 
 # 6. Verify the restore by content as well as by status. A clean exit says the archive was applied;
 #    it does not say the database holds the published dataset. This block compares seventeen values
@@ -569,6 +693,8 @@ echo "DMS served the restored dataset: HTTP 200, Total-Count 21628"
 | Step | Required for | Why |
 | --- | --- | --- |
 | Stage core-only ApiSchema (step 3) | everyone | a different schema set computes a different `EffectiveSchemaHash`, and DMS answers 503 |
+| Repair the security metadata (step 5b) | everyone | `--no-owner --no-privileges` leaves the enqueue functions owned by the superuser and executable by `PUBLIC`; the DDL's ownership, `REVOKE`s and `GRANT`s are re-applied |
+| Compare the restored schema (step 5c) | everyone | proves the restored artifact is indistinguishable from a restore of a same-revision deployment, ownership and privileges included; a restore without step 5b fails it |
 | Verify the restore (step 6) | everyone | `--exit-on-error` and the status check prove the archive applied; only the content check proves it is the published dataset |
 | Install your own OpenIddict key (step 7) | everyone | the shipped private key is encrypted with the producer's identity key; without this no token mints |
 | Rotate `SourceIdentity` (step 8) | everyone standing up a new data store | a restored copied backup is an independent writable data store and must not share a source identity with the producer |
@@ -614,12 +740,15 @@ Every published artifact records the following, on its ticket and in this direct
 | `ChangeVersionSequence` | 21,553,810, equal to `MAX("IdentityVersion")` |
 | Reconciliation evidence | The full per-resource output is **not** summarised in this file, and is not committed (see **Never commit**). The evidence set is the files written by the scripts plus the transcripts captured by the run: the two per-resource count CSVs from `Get-DmsResourceCount.ps1` count mode, one per engine; the captured transcript from that script's reconcile mode; the gap-document CSV passed to `Add-NorthridgeGapDocument.ps1 -OutputPath`; `rowcount.<source>-vs-<target>.tsv`; `restore-list.<target>.txt`; `restore-list.descriptor.txt`; `restore-output.<target>.txt`; the `checkpoint.<name>.<target>.txt` series; and `schema-snapshot.<database>.txt`. `schema-diff.<left>-vs-<right>.txt` exists only for a failing schema compare; a passing compare is represented by the PASS transcript and matching snapshots. That set belongs with the ticket as attachments rather than in this repository. DMS-1406 carries the summary comment for this artifact; the file set named here is what has to accompany it, and a reader who cannot find these files has not been given the reconciliation |
 
-Validation, all on the restored artifact rather than on the database that produced it: schema compare
-against a fresh deployment at the same revision reported no differences; the startup-computed
-`EffectiveSchemaHash` equals the value stored in `dms.EffectiveSchema` and equals the SQL Server
-artifact's; DMS served authenticated reads with no 503 and no restarts; the resource-by-resource
-reconciliation against SQL Server reported zero differences in both directions across 210 resources
-and 10,576,801 documents. Each positive result was paired with a negative control run at the same
+Validation, all on the restored artifact rather than on the database that produced it: the
+startup-computed `EffectiveSchemaHash` equals the value stored in `dms.EffectiveSchema` and equals the
+SQL Server artifact's; DMS served authenticated reads with no 503 and no restarts; the
+resource-by-resource reconciliation against SQL Server reported zero differences in both directions
+across 210 resources and 10,576,801 documents. The schema compare is a gate of the recipe itself
+(step 5c) rather than a result recorded once here: a database restored with the recipe's flags is not
+equivalent to a deployment until step 5b has re-applied the ownership and privileges those flags
+drop, and the snapshot -- ownership, routine security attributes and ACLs included -- reports exactly
+that drift when the step is skipped. Each positive result was paired with a negative control run at the same
 time, because a `pg_restore` run without `--exit-on-error` skips a failed `COPY` and keeps going to
 the end of the archive, `RESTORE VERIFYONLY` passes an unreadable file, and a restore that never
 starts reports zero errors — success-shaped signals that mean nothing on their own.
@@ -628,7 +757,11 @@ Known limitations: the `dmscs` rows in the artifact are producer-local throughou
 OpenIddict signing key, DMS-to-CMS client row, and vendor/application/client rows — which is what
 steps 7, 9, 10 and 12 exist to replace. Ownership-token stamping is not implemented at this revision,
 so `CreatedByOwnershipTokenId` is null on every document. `tracked_changes_edfi` is present and empty
-by design. During production a manifest re-POST was issued against the live database to exercise the
+by design. A restored database differs from a *deployment* -- as opposed to a restore of one -- on
+exactly one row: PostgreSQL re-parses the dumped `CK_DocumentCacheState_Lifecycle` expression
+`(ARRAY[...])::text[]` as `ARRAY[(...)::text, ...]`, the same predicate spelled differently, which is
+why step 5c compares against a restored reference. During production a manifest re-POST was issued
+against the live database to exercise the
 field comparison; DMS treated it as an idempotent upsert, creating no duplicates, and no
 `ContentVersion` moved on any of the 10,576,794 copied documents.
 

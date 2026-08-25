@@ -4989,7 +4989,9 @@ param(
     [string]$ClientScopeName,
     [string]$NewClientSecret,
     [string]$ClientSecretMinimumLength,
-    [string]$ClientSecretMaximumLength
+    [string]$ClientSecretMaximumLength,
+    [string]$ConfigServiceRole,
+    [string]$DmsClientRole
 )
 
 $record = [ordered]@{

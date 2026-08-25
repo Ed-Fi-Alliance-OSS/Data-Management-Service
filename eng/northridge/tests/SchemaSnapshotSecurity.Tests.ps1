@@ -1,0 +1,585 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# Coverage for the security half of Compare-DmsSchemaSnapshot.ps1, and for the restore recipe step
+# that repairs what the restore drops.
+#
+# WHAT THIS PROVES: a snapshot that reports two databases equivalent has actually compared the
+# PostgreSQL security attributes DMS depends on, and the README's restore recipe puts those
+# attributes back before it claims equivalence. The recipe loads with
+# pg_restore --no-owner --no-privileges, which silently drops object ownership and every GRANT the
+# DDL issued. The DMS document-projection enqueue functions are SECURITY DEFINER, owned by a
+# dedicated role, with EXECUTE revoked from PUBLIC, so a bare restore leaves a function that still
+# runs as a definer while owned by the superuser and executable by the whole cluster.
+# pg_get_functiondef carries none of that, so a definition-only snapshot hashes both databases
+# identically and reports PASS. Step 5b of the recipe re-applies the DDL's Security and Grants
+# phase; the structural Describe below holds that block statement by statement to the emitter's
+# authoritative fixture, and the live Describe runs dump -> bare restore -> 5b -> compare.
+#
+# The structural Describes read the real query map out of the script, the real recipe out of the
+# README and the real Phase 9 out of the DDL fixture (no database) and run everywhere. The live
+# Describes are OPT-IN, in the same convention as MssqlPhysicalDistinctnessLive.Tests.ps1: they
+# self-skip when the fixture variable is unset, so every CI lane and hermetic run touches no docker.
+#   DMS_NORTHRIDGE_PG_FIXTURE_CONTAINER  name of a running, DISPOSABLE PostgreSQL container
+#   DMS_NORTHRIDGE_PG_FIXTURE_USER       superuser for psql (optional; defaults to postgres)
+# DISPOSABLE is not decoration: the fixtures build and drop their own databases and cluster roles,
+# because the ownership and privilege shapes under test are the subject and cannot be borrowed
+# from a shared server.
+
+BeforeDiscovery {
+    $script:pgFixtureEnabled = -not [string]::IsNullOrWhiteSpace($env:DMS_NORTHRIDGE_PG_FIXTURE_CONTAINER)
+}
+
+BeforeAll {
+    $script:northridgeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+    $script:compareScript = Join-Path $script:northridgeRoot "Compare-DmsSchemaSnapshot.ps1"
+
+    # Compare-DmsSchemaSnapshot.ps1 has mandatory parameters and runs its work at file scope, so its
+    # helpers are lifted out by AST rather than dot-sourced -- the same extraction style the
+    # docker-compose suites use against build-dms.ps1.
+    function script:Get-ScriptFunctionText {
+        param(
+            [Parameter(Mandatory)] [string] $ScriptPath,
+            [Parameter(Mandatory)] [string] $FunctionName
+        )
+        $parseError = $null
+        $token = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($ScriptPath, [ref]$token, [ref]$parseError)
+        if ($parseError.Count -gt 0) {
+            throw "'$ScriptPath' does not parse: $(($parseError | ForEach-Object { $_.Message }) -join '; ')"
+        }
+        $functionAst = $ast.FindAll({
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $FunctionName
+            }, $true) | Select-Object -First 1
+        if ($null -eq $functionAst) { throw "Function '$FunctionName' was not found in '$ScriptPath'." }
+        return $functionAst.Extent.Text
+    }
+
+    . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:compareScript -FunctionName "Get-SchemaLiteralList")))
+    . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:compareScript -FunctionName "Get-SnapshotQueryMap")))
+
+    $script:queryMap = Get-SnapshotQueryMap -SchemaList (Get-SchemaLiteralList -Name @("dms", "edfi"))
+
+    # The recipe under test, read from the README the consumer reads. The repair block is the SQL the
+    # recipe writes between <<'REPAIR_SQL' and REPAIR_SQL, so the live scenario runs exactly the
+    # documented statements rather than a copy that could drift from them.
+    $readme = Get-Content -Raw -LiteralPath (Join-Path $script:northridgeRoot "README.md")
+    $script:recipe = [regex]::Match($readme, '(?ms)^```shell\r?\n(?<recipe>.*?)^```').Groups["recipe"].Value
+    $script:repairSql = [regex]::Match($script:recipe, "(?ms)<<'REPAIR_SQL'\r?\n(?<sql>.*?)^REPAIR_SQL\s*$").Groups["sql"].Value
+
+    # Phase 9 ("Security and Grants") of the emitted DMS PostgreSQL DDL, read from the emitter's
+    # authoritative DS 5.2 fixture -- the artifact's own schema set -- rather than restated here. The
+    # phase ends where the resource schemas begin.
+    $ddlFixturePath = [System.IO.Path]::GetFullPath((Join-Path $script:northridgeRoot "../../src/dms/backend/Fixtures/authoritative/ds-5.2/expected/pgsql.sql"))
+    $ddl = Get-Content -Raw -LiteralPath $ddlFixturePath
+    $script:securityPhase = [regex]::Match($ddl, '(?ms)^-- Phase 9: Security and Grants\r?\n-- =+\r?\n(?<body>.*?)(?=^CREATE SCHEMA IF NOT EXISTS )').Groups["body"].Value
+
+    # The statements of a security block that change catalog state, in order: the top-level GRANT /
+    # REVOKE / ALTER FUNCTION / SET ROLE / RESET ROLE lines, plus the GRANT / REVOKE / ALTER FUNCTION
+    # text the DDL's DO blocks run through EXECUTE. The role-creation and membership checks are
+    # deliberately not among them: the recipe requires the role to exist already and refuses to
+    # create one. Whitespace is collapsed so a re-wrapped line still compares equal.
+    function script:Get-SecurityStatement {
+        param([Parameter(Mandatory)] [AllowEmptyString()] [string] $Sql)
+        $statement = [System.Collections.Generic.List[string]]::new()
+        foreach ($line in ($Sql -split "\r?\n")) {
+            $trimmed = $line.Trim()
+            if ($line -match '^(GRANT|REVOKE|ALTER FUNCTION|SET ROLE|RESET ROLE)\b' -and $trimmed.EndsWith(";")) {
+                $statement.Add(($trimmed -replace '\s+', ' '))
+            }
+            foreach ($executed in [regex]::Matches($line, "EXECUTE '((?:GRANT|REVOKE|ALTER FUNCTION)[^']*)'")) {
+                $statement.Add((($executed.Groups[1].Value.Trim() + ";") -replace '\s+', ' '))
+            }
+        }
+        return @($statement)
+    }
+
+    # Fixture access shared by the live Describes: the same container and superuser, the same psql
+    # transport, and one compare helper that reads the diff file the recipe itself keeps.
+    $script:container = $env:DMS_NORTHRIDGE_PG_FIXTURE_CONTAINER
+    $script:pgUser =
+        if ([string]::IsNullOrWhiteSpace($env:DMS_NORTHRIDGE_PG_FIXTURE_USER)) { "postgres" }
+        else { $env:DMS_NORTHRIDGE_PG_FIXTURE_USER }
+
+    function script:Invoke-FixtureSql {
+        param(
+            [Parameter(Mandatory)] [string] $DatabaseName,
+            [Parameter(Mandatory)] [string] $Sql
+        )
+        $output = $Sql | docker exec -i $script:container psql -U $script:pgUser -d $DatabaseName `
+            -v ON_ERROR_STOP=1 --quiet 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "fixture psql failed against '$DatabaseName' (exit $LASTEXITCODE): $($output -join [Environment]::NewLine)"
+        }
+    }
+
+    # A failing compare throws, so its output is collected through the pipeline as it is produced:
+    # assigning the whole invocation to a variable would discard everything the script wrote before
+    # the terminating error. The written diff file is the artifact the recipe keeps and is what the
+    # per-drift assertions read.
+    function script:Invoke-Compare {
+        param([Parameter(Mandatory)] [ValidateCount(2, 2)] [string[]] $DatabaseName)
+        $outputDirectory = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N"))
+        $captured = [System.Collections.Generic.List[string]]::new()
+        $failed = $false
+        try {
+            & $script:compareScript -Database $DatabaseName -OutputDirectory $outputDirectory `
+                -Schema "dms" -Container $script:container -PostgresUser $script:pgUser 2>&1 |
+                ForEach-Object { $captured.Add([string]$_) }
+        }
+        catch {
+            $failed = $true
+            $captured.Add([string]$_)
+        }
+        $diffPath = Join-Path $outputDirectory "schema-diff.$($DatabaseName[0])-vs-$($DatabaseName[1]).txt"
+        $diff = if (Test-Path -LiteralPath $diffPath) { Get-Content -LiteralPath $diffPath -Raw } else { "" }
+        return [pscustomobject]@{
+            Failed = $failed
+            Output = ($captured -join [Environment]::NewLine)
+            Diff   = $diff
+        }
+    }
+}
+
+Describe "Snapshot query map covers PostgreSQL routine security" {
+    It "captures routine identity, owner, definer state and configuration" {
+        # The four attributes the finding names, plus proconfig: the enqueue functions pin
+        # search_path, which is what makes running as a definer safe, and ALTER FUNCTION can drop it
+        # without touching a line of the body.
+        $sql = $script:queryMap["14-routine-security"]
+        $sql | Should -Not -BeNullOrEmpty -Because "a routine-security section must exist"
+        $sql | Should -Match "pg_get_function_identity_arguments" -Because "overloads are only distinguishable by signature"
+        $sql | Should -Match "pg_get_userbyid\(p\.proowner\)" -Because "a SECURITY DEFINER routine runs as its owner"
+        $sql | Should -Match "p\.prosecdef"
+        $sql | Should -Match "'DEFINER'" -Because "the definer state must be readable in the diff, not encoded"
+        $sql | Should -Match "'INVOKER'"
+        $sql | Should -Match "p\.proconfig"
+    }
+
+    It "expands routine EXECUTE privileges through the PostgreSQL default rather than reading proacl alone" {
+        # This is the exact false-pass. --no-privileges restores proacl as NULL, and NULL is not
+        # "no privileges": it is the built-in default, which grants EXECUTE to PUBLIC. Reading the
+        # column on its own would report a wide-open routine as having no grants at all.
+        $sql = $script:queryMap["15-routine-grant"]
+        $sql | Should -Not -BeNullOrEmpty -Because "a routine-grant section must exist"
+        $sql | Should -Match "aclexplode" -Because "an aclitem array has to be expanded to be compared"
+        $sql | Should -Match "acldefault\('f', p\.proowner\)" -Because "NULL proacl means the default ACL, which grants EXECUTE to PUBLIC"
+        $sql | Should -Match "COALESCE\(p\.proacl," -Because "the default must stand in for a NULL proacl, not be skipped"
+        $sql | Should -Match "'PUBLIC'" -Because "grantee 0 is PUBLIC and must be named as such in the diff"
+        $sql | Should -Match "'<none>'" -Because "a routine whose privileges are all revoked must still emit a row"
+    }
+
+    It "captures schema ownership and schema-level privileges" {
+        # The schema half of the same GRANT block: the enqueue owner is granted USAGE on dms and
+        # deliberately not CREATE. information_schema.role_table_grants (section 10) reports
+        # privileges on tables, never on the schema that holds them.
+        $sql = $script:queryMap["16-schema-privilege"]
+        $sql | Should -Not -BeNullOrEmpty -Because "a schema-privilege section must exist"
+        $sql | Should -Match "pg_get_userbyid\(n\.nspowner\)"
+        $sql | Should -Match "aclexplode"
+        $sql | Should -Match "acldefault\('n', n\.nspowner\)"
+        $sql | Should -Match "COALESCE\(n\.nspacl,"
+    }
+
+    It "captures relation and sequence ownership, the other half of what --no-owner drops" {
+        $script:queryMap["02-table"] | Should -Match "pg_get_userbyid\(c\.relowner\)"
+        $script:queryMap["06-sequence"] | Should -Match "sequenceowner"
+    }
+
+    It "distinguishes an absent ACL from an explicitly granted identical one" {
+        # Guards against over-normalizing: a routine whose ACL was never set and one explicitly
+        # granted the same privileges are not the same object, and after expansion they would read
+        # alike without this marker.
+        foreach ($section in @("15-routine-grant", "16-schema-privilege")) {
+            $script:queryMap[$section] | Should -Match "'default'" -Because "$section must mark a NULL ACL"
+            $script:queryMap[$section] | Should -Match "'explicit'" -Because "$section must mark a set ACL"
+        }
+    }
+
+    It "orders every section totally, so two runs of the same database are byte-comparable" {
+        # Applies to every section, present and future: an unordered query makes the whole snapshot
+        # non-deterministic and a textual diff meaningless.
+        foreach ($section in $script:queryMap.Keys) {
+            $script:queryMap[$section] | Should -Match "(?s)ORDER BY" -Because "section $section must order its rows"
+        }
+    }
+
+    It "aggregates the privilege sections in a fixed order" {
+        # string_agg without ORDER BY is free to emit its inputs in any order, which would make the
+        # aggregated ACL text differ between runs of the same database.
+        foreach ($section in @("15-routine-grant", "16-schema-privilege")) {
+            $script:queryMap[$section] | Should -Match "(?s)string_agg\(.*ORDER BY" -Because "section $section must aggregate deterministically"
+        }
+    }
+}
+
+Describe "Schema compare fails on restored security drift" -Skip:(-not $script:pgFixtureEnabled) {
+    BeforeAll {
+        $script:ownerRole = "dms_nr_fixture_owner"
+        $script:fixtureDatabase = @(
+            "dms_nr_fx_base",
+            "dms_nr_fx_clone",
+            "dms_nr_fx_owner",
+            "dms_nr_fx_secdef",
+            "dms_nr_fx_exec"
+        )
+
+        function script:Remove-Fixture {
+            foreach ($name in $script:fixtureDatabase) {
+                docker exec $script:container dropdb -U $script:pgUser --maintenance-db=postgres --if-exists -- $name 2>&1 | Out-Null
+            }
+            Invoke-FixtureSql -DatabaseName "postgres" -Sql "DROP ROLE IF EXISTS $script:ownerRole;"
+        }
+
+        # The shape every fixture database shares. Sections 11 and 12 read dms."EffectiveSchema" and
+        # dms."SchemaComponent" by name, so they have to exist for the snapshot to run at all.
+        $script:commonDdl = @"
+CREATE SCHEMA dms;
+CREATE TABLE dms."EffectiveSchema"("EffectiveSchemaSingletonId" int PRIMARY KEY, "ApiSchemaFormatVersion" text, "EffectiveSchemaHash" text, "ResourceKeyCount" int, "ResourceKeySeedHash" bytea);
+CREATE TABLE dms."SchemaComponent"("EffectiveSchemaHash" text, "ProjectEndpointName" text, "ProjectName" text, "ProjectVersion" text, "IsExtensionProject" boolean);
+GRANT CREATE ON SCHEMA dms TO $script:ownerRole;
+"@
+
+        # The locked-down shape a fresh provision produces: SECURITY DEFINER, owned by a dedicated
+        # role, search_path pinned, EXECUTE revoked from PUBLIC, USAGE but not CREATE on the schema.
+        $script:lockedDdl = @"
+$script:commonDdl
+CREATE FUNCTION dms.probe() RETURNS int LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog AS 'SELECT 1';
+ALTER FUNCTION dms.probe() OWNER TO $script:ownerRole;
+REVOKE CREATE ON SCHEMA dms FROM $script:ownerRole;
+GRANT USAGE ON SCHEMA dms TO $script:ownerRole;
+SET ROLE $script:ownerRole;
+REVOKE EXECUTE ON FUNCTION dms.probe() FROM PUBLIC;
+RESET ROLE;
+"@
+
+        # Identical body, identical definer state, identical EXECUTE revoke -- only the owner differs.
+        $script:ownerDriftDdl = @"
+$script:commonDdl
+CREATE FUNCTION dms.probe() RETURNS int LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog AS 'SELECT 1';
+REVOKE CREATE ON SCHEMA dms FROM $script:ownerRole;
+GRANT USAGE ON SCHEMA dms TO $script:ownerRole;
+REVOKE EXECUTE ON FUNCTION dms.probe() FROM PUBLIC;
+"@
+
+        # Identical body and owner -- only the definer state differs.
+        $script:securityDriftDdl = @"
+$script:commonDdl
+CREATE FUNCTION dms.probe() RETURNS int LANGUAGE sql SECURITY INVOKER SET search_path = pg_catalog AS 'SELECT 1';
+ALTER FUNCTION dms.probe() OWNER TO $script:ownerRole;
+REVOKE CREATE ON SCHEMA dms FROM $script:ownerRole;
+GRANT USAGE ON SCHEMA dms TO $script:ownerRole;
+SET ROLE $script:ownerRole;
+REVOKE EXECUTE ON FUNCTION dms.probe() FROM PUBLIC;
+RESET ROLE;
+"@
+
+        # The REVOKE never happened -- exactly what --no-privileges leaves behind.
+        $script:executeDriftDdl = @"
+$script:commonDdl
+CREATE FUNCTION dms.probe() RETURNS int LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog AS 'SELECT 1';
+ALTER FUNCTION dms.probe() OWNER TO $script:ownerRole;
+REVOKE CREATE ON SCHEMA dms FROM $script:ownerRole;
+GRANT USAGE ON SCHEMA dms TO $script:ownerRole;
+"@
+
+        Remove-Fixture
+        Invoke-FixtureSql -DatabaseName "postgres" -Sql "CREATE ROLE $script:ownerRole NOLOGIN;"
+        foreach ($name in $script:fixtureDatabase) {
+            $created = docker exec $script:container createdb -U $script:pgUser --maintenance-db=postgres -- $name 2>&1
+            if ($LASTEXITCODE -ne 0) { throw "could not create fixture database '$name': $created" }
+        }
+
+        Invoke-FixtureSql -DatabaseName "dms_nr_fx_base" -Sql $script:lockedDdl
+        # An independently built database of the same shape: equivalent inputs must still report PASS.
+        Invoke-FixtureSql -DatabaseName "dms_nr_fx_clone" -Sql $script:lockedDdl
+        # One drift per database, so each assertion names exactly one cause.
+        Invoke-FixtureSql -DatabaseName "dms_nr_fx_owner" -Sql $script:ownerDriftDdl
+        Invoke-FixtureSql -DatabaseName "dms_nr_fx_secdef" -Sql $script:securityDriftDdl
+        Invoke-FixtureSql -DatabaseName "dms_nr_fx_exec" -Sql $script:executeDriftDdl
+    }
+
+    AfterAll {
+        Remove-Fixture
+    }
+
+    It "reports PASS for two independently built databases of the same shape" {
+        # The guard against over-sensitivity: the new sections must not manufacture a difference
+        # between databases that really are equivalent.
+        $result = Invoke-Compare -DatabaseName @("dms_nr_fx_base", "dms_nr_fx_clone")
+        $result.Failed | Should -BeFalse -Because "equivalent databases must not fail: $($result.Output)"
+        $result.Output | Should -Match "PASS: schema snapshots"
+    }
+
+    It "fails when a routine keeps its body but loses its owner" {
+        # The narrowest case, and the one nothing else catches: pg_get_functiondef does not carry the
+        # owner, so section 08 hashes these two databases identically.
+        $result = Invoke-Compare -DatabaseName @("dms_nr_fx_base", "dms_nr_fx_owner")
+        $result.Failed | Should -BeTrue -Because "lost function ownership must fail the compare"
+        $result.Diff | Should -Match "routine-security" -Because "the diff must name the section: $($result.Output)"
+        $result.Diff | Should -Match "owner=$script:ownerRole"
+        $result.Diff | Should -Match "owner=$script:pgUser"
+        $result.Diff | Should -Not -Match "08-routine\|" -Because "the body is unchanged, so only the security sections may differ: $($result.Diff)"
+    }
+
+    It "fails when a routine keeps its body but is no longer SECURITY DEFINER" {
+        $result = Invoke-Compare -DatabaseName @("dms_nr_fx_base", "dms_nr_fx_secdef")
+        $result.Failed | Should -BeTrue -Because "a lost SECURITY DEFINER must fail the compare"
+        $result.Diff | Should -Match "security=DEFINER" -Because "the diff must name the state: $($result.Output)"
+        $result.Diff | Should -Match "security=INVOKER"
+    }
+
+    It "fails when a routine keeps its body but its EXECUTE privileges differ" {
+        # The restored side has proacl NULL, which is the PostgreSQL default and grants EXECUTE to
+        # PUBLIC. Nothing but section 15 sees it.
+        $result = Invoke-Compare -DatabaseName @("dms_nr_fx_base", "dms_nr_fx_exec")
+        $result.Failed | Should -BeTrue -Because "lost EXECUTE grants must fail the compare"
+        $result.Diff | Should -Match "routine-grant" -Because "the diff must name the section: $($result.Output)"
+        $result.Diff | Should -Match "PUBLIC=EXECUTE"
+        $result.Diff | Should -Not -Match "08-routine\|" -Because "the body is unchanged, so only the privilege section may differ: $($result.Diff)"
+    }
+
+    It "fails when a schema loses the USAGE grant the enqueue owner depends on" {
+        # The schema-level half of the same GRANT block. Applied and reverted here rather than given
+        # its own database, so the only difference from the baseline is the schema grant itself.
+        Invoke-FixtureSql -DatabaseName "dms_nr_fx_clone" -Sql "REVOKE USAGE ON SCHEMA dms FROM $script:ownerRole;"
+        try {
+            $result = Invoke-Compare -DatabaseName @("dms_nr_fx_base", "dms_nr_fx_clone")
+            $result.Failed | Should -BeTrue -Because "a lost schema grant must fail the compare"
+            $result.Diff | Should -Match "schema-privilege" -Because "the diff must name the section: $($result.Output)"
+            $result.Diff | Should -Match "$script:ownerRole=USAGE"
+        }
+        finally {
+            Invoke-FixtureSql -DatabaseName "dms_nr_fx_clone" -Sql "GRANT USAGE ON SCHEMA dms TO $script:ownerRole;"
+        }
+    }
+
+    It "writes a byte-identical snapshot on a repeated run of the same database" {
+        # Determinism is what makes a textual diff meaningful; a snapshot that varied run to run
+        # would report differences that mean nothing and hide the ones that do.
+        $first = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N"))
+        $second = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N"))
+        foreach ($directory in @($first, $second)) {
+            & $script:compareScript -Database "dms_nr_fx_base" -OutputDirectory $directory `
+                -Schema "dms" -Container $script:container -PostgresUser $script:pgUser | Out-Null
+        }
+        $firstBytes = [System.IO.File]::ReadAllBytes((Join-Path $first "schema-snapshot.dms_nr_fx_base.txt"))
+        $secondBytes = [System.IO.File]::ReadAllBytes((Join-Path $second "schema-snapshot.dms_nr_fx_base.txt"))
+        $firstBytes.Length | Should -BeGreaterThan 0 -Because "an empty snapshot would compare equal to another empty one"
+        [System.Convert]::ToBase64String($secondBytes) | Should -BeExactly ([System.Convert]::ToBase64String($firstBytes))
+    }
+}
+
+Describe "Restore recipe repairs the security metadata the compare checks" {
+    # The README's restore uses pg_restore --no-owner --no-privileges, and the compare reads exactly
+    # the ownership and privileges those flags drop. The two are consistent only because the recipe
+    # re-applies the DDL's Security and Grants phase (step 5b) and proves the result against a
+    # reference put through the same restore (step 5c). These cases hold the recipe to the emitter:
+    # the repair block must be the DDL's own statements, no more and no fewer, in the DDL's order,
+    # and the restore, the repair and the proof must sit in that order.
+
+    It "restores with the flags that drop ownership and privileges, then repairs, then proves" {
+        $script:recipe | Should -Match '(?m)^docker exec dms-postgresql pg_restore -U "\$DBUSER" -d "\$DB" --no-owner --no-privileges'
+        $script:repairSql | Should -Not -BeNullOrEmpty -Because "the recipe must write a REPAIR_SQL block"
+
+        $restoreAt = $script:recipe.IndexOf('pg_restore -U "$DBUSER" -d "$DB"')
+        $repairAt = $script:recipe.IndexOf("<<'REPAIR_SQL'")
+        $proofAt = $script:recipe.IndexOf("# 5c.")
+        $contentCheckAt = $script:recipe.IndexOf("# 6. Verify the restore")
+        $restoreAt | Should -BeGreaterThan -1
+        $repairAt | Should -BeGreaterThan $restoreAt -Because "the repair must follow the restore it repairs"
+        $proofAt | Should -BeGreaterThan $repairAt -Because "the proof must follow the repair"
+        $contentCheckAt | Should -BeGreaterThan $proofAt -Because "the content checks must run on a proven database"
+    }
+
+    It "applies the repair block to the restored artifact and to the reference, transactionally and fail-closed" {
+        # Both applications read the file the heredoc wrote, so the two sides cannot drift, and both
+        # run under -1 (one transaction) and ON_ERROR_STOP (abort at the first error).
+        $application = @([regex]::Matches($script:recipe, '(?m)^.*psql .*-f - < "\$ART/repair\.sql".*$') | ForEach-Object { $_.Value })
+        $application.Count | Should -Be 2 -Because "once for the artifact restore, once for the reference"
+        foreach ($line in $application) {
+            $line | Should -Match '-v ON_ERROR_STOP=1' -Because "a failed statement must stop psql, not be reported and skipped: $line"
+            $line | Should -Match '\s-1\s' -Because "a partial repair must roll back rather than leave a half-repaired database: $line"
+            $line | Should -Match '-U "\$DBUSER"' -Because "the live superuser, not a default: $line"
+        }
+        @($application | Where-Object { $_ -match '-d "\$DB"' }).Count | Should -Be 1
+        @($application | Where-Object { $_ -match '-d "\$REF"' }).Count | Should -Be 1
+
+        $script:repairSql | Should -Match "to_regrole\('edfi_dms_enqueue_owner'\) IS NULL" -Because "the guard must name the role the DDL creates"
+        $script:repairSql | Should -Match 'RAISE EXCEPTION' -Because "a missing role must stop the recipe"
+        $script:repairSql | Should -Not -Match 'CREATE ROLE' -Because "the recipe must not create a role shaped differently from the DDL's"
+    }
+
+    It "dumps the deployment before the drop and compares against a reference restored and repaired the same way" {
+        # The reference is a restore, not the deployment: pg_dump writes a CHECK constraint as
+        # pg_get_constraintdef renders it and PostgreSQL re-parses (ARRAY[...])::text[] as
+        # ARRAY[(...)::text, ...], so a restored database always differs from a deployment on
+        # dms.CK_DocumentCacheState_Lifecycle. Both sides through the same round trip, both repaired
+        # by the same block, compared live by the script itself.
+        $dumpAt = $script:recipe.IndexOf('pg_dump -U "$DBUSER" -Fc -f /tmp/deployed.dump -- "$DB"')
+        $dropAt = $script:recipe.IndexOf('dropdb -U "$DBUSER" --maintenance-db=postgres --if-exists -- "$DB"')
+        $dumpAt | Should -BeGreaterThan -1 -Because "the deployed database must be dumped"
+        $dropAt | Should -BeGreaterThan $dumpAt -Because "the deployed database must be dumped before it is dropped"
+
+        $referenceRestore = [regex]::Match($script:recipe, '(?m)^docker exec dms-postgresql pg_restore -U "\$DBUSER" -d "\$REF" --no-owner --no-privileges.*$')
+        $referenceRestore.Success | Should -BeTrue -Because "the reference must be restored with the artifact's flags"
+        $referenceRestore.Index | Should -BeGreaterThan $script:recipe.IndexOf("<<'REPAIR_SQL'")
+
+        $compare = [regex]::Match($script:recipe, '(?m)^.*Compare-DmsSchemaSnapshot\.ps1 -Database \$env:DB, \$env:REF .*-PostgresUser \$env:DBUSER.*$')
+        $compare.Success | Should -BeTrue -Because "the compare must run the script's two-database mode on the live superuser"
+        $compare.Index | Should -BeGreaterThan $referenceRestore.Index
+        $script:recipe.IndexOf('dropdb -U "$DBUSER" --maintenance-db=postgres -- "$REF"') | Should -BeGreaterThan $compare.Index -Because "the reference is scratch and is removed after the compare"
+        [regex]::Matches($script:recipe, 'Compare-DmsSchemaSnapshot\.ps1').Count | Should -Be 1 -Because "one live compare; a snapshot of the deployment itself would carry the deparse artifact"
+    }
+
+    It "re-applies every statement of the DDL's Security and Grants phase and nothing else" {
+        $script:securityPhase | Should -Not -BeNullOrEmpty -Because "the authoritative fixture must carry a Phase 9"
+        $ddlStatement = @(Get-SecurityStatement -Sql $script:securityPhase | Select-Object -Unique)
+        $recipeStatement = @(Get-SecurityStatement -Sql $script:repairSql | Select-Object -Unique)
+        $ddlStatement.Count | Should -BeGreaterThan 5 -Because "the extraction must have found the phase's statements: $($ddlStatement -join ' | ')"
+
+        foreach ($statement in $ddlStatement) {
+            $recipeStatement | Should -Contain $statement -Because "the DDL applies it and the restore dropped it"
+        }
+        foreach ($statement in $recipeStatement) {
+            $ddlStatement | Should -Contain $statement -Because "the recipe must not apply anything the DDL does not"
+        }
+    }
+
+    It "runs the DDL's top-level statements in the DDL's order, with the EXECUTE revokes as the owner role" {
+        $ddlTopLevel = @(($script:securityPhase -split "\r?\n") |
+                Where-Object { $_ -match '^(GRANT|REVOKE|SET ROLE|RESET ROLE)\b.*;\s*$' } |
+                ForEach-Object { $_.Trim() -replace '\s+', ' ' })
+        $recipeStatement = @(Get-SecurityStatement -Sql $script:repairSql)
+        $ddlTopLevel.Count | Should -BeGreaterThan 5
+
+        $previous = -1
+        foreach ($statement in $ddlTopLevel) {
+            $index = [array]::IndexOf($recipeStatement, $statement)
+            $index | Should -BeGreaterThan $previous -Because "'$statement' must come after the statement the DDL emits before it"
+            $previous = $index
+        }
+
+        # A fresh deployment records the owner role as grantor because the DDL revokes under SET ROLE;
+        # the recipe has to do the same or the ACL differs by grantor. The ownership transfer precedes
+        # the revokes: REVOKE as the owner role only works once the role owns the function.
+        $setRole = [array]::IndexOf($recipeStatement, 'SET ROLE "edfi_dms_enqueue_owner";')
+        $resetRole = [array]::IndexOf($recipeStatement, 'RESET ROLE;')
+        $setRole | Should -BeGreaterThan -1
+        $resetRole | Should -BeGreaterThan $setRole
+        $revoke = @($recipeStatement | Where-Object { $_ -like 'REVOKE EXECUTE ON FUNCTION*' })
+        $revoke.Count | Should -Be 4 -Because "PUBLIC and SESSION_USER, on both enqueue functions"
+        foreach ($statement in $revoke) {
+            $index = [array]::IndexOf($recipeStatement, $statement)
+            ($index -gt $setRole -and $index -lt $resetRole) | Should -BeTrue -Because "'$statement' must run under SET ROLE"
+        }
+        $alterOwner = @($recipeStatement | Where-Object { $_ -like 'ALTER FUNCTION*OWNER TO*' })
+        $alterOwner.Count | Should -Be 2
+        foreach ($statement in $alterOwner) {
+            [array]::IndexOf($recipeStatement, $statement) | Should -BeLessThan $setRole -Because "'$statement' must precede the revokes"
+        }
+    }
+}
+
+Describe "Restore recipe: a bare restore fails the compare and step 5b repairs it" -Skip:(-not $script:pgFixtureEnabled) {
+    BeforeAll {
+        # Two databases: one provisioned the way the DDL provisions -- the objects Phase 9 touches,
+        # then Phase 9 itself, verbatim from the authoritative fixture -- and one restored from its
+        # dump with the recipe's flags. The role is the DDL's own, so it is created only if this
+        # cluster does not have it and dropped only if this run created it: on a stack that has
+        # bootstrapped DMS it already exists, owns objects, and is not this fixture's to remove.
+        $script:recipeDatabase = @("dms_nr_fx_deployed", "dms_nr_fx_restored")
+        $script:recipeDump = "/tmp/dms_nr_fx_deployed.dump"
+        $roleExists = docker exec $script:container psql -U $script:pgUser -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname = 'edfi_dms_enqueue_owner';" 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "could not query pg_roles: $roleExists" }
+        $script:createdEnqueueOwner = (($roleExists | Out-String).Trim() -ne "1")
+
+        function script:Remove-RecipeFixture {
+            foreach ($name in $script:recipeDatabase) {
+                docker exec $script:container dropdb -U $script:pgUser --maintenance-db=postgres --if-exists -- $name 2>&1 | Out-Null
+            }
+            docker exec -u 0 $script:container rm -f $script:recipeDump 2>&1 | Out-Null
+            if ($script:createdEnqueueOwner) {
+                Invoke-FixtureSql -DatabaseName "postgres" -Sql 'DROP ROLE IF EXISTS "edfi_dms_enqueue_owner";'
+            }
+        }
+
+        # The objects Phase 9 names, in the shapes the sections read. The section 11 and 12 tables
+        # are needed for the snapshot to run; the identity column gives section 06 a sequence whose
+        # owner --no-owner also rewrites. The Phase 8 GRANT EXECUTE ... TO SESSION_USER that precedes
+        # Phase 9 in the DDL is omitted: Phase 9 revokes it again, so it leaves no trace to compare.
+        $script:deployedDdl = @"
+CREATE SCHEMA "dms";
+CREATE TABLE dms."EffectiveSchema"("EffectiveSchemaSingletonId" int PRIMARY KEY, "ApiSchemaFormatVersion" text, "EffectiveSchemaHash" text, "ResourceKeyCount" int, "ResourceKeySeedHash" bytea);
+CREATE TABLE dms."SchemaComponent"("EffectiveSchemaHash" text, "ProjectEndpointName" text, "ProjectName" text, "ProjectVersion" text, "IsExtensionProject" boolean);
+CREATE TABLE "dms"."DocumentCacheState"("StateId" int PRIMARY KEY, "ProjectionLifecycleState" text NOT NULL);
+CREATE TABLE "dms"."DocumentProjectionWork"("DocumentProjectionWorkId" bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, "DocumentId" bigint NOT NULL);
+CREATE FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"() RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog AS `$func`$ BEGIN RETURN NULL; END `$func`$;
+CREATE FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"() RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog AS `$func`$ BEGIN RETURN NULL; END `$func`$;
+$script:securityPhase
+"@
+
+        Remove-RecipeFixture
+        foreach ($name in $script:recipeDatabase) {
+            $created = docker exec $script:container createdb -U $script:pgUser --maintenance-db=postgres -- $name 2>&1
+            if ($LASTEXITCODE -ne 0) { throw "could not create fixture database '$name': $created" }
+        }
+        Invoke-FixtureSql -DatabaseName "dms_nr_fx_deployed" -Sql $script:deployedDdl
+
+        # The recipe's own transport: a custom-format dump, restored with --no-owner --no-privileges
+        # --exit-on-error into an empty database.
+        $dumped = docker exec $script:container pg_dump -U $script:pgUser -Fc -f $script:recipeDump dms_nr_fx_deployed 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "pg_dump failed: $dumped" }
+        $restored = docker exec $script:container pg_restore -U $script:pgUser -d dms_nr_fx_restored --no-owner --no-privileges --exit-on-error $script:recipeDump 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "pg_restore failed: $restored" }
+
+        # Runs the README's REPAIR_SQL block exactly as the recipe does: one transaction, stop on error.
+        function script:Invoke-RecipeRepair {
+            param([Parameter(Mandatory)] [string] $DatabaseName)
+            $output = $script:repairSql | docker exec -i $script:container psql -U $script:pgUser -d $DatabaseName `
+                -v ON_ERROR_STOP=1 -q -1 -f - 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                throw "the recipe's repair block failed against '$DatabaseName' (exit $LASTEXITCODE): $($output -join [Environment]::NewLine)"
+            }
+        }
+    }
+
+    AfterAll {
+        Remove-RecipeFixture
+    }
+
+    It "fails the compare after a bare restore, in the sections the repair exists for" {
+        # The premise of the recipe step. --no-owner hands every object to the restoring user, which
+        # is the deploying user too, so table and sequence owners agree and only the functions the
+        # DDL assigns to the enqueue owner differ; --no-privileges resets every ACL to the PostgreSQL
+        # default, so the routine, table and schema grants differ. The bodies are untouched, so
+        # section 08 must be silent.
+        $result = Invoke-Compare -DatabaseName @("dms_nr_fx_deployed", "dms_nr_fx_restored")
+        $result.Failed | Should -BeTrue -Because "a bare restore must not compare equal to a deployment: $($result.Output)"
+        foreach ($section in @("10-grant", "14-routine-security", "15-routine-grant", "16-schema-privilege")) {
+            $result.Diff | Should -Match "`t$section\|" -Because "the drift $section reads is what the flags drop: $($result.Diff)"
+        }
+        foreach ($section in @("02-table", "06-sequence", "08-routine")) {
+            $result.Diff | Should -Not -Match "`t$section\|" -Because "$section is not what a same-user restore changes: $($result.Diff)"
+        }
+        $result.Diff | Should -Match "owner=edfi_dms_enqueue_owner"
+        $result.Diff | Should -Match "PUBLIC=EXECUTE"
+    }
+
+    It "passes the compare once the recipe's repair block has run" {
+        Invoke-RecipeRepair -DatabaseName "dms_nr_fx_restored"
+        $result = Invoke-Compare -DatabaseName @("dms_nr_fx_deployed", "dms_nr_fx_restored")
+        $result.Failed | Should -BeFalse -Because "the repaired restore must be the deployed schema, ownership and privileges included: $($result.Output)$($result.Diff)"
+        $result.Output | Should -Match "PASS: schema snapshots"
+    }
+
+    It "leaves the compare passing when the repair block is run again" {
+        # A consumer who re-runs step 5b must not drift away from the deployment.
+        Invoke-RecipeRepair -DatabaseName "dms_nr_fx_restored"
+        $result = Invoke-Compare -DatabaseName @("dms_nr_fx_deployed", "dms_nr_fx_restored")
+        $result.Failed | Should -BeFalse -Because "the repair must be idempotent: $($result.Output)$($result.Diff)"
+    }
+}

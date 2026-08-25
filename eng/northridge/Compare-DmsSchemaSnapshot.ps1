@@ -27,6 +27,16 @@
     constraint triggers that enforce foreign keys -- is exactly the drift this compare exists to
     catch, and it is invisible in a definition-only snapshot.
 
+    Ownership, privileges and routine security attributes are captured for the same reason. The
+    restore path loads with pg_restore --no-owner --no-privileges, which drops object ownership and
+    every GRANT the DDL issued. DMS PostgreSQL locks the document-projection enqueue functions down:
+    they are SECURITY DEFINER, owned by a dedicated role rather than by the deploying superuser, and
+    EXECUTE on them is revoked from PUBLIC and from the session user. A restore strips all three,
+    leaving functions that still run as SECURITY DEFINER while owned by the superuser with EXECUTE
+    back at the PostgreSQL default, which grants it to PUBLIC. pg_get_functiondef carries none of
+    that, so a definition-only snapshot hashes the two databases identically while one of them has
+    lost the privilege boundary entirely.
+
 .PARAMETER Database
     Database to snapshot. Repeat the parameter, or pass two values, to snapshot and then diff both.
 
@@ -163,6 +173,7 @@ ORDER BY nspname;
 
         "02-table"      = @"
 SELECT 'table|' || n.nspname || '.' || c.relname || '|' || c.relkind::text || '|persistence=' || c.relpersistence::text
+    || '|owner=' || pg_get_userbyid(c.relowner)
 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE n.nspname IN ($SchemaList) AND c.relkind IN ('r','p','v','m','f')
 ORDER BY n.nspname, c.relname;
@@ -216,6 +227,7 @@ ORDER BY schemaname, tablename, indexname;
         "06-sequence"   = @"
 SELECT 'sequence|' || schemaname || '.' || sequencename || '|type=' || data_type
     || '|start=' || COALESCE(start_value::text, '') || '|inc=' || COALESCE(increment_by::text, '')
+    || '|owner=' || sequenceowner
 FROM pg_sequences
 WHERE schemaname IN ($SchemaList)
 ORDER BY schemaname, sequencename;
@@ -292,6 +304,74 @@ JOIN pg_namespace n ON n.oid = rel.relnamespace
 WHERE n.nspname IN ($SchemaList) AND tg.tgconstraint <> 0
 GROUP BY n.nspname, rel.relname, con.conname, con.contype
 ORDER BY n.nspname, rel.relname, con.conname;
+"@
+
+        # Section 08 hashes pg_get_functiondef, which reports the routine's body, language, volatility
+        # and its SECURITY DEFINER/INVOKER word -- but never who owns it and never who may execute it.
+        # For a SECURITY DEFINER routine the owner IS the privilege it runs with, so a snapshot that
+        # omits it says two databases agree while one of them executes the same body as a different
+        # role. proconfig is here for the same reason: the enqueue functions pin search_path, which is
+        # what makes running as a definer safe, and it is the kind of attribute an ALTER FUNCTION can
+        # drop without touching a line of the body.
+        "14-routine-security" = @"
+SELECT 'routine-security|' || n.nspname || '.' || p.proname || '|' || pg_get_function_identity_arguments(p.oid)
+    || '|kind=' || p.prokind::text
+    || '|owner=' || pg_get_userbyid(p.proowner)
+    || '|security=' || CASE WHEN p.prosecdef THEN 'DEFINER' ELSE 'INVOKER' END
+    || '|config=' || COALESCE(array_to_string(p.proconfig, ','), '')
+FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+WHERE n.nspname IN ($SchemaList)
+ORDER BY n.nspname, p.proname, pg_get_function_identity_arguments(p.oid);
+"@
+
+        # proacl is read through COALESCE(..., acldefault(...)) rather than on its own, because NULL
+        # there is not "no privileges" -- it is the PostgreSQL default, which grants EXECUTE to
+        # PUBLIC. --no-privileges restores exactly that NULL, so the difference between a locked-down
+        # routine and one the whole cluster may execute is the difference between an explicit acl and
+        # an absent one, and only the expanded form states it. `source` keeps the two distinguishable
+        # after expansion: an acl that was never set and one explicitly granted the same privileges
+        # are not the same object, and collapsing them would be the over-normalization this section
+        # exists to avoid. One row per routine, aggregated in a fixed order, so a routine stays on one
+        # line and the diff names it; '<none>' rather than a missing row when every privilege has been
+        # revoked, so a routine can never drop out of this section silently.
+        "15-routine-grant" = @"
+SELECT 'routine-grant|' || n.nspname || '.' || p.proname || '|' || pg_get_function_identity_arguments(p.oid)
+    || '|source=' || CASE WHEN p.proacl IS NULL THEN 'default' ELSE 'explicit' END
+    || '|acl=' || COALESCE((
+        SELECT string_agg(
+            (CASE WHEN acl.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(acl.grantee) END)
+                || '=' || acl.privilege_type
+                || CASE WHEN acl.is_grantable THEN '*' ELSE '' END
+                || '/' || pg_get_userbyid(acl.grantor),
+            ',' ORDER BY (CASE WHEN acl.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(acl.grantee) END),
+                         acl.privilege_type, pg_get_userbyid(acl.grantor), acl.is_grantable)
+        FROM aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) AS acl), '<none>')
+FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+WHERE n.nspname IN ($SchemaList)
+ORDER BY n.nspname, p.proname, pg_get_function_identity_arguments(p.oid);
+"@
+
+        # The schema-level half of the same GRANT block: the enqueue owner role is granted USAGE on
+        # dms and deliberately not CREATE, and the DDL revokes the CREATE it borrows while it repairs
+        # function ownership. --no-privileges drops that grant with all the others, and section 10
+        # cannot see it -- role_table_grants reports privileges on tables, not on the schema that
+        # holds them. Same expansion and same `source` marker as section 15, for the same reasons.
+        "16-schema-privilege" = @"
+SELECT 'schema-privilege|' || n.nspname
+    || '|owner=' || pg_get_userbyid(n.nspowner)
+    || '|source=' || CASE WHEN n.nspacl IS NULL THEN 'default' ELSE 'explicit' END
+    || '|acl=' || COALESCE((
+        SELECT string_agg(
+            (CASE WHEN acl.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(acl.grantee) END)
+                || '=' || acl.privilege_type
+                || CASE WHEN acl.is_grantable THEN '*' ELSE '' END
+                || '/' || pg_get_userbyid(acl.grantor),
+            ',' ORDER BY (CASE WHEN acl.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(acl.grantee) END),
+                         acl.privilege_type, pg_get_userbyid(acl.grantor), acl.is_grantable)
+        FROM aclexplode(COALESCE(n.nspacl, acldefault('n', n.nspowner))) AS acl), '<none>')
+FROM pg_namespace n
+WHERE n.nspname IN ($SchemaList)
+ORDER BY n.nspname;
 "@
     }
 }

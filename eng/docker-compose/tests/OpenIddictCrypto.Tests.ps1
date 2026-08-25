@@ -119,6 +119,12 @@ Describe "OpenIddict SQL Server bootstrap script" {
         $statement | Should -Be "IF DB_ID(N'a''b]c') IS NULL CREATE DATABASE [a'b]]c];"
     }
 
+    It "quotes SQL Server string literals without letting configured values terminate them" {
+        ConvertTo-MssqlSqlLiteral -Value "a'b" | Should -BeExactly "N'a''b'"
+        ConvertTo-MssqlSqlLiteral -Value "" | Should -BeExactly "N''"
+        ConvertTo-MssqlSqlLiteral -Value "plain" | Should -BeExactly "N'plain'"
+    }
+
     It "keeps the database name out of the PostgreSQL create script entirely" {
         # The MSSQL statement has to embed and escape the name; the PostgreSQL script must not embed
         # it at all. The name travels as a psql variable (-v dbName=...) and the script refers to it
@@ -613,6 +619,82 @@ Describe "OpenIddict PostgreSQL client provisioning from configured values" {
 
         $sql | Should -BeLike "*'CMS''ReadOnly'*"
         Remove-PostgresStringLiteral $sql | Should -Not -Match "'"
+    }
+}
+
+Describe "OpenIddict SQL Server client provisioning from configured values" {
+    BeforeAll {
+        function script:Invoke-MssqlInsertDataCapture {
+            [OutputType([string[]])]
+            param([hashtable]$Parameter = @{})
+
+            $captured = [System.Collections.Generic.List[string]]::new()
+            Set-Item -Path Function:\global:docker -Value {
+                $flat = @($args | ForEach-Object { $_ })
+                $queryIndex = [array]::IndexOf($flat, "-Q")
+                if ($queryIndex -ge 0 -and $queryIndex -lt ($flat.Count - 1)) {
+                    $captured.Add([string]$flat[$queryIndex + 1])
+                }
+                $global:LASTEXITCODE = 0
+                return ('00000000-0000-0000-0000-{0:d12}' -f $captured.Count)
+            }.GetNewClosure()
+
+            Push-Location $script:DockerComposePath
+            try {
+                . ./setup-openiddict.ps1 -InsertData -EnvironmentFile "" -DbType "MSSQL" `
+                    -ConnectionString "" -MssqlContainerName "dms-mssql-test" -DbHost "dms-mssql" `
+                    -DbPort "1433" -DbName "edfi_configurationservice" -DbUser "sa" -DbPassword "abcdefgh1!" `
+                    -HashIterations "1000" -NewClientSecret $script:HostileSecret @Parameter | Out-Null
+            }
+            finally {
+                Pop-Location
+                Remove-Item Function:\docker -Force -ErrorAction SilentlyContinue
+            }
+
+            return @($captured)
+        }
+
+        function script:Remove-MssqlStringLiteral {
+            [OutputType([string])]
+            param([string]$Sql)
+
+            return [regex]::Replace($Sql, "(?i)N?'(?:[^']|'')*'", '')
+        }
+    }
+
+    It "leaves no configured value outside a SQL Server string literal anywhere in the sequence" {
+        # The start scripts now forward role overrides to SQL Server as well as PostgreSQL. That makes
+        # every configured value in the client-registration path part of the same quoting contract.
+        $sql = Invoke-MssqlInsertDataCapture -Parameter @{
+            NewClientId       = "CMS'ReadOnly"
+            NewClientName     = "CMS ReadOnly 'Access'"
+            ClientScopeName   = "edfi_admin_api/read'only,full"
+            ConfigServiceRole = "cms'client"
+            DmsClientRole     = "dms'client"
+            ClaimName         = "namespace'Prefixes"
+            ClaimValue        = "http://ed-fi.org/o'brien"
+        }
+
+        $sql | Should -HaveCount 13
+        ($sql -join "`n") | Should -BeLike "*CMS''ReadOnly*"
+        ($sql -join "`n") | Should -BeLike "*cms''client*"
+        ($sql -join "`n") | Should -BeLike "*dms''client*"
+        ($sql -join "`n") | Should -BeLike "*edfi_admin_api/read''only,full*"
+        ($sql -join "`n") | Should -BeLike "*namespace''Prefixes*"
+        ($sql -join "`n") | Should -BeLike "*http://ed-fi.org/o''brien*"
+
+        foreach ($statement in $sql) {
+            Remove-MssqlStringLiteral $statement |
+                Should -Not -Match "'" -Because "every configured value must stay inside its T-SQL literal: $statement"
+        }
+    }
+
+    It "stores the SQL Server permissions value as JSON after JSON escaping the configured scope" {
+        $sql = Invoke-MssqlInsertDataCapture -Parameter @{ ClientScopeName = 'edfi_admin_api/full"access\scope' }
+
+        $permissions = @($sql | Where-Object { $_ -match 'SET Permissions' })
+        $permissions | Should -HaveCount 1
+        $permissions[0] | Should -Match ([regex]::Escape('N''["edfi_admin_api/full\"access\\scope"]'''))
     }
 }
 

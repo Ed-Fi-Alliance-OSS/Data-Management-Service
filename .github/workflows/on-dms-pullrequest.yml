@@ -191,7 +191,10 @@ jobs:
           # live suites registered here ON PURPOSE: their probes gate themselves off
           # deterministically when no fixture container is configured (recording intentional
           # skips, touching no docker), so listing them makes a syntax error or a discovery-time
-          # regression a PR failure instead of a silent gap.
+          # regression a PR failure instead of a silent gap. SchemaSnapshotSecurity.Tests.ps1 is
+          # registered on the same terms: its query-map coverage runs here on every PR, and its
+          # live PostgreSQL drift scenarios self-skip because DMS_NORTHRIDGE_PG_FIXTURE_CONTAINER
+          # is unset in this lane.
           $paths = @(
             "eng/docker-compose/tests/BootstrapPackageResolver.Tests.ps1",
             "eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1",
@@ -228,6 +231,7 @@ jobs:
             "eng/DatabaseTemplates/tests/Template-Management.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-WorkflowInputs.Tests.ps1",
             "eng/smoke_test/tests/SmokeTest.Tests.ps1",
+            "eng/northridge/tests/SchemaSnapshotSecurity.Tests.ps1",
             "eng/DatabaseTemplates/tests/Smoke-LegSelection.Tests.ps1"
           )
           $result = Invoke-Pester -Path $paths -Output Detailed -PassThru
