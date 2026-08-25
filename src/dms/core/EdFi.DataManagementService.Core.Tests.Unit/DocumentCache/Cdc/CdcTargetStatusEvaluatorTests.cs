@@ -285,6 +285,41 @@ public class Given_CdcTargetStatusEvaluator
     }
 
     [Test]
+    public void It_ignores_a_previous_binding_state_when_current_state_store_diagnostics_exist()
+    {
+        CdcBinding binding = CdcTargetStatusFixture.CreateBinding();
+
+        CdcTargetStatus status = CdcTargetStatusEvaluator.Evaluate(
+            CdcTargetStatusFixture.ValidInput(binding) with
+            {
+                StateStoreDiagnostics =
+                [
+                    new(
+                        CdcDiagnosticCategory.LocalStateUnavailable,
+                        "$.bindingState",
+                        "local state unavailable"
+                    ),
+                ],
+            }
+        );
+
+        status.Readiness.Should().Be(CdcReadiness.Unknown);
+        status.PrimaryBlockingCategory.Should().Be(CdcBlockingCategory.StatusObservationUnavailable);
+        status.Binding.State.Should().Be(CdcComponentState.Unknown);
+        status.Binding.Category.Should().Be(CdcBlockingCategory.StatusObservationUnavailable);
+        status
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Category == CdcDiagnosticCategory.LocalStateUnavailable
+                && diagnostic.Path == "$.bindingState"
+            );
+        status
+            .Diagnostics.Select(diagnostic => diagnostic.Category)
+            .Should()
+            .NotContain(CdcDiagnosticCategory.BindingIdentityMismatch);
+    }
+
+    [Test]
     public void It_keeps_a_valid_incident_latch_terminal_even_when_live_history_looks_healthy()
     {
         CdcBinding binding = CdcTargetStatusFixture.CreateBinding();

@@ -129,15 +129,25 @@ public static class CdcTargetStatusEvaluator
         CdcDiagnosticCollector diagnostics
     )
     {
+        if (input.StateStoreDiagnostics.Count > 0)
+        {
+            return new(
+                CdcComponent.Unknown(
+                    CdcBlockingCategory.StatusObservationUnavailable,
+                    observedAt,
+                    "binding state unavailable"
+                ),
+                null,
+                null
+            );
+        }
+
         if (input.BindingState is null)
         {
-            if (input.StateStoreDiagnostics.Count == 0)
-            {
-                diagnostics.LocalStateUnavailable(
-                    "$.bindingState",
-                    "CDC binding state observation is unavailable."
-                );
-            }
+            diagnostics.LocalStateUnavailable(
+                "$.bindingState",
+                "CDC binding state observation is unavailable."
+            );
 
             return new(
                 CdcComponent.Unknown(

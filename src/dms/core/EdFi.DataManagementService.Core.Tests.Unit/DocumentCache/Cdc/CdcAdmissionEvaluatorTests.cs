@@ -55,6 +55,39 @@ public class Given_CdcAdmissionEvaluator
     }
 
     [Test]
+    public void It_does_not_admit_when_current_state_store_diagnostics_exist_with_a_valid_binding_state()
+    {
+        CdcAdmission admission = CdcInitialAdmissionEvaluator.Evaluate(
+            CdcAdmissionFixture.ValidInput() with
+            {
+                StateStoreDiagnostics =
+                [
+                    new(
+                        CdcDiagnosticCategory.LocalStateUnavailable,
+                        "$.bindingState",
+                        "local state unavailable"
+                    ),
+                ],
+            }
+        );
+
+        admission.AdmissionState.Should().Be(CdcAdmissionState.Unknown);
+        admission.PrimaryBlockingCategory.Should().Be(CdcBlockingCategory.StatusObservationUnavailable);
+        admission.Steps.Binding.State.Should().Be(CdcComponentState.Unknown);
+        admission.Steps.Binding.Category.Should().Be(CdcBlockingCategory.StatusObservationUnavailable);
+        admission
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.Category == CdcDiagnosticCategory.LocalStateUnavailable
+                && diagnostic.Path == "$.bindingState"
+            );
+        admission
+            .Diagnostics.Select(diagnostic => diagnostic.Category)
+            .Should()
+            .NotContain(CdcDiagnosticCategory.BindingIdentityMismatch);
+    }
+
+    [Test]
     public void It_keeps_explicit_current_source_mismatch_as_source_mismatch()
     {
         CdcAdmission admission = CdcInitialAdmissionEvaluator.Evaluate(
