@@ -6,9 +6,9 @@ provider adapters, status pipeline, administrative command runner, mutex, teleme
 shared JSON contracts without starting the DMS web host.
 
 For configuration keys, see
-[`docs/CONFIGURATION.md`](../../../../docs/CONFIGURATION.md#datamanagementdocumentcache).
+[`docs/CONFIGURATION.md`](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/docs/CONFIGURATION.md#datamanagementdocumentcache).
 For the relational backend runbook context, see
-[`docs/RELATIONAL-BACKEND.md`](../../../../docs/RELATIONAL-BACKEND.md#always-provisioned-documentcache-inventory).
+[`docs/RELATIONAL-BACKEND.md`](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/docs/RELATIONAL-BACKEND.md#always-provisioned-documentcache-inventory).
 
 ## Installation
 
@@ -227,34 +227,34 @@ not reconnect under presumed mutex ownership after cancellation or session loss.
 ## Runbook Links
 
 - Safe new-empty activation is owned by
-  [Guarded New-Empty Activation](../../../../reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#guarded-new-empty-activation).
+  [Guarded New-Empty Activation](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#guarded-new-empty-activation).
 - Safe offline activation and deactivation are owned by
-  [Offline Read-Acceleration Activation](../../../../reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#offline-read-acceleration-activation)
+  [Offline Read-Acceleration Activation](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#offline-read-acceleration-activation)
   and
-  [Offline Deactivation](../../../../reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#offline-deactivation).
+  [Offline Deactivation](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#offline-deactivation).
 - Online rebuild, `Resetting`/`Rebuilding` crash retry, and set-latch rebuild rejection
   are owned by
-  [Online Cache Rebuild](../../../../reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#online-cache-rebuild)
+  [Online Cache Rebuild](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#online-cache-rebuild)
   and the broader
-  [Baseline, Rebuild, Deactivation, and Scrub](../../../../reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#baseline-rebuild-deactivation-and-scrub)
+  [Baseline, Rebuild, Deactivation, and Scrub](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#baseline-rebuild-deactivation-and-scrub)
   runbook material.
 - Explicit scrub and persistent poison/work-anomaly remediation are owned by
-  [Explicit Integrity Scrub](../../../../reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#explicit-integrity-scrub),
-  [Freshness and Reconciliation](../../../../reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#freshness-and-reconciliation),
+  [Explicit Integrity Scrub](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#explicit-integrity-scrub),
+  [Freshness and Reconciliation](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#freshness-and-reconciliation),
   and
-  [Projection Health and Deployment-Owned CDC Readiness](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness).
+  [Projection Health and Deployment-Owned CDC Readiness](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness).
 - Cache-ahead recovery routing is owned by
-  [Cache-Ahead Invariant Recovery](../../../../reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cache-ahead-invariant-recovery)
+  [Cache-Ahead Invariant Recovery](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cache-ahead-invariant-recovery)
   and
-  [Contract Change and Repair Operations](../../../../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations).
+  [Contract Change and Repair Operations](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations).
 - Kafka connector setup, connector teardown, source replacement, binding retirement, topic
   management, CDC bootstrap orchestration, and downstream publication containment are E19
   concerns. Start with
-  [Add CDC Setup, Monitoring, Recovery, and Security Runbooks](../../../../reference/design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md).
+  [Add CDC Setup, Monitoring, Recovery, and Security Runbooks](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md).
 - The CLI story boundary and package verification evidence are in
-  [Add a DocumentCache Administration CLI](../../../../reference/design/backend-redesign/epics/18-document-cache/09-documentcache-administration-cli.md);
+  [Add a DocumentCache Administration CLI](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/epics/18-document-cache/09-documentcache-administration-cli.md);
   cross-feature DocumentCache runbook evidence is tracked by
-  [Add DocumentCache Integration Coverage and Runbooks](../../../../reference/design/backend-redesign/epics/18-document-cache/07-documentcache-integration-tests-and-runbooks.md).
+  [Add DocumentCache Integration Coverage and Runbooks](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/epics/18-document-cache/07-documentcache-integration-tests-and-runbooks.md).
 
 ## Out of Scope
 

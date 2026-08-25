@@ -18,6 +18,8 @@ public sealed class Given_DocumentCacheAdminHelpAndDocumentation
 {
     private const string Fingerprint =
         "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    private const string RepositoryBlobUrlPrefix =
+        "https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/";
 
     private static readonly Regex MarkdownLinkPattern = new(
         @"\[[^\]]+\]\((?<href>[^)#]+\.md)(?<anchor>#[^)]+)?\)",
@@ -167,7 +169,7 @@ public sealed class Given_DocumentCacheAdminHelpAndDocumentation
     }
 
     [Test]
-    public void It_resolves_all_relative_markdown_links_and_anchors()
+    public void It_resolves_all_packaged_repository_markdown_links_and_anchors()
     {
         MatchCollection matches = MarkdownLinkPattern.Matches(_readme);
         matches.Should().NotBeEmpty();
@@ -175,7 +177,13 @@ public sealed class Given_DocumentCacheAdminHelpAndDocumentation
         foreach (Match match in matches)
         {
             string href = match.Groups["href"].Value;
-            string linkedPath = Path.GetFullPath(Path.Combine(ReadmeDirectory(), href));
+            href.Should()
+                .StartWith(
+                    RepositoryBlobUrlPrefix,
+                    $"README link '{href}' should be usable from the installed package"
+                );
+
+            string linkedPath = RepositoryLocalPathFromUrl(href);
 
             File.Exists(linkedPath).Should().BeTrue($"README link '{href}' should resolve");
 
@@ -278,6 +286,26 @@ public sealed class Given_DocumentCacheAdminHelpAndDocumentation
             .Where(line => line.StartsWith('#'))
             .Select(ToMarkdownAnchor)
             .Where(anchor => anchor.Length > 0);
+
+    private static string RepositoryLocalPathFromUrl(string href)
+    {
+        string repositoryRelativePath = href[RepositoryBlobUrlPrefix.Length..];
+        repositoryRelativePath.Should().NotContain("..", href);
+
+        string repositoryRoot = RepositoryRoot();
+        string linkedPath = Path.GetFullPath(
+            Path.Combine(repositoryRoot, repositoryRelativePath.Replace('/', Path.DirectorySeparatorChar))
+        );
+
+        linkedPath
+            .Should()
+            .StartWith(
+                repositoryRoot + Path.DirectorySeparatorChar,
+                $"README link '{href}' should stay inside the repository"
+            );
+
+        return linkedPath;
+    }
 
     private static string NormalizeWhitespace(string value) => Regex.Replace(value, @"\s+", " ");
 
