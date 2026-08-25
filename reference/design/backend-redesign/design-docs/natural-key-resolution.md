@@ -53,11 +53,12 @@ where the Configuration Service objects share the same physical database as DMS,
 
 The migration will be **code-only and re-provision-only**; no in-place upgrade scripts will be
 provided. Release review confirmed that mapping version `v2` has not been released as a supported
-database shape. These physical mapping changes therefore move the prerelease mapping line to `v3`.
-Databases provisioned from an earlier prerelease shape must re-provision after picking up these
-changes; the mapping-version mismatch rejects the stale shape. Once a mapping version has been
-released, later incompatible mapping changes must bump
-`RelationalMappingVersion` so stale released databases fail fast with the designed 503.
+database shape. DMS-1408 consumes `RelationalMappingVersion=v3` for the current physical schema
+shape. Databases provisioned from an earlier prerelease shape must re-provision after picking up
+these changes; the mapping-version mismatch rejects the stale shape. Future natural-key physical
+storage changes must not reuse `v3`; each later incompatible physical schema change requires its own
+`RelationalMappingVersion` bump and schema-hash re-bless so stale databases fail fast with the
+designed 503.
 
 The rollout is filed as epic DMS-1402 with fourteen stories, DMS-1443 through DMS-1456; this
 document refers to them by their stable local aliases T1–T14, defined in

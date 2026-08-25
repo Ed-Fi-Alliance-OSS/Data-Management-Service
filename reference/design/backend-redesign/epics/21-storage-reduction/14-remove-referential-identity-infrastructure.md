@@ -86,7 +86,8 @@ atomically removing all remaining DMS-owned ReferentialIdentity and UUIDv5 infra
   `CREATE EXTENSION pgcrypto`.
 - Derived constraint inventories, manifests, and generated DDL contain no
   `UX_Descriptor_Uri_Discriminator` uniqueness.
-- Version/hash expectations update the confirmed unreleased `v2` mapping version to `v3` and
-  re-bless the current schema-hash pins.
+- DMS-1408 already consumes `RelationalMappingVersion=v3` and re-blesses the current schema-hash
+  pins. Future natural-key physical schema changes must use their own mapping-version bump rather
+  than reusing `v3`.
 - Rollback after DMS-1454, including after this schema removal, requires re-provisioning with the previous
   build or an explicitly designed backfill.
