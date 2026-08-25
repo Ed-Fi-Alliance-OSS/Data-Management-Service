@@ -145,6 +145,8 @@ void ConfigureServices(
     var logConfiguration = new LoggerConfiguration().MinimumLevel.Is(
         enableVerbose ? LogEventLevel.Debug : LogEventLevel.Information
     );
+    DocumentCacheAdminLogSanitizingTextFormatter logFormatter =
+        DocumentCacheAdminLogSanitizingTextFormatter.Instance;
 
     if (enableVerbose)
     {
@@ -153,6 +155,7 @@ void ConfigureServices(
             var logDirectory = Path.Combine(Directory.GetCurrentDirectory(), "logs");
             Directory.CreateDirectory(logDirectory);
             logConfiguration.WriteTo.File(
+                logFormatter,
                 Path.Combine(logDirectory, $"{DocumentCacheAdminCliConstants.ToolCommandName}.log"),
                 rollingInterval: RollingInterval.Day
             );
@@ -164,7 +167,7 @@ void ConfigureServices(
             );
         }
 
-        logConfiguration.WriteTo.Console(standardErrorFromLevel: LogEventLevel.Verbose);
+        logConfiguration.WriteTo.Console(logFormatter, standardErrorFromLevel: LogEventLevel.Verbose);
     }
 
     Log.Logger = logConfiguration.CreateLogger();

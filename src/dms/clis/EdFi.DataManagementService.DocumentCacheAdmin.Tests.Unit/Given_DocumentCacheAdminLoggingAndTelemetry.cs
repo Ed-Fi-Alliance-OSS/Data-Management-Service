@@ -14,6 +14,9 @@ using EdFi.DataManagementService.DocumentCacheAdmin;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Serilog;
+using Serilog.Events;
+using MicrosoftLogger = Microsoft.Extensions.Logging.ILogger;
 
 namespace EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit;
 
@@ -124,6 +127,93 @@ public sealed class Given_DocumentCacheAdminLoggingAndTelemetry
         humanOutput.Should().NotContain("StudentUniqueId");
         humanOutput.Should().NotContain("Password");
         stderr.ToString().Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_sanitizes_verbose_console_and_rolling_file_log_rendering_at_the_serilog_boundary()
+    {
+        const string exceptionSentinel = "EXCEPTION_PASSWORD_SENTINEL";
+        const string connectionStringSentinel =
+            "Server=cli-db-host;Database=DATABASE_SENTINEL;User Id=cli-user;Password=CONNECTION_PASSWORD_SENTINEL";
+        const string credentialSentinel = "CREDENTIAL_SENTINEL";
+        const string cmsUrlSentinel = "https://cms-sentinel.example.local/configuration";
+        const string dataStoreNameSentinel = "DATASTORE_NAME_SENTINEL";
+        const string tenantInputSentinel = "TENANT_INPUT_SENTINEL";
+        const string databaseIdentifierSentinel = "PHYSICAL_DATABASE_SENTINEL";
+        const string documentIdentifierSentinel = "DOCUMENT_IDENTIFIER_SENTINEL";
+
+        string logDirectory = Path.Combine(Path.GetTempPath(), $"dms-document-cache-logs-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(logDirectory);
+        string logPath = Path.Combine(logDirectory, $"{DocumentCacheAdminCliConstants.ToolCommandName}.log");
+        using var stderr = new StringWriter();
+        TextWriter originalError = Console.Error;
+
+        try
+        {
+            Console.SetError(stderr);
+            using Serilog.Core.Logger logger = new LoggerConfiguration()
+                .MinimumLevel.Verbose()
+                .WriteTo.File(
+                    DocumentCacheAdminLogSanitizingTextFormatter.Instance,
+                    logPath,
+                    rollingInterval: RollingInterval.Day
+                )
+                .WriteTo.Console(
+                    DocumentCacheAdminLogSanitizingTextFormatter.Instance,
+                    standardErrorFromLevel: LogEventLevel.Verbose
+                )
+                .CreateLogger();
+
+            logger
+                .ForContext(
+                    "SourceContext",
+                    "EdFi.DataManagementService.Core.Configuration.ConfigurationServiceDataStoreProvider"
+                )
+                .ForContext("Command", DocumentCacheAdminCommandSurface.RebuildOnlineCommandName)
+                .ForContext("Target", "t1_safeTarget")
+                .ForContext("OutputMode", "json")
+                .ForContext("Outcome", "RejectedNoMutation")
+                .ForContext("Category", "UnexpectedProviderFailure")
+                .ForContext("ConnectionString", connectionStringSentinel)
+                .ForContext("ClientSecret", credentialSentinel)
+                .ForContext("CmsUrl", cmsUrlSentinel)
+                .ForContext("DataStoreName", dataStoreNameSentinel)
+                .ForContext("TenantInput", tenantInputSentinel)
+                .ForContext("DatabaseIdentifier", databaseIdentifierSentinel)
+                .ForContext("DocumentIdentifier", documentIdentifierSentinel)
+                .Warning(
+                    new InvalidOperationException($"provider failed with {exceptionSentinel}"),
+                    "DocumentCacheAdminCommandCompleted command {Command} target {Target} outcome {Outcome}."
+                );
+        }
+        finally
+        {
+            Console.SetError(originalError);
+        }
+
+        string fileOutput = File.ReadAllText(
+            Directory.GetFiles(logDirectory).Should().ContainSingle().Subject
+        );
+        string renderedLogs = stderr + fileOutput;
+
+        renderedLogs.Should().Contain("DocumentCacheAdminCommandCompleted");
+        renderedLogs.Should().Contain("level Warning");
+        renderedLogs.Should().Contain("command rebuild-online");
+        renderedLogs.Should().Contain("target t1_safeTarget");
+        renderedLogs.Should().Contain("outcome RejectedNoMutation");
+        renderedLogs.Should().Contain("category UnexpectedProviderFailure");
+        renderedLogs.Should().Contain("exceptionType InvalidOperationException");
+        renderedLogs.Should().NotContain(exceptionSentinel);
+        renderedLogs.Should().NotContain(connectionStringSentinel);
+        renderedLogs.Should().NotContain("CONNECTION_PASSWORD_SENTINEL");
+        renderedLogs.Should().NotContain(credentialSentinel);
+        renderedLogs.Should().NotContain(cmsUrlSentinel);
+        renderedLogs.Should().NotContain(dataStoreNameSentinel);
+        renderedLogs.Should().NotContain(tenantInputSentinel);
+        renderedLogs.Should().NotContain(databaseIdentifierSentinel);
+        renderedLogs.Should().NotContain(documentIdentifierSentinel);
+
+        Directory.Delete(logDirectory, recursive: true);
     }
 
     [Test]
@@ -296,12 +386,12 @@ public sealed class Given_DocumentCacheAdminLoggingAndTelemetry
     {
         private readonly object _gate = new();
 
-        public ILogger CreateLogger(string categoryName) => new TextWriterLogger(writer, _gate);
+        public MicrosoftLogger CreateLogger(string categoryName) => new TextWriterLogger(writer, _gate);
 
         public void Dispose() { }
     }
 
-    private sealed class TextWriterLogger(TextWriter writer, object gate) : ILogger
+    private sealed class TextWriterLogger(TextWriter writer, object gate) : MicrosoftLogger
     {
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull => NullScope.Instance;
