@@ -353,7 +353,7 @@
       "dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheAdministrativeMutex",
       "rg -n \"EdFi.DMS.DocumentProjection.Administration.v1|811646948|pg_advisory_lock|sp_getapplock\" src/dms/backend src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "retry-timeout-and-session-loss-tests",

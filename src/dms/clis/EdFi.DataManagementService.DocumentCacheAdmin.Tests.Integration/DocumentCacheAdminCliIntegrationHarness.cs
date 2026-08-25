@@ -36,8 +36,10 @@ internal sealed class DocumentCacheAdminCliTarget : IAsyncDisposable
 
     private readonly PostgresqlGeneratedDdlTestDatabase? _postgresqlDatabase;
     private readonly IMssqlGeneratedDdlBaselineLease? _mssqlLease;
-    private readonly string _tenantKey = string.Empty;
-    private readonly long _dataStoreId = TargetDataStoreId;
+    private readonly bool _ownsPostgresqlDatabase;
+    private readonly bool _ownsMssqlLease;
+    private readonly string _tenantKey;
+    private readonly long _dataStoreId;
 
     private DocumentCacheAdminCliTarget(
         RelationalProviderToken providerToken,
@@ -45,7 +47,11 @@ internal sealed class DocumentCacheAdminCliTarget : IAsyncDisposable
         string connectionString,
         string apiSchemaDirectory,
         PostgresqlGeneratedDdlTestDatabase? postgresqlDatabase,
-        IMssqlGeneratedDdlBaselineLease? mssqlLease
+        IMssqlGeneratedDdlBaselineLease? mssqlLease,
+        bool ownsPostgresqlDatabase,
+        bool ownsMssqlLease,
+        string tenantKey = "",
+        long dataStoreId = TargetDataStoreId
     )
     {
         ProviderToken = providerToken;
@@ -54,6 +60,10 @@ internal sealed class DocumentCacheAdminCliTarget : IAsyncDisposable
         ApiSchemaDirectory = apiSchemaDirectory;
         _postgresqlDatabase = postgresqlDatabase;
         _mssqlLease = mssqlLease;
+        _ownsPostgresqlDatabase = ownsPostgresqlDatabase;
+        _ownsMssqlLease = ownsMssqlLease;
+        _tenantKey = tenantKey;
+        _dataStoreId = dataStoreId;
         State = new DocumentCacheAdminCliStateInspector(
             providerToken,
             postgresqlDatabase,
@@ -89,7 +99,9 @@ internal sealed class DocumentCacheAdminCliTarget : IAsyncDisposable
             database.ConnectionString,
             DocumentCacheAdminCliFixture.Shared.ApiSchemaDirectory,
             database,
-            mssqlLease: null
+            mssqlLease: null,
+            ownsPostgresqlDatabase: true,
+            ownsMssqlLease: false
         );
     }
 
@@ -107,18 +119,44 @@ internal sealed class DocumentCacheAdminCliTarget : IAsyncDisposable
             lease.Database.ConnectionString,
             DocumentCacheAdminCliFixture.Shared.ApiSchemaDirectory,
             postgresqlDatabase: null,
-            lease
+            lease,
+            ownsPostgresqlDatabase: false,
+            ownsMssqlLease: true
+        );
+    }
+
+    public DocumentCacheAdminCliTarget CreateAlias(
+        long dataStoreId,
+        string tenantKey,
+        string connectionString
+    )
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(dataStoreId);
+        ArgumentNullException.ThrowIfNull(tenantKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+
+        return new(
+            ProviderToken,
+            AppSettingsDatastore,
+            connectionString,
+            ApiSchemaDirectory,
+            _postgresqlDatabase,
+            _mssqlLease,
+            ownsPostgresqlDatabase: false,
+            ownsMssqlLease: false,
+            tenantKey,
+            dataStoreId
         );
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (_postgresqlDatabase is not null)
+        if (_ownsPostgresqlDatabase && _postgresqlDatabase is not null)
         {
             await _postgresqlDatabase.DisposeAsync();
         }
 
-        if (_mssqlLease is not null)
+        if (_ownsMssqlLease && _mssqlLease is not null)
         {
             await _mssqlLease.DisposeAsync();
         }
@@ -834,6 +872,84 @@ internal sealed class DocumentCacheAdminCliStateInspector(
             contentVersion
         );
 
+    public Task<DocumentCacheAdminCliMssqlInsertTransaction> BeginMssqlCanonicalInsertTransactionAsync(
+        long contentVersion = 10
+    ) =>
+        DocumentCacheAdminCliMssqlInsertTransaction.BeginAsync(
+            RequireMssqlDatabase().ConnectionString,
+            contentVersion
+        );
+
+    public async Task<long> ReadAdministrativeMutexGrantedCountAsync()
+    {
+        IReadOnlyDictionary<string, object?> row = await QuerySingleRowAsync(
+            """
+            SELECT COUNT(*) AS "GrantedLockCount"
+            FROM pg_locks
+            WHERE locktype = 'advisory'
+              AND database = (
+                  SELECT database.oid
+                  FROM pg_database AS database
+                  WHERE database.datname = current_database()
+              )
+              AND classid = 811646948::oid
+              AND objid = (
+                  SELECT database.oid
+                  FROM pg_database AS database
+                  WHERE database.datname = current_database()
+              )
+              AND mode = 'ExclusiveLock'
+              AND granted;
+            """,
+            """
+            SELECT COUNT(*) AS [GrantedLockCount]
+            FROM [sys].[dm_tran_locks]
+            WHERE [resource_type] = N'APPLICATION'
+              AND [resource_database_id] = DB_ID()
+              AND [request_mode] = N'X'
+              AND [request_status] = N'GRANT'
+              AND [resource_description] LIKE N'%EdFi.DMS.DocumentProjection.Admi%';
+            """
+        );
+
+        return RequireInt64(row, "GrantedLockCount");
+    }
+
+    public async Task<long> ReadAdministrativeMutexWaitingCountAsync()
+    {
+        IReadOnlyDictionary<string, object?> row = await QuerySingleRowAsync(
+            """
+            SELECT COUNT(*) AS "WaitingLockCount"
+            FROM pg_locks
+            WHERE locktype = 'advisory'
+              AND database = (
+                  SELECT database.oid
+                  FROM pg_database AS database
+                  WHERE database.datname = current_database()
+              )
+              AND classid = 811646948::oid
+              AND objid = (
+                  SELECT database.oid
+                  FROM pg_database AS database
+                  WHERE database.datname = current_database()
+              )
+              AND mode = 'ExclusiveLock'
+              AND NOT granted;
+            """,
+            """
+            SELECT COUNT(*) AS [WaitingLockCount]
+            FROM [sys].[dm_tran_locks]
+            WHERE [resource_type] = N'APPLICATION'
+              AND [resource_database_id] = DB_ID()
+              AND [request_mode] = N'X'
+              AND [request_status] = N'WAIT'
+              AND [resource_description] LIKE N'%EdFi.DMS.DocumentProjection.Admi%';
+            """
+        );
+
+        return RequireInt64(row, "WaitingLockCount");
+    }
+
     private PostgresqlGeneratedDdlTestDatabase RequirePostgresqlDatabase() =>
         postgresqlDatabase
         ?? throw new InvalidOperationException("This helper is only available for PostgreSQL targets.");
@@ -1031,6 +1147,108 @@ internal sealed class DocumentCacheAdminCliPostgresqlInsertTransaction : IAsyncD
     }
 }
 
+internal sealed class DocumentCacheAdminCliMssqlInsertTransaction : IAsyncDisposable
+{
+    private readonly SqlConnection _connection;
+    private readonly SqlTransaction _transaction;
+    private bool _completed;
+
+    private DocumentCacheAdminCliMssqlInsertTransaction(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        long documentId
+    )
+    {
+        _connection = connection;
+        _transaction = transaction;
+        DocumentId = documentId;
+    }
+
+    public long DocumentId { get; }
+
+    public static async Task<DocumentCacheAdminCliMssqlInsertTransaction> BeginAsync(
+        string connectionString,
+        long contentVersion
+    )
+    {
+        SqlConnection connection = new(connectionString);
+        await connection.OpenAsync();
+        SqlTransaction transaction = (SqlTransaction)await connection.BeginTransactionAsync();
+
+        try
+        {
+            await using SqlCommand command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                DECLARE @inserted TABLE ([DocumentId] bigint NOT NULL);
+
+                WITH [resource_key] AS (
+                    SELECT TOP (1) [ResourceKeyId]
+                    FROM [dms].[ResourceKey]
+                    ORDER BY [ResourceKeyId]
+                )
+                INSERT INTO [dms].[Document] (
+                    [DocumentUuid],
+                    [ResourceKeyId],
+                    [ContentVersion],
+                    [ContentLastModifiedAt]
+                )
+                OUTPUT inserted.[DocumentId]
+                INTO @inserted
+                SELECT
+                    @documentUuid,
+                    [resource_key].[ResourceKeyId],
+                    @contentVersion,
+                    @observedAt
+                FROM [resource_key];
+
+                SELECT [DocumentId]
+                FROM @inserted;
+                """;
+            command.Parameters.Add(new SqlParameter("documentUuid", Guid.NewGuid()));
+            command.Parameters.Add(new SqlParameter("contentVersion", contentVersion));
+            command.Parameters.Add(new SqlParameter("observedAt", DateTime.UtcNow));
+
+            object? result = await command.ExecuteScalarAsync();
+            long documentId = result is not null
+                ? Convert.ToInt64(result, CultureInfo.InvariantCulture)
+                : throw new InvalidOperationException("Expected inserted DocumentId.");
+
+            return new(connection, transaction, documentId);
+        }
+        catch
+        {
+            await transaction.DisposeAsync();
+            await connection.DisposeAsync();
+            throw;
+        }
+    }
+
+    public async Task CommitAsync()
+    {
+        await _transaction.CommitAsync();
+        _completed = true;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (!_completed)
+        {
+            try
+            {
+                await _transaction.RollbackAsync();
+            }
+            catch (InvalidOperationException)
+            {
+                // Best-effort cleanup for a transaction already completed by the provider.
+            }
+        }
+
+        await _transaction.DisposeAsync();
+        await _connection.DisposeAsync();
+    }
+}
+
 internal sealed class DocumentCacheAdminCliProcessHarness : IAsyncDisposable
 {
     private const string ConfigurationServiceClientId = "document-cache-admin-cli-integration";
@@ -1085,7 +1303,13 @@ internal sealed class DocumentCacheAdminCliProcessHarness : IAsyncDisposable
 
     public async Task<DocumentCacheAdminCliProcessResult> RunAsync(params string[] arguments)
     {
-        using var process = new Process();
+        await using DocumentCacheAdminCliRunningProcess runningProcess = Start(arguments);
+        return await runningProcess.WaitForExitAsync(TimeSpan.FromSeconds(120));
+    }
+
+    public DocumentCacheAdminCliRunningProcess Start(params string[] arguments)
+    {
+        var process = new Process();
         process.StartInfo = new ProcessStartInfo
         {
             FileName = "dotnet",
@@ -1123,35 +1347,14 @@ internal sealed class DocumentCacheAdminCliProcessHarness : IAsyncDisposable
 
         if (!process.Start())
         {
+            process.Dispose();
             throw new InvalidOperationException("Unable to start DocumentCacheAdmin process.");
         }
 
         Task<string> standardOutput = process.StandardOutput.ReadToEndAsync();
         Task<string> standardError = process.StandardError.ReadToEndAsync();
 
-        try
-        {
-            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(120));
-        }
-        catch (TimeoutException)
-        {
-            try
-            {
-                process.Kill(entireProcessTree: true);
-            }
-            catch (InvalidOperationException)
-            {
-                // The process exited after the timeout fired.
-            }
-
-            throw new TimeoutException(
-                "DocumentCacheAdmin process timed out.\n"
-                    + $"stdout:\n{await standardOutput}\n"
-                    + $"stderr:\n{await standardError}"
-            );
-        }
-
-        return new(process.ExitCode, await standardOutput, await standardError);
+        return new(process, standardOutput, standardError);
     }
 
     public async ValueTask DisposeAsync()
@@ -1234,6 +1437,121 @@ internal sealed class DocumentCacheAdminCliProcessHarness : IAsyncDisposable
 
     private static string RepositoryRoot() =>
         FixturePathResolver.FindRepositoryRoot(AppContext.BaseDirectory);
+}
+
+internal sealed class DocumentCacheAdminCliRunningProcess : IAsyncDisposable
+{
+    private readonly Process _process;
+    private readonly Task<string> _standardOutput;
+    private readonly Task<string> _standardError;
+    private DocumentCacheAdminCliProcessResult? _result;
+
+    public DocumentCacheAdminCliRunningProcess(
+        Process process,
+        Task<string> standardOutput,
+        Task<string> standardError
+    )
+    {
+        _process = process ?? throw new ArgumentNullException(nameof(process));
+        _standardOutput = standardOutput ?? throw new ArgumentNullException(nameof(standardOutput));
+        _standardError = standardError ?? throw new ArgumentNullException(nameof(standardError));
+    }
+
+    public bool HasExited
+    {
+        get
+        {
+            try
+            {
+                return _process.HasExited;
+            }
+            catch (InvalidOperationException)
+            {
+                return true;
+            }
+        }
+    }
+
+    public async Task<DocumentCacheAdminCliProcessResult?> TryWaitForExitAsync(TimeSpan timeout)
+    {
+        if (_result is not null)
+        {
+            return _result;
+        }
+
+        try
+        {
+            await _process.WaitForExitAsync().WaitAsync(timeout);
+        }
+        catch (TimeoutException)
+        {
+            return null;
+        }
+
+        return await CompleteAsync();
+    }
+
+    public async Task<DocumentCacheAdminCliProcessResult> WaitForExitAsync(TimeSpan timeout)
+    {
+        if (_result is not null)
+        {
+            return _result;
+        }
+
+        try
+        {
+            await _process.WaitForExitAsync().WaitAsync(timeout);
+        }
+        catch (TimeoutException)
+        {
+            await KillAsync();
+
+            throw new TimeoutException(
+                "DocumentCacheAdmin process timed out.\n"
+                    + $"stdout:\n{await _standardOutput}\n"
+                    + $"stderr:\n{await _standardError}"
+            );
+        }
+
+        return await CompleteAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_result is null && !HasExited)
+        {
+            await KillAsync();
+        }
+
+        _process.Dispose();
+    }
+
+    private async Task<DocumentCacheAdminCliProcessResult> CompleteAsync()
+    {
+        _result ??= new(_process.ExitCode, await _standardOutput, await _standardError);
+        return _result;
+    }
+
+    private async Task KillAsync()
+    {
+        try
+        {
+            _process.Kill(entireProcessTree: true);
+        }
+        catch (InvalidOperationException)
+        {
+            // The process exited after the timeout fired.
+        }
+
+        try
+        {
+            await _process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        catch (TimeoutException)
+        {
+            // Preserve the original timeout context.
+        }
+    }
 }
 
 internal sealed record DocumentCacheAdminCliProcessResult(
