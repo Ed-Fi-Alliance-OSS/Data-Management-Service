@@ -12,7 +12,6 @@ using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
-using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
@@ -42,8 +41,7 @@ public sealed class RelationalDocumentStoreRepository(
     IDocumentCacheReadAccelerationCoordinator readAccelerationCoordinator,
     IRelationalParameterConfigurator? relationalParameterConfigurator = null,
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
-        null,
-    ChangeQueryPageOrderingPolicy? orderingPolicy = null
+        null
 ) : IDocumentStoreRepository, IQueryHandler, IPartitionQueryHandler
 {
     private const int GetByIdRelationshipAuthorizationAuth1Index = 0;
@@ -98,8 +96,6 @@ public sealed class RelationalDocumentStoreRepository(
     private readonly IRelationshipAuthorizationProviderFailureExtractor _relationshipAuthorizationProviderFailureExtractor =
         relationshipAuthorizationProviderFailureExtractor
         ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance;
-    private readonly ChangeQueryPageOrderingPolicy _orderingPolicy =
-        orderingPolicy ?? ChangeQueryPageOrderingPolicy.Default;
     private readonly IDocumentCacheReadAccelerationCoordinator _readAccelerationCoordinator =
         readAccelerationCoordinator ?? throw new ArgumentNullException(nameof(readAccelerationCoordinator));
     private readonly RelationshipAuthorizationPlanner _relationshipAuthorizationPlanner = new(
@@ -1396,9 +1392,10 @@ public sealed class RelationalDocumentStoreRepository(
 
         PageKeysetSpec.Query? plannedQuery;
 
-        // Resolved once and reused for the selected-keyset boundary below, so the ordering the page was
-        // actually selected with is the ordering the continuation decision is made from.
-        var orderingMode = _orderingPolicy.ResolveForLiveQuery(queryRequest.ChangeVersionRange);
+        // Read off the request rather than resolved here, and reused for the selected-keyset boundary
+        // below, so the ordering the page was actually selected with is the ordering the continuation
+        // decision is made from — and the ordering Core stamped on the token it will hand back.
+        PageOrderingMode orderingMode = queryRequest.PageOrderingMode;
 
         try
         {

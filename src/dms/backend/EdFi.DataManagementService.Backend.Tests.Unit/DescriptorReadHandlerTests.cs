@@ -570,8 +570,10 @@ public partial class Given_DescriptorReadHandler
         commandExecutor.Commands[0].CommandText.Should().NotContain("COUNT(1)");
     }
 
-    // A windowed traditional descriptor page is ordered by ContentVersion, so its real selected maximum
-    // is reported while the continuation it cannot anchor is withheld.
+    // A traditional descriptor page whose request anchors on ContentVersion reports its real selected
+    // maximum while withholding the continuation that maximum cannot anchor. The anchor arrives on the
+    // request, so it is supplied here alongside the window Core resolved it from rather than inferred
+    // from that window by the handler.
     [Test]
     public async Task It_keeps_the_descriptor_boundary_but_disallows_continuation_for_a_windowed_traditional_page()
     {
@@ -582,7 +584,11 @@ public partial class Given_DescriptorReadHandler
         );
 
         var result = await sut.HandleQueryAsync(
-            CreateQueryRequest(SqlDialect.Pgsql, changeVersionRange: new ChangeVersionRange(null, 900L))
+            CreateQueryRequest(
+                SqlDialect.Pgsql,
+                changeVersionRange: new ChangeVersionRange(null, 900L),
+                pageOrderingMode: PageOrderingMode.ContentVersion
+            )
         );
 
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
@@ -2008,9 +2014,9 @@ public partial class Given_DescriptorReadHandler
             .MustHaveHappenedOnceExactly();
     }
 
-    // A windowed traditional descriptor page is ordered by ContentVersion, so the candidate page a
-    // cache-served response is shaped from reports the selected maximum without the continuation
-    // eligibility that maximum cannot carry.
+    // A traditional descriptor page anchored on ContentVersion shapes a cache-served response from a
+    // candidate page that reports the selected maximum without the continuation eligibility that
+    // maximum cannot carry.
     [Test]
     public async Task It_exposes_a_windowed_descriptor_candidate_page_that_cannot_anchor_a_continuation()
     {
@@ -2048,7 +2054,11 @@ public partial class Given_DescriptorReadHandler
         var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
 
         await sut.HandleQueryAsync(
-            CreateQueryRequest(SqlDialect.Pgsql, changeVersionRange: new ChangeVersionRange(null, 900L))
+            CreateQueryRequest(
+                SqlDialect.Pgsql,
+                changeVersionRange: new ChangeVersionRange(null, 900L),
+                pageOrderingMode: PageOrderingMode.ContentVersion
+            )
         );
 
         capturedSelection
@@ -2063,7 +2073,8 @@ public partial class Given_DescriptorReadHandler
     public async Task It_withholds_continuation_from_an_empty_windowed_descriptor_candidate_selection()
     {
         var capturedSuccess = await SelectEmptyDescriptorCandidatePageAsync(
-            new ChangeVersionRange(null, 900L)
+            new ChangeVersionRange(null, 900L),
+            PageOrderingMode.ContentVersion
         );
 
         capturedSuccess.EdfiDocs.Should().BeEmpty();
@@ -2088,7 +2099,8 @@ public partial class Given_DescriptorReadHandler
     /// the short-circuit success the selection completed with.
     /// </summary>
     private static async Task<QueryResult.QuerySuccess> SelectEmptyDescriptorCandidatePageAsync(
-        ChangeVersionRange? changeVersionRange
+        ChangeVersionRange? changeVersionRange,
+        PageOrderingMode pageOrderingMode = PageOrderingMode.DocumentId
     )
     {
         var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
@@ -2122,7 +2134,11 @@ public partial class Given_DescriptorReadHandler
         var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
 
         await sut.HandleQueryAsync(
-            CreateQueryRequest(SqlDialect.Pgsql, changeVersionRange: changeVersionRange)
+            CreateQueryRequest(
+                SqlDialect.Pgsql,
+                changeVersionRange: changeVersionRange,
+                pageOrderingMode: pageOrderingMode
+            )
         );
 
         return capturedSuccess;

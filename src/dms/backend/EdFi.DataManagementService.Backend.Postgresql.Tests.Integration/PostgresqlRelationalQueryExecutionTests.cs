@@ -19,7 +19,6 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
-using EdFi.DataManagementService.Core.Paging;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -522,11 +521,21 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         return refreshedSchools;
     }
 
+    /// <summary>
+    /// Walks a windowed collection one document per page.
+    /// </summary>
+    /// <remarks>
+    /// The anchor is a required argument rather than derived from
+    /// <paramref name="changeVersionRange" />, because deriving it here would reimplement the Core
+    /// resolver these tests exist to check the consequences of. DocumentId is the enum's zero value, so
+    /// a defaulted anchor would also let a case that means to prove ContentVersion ordering pass
+    /// against DocumentId ordering it never asked for.
+    /// </remarks>
     private async Task<IReadOnlyList<Guid>> WalkPagesAsync(
         ChangeVersionRange changeVersionRange,
+        PageOrderingMode pageOrderingMode,
         int pageCount,
-        string traceIdPrefix,
-        ServiceProvider? serviceProvider = null
+        string traceIdPrefix
     )
     {
         var walkedDocumentUuids = new List<Guid>();
@@ -540,7 +549,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
                 totalCount: offset == 0,
                 traceId: $"{traceIdPrefix}-{offset}",
                 changeVersionRange: changeVersionRange,
-                serviceProvider: serviceProvider
+                pageOrderingMode: pageOrderingMode
             );
 
             var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
@@ -568,6 +577,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
 
         var walkedDocumentUuids = await WalkPagesAsync(
             new ChangeVersionRange(byContentVersion[0].ContentVersion, byContentVersion[^1].ContentVersion),
+            PageOrderingMode.ContentVersion,
             pageCount: refreshedSchools.Count,
             traceIdPrefix: "pg-cv-ordering-bounded"
         );
@@ -585,6 +595,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
 
         var walkedDocumentUuids = await WalkPagesAsync(
             new ChangeVersionRange(null, byContentVersion[^1].ContentVersion),
+            PageOrderingMode.ContentVersion,
             pageCount: refreshedSchools.Count,
             traceIdPrefix: "pg-cv-ordering-max-only"
         );
@@ -601,6 +612,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
 
         var walkedDocumentUuids = await WalkPagesAsync(
             new ChangeVersionRange(minContentVersion, null),
+            PageOrderingMode.DocumentId,
             pageCount: refreshedSchools.Count,
             traceIdPrefix: "pg-cv-ordering-min-only"
         );
@@ -608,22 +620,28 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         walkedDocumentUuids.Should().Equal(expectedProgression);
     }
 
+    /// <summary>
+    /// The ordering a bounded window is paged in is the one the request carries, not one derived from
+    /// the window here: a request whose anchor is DocumentId over a bounded window — what a deployment
+    /// running with the legacy ordering switch produces — pages in DocumentId order.
+    /// </summary>
+    /// <remarks>
+    /// This is the case whose expectation cannot be reached by accident: the fixture's ContentVersion
+    /// order differs from its DocumentId order, so the same window paged under the other anchor returns
+    /// the other progression, which is what the bounded-window test above asserts.
+    /// </remarks>
     [Test]
-    public async Task It_retains_document_id_ordering_for_bounded_windows_when_the_legacy_flag_is_enabled()
+    public async Task It_pages_a_bounded_window_by_document_id_when_the_request_anchors_on_it()
     {
         var refreshedSchools = await UpdateFirstSchoolAndReadStateAsync();
         var byContentVersion = refreshedSchools.OrderBy(s => s.ContentVersion).ToArray();
         var expectedProgression = refreshedSchools.Select(s => s.DocumentUuid).ToArray();
 
-        await using var legacyProvider = CreateServiceProvider(
-            new ChangeQueryPageOrderingPolicy(useLegacyDocumentIdOrdering: true)
-        );
-
         var walkedDocumentUuids = await WalkPagesAsync(
             new ChangeVersionRange(byContentVersion[0].ContentVersion, byContentVersion[^1].ContentVersion),
+            PageOrderingMode.DocumentId,
             pageCount: refreshedSchools.Count,
-            traceIdPrefix: "pg-cv-ordering-legacy",
-            serviceProvider: legacyProvider
+            traceIdPrefix: "pg-cv-ordering-document-id-anchor"
         );
 
         walkedDocumentUuids.Should().Equal(expectedProgression);
@@ -1007,7 +1025,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         return [.. rows.Select(row => GetRequiredInt64(row, "DocumentId"))];
     }
 
-    private static ServiceProvider CreateServiceProvider(ChangeQueryPageOrderingPolicy? orderingPolicy = null)
+    private static ServiceProvider CreateServiceProvider()
     {
         ServiceCollection services = [];
 
@@ -1030,11 +1048,6 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
                 ThrowingRelationalReadTargetLookupService
             >()
         );
-
-        if (orderingPolicy is not null)
-        {
-            services.AddSingleton(orderingPolicy);
-        }
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
@@ -1205,7 +1218,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         bool totalCount,
         string traceId,
         ChangeVersionRange? changeVersionRange = null,
-        ServiceProvider? serviceProvider = null
+        PageOrderingMode pageOrderingMode = PageOrderingMode.DocumentId
     ) =>
         await ExecuteQueryAsync(
             new CollectionPaging.Traditional(
@@ -1219,7 +1232,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
             queryElements,
             traceId,
             changeVersionRange,
-            serviceProvider
+            pageOrderingMode
         );
 
     private async Task<QueryResult> ExecuteCursorQueryAsync(
@@ -1241,10 +1254,10 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         QueryElement[] queryElements,
         string traceId,
         ChangeVersionRange? changeVersionRange = null,
-        ServiceProvider? serviceProvider = null
+        PageOrderingMode pageOrderingMode = PageOrderingMode.DocumentId
     )
     {
-        await using var scope = (serviceProvider ?? _serviceProvider).CreateAsyncScope();
+        await using var scope = _serviceProvider.CreateAsyncScope();
         SetSelectedInstance(scope.ServiceProvider);
 
         var request = new RelationalQueryRequest(
@@ -1255,7 +1268,8 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
             AuthorizationStrategyEvaluators: [],
             Paging: paging,
             TraceId: new TraceId(traceId),
-            ChangeVersionRange: changeVersionRange
+            ChangeVersionRange: changeVersionRange,
+            PageOrderingMode: pageOrderingMode
         );
 
         return await scope

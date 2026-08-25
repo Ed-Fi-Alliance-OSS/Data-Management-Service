@@ -82,6 +82,11 @@ public class PartitionRequestHandlerTests
         requestInfo.RequestedPartitionCount = requestedPartitionCount;
         requestInfo.QueryElements = _queryElements;
         requestInfo.ChangeVersionRange = _changeVersionRange;
+
+        // The anchor the validating middleware resolves for that max-bearing window. Set here rather
+        // than left to the default because these tests build RequestInfo directly, and the assertion
+        // that it crosses the seam has to be able to fail: DocumentId is the enum's zero value.
+        requestInfo.PageOrderingMode = PageOrderingMode.ContentVersion;
         requestInfo.FrontendRequest = requestInfo.FrontendRequest with { Tenant = TenantKey };
 
         await new PartitionRequestHandler(
@@ -194,6 +199,17 @@ public class PartitionRequestHandlerTests
         public void It_hands_the_change_version_window_to_the_backend()
         {
             _handler.CapturedRequest!.ChangeVersionRange.Should().Be(_changeVersionRange);
+        }
+
+        /// <summary>
+        /// The backend cuts boundaries on the anchor Core resolved rather than one it derives from the
+        /// window it receives, so a partition set and a page of the same request cannot end up ordered
+        /// differently.
+        /// </summary>
+        [Test]
+        public void It_hands_the_resolved_boundary_anchor_to_the_backend()
+        {
+            _handler.CapturedRequest!.PageOrderingMode.Should().Be(PageOrderingMode.ContentVersion);
         }
 
         [Test]

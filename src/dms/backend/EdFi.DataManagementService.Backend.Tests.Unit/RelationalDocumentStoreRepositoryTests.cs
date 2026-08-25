@@ -14,7 +14,6 @@ using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
-using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Profile;
 using FakeItEasy;
 using FluentAssertions;
@@ -4253,7 +4252,8 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
                 Offset: 1,
                 TotalCount: true,
                 MaximumPageSize: 500
-            )
+            ),
+            pageOrderingMode: PageOrderingMode.ContentVersion
         );
         var readAccelerationCoordinator = new RecordingReadAccelerationCoordinator();
         RelationalCommand candidateSelectionCommand = null!;
@@ -5031,9 +5031,11 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         success.SelectionSkipped.Should().BeFalse();
     }
 
-    // A traditional page over a max-bearing change-version window is ordered by ContentVersion, so its
-    // highest selected DocumentId is a real selected maximum that nevertheless does not describe where
-    // the page ended. The maximum is reported as selected; only continuation eligibility is withheld.
+    // A traditional page anchored on ContentVersion has a highest selected DocumentId that is a real
+    // selected maximum but does not describe where the page ended, so the maximum is reported as
+    // selected while only continuation eligibility is withheld. The anchor arrives on the request, so
+    // it is supplied alongside the window Core resolved it from rather than inferred from that window
+    // here.
     [Test]
     public async Task It_keeps_the_real_boundary_but_disallows_continuation_for_a_windowed_traditional_page()
     {
@@ -5051,7 +5053,8 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             mappingSet,
             [],
             totalCount: false,
-            changeVersionRange: new ChangeVersionRange(null, 900L)
+            changeVersionRange: new ChangeVersionRange(null, 900L),
+            pageOrderingMode: PageOrderingMode.ContentVersion
         );
 
         StubHydrationWithBoundary(readPlan, 2509L);
@@ -5063,10 +5066,12 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         success.AllowsDocumentIdContinuation.Should().BeFalse();
     }
 
-    // The legacy ordering switch keeps a windowed traditional page ordered by DocumentId, so the same
-    // request really can anchor a continuation. Eligibility follows the effective ordering, not the filter.
+    // A deployment running with the legacy ordering switch resolves a DocumentId anchor even for a
+    // max-bearing window, so the same request really can anchor a continuation. The repository reads the
+    // anchor off the request, which is what lets this case exist at all: eligibility follows the ordering
+    // the page was selected with, never the filter the request carried.
     [Test]
-    public async Task It_allows_continuation_for_a_windowed_traditional_page_under_legacy_document_id_ordering()
+    public async Task It_allows_continuation_for_a_windowed_traditional_page_anchored_on_the_document_id()
     {
         var mappingSet = CreateQuerySupportedMappingSet(
             _schoolResourceInfo,
@@ -5082,12 +5087,10 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             mappingSet,
             [],
             totalCount: false,
-            changeVersionRange: new ChangeVersionRange(null, 900L)
+            changeVersionRange: new ChangeVersionRange(null, 900L),
+            pageOrderingMode: PageOrderingMode.DocumentId
         );
 
-        _sut = CreateRepositoryWithOrderingPolicy(
-            new ChangeQueryPageOrderingPolicy(useLegacyDocumentIdOrdering: true)
-        );
         StubHydrationWithBoundary(readPlan, 2509L);
 
         var result = await _sut.QueryDocuments(queryRequest);
@@ -5190,32 +5193,6 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
 
         readAccelerationCoordinator.QueryAttempts.Should().Be(1);
     }
-
-    private RelationalDocumentStoreRepository CreateRepositoryWithOrderingPolicy(
-        ChangeQueryPageOrderingPolicy orderingPolicy
-    ) =>
-        new(
-            _logger,
-            _writeExecutor,
-            _currentEtagPreconditionChecker,
-            new ThrowingDescriptorWriteHandler(),
-            _descriptorReadHandler,
-            _referenceResolver,
-            _documentHydrator,
-            _readTargetLookupService,
-            _readMaterializer,
-            _readableProfileProjector,
-            _writeExceptionClassifier,
-            _deleteConstraintResolver,
-            _writeSessionFactory,
-            CreateAuthorizationSubjectSelector(),
-            _singleRecordRelationshipAuthorizationExecutor,
-            _namespaceAuthorizationExecutor,
-            _customViewAuthorizationExecutor,
-            _commandExecutor,
-            readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance,
-            orderingPolicy: orderingPolicy
-        );
 
     private void StubHydrationWithBoundary(ResourceReadPlan readPlan, long highestSelectedDocumentId)
     {
@@ -15090,7 +15067,8 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         IReadOnlyList<string>? namespacePrefixes = null,
         ChangeVersionRange? changeVersionRange = null,
         PaginationParameters? paginationParameters = null,
-        CollectionPaging? paging = null
+        CollectionPaging? paging = null,
+        PageOrderingMode pageOrderingMode = PageOrderingMode.DocumentId
     )
     {
         authorizationStrategyEvaluators ??= [];
@@ -15107,6 +15085,13 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         var queryRequest = A.Fake<IQueryRequest>();
         A.CallTo(() => queryRequest.ChangeVersionRange)
             .Returns(changeVersionRange ?? ChangeVersionRange.None);
+
+        // Stubbed explicitly rather than left to the fake's default. The anchor now arrives on the
+        // request instead of being resolved from the window inside the repository, and DocumentId is
+        // the enum's zero value: an unstubbed property would hand every test the DocumentId anchor
+        // while reading as though the window decided it, so a ContentVersion expectation would fail
+        // loudly but a DocumentId one would pass without the mode ever being supplied.
+        A.CallTo(() => queryRequest.PageOrderingMode).Returns(pageOrderingMode);
         A.CallTo(() => queryRequest.ResourceInfo).Returns(resourceInfo);
         A.CallTo(() => queryRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => queryRequest.QueryElements).Returns(queryElements);

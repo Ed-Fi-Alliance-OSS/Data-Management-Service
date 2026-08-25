@@ -1061,6 +1061,11 @@ public class QueryRequestHandlerTests
             _requestInfo.CollectionPaging = new CollectionPaging.Traditional(_paginationParameters);
             _requestInfo.AuthorizationStrategyEvaluators = _authorizationStrategyEvaluators;
             _requestInfo.ChangeVersionRange = new ChangeVersionRange(100L, 200L);
+
+            // The anchor the validating middleware resolves for that max-bearing window. Set here
+            // rather than left to the default because this fixture builds RequestInfo directly, and
+            // the assertion below has to be able to fail: DocumentId is the enum's zero value.
+            _requestInfo.PageOrderingMode = PageOrderingMode.ContentVersion;
             _requestInfo.ClientAuthorizations = new ClientAuthorizations(
                 TokenId: "token-id",
                 ClientId: "client-id",
@@ -1142,6 +1147,18 @@ public class QueryRequestHandlerTests
         {
             _repository.CapturedRequest.Should().NotBeNull();
             _repository.CapturedRequest!.ChangeVersionRange.Should().Be(new ChangeVersionRange(100L, 200L));
+        }
+
+        /// <summary>
+        /// The backend no longer resolves the anchor from the window it receives; it reads the one Core
+        /// resolved. This is the assertion that the resolution actually crosses the seam, and the only
+        /// thing standing between a windowed page and one selected in the wrong order.
+        /// </summary>
+        [Test]
+        public void It_copies_the_resolved_page_ordering_mode_onto_the_relational_query_request()
+        {
+            _repository.CapturedRequest.Should().NotBeNull();
+            _repository.CapturedRequest!.PageOrderingMode.Should().Be(PageOrderingMode.ContentVersion);
         }
 
         [Test]

@@ -22,14 +22,14 @@ namespace EdFi.DataManagementService.Core.Paging;
 /// names. Resolving it in both places would be two implementations of one rule, so Core resolves it
 /// once and carries it down on the request.
 /// <para>
-/// Only traditional limit/offset page selection consumes the resolved ordering. Cursor and partition
-/// selection always anchor on <c>DocumentId</c>: their candidate modes carry no ordering choice at
-/// all, so a resolved mode reaching them is discarded rather than applied. Snapshot data sources get
-/// their own explicit entry point when snapshot support lands; do not widen
-/// <see cref="ResolveForLiveQuery"/> to cover them.
+/// <c>internal</c> deliberately: the two paging middlewares are the only callers, and the backend
+/// reads the resolved mode off the request rather than deriving its own. A backend-visible resolver
+/// would be a second place for that one rule to live, and a page selected under one ordering whose
+/// token claims another is a walk that skips rows. Snapshot data sources get their own explicit entry
+/// point when snapshot support lands; do not widen <see cref="ResolveForLiveQuery"/> to cover them.
 /// </para>
 /// </remarks>
-public sealed class ChangeQueryPageOrderingPolicy(bool useLegacyDocumentIdOrdering)
+internal sealed class ChangeQueryPageOrderingPolicy(bool useLegacyDocumentIdOrdering)
 {
     /// <summary>
     /// The default policy: kill switch disabled, conditional ordering active.

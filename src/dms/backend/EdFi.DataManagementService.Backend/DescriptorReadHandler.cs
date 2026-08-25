@@ -14,7 +14,6 @@ using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
-using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
@@ -34,8 +33,7 @@ internal sealed class DescriptorReadHandler(
     IServedEtagComposer servedEtagComposer,
     ILogger<DescriptorReadHandler> logger,
     IDocumentCacheReadAccelerationCoordinator readAccelerationCoordinator,
-    ICustomViewAuthorizationExecutor customViewAuthorizationExecutor,
-    ChangeQueryPageOrderingPolicy? orderingPolicy = null
+    ICustomViewAuthorizationExecutor customViewAuthorizationExecutor
 ) : IDescriptorReadHandler
 {
     private const string DocumentUuidParameterName = "@documentUuid";
@@ -69,8 +67,6 @@ internal sealed class DescriptorReadHandler(
     private readonly ICustomViewAuthorizationExecutor _customViewAuthorizationExecutor =
         customViewAuthorizationExecutor
         ?? throw new ArgumentNullException(nameof(customViewAuthorizationExecutor));
-    private readonly ChangeQueryPageOrderingPolicy _orderingPolicy =
-        orderingPolicy ?? ChangeQueryPageOrderingPolicy.Default;
     private readonly IDocumentCacheReadAccelerationCoordinator _readAccelerationCoordinator =
         readAccelerationCoordinator ?? throw new ArgumentNullException(nameof(readAccelerationCoordinator));
 
@@ -581,15 +577,15 @@ internal sealed class DescriptorReadHandler(
 
         var rowsPage = (DescriptorQueryCandidateSelectionReadResult.CandidatePage)candidateReadResult;
 
-        // Resolved ahead of the empty check so both branches report the same continuation facts. A
+        // Built ahead of the empty check so both branches report the same continuation facts. A
         // selection that returned nothing is still a selection that ran under an ordering, and a
         // traditional page over a max-bearing change-version window cannot anchor a DocumentId
-        // continuation whether or not it selected rows. Deriving it in only the non-empty branch would
+        // continuation whether or not it selected rows. Deciding it in only the non-empty branch would
         // leave the empty one on the permissive default and answer the same request differently from
         // the regular-resource path.
         var continuationBoundary = PageContinuationBoundary.For(
             request.Paging,
-            _orderingPolicy.ResolveForLiveQuery(request.ChangeVersionRange),
+            request.PageOrderingMode,
             SelectedMaximumOf(rowsPage.Page.Rows)
         );
 
@@ -1510,10 +1506,8 @@ internal sealed class DescriptorReadHandler(
     /// would undercount the request's real command and the budget would fail at execution instead of
     /// failing closed.
     /// </summary>
-    private int CountPagingParameters(DescriptorQueryRequest request) =>
-        PageCandidateModePlanning
-            .ForPaging(request.Paging, _orderingPolicy.ResolveForLiveQuery(request.ChangeVersionRange))
-            .ParameterValues.Count;
+    private static int CountPagingParameters(DescriptorQueryRequest request) =>
+        PageCandidateModePlanning.ForPaging(request.Paging, request.PageOrderingMode).ParameterValues.Count;
 
     /// <summary>
     /// Returns a security-configuration failure when the descriptor page query's namespace prefix
@@ -1583,7 +1577,7 @@ internal sealed class DescriptorReadHandler(
         return ReadQueryRowsAsync(request, plannedQuery, cancellationToken);
     }
 
-    private PageKeysetSpec.Query PlanDescriptorQuery(
+    private static PageKeysetSpec.Query PlanDescriptorQuery(
         DescriptorQueryRequest request,
         DescriptorQueryPreprocessingResult preprocessingResult,
         PageDocumentIdAuthorizationSpec? authorizationSpec
@@ -1595,7 +1589,7 @@ internal sealed class DescriptorReadHandler(
             request.Paging,
             authorizationSpec,
             request.ChangeVersionRange,
-            orderingMode: _orderingPolicy.ResolveForLiveQuery(request.ChangeVersionRange)
+            orderingMode: request.PageOrderingMode
         );
 
     private Task<DescriptorQueryRowsPage> ReadQueryRowsAsync(
@@ -1704,7 +1698,7 @@ internal sealed class DescriptorReadHandler(
     {
         var continuationBoundary = PageContinuationBoundary.For(
             request.Paging,
-            _orderingPolicy.ResolveForLiveQuery(request.ChangeVersionRange),
+            request.PageOrderingMode,
             SelectedMaximumOf(queryRowsPage.Rows)
         );
 
