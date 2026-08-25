@@ -142,6 +142,49 @@ public sealed class Given_DocumentCacheAdminInProcessCommandRunner
     }
 
     [Test]
+    [Category("Downstream")]
+    public async Task It_keeps_cache_ahead_recovery_latch_set_until_rebuilding_transition_with_fake_internal_only_history()
+    {
+        RecordingDownstreamPublicationHistoryProvider downstreamHistoryProvider = new(
+            DocumentCacheDownstreamPublicationStatus.InternalOnly
+        );
+        InProcessCommandHarness harness = InProcessCommandHarness.Create(
+            new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, true),
+            downstreamHistoryProvider
+        );
+        await using ServiceProvider serviceProvider = harness.BuildServiceProvider();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+
+        int exitCode = await DocumentCacheAdminCommandExecutor.ExecuteAsync(
+            ParseCommand(
+                DocumentCacheAdminCommandSurface.RecoverCacheAheadCommandName,
+                Args("internalCacheAheadRecovery", offlineWriterAdmission: true)
+            ),
+            InvocationTarget(),
+            serviceProvider,
+            stdout,
+            stderr
+        );
+
+        exitCode.Should().Be(DocumentCacheAdminExitCodes.Success);
+        harness
+            .Primitives.Events.Should()
+            .Equal(
+                "transition:Tracking:True->Resetting:True",
+                "clear:DocumentCache",
+                "clear:DocumentProjectionWork",
+                "transition:Resetting:True->Rebuilding:False",
+                "transition:Rebuilding:False->Tracking:False"
+            );
+        JsonObject result = JsonNode.Parse(stdout.ToString())!.AsObject();
+        result["command"]!.GetValue<string>().Should().Be("internalOnlyCacheAheadRecovery");
+        result["status"]!.GetValue<string>().Should().Be("completed");
+        result["cacheAheadRecoveryRequired"]!.GetValue<bool>().Should().BeFalse();
+        stderr.ToString().Should().BeEmpty();
+    }
+
+    [Test]
     public void It_does_not_expose_a_packaged_downstream_history_override_option()
     {
         RootCommand rootCommand = DocumentCacheAdminCommandSurface.CreateRootCommand();
@@ -724,11 +767,14 @@ public sealed class Given_DocumentCacheAdminInProcessCommandRunner
     {
         private DocumentCacheLifecycleObservation _lifecycle = lifecycle;
         private readonly List<DocumentCacheAdministrativeLifecycleTransitionRequest> _transitionRequests = [];
+        private readonly List<string> _events = [];
 
         public RelationalProviderToken ProviderToken => RelationalProviderToken.Postgresql;
 
         public ImmutableArray<DocumentCacheAdministrativeLifecycleTransitionRequest> TransitionRequests =>
             [.. _transitionRequests];
+
+        public ImmutableArray<string> Events => [.. _events];
 
         public Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(
             IRelationalWriteSession mutexSession,
@@ -792,6 +838,9 @@ public sealed class Given_DocumentCacheAdminInProcessCommandRunner
             _ = mutexSession;
             cancellationToken.ThrowIfCancellationRequested();
             _transitionRequests.Add(request);
+            _events.Add(
+                $"transition:{request.ExpectedLifecycle}:{request.ExpectedCacheAheadRecoveryRequired}->{request.NextLifecycle}:{request.NextCacheAheadRecoveryRequired}"
+            );
 
             if (
                 _lifecycle.State != request.ExpectedLifecycle
@@ -819,6 +868,7 @@ public sealed class Given_DocumentCacheAdminInProcessCommandRunner
         {
             _ = mutexSession;
             cancellationToken.ThrowIfCancellationRequested();
+            _events.Add($"clear:{DocumentCacheAdministrativeClearTarget.DocumentCache}");
             return Task.FromResult(EmptyClearBatch(DocumentCacheAdministrativeClearTarget.DocumentCache));
         }
 
@@ -832,6 +882,7 @@ public sealed class Given_DocumentCacheAdminInProcessCommandRunner
             _ = mutexSession;
             _ = clearance;
             cancellationToken.ThrowIfCancellationRequested();
+            _events.Add($"clear:{DocumentCacheAdministrativeClearTarget.DocumentProjectionWork}");
             return Task.FromResult(
                 EmptyClearBatch(DocumentCacheAdministrativeClearTarget.DocumentProjectionWork)
             );
