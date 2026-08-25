@@ -218,6 +218,10 @@ Feature: OwnershipTokens endpoints
                     {
                       "id": {appleOwnershipTokenId},
                       "description": "Zzx Apple Token"
+                    },
+                    {
+                      "id": {readOwnershipTokenId},
+                      "description": "Read Token"
                     }
                   ]
                   """
