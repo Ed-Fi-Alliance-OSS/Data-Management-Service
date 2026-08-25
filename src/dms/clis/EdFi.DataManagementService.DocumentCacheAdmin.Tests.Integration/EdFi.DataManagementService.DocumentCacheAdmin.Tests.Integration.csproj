@@ -22,5 +22,8 @@
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DataManagementService.DocumentCacheAdmin\EdFi.DataManagementService.DocumentCacheAdmin.csproj" />
+        <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Ddl\EdFi.DataManagementService.Backend.Ddl.csproj" />
+        <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Tests.Common\EdFi.DataManagementService.Backend.Tests.Common.csproj" />
+        <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Tests.Integration.Common\EdFi.DataManagementService.Backend.Tests.Integration.Common.csproj" />
     </ItemGroup>
 </Project>
