@@ -135,6 +135,20 @@ public static class CdcSourceHistoryContinuityClassifier
             return setupResult;
         }
 
+        if (
+            TryEvaluateTerminalProviderHistoryWithoutConnectorOffset(
+                input,
+                inventory,
+                expectedSourcePartitionHash,
+                observedAt,
+                diagnostics
+            ) is
+            { } terminalProviderResult
+        )
+        {
+            return terminalProviderResult;
+        }
+
         CdcConnectorOffsetEvaluation offsetEvaluation = EvaluateConnectorOffset(
             input,
             binding,
@@ -299,6 +313,170 @@ public static class CdcSourceHistoryContinuityClassifier
                 or CdcProviderArtifactContinuityState.Recreated
         || providerHistory?.RetainedRangeState == CdcProviderRetainedRangeState.Gap
         || providerHistory?.SqlServerJobs?.HasMissingJob == true;
+
+    private static CdcSourceHistoryClassificationResult? TryEvaluateTerminalProviderHistoryWithoutConnectorOffset(
+        CdcSourceHistoryClassificationInput input,
+        CdcArtifactInventory inventory,
+        string? expectedSourcePartitionHash,
+        DateTimeOffset observedAt,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (input.ConnectorOffset is not null || !HasTerminalProviderHistory(input.ProviderHistory))
+        {
+            return null;
+        }
+
+        CdcProviderSourceHistoryEvidence providerHistory =
+            input.ProviderHistory
+            ?? throw new InvalidOperationException(
+                "Terminal provider history cannot be detected without provider history evidence."
+            );
+        AddDiagnostics(diagnostics, providerHistory.Diagnostics);
+        diagnostics.LocalStateUnavailable(
+            "$.connectorOffset",
+            "CDC connector offset evidence is unavailable, but terminal provider source-history evidence was observed."
+        );
+
+        if (!Enum.IsDefined(providerHistory.ProviderArtifactState))
+        {
+            diagnostics.InvalidEnumValue(
+                "$.providerHistory.providerArtifactState",
+                "CDC provider source-history artifact state is unsupported."
+            );
+            return UnknownWithMetadata(
+                input,
+                observedAt,
+                diagnostics,
+                input.Binding.Provider,
+                inventory,
+                expectedSourcePartitionHash,
+                null,
+                providerHistory,
+                [CdcIncidentUnavailableFact.ProviderArtifact, CdcIncidentUnavailableFact.ConnectOffset]
+            );
+        }
+
+        if (!Enum.IsDefined(providerHistory.RetainedRangeState))
+        {
+            diagnostics.InvalidEnumValue(
+                "$.providerHistory.retainedRangeState",
+                "CDC provider source-history retained range state is unsupported."
+            );
+            return UnknownWithMetadata(
+                input,
+                observedAt,
+                diagnostics,
+                input.Binding.Provider,
+                inventory,
+                expectedSourcePartitionHash,
+                null,
+                providerHistory,
+                [CdcIncidentUnavailableFact.ProviderRetainedRange, CdcIncidentUnavailableFact.ConnectOffset]
+            );
+        }
+
+        if (providerHistory.ProviderArtifactState == CdcProviderArtifactContinuityState.Missing)
+        {
+            return Lost(
+                input,
+                observedAt,
+                diagnostics,
+                CdcIncidentFailureCategory.ProviderArtifactMissing,
+                BuildPositionMetadata(
+                    input.Binding.Provider,
+                    inventory,
+                    expectedSourcePartitionHash,
+                    null,
+                    providerHistory,
+                    [CdcIncidentUnavailableFact.ProviderArtifact, CdcIncidentUnavailableFact.ConnectOffset]
+                )
+            );
+        }
+
+        if (providerHistory.ProviderArtifactState == CdcProviderArtifactContinuityState.Recreated)
+        {
+            return Lost(
+                input,
+                observedAt,
+                diagnostics,
+                CdcIncidentFailureCategory.ProviderArtifactRecreated,
+                BuildPositionMetadata(
+                    input.Binding.Provider,
+                    inventory,
+                    expectedSourcePartitionHash,
+                    null,
+                    providerHistory,
+                    [CdcIncidentUnavailableFact.ProviderArtifact, CdcIncidentUnavailableFact.ConnectOffset]
+                )
+            );
+        }
+
+        if (providerHistory.RetainedRangeState == CdcProviderRetainedRangeState.Gap)
+        {
+            return Lost(
+                input,
+                observedAt,
+                diagnostics,
+                CdcIncidentFailureCategory.RetainedHistoryGap,
+                BuildPositionMetadata(
+                    input.Binding.Provider,
+                    inventory,
+                    expectedSourcePartitionHash,
+                    null,
+                    providerHistory,
+                    [CdcIncidentUnavailableFact.ConnectOffset]
+                )
+            );
+        }
+
+        if (input.Binding.Provider != CdcProvider.SqlServer)
+        {
+            return null;
+        }
+
+        CdcSqlServerCdcJobEvidence? sqlServerJobs = providerHistory.SqlServerJobs;
+        if (sqlServerJobs is null)
+        {
+            diagnostics.MissingRequiredField("$.providerHistory.sqlServerJobs", "sqlServerJobs");
+            return UnknownWithMetadata(
+                input,
+                observedAt,
+                diagnostics,
+                CdcProvider.SqlServer,
+                inventory,
+                expectedSourcePartitionHash,
+                null,
+                providerHistory,
+                [CdcIncidentUnavailableFact.ProviderArtifact, CdcIncidentUnavailableFact.ConnectOffset]
+            );
+        }
+
+        if (!sqlServerJobs.HasMissingJob)
+        {
+            return null;
+        }
+
+        diagnostics.Add(
+            CdcDiagnosticCategory.InvalidObservation,
+            "$.providerHistory.sqlServerJobs",
+            "CDC SQL Server capture and cleanup jobs must both exist."
+        );
+        return Lost(
+            input,
+            observedAt,
+            diagnostics,
+            CdcIncidentFailureCategory.ProviderArtifactMissing,
+            BuildPositionMetadata(
+                CdcProvider.SqlServer,
+                inventory,
+                expectedSourcePartitionHash,
+                null,
+                providerHistory,
+                [CdcIncidentUnavailableFact.ProviderArtifact, CdcIncidentUnavailableFact.ConnectOffset]
+            )
+        );
+    }
 
     private static CdcConnectorOffsetEvaluation EvaluateConnectorOffset(
         CdcSourceHistoryClassificationInput input,

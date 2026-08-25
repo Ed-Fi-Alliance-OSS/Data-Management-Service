@@ -101,6 +101,97 @@ public class Given_CdcProviderSetupResultMapper
 
     [TestCase(CdcProviderArtifactState.Missing, CoreCdc.CdcProviderArtifactContinuityState.Missing)]
     [TestCase(CdcProviderArtifactState.Mismatched, CoreCdc.CdcProviderArtifactContinuityState.Recreated)]
+    public void It_preserves_terminal_postgresql_publication_evidence_when_history_is_unavailable(
+        CdcProviderArtifactState artifactState,
+        CoreCdc.CdcProviderArtifactContinuityState expectedState
+    )
+    {
+        CoreCdc.CdcBinding binding = BuildBinding(CoreCdc.CdcProvider.Postgresql);
+        CoreCdc.CdcArtifactInventory inventory = RecoverInventory(binding);
+        CdcProviderSetupResult setupResult = BuildSetupResult(
+            CdcProvider.Postgresql,
+            binding,
+            [
+                Artifact(
+                    CdcProviderArtifactKind.PostgresqlPublication,
+                    inventory.PostgresqlPublicationName!,
+                    artifactState
+                ),
+                Artifact(
+                    CdcProviderArtifactKind.PostgresqlReplicationSlot,
+                    inventory.PostgresqlLogicalSlotName!
+                ),
+            ],
+            []
+        ) with
+        {
+            Diagnostics =
+            [
+                ProviderHistoryUnavailableDiagnostic(
+                    CdcProviderArtifactKind.PostgresqlReplicationSlot,
+                    inventory.PostgresqlLogicalSlotName!
+                ),
+            ],
+        };
+
+        CoreCdc.CdcProviderSourceHistoryEvidence providerHistory =
+            CdcProviderSetupResultMapper.ToProviderSourceHistoryEvidence(ObservedAt, binding, setupResult);
+
+        providerHistory.ProviderArtifactState.Should().Be(expectedState);
+        providerHistory.ProviderArtifactName.Should().Be(inventory.PostgresqlPublicationName);
+        providerHistory.RetainedRangeState.Should().Be(CoreCdc.CdcProviderRetainedRangeState.Unknown);
+    }
+
+    [Test]
+    public void It_preserves_postgresql_wal_loss_when_other_history_evidence_is_unavailable()
+    {
+        CoreCdc.CdcBinding binding = BuildBinding(CoreCdc.CdcProvider.Postgresql);
+        CoreCdc.CdcArtifactInventory inventory = RecoverInventory(binding);
+        CdcProviderSetupResult setupResult = BuildSetupResult(
+            CdcProvider.Postgresql,
+            binding,
+            [
+                Artifact(CdcProviderArtifactKind.PostgresqlPublication, inventory.PostgresqlPublicationName!),
+                Artifact(
+                    CdcProviderArtifactKind.PostgresqlReplicationSlot,
+                    inventory.PostgresqlLogicalSlotName!
+                ),
+            ],
+            [
+                History(
+                    CdcProviderArtifactKind.PostgresqlReplicationSlot,
+                    inventory.PostgresqlLogicalSlotName!,
+                    new Dictionary<string, string>
+                    {
+                        ["restart_lsn"] = "0_16B6C50",
+                        ["confirmed_flush_lsn"] = "0_16B6C60",
+                        ["wal_status"] = "lost",
+                        ["invalidation_reason"] = "",
+                    }
+                ),
+            ]
+        ) with
+        {
+            Diagnostics =
+            [
+                ProviderHistoryUnavailableDiagnostic(
+                    CdcProviderArtifactKind.PostgresqlPublication,
+                    inventory.PostgresqlPublicationName!
+                ),
+            ],
+        };
+
+        CoreCdc.CdcProviderSourceHistoryEvidence providerHistory =
+            CdcProviderSetupResultMapper.ToProviderSourceHistoryEvidence(ObservedAt, binding, setupResult);
+
+        providerHistory
+            .ProviderArtifactState.Should()
+            .Be(CoreCdc.CdcProviderArtifactContinuityState.ExactMatch);
+        providerHistory.RetainedRangeState.Should().Be(CoreCdc.CdcProviderRetainedRangeState.Gap);
+    }
+
+    [TestCase(CdcProviderArtifactState.Missing, CoreCdc.CdcProviderArtifactContinuityState.Missing)]
+    [TestCase(CdcProviderArtifactState.Mismatched, CoreCdc.CdcProviderArtifactContinuityState.Recreated)]
     public void It_preserves_terminal_sql_server_capture_evidence_when_database_history_is_unavailable(
         CdcProviderArtifactState artifactState,
         CoreCdc.CdcProviderArtifactContinuityState expectedState
@@ -368,6 +459,34 @@ public class Given_CdcProviderSetupResultMapper
             .ProviderHistory.ProviderArtifactState.Should()
             .Be(CoreCdc.CdcProviderArtifactContinuityState.Unknown);
         mapping.ProviderHistory.SqlServerJobs.Should().Be(CoreCdc.CdcSqlServerCdcJobEvidence.Unknown);
+    }
+
+    [Test]
+    public void It_preserves_terminal_sql_server_missing_job_evidence_when_database_history_is_unavailable()
+    {
+        CoreCdc.CdcBinding binding = BuildBinding(CoreCdc.CdcProvider.SqlServer);
+        CdcProviderSetupObservationMapping mapping = MapSqlServerProviderSetup(
+            binding,
+            History(
+                CdcProviderArtifactKind.ProviderHistory,
+                "sqlserver_database_cdc",
+                new Dictionary<string, string>
+                {
+                    ["history"] = "unavailable",
+                    ["capture_job_present"] = "False",
+                }
+            )
+        );
+
+        mapping
+            .ProviderHistory.ProviderArtifactState.Should()
+            .Be(CoreCdc.CdcProviderArtifactContinuityState.Missing);
+        mapping
+            .ProviderHistory.SqlServerJobs!.CaptureJobState.Should()
+            .Be(CoreCdc.CdcSqlServerCdcJobState.Missing);
+        mapping
+            .ProviderHistory.SqlServerJobs.CleanupJobState.Should()
+            .Be(CoreCdc.CdcSqlServerCdcJobState.Unknown);
     }
 
     [Test]

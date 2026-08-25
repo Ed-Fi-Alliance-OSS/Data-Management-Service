@@ -455,6 +455,112 @@ public class Given_CdcContinuityIncidentClassifier
             .BeTrue();
     }
 
+    private static IEnumerable<TestCaseData> TerminalProviderHistoryWithUnavailableConnectorOffsetCases()
+    {
+        yield return new TestCaseData(
+            CdcIncidentFailureCategory.ProviderArtifactMissing,
+            CdcProvider.Postgresql,
+            new Func<CdcSourceHistoryClassificationInput, CdcSourceHistoryClassificationInput>(input =>
+                input with
+                {
+                    ProviderHistory = CdcContinuityFixture.ProviderHistory(
+                        input.Binding,
+                        CdcProviderArtifactContinuityState.Missing,
+                        CdcProviderRetainedRangeState.CoversCommittedOffset
+                    ),
+                }
+            )
+        ).SetName("postgresql_missing_artifact_with_unavailable_offset");
+        yield return new TestCaseData(
+            CdcIncidentFailureCategory.ProviderArtifactRecreated,
+            CdcProvider.Postgresql,
+            new Func<CdcSourceHistoryClassificationInput, CdcSourceHistoryClassificationInput>(input =>
+                input with
+                {
+                    ProviderHistory = CdcContinuityFixture.ProviderHistory(
+                        input.Binding,
+                        CdcProviderArtifactContinuityState.Recreated,
+                        CdcProviderRetainedRangeState.CoversCommittedOffset
+                    ),
+                }
+            )
+        ).SetName("postgresql_recreated_artifact_with_unavailable_offset");
+        yield return new TestCaseData(
+            CdcIncidentFailureCategory.RetainedHistoryGap,
+            CdcProvider.Postgresql,
+            new Func<CdcSourceHistoryClassificationInput, CdcSourceHistoryClassificationInput>(input =>
+                input with
+                {
+                    ProviderHistory = CdcContinuityFixture.ProviderHistory(
+                        input.Binding,
+                        CdcProviderArtifactContinuityState.ExactMatch,
+                        CdcProviderRetainedRangeState.Gap
+                    ),
+                }
+            )
+        ).SetName("postgresql_retained_history_gap_with_unavailable_offset");
+        yield return new TestCaseData(
+            CdcIncidentFailureCategory.ProviderArtifactMissing,
+            CdcProvider.SqlServer,
+            new Func<CdcSourceHistoryClassificationInput, CdcSourceHistoryClassificationInput>(input =>
+                input with
+                {
+                    ProviderHistory = input.ProviderHistory! with
+                    {
+                        SqlServerJobs = new(CdcSqlServerCdcJobState.Missing, CdcSqlServerCdcJobState.Healthy),
+                    },
+                }
+            )
+        ).SetName("sql_server_missing_job_with_unavailable_offset");
+    }
+
+    [TestCaseSource(nameof(TerminalProviderHistoryWithUnavailableConnectorOffsetCases))]
+    public void It_preserves_terminal_provider_history_when_connector_offset_is_unavailable(
+        CdcIncidentFailureCategory expectedFailureCategory,
+        CdcProvider provider,
+        Func<CdcSourceHistoryClassificationInput, CdcSourceHistoryClassificationInput> customize
+    )
+    {
+        CdcBinding binding = CdcContinuityFixture.CreateBinding(provider);
+        CdcSourceHistoryClassificationInput input = customize(CdcContinuityFixture.CreateInput(binding)) with
+        {
+            ConnectorOffset = null,
+        };
+
+        CdcSourceHistoryClassificationResult result = CdcSourceHistoryContinuityClassifier.Evaluate(input);
+
+        result.Observation.Continuity.Should().Be(CdcSourceHistoryContinuity.Lost);
+        result.Observation.IncidentFailureCategory.Should().Be(expectedFailureCategory);
+        result.IncidentCandidate.Should().NotBeNull();
+        result.IncidentCandidate!.FailureCategory.Should().Be(expectedFailureCategory);
+        result
+            .Observation.PositionEvidence!.UnavailableFacts.Should()
+            .Contain(CdcIncidentUnavailableFact.ConnectOffset);
+        result
+            .Observation.Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CdcDiagnosticCategory.LocalStateUnavailable
+                && diagnostic.Path == "$.connectorOffset"
+            );
+        CdcIncidentValidator
+            .ValidateForBinding(result.IncidentCandidate.ToIncident(), binding, Now)
+            .Succeeded.Should()
+            .BeTrue();
+        CdcSourceHistoryObservationValidator
+            .ValidateForBinding(
+                result.Observation,
+                binding,
+                new(
+                    CdcContinuityFixture.OperationId,
+                    binding.ToTargetIdentity(),
+                    binding.PhysicalSourceFingerprint,
+                    Now
+                )
+            )
+            .Succeeded.Should()
+            .BeTrue();
+    }
+
     private static IEnumerable<TestCaseData> TerminalIncidentCases()
     {
         yield return new TestCaseData(

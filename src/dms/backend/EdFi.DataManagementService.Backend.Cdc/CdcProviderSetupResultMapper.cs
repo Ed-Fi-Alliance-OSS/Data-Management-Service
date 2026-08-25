@@ -738,9 +738,20 @@ public static class CdcProviderSetupResultMapper
         CdcProviderHistoryObservation? databaseHistory
     )
     {
-        if (databaseHistory is null || ObservedValue(databaseHistory, "history") == "unavailable")
+        if (databaseHistory is null)
         {
             return CoreCdc.CdcSqlServerCdcJobEvidence.Unknown;
+        }
+
+        if (ObservedValue(databaseHistory, "history") == "unavailable")
+        {
+            CoreCdc.CdcSqlServerCdcJobEvidence unavailableEvidence = new(
+                SqlServerUnavailableJobState(databaseHistory, "capture"),
+                SqlServerUnavailableJobState(databaseHistory, "cleanup")
+            );
+            return unavailableEvidence.HasMissingJob
+                ? unavailableEvidence
+                : CoreCdc.CdcSqlServerCdcJobEvidence.Unknown;
         }
 
         return new(
@@ -748,6 +759,14 @@ public static class CdcProviderSetupResultMapper
             SqlServerJobState(databaseHistory, "cleanup", captureJob: false)
         );
     }
+
+    private static CoreCdc.CdcSqlServerCdcJobState SqlServerUnavailableJobState(
+        CdcProviderHistoryObservation databaseHistory,
+        string jobType
+    ) =>
+        IsFalseValue(databaseHistory, $"{jobType}_job_present")
+            ? CoreCdc.CdcSqlServerCdcJobState.Missing
+            : CoreCdc.CdcSqlServerCdcJobState.Unknown;
 
     private static CoreCdc.CdcSqlServerCdcJobState SqlServerJobState(
         CdcProviderHistoryObservation? databaseHistory,
