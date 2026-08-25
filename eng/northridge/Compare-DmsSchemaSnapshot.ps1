@@ -37,6 +37,14 @@
     that, so a definition-only snapshot hashes the two databases identically while one of them has
     lost the privilege boundary entirely.
 
+    One deparse artifact is normalized, and only one. pg_get_constraintdef spells an array cast two
+    ways that PostgreSQL treats as the same expression: a deployment stores CHECK ("Col" IN (...)) on
+    a varchar column as (ARRAY['a'::character varying, ...])::text[], and a database restored from a
+    dump of it re-parses that text with the cast pushed into the elements, ARRAY[('a'::character
+    varying)::text, ...], from then on. The element-wise spelling is rewritten to the gathered one so
+    a restore compares equal to the deployment it came from; a different value, element count, cast
+    type or column still differs. See ConvertTo-CanonicalConstraintDefinition.
+
 .PARAMETER Database
     Database to snapshot. Repeat the parameter, or pass two values, to snapshot and then diff both.
 
@@ -121,6 +129,52 @@ function Get-SchemaLiteralList {
     param([Parameter(Mandatory)] [string[]] $Name)
 
     return ($Name | ForEach-Object { "'" + $_.Replace("'", "''") + "'" }) -join ", "
+}
+
+# pg_get_constraintdef renders an array cast in one of two spellings that PostgreSQL treats as the
+# same expression. The DDL's CHECK ("Col" IN ('a', 'b')) on a varchar column is stored -- and
+# deparsed by a fresh deployment -- as (ARRAY['a'::character varying, ...])::text[]. pg_dump writes
+# that text, a restore re-parses it, and the parser pushes the cast into the elements, so the
+# restored catalog deparses ARRAY[('a'::character varying)::text, ...] from then on; a second round
+# trip leaves that spelling as it is. Both spell one predicate, so a byte compare of the raw text
+# fails a restore against the deployment it came from on that row alone. The element-wise spelling
+# is rewritten to the gathered one here, and only when every element carries the same parenthesised
+# cast, so the two forms compare equal while a different value, a different element count, a
+# different cast type or a different column still differ. Nothing is dropped: the elements, their
+# types and their order all survive the rewrite, and an array that does not have that exact shape
+# -- uncast elements, mixed casts, a nested array -- is left as the catalog rendered it.
+function ConvertTo-CanonicalConstraintDefinition {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)] [AllowEmptyString()] [string] $Definition)
+
+    # One element of the pushed-down spelling: a parenthesised expression whose own parentheses, if
+    # any, sit inside string literals, followed by a scalar cast. The type is a bare or
+    # space-separated name such as text or character varying, optionally with a typmod; an array
+    # type ends in [] and does not match, so a nested array cast is reported rather than rewritten.
+    $element = "\((?<inner>(?:'(?:[^']|'')*'|[^()'])*)\)::(?<type>[A-Za-z_][A-Za-z0-9_]*(?: [A-Za-z_][A-Za-z0-9_]*)*(?:\([0-9, ]*\))?)"
+    $elementList = [regex]::new("^(?<element>$element)(?:, (?<element>$element))*$")
+
+    return [regex]::Replace($Definition, 'ARRAY\[(?<body>[^\[\]]*)\]', {
+            param($match)
+
+            $list = $elementList.Match($match.Groups["body"].Value)
+            if (-not $list.Success) { return $match.Value }
+
+            $inner = [System.Collections.Generic.List[string]]::new()
+            $type = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+            foreach ($capture in $list.Groups["element"].Captures) {
+                $part = [regex]::Match($capture.Value, "^$element$")
+                $inner.Add($part.Groups["inner"].Value)
+                [void]$type.Add($part.Groups["type"].Value)
+            }
+
+            # Every element cast to the same type is what a pushed-down array cast looks like; anything
+            # else is a genuine expression of its own and is not this script's to rewrite.
+            if ($type.Count -ne 1) { return $match.Value }
+
+            return "(ARRAY[$($inner -join ', ')])::$(@($type)[0])[]"
+        })
 }
 
 # -Schema is free text, and sections 11 and 12 read dms."EffectiveSchema" and dms."SchemaComponent"
@@ -397,6 +451,11 @@ function Export-SchemaSnapshot {
         foreach ($row in $rows) {
             $text = [string]$row
             if (-not [string]::IsNullOrWhiteSpace($text)) {
+                # Section 04 carries pg_get_constraintdef text, the one place the dump round trip
+                # respells an expression without changing it.
+                if ($section -eq "04-constraint") {
+                    $text = ConvertTo-CanonicalConstraintDefinition -Definition $text
+                }
                 $lines.Add("$section|$($text.Trim())")
             }
         }

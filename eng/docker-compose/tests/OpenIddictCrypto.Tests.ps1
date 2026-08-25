@@ -745,4 +745,56 @@ Describe "Northridge PostgreSQL restore recipe identity handoff" {
         $invocation | Should -Match '-ClientSecretMinimumLength "\$CLIENT_SECRET_MIN"'
         $invocation | Should -Match '-ClientSecretMaximumLength "\$CLIENT_SECRET_MAX"'
     }
+
+    It "replaces the OpenIddict signing key in one guarded transaction and proves exactly one key is active" {
+        # The recipe carries no set -e. Deactivating the producer's key and inserting the consumer's
+        # must be one operation: run separately, a failed insert leaves no active key and a failed
+        # deactivate leaves the producer's key trusted beside the new one, and neither shows until
+        # the token check. So the generator's INSERT is assembled into one file between the
+        # deactivate and an assertion, the file runs under -1 and ON_ERROR_STOP, and every command
+        # that can fail is guarded with an exit.
+        $step7 = [regex]::Match($script:NorthridgeRecipe, '(?ms)^# 7\. REQUIRED: install your own OpenIddict signing key\..*?(?=^# 8\. )').Value
+        $step7 | Should -Not -BeNullOrEmpty
+
+        $step7 | Should -Match '(?m)^pwsh -NoProfile -File \./Generate-OpenIddictKey-Insert\.ps1 -EncryptionKey "\$IDK" > "\$ART/newkey-insert\.sql" \|\| \\\r?\n\s+\{ .*; exit 1; \}$'
+        $step7 | Should -Match '(?m)^grep -q ''\^INSERT INTO "dmscs"\."OpenIddictKey" '' "\$ART/newkey-insert\.sql" \|\| \\\r?\n\s+\{ .*; exit 1; \}$'
+        $step7 | Should -Match '(?m)^\} > "\$ART/newkey\.sql" \|\| \\\r?\n\s+\{ .*; exit 1; \}$'
+        $step7 | Should -Match '(?m)^docker exec -i dms-postgresql psql -U "\$DBUSER" -d "\$DB" -v ON_ERROR_STOP=1 -q -1 -f - < "\$ART/newkey\.sql" \|\| \\\r?\n\s+\{ .*; exit 1; \}$'
+
+        # One psql run over one file: no separate deactivate, no copy into the container.
+        @([regex]::Matches($step7, '(?m)^docker exec .*psql')).Count | Should -Be 1
+        $step7 | Should -Not -Match 'psql .*-c ''UPDATE dmscs\."OpenIddictKey"'
+        $step7 | Should -Not -Match 'docker cp'
+
+        $assembled = [regex]::Match($step7, '(?ms)^\{\r?\n(?<body>.*?)^\} > "\$ART/newkey\.sql"').Groups["body"].Value
+        $assembled | Should -Not -BeNullOrEmpty
+        $deactivateAt = $assembled.IndexOf('echo ''UPDATE dmscs."OpenIddictKey" SET "IsActive" = FALSE;''')
+        $insertAt = $assembled.IndexOf('cat "$ART/newkey-insert.sql"')
+        $assertAt = $assembled.IndexOf("<<'KEY_ASSERT_SQL'")
+        $deactivateAt | Should -BeGreaterThan -1
+        $insertAt | Should -BeGreaterThan $deactivateAt -Because "the producer's key is deactivated before the new one is inserted"
+        $assertAt | Should -BeGreaterThan $insertAt -Because "the assertion runs after the insert, inside the same transaction"
+
+        $assertion = [regex]::Match($assembled, "(?ms)<<'KEY_ASSERT_SQL'\r?\n(?<sql>.*?)^KEY_ASSERT_SQL").Groups["sql"].Value
+        $assertion | Should -Match 'SELECT COUNT\(\*\) INTO active FROM dmscs\."OpenIddictKey" WHERE "IsActive"'
+        $assertion | Should -Match '(?s)IF active <> 1 THEN\s+RAISE EXCEPTION' -Because "an insert that succeeded beside a still-active producer key must roll back"
+
+        # The key material does not outlive the step, on the success path or the failure path.
+        @([regex]::Matches($step7, 'rm -f "\$ART/newkey\.sql" "\$ART/newkey-insert\.sql"')).Count | Should -BeGreaterOrEqual 2
+
+        # The token check stays, after the replacement, as the second proof rather than the only one.
+        $tokenCheckAt = $script:NorthridgeRecipe.IndexOf('test -n "$T" || { echo "no token: step 7 did not take effect"; exit 1; }')
+        $tokenCheckAt | Should -BeGreaterThan $script:NorthridgeRecipe.IndexOf("# 8. REQUIRED")
+    }
+
+    It "guards the DMS-to-CMS client replacement so a failed delete or insert stops the recipe" {
+        # The same class as step 7: setup-openiddict.ps1 inserts ON CONFLICT DO NOTHING, so a delete
+        # that fails silently leaves the producer's secret hash in place, and only the token check
+        # would notice. Both commands stop the recipe on failure.
+        $step10 = [regex]::Match($script:NorthridgeRecipe, '(?ms)^# 10\. REQUIRED: recreate the client DMS uses.*?(?=^# 11\. )').Value
+        $step10 | Should -Not -BeNullOrEmpty
+        $step10 | Should -Match '(?m)^docker exec -i dms-postgresql psql .* -v cid="\$CID" -f - <<''SQL'' \|\| \\\r?\n\s+\{ .*; exit 1; \}\r?\nDELETE FROM dmscs\."OpenIddictApplication" WHERE "ClientId" = :''cid'';\r?\nSQL$'
+        $invocation = & $script:SetupOpenIddictInvocation
+        $invocation | Should -Match '\|\| \\\n\s+\{ .*; exit 1; \}$' -Because "a failed setup-openiddict.ps1 must stop the recipe before the token check"
+    }
 }

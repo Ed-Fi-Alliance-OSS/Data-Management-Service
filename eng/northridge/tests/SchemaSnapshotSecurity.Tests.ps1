@@ -60,6 +60,8 @@ BeforeAll {
 
     . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:compareScript -FunctionName "Get-SchemaLiteralList")))
     . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:compareScript -FunctionName "Get-SnapshotQueryMap")))
+    . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:compareScript -FunctionName "ConvertTo-CanonicalConstraintDefinition")))
+    $script:exportSnapshotText = Get-ScriptFunctionText -ScriptPath $script:compareScript -FunctionName "Export-SchemaSnapshot"
 
     $script:queryMap = Get-SnapshotQueryMap -SchemaList (Get-SchemaLiteralList -Name @("dms", "edfi"))
 
@@ -68,7 +70,24 @@ BeforeAll {
     # documented statements rather than a copy that could drift from them.
     $readme = Get-Content -Raw -LiteralPath (Join-Path $script:northridgeRoot "README.md")
     $script:recipe = [regex]::Match($readme, '(?ms)^```shell\r?\n(?<recipe>.*?)^```').Groups["recipe"].Value
-    $script:repairSql = [regex]::Match($script:recipe, "(?ms)<<'REPAIR_SQL'\r?\n(?<sql>.*?)^REPAIR_SQL\s*$").Groups["sql"].Value
+    # The heredoc line carries its own `|| { ...; exit 1; }` guard after the tag; the body starts on
+    # the next line.
+    $script:repairSql = [regex]::Match($script:recipe, "(?ms)<<'REPAIR_SQL'[^\r\n]*\r?\n(?<sql>.*?)^REPAIR_SQL\s*$").Groups["sql"].Value
+    # The recipe with its comment lines removed, for assertions about what it runs rather than what
+    # it explains -- the comments name pg_dump and nextval() in order to say why they are not used.
+    $script:activeRecipe = (($script:recipe -split "\r?\n") | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
+
+    # Step 6 of the recipe, the content gate, as the SQL its heredoc feeds psql; and the sequences
+    # Copy-NorthridgeDataForward.ps1 restores from the archive and asserts, read from that script so
+    # the gate is held to the copy tool rather than to a list restated here.
+    $step6 = [regex]::Match($script:recipe, '(?ms)^# 6\. Verify the restore.*?(?=^# 7\. )').Value
+    $script:contentGateSql = [regex]::Match($step6, "(?ms)<<'SQL'\r?\n(?<sql>.*?)^SQL\s*$").Groups["sql"].Value
+    $copyTool = Get-Content -Raw -LiteralPath (Join-Path $script:northridgeRoot "Copy-NorthridgeDataForward.ps1")
+    $script:copyToolSequence = @([regex]::Matches(
+            [regex]::Match($copyTool, '(?ms)\$script:DmsSequence = @\((?<list>.*?)\)').Groups["list"].Value,
+            '"(?<name>[^"]+)"') | ForEach-Object { $_.Groups["name"].Value })
+    $script:copyToolCollectionPredicate = [regex]::Match($copyTool,
+        "(?m)^WHERE (?<predicate>column_name = 'CollectionItemId' AND table_schema IN \([^)]*\));").Groups["predicate"].Value
 
     # Phase 9 ("Security and Grants") of the emitted DMS PostgreSQL DDL, read from the emitter's
     # authoritative DS 5.2 fixture -- the artifact's own schema set -- rather than restated here. The
@@ -376,10 +395,10 @@ GRANT USAGE ON SCHEMA dms TO $script:ownerRole;
 Describe "Restore recipe repairs the security metadata the compare checks" {
     # The README's restore uses pg_restore --no-owner --no-privileges, and the compare reads exactly
     # the ownership and privileges those flags drop. The two are consistent only because the recipe
-    # re-applies the DDL's Security and Grants phase (step 5b) and proves the result against a
-    # reference put through the same restore (step 5c). These cases hold the recipe to the emitter:
-    # the repair block must be the DDL's own statements, no more and no fewer, in the DDL's order,
-    # and the restore, the repair and the proof must sit in that order.
+    # re-applies the DDL's Security and Grants phase (step 5b) and proves the result against the
+    # deployment itself, set aside by a rename before the restore (step 5c). These cases hold the
+    # recipe to the emitter: the repair block must be the DDL's own statements, no more and no fewer,
+    # in the DDL's order, and the rename, the restore, the repair and the proof must sit in that order.
 
     It "restores with the flags that drop ownership and privileges, then repairs, then proves" {
         $script:recipe | Should -Match '(?m)^docker exec dms-postgresql pg_restore -U "\$DBUSER" -d "\$DB" --no-owner --no-privileges'
@@ -395,44 +414,84 @@ Describe "Restore recipe repairs the security metadata the compare checks" {
         $contentCheckAt | Should -BeGreaterThan $proofAt -Because "the content checks must run on a proven database"
     }
 
-    It "applies the repair block to the restored artifact and to the reference, transactionally and fail-closed" {
-        # Both applications read the file the heredoc wrote, so the two sides cannot drift, and both
-        # run under -1 (one transaction) and ON_ERROR_STOP (abort at the first error).
+    It "applies the repair block to the restored artifact only, transactionally and fail-closed" {
+        # The reference is the deployment itself and needs no repair; repairing it would mask a block
+        # incomplete in the same way on both sides. The one application reads the file the heredoc
+        # wrote and runs under -1 (one transaction) and ON_ERROR_STOP (abort at the first error).
+        # The write is guarded too: a heredoc that fails to land must stop the recipe rather than let
+        # a stale repair.sql from an earlier attempt be applied in its place.
+        $script:recipe | Should -Match '(?m)^cat > "\$ART/repair\.sql" <<''REPAIR_SQL'' \|\| \{ .*; exit 1; \}$' -Because "writing the repair block must be fail-closed like applying it"
+        $script:repairSql | Should -Match '(?m)^DO \$\$' -Because "the extracted block must start at the SQL, not at the guard"
+        $script:repairSql | Should -Not -Match 'exit 1' -Because "the guard must not be read as part of the SQL fed to psql"
+
         $application = @([regex]::Matches($script:recipe, '(?m)^.*psql .*-f - < "\$ART/repair\.sql".*$') | ForEach-Object { $_.Value })
-        $application.Count | Should -Be 2 -Because "once for the artifact restore, once for the reference"
+        $application.Count | Should -Be 1 -Because "the artifact restore is repaired; the deployment must not be touched"
         foreach ($line in $application) {
             $line | Should -Match '-v ON_ERROR_STOP=1' -Because "a failed statement must stop psql, not be reported and skipped: $line"
             $line | Should -Match '\s-1\s' -Because "a partial repair must roll back rather than leave a half-repaired database: $line"
             $line | Should -Match '-U "\$DBUSER"' -Because "the live superuser, not a default: $line"
+            $line | Should -Match '-d "\$DB"' -Because "the restored artifact is the database being repaired: $line"
         }
-        @($application | Where-Object { $_ -match '-d "\$DB"' }).Count | Should -Be 1
-        @($application | Where-Object { $_ -match '-d "\$REF"' }).Count | Should -Be 1
+        $script:recipe | Should -Not -Match '-d "\$REF"' -Because "nothing in the recipe may connect to the reference deployment to write to it"
 
         $script:repairSql | Should -Match "to_regrole\('edfi_dms_enqueue_owner'\) IS NULL" -Because "the guard must name the role the DDL creates"
         $script:repairSql | Should -Match 'RAISE EXCEPTION' -Because "a missing role must stop the recipe"
         $script:repairSql | Should -Not -Match 'CREATE ROLE' -Because "the recipe must not create a role shaped differently from the DDL's"
     }
 
-    It "dumps the deployment before the drop and compares against a reference restored and repaired the same way" {
-        # The reference is a restore, not the deployment: pg_dump writes a CHECK constraint as
-        # pg_get_constraintdef renders it and PostgreSQL re-parses (ARRAY[...])::text[] as
-        # ARRAY[(...)::text, ...], so a restored database always differs from a deployment on
-        # dms.CK_DocumentCacheState_Lifecycle. Both sides through the same round trip, both repaired
-        # by the same block, compared live by the script itself.
-        $dumpAt = $script:recipe.IndexOf('pg_dump -U "$DBUSER" -Fc -f /tmp/deployed.dump -- "$DB"')
-        $dropAt = $script:recipe.IndexOf('dropdb -U "$DBUSER" --maintenance-db=postgres --if-exists -- "$DB"')
-        $dumpAt | Should -BeGreaterThan -1 -Because "the deployed database must be dumped"
-        $dropAt | Should -BeGreaterThan $dumpAt -Because "the deployed database must be dumped before it is dropped"
+    It "keeps the fresh deployment as the reference and compares the restored artifact against it" {
+        # The reference is the database step 4 deployed, renamed before the artifact is restored --
+        # not a dump of it restored beside the artifact, which would have needed the same repair and
+        # so could not have caught a repair block wrong in the same way on both sides. The rename is
+        # generated server-side from psql variables through format('%I'), so no database name is
+        # pasted into SQL text, and it is guarded like every other step.
+        $script:activeRecipe | Should -Not -Match 'pg_dump' -Because "the deployment is kept, not dumped and restored"
+        $script:activeRecipe | Should -Not -Match 'deployed\.dump'
 
-        $referenceRestore = [regex]::Match($script:recipe, '(?m)^docker exec dms-postgresql pg_restore -U "\$DBUSER" -d "\$REF" --no-owner --no-privileges.*$')
-        $referenceRestore.Success | Should -BeTrue -Because "the reference must be restored with the artifact's flags"
-        $referenceRestore.Index | Should -BeGreaterThan $script:recipe.IndexOf("<<'REPAIR_SQL'")
-
+        $stopAt = $script:recipe.IndexOf('docker stop ed-fi-api ed-fi-api-config-service')
+        $referenceAt = $script:recipe.IndexOf('REF="${DB}_reference"')
+        $staleDropAt = $script:recipe.IndexOf('dropdb -U "$DBUSER" --maintenance-db=postgres --if-exists -- "$REF"')
+        $rename = [regex]::Match($script:recipe, '(?m)^docker exec -i dms-postgresql psql -U "\$DBUSER" -d postgres -v ON_ERROR_STOP=1 -q \\\r?\n\s+-v db="\$DB" -v ref="\$REF" -f - <<''SQL'' \|\| \\\r?\n\s+\{ echo [^\n]*; exit 1; \}\r?\nSELECT format\(''ALTER DATABASE %I RENAME TO %I'', :''db'', :''ref''\) \\gexec\r?\nSQL$')
+        $createAt = $script:recipe.IndexOf('createdb -U "$DBUSER" --maintenance-db=postgres -- "$DB"')
+        $restoreAt = $script:recipe.IndexOf('pg_restore -U "$DBUSER" -d "$DB"')
+        $repairAt = $script:recipe.IndexOf("<<'REPAIR_SQL'")
         $compare = [regex]::Match($script:recipe, '(?m)^.*Compare-DmsSchemaSnapshot\.ps1 -Database \$env:DB, \$env:REF .*-PostgresUser \$env:DBUSER.*$')
+        $referenceDropAt = $script:recipe.IndexOf('dropdb -U "$DBUSER" --maintenance-db=postgres -- "$REF"')
+
+        $stopAt | Should -BeGreaterThan -1
+        $referenceAt | Should -BeGreaterThan $stopAt -Because "nothing may hold a connection while the deployment is renamed"
+        $staleDropAt | Should -BeGreaterThan $referenceAt -Because "a reference left by an earlier attempt must be dropped before the rename can collide with it"
+        $rename.Success | Should -BeTrue -Because "the deployment must be renamed through psql variables and format('%I'), fail-closed"
+        $rename.Index | Should -BeGreaterThan $staleDropAt
+        $createAt | Should -BeGreaterThan $rename.Index -Because "the artifact's database is created only once the deployment is safely out of the way"
+        $restoreAt | Should -BeGreaterThan $createAt
+        $repairAt | Should -BeGreaterThan $restoreAt
         $compare.Success | Should -BeTrue -Because "the compare must run the script's two-database mode on the live superuser"
-        $compare.Index | Should -BeGreaterThan $referenceRestore.Index
-        $script:recipe.IndexOf('dropdb -U "$DBUSER" --maintenance-db=postgres -- "$REF"') | Should -BeGreaterThan $compare.Index -Because "the reference is scratch and is removed after the compare"
-        [regex]::Matches($script:recipe, 'Compare-DmsSchemaSnapshot\.ps1').Count | Should -Be 1 -Because "one live compare; a snapshot of the deployment itself would carry the deparse artifact"
+        $compare.Index | Should -BeGreaterThan $repairAt -Because "the proof follows the repair"
+        $referenceDropAt | Should -BeGreaterThan $compare.Index -Because "the reference is scratch once the compare has passed"
+
+        [regex]::Matches($script:recipe, '(?m)^docker exec dms-postgresql pg_restore ').Count | Should -Be 1 -Because "one restore, the artifact into `$DB; the reference is never restored"
+        [regex]::Matches($script:activeRecipe, 'Compare-DmsSchemaSnapshot\.ps1').Count | Should -Be 1 -Because "one live compare, against the deployment itself"
+        $script:recipe | Should -Not -Match 'dropdb [^\n]* -- "\$DB"' -Because "the deployment is renamed, never dropped"
+    }
+
+    It "never pastes a database name into SQL text" {
+        # A supported POSTGRES_DB_NAME need not be a well-behaved identifier. Names reach the server
+        # only as dropdb/createdb arguments after `--`, as psql -d connections, or as psql variables
+        # quoted server-side by format('%I'); every heredoc that carries SQL is quoted, so nothing
+        # the shell holds expands into it, and every inline SQL argument is single-quoted.
+        $active = $script:activeRecipe
+        foreach ($heredoc in [regex]::Matches($active, '<<\s*(?<tag>\S+)')) {
+            $heredoc.Groups["tag"].Value | Should -Match "^'[A-Z_]+'$" -Because "an unquoted heredoc would expand shell variables into SQL: $($heredoc.Value)"
+        }
+        $joined = $active -replace '\\\n\s*', ' '
+        foreach ($line in ($joined -split "\n" | Where-Object { $_ -match '\bpsql\b' -and $_ -match '\s-(c|tAc)\s' })) {
+            $line | Should -Match '\s-(c|tAc)\s+''' -Because "an inline SQL argument must be single-quoted so the shell cannot expand into it: $line"
+        }
+        $active | Should -Not -Match 'ALTER DATABASE\s+"?\$' -Because "the rename must go through format('%I'), never a pasted name"
+        foreach ($line in ($joined -split "\n" | Where-Object { $_ -match '\b(dropdb|createdb)\b' })) {
+            $line | Should -Match ' -- "\$(DB|REF)"' -Because "dropdb/createdb must take the name as a guarded argument: $line"
+        }
     }
 
     It "re-applies every statement of the DDL's Security and Grants phase and nothing else" {
@@ -484,6 +543,123 @@ Describe "Restore recipe repairs the security metadata the compare checks" {
     }
 }
 
+Describe "Constraint snapshot normalizes PostgreSQL's two array-cast spellings and nothing else" {
+    # pg_get_constraintdef renders CHECK ("Col" IN (...)) on a varchar column as (ARRAY[...])::text[]
+    # in the database the DDL deployed, and as ARRAY[(...)::text, ...] in a database restored from a
+    # dump of it. Section 04 has to read those as one constraint -- step 5c compares a restore
+    # against the deployment itself -- while still reading a changed predicate as a difference. The
+    # spellings below are the catalog's own, captured from PostgreSQL 16 before and after a
+    # pg_dump/pg_restore round trip of the DDL's dms."DocumentCacheState".
+    BeforeAll {
+        $script:deployedSpelling = 'CHECK ((("ProjectionLifecycleState")::text = ANY ((ARRAY[''Disabled''::character varying, ''Resetting''::character varying, ''Rebuilding''::character varying, ''Tracking''::character varying])::text[])))'
+        $script:restoredSpelling = 'CHECK ((("ProjectionLifecycleState")::text = ANY (ARRAY[(''Disabled''::character varying)::text, (''Resetting''::character varying)::text, (''Rebuilding''::character varying)::text, (''Tracking''::character varying)::text])))'
+    }
+
+    It "reads the restored spelling as the deployed one" {
+        ConvertTo-CanonicalConstraintDefinition -Definition $script:restoredSpelling | Should -BeExactly $script:deployedSpelling
+    }
+
+    It "leaves the deployed spelling as it is, so a deployment's snapshot does not change" {
+        ConvertTo-CanonicalConstraintDefinition -Definition $script:deployedSpelling | Should -BeExactly $script:deployedSpelling
+    }
+
+    It "is idempotent" {
+        $once = ConvertTo-CanonicalConstraintDefinition -Definition $script:restoredSpelling
+        ConvertTo-CanonicalConstraintDefinition -Definition $once | Should -BeExactly $once
+    }
+
+    It "carries a string literal's own quotes and parentheses through the rewrite" {
+        # PostgreSQL doubles a quote inside a literal, and a literal may hold parentheses; the element
+        # pattern has to read them as text rather than as expression structure.
+        ConvertTo-CanonicalConstraintDefinition -Definition 'CHECK ((("Z")::text = ANY (ARRAY[(''it''''s (odd)''::character varying)::text, (''plain''::character varying)::text])))' |
+            Should -BeExactly 'CHECK ((("Z")::text = ANY ((ARRAY[''it''''s (odd)''::character varying, ''plain''::character varying])::text[])))'
+    }
+
+    It "still reads a changed, missing or added value, a different cast type and a different column as differences" {
+        # The negative control: each variant is the restored spelling with one real change, and none
+        # may normalize to the deployment.
+        $variant = [ordered]@{
+            "changed value"  = $script:restoredSpelling.Replace("'Tracking'", "'Trackin'")
+            "missing value"  = $script:restoredSpelling.Replace(", ('Tracking'::character varying)::text", "")
+            "added value"    = $script:restoredSpelling.Replace("('Tracking'::character varying)::text]", "('Tracking'::character varying)::text, ('Archived'::character varying)::text]")
+            "different cast" = $script:restoredSpelling.Replace(")::text,", ")::character varying,").Replace(")::text]", ")::character varying]")
+            "other column"   = $script:restoredSpelling.Replace('"ProjectionLifecycleState"', '"Other"')
+        }
+        foreach ($name in $variant.Keys) {
+            $variant[$name] | Should -Not -BeExactly $script:restoredSpelling -Because "the $name variant must actually differ from the baseline"
+            ConvertTo-CanonicalConstraintDefinition -Definition $variant[$name] |
+                Should -Not -BeExactly $script:deployedSpelling -Because "a $name is real drift and must still fail the compare"
+        }
+    }
+
+    It "does not rewrite an array that is not a uniformly pushed-down cast" {
+        # Anything but "every element is (expr)::same-type" is an expression of its own and is
+        # reported as the catalog rendered it -- a false difference at worst, never a false match.
+        foreach ($untouched in @(
+                'CHECK (("N" = ANY (ARRAY[1, 2, 3])))',
+                'CHECK (("X" = ANY (ARRAY[''a''::text, ''b''::text])))',
+                'ARRAY[(''a''::character varying)::text, ''b''::text]',
+                'ARRAY[(''a''::character varying)::text, (''b''::character varying)::integer]',
+                'ARRAY[(''a''::text)::text[], (''b''::text)::text[]]'
+            )) {
+            ConvertTo-CanonicalConstraintDefinition -Definition $untouched | Should -BeExactly $untouched
+        }
+    }
+
+    It "is applied to the constraint section of the snapshot and to no other" {
+        $script:exportSnapshotText | Should -Match '"04-constraint"' -Because "the rewrite must be scoped to the pg_get_constraintdef rows"
+        [regex]::Matches($script:exportSnapshotText, 'ConvertTo-CanonicalConstraintDefinition').Count | Should -Be 1
+    }
+}
+
+Describe "Restore recipe content gate checks every sequence the copied data draws from" {
+    # Step 6 proves the restored database holds the published dataset. Row counts cannot see a
+    # sequence left at its fresh-database position, which surfaces as a primary-key collision on the
+    # first write, so every sequence the copy tool restores from the archive and asserts is measured
+    # here too, against the data it numbers, from last_value, is_called and the increment -- never
+    # nextval(), which would move the sequence being checked.
+
+    It "names the same sequences Copy-NorthridgeDataForward.ps1 restores, and no fewer" {
+        $script:copyToolSequence.Count | Should -Be 3 -Because "the copy tool lists three: $($script:copyToolSequence -join ', ')"
+        foreach ($sequence in $script:copyToolSequence) {
+            $schema, $name = $sequence.Split(".")
+            $quoted = "$schema.`"$name`""
+            $script:contentGateSql | Should -Match ([regex]::Escape("FROM $quoted s, pg_sequence q")) -Because "$sequence must be read from its own relation, where is_called lives"
+            $script:contentGateSql | Should -Match ([regex]::Escape("WHERE q.seqrelid = '$quoted'::regclass")) -Because "the increment for $sequence must come from pg_sequence"
+        }
+    }
+
+    It "computes each next value from last_value, is_called and the increment, never from nextval()" {
+        # The SQL comments name nextval() to say why it is not called; the statements must not call it.
+        $statement = (($script:contentGateSql -split "\r?\n") | Where-Object { $_ -notmatch '^\s*--' }) -join "`n"
+        $statement | Should -Not -Match 'nextval\s*\('
+        [regex]::Matches($script:contentGateSql, [regex]::Escape('s.last_value + CASE WHEN s.is_called THEN q.seqincrement ELSE 0 END')).Count |
+            Should -Be $script:copyToolSequence.Count -Because "every sequence uses the same next-value reasoning"
+    }
+
+    It "measures each sequence against the data it numbers, with the collection tables read from the catalog" {
+        $script:contentGateSql | Should -Match ([regex]::Escape('> COALESCE((SELECT MAX("DocumentId") FROM dms."Document"), 0)')) -Because "Document_DocumentId_seq numbers dms.Document"
+        $script:contentGateSql | Should -Match 'MAX\(GREATEST\("ContentVersion", "IdentityVersion"\)\)' -Because "ChangeVersionSequence spans both document versions"
+        $script:contentGateSql | Should -Match ([regex]::Escape('MAX("ContentVersion") FROM dms."Descriptor"')) -Because "the descriptor stamping trigger draws from ChangeVersionSequence too"
+        $script:contentGateSql | Should -Match '> collection_max\)' -Because "CollectionItemIdSequence is measured against the gathered collection maximum"
+        # The same catalog predicate as the copy tool, so the two cannot disagree on which tables count.
+        $script:copyToolCollectionPredicate | Should -Not -BeNullOrEmpty -Because "the copy tool's predicate must have been read"
+        $script:contentGateSql | Should -Match ([regex]::Escape($script:copyToolCollectionPredicate))
+        $script:contentGateSql | Should -Match "format\('SELECT COALESCE\(MAX\(%I\), 0\) AS v FROM %I\.%I'" -Because "table and column names must be quoted as identifiers, never pasted"
+        $script:contentGateSql | Should -Match '(?s)IF collection_sql IS NULL THEN\s+RAISE EXCEPTION' -Because "no collection tables at all must stop the gate, not pass it"
+    }
+
+    It "asserts that every written check ran, and the prose, the assertion and the notice agree on how many" {
+        $written = [regex]::Matches($script:contentGateSql, "(?m)^\s*(?:UNION ALL )?SELECT '[^']+'(?: AS item)?,").Count
+        $written | Should -BeGreaterThan 17 -Because "the gate grew by the two sequence checks"
+        [regex]::Match($script:contentGateSql, 'IF checked <> (?<n>\d+) THEN').Groups["n"].Value | Should -Be "$written"
+        $script:contentGateSql | Should -Match "only % of $written checks ran"
+        $script:contentGateSql | Should -Match "restore verified: all $written published values and invariants match"
+        $script:recipe | Should -Match "#\s+Expect: NOTICE: restore verified: all $written published values and invariants match"
+        $script:recipe | Should -Match "This block compares $written values"
+    }
+}
+
 Describe "Restore recipe: a bare restore fails the compare and step 5b repairs it" -Skip:(-not $script:pgFixtureEnabled) {
     BeforeAll {
         # Two databases: one provisioned the way the DDL provisions -- the objects Phase 9 touches,
@@ -491,6 +667,9 @@ Describe "Restore recipe: a bare restore fails the compare and step 5b repairs i
         # dump with the recipe's flags. The role is the DDL's own, so it is created only if this
         # cluster does not have it and dropped only if this run created it: on a stack that has
         # bootstrapped DMS it already exists, owns objects, and is not this fixture's to remove.
+        # dms."DocumentCacheState" carries the DDL's own varchar column and CHECK ... IN constraint,
+        # the one row a dump round trip respells, so the repaired compare below is the recipe's step
+        # 5c in miniature: a restore against the deployment itself, deparse artifact included.
         $script:recipeDatabase = @("dms_nr_fx_deployed", "dms_nr_fx_restored")
         $script:recipeDump = "/tmp/dms_nr_fx_deployed.dump"
         $roleExists = docker exec $script:container psql -U $script:pgUser -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname = 'edfi_dms_enqueue_owner';" 2>&1
@@ -515,7 +694,7 @@ Describe "Restore recipe: a bare restore fails the compare and step 5b repairs i
 CREATE SCHEMA "dms";
 CREATE TABLE dms."EffectiveSchema"("EffectiveSchemaSingletonId" int PRIMARY KEY, "ApiSchemaFormatVersion" text, "EffectiveSchemaHash" text, "ResourceKeyCount" int, "ResourceKeySeedHash" bytea);
 CREATE TABLE dms."SchemaComponent"("EffectiveSchemaHash" text, "ProjectEndpointName" text, "ProjectName" text, "ProjectVersion" text, "IsExtensionProject" boolean);
-CREATE TABLE "dms"."DocumentCacheState"("StateId" int PRIMARY KEY, "ProjectionLifecycleState" text NOT NULL);
+CREATE TABLE "dms"."DocumentCacheState"("StateId" smallint PRIMARY KEY, "ProjectionLifecycleState" varchar(16) NOT NULL, CONSTRAINT "CK_DocumentCacheState_Lifecycle" CHECK ("ProjectionLifecycleState" IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking')));
 CREATE TABLE "dms"."DocumentProjectionWork"("DocumentProjectionWorkId" bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, "DocumentId" bigint NOT NULL);
 CREATE FUNCTION "dms"."TF_Document_EnqueueProjectionInsert"() RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog AS `$func`$ BEGIN RETURN NULL; END `$func`$;
 CREATE FUNCTION "dms"."TF_Document_EnqueueProjectionUpdate"() RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog AS `$func`$ BEGIN RETURN NULL; END `$func`$;
@@ -565,6 +744,7 @@ $script:securityPhase
         foreach ($section in @("02-table", "06-sequence", "08-routine")) {
             $result.Diff | Should -Not -Match "`t$section\|" -Because "$section is not what a same-user restore changes: $($result.Diff)"
         }
+        $result.Diff | Should -Not -Match "`t04-constraint\|" -Because "the respelled CHECK constraint is the same predicate and must not read as drift: $($result.Diff)"
         $result.Diff | Should -Match "owner=edfi_dms_enqueue_owner"
         $result.Diff | Should -Match "PUBLIC=EXECUTE"
     }
@@ -581,5 +761,27 @@ $script:securityPhase
         Invoke-RecipeRepair -DatabaseName "dms_nr_fx_restored"
         $result = Invoke-Compare -DatabaseName @("dms_nr_fx_deployed", "dms_nr_fx_restored")
         $result.Failed | Should -BeFalse -Because "the repair must be idempotent: $($result.Output)$($result.Diff)"
+    }
+
+    It "still fails when the restored CHECK constraint really differs" {
+        # The live negative control for the deparse normalization: the two spellings of one
+        # predicate compare equal above, so a different predicate must not. The restored side gets
+        # the same constraint with one value fewer, then gets the original back.
+        Invoke-FixtureSql -DatabaseName "dms_nr_fx_restored" -Sql @"
+ALTER TABLE "dms"."DocumentCacheState" DROP CONSTRAINT "CK_DocumentCacheState_Lifecycle";
+ALTER TABLE "dms"."DocumentCacheState" ADD CONSTRAINT "CK_DocumentCacheState_Lifecycle" CHECK ("ProjectionLifecycleState" IN ('Disabled', 'Resetting', 'Rebuilding'));
+"@
+        try {
+            $result = Invoke-Compare -DatabaseName @("dms_nr_fx_deployed", "dms_nr_fx_restored")
+            $result.Failed | Should -BeTrue -Because "a changed value list is real drift: $($result.Output)"
+            $result.Diff | Should -Match "`t04-constraint\|constraint\|dms\.DocumentCacheState\|CK_DocumentCacheState_Lifecycle\|" -Because "the diff must name the constraint: $($result.Diff)"
+            $result.Diff | Should -Match "'Tracking'" -Because "the side that still holds the value must show it"
+        }
+        finally {
+            Invoke-FixtureSql -DatabaseName "dms_nr_fx_restored" -Sql @"
+ALTER TABLE "dms"."DocumentCacheState" DROP CONSTRAINT "CK_DocumentCacheState_Lifecycle";
+ALTER TABLE "dms"."DocumentCacheState" ADD CONSTRAINT "CK_DocumentCacheState_Lifecycle" CHECK ("ProjectionLifecycleState" IN ('Disabled', 'Resetting', 'Rebuilding', 'Tracking'));
+"@
+        }
     }
 }
