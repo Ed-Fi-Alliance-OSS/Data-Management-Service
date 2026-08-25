@@ -133,6 +133,77 @@ public sealed class Given_DocumentCacheAdminProcessFailures
     }
 
     [Test]
+    public async Task It_returns_retryable_shared_result_when_dispatch_cancellation_escapes_in_json_mode()
+    {
+        ThrowingMutatingCommandDispatcher dispatcher = new(new OperationCanceledException("cancelled"));
+        await using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddSingleton<IDocumentCacheAdminMutatingCommandDispatcher>(dispatcher)
+            .BuildServiceProvider();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+
+        int exitCode = await DocumentCacheAdminCommandExecutor.ExecuteAsync(
+            ParseCommand(
+                DocumentCacheAdminCommandSurface.RebuildOnlineCommandName,
+                DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
+                "1",
+                DocumentCacheAdminCommandSurface.ConfirmOptionName,
+                "onlineCacheRebuild",
+                DocumentCacheAdminCommandSurface.JsonOptionName
+            ),
+            InvocationTarget(),
+            serviceProvider,
+            stdout,
+            stderr
+        );
+
+        exitCode.Should().Be(DocumentCacheAdminExitCodes.IncompleteRetryable);
+        JsonObject result = ParseSingleJsonResult(stdout);
+        result["command"]!.GetValue<string>().Should().Be("onlineCacheRebuild");
+        result["status"]!.GetValue<string>().Should().Be("incompleteRetryable");
+        result["classification"]!.GetValue<string>().Should().Be("cancellationAfterMutation");
+        result["mutated"]!.GetValue<bool>().Should().BeTrue();
+        result["phaseDiagnostics"]![0]!["diagnosticCategory"]!.GetValue<string>().Should().Be("cancellation");
+        result["phaseDiagnostics"]![0]!["retryable"]!.GetValue<bool>().Should().BeTrue();
+        stderr.ToString().Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_renders_the_retryable_dispatch_cancellation_result_in_human_mode()
+    {
+        ThrowingMutatingCommandDispatcher dispatcher = new(new OperationCanceledException("cancelled"));
+        await using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddSingleton<IDocumentCacheAdminMutatingCommandDispatcher>(dispatcher)
+            .BuildServiceProvider();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+
+        int exitCode = await DocumentCacheAdminCommandExecutor.ExecuteAsync(
+            ParseCommand(
+                DocumentCacheAdminCommandSurface.ScrubCommandName,
+                DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
+                "1",
+                DocumentCacheAdminCommandSurface.ConfirmOptionName,
+                "integrityScrub"
+            ),
+            InvocationTarget(),
+            serviceProvider,
+            stdout,
+            stderr
+        );
+
+        exitCode.Should().Be(DocumentCacheAdminExitCodes.IncompleteRetryable);
+        stdout
+            .ToString()
+            .Should()
+            .Contain(
+                "DocumentCache command=ExplicitIntegrityScrub status=IncompleteRetryable classification=CancellationAfterMutation mutated=true"
+            )
+            .And.Contain("diagnostic phase=Complete category=Cancellation retryable=true");
+        stderr.ToString().Should().BeEmpty();
+    }
+
+    [Test]
     public async Task It_preserves_a_retryable_cancellation_result_from_the_shared_runner()
     {
         ReturningMutatingCommandDispatcher dispatcher = new(

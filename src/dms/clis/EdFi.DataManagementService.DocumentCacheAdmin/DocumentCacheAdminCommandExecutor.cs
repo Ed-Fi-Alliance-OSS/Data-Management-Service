@@ -213,18 +213,18 @@ internal static class DocumentCacheAdminCommandExecutor
             }
             catch (OperationCanceledException)
             {
-                await WriteErrorAsync(
-                        standardError,
-                        "DocumentCache administrative command was cancelled before a shared result could be produced."
-                    )
+                DocumentCacheAdministrativeCommandResult result = CreateDispatchCancellationResult(
+                    commandName,
+                    mutatingCommandRequest
+                );
+
+                await WriteAdministrativeCommandResultAsync(result, jsonOutput, standardOutput)
                     .ConfigureAwait(false);
 
                 return CompleteCommand(
-                    DocumentCacheAdminExitCodes.UnexpectedFailure,
-                    "unexpectedFailure",
-                    commandTimeout.IsTimeoutExpired
-                        ? "dispatcherTimeoutWithoutResult"
-                        : "dispatcherCancellationWithoutResult"
+                    DocumentCacheAdminExitCodeMapper.ForAdministrativeCommandResult(result),
+                    result.Status.ToString(),
+                    result.Classification.ToString()
                 );
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
@@ -267,6 +267,47 @@ internal static class DocumentCacheAdminCommandExecutor
         }
 
         await WriteHumanAdministrativeCommandResultAsync(result, standardOutput).ConfigureAwait(false);
+    }
+
+    private static DocumentCacheAdministrativeCommandResult CreateDispatchCancellationResult(
+        string commandName,
+        DocumentCacheAdminMutatingCommandRequest commandRequest
+    )
+    {
+        if (
+            !DocumentCacheAdminMutatingCommandContracts.TryGet(
+                commandName,
+                out DocumentCacheAdminMutatingCommandContract? contract
+            )
+        )
+        {
+            throw new InvalidOperationException($"Command '{commandName}' is not a mutating command.");
+        }
+
+        DocumentCacheOfflineWriterAdmissionConfirmation? offlineWriterAdmission = commandRequest.Request
+            is IDocumentCacheOfflineWriterAdmissionRequest request
+            ? request.OfflineWriterAdmission?.Confirmation
+            : null;
+
+        return new(
+            contract.AdministrativeCommand,
+            DocumentCacheAdministrativeTargetKey.FromTargetKey(commandRequest.TargetKey),
+            DocumentCacheAdministrativeCommandStatus.IncompleteRetryable,
+            DocumentCacheAdministrativeCommandClassification.CancellationAfterMutation,
+            mutated: true,
+            phaseDiagnostics:
+            [
+                new DocumentCacheAdministrativePhaseDiagnostic(
+                    DocumentCacheAdministrativeCommandPhase.Complete,
+                    lastCompletedPhase: null,
+                    retryable: true,
+                    DocumentCacheAdministrativeDiagnosticCategory.Cancellation,
+                    affectedDocumentIds: [],
+                    "Administrative command cancellation escaped after mutating dispatch began; reissue the same explicit command."
+                ),
+            ],
+            offlineWriterAdmission: offlineWriterAdmission
+        );
     }
 
     private static DocumentCacheAdministrativeCommandResult ConvertCancellationResultToWorkflowTimeout(
