@@ -32,6 +32,10 @@ internal static class DocumentCacheAdminServiceCollectionExtensions
         services.TryAddSingleton(configuration);
 
         services.AddOptions<AppSettings>().Bind(configuration.GetSection("AppSettings"));
+        services
+            .AddOptions<DocumentCacheOptions>()
+            .Configure(options => ConfigureDocumentCacheOptions(configuration, invocationTarget, options))
+            .ValidateOnStart();
 
         services
             .AddDmsDefaultConfiguration(
@@ -43,18 +47,6 @@ internal static class DocumentCacheAdminServiceCollectionExtensions
             .AddDmsConfigurationServiceDataStoreProvider(configuration)
             .AddDmsDocumentCacheTargetRegistry(configuration)
             .AddDocumentCacheProjectionSupervisor(registerHostedService: false);
-
-        services.Configure<DocumentCacheOptions>(options =>
-        {
-            options.Targets =
-            [
-                new DocumentCacheTargetOptions
-                {
-                    TenantKey = invocationTarget.TenantKey,
-                    DataStoreId = invocationTarget.DataStoreId,
-                },
-            ];
-        });
 
         services.AddSingleton<IDocumentCacheAdminTargetResolver, DocumentCacheAdminTargetResolver>();
         services.AddSingleton<
@@ -77,5 +69,59 @@ internal static class DocumentCacheAdminServiceCollectionExtensions
         }
 
         throw new InvalidOperationException("AppSettings:Datastore must be one of: postgresql, mssql");
+    }
+
+    private static void ConfigureDocumentCacheOptions(
+        IConfiguration configuration,
+        DocumentCacheTargetKey invocationTarget,
+        DocumentCacheOptions options
+    )
+    {
+        IConfigurationRoot configurationWithoutConfiguredTargets =
+            CreateConfigurationWithoutConfiguredTargets(configuration);
+
+        configurationWithoutConfiguredTargets.GetSection(DocumentCacheOptions.SectionName).Bind(options);
+        options.Targets =
+        [
+            new DocumentCacheTargetOptions
+            {
+                TenantKey = invocationTarget.TenantKey,
+                DataStoreId = invocationTarget.DataStoreId,
+            },
+        ];
+    }
+
+    private static IConfigurationRoot CreateConfigurationWithoutConfiguredTargets(
+        IConfiguration configuration
+    )
+    {
+        const string documentCacheSectionName = DocumentCacheOptions.SectionName;
+        const string targetsSectionName = $"{DocumentCacheOptions.SectionName}:Targets";
+        string documentCacheSectionPrefix = $"{documentCacheSectionName}:";
+        string targetsSectionPrefix = $"{targetsSectionName}:";
+        Dictionary<string, string?> settings = new(StringComparer.OrdinalIgnoreCase);
+
+        foreach (KeyValuePair<string, string?> setting in configuration.AsEnumerable())
+        {
+            if (
+                !string.Equals(setting.Key, documentCacheSectionName, StringComparison.OrdinalIgnoreCase)
+                && !setting.Key.StartsWith(documentCacheSectionPrefix, StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                continue;
+            }
+
+            if (
+                string.Equals(setting.Key, targetsSectionName, StringComparison.OrdinalIgnoreCase)
+                || setting.Key.StartsWith(targetsSectionPrefix, StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                continue;
+            }
+
+            settings[setting.Key] = setting.Value;
+        }
+
+        return new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
     }
 }

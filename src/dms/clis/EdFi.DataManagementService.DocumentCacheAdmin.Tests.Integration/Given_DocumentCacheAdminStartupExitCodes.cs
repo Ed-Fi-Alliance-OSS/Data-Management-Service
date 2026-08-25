@@ -38,7 +38,7 @@ public sealed class Given_DocumentCacheAdminStartupExitCodes
         result.StandardError.Should().Contain("DocumentCache configuration error");
     }
 
-    [TestCaseSource(nameof(MalformedDocumentCacheOptionCases))]
+    [TestCaseSource(nameof(StatusMalformedEffectiveDocumentCacheOptionCases))]
     public async Task It_returns_configuration_error_for_malformed_document_cache_options_before_status_execution(
         MalformedDocumentCacheOption option,
         string expectedDiagnostic
@@ -67,7 +67,7 @@ public sealed class Given_DocumentCacheAdminStartupExitCodes
         }
     }
 
-    [TestCaseSource(nameof(MalformedDocumentCacheOptionCases))]
+    [TestCaseSource(nameof(MutatingMalformedEffectiveDocumentCacheOptionCases))]
     public async Task It_returns_configuration_error_for_malformed_document_cache_options_before_mutating_execution(
         MalformedDocumentCacheOption option,
         string expectedDiagnostic
@@ -181,12 +181,8 @@ public sealed class Given_DocumentCacheAdminStartupExitCodes
         return new ProcessResult(process.ExitCode, await standardOutput, await standardError);
     }
 
-    private static IEnumerable<TestCaseData> MalformedDocumentCacheOptionCases()
+    private static IEnumerable<TestCaseData> StatusMalformedEffectiveDocumentCacheOptionCases()
     {
-        yield return new TestCaseData(
-            MalformedDocumentCacheOption.Status,
-            "Status:EndpointTimeout must be positive"
-        ).SetName("Status timeout");
         yield return new TestCaseData(
             MalformedDocumentCacheOption.Administration,
             "Administration:WorkflowTimeout must be positive"
@@ -195,10 +191,18 @@ public sealed class Given_DocumentCacheAdminStartupExitCodes
             MalformedDocumentCacheOption.Projector,
             "Projector:PageSize must be positive"
         ).SetName("Projector page size");
+    }
+
+    private static IEnumerable<TestCaseData> MutatingMalformedEffectiveDocumentCacheOptionCases()
+    {
         yield return new TestCaseData(
-            MalformedDocumentCacheOption.Target,
-            "Targets0 DataStoreId must be positive"
-        ).SetName("Configured target");
+            MalformedDocumentCacheOption.Status,
+            "Status:EndpointTimeout must be positive"
+        ).SetName("Status timeout");
+        yield return new TestCaseData(
+            MalformedDocumentCacheOption.Projector,
+            "Projector:PageSize must be positive"
+        ).SetName("Projector page size");
     }
 
     private static string CreateMalformedSettingsFile(MalformedDocumentCacheOption option)

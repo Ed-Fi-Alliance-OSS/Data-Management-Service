@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
@@ -155,6 +156,140 @@ public sealed class Given_DocumentCacheAdminServiceRegistration
     }
 
     [Test]
+    public void It_applies_datastore_overrides_before_runtime_provider_selection()
+    {
+        string settingsPath = CreateSettingsFile(_ => { }, datastore: "unsupported");
+
+        try
+        {
+            var parseResult = DocumentCacheAdminCommandSurface
+                .CreateRootCommand()
+                .Parse([
+                    DocumentCacheAdminCommandSurface.StatusCommandName,
+                    DocumentCacheAdminCommandSurface.SettingsOptionName,
+                    settingsPath,
+                    DocumentCacheAdminCommandSurface.DatastoreOptionName,
+                    DocumentCacheAdminCommandSurface.SqlServerDatastoreOptionValue,
+                    DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
+                    "7",
+                ]);
+            parseResult.Errors.Should().BeEmpty();
+
+            using ServiceProvider serviceProvider = BuildAdminServiceProvider(
+                DocumentCacheAdminConfiguration.Build(parseResult),
+                DocumentCacheTargetKey.Create(string.Empty, 7)
+            );
+
+            serviceProvider
+                .GetRequiredService<DocumentCacheProcessProviderToken>()
+                .ProviderToken.Value.Should()
+                .Be(RelationalProviderToken.SqlServerValue);
+            serviceProvider
+                .GetRequiredService<IDatabaseFingerprintReader>()
+                .GetType()
+                .Name.Should()
+                .Be("MssqlDatabaseFingerprintReader");
+        }
+        finally
+        {
+            TryDelete(settingsPath);
+        }
+    }
+
+    [Test]
+    public void It_applies_status_timeout_overrides_before_document_cache_options_validation()
+    {
+        string settingsPath = CreateSettingsFile(documentCacheSettings =>
+        {
+            documentCacheSettings["Status"] = new JsonObject
+            {
+                ["StatusObservationTimeout"] = "00:00:00",
+                ["EndpointTimeout"] = "00:00:00",
+            };
+        });
+
+        try
+        {
+            var parseResult = DocumentCacheAdminCommandSurface
+                .CreateRootCommand()
+                .Parse([
+                    DocumentCacheAdminCommandSurface.StatusCommandName,
+                    DocumentCacheAdminCommandSurface.SettingsOptionName,
+                    settingsPath,
+                    DocumentCacheAdminCommandSurface.DatastoreOptionName,
+                    DocumentCacheAdminCommandSurface.PostgresqlDatastoreOptionValue,
+                    DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
+                    "7",
+                    DocumentCacheAdminCommandSurface.StatusObservationTimeoutSecondsOptionName,
+                    "2",
+                    DocumentCacheAdminCommandSurface.StatusTimeoutSecondsOptionName,
+                    "6",
+                ]);
+            parseResult.Errors.Should().BeEmpty();
+
+            using ServiceProvider serviceProvider = BuildAdminServiceProvider(
+                DocumentCacheAdminConfiguration.Build(parseResult),
+                DocumentCacheTargetKey.Create(string.Empty, 7)
+            );
+
+            DocumentCacheOptions options = serviceProvider
+                .GetRequiredService<IOptions<DocumentCacheOptions>>()
+                .Value;
+
+            options.Status.StatusObservationTimeout.Should().Be(TimeSpan.FromSeconds(2));
+            options.Status.EndpointTimeout.Should().Be(TimeSpan.FromSeconds(6));
+        }
+        finally
+        {
+            TryDelete(settingsPath);
+        }
+    }
+
+    [Test]
+    public void It_applies_command_timeout_overrides_before_document_cache_options_validation()
+    {
+        string settingsPath = CreateSettingsFile(documentCacheSettings =>
+        {
+            documentCacheSettings["Administration"] = new JsonObject { ["WorkflowTimeout"] = "00:00:00" };
+        });
+
+        try
+        {
+            var parseResult = DocumentCacheAdminCommandSurface
+                .CreateRootCommand()
+                .Parse([
+                    DocumentCacheAdminCommandSurface.RebuildOnlineCommandName,
+                    DocumentCacheAdminCommandSurface.SettingsOptionName,
+                    settingsPath,
+                    DocumentCacheAdminCommandSurface.DatastoreOptionName,
+                    DocumentCacheAdminCommandSurface.PostgresqlDatastoreOptionValue,
+                    DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
+                    "7",
+                    DocumentCacheAdminCommandSurface.ConfirmOptionName,
+                    "onlineCacheRebuild",
+                    DocumentCacheAdminCommandSurface.CommandTimeoutSecondsOptionName,
+                    "12",
+                ]);
+            parseResult.Errors.Should().BeEmpty();
+
+            using ServiceProvider serviceProvider = BuildAdminServiceProvider(
+                DocumentCacheAdminConfiguration.Build(parseResult),
+                DocumentCacheTargetKey.Create(string.Empty, 7)
+            );
+
+            DocumentCacheOptions options = serviceProvider
+                .GetRequiredService<IOptions<DocumentCacheOptions>>()
+                .Value;
+
+            options.Administration.WorkflowTimeout.Should().Be(TimeSpan.FromSeconds(12));
+        }
+        finally
+        {
+            TryDelete(settingsPath);
+        }
+    }
+
+    [Test]
     public void It_treats_the_invocation_target_as_the_only_document_cache_target()
     {
         IServiceCollection services = new ServiceCollection();
@@ -177,6 +312,39 @@ public sealed class Given_DocumentCacheAdminServiceRegistration
             .Which.Should()
             .Be(invocationTarget);
         serviceProvider.GetRequiredService<IDocumentCacheAdminTargetResolver>().Should().NotBeNull();
+    }
+
+    [Test]
+    public void It_ignores_malformed_configured_targets_before_final_document_cache_options_validation()
+    {
+        IServiceCollection services = new ServiceCollection();
+        DocumentCacheTargetKey invocationTarget = DocumentCacheTargetKey.Create("TenantA", 7);
+
+        services.AddLogging();
+        services.AddDocumentCacheAdminRuntimeServices(
+            CreateConfiguration(
+                DocumentCacheAdminCommandSurface.PostgresqlDatastoreOptionValue,
+                new Dictionary<string, string?>
+                {
+                    ["DataManagement:DocumentCache:Targets:0:TenantKey"] = " BadTenant",
+                    ["DataManagement:DocumentCache:Targets:0:DataStoreId"] = "0",
+                    ["DataManagement:DocumentCache:Targets:1:TenantKey"] = "OtherTenant",
+                    ["DataManagement:DocumentCache:Targets:1:DataStoreId"] = "not-a-number",
+                }
+            ),
+            new LoggerConfiguration().CreateLogger(),
+            invocationTarget
+        );
+
+        using ServiceProvider serviceProvider = services.BuildServiceProvider();
+
+        serviceProvider
+            .GetRequiredService<IOptions<DocumentCacheOptions>>()
+            .Value.GetTargetKeys()
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(invocationTarget);
     }
 
     private static IConfiguration CreateConfiguration(
@@ -227,6 +395,73 @@ public sealed class Given_DocumentCacheAdminServiceRegistration
                 }
             )
             .Build();
+
+    private static ServiceProvider BuildAdminServiceProvider(
+        IConfiguration configuration,
+        DocumentCacheTargetKey invocationTarget
+    )
+    {
+        IServiceCollection services = new ServiceCollection();
+        services.AddLogging();
+        services.AddDocumentCacheAdminRuntimeServices(
+            configuration,
+            new LoggerConfiguration().CreateLogger(),
+            invocationTarget
+        );
+
+        return services.BuildServiceProvider();
+    }
+
+    private static string CreateSettingsFile(
+        Action<JsonObject> configureDocumentCacheSettings,
+        string datastore = DocumentCacheAdminCommandSurface.PostgresqlDatastoreOptionValue
+    )
+    {
+        JsonObject documentCacheSettings = new();
+        configureDocumentCacheSettings(documentCacheSettings);
+
+        JsonObject settings = new()
+        {
+            ["AppSettings"] = new JsonObject
+            {
+                ["Datastore"] = datastore,
+                ["DefaultPartitionCount"] = 10,
+                ["UseApiSchemaPath"] = false,
+            },
+            ["ConfigurationServiceSettings"] = new JsonObject
+            {
+                ["BaseUrl"] = "https://cms.example.org",
+                ["ClientId"] = "document-cache-admin-service-registration-test",
+                ["ClientSecret"] = "client-secret",
+                ["Scope"] = "edfi_admin_api/full_access",
+                ["EncryptionKey"] = "TestEncryptionKey123456789012345678901234567890",
+            },
+            ["DataManagement"] = new JsonObject { ["DocumentCache"] = documentCacheSettings },
+        };
+
+        string settingsPath = Path.Combine(
+            Path.GetTempPath(),
+            $"{Guid.NewGuid():N}-document-cache-admin-settings.json"
+        );
+        File.WriteAllText(settingsPath, settings.ToJsonString());
+        return settingsPath;
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (IOException)
+        {
+            // Best-effort temp-file cleanup.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Best-effort temp-file cleanup.
+        }
+    }
 
     private static object ResolveBackendService(IServiceProvider serviceProvider, string serviceTypeName)
     {
