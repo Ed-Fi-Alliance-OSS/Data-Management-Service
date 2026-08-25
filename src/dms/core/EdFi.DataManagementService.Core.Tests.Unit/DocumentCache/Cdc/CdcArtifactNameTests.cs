@@ -1,0 +1,244 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Security.Cryptography;
+using System.Text;
+using EdFi.DataManagementService.Core.DocumentCache.Cdc;
+using FluentAssertions;
+using NUnit.Framework;
+
+namespace EdFi.DataManagementService.Core.Tests.Unit.DocumentCache.Cdc;
+
+[TestFixture]
+[Parallelizable]
+[Category("CdcArtifactName")]
+public class Given_CdcArtifactNameGenerator
+{
+    [Test]
+    public void It_renders_complete_postgresql_inventory_from_design_formulas()
+    {
+        CdcArtifactNameResult result = CdcArtifactNameGenerator.Render(
+            new("dms-local", "edfi.dms", "data-store-1", 1, CdcProvider.Postgresql)
+        );
+
+        result.Succeeded.Should().BeTrue();
+        CdcArtifactInventory inventory = result.Inventory!;
+        inventory.ConnectorName.Should().Be("dms-local-data-store-1-g1");
+        inventory.TopicName.Should().Be("edfi.dms.instance.data-store-1-g1.documents.v1");
+        inventory
+            .ProgressTopicName.Should()
+            .Be("edfi.dms.instance.data-store-1-g1.documents.v1.cdc-progress");
+        inventory.SchemaHistoryTopicName.Should().BeNull();
+        inventory.PostgresqlPublicationName.Should().Be("edfi_dms_dms_local_data_store_1_g1_pub");
+        inventory.PostgresqlLogicalSlotName.Should().Be("edfi_dms_dms_local_data_store_1_g1_slot");
+        inventory.SqlServerCdcGatingRoleName.Should().BeNull();
+        inventory
+            .GovernedArtifacts.Should()
+            .Equal(
+                new CdcGovernedArtifactName(
+                    CdcGovernedArtifactKind.KafkaConnectConnector,
+                    inventory.ConnectorName
+                ),
+                new CdcGovernedArtifactName(
+                    CdcGovernedArtifactKind.ConnectSourceOffsets,
+                    inventory.ConnectorName
+                ),
+                new CdcGovernedArtifactName(CdcGovernedArtifactKind.PublicTopic, inventory.TopicName),
+                new CdcGovernedArtifactName(
+                    CdcGovernedArtifactKind.ProgressTopic,
+                    inventory.ProgressTopicName
+                ),
+                new CdcGovernedArtifactName(CdcGovernedArtifactKind.PublicTopicAcls, inventory.TopicName),
+                new CdcGovernedArtifactName(
+                    CdcGovernedArtifactKind.ProgressTopicAcls,
+                    inventory.ProgressTopicName
+                ),
+                new CdcGovernedArtifactName(
+                    CdcGovernedArtifactKind.PostgresqlPublication,
+                    inventory.PostgresqlPublicationName!
+                ),
+                new CdcGovernedArtifactName(
+                    CdcGovernedArtifactKind.PostgresqlLogicalSlot,
+                    inventory.PostgresqlLogicalSlotName!
+                )
+            );
+    }
+
+    [Test]
+    public void It_renders_complete_sql_server_inventory_and_isolates_generation()
+    {
+        CdcArtifactNameResult result = CdcArtifactNameGenerator.Render(
+            new("dms-local", "edfi.dms", "data-store-1", 7, CdcProvider.SqlServer)
+        );
+        CdcArtifactNameResult nextGenerationResult = CdcArtifactNameGenerator.Render(
+            new("dms-local", "edfi.dms", "data-store-1", 8, CdcProvider.SqlServer)
+        );
+
+        result.Succeeded.Should().BeTrue();
+        nextGenerationResult.Succeeded.Should().BeTrue();
+        CdcArtifactInventory inventory = result.Inventory!;
+        inventory.ConnectorName.Should().Be("dms-local-data-store-1-g7");
+        inventory.TopicName.Should().Be("edfi.dms.instance.data-store-1-g7.documents.v1");
+        inventory
+            .ProgressTopicName.Should()
+            .Be("edfi.dms.instance.data-store-1-g7.documents.v1.cdc-progress");
+        inventory
+            .SchemaHistoryTopicName.Should()
+            .Be("edfi.dms.instance.data-store-1-g7.documents.v1.schema-history");
+        inventory.SqlServerCdcGatingRoleName.Should().Be("edfi_dms_dms_local_data_store_1_g7_cdc_reader");
+        inventory
+            .SqlServerCaptureInstanceDocumentName.Should()
+            .Be("edfi_dms_dms_local_data_store_1_g7_document");
+        inventory
+            .SqlServerCaptureInstanceDocumentCacheName.Should()
+            .Be("edfi_dms_dms_local_data_store_1_g7_documentcache");
+        inventory
+            .SqlServerCaptureInstanceCdcHeartbeatName.Should()
+            .Be("edfi_dms_dms_local_data_store_1_g7_cdcheartbeat");
+        inventory.PostgresqlPublicationName.Should().BeNull();
+        inventory
+            .GovernedArtifacts.Select(artifact => artifact.Kind)
+            .Should()
+            .Equal(
+                CdcGovernedArtifactKind.KafkaConnectConnector,
+                CdcGovernedArtifactKind.ConnectSourceOffsets,
+                CdcGovernedArtifactKind.PublicTopic,
+                CdcGovernedArtifactKind.ProgressTopic,
+                CdcGovernedArtifactKind.PublicTopicAcls,
+                CdcGovernedArtifactKind.ProgressTopicAcls,
+                CdcGovernedArtifactKind.SqlServerCdcGatingRole,
+                CdcGovernedArtifactKind.SqlServerCaptureInstanceDocument,
+                CdcGovernedArtifactKind.SqlServerCaptureInstanceDocumentCache,
+                CdcGovernedArtifactKind.SqlServerCaptureInstanceCdcHeartbeat,
+                CdcGovernedArtifactKind.SchemaHistoryTopic,
+                CdcGovernedArtifactKind.SchemaHistoryTopicAcls
+            );
+        nextGenerationResult.Inventory!.ConnectorName.Should().NotBe(inventory.ConnectorName);
+        nextGenerationResult.Inventory!.TopicName.Should().NotBe(inventory.TopicName);
+        nextGenerationResult
+            .Inventory!.SqlServerCaptureInstanceDocumentName.Should()
+            .NotBe(inventory.SqlServerCaptureInstanceDocumentName);
+    }
+
+    [Test]
+    public void It_keeps_provider_artifact_names_that_are_at_their_exact_limits()
+    {
+        CdcArtifactInventory postgresqlPublicationLimit = Render(
+            new(new string('a', 23), "x", new string('b', 23), 1, CdcProvider.Postgresql)
+        );
+        CdcArtifactInventory postgresqlSlotLimit = Render(
+            new(new string('a', 22), "x", new string('b', 23), 1, CdcProvider.Postgresql)
+        );
+        CdcArtifactInventory sqlServerRoleLimit = Render(
+            new(new string('a', 52), "x", new string('b', 52), 1, CdcProvider.SqlServer)
+        );
+        CdcArtifactInventory sqlServerDocumentLimit = Render(
+            new(new string('a', 39), "x", new string('b', 39), 1, CdcProvider.SqlServer)
+        );
+        CdcArtifactInventory sqlServerDocumentCacheLimit = Render(
+            new(new string('a', 36), "x", new string('b', 37), 1, CdcProvider.SqlServer)
+        );
+        CdcArtifactInventory sqlServerCdcHeartbeatLimit = Render(
+            new(new string('a', 37), "x", new string('b', 37), 1, CdcProvider.SqlServer)
+        );
+
+        postgresqlPublicationLimit.PostgresqlPublicationName.Should().HaveLength(63);
+        postgresqlPublicationLimit.PostgresqlPublicationName.Should().EndWith("_pub");
+        postgresqlSlotLimit.PostgresqlLogicalSlotName.Should().HaveLength(63);
+        postgresqlSlotLimit.PostgresqlLogicalSlotName.Should().EndWith("_slot");
+        sqlServerRoleLimit.SqlServerCdcGatingRoleName.Should().HaveLength(128);
+        sqlServerRoleLimit.SqlServerCdcGatingRoleName.Should().EndWith("_cdc_reader");
+        sqlServerDocumentLimit.SqlServerCaptureInstanceDocumentName.Should().HaveLength(100);
+        sqlServerDocumentLimit.SqlServerCaptureInstanceDocumentName.Should().EndWith("_document");
+        sqlServerDocumentCacheLimit.SqlServerCaptureInstanceDocumentCacheName.Should().HaveLength(100);
+        sqlServerDocumentCacheLimit
+            .SqlServerCaptureInstanceDocumentCacheName.Should()
+            .EndWith("_documentcache");
+        sqlServerCdcHeartbeatLimit.SqlServerCaptureInstanceCdcHeartbeatName.Should().HaveLength(100);
+        sqlServerCdcHeartbeatLimit.SqlServerCaptureInstanceCdcHeartbeatName.Should().EndWith("_cdcheartbeat");
+    }
+
+    [Test]
+    public void It_truncates_provider_artifacts_with_literal_artifact_kind_hashes()
+    {
+        string deploymentKey = new('a', 24);
+        string instanceKey = new('b', 23);
+        string sqlServerDeploymentKey = new('a', 45);
+        string sqlServerInstanceKey = new('b', 45);
+        string postgresqlPublication = $"edfi_dms_{deploymentKey}_{instanceKey}_g1_pub";
+        string postgresqlSlot = $"edfi_dms_{deploymentKey}_{instanceKey}_g1_slot";
+        string sqlServerCapture =
+            $"edfi_dms_{sqlServerDeploymentKey}_{sqlServerInstanceKey}_g1_documentcache";
+
+        CdcArtifactInventory postgresqlInventory = Render(
+            new(deploymentKey, "x", instanceKey, 1, CdcProvider.Postgresql)
+        );
+        CdcArtifactInventory sqlServerInventory = Render(
+            new(sqlServerDeploymentKey, "x", sqlServerInstanceKey, 1, CdcProvider.SqlServer)
+        );
+
+        postgresqlInventory
+            .PostgresqlPublicationName.Should()
+            .Be(Truncate("postgresql-publication", postgresqlPublication, 63));
+        postgresqlInventory
+            .PostgresqlLogicalSlotName.Should()
+            .Be(Truncate("postgresql-logical-slot", postgresqlSlot, 63));
+        postgresqlInventory
+            .PostgresqlPublicationName.Should()
+            .NotBe(postgresqlInventory.PostgresqlLogicalSlotName);
+        sqlServerInventory
+            .SqlServerCaptureInstanceDocumentCacheName.Should()
+            .Be(Truncate("sqlserver-capture-instance-documentcache", sqlServerCapture, 100));
+        sqlServerInventory.SqlServerCaptureInstanceDocumentCacheName.Should().HaveLength(100);
+    }
+
+    [Test]
+    public void It_rejects_kafka_and_connect_artifact_names_over_the_limit_without_truncating()
+    {
+        CdcArtifactNameResult connectorResult = CdcArtifactNameGenerator.Render(
+            new(new string('a', 130), "x", new string('b', 120), 1, CdcProvider.Postgresql)
+        );
+        CdcArtifactNameResult schemaHistoryResult = CdcArtifactNameGenerator.Render(
+            new("dms-local", new string('a', 230), "data-store-1", 1, CdcProvider.SqlServer)
+        );
+
+        connectorResult.Succeeded.Should().BeFalse();
+        connectorResult.Inventory.Should().BeNull();
+        connectorResult
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Path == "$.deploymentKey"
+                && diagnostic.Message.Contains("connectorName", StringComparison.Ordinal)
+            );
+        schemaHistoryResult.Succeeded.Should().BeFalse();
+        schemaHistoryResult.Inventory.Should().BeNull();
+        schemaHistoryResult
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Path == "$.topicPrefix"
+                && diagnostic.Message.Contains("schemaHistoryTopicName", StringComparison.Ordinal)
+            );
+    }
+
+    private static CdcArtifactInventory Render(CdcArtifactNameInput input)
+    {
+        CdcArtifactNameResult result = CdcArtifactNameGenerator.Render(input);
+
+        result.Succeeded.Should().BeTrue();
+        return result.Inventory!;
+    }
+
+    private static string Truncate(string artifactKind, string untruncatedName, int limit)
+    {
+        if (untruncatedName.Length <= limit)
+        {
+            return untruncatedName;
+        }
+
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{artifactKind}\0{untruncatedName}"));
+        string suffix = $"_{Convert.ToHexString(hash).ToLowerInvariant()[..12]}";
+        return $"{untruncatedName[..(limit - suffix.Length)]}{suffix}";
+    }
+}

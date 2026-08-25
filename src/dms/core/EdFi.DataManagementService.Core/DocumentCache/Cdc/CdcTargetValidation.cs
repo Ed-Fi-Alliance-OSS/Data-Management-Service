@@ -74,8 +74,6 @@ public static class CdcTargetValidator
     public const string DefaultBindingTenantKey = "default";
     public const string KafkaMurmur2V1PartitionerAlgorithm = "kafka-murmur2-v1";
 
-    private const int MaximumKafkaOrConnectNameLength = 249;
-
     public static CdcTargetValidationResult Validate(CdcTargetInput input)
     {
         ArgumentNullException.ThrowIfNull(input);
@@ -118,8 +116,8 @@ public static class CdcTargetValidator
         {
             ValidateRenderedArtifactNames(
                 deploymentKey,
-                instanceKey,
                 topicPrefix,
+                instanceKey,
                 input.Generation,
                 input.Provider,
                 diagnostics
@@ -281,51 +279,19 @@ public static class CdcTargetValidator
 
     private static void ValidateRenderedArtifactNames(
         string deploymentKey,
-        string instanceKey,
         string topicPrefix,
+        string instanceKey,
         long generation,
         CdcProvider provider,
         CdcDiagnosticCollector diagnostics
     )
     {
-        string connectorName = $"{deploymentKey}-{instanceKey}-g{generation}";
-        string topicName = $"{topicPrefix}.instance.{instanceKey}-g{generation}.documents.v1";
-        string progressTopicName = $"{topicName}.cdc-progress";
-
-        ValidateKafkaOrConnectNameLength(connectorName, "$.deploymentKey", "connectorName", diagnostics);
-        ValidateKafkaOrConnectNameLength(topicName, "$.topicPrefix", "topicName", diagnostics);
-        ValidateKafkaOrConnectNameLength(
-            progressTopicName,
-            "$.topicPrefix",
-            "progressTopicName",
-            diagnostics
+        CdcArtifactNameResult result = CdcArtifactNameGenerator.Render(
+            new(deploymentKey, topicPrefix, instanceKey, generation, provider)
         );
-
-        if (provider == CdcProvider.SqlServer)
+        foreach (CdcDiagnostic diagnostic in result.Diagnostics)
         {
-            string schemaHistoryTopicName = $"{topicName}.schema-history";
-            ValidateKafkaOrConnectNameLength(
-                schemaHistoryTopicName,
-                "$.topicPrefix",
-                "schemaHistoryTopicName",
-                diagnostics
-            );
-        }
-    }
-
-    private static void ValidateKafkaOrConnectNameLength(
-        string renderedName,
-        string path,
-        string artifactName,
-        CdcDiagnosticCollector diagnostics
-    )
-    {
-        if (renderedName.Length > MaximumKafkaOrConnectNameLength)
-        {
-            diagnostics.MalformedPayload(
-                path,
-                $"CDC {artifactName} must not exceed {MaximumKafkaOrConnectNameLength} characters."
-            );
+            diagnostics.Add(diagnostic);
         }
     }
 }

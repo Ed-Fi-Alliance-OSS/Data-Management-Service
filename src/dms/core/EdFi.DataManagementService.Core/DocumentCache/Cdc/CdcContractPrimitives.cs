@@ -261,6 +261,13 @@ public sealed class CdcDiagnosticCollector
 
     public bool HasDiagnostics => _diagnostics.Count != 0;
 
+    public void Add(CdcDiagnostic diagnostic)
+    {
+        ArgumentNullException.ThrowIfNull(diagnostic);
+
+        _diagnostics.Add(diagnostic);
+    }
+
     public void Add(CdcDiagnosticCategory category, string path, string message) =>
         _diagnostics.Add(new(category, path, message));
 
