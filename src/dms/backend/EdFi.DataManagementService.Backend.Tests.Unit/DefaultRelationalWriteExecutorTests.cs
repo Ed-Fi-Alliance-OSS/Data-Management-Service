@@ -1520,8 +1520,6 @@ public class Given_Default_Relational_Write_Executor
                 345L,
                 Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
                 44L,
-                44L,
-                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
                 new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
                 1
             ),
@@ -1839,8 +1837,6 @@ public class Given_Default_Relational_Write_Executor
                 345L,
                 Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
                 44L,
-                44L,
-                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
                 new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
                 1
             ),
@@ -2363,8 +2359,6 @@ public class Given_Default_Relational_Write_Executor
                     345L,
                     existingDocumentUuid.Value,
                     45L,
-                    45L,
-                    new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
                     new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
                     1
                 ),
@@ -3842,8 +3836,6 @@ public class Given_Default_Relational_Write_Executor
                 345L,
                 Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
                 44L,
-                44L,
-                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
                 new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
                 1
             ),
@@ -9226,8 +9218,6 @@ public class Given_Default_Relational_Write_Executor
                             request.TargetContext.DocumentId,
                             request.TargetContext.DocumentUuid.Value,
                             request.TargetContext.ObservedContentVersion,
-                            request.TargetContext.ObservedContentVersion,
-                            DateTimeOffset.UnixEpoch,
                             DateTimeOffset.UnixEpoch,
                             1
                         ),
@@ -9445,8 +9435,6 @@ public class Given_Default_Relational_Write_Executor
                 targetContext.DocumentId,
                 targetContext.DocumentUuid.Value,
                 contentVersion,
-                contentVersion,
-                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
                 new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
                 1
             ),

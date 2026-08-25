@@ -98,8 +98,6 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
                     DocumentId,
                     DocumentGuid,
                     ContentVersion,
-                    ContentVersion,
-                    LastModifiedAt,
                     LastModifiedAt,
                     ResourceKeyId
                 )
@@ -420,8 +418,6 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
                     source.DocumentId,
                     source.DocumentUuid.Value,
                     source.ContentVersion,
-                    source.ContentVersion,
-                    source.ContentLastModifiedAt,
                     source.ContentLastModifiedAt,
                     source.ResourceKeyId
                 ),

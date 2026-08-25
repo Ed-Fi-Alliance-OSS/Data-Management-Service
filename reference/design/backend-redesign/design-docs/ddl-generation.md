@@ -329,7 +329,7 @@ See [key-unification.md](key-unification.md) for the normative rules and dialect
 
 Emit per-table triggers derived from ApiSchema that:
 
-- stamp `dms.Document` representation/identity versions on writes to resource root/child/extension tables (see [update-tracking.md](update-tracking.md)),
+- stamp `dms.Document` content tracking columns on writes to resource root/child/extension tables (see [update-tracking.md](update-tracking.md)),
 - maintain `{schema}.{AbstractResource}Identity` tables from participating concrete root tables.
 
 The DDL generator emits only the surviving derived-maintenance objects: document stamping and abstract identity maintenance. Reference resolution and POST upsert detection use the compiled natural-key probe metadata described in [natural-key-resolution.md](natural-key-resolution.md).

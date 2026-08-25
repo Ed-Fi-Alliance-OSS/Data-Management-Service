@@ -64,15 +64,16 @@ Descriptor resources stored in shared `dms.Descriptor` (no per-descriptor tables
 
 - Inventory includes required trigger intents for schema-derived tables (non-descriptor resources):
 
-1. **Representation/identity stamping triggers** (`TriggerKindParameters.DocumentStamping`)
+1. **Representation stamping triggers** (`TriggerKindParameters.DocumentStamping`)
    - One per schema-derived table that can change a resource representation:
      - resource root tables,
      - resource child/collection tables,
      - `_ext` extension tables.
    - Trigger events: `INSERT`, `UPDATE`, `DELETE` on the table.
    - Semantic purpose: update `dms.Document` stamps per `update-tracking.md`:
-     - always bump `ContentVersion`/`ContentLastModifiedAt` for any representation-affecting change,
-     - bump `IdentityVersion`/`IdentityLastModifiedAt` when the change affects identity projection columns for the document.
+     - bump `ContentVersion`/`ContentLastModifiedAt` for any representation-affecting change.
+   - Identity projection changes are representation-affecting changes, but they do not maintain
+     separate document-level identity tracking columns.
    - The trigger intent must carry (at minimum) the column(s) needed to identify the affected `DocumentId`:
      - root tables: `DocumentId`,
      - child/extension tables: the root document id parent-key-part column (e.g., `{RootBaseName}_DocumentId`).

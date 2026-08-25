@@ -29,9 +29,8 @@ public class Given_Relational_Write_Current_State_Loader
                         345L,
                         Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
                         44L,
-                        45L,
                         new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
-                        new DateTimeOffset(2026, 4, 2, 12, 1, 0, TimeSpan.Zero)
+                        (short)1
                     )
                 ),
                 CreateRootTableRows((345L, "Lincoln High"))
@@ -70,9 +69,8 @@ public class Given_Relational_Write_Current_State_Loader
                         345L,
                         Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
                         44L,
-                        45L,
                         new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
-                        new DateTimeOffset(2026, 4, 2, 12, 1, 0, TimeSpan.Zero)
+                        (short)1
                     )
                 ),
                 CreateDescriptorRootTableRows((345L, 601L)),
@@ -117,17 +115,15 @@ public class Given_Relational_Write_Current_State_Loader
                             345L,
                             Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
                             44L,
-                            45L,
                             new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
-                            new DateTimeOffset(2026, 4, 2, 12, 1, 0, TimeSpan.Zero)
+                            (short)1
                         ),
                         (
                             345L,
                             Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
                             44L,
-                            45L,
                             new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
-                            new DateTimeOffset(2026, 4, 2, 12, 1, 0, TimeSpan.Zero)
+                            (short)1
                         )
                     ),
                     CreateRootTableRows()
@@ -165,9 +161,8 @@ public class Given_Relational_Write_Current_State_Loader
                         345L,
                         Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
                         44L,
-                        45L,
                         new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
-                        new DateTimeOffset(2026, 4, 2, 12, 1, 0, TimeSpan.Zero)
+                        (short)1
                     )
                 ),
                 CreateRootTableRows((345L, "Lincoln High"))
@@ -200,9 +195,8 @@ public class Given_Relational_Write_Current_State_Loader
                         345L,
                         Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
                         44L,
-                        45L,
                         new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
-                        new DateTimeOffset(2026, 4, 2, 12, 1, 0, TimeSpan.Zero)
+                        (short)1
                     )
                 ),
                 CreateRootTableRows((345L, "Lincoln High"))
@@ -481,9 +475,8 @@ public class Given_Relational_Write_Current_State_Loader
             long DocumentId,
             Guid DocumentUuid,
             long ContentVersion,
-            long IdentityVersion,
             DateTimeOffset ContentLastModifiedAt,
-            DateTimeOffset IdentityLastModifiedAt
+            short ResourceKeyId
         )[] rows
     )
     {
@@ -491,9 +484,7 @@ public class Given_Relational_Write_Current_State_Loader
         table.Columns.Add("DocumentId", typeof(long));
         table.Columns.Add("DocumentUuid", typeof(Guid));
         table.Columns.Add("ContentVersion", typeof(long));
-        table.Columns.Add("IdentityVersion", typeof(long));
         table.Columns.Add("ContentLastModifiedAt", typeof(DateTimeOffset));
-        table.Columns.Add("IdentityLastModifiedAt", typeof(DateTimeOffset));
         table.Columns.Add("ResourceKeyId", typeof(short));
 
         foreach (var row in rows)
@@ -502,10 +493,8 @@ public class Given_Relational_Write_Current_State_Loader
                 row.DocumentId,
                 row.DocumentUuid,
                 row.ContentVersion,
-                row.IdentityVersion,
                 row.ContentLastModifiedAt,
-                row.IdentityLastModifiedAt,
-                (short)1
+                row.ResourceKeyId
             );
         }
 

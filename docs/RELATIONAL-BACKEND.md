@@ -333,6 +333,22 @@ endpoints, which are still a placeholder shim (see the note below).
 > that returns `[]` (with a `Total-Count: 0` header only when `totalCount=true` is requested). Do not
 > expect `/deletes` or `/keyChanges` to read the tracked-change tables yet.
 
+`newestChangeVersion` is the current value reported by the provider's change-version sequence, not
+`MAX(ContentVersion)` over `dms.Document`. After identity stamp columns were removed from
+`dms.Document`, document inserts and identity-changing root updates allocate one sequence value
+instead of two: they formerly wrote both a content stamp and an identity stamp. Child scopes and
+content-only root updates already allocated only one value. The reported watermark therefore no
+longer appears one value ahead of the stored `ContentVersion` for document inserts and
+identity-changing root updates. Database sequences can still have ordinary gaps, for example from
+rolled-back transactions; SQL Server sequence-cache recovery after a restart can also leave
+`current_value` ahead of every stored `ContentVersion`.
+
+Compatibility note: change-version filters use inclusive bounds. A client that stores the previous
+`newestChangeVersion` and later resumes by passing it as `minChangeVersion` can receive the boundary
+item again. Incremental extraction clients should treat change-query windows as idempotent and
+deduplicate by the appropriate resource identity and change version, or advance their lower bound
+according to their own resume policy.
+
 ## 5. Mapping packs (optional)
 
 A "mapping pack" (`.mpack`) is a planned ahead-of-time-compiled artifact that would let DMS load

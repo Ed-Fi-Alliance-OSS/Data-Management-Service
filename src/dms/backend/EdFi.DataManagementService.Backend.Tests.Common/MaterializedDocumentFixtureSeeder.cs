@@ -154,12 +154,8 @@ public sealed class MaterializedDocumentFixtureSeeder(
                     {_dialect.Quote("ResourceKeyId")} smallint NOT NULL,
                     {_dialect.Quote("CreatedByOwnershipTokenId")} smallint NULL,
                     {_dialect.Quote("ContentVersion")} bigint NOT NULL,
-                    {_dialect.Quote("IdentityVersion")} bigint NOT NULL,
                     {_dialect.Quote(
                         "ContentLastModifiedAt"
-                    )} {_dialect.TimestampWithOffsetColumnType} NOT NULL,
-                    {_dialect.Quote(
-                        "IdentityLastModifiedAt"
                     )} {_dialect.TimestampWithOffsetColumnType} NOT NULL,
                     {_dialect.Quote("CreatedAt")} {_dialect.TimestampWithOffsetColumnType} NOT NULL
                     """
@@ -301,9 +297,7 @@ public sealed class MaterializedDocumentFixtureSeeder(
                             "ResourceKeyId",
                             "CreatedByOwnershipTokenId",
                             "ContentVersion",
-                            "IdentityVersion",
                             "ContentLastModifiedAt",
-                            "IdentityLastModifiedAt",
                             "CreatedAt",
                         ],
                         [
@@ -312,8 +306,6 @@ public sealed class MaterializedDocumentFixtureSeeder(
                             parameters[2].Name,
                             "NULL",
                             parameters[3].Name,
-                            parameters[3].Name,
-                            parameters[4].Name,
                             parameters[4].Name,
                             parameters[4].Name,
                         ],
@@ -423,9 +415,7 @@ public sealed class MaterializedDocumentFixtureSeeder(
                     $"""
                     UPDATE {_dialect.QualifiedTable("dms", "Document")}
                     SET {_dialect.Quote("ContentVersion")} = {parameters[0].Name},
-                        {_dialect.Quote("IdentityVersion")} = {parameters[0].Name},
-                        {_dialect.Quote("ContentLastModifiedAt")} = {parameters[1].Name},
-                        {_dialect.Quote("IdentityLastModifiedAt")} = {parameters[1].Name}
+                        {_dialect.Quote("ContentLastModifiedAt")} = {parameters[1].Name}
                     WHERE {_dialect.Quote("DocumentId")} = {parameters[2].Name}
                     """,
                     parameters

@@ -9,9 +9,9 @@ IF OBJECT_ID(N'dms.EffectiveSchema', N'U') IS NOT NULL
 BEGIN
     SELECT @preflight_stored_hash = [EffectiveSchemaHash] FROM [dms].[EffectiveSchema]
     WHERE [EffectiveSchemaSingletonId] = 1;
-    IF @preflight_stored_hash IS NOT NULL AND @preflight_stored_hash <> N'8cc3d6f59e878565cdccda12f77af46a37183ce5634cc317ed4e332aadc8a190'
+    IF @preflight_stored_hash IS NOT NULL AND @preflight_stored_hash <> N'11fb8848a557c7df7a153c01159915b4778d67dee312d617fb0d3b1d2b7ee83c'
     BEGIN
-        DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database has ''', @preflight_stored_hash, N''' but expected ''', N'8cc3d6f59e878565cdccda12f77af46a37183ce5634cc317ed4e332aadc8a190', N'''');
+        DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database has ''', @preflight_stored_hash, N''' but expected ''', N'11fb8848a557c7df7a153c01159915b4778d67dee312d617fb0d3b1d2b7ee83c', N'''');
         THROW 50000, @preflight_msg, 1;
     END
 END
@@ -23,7 +23,7 @@ IF OBJECT_ID(N'dms.EffectiveSchema', N'U') IS NOT NULL
 BEGIN
     SELECT @preflight_completed_hash = [EffectiveSchemaHash] FROM [dms].[EffectiveSchema]
     WHERE [EffectiveSchemaSingletonId] = 1;
-    IF @preflight_completed_hash = N'8cc3d6f59e878565cdccda12f77af46a37183ce5634cc317ed4e332aadc8a190'
+    IF @preflight_completed_hash = N'11fb8848a557c7df7a153c01159915b4778d67dee312d617fb0d3b1d2b7ee83c'
     BEGIN
         IF OBJECT_ID(N'dms.DataStoreIdentity', N'U') IS NULL
         BEGIN
@@ -255,9 +255,7 @@ CREATE TABLE [dms].[Document]
     [ResourceKeyId] smallint NOT NULL,
     [CreatedByOwnershipTokenId] smallint NULL,
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Document_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
-    [IdentityVersion] bigint NOT NULL CONSTRAINT [DF_Document_IdentityVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Document_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
-    [IdentityLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Document_IdentityLastModifiedAt] DEFAULT (sysutcdatetime()),
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Document_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_Document] PRIMARY KEY CLUSTERED ([DocumentId])
 );
@@ -729,7 +727,7 @@ BEGIN
     END
     ELSE IF (UPDATE([NamingStressItemId]))
     BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
         INSERT INTO @changedDocs ([DocumentId])
         SELECT i.[DocumentId]
         FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
@@ -803,14 +801,11 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
     BEGIN
-        DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);
-        UPDATE d
-        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs
-        FROM [dms].[Document] d
-        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        WHERE (i.[NamingStressItemId] <> del.[NamingStressItemId] OR (i.[NamingStressItemId] IS NULL AND del.[NamingStressItemId] IS NOT NULL) OR (i.[NamingStressItemId] IS NOT NULL AND del.[NamingStressItemId] IS NULL));
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[NamingStressItemId] <> d.[NamingStressItemId] OR (i.[NamingStressItemId] IS NULL AND d.[NamingStressItemId] IS NOT NULL) OR (i.[NamingStressItemId] IS NOT NULL AND d.[NamingStressItemId] IS NULL));
         INSERT INTO [tracked_changes_edfi].[NamingStressItem] (
             [OldNamingStressItemId],
             [NewNamingStressItemId],
@@ -821,9 +816,9 @@ BEGIN
             del.[NamingStressItemId],
             i.[NamingStressItemId],
             doc.[DocumentUuid],
-            idc.[ContentVersion]
-        FROM @identityChangedDocs idc
-        INNER JOIN inserted i ON i.[DocumentId] = idc.[DocumentId]
+            doc.[ContentVersion]
+        FROM @changedDocs cd
+        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
         INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
     END
@@ -896,7 +891,7 @@ END
 -- EffectiveSchema singleton insert-if-missing
 IF NOT EXISTS (SELECT 1 FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1)
     INSERT INTO [dms].[EffectiveSchema] ([EffectiveSchemaSingletonId], [ApiSchemaFormatVersion], [EffectiveSchemaHash], [ResourceKeyCount], [ResourceKeySeedHash])
-    VALUES (1, N'1.0.0', N'8cc3d6f59e878565cdccda12f77af46a37183ce5634cc317ed4e332aadc8a190', 1, 0xECD1439457B6F0560A20DF2668B314E42DCF6079592558C4695F2B299DFBC301);
+    VALUES (1, N'1.0.0', N'11fb8848a557c7df7a153c01159915b4778d67dee312d617fb0d3b1d2b7ee83c', 1, 0xECD1439457B6F0560A20DF2668B314E42DCF6079592558C4695F2B299DFBC301);
 
 -- EffectiveSchema validation (ApiSchemaFormatVersion + ResourceKeyCount + ResourceKeySeedHash)
 DECLARE @es_stored_api_schema_format_version nvarchar(255);
@@ -925,16 +920,16 @@ BEGIN
 END
 
 -- SchemaComponent seed inserts (insert-if-missing)
-IF NOT EXISTS (SELECT 1 FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'8cc3d6f59e878565cdccda12f77af46a37183ce5634cc317ed4e332aadc8a190' AND [ProjectEndpointName] = N'ed-fi')
+IF NOT EXISTS (SELECT 1 FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'11fb8848a557c7df7a153c01159915b4778d67dee312d617fb0d3b1d2b7ee83c' AND [ProjectEndpointName] = N'ed-fi')
     INSERT INTO [dms].[SchemaComponent] ([EffectiveSchemaHash], [ProjectEndpointName], [ProjectName], [ProjectVersion], [IsExtensionProject])
-    VALUES (N'8cc3d6f59e878565cdccda12f77af46a37183ce5634cc317ed4e332aadc8a190', N'ed-fi', N'Ed-Fi', N'5.0.0', 0);
+    VALUES (N'11fb8848a557c7df7a153c01159915b4778d67dee312d617fb0d3b1d2b7ee83c', N'ed-fi', N'Ed-Fi', N'5.0.0', 0);
 
 -- SchemaComponent exact-match validation (count + content)
 DECLARE @sc_actual_count integer;
 DECLARE @sc_mismatched_count integer;
 DECLARE @sc_mismatched_names nvarchar(max);
 
-SELECT @sc_actual_count = COUNT(*) FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'8cc3d6f59e878565cdccda12f77af46a37183ce5634cc317ed4e332aadc8a190';
+SELECT @sc_actual_count = COUNT(*) FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'11fb8848a557c7df7a153c01159915b4778d67dee312d617fb0d3b1d2b7ee83c';
 IF @sc_actual_count <> 1
 BEGIN
     DECLARE @sc_count_msg nvarchar(200) = CONCAT(N'dms.SchemaComponent count mismatch: expected 1, found ', CAST(@sc_actual_count AS nvarchar(10)));
@@ -943,7 +938,7 @@ END
 
 SELECT @sc_mismatched_count = COUNT(*)
 FROM [dms].[SchemaComponent] sc
-WHERE sc.[EffectiveSchemaHash] = N'8cc3d6f59e878565cdccda12f77af46a37183ce5634cc317ed4e332aadc8a190'
+WHERE sc.[EffectiveSchemaHash] = N'11fb8848a557c7df7a153c01159915b4778d67dee312d617fb0d3b1d2b7ee83c'
 AND NOT EXISTS (
     SELECT 1 FROM (VALUES
         (N'ed-fi', N'Ed-Fi', N'5.0.0', 0)
@@ -959,7 +954,7 @@ BEGIN
     FROM (
         SELECT TOP 10 sc.[ProjectEndpointName]
         FROM [dms].[SchemaComponent] sc
-        WHERE sc.[EffectiveSchemaHash] = N'8cc3d6f59e878565cdccda12f77af46a37183ce5634cc317ed4e332aadc8a190'
+        WHERE sc.[EffectiveSchemaHash] = N'11fb8848a557c7df7a153c01159915b4778d67dee312d617fb0d3b1d2b7ee83c'
         AND NOT EXISTS (
             SELECT 1 FROM (VALUES
                 (N'ed-fi', N'Ed-Fi', N'5.0.0', 0)

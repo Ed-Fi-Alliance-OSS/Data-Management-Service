@@ -1126,9 +1126,7 @@ public static class DocumentReconstituter
             DocumentId: documentId,
             DocumentUuid: Guid.Empty,
             ContentVersion: 0L,
-            IdentityVersion: 0L,
             ContentLastModifiedAt: DateTimeOffset.UnixEpoch,
-            IdentityLastModifiedAt: DateTimeOffset.UnixEpoch,
             ResourceKeyId: 0
         );
 }

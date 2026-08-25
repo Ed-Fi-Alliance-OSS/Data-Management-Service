@@ -20,8 +20,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private static readonly DbColumnName DocumentIdColumn = RelationalNameConventions.DocumentIdColumnName;
     private static readonly DbColumnName ContentVersionColumn = new("ContentVersion");
     private static readonly DbColumnName ContentLastModifiedAtColumn = new("ContentLastModifiedAt");
-    private static readonly DbColumnName IdentityVersionColumn = new("IdentityVersion");
-    private static readonly DbColumnName IdentityLastModifiedAtColumn = new("IdentityLastModifiedAt");
     private static readonly DbColumnName ReferentialIdColumn = new("ReferentialId");
     private static readonly DbColumnName ResourceKeyIdColumn = new("ResourceKeyId");
     private static readonly DbColumnName DiscriminatorColumn = new("Discriminator");
@@ -1335,9 +1333,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     /// <summary>
     /// Emits the document stamping trigger body: INSERT/UPDATE representation stamping,
-    /// <c>IdentityVersion</c> stamping on root tables with identity projection columns,
-    /// and — for triggers with a ChangeTracking attachment — tracked-change tombstone and
-    /// key-change emission on DELETE (DMS-1179).
+    /// and, for triggers with a ChangeTracking attachment, tracked-change tombstones on DELETE and
+    /// key changes on UPDATE (DMS-1179).
     /// </summary>
     private void EmitDocumentStampingBody(
         SqlWriter writer,
@@ -1575,51 +1572,23 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             );
         }
 
-        // IdentityVersion stamp for root tables with identity projection columns
-        if (trigger.IdentityProjectionColumns.Count > 0)
+        if (
+            trigger.IdentityProjectionColumns.Count > 0
+            && trackedChangePlan is { Table.Kind: TrackedChangeTableKind.Resource }
+        )
         {
-            // PostgreSQL: IS DISTINCT FROM provides null-safe inequality comparison.
-            // (NULL IS DISTINCT FROM NULL) → false, (NULL IS DISTINCT FROM value) → true.
-            // Equivalent to MssqlTriggerDiffEmitter.EmitNullSafeNotEqual which expands to:
-            // (a <> b OR (a IS NULL AND b IS NOT NULL) OR (a IS NOT NULL AND b IS NULL))
             writer.Append("IF TG_OP = 'UPDATE' AND (");
             EmitPgsqlValueDiffDisjunction(writer, trigger.IdentityProjectionColumns);
             writer.AppendLine(") THEN");
-
             using (writer.Indent())
             {
-                writer.Append("UPDATE ");
-                writer.AppendLine(documentTable);
-                writer.Append("SET ");
-                writer.Append(Quote(IdentityVersionColumn));
-                writer.Append(" = nextval('");
-                writer.Append(sequenceName);
-                writer.Append("'), ");
-                writer.Append(Quote(IdentityLastModifiedAtColumn));
-                writer.AppendLine(" = now()");
-                writer.Append("WHERE ");
-                writer.Append(Quote(DocumentIdColumn));
-                writer.Append(" = NEW.");
-                writer.Append(Quote(keyColumn));
-                writer.AppendLine(";");
-
-                // Resource-kind tracked-change attachments record a key-change row for the same
-                // identity-diff workset that bumped IdentityVersion above. ConcreteAbstract tables
-                // are tombstone-only by design.
-                if (
-                    trackedChangePlan is not null
-                    && trackedChangePlan.Table.Kind == TrackedChangeTableKind.Resource
-                )
-                {
-                    TrackedChangeTriggerBodyEmitter.EmitPgsqlKeyChangeInsert(
-                        writer,
-                        _dialect,
-                        trackedChangePlan,
-                        keyColumn
-                    );
-                }
+                TrackedChangeTriggerBodyEmitter.EmitPgsqlKeyChangeInsert(
+                    writer,
+                    _dialect,
+                    trackedChangePlan,
+                    keyColumn
+                );
             }
-
             writer.AppendLine("END IF;");
         }
     }
@@ -1927,11 +1896,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             // ContentVersion/ContentLastModifiedAt: deleted is non-empty there, so EXISTS alone
             // cannot exclude it, but no stored column appears in that SET clause.
             //
-            // UPDATE(col) is a performance pre-filter only, exactly as in the IdentityVersion stamp
-            // below: it reports that a column appeared in a SET clause, not that its value changed.
-            // The null-safe value diff inside affectedDocs stays authoritative, so the guard can
-            // only skip statements whose workset would have been empty. The disjunction covers
-            // exactly the stored columns that diff already uses, so the two cannot disagree.
+            // UPDATE(col) is a performance pre-filter only: it reports that a column appeared in
+            // a SET clause, not that its value changed. The null-safe value diff inside
+            // affectedDocs stays authoritative, so the guard can only skip statements whose
+            // workset would have been empty. The disjunction covers exactly the stored columns
+            // that diff already uses, so the two cannot disagree.
             //
             // The case this has to survive is a stored column written by an FK cascade rather than by
             // a client statement, because UPDATE(col) is documented to report an INSERT or UPDATE
@@ -2015,89 +1984,32 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.AppendLine("END");
         }
 
-        // IdentityVersion stamp for root tables with identity projection columns
-        if (trigger.IdentityProjectionColumns.Count > 0)
+        if (
+            trigger.IdentityProjectionColumns.Count > 0
+            && trackedChangePlan is { Table.Kind: TrackedChangeTableKind.Resource }
+        )
         {
-            if (
-                trackedChangePlan is not null
-                && trackedChangePlan.Table.Kind == TrackedChangeTableKind.Resource
-            )
-            {
-                EmitMssqlIdentityStampWithKeyChange(
-                    writer,
-                    trigger,
-                    tableModel,
-                    documentTable,
-                    sequenceName,
-                    keyColumn,
-                    trackedChangePlan
-                );
-            }
-            else
-            {
-                // Performance pre-filter: UPDATE(col) returns true if the column appeared in the SET clause,
-                // regardless of whether the value actually changed. The WHERE clause below (using null-safe
-                // inequality) is the authoritative value-change check that filters to only actually changed rows.
-                writer.Append("IF EXISTS (SELECT 1 FROM deleted) AND (");
-                EmitMssqlUpdateColumnDisjunction(writer, trigger.IdentityProjectionColumns);
-                writer.AppendLine(")");
-
-                writer.AppendLine("BEGIN");
-
-                using (writer.Indent())
-                {
-                    EmitMssqlIdentityVersionUpdate(
-                        writer,
-                        trigger,
-                        tableModel,
-                        documentTable,
-                        sequenceName,
-                        keyColumn,
-                        captureIdentityChangedDocs: false
-                    );
-                }
-
-                writer.AppendLine("END");
-            }
+            EmitMssqlIdentityKeyChange(writer, trigger, tableModel, keyColumn, trackedChangePlan);
         }
     }
 
     /// <summary>
-    /// Emits the SQL Server IdentityVersion stamp for a stamping trigger attached to a
-    /// <see cref="TrackedChangeTableKind.Resource"/> tracked-change table, capturing the
-    /// identity-changed workset into <c>@identityChangedDocs</c> via an OUTPUT clause and rendering the
-    /// key-change INSERT from it. Gated only by row-set existence plus the authoritative null-safe
-    /// value diff — never by <c>UPDATE(column)</c>, which reports SET-clause membership rather than
-    /// value change (DMS-1179 AC bans <c>UPDATE(column)</c> for key-change eligibility).
+    /// Emits SQL Server key-change eligibility from the authoritative null-safe value-diff
+    /// workset and inserts tracked-change rows using the post-stamp content version.
     /// </summary>
-    private void EmitMssqlIdentityStampWithKeyChange(
+    private void EmitMssqlIdentityKeyChange(
         SqlWriter writer,
         DbTriggerInfo trigger,
         DbTableModel tableModel,
-        string documentTable,
-        string sequenceName,
         DbColumnName keyColumn,
         TrackedChangeInsertPlan trackedChangePlan
     )
     {
         writer.AppendLine("IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)");
         writer.AppendLine("BEGIN");
-
         using (writer.Indent())
         {
-            writer.AppendLine(
-                "DECLARE @identityChangedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY, [ContentVersion] bigint NOT NULL);"
-            );
-            EmitMssqlIdentityVersionUpdate(
-                writer,
-                trigger,
-                tableModel,
-                documentTable,
-                sequenceName,
-                keyColumn,
-                captureIdentityChangedDocs: true
-            );
-
+            EmitMssqlValueDiffWorkset(writer, tableModel, trigger.IdentityProjectionColumns);
             TrackedChangeTriggerBodyEmitter.EmitMssqlKeyChangeInsert(
                 writer,
                 _dialect,
@@ -2105,67 +2017,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 keyColumn
             );
         }
-
         writer.AppendLine("END");
-    }
-
-    /// <summary>
-    /// Emits the core <c>UPDATE d SET d.[IdentityVersion] = ... FROM ... INNER JOIN inserted ...
-    /// INNER JOIN deleted ... WHERE &lt;null-safe diff&gt;</c> statement, optionally appending an
-    /// <c>OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs</c> line
-    /// when <paramref name="captureIdentityChangedDocs"/> is <see langword="true"/>.
-    /// </summary>
-    private void EmitMssqlIdentityVersionUpdate(
-        SqlWriter writer,
-        DbTriggerInfo trigger,
-        DbTableModel tableModel,
-        string documentTable,
-        string sequenceName,
-        DbColumnName keyColumn,
-        bool captureIdentityChangedDocs
-    )
-    {
-        writer.AppendLine("UPDATE d");
-        writer.Append("SET d.");
-        writer.Append(Quote(IdentityVersionColumn));
-        writer.Append(" = NEXT VALUE FOR ");
-        writer.Append(sequenceName);
-        writer.Append(", d.");
-        writer.Append(Quote(IdentityLastModifiedAtColumn));
-        writer.AppendLine(" = sysutcdatetime()");
-        if (captureIdentityChangedDocs)
-        {
-            writer.AppendLine(
-                "OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs"
-            );
-        }
-        writer.Append("FROM ");
-        writer.Append(documentTable);
-        writer.AppendLine(" d");
-        writer.Append("INNER JOIN inserted i ON d.");
-        writer.Append(Quote(DocumentIdColumn));
-        writer.Append(" = i.");
-        writer.AppendLine(Quote(keyColumn));
-        writer.Append("INNER JOIN deleted del ON del.");
-        writer.Append(Quote(keyColumn));
-        writer.Append(" = i.");
-        writer.AppendLine(Quote(keyColumn));
-        writer.Append("WHERE ");
-        for (int i = 0; i < trigger.IdentityProjectionColumns.Count; i++)
-        {
-            if (i > 0)
-            {
-                writer.Append(" OR ");
-            }
-            EmitMssqlColumnValueDiffPredicate(
-                writer,
-                tableModel,
-                "i",
-                "del",
-                trigger.IdentityProjectionColumns[i]
-            );
-        }
-        writer.AppendLine(";");
     }
 
     /// <summary>
@@ -2879,12 +2731,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// (null-safe value diff between <c>inserted</c> and <c>deleted</c>).
     /// </summary>
     /// <remarks>
-    /// A table variable is used instead of a CTE because T-SQL CTEs scope to the single
-    /// immediately-following DML statement, while triggers need the workset across multiple
-    /// statements (DELETE + INSERT or MERGE). The table variable persists for the entire
-    /// BEGIN...END block. This is the authoritative workset for UPDATE triggers and is
-    /// correct under key unification where <c>UPDATE(aliasColumn)</c> returns false for
-    /// CASCADE-driven canonical column changes.
+    /// A table variable is used instead of a CTE so the materialized workset can be reused by
+    /// multi-consumer trigger shapes and joined consistently by single-consumer shapes. This is
+    /// the authoritative workset for UPDATE triggers and is correct under key unification where
+    /// <c>UPDATE(aliasColumn)</c> returns false for CASCADE-driven canonical column changes.
     /// </remarks>
     private void EmitMssqlValueDiffWorkset(
         SqlWriter writer,
@@ -2895,7 +2745,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         var documentIdCol = Quote(DocumentIdColumn);
         writer.Append("DECLARE @changedDocs TABLE (");
         writer.Append(documentIdCol);
-        writer.AppendLine(" bigint NOT NULL);");
+        writer.AppendLine(" bigint NOT NULL PRIMARY KEY);");
         writer.Append("INSERT INTO @changedDocs (");
         writer.Append(documentIdCol);
         writer.AppendLine(")");

@@ -13,8 +13,6 @@ internal sealed record ProfileGuardedNoOpDocumentRow(
     short ResourceKeyId,
     long ContentVersion,
     DateTime ContentLastModifiedAt,
-    long IdentityVersion,
-    DateTime IdentityLastModifiedAt,
     DateTime CreatedAt
 );
 
@@ -69,11 +67,6 @@ internal static class ProfileGuardedNoOpPersistedStateSupport
             ContentVersion: Convert.ToInt64(row["ContentVersion"], CultureInfo.InvariantCulture),
             ContentLastModifiedAt: Convert.ToDateTime(
                 row["ContentLastModifiedAt"],
-                CultureInfo.InvariantCulture
-            ),
-            IdentityVersion: Convert.ToInt64(row["IdentityVersion"], CultureInfo.InvariantCulture),
-            IdentityLastModifiedAt: Convert.ToDateTime(
-                row["IdentityLastModifiedAt"],
                 CultureInfo.InvariantCulture
             ),
             CreatedAt: Convert.ToDateTime(row["CreatedAt"], CultureInfo.InvariantCulture)

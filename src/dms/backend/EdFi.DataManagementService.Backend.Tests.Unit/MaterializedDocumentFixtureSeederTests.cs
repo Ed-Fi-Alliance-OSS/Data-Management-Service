@@ -82,6 +82,11 @@ public class Given_MaterializedDocumentFixtureSeeder
             && command.Parameters.Any(parameter => Equals(parameter.Value, 970101L))
         );
 
+        documentInsert
+            .CommandText.Should()
+            .Be(
+                "INSERT INTO \"dms\".\"Document\" (\"DocumentId\", \"DocumentUuid\", \"ResourceKeyId\", \"CreatedByOwnershipTokenId\", \"ContentVersion\", \"ContentLastModifiedAt\", \"CreatedAt\") VALUES (@p0, @p1, @p2, NULL, @p3, @p4, @p4)"
+            );
         documentInsert.Parameters.Should().Contain(parameter => Equals(parameter.Value, 970101L));
         documentInsert
             .Parameters.Any(parameter =>
@@ -130,6 +135,15 @@ public class Given_MaterializedDocumentFixtureSeeder
             .Should()
             .Contain(command =>
                 command.Contains("[ContentLastModifiedAt] datetime2(7)", StringComparison.Ordinal)
+            );
+
+        var documentInsert = commands.Single(command =>
+            command.CommandText.StartsWith("INSERT INTO [dms].[Document]", StringComparison.Ordinal)
+        );
+        documentInsert
+            .CommandText.Should()
+            .Be(
+                "INSERT INTO [dms].[Document] ([DocumentId], [DocumentUuid], [ResourceKeyId], [CreatedByOwnershipTokenId], [ContentVersion], [ContentLastModifiedAt], [CreatedAt]) VALUES (@p0, @p1, @p2, NULL, @p3, @p4, @p4)"
             );
 
         var descriptorInsert = commands.Single(command =>
@@ -268,6 +282,30 @@ public class Given_MaterializedDocumentFixtureSeeder
             )
             .Should()
             .BeTrue();
+    }
+
+    [Test]
+    public void It_generates_a_valid_mssql_document_stamp_update_without_a_trailing_comma()
+    {
+        var commands = new MaterializedDocumentFixtureSeeder(
+            MaterializedDocumentFixtureSqlDialect.Mssql,
+            new MaterializedDocumentFixtureSeederOptions { CreateSchemasAndTables = false }
+        ).BuildSetupCommands(_failureFixture);
+
+        var stampUpdate = commands.Single(command =>
+            command.CommandText.StartsWith("UPDATE [dms].[Document]", StringComparison.Ordinal)
+        );
+
+        stampUpdate
+            .CommandText.Should()
+            .Be(
+                """
+                UPDATE [dms].[Document]
+                SET [ContentVersion] = @p0,
+                    [ContentLastModifiedAt] = @p1
+                WHERE [DocumentId] = @p2
+                """
+            );
     }
 
     [Test]

@@ -53,12 +53,12 @@ where the Configuration Service objects share the same physical database as DMS,
 
 The migration will be **code-only and re-provision-only**; no in-place upgrade scripts will be
 provided. Release review confirmed that mapping version `v2` has not been released as a supported
-database shape, so this remains a prerelease schema-shape change within the unreleased `v2` mapping
-line and does not bump `RelationalMappingVersion`. Databases provisioned from an earlier prerelease
-shape are not guaranteed to be mechanically rejected by the fingerprint check; environments must
-re-provision after picking up these changes. Once a mapping version has been released, later
-incompatible mapping changes must bump `RelationalMappingVersion` so stale released databases fail
-fast with the designed 503.
+database shape. DMS-1408 consumes `RelationalMappingVersion=v3` for the current physical schema
+shape. Databases provisioned from an earlier prerelease shape must re-provision after picking up
+these changes; the mapping-version mismatch rejects the stale shape. Future natural-key physical
+storage changes must not reuse `v3`; each later incompatible physical schema change requires its own
+`RelationalMappingVersion` bump and schema-hash re-bless so stale databases fail fast with the
+designed 503.
 
 The rollout is filed as epic DMS-1402 with fourteen stories, DMS-1443 through DMS-1456; this
 document refers to them by their stable local aliases T1–T14, defined in
@@ -822,7 +822,7 @@ preservation must be explicit. Three pieces will be added, all in the shared wri
    every referrer; and the stamping trigger's identity diff is deliberately **binary** (string
    columns compared as `varbinary(max)`; see ["Trigger value-diffs stay byte-level on SQL
    Server"](#trigger-value-diffs-stay-byte-level-on-sql-server)), so an unrebated recase would bump
-   `IdentityVersion` and record a key change in the tracked-change tables. After the rebind, none of
+   `ContentVersion` and record a key change in the tracked-change tables. After the rebind, none of
    that machinery will see a change — no suppression logic will be needed anywhere downstream.
 3. **No-op detection will come free.** After the rebind, a casing-only re-POST with an otherwise
    identical payload will be row-for-row equal to current state and will land on the existing
@@ -931,7 +931,7 @@ identity-propagation trigger row here would contradict that pruning contract.
 | Surviving trigger family | What the binary diff gates | Why it must stay byte-level |
 |---|---|---|
 | Document stamping — content stamp (resource roots, child scopes, and `dms.Descriptor`) | `ContentVersion` / `ContentLastModifiedAt` bumps | Non-identity fields stay request-wins under this contract: a case-only or trailing-space-only edit changes the served bytes, so the ETag must change and change queries must resurface the document. A collation diff would leave the ETag stale while the body changed. |
-| Document stamping — identity stamp + key-change workset | `IdentityVersion` bump + the key-change tracked-change row | The fail-closed comparer residue: a byte-different-but-collation-equal key change (e.g. `Straße` → `Strasse`) is deliberately allowed through as a real key change, and its cascade rewrites referrer bytes; only a byte-level diff records any of it. |
+| Document stamping — key-change workset | Whether the key-change tracked-change row is emitted | The fail-closed comparer residue: a byte-different-but-collation-equal key change (e.g. `Straße` → `Strasse`) is deliberately allowed through as a real key change, and its cascade rewrites referrer bytes; only a byte-level diff records any of it. |
 | Abstract identity maintenance | Whether concrete identity changes propagate into the `<Abstract>Identity` tables | These tables will become the *only* resolution path for abstract references, and PostgreSQL matches them case-sensitively — byte drift between a concrete root and its abstract copy would become user-visible. |
 
 (Non-string columns are never cast — the byte comparison exists only where collation equality and
@@ -1237,7 +1237,7 @@ a follow-on to be filed only on evidence and is not part of the T1–T14 rollout
   `DROP EXTENSION pgcrypto`; shared databases may still need the extension for CMS/OpenIddict key
   encryption.
 
-### To remain unchanged
+### Retained contracts
 
 `dms.Document` except for the narrow `UX_Document_DocumentId_ResourceKeyId` parent key used only by
 descriptor and abstract identity document/resource invariants (columns including
@@ -1254,16 +1254,15 @@ its trigger topology except for concrete `ResourceKeyId` column population, the 
 document/resource FK, and explicit SQL Server identity collation; the DocumentCache table family;
 tracked-change tables and triggers; `auth.*`;
 `dms.ResourceKey` / `dms.EffectiveSchema` / `dms.SchemaComponent`; the read/reconstitution pipeline;
-`RelationalMappingVersion` remains `v2` because release review confirmed it is still an unreleased
-aggregate mapping shape.
+`RelationalMappingVersion` is `v3` because these physical mapping changes must reject earlier
+prerelease aggregate database shapes.
 
 ## Release compatibility and rollback
 
 Release review confirmed that `v2` has not been published as a supported database shape. This
-design therefore remains within the unreleased, re-provision-only `v2` aggregate and does not
-introduce a `v2 → v3` bump. Current schema-hash expectations will be re-blessed as the physical
-changes land. Environments using an earlier prerelease `v2` shape must re-provision rather than rely on an
-in-place upgrade or version-mismatch failure.
+design therefore moves to the unreleased, re-provision-only `v3` aggregate. Current schema-hash
+expectations will be re-blessed as the physical changes land. Environments using an earlier
+prerelease `v2` shape must re-provision; the mapping-version mismatch rejects that stale shape.
 
 Rollback is a commit revert while `dms.ReferentialIdentity` remains fully maintained. Once
 descriptor writes stop maintaining RI rows, rollback to the RI resolver requires re-provisioning
@@ -1387,7 +1386,7 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
 - **Behavior pins**:
   - Case-variant natural-key POST/PUT suites asserting the ODS-parity contract on SQL Server (200,
     stored casing served back, true no-op on identical payload, no referrer rewrite / key-change
-    row / `IdentityVersion` bump; casing-only PUT is not a key change; a mixed PUT cascades only the
+    row / `ContentVersion` bump; casing-only PUT is not a key change; a mixed PUT cascades only the
     genuinely changed column) and the PostgreSQL second-document behavior.
   - Descriptor stored-wins pins per engine (POST preserves stored casing and no-ops on casing-only
     re-POST; case-only descriptor PUT returns 200 with stored identity intact).

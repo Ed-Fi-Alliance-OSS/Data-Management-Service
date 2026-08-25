@@ -86,9 +86,7 @@ CREATE TABLE dms.Document (
     -- Update tracking tokens (see reference/design/backend-redesign/design-docs/update-tracking.md)
     -- Note: emitted DDL must create dms.ChangeVersionSequence before dms.Document.
     ContentVersion bigint NOT NULL DEFAULT nextval('dms.ChangeVersionSequence'),
-    IdentityVersion bigint NOT NULL DEFAULT nextval('dms.ChangeVersionSequence'),
     ContentLastModifiedAt timestamp with time zone NOT NULL DEFAULT now(),
-    IdentityLastModifiedAt timestamp with time zone NOT NULL DEFAULT now(),
 
     CreatedAt timestamp with time zone NOT NULL DEFAULT now(),
 
@@ -117,9 +115,7 @@ CREATE TABLE dms.Document (
     -- Update tracking tokens (see reference/design/backend-redesign/design-docs/update-tracking.md)
     -- Note: emitted DDL must create dms.ChangeVersionSequence before dms.Document.
     ContentVersion bigint NOT NULL CONSTRAINT DF_Document_ContentVersion DEFAULT (NEXT VALUE FOR dms.ChangeVersionSequence),
-    IdentityVersion bigint NOT NULL CONSTRAINT DF_Document_IdentityVersion DEFAULT (NEXT VALUE FOR dms.ChangeVersionSequence),
     ContentLastModifiedAt datetime2(7) NOT NULL CONSTRAINT DF_Document_ContentLastModifiedAt DEFAULT (sysutcdatetime()),
-    IdentityLastModifiedAt datetime2(7) NOT NULL CONSTRAINT DF_Document_IdentityLastModifiedAt DEFAULT (sysutcdatetime()),
 
     CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_Document_CreatedAt DEFAULT (sysutcdatetime()),
 
@@ -144,14 +140,14 @@ Notes:
 - `CreatedByOwnershipTokenId` is stamped from the authenticated client context on create and is used by the ownership-based authorization strategy; it is not client-writable (see [auth.md](auth.md)).
 - Update tracking columns (brief semantics; see `reference/design/backend-redesign/design-docs/update-tracking.md` for the normative rules):
   - `ContentVersion` / `ContentLastModifiedAt`: bump when the document's full resource-state representation changes (local write, or cascaded update to reference-identity storage columns and any dependent generated aliases).
-  - `IdentityVersion` / `IdentityLastModifiedAt`: bump when the document’s identity/URI projection changes (directly or via cascaded updates to identity-component reference identity columns).
+  - Identity-projection changes that alter the stored representation are reflected through the same content stamps.
   - API `_lastModifiedDate` and per-item `ChangeVersion` are served from these stored stamps. `_lastModifiedDate` uses the existing DMS whole-second UTC `yyyy-MM-ddTHH:mm:ssZ` formatter, discarding fractional seconds without rounding. API `_etag` is composed from `ContentVersion` plus a representation `variantKey` (schema epoch, format, profile code, link flag, and content-coding code); the document body is not hashed for etag construction.
 - Time semantics: store timestamps as UTC instants at provider precision. In PostgreSQL, use `timestamp with time zone`; in SQL Server, use `datetime2` with UTC writers (e.g., `sysutcdatetime()`). Public `_lastModifiedDate` formatting is the whole-second UTC representation defined above.
 - Authorization is addressed separately in [auth.md](auth.md).
 
 ##### 1a) `dms.ChangeVersionSequence`
 
-Global monotonic `bigint` sequence used to allocate update tracking stamps (for `ContentVersion` and `IdentityVersion`). See `reference/design/backend-redesign/design-docs/update-tracking.md` for stamping rules.
+Global monotonic `bigint` sequence used to allocate update tracking stamps for `ContentVersion`. See `reference/design/backend-redesign/design-docs/update-tracking.md` for stamping rules.
 
 **PostgreSQL**
 
@@ -407,7 +403,7 @@ Canonical JSON contract (normative for `canonicalizeJson(...)`):
 
 `RelationalMappingVersion` contract:
 
-- `RelationalMappingVersion` is a single DMS-owned string constant (recommended: a short value like `v2`).
+- `RelationalMappingVersion` is a single DMS-owned string constant (recommended: a short value like `v3`).
 - The value used in the `EffectiveSchemaHash` manifest MUST match the value used for mapping pack selection (`relational_mapping_version` in `.mpack`).
 - Changing mapping rules requires bumping `RelationalMappingVersion` (or, if the hash algorithm itself changes, bump the hash header/version).
 
@@ -421,7 +417,7 @@ Algorithm (suggested):
 4. Compute `ProjectHash = SHA-256(canonicalJson(projectSchema))` for each project.
 5. Compute `EffectiveSchemaHash = SHA-256(manifestString)` where `manifestString` is:
    - a constant header (e.g., `dms-effective-schema-hash:v1`)
-   - a constant mapping version (e.g., `relationalMappingVersion=v2`)
+   - a constant mapping version (e.g., `relationalMappingVersion=v3`)
    - `ApiSchemaFormatVersion`
    - one line per project: `ProjectEndpointName|ProjectName|ProjectVersion|IsExtensionProject|ProjectHash`
 
@@ -429,7 +425,7 @@ Pseudocode:
 
 ```text
 const HashVersion = "dms-effective-schema-hash:v1"
-const RelationalMappingVersion = "v2"
+const RelationalMappingVersion = "v3"
 
 projects = []
 apiSchemaFormatVersion = null

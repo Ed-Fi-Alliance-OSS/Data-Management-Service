@@ -1008,13 +1008,25 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
     }
 
     [Test]
-    public void It_should_gate_identity_stamping_on_null_safe_root_identity_diffs()
+    public void It_should_not_write_identity_stamps()
     {
-        _ddl.Should()
-            .Contain("IF TG_OP = 'UPDATE' AND (OLD.\"SchoolId\" IS DISTINCT FROM NEW.\"SchoolId\") THEN");
-        _ddl.Should().Contain("\"IdentityVersion\" = nextval('\"dms\".\"ChangeVersionSequence\"')");
-        _ddl.Should().Contain("\"IdentityLastModifiedAt\" = now()");
-        _ddl.Should().Contain("WHERE \"DocumentId\" = NEW.\"DocumentId\";");
+        var triggerBody = GetRootStampFunctionBody();
+
+        triggerBody.Should().Contain("IS DISTINCT FROM");
+        triggerBody.Should().Contain("_stampedContentVersion");
+        triggerBody.Should().NotContain("IdentityVersion");
+        triggerBody.Should().NotContain("IdentityLastModifiedAt");
+    }
+
+    [Test]
+    public void It_should_not_emit_an_identity_diff_key_change_block_without_an_attachment()
+    {
+        var triggerBody = GetRootStampFunctionBody();
+
+        triggerBody
+            .Should()
+            .NotContain("IF TG_OP = 'UPDATE' AND (OLD.\"SchoolId\" IS DISTINCT FROM NEW.\"SchoolId\") THEN");
+        triggerBody.Should().NotContain("INSERT INTO \"tracked_changes_");
     }
 
     [Test]
@@ -1532,26 +1544,31 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
     }
 
     [Test]
-    public void It_should_use_next_value_for_directly_in_the_set_based_update()
+    public void It_should_use_next_value_for_directly_in_the_content_stamp_update()
     {
         _ddl.Should().Contain("SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]");
-        _ddl.Should().Contain("SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]");
         _ddl.Should().NotContain("DECLARE @contentVersion");
-        _ddl.Should().NotContain("DECLARE @identityVersion");
     }
 
     [Test]
-    public void It_should_gate_identity_stamping_with_update_prefilter_and_null_safe_value_diff()
+    public void It_should_not_write_identity_stamps()
     {
-        _ddl.Should().Contain("IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([SchoolId]))");
-        _ddl.Should()
-            .Contain(
-                "SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()"
-            );
-        _ddl.Should()
-            .Contain(
-                "(i.[SchoolId] <> del.[SchoolId] OR (i.[SchoolId] IS NULL AND del.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND del.[SchoolId] IS NULL))"
-            );
+        var triggerBody = GetSchoolStampTriggerBody();
+
+        triggerBody.Should().NotContain("IdentityVersion");
+        triggerBody.Should().NotContain("IdentityLastModifiedAt");
+    }
+
+    [Test]
+    public void It_should_not_emit_an_identity_diff_key_change_block_without_an_attachment()
+    {
+        var triggerBody = GetSchoolStampTriggerBody();
+
+        triggerBody
+            .Should()
+            .NotContain("IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)");
+        triggerBody.Should().NotContain("DECLARE @changedDocs TABLE");
+        triggerBody.Should().NotContain("INSERT INTO [tracked_changes_");
     }
 
     [Test]
@@ -1650,10 +1667,14 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
     /// <see cref="Given_RelationalModelDdlEmitter_With_TrackedChange_Attached_Resource_Mssql.It_should_place_tombstone_branch_after_mirror_update_block"/>.
     /// </summary>
     [Test]
-    public void It_should_keep_the_mirror_guard_and_identity_stamp_in_order_after_the_guard()
+    public void It_should_keep_the_mirror_guard_after_the_content_stamp_guard()
     {
         var triggerBody = GetSchoolStampTriggerBody();
 
+        var contentGuardStart = triggerBody.IndexOf(
+            "IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE(",
+            StringComparison.Ordinal
+        );
         var mirrorGuardStart = triggerBody.IndexOf(
             "IF EXISTS (SELECT 1 FROM @stamped)",
             StringComparison.Ordinal
@@ -1663,8 +1684,10 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
             StringComparison.Ordinal
         );
 
+        contentGuardStart.Should().BeGreaterOrEqualTo(0);
         mirrorGuardStart.Should().BeGreaterThan(0);
-        identityStampStart.Should().BeGreaterThan(mirrorGuardStart);
+        mirrorGuardStart.Should().BeGreaterThan(contentGuardStart);
+        identityStampStart.Should().Be(-1, "document-level identity stamps are no longer emitted");
     }
 
     [Test]
@@ -1672,10 +1695,10 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
     {
         // DMS-1127: pins the "never UPDATE(column)" invariant on the non-root child-collection stamp
         // path — the path a mutable parent-identity rename actually cascades through into a child
-        // binding. The attached-Resource key-change path is already pinned by
-        // It_should_capture_identity_changed_docs_and_not_gate_on_update_function, and the immutable
-        // ConcreteAbstract identity-stamp path deliberately requires UPDATE(column) in
-        // It_should_emit_tombstone_but_no_key_change; this closes the third path at the unit layer.
+        // binding. Attached-Resource key-change paths are pinned by the Change Queries trigger
+        // tests. ConcreteAbstract attachments remain tombstone-only, without an identity-stamp
+        // UPDATE(column) path; It_should_emit_tombstone_but_no_key_change closes that path at
+        // the unit layer.
         // SchoolAddress is a child collection of the (immutable) School, so it exercises the
         // child-collection stamp path structurally: the change is detected by a null-safe stored-value
         // diff (CAST(...) <> CAST(...) with explicit IS NULL / IS NOT NULL handling), never by an
@@ -3953,21 +3976,32 @@ public class Given_RelationalModelDdlEmitter_With_TrackedChange_Attached_Resourc
     }
 
     [Test]
-    public void It_should_insert_a_key_change_row_inside_the_identity_diff_branch()
+    public void It_should_stamp_content_before_inserting_a_key_change_inside_the_identity_diff_guard()
     {
-        _ddl.Should().Contain("_stampedContentVersion");
-        _ddl.Should().Contain("IS DISTINCT FROM");
+        var functionBody = GetAttachedResourceFunctionBody();
+        const string identityGuard =
+            "IF TG_OP = 'UPDATE' AND (OLD.\"BeginDate\" IS DISTINCT FROM NEW.\"BeginDate\" OR OLD.\"SchoolId_Unified\" IS DISTINCT FROM NEW.\"SchoolId_Unified\") THEN";
 
-        // The tracked-change CREATE TABLE earlier in the script legitimately names New* columns,
-        // so slice to the trigger-function section to prove the key-change INSERT was rendered.
-        var triggerSection = _ddl[_ddl.IndexOf("CREATE OR REPLACE FUNCTION", StringComparison.Ordinal)..];
-        triggerSection.Should().Contain("\"NewBeginDate\"");
+        var contentStampCapture = functionBody.IndexOf(
+            "RETURNING \"ContentVersion\", \"ContentLastModifiedAt\" INTO STRICT _stampedContentVersion",
+            StringComparison.Ordinal
+        );
+        var identityGuardStart = functionBody.IndexOf(identityGuard, StringComparison.Ordinal);
+        var newIdentityProjection = functionBody.IndexOf("\"NewBeginDate\"", StringComparison.Ordinal);
+        newIdentityProjection.Should().BeGreaterThanOrEqualTo(0);
+        var keyChangeInsert = functionBody.LastIndexOf(
+            "INSERT INTO \"tracked_changes_edfi\".\"Grade\" (",
+            newIdentityProjection,
+            StringComparison.Ordinal
+        );
+        var identityGuardEnd = functionBody.IndexOf("END IF;", identityGuardStart, StringComparison.Ordinal);
 
-        // The key-change INSERT must appear AFTER the IdentityVersion UPDATE within the DDL.
-        triggerSection
-            .IndexOf("\"IdentityVersion\"", StringComparison.Ordinal)
-            .Should()
-            .BeLessThan(triggerSection.IndexOf("\"NewBeginDate\"", StringComparison.Ordinal));
+        contentStampCapture.Should().BeGreaterThanOrEqualTo(0);
+        identityGuardStart.Should().BeGreaterThan(contentStampCapture);
+        keyChangeInsert.Should().BeGreaterThan(identityGuardStart);
+        identityGuardEnd.Should().BeGreaterThan(keyChangeInsert);
+        functionBody.Should().NotContain("IdentityVersion");
+        functionBody.Should().NotContain("IdentityLastModifiedAt");
     }
 
     [Test]
@@ -3977,6 +4011,20 @@ public class Given_RelationalModelDdlEmitter_With_TrackedChange_Attached_Resourc
         // row eligibility — the null-safe identity-workset diff is the only gate.
         // Mirrors the MSSQL fixture's NotContain("UPDATE(") assertion.
         _ddl.Should().NotContain("UPDATE OF");
+    }
+
+    private string GetAttachedResourceFunctionBody()
+    {
+        var functionStart = _ddl.IndexOf(
+            "CREATE OR REPLACE FUNCTION \"edfi\".\"TF_TR_Grade_DocumentStamping\"()",
+            StringComparison.Ordinal
+        );
+        functionStart.Should().BeGreaterThanOrEqualTo(0);
+
+        var functionEnd = _ddl.IndexOf("$func$ LANGUAGE plpgsql;", functionStart, StringComparison.Ordinal);
+        functionEnd.Should().BeGreaterThan(functionStart);
+
+        return _ddl.Substring(functionStart, functionEnd - functionStart + "$func$ LANGUAGE plpgsql;".Length);
     }
 
     [Test]
@@ -4028,26 +4076,68 @@ public class Given_RelationalModelDdlEmitter_With_TrackedChange_Attached_Resourc
     }
 
     [Test]
-    public void It_should_capture_identity_changed_docs_and_not_gate_on_update_function()
+    public void It_should_stamp_content_then_build_a_guarded_workset_before_inserting_a_key_change()
     {
-        _ddl.Should().Contain("DECLARE @identityChangedDocs TABLE");
-        _ddl.Should()
-            .Contain("OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs");
+        var triggerBody = GetAttachedResourceTriggerBody();
+        const string identityGuard = "IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)";
 
-        // DMS-1127 AC: the IdentityVersion stamp on an attached Resource trigger must not be gated by
-        // UPDATE(col). It captures @identityChangedDocs by null-safe value diff instead, so a
-        // cascade-driven identity change cannot be pre-filtered away and lose its tracked-change row.
-        //
-        // Scoped to that gate's exact shape rather than to "UPDATE( appears anywhere". The blanket
-        // form was equivalent only while nothing else in the DDL emitted UPDATE(; the ContentVersion
-        // stamp is now guarded by "AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE(...))", which is
-        // a different statement with a different safety argument - it can only skip a workset that
-        // would have been empty, and its value diff remains authoritative.
-        _ddl.Should()
-            .NotContain(
-                "IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE(",
-                "the identity stamp must not be gated by UPDATE(col) on attached Resource triggers"
+        var contentStampCapture = triggerBody.IndexOf(
+            "OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped",
+            StringComparison.Ordinal
+        );
+        var identityGuardStart = triggerBody.IndexOf(identityGuard, StringComparison.Ordinal);
+        var worksetStart = triggerBody.IndexOf("DECLARE @changedDocs TABLE", StringComparison.Ordinal);
+        var newIdentityProjection = triggerBody.IndexOf("[NewBeginDate]", StringComparison.Ordinal);
+        newIdentityProjection.Should().BeGreaterThanOrEqualTo(0);
+        var keyChangeInsert = triggerBody.LastIndexOf(
+            "INSERT INTO [tracked_changes_edfi].[Grade] (",
+            newIdentityProjection,
+            StringComparison.Ordinal
+        );
+        var identityGuardEnd = triggerBody.IndexOf("\n    END", identityGuardStart, StringComparison.Ordinal);
+
+        contentStampCapture.Should().BeGreaterThanOrEqualTo(0);
+        identityGuardStart.Should().BeGreaterThan(contentStampCapture);
+        worksetStart.Should().BeGreaterThan(identityGuardStart);
+        keyChangeInsert.Should().BeGreaterThan(worksetStart);
+        identityGuardEnd.Should().BeGreaterThan(keyChangeInsert);
+
+        var guardedBlock = triggerBody.Substring(identityGuardStart, identityGuardEnd - identityGuardStart);
+        guardedBlock
+            .Should()
+            .Contain("DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY)");
+        guardedBlock.Should().Contain("FROM inserted i INNER JOIN deleted d");
+        guardedBlock
+            .Should()
+            .Contain(
+                "(i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL))"
             );
+        guardedBlock
+            .Should()
+            .Contain(
+                "(i.[SchoolId_Unified] <> d.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND d.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND d.[SchoolId_Unified] IS NULL))"
+            );
+        guardedBlock.Should().Contain("FROM @changedDocs cd");
+        guardedBlock.Should().Contain("doc.[ContentVersion]");
+        triggerBody.Should().NotContain("@identityChangedDocs");
+        triggerBody
+            .Should()
+            .NotContain("OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @identityChangedDocs");
+        triggerBody.Should().NotContain("IdentityVersion");
+    }
+
+    private string GetAttachedResourceTriggerBody()
+    {
+        var triggerStart = _ddl.IndexOf(
+            "CREATE OR ALTER TRIGGER [edfi].[TR_Grade_DocumentStamping]",
+            StringComparison.Ordinal
+        );
+        triggerStart.Should().BeGreaterThanOrEqualTo(0);
+
+        var triggerEnd = _ddl.IndexOf("\nGO", triggerStart, StringComparison.Ordinal);
+        triggerEnd.Should().BeGreaterThan(triggerStart);
+
+        return _ddl.Substring(triggerStart, triggerEnd - triggerStart);
     }
 
     [Test]
@@ -4081,6 +4171,7 @@ public class Given_RelationalModelDdlEmitter_With_TrackedChange_ConcreteAbstract
 
         ddl.Should().Contain("tracked_changes_edfi");
         ddl.Should().NotContain("@identityChangedDocs");
+        ddl.Should().NotContain("IdentityVersion");
 
         // The tombstone itself never emits New* columns, so their absence from the trigger
         // section proves no key-change INSERT was rendered. (The tracked-change CREATE TABLE
@@ -4100,10 +4191,8 @@ public class Given_RelationalModelDdlEmitter_With_TrackedChange_ConcreteAbstract
                     : "INSERT INTO [tracked_changes_edfi]."
             );
 
-        if (sqlDialect == SqlDialect.Mssql)
-        {
-            ddl.Should().Contain("UPDATE("); // existing IdentityVersion stamp shape preserved
-        }
+        ddl.Should().NotContain("@identityChangedDocs");
+        ddl.Should().NotContain("IdentityVersion");
     }
 }
 

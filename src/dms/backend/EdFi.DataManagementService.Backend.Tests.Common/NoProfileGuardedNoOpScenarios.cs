@@ -124,9 +124,7 @@ public static class NoProfileGuardedNoOpScenarios
         Guid DocumentUuid,
         short ResourceKeyId,
         long ContentVersion,
-        long IdentityVersion,
         DateTimeOffset ContentLastModifiedAt,
-        DateTimeOffset IdentityLastModifiedAt,
         DateTimeOffset CreatedAt
     );
 
@@ -184,9 +182,9 @@ public static class NoProfileGuardedNoOpScenarios
 
     /// <summary>
     /// Asserts a guarded no-op left the full persisted rowset, ContentVersion, and every stored
-    /// update-tracking stamp (ContentLastModifiedAt, IdentityVersion, IdentityLastModifiedAt,
-    /// CreatedAt) unchanged, with the expected resource key. Guards the focused snapshot against
-    /// vacuity (one document, two base and two aligned rows) before the full equality check.
+    /// update-tracking stamp (ContentLastModifiedAt and CreatedAt) unchanged, with the expected resource key.
+    /// Guards the focused snapshot against vacuity (one document, two base and two aligned rows)
+    /// before the full equality check.
     /// </summary>
     public static void AssertRowsetUnchanged(
         PersistedState before,
@@ -223,9 +221,8 @@ public static class NoProfileGuardedNoOpScenarios
     /// Asserts a guarded no-op left the full rowset unchanged except for exactly one concurrent
     /// content-stamp write: ContentVersion is before + 1 and ContentLastModifiedAt is exactly the
     /// injected concurrent sentinel (proving the concurrent outcome was retained without an extra DMS
-    /// stamp/write), while IdentityVersion, IdentityLastModifiedAt, CreatedAt, and every rowset stay
-    /// unchanged, with the expected resource key. Guards the focused snapshot against vacuity and the
-    /// sentinel against matching the pre-state (which would make retention unprovable) before the
+    /// stamp/write), while CreatedAt and every rowset stay unchanged, with the expected resource key. Guards the focused snapshot against vacuity and
+    /// the sentinel against matching the pre-state (which would make retention unprovable) before the
     /// equality check.
     /// </summary>
     public static void AssertRowsetUnchangedExceptOneContentVersionBump(

@@ -345,9 +345,7 @@ public class Given_A_Postgresql_Descriptor_Only_Resource_Page
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
                 "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "IdentityVersion" bigint NOT NULL DEFAULT 1,
                 "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "IdentityLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "CreatedAt" timestamptz NOT NULL DEFAULT now()
             );
 

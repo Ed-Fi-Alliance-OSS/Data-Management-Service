@@ -124,9 +124,7 @@ public class Given_HydrationBatchBuilder_With_Single_Keyset
     {
         _pgsqlBatch.Should().Contain("\"DocumentUuid\"");
         _pgsqlBatch.Should().Contain("\"ContentVersion\"");
-        _pgsqlBatch.Should().Contain("\"IdentityVersion\"");
         _pgsqlBatch.Should().Contain("\"ContentLastModifiedAt\"");
-        _pgsqlBatch.Should().Contain("\"IdentityLastModifiedAt\"");
         _pgsqlBatch.Should().Contain("\"dms\".\"Document\"");
     }
 
@@ -138,18 +136,16 @@ public class Given_HydrationBatchBuilder_With_Single_Keyset
             "d.\"DocumentId\"",
             "d.\"DocumentUuid\"",
             "d.\"ContentVersion\"",
-            "d.\"IdentityVersion\"",
             "d.\"ContentLastModifiedAt\"",
-            "d.\"IdentityLastModifiedAt\""
+            "d.\"ResourceKeyId\""
         );
         AssertAppearsInOrder(
             _mssqlBatch,
             "d.[DocumentId]",
             "d.[DocumentUuid]",
             "d.[ContentVersion]",
-            "d.[IdentityVersion]",
             "d.[ContentLastModifiedAt]",
-            "d.[IdentityLastModifiedAt]"
+            "d.[ResourceKeyId]"
         );
     }
 
@@ -355,9 +351,7 @@ public class Given_HydrationBatchBuilder_With_Pgsql_Single_Document_Fast_Path
                     d."DocumentId",
                     d."DocumentUuid",
                     d."ContentVersion",
-                    d."IdentityVersion",
                     d."ContentLastModifiedAt",
-                    d."IdentityLastModifiedAt",
                     d."ResourceKeyId"
                 FROM "dms"."Document" d
                 WHERE d."DocumentId" = @DocumentId
@@ -705,9 +699,7 @@ public class Given_HydrationBatchBuilder_With_Mssql_Single_Document_Fast_Path
                     d.[DocumentId],
                     d.[DocumentUuid],
                     d.[ContentVersion],
-                    d.[IdentityVersion],
                     d.[ContentLastModifiedAt],
-                    d.[IdentityLastModifiedAt],
                     d.[ResourceKeyId]
                 FROM [dms].[Document] d
                 WHERE d.[DocumentId] = @DocumentId

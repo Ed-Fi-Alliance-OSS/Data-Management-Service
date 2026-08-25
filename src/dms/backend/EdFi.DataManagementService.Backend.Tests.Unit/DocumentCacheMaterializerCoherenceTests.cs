@@ -260,8 +260,6 @@ public class Given_DocumentCacheMaterializer_Coherence
                     source.DocumentId,
                     source.DocumentUuid.Value,
                     source.ContentVersion,
-                    source.ContentVersion,
-                    source.ContentLastModifiedAt,
                     source.ContentLastModifiedAt,
                     source.ResourceKeyId
                 ),

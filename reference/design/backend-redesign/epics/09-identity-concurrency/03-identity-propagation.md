@@ -31,5 +31,5 @@ Align with:
    - full-composite FKs with provider actions selected by [SQL Server foreign-key pruning](../../design-docs/sql-server-pruning.md), and
    - no `MssqlIdentityPropagationTrigger` fallback.
 2. Emit per-resource triggers to maintain `dms.ReferentialIdentity` transactionally on identity projection changes, recomputing `ReferentialId` using the engine UUIDv5 helper (`E02-S06`).
-3. Integrate identity-stamp behavior (`IdentityVersion/IdentityLastModifiedAt`) with trigger maintenance.
+3. Integrate key-change detection and content-stamp behavior with trigger maintenance.
 4. Add integration tests for a small identity dependency chain scenario.

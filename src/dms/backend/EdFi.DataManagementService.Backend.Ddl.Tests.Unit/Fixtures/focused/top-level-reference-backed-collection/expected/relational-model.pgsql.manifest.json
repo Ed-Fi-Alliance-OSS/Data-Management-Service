@@ -1,7 +1,7 @@
 {
   "dialect": "pgsql",
-  "effective_schema_hash": "ca6b657de7cfe191e2cd5b733292e516ccbd5cb81d05b663c4a39a04a5b8fd61",
-  "relational_mapping_version": "v2",
+  "effective_schema_hash": "9cf6b269af4ed138094aea66b96002c50c45e449cf82d8ab0622f3e1a591796c",
+  "relational_mapping_version": "v3",
   "projects": [
     {
       "project_endpoint_name": "ed-fi",

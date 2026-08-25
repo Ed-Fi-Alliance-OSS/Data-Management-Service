@@ -22,7 +22,7 @@ Known PostgreSQL follow-up: this story keeps PostgreSQL child / `_ext` `Document
 - Trigger renderers update `DbTriggerInfo.MirrorStampTargetTable` with the captured stamp values.
 - The mirror update uses the same `ContentVersion` and `ContentLastModifiedAt` stored on `dms.Document`.
 - The trigger does not allocate a second sequence value for the mirror.
-- The affected-document workset excludes rows whose only old/new differences are `ContentVersion`, `ContentLastModifiedAt`, `IdentityVersion`, or `IdentityLastModifiedAt`.
+- The affected-document workset excludes rows whose only old/new differences are `ContentVersion` or `ContentLastModifiedAt`.
 - Inserts, updates, identity changes, child writes, `_ext` writes, FK-cascade updates, extension-project resource writes, and descriptor writes leave the mirror equal to `dms.Document`.
 - Successful no-op updates do not change `dms.Document` stamps and do not change mirror stamps.
 - Direct stamp-only updates do not insert tracked-change rows and do not allocate an additional change version through nested trigger activity.

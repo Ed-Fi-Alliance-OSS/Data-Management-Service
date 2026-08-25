@@ -772,7 +772,4 @@ Key unification is gated by `RelationalMappingVersion` (not `PackFormatVersion`)
 - Consumers MUST reject packs whose `relational_mapping_version` does not match the expected value, including older packs that omit key-unification metadata.
 - Consumers MAY interpret missing `DbColumnModel.storage` as `Stored` and missing `DbTableModel.key_unification_classes` as empty only when explicitly operating in an older `RelationalMappingVersion` mode.
 
-Repository status note (non-normative): this story updates the mapping-pack contract documentation only; this repo is
-not introducing a `RelationalMappingVersion` bump in the same change.
-
 ---

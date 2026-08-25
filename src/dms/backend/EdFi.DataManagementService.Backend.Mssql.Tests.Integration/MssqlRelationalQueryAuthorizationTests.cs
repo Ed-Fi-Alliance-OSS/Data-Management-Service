@@ -2454,9 +2454,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                 [DocumentUuid],
                 [ResourceKeyId],
                 [ContentVersion],
-                [IdentityVersion],
                 [ContentLastModifiedAt],
-                [IdentityLastModifiedAt],
                 [CreatedAt]
             FROM [dms].[Document]
             WHERE [DocumentUuid] = @documentUuid
@@ -2472,9 +2470,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                 GetRequiredGuid(rows[0], "DocumentUuid"),
                 GetRequiredInt16(rows[0], "ResourceKeyId"),
                 GetRequiredInt64(rows[0], "ContentVersion"),
-                GetRequiredInt64(rows[0], "IdentityVersion"),
                 GetRequiredDateTime(rows[0], "ContentLastModifiedAt"),
-                GetRequiredDateTime(rows[0], "IdentityLastModifiedAt"),
                 GetRequiredDateTime(rows[0], "CreatedAt")
             )
             : throw new InvalidOperationException(
@@ -3522,10 +3518,10 @@ public class Given_A_Mssql_Relational_Query_Authorization_With_The_Authoritative
     [Test]
     public async Task It_composes_the_change_version_window_with_relationship_authorization_filtering()
     {
-        // The stamping triggers assign strictly increasing ContentVersion values in insert order, so a
-        // window from Beta to Gamma holds Beta — SchoolId 200, authorized under the normal strategy —
-        // and unauthorized Gamma, SchoolId 300. The window excludes authorized Alpha and Delta, and
-        // authorization excludes in-window Gamma, so only the intersection survives.
+        // The stamping triggers assign strictly increasing ContentVersion values in insert order, and
+        // minChangeVersion is inclusive. A window from Beta through Gamma holds authorized Beta
+        // (SchoolId 200) plus unauthorized Gamma (SchoolId 300). Authorization excludes in-window
+        // Gamma, so the lower-bound row proves the change-version predicate composes with auth.
         var betaSchool = _persistedSchoolsInDocumentOrder[1];
         var gammaSchool = _persistedSchoolsInDocumentOrder[2];
 

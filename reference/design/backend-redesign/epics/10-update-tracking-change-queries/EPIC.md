@@ -14,7 +14,7 @@ Implement the representation-sensitive update tracking design in:
 - `reference/design/backend-redesign/design-docs/change-queries.md` (normative)
 
 Deliverables include:
-- write-side stamping of `ContentVersion/IdentityVersion` (global monotonic stamps),
+- write-side stamping of `ContentVersion` (global monotonic representation stamp),
 - journal emission via triggers,
 - composing `_etag` from `ContentVersion` plus the active `variantKey`, and serving
   `_lastModifiedDate` and per-item `ChangeVersion` from stored stamps,

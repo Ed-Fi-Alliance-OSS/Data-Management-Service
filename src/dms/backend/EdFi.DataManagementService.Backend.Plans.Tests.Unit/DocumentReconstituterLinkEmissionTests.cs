@@ -228,18 +228,14 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
                 DocumentId: 1L,
                 DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
                 ContentVersion: 1L,
-                IdentityVersion: 1L,
                 ContentLastModifiedAt: DateTimeOffset.UnixEpoch,
-                IdentityLastModifiedAt: DateTimeOffset.UnixEpoch,
                 ResourceKeyId: 1
             ),
             new DocumentMetadataRow(
                 DocumentId: 2L,
                 DocumentUuid: Guid.Parse("cccccccc-4444-5555-6666-dddddddddddd"),
                 ContentVersion: 1L,
-                IdentityVersion: 1L,
                 ContentLastModifiedAt: DateTimeOffset.UnixEpoch,
-                IdentityLastModifiedAt: DateTimeOffset.UnixEpoch,
                 ResourceKeyId: 1
             ),
         };
@@ -417,9 +413,7 @@ public class Given_DocumentReconstituter_With_Document_Reference_Link_Injection
             DocumentId: 1L,
             DocumentUuid: Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
             ContentVersion: 1L,
-            IdentityVersion: 1L,
             ContentLastModifiedAt: DateTimeOffset.UnixEpoch,
-            IdentityLastModifiedAt: DateTimeOffset.UnixEpoch,
             ResourceKeyId: 1
         );
 

@@ -418,10 +418,10 @@ public class Given_A_Postgresql_DescriptorRead_Query_Request
             [],
             "pg-descriptor-query-change-version-window",
             totalCount: true,
-            changeVersionRange: new ChangeVersionRange(middleContentVersion, middleContentVersion)
+            changeVersionRange: new ChangeVersionRange(middleContentVersion - 1, middleContentVersion)
         );
 
-        AssertDescriptorPage(result, [PagingSecondSeed], expectedTotalCount: 1);
+        AssertDescriptorPage(result, [PagingFirstSeed, PagingSecondSeed], expectedTotalCount: 2);
     }
 
     [Test]
@@ -465,7 +465,7 @@ public class Given_A_Postgresql_DescriptorRead_Query_Request
             "pg-descriptor-query-change-version-resource-key-scope",
             totalCount: true,
             changeVersionRange: new ChangeVersionRange(
-                contentVersions.Values.Min(),
+                contentVersions.Values.Min() - 1,
                 contentVersions.Values.Max()
             )
         );
@@ -808,7 +808,7 @@ public class Given_A_Postgresql_DescriptorRead_Query_Request
             await ExecuteQueryAsync(
                 [],
                 "pg-descriptor-cursor-min-window",
-                changeVersionRange: new ChangeVersionRange(lowestContentVersion, null),
+                changeVersionRange: new ChangeVersionRange(lowestContentVersion - 1, null),
                 paging: new CollectionPaging.Cursor(CursorRange.From(1), new PageSize(25))
             );
 

@@ -60,9 +60,7 @@ public class Given_Mssql_DocumentCacheMaterializer_Descriptor
                     [ResourceKeyId] smallint NOT NULL,
                     [CreatedByOwnershipTokenId] smallint NULL,
                     [ContentVersion] bigint NOT NULL,
-                    [IdentityVersion] bigint NOT NULL,
                     [ContentLastModifiedAt] datetimeoffset NOT NULL,
-                    [IdentityLastModifiedAt] datetimeoffset NOT NULL,
                     [CreatedAt] datetimeoffset NOT NULL
                 );
 
@@ -84,9 +82,7 @@ public class Given_Mssql_DocumentCacheMaterializer_Descriptor
                     [ResourceKeyId],
                     [CreatedByOwnershipTokenId],
                     [ContentVersion],
-                    [IdentityVersion],
                     [ContentLastModifiedAt],
-                    [IdentityLastModifiedAt],
                     [CreatedAt]
                 )
                 VALUES (
@@ -95,8 +91,6 @@ public class Given_Mssql_DocumentCacheMaterializer_Descriptor
                     13,
                     NULL,
                     222,
-                    111,
-                    '2026-07-30T14:15:16+00:00',
                     '2026-07-30T14:15:16+00:00',
                     '2026-07-30T14:15:16+00:00'
                 );

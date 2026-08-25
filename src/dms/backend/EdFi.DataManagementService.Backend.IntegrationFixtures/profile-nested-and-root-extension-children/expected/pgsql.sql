@@ -10,8 +10,8 @@ BEGIN
     IF to_regclass('"dms"."EffectiveSchema"') IS NOT NULL THEN
         SELECT "EffectiveSchemaHash" INTO _stored_hash FROM "dms"."EffectiveSchema"
         WHERE "EffectiveSchemaSingletonId" = 1;
-        IF _stored_hash IS NOT NULL AND _stored_hash <> '3440540b5709531eda900de5f0ff11466c14e92c5c7d114d30cff155d27cdac3' THEN
-            RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, '3440540b5709531eda900de5f0ff11466c14e92c5c7d114d30cff155d27cdac3';
+        IF _stored_hash IS NOT NULL AND _stored_hash <> '1465b3efbea24eb7edab1c88d80f6c701b63e62268f801301e8d8afc700ddf16' THEN
+            RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, '1465b3efbea24eb7edab1c88d80f6c701b63e62268f801301e8d8afc700ddf16';
         END IF;
     END IF;
 END $$;
@@ -27,7 +27,7 @@ BEGIN
     IF to_regclass('"dms"."EffectiveSchema"') IS NOT NULL THEN
         SELECT "EffectiveSchemaHash" INTO _stored_hash FROM "dms"."EffectiveSchema"
         WHERE "EffectiveSchemaSingletonId" = 1;
-        IF _stored_hash = '3440540b5709531eda900de5f0ff11466c14e92c5c7d114d30cff155d27cdac3' THEN
+        IF _stored_hash = '1465b3efbea24eb7edab1c88d80f6c701b63e62268f801301e8d8afc700ddf16' THEN
             IF to_regclass('"dms"."DataStoreIdentity"') IS NULL THEN
                 RAISE EXCEPTION 'Completed dms.EffectiveSchema hash matches this DDL, but dms.DataStoreIdentity is missing. Drop and recreate the database before re-provisioning.';
             END IF;
@@ -277,9 +277,7 @@ CREATE TABLE IF NOT EXISTS "dms"."Document"
     "ResourceKeyId" smallint NOT NULL,
     "CreatedByOwnershipTokenId" smallint NULL,
     "ContentVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
-    "IdentityVersion" bigint NOT NULL DEFAULT nextval('"dms"."ChangeVersionSequence"'),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
-    "IdentityLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_Document" PRIMARY KEY ("DocumentId")
 );
@@ -1176,9 +1174,6 @@ BEGIN
         NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
     END IF;
     IF TG_OP = 'UPDATE' AND (OLD."ParentResourceId" IS DISTINCT FROM NEW."ParentResourceId") THEN
-        UPDATE "dms"."Document"
-        SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId";
         INSERT INTO "tracked_changes_edfi"."ParentResource" (
             "OldParentResourceId",
             "NewParentResourceId",
@@ -1660,7 +1655,7 @@ END $$;
 
 -- EffectiveSchema singleton insert-if-missing
 INSERT INTO "dms"."EffectiveSchema" ("EffectiveSchemaSingletonId", "ApiSchemaFormatVersion", "EffectiveSchemaHash", "ResourceKeyCount", "ResourceKeySeedHash")
-VALUES (1, '1.0.0', '3440540b5709531eda900de5f0ff11466c14e92c5c7d114d30cff155d27cdac3', 1, '\xAA4516A2188A393B97F346BD6483E8A82E57AB430F5377D00B6409E307A812DC'::bytea)
+VALUES (1, '1.0.0', '1465b3efbea24eb7edab1c88d80f6c701b63e62268f801301e8d8afc700ddf16', 1, '\xAA4516A2188A393B97F346BD6483E8A82E57AB430F5377D00B6409E307A812DC'::bytea)
 ON CONFLICT ("EffectiveSchemaSingletonId") DO NOTHING;
 
 -- EffectiveSchema validation (ApiSchemaFormatVersion + ResourceKeyCount + ResourceKeySeedHash)
@@ -1688,10 +1683,10 @@ END $$;
 
 -- SchemaComponent seed inserts (insert-if-missing)
 INSERT INTO "dms"."SchemaComponent" ("EffectiveSchemaHash", "ProjectEndpointName", "ProjectName", "ProjectVersion", "IsExtensionProject")
-VALUES ('3440540b5709531eda900de5f0ff11466c14e92c5c7d114d30cff155d27cdac3', 'ed-fi', 'Ed-Fi', '1.0.0', false)
+VALUES ('1465b3efbea24eb7edab1c88d80f6c701b63e62268f801301e8d8afc700ddf16', 'ed-fi', 'Ed-Fi', '1.0.0', false)
 ON CONFLICT ("EffectiveSchemaHash", "ProjectEndpointName") DO NOTHING;
 INSERT INTO "dms"."SchemaComponent" ("EffectiveSchemaHash", "ProjectEndpointName", "ProjectName", "ProjectVersion", "IsExtensionProject")
-VALUES ('3440540b5709531eda900de5f0ff11466c14e92c5c7d114d30cff155d27cdac3', 'root_ext', 'RootExt', '1.0.0', true)
+VALUES ('1465b3efbea24eb7edab1c88d80f6c701b63e62268f801301e8d8afc700ddf16', 'root_ext', 'RootExt', '1.0.0', true)
 ON CONFLICT ("EffectiveSchemaHash", "ProjectEndpointName") DO NOTHING;
 
 -- SchemaComponent exact-match validation (count + content)
@@ -1701,14 +1696,14 @@ DECLARE
     _mismatched_count integer;
     _mismatched_names text;
 BEGIN
-    SELECT COUNT(*) INTO _actual_count FROM "dms"."SchemaComponent" WHERE "EffectiveSchemaHash" = '3440540b5709531eda900de5f0ff11466c14e92c5c7d114d30cff155d27cdac3';
+    SELECT COUNT(*) INTO _actual_count FROM "dms"."SchemaComponent" WHERE "EffectiveSchemaHash" = '1465b3efbea24eb7edab1c88d80f6c701b63e62268f801301e8d8afc700ddf16';
     IF _actual_count <> 2 THEN
         RAISE EXCEPTION 'dms.SchemaComponent count mismatch: expected 2, found %', _actual_count;
     END IF;
 
     SELECT COUNT(*) INTO _mismatched_count
     FROM "dms"."SchemaComponent" sc
-    WHERE sc."EffectiveSchemaHash" = '3440540b5709531eda900de5f0ff11466c14e92c5c7d114d30cff155d27cdac3'
+    WHERE sc."EffectiveSchemaHash" = '1465b3efbea24eb7edab1c88d80f6c701b63e62268f801301e8d8afc700ddf16'
     AND NOT EXISTS (
         SELECT 1 FROM (VALUES
             ('ed-fi', 'Ed-Fi', '1.0.0', false),
@@ -1724,7 +1719,7 @@ BEGIN
         FROM (
             SELECT sc."ProjectEndpointName" AS name
             FROM "dms"."SchemaComponent" sc
-            WHERE sc."EffectiveSchemaHash" = '3440540b5709531eda900de5f0ff11466c14e92c5c7d114d30cff155d27cdac3'
+            WHERE sc."EffectiveSchemaHash" = '1465b3efbea24eb7edab1c88d80f6c701b63e62268f801301e8d8afc700ddf16'
             AND NOT EXISTS (
                 SELECT 1 FROM (VALUES
                     ('ed-fi', 'Ed-Fi', '1.0.0', false),

@@ -434,7 +434,7 @@ public static partial class ParityScenarioCatalog
         ),
         NoProfile(
             "NoProfilePostAsUpdate/ImmutableIdentityRejected",
-            "POST-as-update that changes an immutable identity is rejected with UpsertFailureImmutableIdentity and commits no row changes: the document row including ContentVersion and every stored update-tracking stamp (IdentityVersion, ContentLastModifiedAt, IdentityLastModifiedAt, CreatedAt), the root, the base and aligned-extension collections, the referential identity, and the tracked-change rowset are all unchanged.",
+            "POST-as-update that changes an immutable identity is rejected with UpsertFailureImmutableIdentity and commits no row changes: the document row including ContentVersion, ContentLastModifiedAt, and CreatedAt, the root, the base and aligned-extension collections, the referential identity, and the tracked-change rowset are all unchanged.",
             ProductionBoundary.IdentityStability,
             "RelationalWritePostAsUpdateSmokeTests",
             "Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Change_With_A_Focused_Stable_Key_Fixture",

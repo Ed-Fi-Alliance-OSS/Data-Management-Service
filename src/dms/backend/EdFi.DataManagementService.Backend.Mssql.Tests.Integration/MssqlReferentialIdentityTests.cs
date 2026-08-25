@@ -596,7 +596,7 @@ public class MssqlReferentialIdentityTests
         var (expectedStudentNew, expectedResANew, expectedResBNew, expectedUnifiedNew) =
             ComputeExpectedReferentialIds(NewStudentUniqueId, "resA-1", "resB-1", "unified-1");
 
-        // Capture before-snapshots of identity stamps for all four documents
+        // Capture before-snapshots of content stamps for all four documents
         DocumentStampState beforeStudent;
         DocumentStampState beforeResourceA;
         DocumentStampState beforeResourceB;
@@ -679,21 +679,21 @@ public class MssqlReferentialIdentityTests
                 && (long)r["DocumentId"]! == keyUnifiedDocumentId
             );
 
-        // Assert (pre-commit) — IdentityVersion / IdentityLastModifiedAt strictly bumped
+        // Assert (pre-commit) — ContentVersion / ContentLastModifiedAt strictly bumped
         // on the parent and on every cascaded dependent.
         var inTxnStudent = await GetDocumentStampStateAsync(connection, transaction, studentDocumentId);
         var inTxnResourceA = await GetDocumentStampStateAsync(connection, transaction, resourceADocumentId);
         var inTxnResourceB = await GetDocumentStampStateAsync(connection, transaction, resourceBDocumentId);
         var inTxnKeyUnified = await GetDocumentStampStateAsync(connection, transaction, keyUnifiedDocumentId);
 
-        inTxnStudent.IdentityVersion.Should().BeGreaterThan(beforeStudent.IdentityVersion);
-        inTxnStudent.IdentityLastModifiedAt.Should().BeAfter(beforeStudent.IdentityLastModifiedAt);
-        inTxnResourceA.IdentityVersion.Should().BeGreaterThan(beforeResourceA.IdentityVersion);
-        inTxnResourceA.IdentityLastModifiedAt.Should().BeAfter(beforeResourceA.IdentityLastModifiedAt);
-        inTxnResourceB.IdentityVersion.Should().BeGreaterThan(beforeResourceB.IdentityVersion);
-        inTxnResourceB.IdentityLastModifiedAt.Should().BeAfter(beforeResourceB.IdentityLastModifiedAt);
-        inTxnKeyUnified.IdentityVersion.Should().BeGreaterThan(beforeKeyUnified.IdentityVersion);
-        inTxnKeyUnified.IdentityLastModifiedAt.Should().BeAfter(beforeKeyUnified.IdentityLastModifiedAt);
+        inTxnStudent.ContentVersion.Should().BeGreaterThan(beforeStudent.ContentVersion);
+        inTxnStudent.ContentLastModifiedAt.Should().BeAfter(beforeStudent.ContentLastModifiedAt);
+        inTxnResourceA.ContentVersion.Should().BeGreaterThan(beforeResourceA.ContentVersion);
+        inTxnResourceA.ContentLastModifiedAt.Should().BeAfter(beforeResourceA.ContentLastModifiedAt);
+        inTxnResourceB.ContentVersion.Should().BeGreaterThan(beforeResourceB.ContentVersion);
+        inTxnResourceB.ContentLastModifiedAt.Should().BeAfter(beforeResourceB.ContentLastModifiedAt);
+        inTxnKeyUnified.ContentVersion.Should().BeGreaterThan(beforeKeyUnified.ContentVersion);
+        inTxnKeyUnified.ContentLastModifiedAt.Should().BeAfter(beforeKeyUnified.ContentLastModifiedAt);
 
         await transaction.CommitAsync();
 
@@ -747,14 +747,14 @@ public class MssqlReferentialIdentityTests
                 keyUnifiedDocumentId
             );
 
-            postCommitStudent.IdentityVersion.Should().Be(inTxnStudent.IdentityVersion);
-            postCommitStudent.IdentityLastModifiedAt.Should().Be(inTxnStudent.IdentityLastModifiedAt);
-            postCommitResourceA.IdentityVersion.Should().Be(inTxnResourceA.IdentityVersion);
-            postCommitResourceA.IdentityLastModifiedAt.Should().Be(inTxnResourceA.IdentityLastModifiedAt);
-            postCommitResourceB.IdentityVersion.Should().Be(inTxnResourceB.IdentityVersion);
-            postCommitResourceB.IdentityLastModifiedAt.Should().Be(inTxnResourceB.IdentityLastModifiedAt);
-            postCommitKeyUnified.IdentityVersion.Should().Be(inTxnKeyUnified.IdentityVersion);
-            postCommitKeyUnified.IdentityLastModifiedAt.Should().Be(inTxnKeyUnified.IdentityLastModifiedAt);
+            postCommitStudent.ContentVersion.Should().Be(inTxnStudent.ContentVersion);
+            postCommitStudent.ContentLastModifiedAt.Should().Be(inTxnStudent.ContentLastModifiedAt);
+            postCommitResourceA.ContentVersion.Should().Be(inTxnResourceA.ContentVersion);
+            postCommitResourceA.ContentLastModifiedAt.Should().Be(inTxnResourceA.ContentLastModifiedAt);
+            postCommitResourceB.ContentVersion.Should().Be(inTxnResourceB.ContentVersion);
+            postCommitResourceB.ContentLastModifiedAt.Should().Be(inTxnResourceB.ContentLastModifiedAt);
+            postCommitKeyUnified.ContentVersion.Should().Be(inTxnKeyUnified.ContentVersion);
+            postCommitKeyUnified.ContentLastModifiedAt.Should().Be(inTxnKeyUnified.ContentLastModifiedAt);
         }
     }
 
@@ -869,10 +869,10 @@ public class MssqlReferentialIdentityTests
                 resourceADocumentId
             );
 
-            postRollbackStudent.IdentityVersion.Should().Be(beforeStudent.IdentityVersion);
-            postRollbackStudent.IdentityLastModifiedAt.Should().Be(beforeStudent.IdentityLastModifiedAt);
-            postRollbackResourceA.IdentityVersion.Should().Be(beforeResourceA.IdentityVersion);
-            postRollbackResourceA.IdentityLastModifiedAt.Should().Be(beforeResourceA.IdentityLastModifiedAt);
+            postRollbackStudent.ContentVersion.Should().Be(beforeStudent.ContentVersion);
+            postRollbackStudent.ContentLastModifiedAt.Should().Be(beforeStudent.ContentLastModifiedAt);
+            postRollbackResourceA.ContentVersion.Should().Be(beforeResourceA.ContentVersion);
+            postRollbackResourceA.ContentLastModifiedAt.Should().Be(beforeResourceA.ContentLastModifiedAt);
         }
     }
 
@@ -1024,7 +1024,7 @@ public class MssqlReferentialIdentityTests
                 && (long)r["DocumentId"]! == edOrgDepChildDocumentId
             );
 
-        // Assert (pre-commit) — IdentityVersion / IdentityLastModifiedAt strictly bumped on every impacted document.
+        // Assert (pre-commit) — ContentVersion / ContentLastModifiedAt strictly bumped on every impacted document.
         var inTxnSchool = await GetDocumentStampStateAsync(connection, transaction, schoolDocumentId);
         var inTxnEdOrgDep = await GetDocumentStampStateAsync(connection, transaction, edOrgDepDocumentId);
         var inTxnEdOrgDepChild = await GetDocumentStampStateAsync(
@@ -1033,14 +1033,12 @@ public class MssqlReferentialIdentityTests
             edOrgDepChildDocumentId
         );
 
-        inTxnSchool.IdentityVersion.Should().BeGreaterThan(beforeSchool.IdentityVersion);
-        inTxnSchool.IdentityLastModifiedAt.Should().BeAfter(beforeSchool.IdentityLastModifiedAt);
-        inTxnEdOrgDep.IdentityVersion.Should().BeGreaterThan(beforeEdOrgDep.IdentityVersion);
-        inTxnEdOrgDep.IdentityLastModifiedAt.Should().BeAfter(beforeEdOrgDep.IdentityLastModifiedAt);
-        inTxnEdOrgDepChild.IdentityVersion.Should().BeGreaterThan(beforeEdOrgDepChild.IdentityVersion);
-        inTxnEdOrgDepChild
-            .IdentityLastModifiedAt.Should()
-            .BeAfter(beforeEdOrgDepChild.IdentityLastModifiedAt);
+        inTxnSchool.ContentVersion.Should().BeGreaterThan(beforeSchool.ContentVersion);
+        inTxnSchool.ContentLastModifiedAt.Should().BeAfter(beforeSchool.ContentLastModifiedAt);
+        inTxnEdOrgDep.ContentVersion.Should().BeGreaterThan(beforeEdOrgDep.ContentVersion);
+        inTxnEdOrgDep.ContentLastModifiedAt.Should().BeAfter(beforeEdOrgDep.ContentLastModifiedAt);
+        inTxnEdOrgDepChild.ContentVersion.Should().BeGreaterThan(beforeEdOrgDepChild.ContentVersion);
+        inTxnEdOrgDepChild.ContentLastModifiedAt.Should().BeAfter(beforeEdOrgDepChild.ContentLastModifiedAt);
 
         await transaction.CommitAsync();
 
@@ -1088,14 +1086,14 @@ public class MssqlReferentialIdentityTests
                 edOrgDepChildDocumentId
             );
 
-            postCommitSchool.IdentityVersion.Should().Be(inTxnSchool.IdentityVersion);
-            postCommitSchool.IdentityLastModifiedAt.Should().Be(inTxnSchool.IdentityLastModifiedAt);
-            postCommitEdOrgDep.IdentityVersion.Should().Be(inTxnEdOrgDep.IdentityVersion);
-            postCommitEdOrgDep.IdentityLastModifiedAt.Should().Be(inTxnEdOrgDep.IdentityLastModifiedAt);
-            postCommitEdOrgDepChild.IdentityVersion.Should().Be(inTxnEdOrgDepChild.IdentityVersion);
+            postCommitSchool.ContentVersion.Should().Be(inTxnSchool.ContentVersion);
+            postCommitSchool.ContentLastModifiedAt.Should().Be(inTxnSchool.ContentLastModifiedAt);
+            postCommitEdOrgDep.ContentVersion.Should().Be(inTxnEdOrgDep.ContentVersion);
+            postCommitEdOrgDep.ContentLastModifiedAt.Should().Be(inTxnEdOrgDep.ContentLastModifiedAt);
+            postCommitEdOrgDepChild.ContentVersion.Should().Be(inTxnEdOrgDepChild.ContentVersion);
             postCommitEdOrgDepChild
-                .IdentityLastModifiedAt.Should()
-                .Be(inTxnEdOrgDepChild.IdentityLastModifiedAt);
+                .ContentLastModifiedAt.Should()
+                .Be(inTxnEdOrgDepChild.ContentLastModifiedAt);
         }
     }
 
@@ -1686,7 +1684,7 @@ public class MssqlReferentialIdentityTests
         );
     }
 
-    private sealed record DocumentStampState(long IdentityVersion, DateTimeOffset IdentityLastModifiedAt);
+    private sealed record DocumentStampState(long ContentVersion, DateTimeOffset ContentLastModifiedAt);
 
     private static async Task<DocumentStampState> GetDocumentStampStateAsync(
         SqlConnection connection,
@@ -1697,7 +1695,7 @@ public class MssqlReferentialIdentityTests
         await using var cmd = connection.CreateCommand();
         cmd.Transaction = transaction;
         cmd.CommandText = """
-            SELECT [IdentityVersion], [IdentityLastModifiedAt]
+            SELECT [ContentVersion], [ContentLastModifiedAt]
             FROM [dms].[Document]
             WHERE [DocumentId] = @documentId;
             """;

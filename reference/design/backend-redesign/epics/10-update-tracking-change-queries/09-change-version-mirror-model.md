@@ -36,7 +36,7 @@ Note: The derived relational model changes described here and in the `change-que
 - `TableWritePlan.ColumnBindings` excludes the mirror column kinds from client-writable projections.
 - Generated client insert and update DML does not bind, set, or assign `ContentVersion` or `ContentLastModifiedAt` mirror columns.
 - Mirror columns are maintained only by `*_Stamp` triggers; they are not reachable through client-writable projections.
-- `IdentityVersion` and `IdentityLastModifiedAt` columns are absent from every in-scope concrete resource root table and from `dms.Descriptor`.
+- Only content-stamp mirror columns are present on in-scope concrete resource root tables and `dms.Descriptor`.
 - Fixture or manifest coverage proves mirrors and indexes are emitted for core resources, extension-project resources, and descriptors.
 
 ## Out of Scope

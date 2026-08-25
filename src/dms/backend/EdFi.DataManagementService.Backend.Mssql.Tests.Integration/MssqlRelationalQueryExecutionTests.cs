@@ -527,16 +527,16 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
     [Test]
     public async Task It_composes_the_change_version_window_with_a_query_filter()
     {
-        var middleSchool = _persistedSchoolsInDocumentOrder[1];
+        var firstSchool = _persistedSchoolsInDocumentOrder[0];
 
         var matchingResult = await ExecuteQueryAsync(
-            [CreateQueryElement("nameOfInstitution", "$.nameOfInstitution", middleSchool.NameOfInstitution)],
+            [CreateQueryElement("nameOfInstitution", "$.nameOfInstitution", firstSchool.NameOfInstitution)],
             limit: 25,
             offset: 0,
             totalCount: true,
             traceId: "mssql-query-change-version-composed-match",
             changeVersionRange: new ChangeVersionRange(
-                _persistedSchoolsInDocumentOrder[0].ContentVersion,
+                firstSchool.ContentVersion,
                 _persistedSchoolsInDocumentOrder[^1].ContentVersion
             )
         );
@@ -547,17 +547,17 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         matchingSuccess.EdfiDocs[0]!["id"]!
             .GetValue<string>()
             .Should()
-            .Be(middleSchool.DocumentUuid.ToString());
+            .Be(firstSchool.DocumentUuid.ToString());
 
         _recorder.Reset();
 
         var excludedResult = await ExecuteQueryAsync(
-            [CreateQueryElement("nameOfInstitution", "$.nameOfInstitution", middleSchool.NameOfInstitution)],
+            [CreateQueryElement("nameOfInstitution", "$.nameOfInstitution", firstSchool.NameOfInstitution)],
             limit: 25,
             offset: 0,
             totalCount: true,
             traceId: "mssql-query-change-version-composed-excluded",
-            changeVersionRange: new ChangeVersionRange(null, middleSchool.ContentVersion - 1)
+            changeVersionRange: new ChangeVersionRange(null, firstSchool.ContentVersion - 1)
         );
 
         var excludedSuccess = excludedResult.Should().BeOfType<QueryResult.QuerySuccess>().Subject;

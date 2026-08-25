@@ -189,9 +189,7 @@ file static class PostAsUpdateIntegrationTestSupport
                 state.Document.DocumentUuid,
                 state.Document.ResourceKeyId,
                 state.Document.ContentVersion,
-                state.Document.IdentityVersion,
                 state.Document.ContentLastModifiedAt,
-                state.Document.IdentityLastModifiedAt,
                 state.Document.CreatedAt
             ),
             new NoProfilePostAsUpdateScenarios.AuthoritativeAcademicRecordSnapshot(
@@ -672,8 +670,8 @@ public class Given_A_Mssql_Relational_Post_As_Update_Immutable_Identity_Change_W
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT [DocumentId], [DocumentUuid], [ResourceKeyId], [ContentVersion], [IdentityVersion],
-                [ContentLastModifiedAt], [IdentityLastModifiedAt], [CreatedAt]
+            SELECT [DocumentId], [DocumentUuid], [ResourceKeyId], [ContentVersion],
+                [ContentLastModifiedAt], [CreatedAt]
             FROM [dms].[Document]
             WHERE [DocumentUuid] = @documentUuid;
             """,
@@ -686,9 +684,7 @@ public class Given_A_Mssql_Relational_Post_As_Update_Immutable_Identity_Change_W
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
                 PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "IdentityVersion"),
                 PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt"),
-                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "IdentityLastModifiedAt"),
                 PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "CreatedAt")
             )
             : throw new InvalidOperationException(
@@ -1602,9 +1598,7 @@ internal sealed record AuthoritativePostAsUpdateDocumentRow(
     Guid DocumentUuid,
     short ResourceKeyId,
     long ContentVersion,
-    long IdentityVersion,
     DateTimeOffset ContentLastModifiedAt,
-    DateTimeOffset IdentityLastModifiedAt,
     DateTimeOffset CreatedAt
 );
 
@@ -1818,8 +1812,8 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Ds52
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT [DocumentId], [DocumentUuid], [ResourceKeyId], [ContentVersion], [IdentityVersion],
-                [ContentLastModifiedAt], [IdentityLastModifiedAt], [CreatedAt]
+            SELECT [DocumentId], [DocumentUuid], [ResourceKeyId], [ContentVersion],
+                [ContentLastModifiedAt], [CreatedAt]
             FROM [dms].[Document]
             WHERE [DocumentUuid] = @documentUuid;
             """,
@@ -1832,9 +1826,7 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Ds52
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
                 PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "IdentityVersion"),
                 PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt"),
-                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "IdentityLastModifiedAt"),
                 PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "CreatedAt")
             )
             : throw new InvalidOperationException(
@@ -3301,8 +3293,8 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT [DocumentId], [DocumentUuid], [ResourceKeyId], [ContentVersion], [IdentityVersion],
-                [ContentLastModifiedAt], [IdentityLastModifiedAt], [CreatedAt]
+            SELECT [DocumentId], [DocumentUuid], [ResourceKeyId], [ContentVersion],
+                [ContentLastModifiedAt], [CreatedAt]
             FROM [dms].[Document]
             WHERE [DocumentUuid] = @documentUuid;
             """,
@@ -3315,9 +3307,7 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
                 PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "IdentityVersion"),
                 PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt"),
-                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "IdentityLastModifiedAt"),
                 PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "CreatedAt")
             )
             : throw new InvalidOperationException(
@@ -5087,8 +5077,8 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT [DocumentId], [DocumentUuid], [ResourceKeyId], [ContentVersion], [IdentityVersion],
-                [ContentLastModifiedAt], [IdentityLastModifiedAt], [CreatedAt]
+            SELECT [DocumentId], [DocumentUuid], [ResourceKeyId], [ContentVersion],
+                [ContentLastModifiedAt], [CreatedAt]
             FROM [dms].[Document]
             WHERE [DocumentUuid] = @documentUuid;
             """,
@@ -5101,9 +5091,7 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
                 PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "IdentityVersion"),
                 PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt"),
-                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "IdentityLastModifiedAt"),
                 PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "CreatedAt")
             )
             : throw new InvalidOperationException(

@@ -18,9 +18,9 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 /// binding through the native <c>ON UPDATE CASCADE</c> foreign key and preserves update tracking for
 /// the owning root, using the same acyclic authoritative <c>ds-5.2</c> scenario
 /// (<c>ClassPeriod → BellScheduleClassPeriod → BellSchedule</c>) as the SQL Server test. The owning
-/// root <c>BellSchedule</c> advances its content stamps and root-table mirror while its identity
-/// stamps stay frozen and it emits no key-change row; the upstream <c>ClassPeriod</c> advances all four
-/// stamps and emits exactly one key-change row carrying the full composite identity with the three-way
+/// root <c>BellSchedule</c> advances its content stamps and root-table mirror without emitting a
+/// key-change row; the upstream <c>ClassPeriod</c> advances its content stamps and emits exactly one
+/// key-change row carrying the full composite identity with the three-way
 /// <c>ChangeVersion</c> linkage. This delivers the cross-engine equivalent-outcomes acceptance
 /// criterion.
 /// </summary>
@@ -128,8 +128,8 @@ public class Given_A_Provisioned_Postgresql_Database_With_A_ClassPeriod_To_BellS
             CultureInfo.InvariantCulture
         );
 
-        var beforeBellSchedule = await GetDocumentStampStateAsync(bellScheduleDocumentId);
-        var beforeClassPeriod = await GetDocumentStampStateAsync(classPeriodDocumentId);
+        var beforeBellSchedule = await GetChildBindingDocumentStampStateAsync(bellScheduleDocumentId);
+        var beforeClassPeriod = await GetChildBindingDocumentStampStateAsync(classPeriodDocumentId);
         var bellScheduleKeyChangesBefore = await CountTrackedChangeRowsAsync(
             "tracked_changes_edfi",
             "BellSchedule",
@@ -199,8 +199,8 @@ public class Given_A_Provisioned_Postgresql_Database_With_A_ClassPeriod_To_BellS
                 "the cascade must update the child row in place, not delete and re-insert it"
             );
 
-        var afterBellSchedule = await GetDocumentStampStateAsync(bellScheduleDocumentId);
-        var afterClassPeriod = await GetDocumentStampStateAsync(classPeriodDocumentId);
+        var afterBellSchedule = await GetChildBindingDocumentStampStateAsync(bellScheduleDocumentId);
+        var afterClassPeriod = await GetChildBindingDocumentStampStateAsync(classPeriodDocumentId);
         var afterBellScheduleMirror = await GetRootMirrorStampStateAsync(
             "edfi",
             "BellSchedule",
@@ -213,9 +213,8 @@ public class Given_A_Provisioned_Postgresql_Database_With_A_ClassPeriod_To_BellS
         );
 
         // Owning root BellSchedule: its representation changed (a child binding's projected identity was
-        // cascade-updated) but its OWN identity did not. Its content stamps advance and its root-table
-        // mirror tracks the document row, while its identity stamps stay frozen (a paired contract) and
-        // it emits no key-change row because its identity is unchanged.
+        // cascade-updated) but its own identity did not. Its content stamps advance, its root-table mirror
+        // tracks the document row, and it emits no key-change row.
         afterBellSchedule
             .ContentVersion.Should()
             .BeGreaterThan(
@@ -223,18 +222,6 @@ public class Given_A_Provisioned_Postgresql_Database_With_A_ClassPeriod_To_BellS
                 "child stamp trigger must fire from the cascade UPDATE and bump the owning root ContentVersion"
             );
         afterBellSchedule.ContentLastModifiedAt.Should().BeAfter(beforeBellSchedule.ContentLastModifiedAt);
-        afterBellSchedule
-            .IdentityVersion.Should()
-            .Be(
-                beforeBellSchedule.IdentityVersion,
-                "BellSchedule's own identity did not change, so IdentityVersion must be frozen"
-            );
-        afterBellSchedule
-            .IdentityLastModifiedAt.Should()
-            .Be(
-                beforeBellSchedule.IdentityLastModifiedAt,
-                "identity stamps are a paired contract and must both be frozen"
-            );
         AssertMirrorContentMatchesDocument(afterBellScheduleMirror, afterBellSchedule);
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "BellSchedule", bellScheduleDocumentUuid))
             .Should()
@@ -243,12 +230,10 @@ public class Given_A_Provisioned_Postgresql_Database_With_A_ClassPeriod_To_BellS
                 "the referrer's identity did not change, so it must emit no key-change row"
             );
 
-        // Upstream ClassPeriod: its own identity changed. All four stamps advance, and it emits exactly
+        // Upstream ClassPeriod: its own identity changed. Content stamps advance, and it emits exactly
         // one key-change row.
         afterClassPeriod.ContentVersion.Should().BeGreaterThan(beforeClassPeriod.ContentVersion);
         afterClassPeriod.ContentLastModifiedAt.Should().BeAfter(beforeClassPeriod.ContentLastModifiedAt);
-        afterClassPeriod.IdentityVersion.Should().BeGreaterThan(beforeClassPeriod.IdentityVersion);
-        afterClassPeriod.IdentityLastModifiedAt.Should().BeAfter(beforeClassPeriod.IdentityLastModifiedAt);
         AssertMirrorContentMatchesDocument(afterClassPeriodMirror, afterClassPeriod);
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "ClassPeriod", classPeriodDocumentUuid))
             .Should()
@@ -500,16 +485,14 @@ public class Given_A_Provisioned_Postgresql_Database_With_A_ClassPeriod_To_BellS
         return rows.Single();
     }
 
-    private async Task<DocumentStampState> GetDocumentStampStateAsync(long documentId)
+    private async Task<DocumentStampState> GetChildBindingDocumentStampStateAsync(long documentId)
     {
         var row = (
             await _database.QueryRowsAsync(
                 """
                 SELECT
                     "ContentVersion",
-                    "IdentityVersion",
-                    "ContentLastModifiedAt",
-                    "IdentityLastModifiedAt"
+                    "ContentLastModifiedAt"
                 FROM "dms"."Document"
                 WHERE "DocumentId" = @documentId;
                 """,
@@ -519,9 +502,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_A_ClassPeriod_To_BellS
 
         return new(
             Convert.ToInt64(row["ContentVersion"], CultureInfo.InvariantCulture),
-            Convert.ToInt64(row["IdentityVersion"], CultureInfo.InvariantCulture),
-            ReadDateTimeOffset(row["ContentLastModifiedAt"]),
-            ReadDateTimeOffset(row["IdentityLastModifiedAt"])
+            ReadDateTimeOffset(row["ContentLastModifiedAt"])
         );
     }
 
@@ -548,9 +529,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_A_ClassPeriod_To_BellS
 
         return new(
             Convert.ToInt64(row["ContentVersion"], CultureInfo.InvariantCulture),
-            IdentityVersion: 0,
-            ReadDateTimeOffset(row["ContentLastModifiedAt"]),
-            IdentityLastModifiedAt: DateTimeOffset.UnixEpoch
+            ReadDateTimeOffset(row["ContentLastModifiedAt"])
         );
     }
 
