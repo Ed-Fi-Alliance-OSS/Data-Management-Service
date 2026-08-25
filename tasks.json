@@ -47,7 +47,7 @@
       "dotnet run --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- --help",
       "dotnet run --project src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin -- status --help"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "configuration-and-target-resolution",

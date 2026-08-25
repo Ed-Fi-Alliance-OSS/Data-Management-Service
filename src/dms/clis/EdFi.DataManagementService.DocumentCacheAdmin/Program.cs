@@ -12,25 +12,29 @@ using Serilog;
 using Serilog.Events;
 
 var verbose = Array.Exists(args, a => a is "--verbose" or "-v");
-IConfigurationRoot configuration = new ConfigurationBuilder().AddEnvironmentVariables().Build();
-
-var serviceCollection = new ServiceCollection();
-ConfigureServices(serviceCollection, configuration, verbose);
-await using ServiceProvider serviceProvider = serviceCollection.BuildServiceProvider();
 
 try
 {
-    var rootCommand = new RootCommand("Ed-Fi DMS DocumentCache administration tool");
-
-    var verboseOption = new Option<bool>("--verbose", "-v")
-    {
-        Description = "Enable verbose (debug-level) logging",
-        Recursive = true,
-    };
-    rootCommand.Options.Add(verboseOption);
-
+    RootCommand rootCommand = DocumentCacheAdminCommandSurface.CreateRootCommand();
     var parseResult = rootCommand.Parse(args);
-    return await parseResult.InvokeAsync();
+
+    if (parseResult.Errors.Count > 0)
+    {
+        await parseResult.InvokeAsync();
+        return DocumentCacheAdminExitCodes.ArgumentError;
+    }
+
+    IConfigurationRoot configuration = new ConfigurationBuilder()
+        .AddEnvironmentVariables()
+        .AddInMemoryCollection(DocumentCacheAdminCommandSurface.CreateConfigurationOverrides(parseResult))
+        .Build();
+
+    var serviceCollection = new ServiceCollection();
+    ConfigureServices(serviceCollection, configuration, verbose);
+    await using ServiceProvider serviceProvider = serviceCollection.BuildServiceProvider();
+
+    int exitCode = await parseResult.InvokeAsync();
+    return exitCode;
 }
 finally
 {
