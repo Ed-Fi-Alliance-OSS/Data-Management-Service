@@ -52,7 +52,7 @@ public static class CdcTargetStatusEvaluator
         CdcObservationValidationContext context = new(
             input.OperationId,
             input.TargetIdentity,
-            input.PhysicalSourceFingerprint ?? binding.Binding?.PhysicalSourceFingerprint,
+            input.PhysicalSourceFingerprint,
             observedAt
         );
 
@@ -210,7 +210,8 @@ public static class CdcTargetStatusEvaluator
             CdcBindingState.BindingPresent => EvaluatePresentBinding(
                 bindingState.Binding!,
                 input,
-                bindingState.ObservedAt
+                bindingState.ObservedAt,
+                diagnostics
             ),
             CdcBindingState.IncidentLatched => EvaluateIncidentLatchedBinding(
                 bindingState,
@@ -302,7 +303,8 @@ public static class CdcTargetStatusEvaluator
     private static BindingEvaluation EvaluatePresentBinding(
         CdcBinding binding,
         CdcTargetStatusEvaluationInput input,
-        DateTimeOffset observedAt
+        DateTimeOffset observedAt,
+        CdcDiagnosticCollector diagnostics
     )
     {
         if (binding.ToTargetIdentity() != input.TargetIdentity)
@@ -318,9 +320,26 @@ public static class CdcTargetStatusEvaluator
             );
         }
 
+        if (string.IsNullOrWhiteSpace(input.PhysicalSourceFingerprint))
+        {
+            diagnostics.Add(
+                CdcDiagnosticCategory.StatusObservationUnavailable,
+                "$.physicalSourceFingerprint",
+                "CDC target status requires a current physical source fingerprint."
+            );
+            return new(
+                CdcComponent.Unknown(
+                    CdcBlockingCategory.StatusObservationUnavailable,
+                    observedAt,
+                    "current source unavailable"
+                ),
+                binding,
+                null
+            );
+        }
+
         if (
-            input.PhysicalSourceFingerprint is not null
-            && !string.Equals(
+            !string.Equals(
                 binding.PhysicalSourceFingerprint,
                 input.PhysicalSourceFingerprint,
                 StringComparison.Ordinal
@@ -351,7 +370,8 @@ public static class CdcTargetStatusEvaluator
         BindingEvaluation bindingEvaluation = EvaluatePresentBinding(
             bindingState.Binding!,
             input,
-            bindingState.ObservedAt
+            bindingState.ObservedAt,
+            diagnostics
         );
         if (bindingEvaluation.Component.State != CdcComponentState.Satisfied)
         {

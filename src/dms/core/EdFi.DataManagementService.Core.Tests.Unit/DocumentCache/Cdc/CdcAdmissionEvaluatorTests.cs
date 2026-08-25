@@ -34,6 +34,43 @@ public class Given_CdcAdmissionEvaluator
     }
 
     [Test]
+    public void It_does_not_admit_when_current_source_resolution_is_unavailable()
+    {
+        CdcAdmission admission = CdcInitialAdmissionEvaluator.Evaluate(
+            CdcAdmissionFixture.ValidInput() with
+            {
+                PhysicalSourceFingerprint = null,
+            }
+        );
+
+        admission.AdmissionState.Should().Be(CdcAdmissionState.Unknown);
+        admission.PrimaryBlockingCategory.Should().Be(CdcBlockingCategory.StatusObservationUnavailable);
+        admission.Steps.Binding.State.Should().Be(CdcComponentState.Unknown);
+        admission.Steps.Binding.Category.Should().Be(CdcBlockingCategory.StatusObservationUnavailable);
+        admission.Steps.GuardedTrackingActivation.State.Should().Be(CdcComponentState.Unknown);
+        admission
+            .Diagnostics.Select(diagnostic => diagnostic.Category)
+            .Should()
+            .Contain(CdcDiagnosticCategory.StatusObservationUnavailable);
+    }
+
+    [Test]
+    public void It_keeps_explicit_current_source_mismatch_as_source_mismatch()
+    {
+        CdcAdmission admission = CdcInitialAdmissionEvaluator.Evaluate(
+            CdcAdmissionFixture.ValidInput() with
+            {
+                PhysicalSourceFingerprint = CdcTargetStatusFixture.OtherSourceFingerprint,
+            }
+        );
+
+        admission.AdmissionState.Should().Be(CdcAdmissionState.NotAdmitted);
+        admission.PrimaryBlockingCategory.Should().Be(CdcBlockingCategory.SourceMismatch);
+        admission.Steps.Binding.State.Should().Be(CdcComponentState.NotSatisfied);
+        admission.Steps.Binding.Category.Should().Be(CdcBlockingCategory.SourceMismatch);
+    }
+
+    [Test]
     public void It_keeps_provider_barrier_not_reached_as_the_primary_admission_blocker()
     {
         CdcBinding binding = CdcTargetStatusFixture.CreateBinding();

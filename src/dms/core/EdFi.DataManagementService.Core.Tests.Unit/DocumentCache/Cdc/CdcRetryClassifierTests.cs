@@ -80,6 +80,22 @@ public class Given_CdcInitialEnableRetryClassifier
     }
 
     [Test]
+    public void It_rejects_exact_binding_retry_when_current_source_resolution_is_unavailable()
+    {
+        CdcRetry retry = CdcInitialEnableRetryClassifier.EvaluateRetry(
+            RetryInput(Eligibility(CdcLifecycleState.Tracking), physicalSourceFingerprint: null)
+        );
+
+        retry.RetryClassification.Should().Be(CdcRetryClassification.RejectNotInitialWorkflow);
+        retry.Action.Should().Be(CdcRetryAction.RetireUnusedBindingAndReprovision);
+        retry.PrimaryBlockingCategory.Should().Be(CdcBlockingCategory.StatusObservationUnavailable);
+        retry
+            .Diagnostics.Select(diagnostic => diagnostic.Category)
+            .Should()
+            .Contain(CdcDiagnosticCategory.SourceMismatch);
+    }
+
+    [Test]
     public void It_rejects_tracking_without_a_binding()
     {
         CdcRetry retry = CdcInitialEnableRetryClassifier.EvaluateRetry(
@@ -199,7 +215,8 @@ public class Given_CdcInitialEnableRetryClassifier
     private static CdcInitialEnableRetryClassificationInput RetryInput(
         InitialCdcEligibilityObservation eligibilityObservation,
         CdcBindingStateContract? bindingState = null,
-        InitialCdcProvisioningProof? provisioningProof = null
+        InitialCdcProvisioningProof? provisioningProof = null,
+        string? physicalSourceFingerprint = CdcTargetStatusFixture.SourceFingerprint
     )
     {
         CdcBinding binding = CdcTargetStatusFixture.CreateBinding();
@@ -218,7 +235,7 @@ public class Given_CdcInitialEnableRetryClassifier
             ObservedAt,
             Now,
             binding.ToTargetIdentity(),
-            CdcTargetStatusFixture.SourceFingerprint,
+            physicalSourceFingerprint,
             provisioningProof ?? ProvisioningProof(),
             eligibilityObservation,
             effectiveBindingState

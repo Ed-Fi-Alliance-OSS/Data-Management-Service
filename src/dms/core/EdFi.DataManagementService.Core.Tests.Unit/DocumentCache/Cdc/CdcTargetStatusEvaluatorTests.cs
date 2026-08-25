@@ -42,6 +42,69 @@ public class Given_CdcTargetStatusEvaluator
     }
 
     [Test]
+    public void It_treats_missing_current_source_fingerprint_as_unavailable_status_evidence()
+    {
+        CdcBinding binding = CdcTargetStatusFixture.CreateBinding();
+
+        CdcTargetStatus status = CdcTargetStatusEvaluator.Evaluate(
+            CdcTargetStatusFixture.ValidInput(binding) with
+            {
+                PhysicalSourceFingerprint = null,
+            }
+        );
+
+        status.Readiness.Should().Be(CdcReadiness.Unknown);
+        status.PrimaryBlockingCategory.Should().Be(CdcBlockingCategory.StatusObservationUnavailable);
+        status.Binding.State.Should().Be(CdcComponentState.Unknown);
+        status.Binding.Category.Should().Be(CdcBlockingCategory.StatusObservationUnavailable);
+        status
+            .Diagnostics.Select(diagnostic => diagnostic.Category)
+            .Should()
+            .Contain(CdcDiagnosticCategory.StatusObservationUnavailable)
+            .And.NotContain(CdcDiagnosticCategory.SourceMismatch);
+    }
+
+    [Test]
+    public void It_keeps_explicit_current_source_mismatch_as_source_mismatch()
+    {
+        CdcBinding binding = CdcTargetStatusFixture.CreateBinding();
+
+        CdcTargetStatus status = CdcTargetStatusEvaluator.Evaluate(
+            CdcTargetStatusFixture.ValidInput(binding) with
+            {
+                PhysicalSourceFingerprint = CdcTargetStatusFixture.OtherSourceFingerprint,
+            }
+        );
+
+        status.Readiness.Should().Be(CdcReadiness.NotReady);
+        status.PrimaryBlockingCategory.Should().Be(CdcBlockingCategory.SourceMismatch);
+        status.Binding.State.Should().Be(CdcComponentState.NotSatisfied);
+        status.Binding.Category.Should().Be(CdcBlockingCategory.SourceMismatch);
+    }
+
+    [Test]
+    public void It_selects_a_known_not_ready_blocker_before_missing_current_source_evidence()
+    {
+        CdcBinding binding = CdcTargetStatusFixture.CreateBinding();
+
+        CdcTargetStatus status = CdcTargetStatusEvaluator.Evaluate(
+            CdcTargetStatusFixture.ValidInput(binding) with
+            {
+                PhysicalSourceFingerprint = null,
+                Projection = CdcTargetStatusFixture.Projection(binding) with
+                {
+                    OperationalHealthStatus = DocumentCacheOperationalHealthStatus.NonOperational,
+                },
+            }
+        );
+
+        status.Readiness.Should().Be(CdcReadiness.NotReady);
+        status.PrimaryBlockingCategory.Should().Be(CdcBlockingCategory.ProjectionNonOperational);
+        status.Binding.State.Should().Be(CdcComponentState.Unknown);
+        status.Projection.State.Should().Be(CdcComponentState.NotSatisfied);
+    }
+
+    [Test]
     public void It_maps_component_observation_states_to_their_design_blockers()
     {
         CdcBinding binding = CdcTargetStatusFixture.CreateBinding();
