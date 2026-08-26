@@ -116,6 +116,10 @@ jobs:
                 fresh_build_required=true
                 ;;
             esac
+            # src/config counts as DMS-relevant: the DMS E2E lanes (incl. the DS 6.1
+            # version-coupled lane) bring up the Config Service built from src/config, so
+            # config-only changes (e.g. ds61 Claims.json, ClaimsProvider, ResourceClaim
+            # seeding) must still trigger this workflow's DMS + DS 6.1 validation.
             case "$file" in
               .github/actions/*|.github/workflows/*|build-dms.ps1|eng/*|src/Directory.Packages.props|src/nuget.config|src/dms/*|src/config/*)
                 dms_relevant=true
@@ -645,6 +649,8 @@ jobs:
           image_sha="${PULL_REQUEST_HEAD_SHA:-$GITHUB_SHA}"
           dms_image="ghcr.io/${owner}/data-management-service-ed-fi-api-ci:${image_sha}"
           config_image="ghcr.io/${owner}/data-management-service-ed-fi-api-config-ci:${image_sha}"
+          dms_cache_ref="ghcr.io/${owner}/data-management-service-ed-fi-api-ci:buildcache"
+          config_cache_ref="ghcr.io/${owner}/data-management-service-ed-fi-api-config-ci:buildcache"
 
           dms_compose_image=""
           config_compose_image=""
@@ -657,6 +663,8 @@ jobs:
             echo "use_prebuilt_images=$use_prebuilt_images"
             echo "dms_image=$dms_image"
             echo "config_image=$config_image"
+            echo "dms_cache_ref=$dms_cache_ref"
+            echo "config_cache_ref=$config_cache_ref"
             echo "dms_compose_image=$dms_compose_image"
             echo "config_compose_image=$config_compose_image"
           } >> "$GITHUB_OUTPUT"
@@ -687,8 +695,12 @@ jobs:
             parentdir=./src
           push: true
           tags: ${{ steps.prepare-images.outputs.dms_image }}
-          cache-from: type=gha,scope=dms-pr-dms-image
-          cache-to: type=gha,mode=max,scope=dms-pr-dms-image
+          # A registry cache is not branch-scoped, so one shared ref serves every event and any
+          # run can restore it. Only non-pull_request runs export to it: the merge queue builds
+          # the tree that is about to become main, while concurrent pull request exports would
+          # race on the same tag and fill it with branch-specific layers.
+          cache-from: type=registry,ref=${{ steps.prepare-images.outputs.dms_cache_ref }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,mode=max,ref={0}', steps.prepare-images.outputs.dms_cache_ref) || '' }}
 
       - name: Build and push Config CI Docker image
         if: steps.prepare-images.outputs.use_prebuilt_images == 'true'
@@ -700,8 +712,8 @@ jobs:
             parentdir=./src
           push: true
           tags: ${{ steps.prepare-images.outputs.config_image }}
-          cache-from: type=gha,scope=dms-pr-config-image
-          cache-to: type=gha,mode=max,scope=dms-pr-config-image
+          cache-from: type=registry,ref=${{ steps.prepare-images.outputs.config_cache_ref }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,mode=max,ref={0}', steps.prepare-images.outputs.config_cache_ref) || '' }}
 
   run-backend-mssql-integration-tests:
     name: Run Backend MSSQL Integration Tests (${{ matrix.shard-name }})
