@@ -1249,7 +1249,7 @@ public static class CdcSourceHistoryContinuityClassifier
         }
 
         CdcSourcePartitionHashResult result = CdcSourcePartitionHashCalculator.ComputePostgresql(
-            inventory.TopicPrefix
+            inventory.ConnectorName
         );
         AddDiagnostics(diagnostics, result.Diagnostics);
 

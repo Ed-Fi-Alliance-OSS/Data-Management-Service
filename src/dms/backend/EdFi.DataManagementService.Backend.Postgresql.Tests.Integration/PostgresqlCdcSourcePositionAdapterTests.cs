@@ -494,7 +494,7 @@ public class Given_PostgresqlCdcSourcePositionAdapterTests
     )
     {
         string sourcePartitionHash = CoreCdc
-            .CdcSourcePartitionHashCalculator.ComputePostgresql(inventory.TopicPrefix)
+            .CdcSourcePartitionHashCalculator.ComputePostgresql(inventory.ConnectorName)
             .Hash!;
 
         return new(

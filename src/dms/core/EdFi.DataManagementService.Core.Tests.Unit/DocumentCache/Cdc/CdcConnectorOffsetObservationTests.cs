@@ -28,7 +28,7 @@ public class Given_CdcConnectorOffsetObservation
         CdcBinding binding = CreateBinding(CdcProvider.Postgresql);
         CdcArtifactInventory inventory = CdcArtifactNameGenerator.RecoverFromBinding(binding).Inventory!;
         string sourcePartitionHash = CdcSourcePartitionHashCalculator
-            .ComputePostgresql(inventory.TopicPrefix)
+            .ComputePostgresql(inventory.ConnectorName)
             .Hash!;
         CdcConnectorOffsetObservation observation = new(
             CdcJsonContract.CurrentContractVersion,
@@ -199,7 +199,7 @@ public class Given_CdcConnectorOffsetObservation
             observation,
             binding,
             new(OperationId, binding.ToTargetIdentity(), SourceFingerprint, Now),
-            CdcSourcePartitionHashCalculator.ComputePostgresql(inventory.TopicPrefix).Hash!
+            CdcSourcePartitionHashCalculator.ComputePostgresql(inventory.ConnectorName).Hash!
         );
 
         result.Succeeded.Should().BeFalse();

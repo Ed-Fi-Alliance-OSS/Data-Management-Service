@@ -14,16 +14,24 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.DocumentCache.Cdc;
 [Category("CdcSourcePartitionHash")]
 public class Given_CdcSourcePartitionHash
 {
-    [TestCase("edfi.dms", "sha256:9605ac115e4c82a0a9f1b2e7e0687c09fce12c699903be5189c8527efa3d2f40")]
+    [TestCase(
+        "dms-local-data-store-1-g1",
+        "sha256:d895224c368e513dd6da91ceb83ad4ce11e58bac94a92bec07a00a0952686fd9"
+    )]
     public void It_computes_the_design_postgresql_source_partition_hash_vector(
-        string topicPrefix,
+        string connectorName,
         string expectedHash
     )
     {
-        CdcSourcePartitionHashResult result = CdcSourcePartitionHashCalculator.ComputePostgresql(topicPrefix);
+        CdcSourcePartitionHashResult result = CdcSourcePartitionHashCalculator.ComputePostgresql(
+            connectorName
+        );
+        CdcSourcePartitionHashResult publicTopicPrefixResult =
+            CdcSourcePartitionHashCalculator.ComputePostgresql("edfi.dms");
 
         result.Succeeded.Should().BeTrue();
         result.Hash.Should().Be(expectedHash);
+        publicTopicPrefixResult.Hash.Should().NotBe(expectedHash);
         result.Diagnostics.Should().BeEmpty();
     }
 

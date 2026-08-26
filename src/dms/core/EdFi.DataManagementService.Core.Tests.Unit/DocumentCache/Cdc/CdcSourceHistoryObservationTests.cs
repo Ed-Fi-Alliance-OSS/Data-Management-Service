@@ -44,7 +44,7 @@ public class Given_CdcSourceHistoryObservation
                 inventory.ProgressTopicName,
                 null,
                 inventory.PostgresqlLogicalSlotName,
-                CdcSourcePartitionHashCalculator.ComputePostgresql(inventory.TopicPrefix).Hash,
+                CdcSourcePartitionHashCalculator.ComputePostgresql(inventory.ConnectorName).Hash,
                 "0/16B6C51",
                 null,
                 null,

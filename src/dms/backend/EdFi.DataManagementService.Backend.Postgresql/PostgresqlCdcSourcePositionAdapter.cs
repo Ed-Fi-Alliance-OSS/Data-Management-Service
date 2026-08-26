@@ -291,7 +291,7 @@ internal sealed class PostgresqlCdcSourcePositionAdapter(
         }
 
         CdcSourcePartitionHashResult sourcePartitionHash = CdcSourcePartitionHashCalculator.ComputePostgresql(
-            artifactNameResult.Inventory.TopicPrefix
+            artifactNameResult.Inventory.ConnectorName
         );
         AddDiagnostics(diagnostics, sourcePartitionHash.Diagnostics);
 

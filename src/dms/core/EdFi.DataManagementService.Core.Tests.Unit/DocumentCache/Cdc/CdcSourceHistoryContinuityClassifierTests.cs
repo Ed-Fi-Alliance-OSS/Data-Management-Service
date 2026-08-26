@@ -928,7 +928,7 @@ internal static class CdcContinuityFixture
         CdcArtifactInventory inventory = CdcArtifactNameGenerator.RecoverFromBinding(binding).Inventory!;
 
         return binding.Provider == CdcProvider.Postgresql
-            ? CdcSourcePartitionHashCalculator.ComputePostgresql(inventory.TopicPrefix).Hash!
+            ? CdcSourcePartitionHashCalculator.ComputePostgresql(inventory.ConnectorName).Hash!
             : SqlServerSourcePartitionHash;
     }
 
