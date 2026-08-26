@@ -72,12 +72,20 @@ internal static class DocumentCacheAdminCommandExecutor
                 cancellationToken
             );
 
+            bool statusEvaluationStarted = false;
             try
             {
-                DocumentCacheStatusResponse statusResponse = await GetStatusResponseAsync(
+                await ResolveStatusTargetAsync(
                         invocationTarget.TargetKey,
                         serviceProvider,
                         statusTimeout.Token
+                    )
+                    .ConfigureAwait(false);
+
+                statusEvaluationStarted = true;
+                DocumentCacheStatusResponse statusResponse = await GetStatusResponseAsync(
+                        serviceProvider,
+                        cancellationToken
                     )
                     .ConfigureAwait(false);
 
@@ -99,7 +107,8 @@ internal static class DocumentCacheAdminCommandExecutor
 
                 return CompleteCommand(DocumentCacheAdminExitCodes.Success, "completed", "status");
             }
-            catch (OperationCanceledException) when (statusTimeout.IsTimeoutExpired)
+            catch (OperationCanceledException)
+                when (!statusEvaluationStarted && statusTimeout.IsTimeoutExpired)
             {
                 await WriteErrorAsync(
                         standardError,
@@ -695,7 +704,7 @@ internal static class DocumentCacheAdminCommandExecutor
         return standardError.WriteLineAsync(message);
     }
 
-    private static async Task<DocumentCacheStatusResponse> GetStatusResponseAsync(
+    private static async Task ResolveStatusTargetAsync(
         DocumentCacheTargetKey targetKey,
         IServiceProvider serviceProvider,
         CancellationToken cancellationToken
@@ -716,7 +725,13 @@ internal static class DocumentCacheAdminCommandExecutor
                 );
             }
         }
+    }
 
+    private static async Task<DocumentCacheStatusResponse> GetStatusResponseAsync(
+        IServiceProvider serviceProvider,
+        CancellationToken cancellationToken
+    )
+    {
         IDocumentCacheStatusService statusService =
             serviceProvider.GetRequiredService<IDocumentCacheStatusService>();
 

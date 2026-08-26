@@ -154,7 +154,52 @@ public sealed class Given_DocumentCacheAdminPostgresqlStatus
                 .GetValue<string>()
                 .Should()
                 .Be("unknown");
-            AssertStandaloneRuntimeNotObserved(targetStatus);
+            AssertStatusTimeoutReason(targetStatus, "statusObservationTimeout");
+        }
+        finally
+        {
+            await transaction.RollbackAsync();
+        }
+    }
+
+    [Test]
+    public async Task It_returns_complete_unknown_status_when_endpoint_timeout_expires_during_direct_durable_observation()
+    {
+        await using DocumentCacheAdminCliTarget target =
+            await DocumentCacheAdminCliTarget.CreatePostgresqlAsync();
+        await target.State.SetLifecycleAsync("Tracking", cacheAheadRecoveryRequired: false);
+        await using NpgsqlConnection connection = new(target.ConnectionString);
+        await connection.OpenAsync();
+        await using NpgsqlTransaction transaction = await connection.BeginTransactionAsync();
+        await using NpgsqlCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """LOCK TABLE "dms"."DocumentProjectionWork" IN ACCESS EXCLUSIVE MODE;""";
+        await command.ExecuteNonQueryAsync();
+
+        try
+        {
+            DocumentCacheAdminCliProcessResult result = await RunStatusAsync(
+                target,
+                target.DataStoreId,
+                statusObservationTimeoutSeconds: "3",
+                statusTimeoutSeconds: "0.5"
+            );
+
+            JsonObject targetStatus = AssertStatusResult(
+                result,
+                target,
+                expectedDataStoreId: target.DataStoreId
+            );
+            AssertCompleteStatusShape(targetStatus);
+            AssertResolvedPostgresqlTarget(targetStatus);
+            targetStatus["durableObservedAt"].Should().BeNull();
+            RequiredObject(targetStatus, "lifecycle")["state"]!.GetValue<string>().Should().Be("unknown");
+            RequiredObject(targetStatus, "cacheAhead")["state"]!.GetValue<string>().Should().Be("unknown");
+            RequiredObject(targetStatus, "queueSummary")["presence"]!
+                .GetValue<string>()
+                .Should()
+                .Be("unknown");
+            AssertStatusTimeoutReason(targetStatus, "statusEndpointTimeout");
         }
         finally
         {
@@ -334,6 +379,20 @@ public sealed class Given_DocumentCacheAdminPostgresqlStatus
             .GetValue<string>()
             .Should()
             .Be("runtimeNotObserved");
+    }
+
+    private static void AssertStatusTimeoutReason(JsonObject targetStatus, string expectedReason)
+    {
+        RequiredObject(targetStatus, "operationalHealth")["status"]!
+            .GetValue<string>()
+            .Should()
+            .Be("unknown");
+        RequiredObject(targetStatus, "operationalHealth")["reason"]!
+            .GetValue<string>()
+            .Should()
+            .Be(expectedReason);
+        RequiredObject(targetStatus, "caughtUp")["status"]!.GetValue<string>().Should().Be("unknown");
+        RequiredObject(targetStatus, "caughtUp")["reason"]!.GetValue<string>().Should().Be(expectedReason);
     }
 
     internal static JsonObject RequiredObject(JsonObject parent, string propertyName)

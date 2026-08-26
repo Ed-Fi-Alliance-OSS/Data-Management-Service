@@ -811,6 +811,76 @@ public class Given_DocumentCacheStatusService
         );
     }
 
+    [TestCase(DocumentCacheStatusReason.StatusObservationTimeout, 20, 200)]
+    [TestCase(DocumentCacheStatusReason.StatusEndpointTimeout, 200, 20)]
+    public async Task It_preserves_status_timeout_reasons_in_standalone_mode(
+        DocumentCacheStatusReason expectedReason,
+        int statusObservationTimeoutMilliseconds,
+        int endpointTimeoutMilliseconds
+    )
+    {
+        DocumentCacheTargetEffectiveSettings effectiveSettings = EffectiveSettings(
+            statusObservationTimeout: TimeSpan.FromMilliseconds(statusObservationTimeoutMilliseconds),
+            endpointTimeout: TimeSpan.FromMilliseconds(endpointTimeoutMilliseconds)
+        );
+        DocumentCacheTargetObservation target = ResolvedTarget(
+            DocumentCacheTargetKey.Create("", 1),
+            effectiveSettings
+        );
+        StaticTargetRegistry registry = new([target], [ExecutionContext(target)]);
+        TaskCompletionSource providerObservationStarted = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        ScriptedStatusObserver observer = new(
+            async (_, cancellationToken) =>
+            {
+                providerObservationStarted.TrySetResult();
+                await WaitForCancellationAsync(cancellationToken);
+                return DocumentCacheStatusCurrentSourceObservationResult.Cancelled("cancelled");
+            }
+        );
+        ControlledTimeProvider timeProvider = new(ProcessObservedAt);
+        DocumentCacheStatusService service = CreateService(
+            registry,
+            observer: observer,
+            timeProvider: timeProvider
+        );
+
+        DocumentCacheStatusResponse response;
+        using (CancellationTokenSource callerCancellationTokenSource = new())
+        {
+            Task<DocumentCacheStatusResponse> responseTask = service.GetStatusAsync(
+                callerCancellationTokenSource.Token,
+                DocumentCacheStatusEvaluationMode.StandaloneDirectObservation
+            );
+
+            try
+            {
+                await providerObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                timeProvider.Advance(
+                    TimeSpan.FromMilliseconds(
+                        Math.Min(statusObservationTimeoutMilliseconds, endpointTimeoutMilliseconds)
+                    )
+                );
+                response = await responseTask.WaitAsync(TimeSpan.FromSeconds(2));
+            }
+            catch
+            {
+                await callerCancellationTokenSource.CancelAsync();
+                throw;
+            }
+        }
+
+        DocumentCacheStatusTarget statusTarget = response.Targets.Should().ContainSingle().Which;
+        statusTarget.OperationalHealth.Status.Should().Be(DocumentCacheOperationalHealthStatus.Unknown);
+        statusTarget.OperationalHealth.Reason.Should().Be(expectedReason);
+        statusTarget.CaughtUp.Status.Should().Be(DocumentCacheCaughtUpStatus.Unknown);
+        statusTarget.CaughtUp.Reason.Should().Be(expectedReason);
+        statusTarget.Lifecycle.Availability.Should().Be(DocumentCacheStatusAvailability.Unknown);
+        statusTarget.QueueSummary.Presence.Should().Be(DocumentCacheStatusQueuePresence.Unknown);
+        observer.StartedKeys.Should().ContainSingle(key => key.Equals(target.TargetKey));
+    }
+
     [Test]
     public async Task It_serializes_provider_observation_failure_without_blocking_peer_targets()
     {

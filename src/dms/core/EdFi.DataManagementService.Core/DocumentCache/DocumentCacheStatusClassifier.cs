@@ -567,7 +567,7 @@ public static class DocumentCacheStatusClassifier
             ),
         };
 
-        return standaloneRuntimeNotObserved
+        return standaloneRuntimeNotObserved && !ShouldPreserveStandaloneDurableTimeoutReason(result)
             ? WithStandaloneRuntimeNotObservedHealth(result, processEligibility)
             : result;
     }
@@ -575,6 +575,13 @@ public static class DocumentCacheStatusClassifier
     private static bool IsRuntimeNotObserved(DocumentCacheStatusProcessEligibility processEligibility) =>
         processEligibility.Status == DocumentCacheStatusProcessEligibilityStatus.Unknown
         && processEligibility.Reason == DocumentCacheStatusReason.RuntimeNotObserved;
+
+    private static bool ShouldPreserveStandaloneDurableTimeoutReason(
+        DocumentCacheStatusClassificationResult result
+    ) =>
+        result.OperationalHealth.Reason
+            is DocumentCacheStatusReason.StatusEndpointTimeout
+                or DocumentCacheStatusReason.StatusObservationTimeout;
 
     private static DocumentCacheStatusClassificationResult WithStandaloneRuntimeNotObservedHealth(
         DocumentCacheStatusClassificationResult result,

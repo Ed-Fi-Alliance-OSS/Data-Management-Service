@@ -126,13 +126,13 @@ public sealed class Given_DocumentCacheAdminStatusCommand
 
     [Test]
     [Category("Timeout")]
-    public async Task It_applies_status_timeout_to_status_evaluation()
+    public async Task It_serializes_endpoint_timeout_status_data_after_status_evaluation_starts()
     {
         ScriptedDocumentCacheStatusService statusService = new(
             async (_, cancellationToken) =>
             {
-                await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
-                return StatusResponse();
+                await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationToken).ConfigureAwait(false);
+                return TimedOutStatusResponse(DocumentCacheStatusReason.StatusEndpointTimeout);
             }
         );
         await using ServiceProvider serviceProvider = new ServiceCollection()
@@ -155,9 +155,11 @@ public sealed class Given_DocumentCacheAdminStatusCommand
             stderr
         );
 
-        exitCode.Should().Be(DocumentCacheAdminExitCodes.FailedNoMutation);
-        stdout.ToString().Should().BeEmpty();
-        stderr.ToString().Should().Contain("status timed out");
+        exitCode.Should().Be(DocumentCacheAdminExitCodes.Success);
+        JsonObject root = JsonNode.Parse(stdout.ToString())!.AsObject();
+        JsonObject target = root["targets"]![0]!.AsObject();
+        target["operationalHealth"]!["reason"]!.GetValue<string>().Should().Be("statusEndpointTimeout");
+        stderr.ToString().Should().BeEmpty();
         statusService
             .EvaluationModes.Should()
             .ContainSingle()
@@ -307,15 +309,25 @@ public sealed class Given_DocumentCacheAdminStatusCommand
     private static DocumentCacheAdminInvocationTarget InvocationTarget() =>
         new(DocumentCacheTargetKey.Create("", 1));
 
-    private static DocumentCacheStatusResponse StatusResponse() =>
-        new(
+    private static DocumentCacheStatusResponse StatusResponse(
+        DocumentCacheStatusReason? durableTimeoutReason = null
+    )
+    {
+        bool isDurableTimeout = durableTimeoutReason is not null;
+        string statusMessage = isDurableTimeout
+            ? "DocumentCache status evaluation timed out."
+            : "Current-generation DocumentCache projection runtime has not been observed.";
+        DocumentCacheStatusReason healthReason =
+            durableTimeoutReason ?? DocumentCacheStatusReason.RuntimeNotObserved;
+
+        return new(
             ObservedAt,
             [
                 new DocumentCacheStatusTarget(
                     DocumentCacheStatusTargetKey.FromTargetKey(DocumentCacheTargetKey.Create("", 1)),
                     targetGeneration: 3,
                     ObservedAt,
-                    DurableObservedAt,
+                    isDurableTimeout ? null : DurableObservedAt,
                     provider: "postgresql",
                     physicalSourceFingerprint: "sha256:0000000000000000000000000000000000000000000000000000000000000001",
                     new DocumentCacheStatusResolutionComponent(
@@ -357,27 +369,35 @@ public sealed class Given_DocumentCacheAdminStatusCommand
                         )
                     ),
                     new DocumentCacheStatusLifecycleComponent(
-                        DocumentCacheStatusLifecycleState.Tracking,
-                        DocumentCacheStatusAvailability.Available,
-                        message: null
+                        isDurableTimeout
+                            ? DocumentCacheStatusLifecycleState.Unknown
+                            : DocumentCacheStatusLifecycleState.Tracking,
+                        isDurableTimeout
+                            ? DocumentCacheStatusAvailability.Unknown
+                            : DocumentCacheStatusAvailability.Available,
+                        isDurableTimeout ? statusMessage : null
                     ),
                     new DocumentCacheStatusCacheAheadComponent(
-                        DocumentCacheStatusCacheAheadState.Clear,
-                        recoveryRequired: false,
-                        message: null
+                        isDurableTimeout
+                            ? DocumentCacheStatusCacheAheadState.Unknown
+                            : DocumentCacheStatusCacheAheadState.Clear,
+                        recoveryRequired: isDurableTimeout ? null : false,
+                        message: isDurableTimeout ? statusMessage : null
                     ),
                     new DocumentCacheOperationalHealthComponent(
                         DocumentCacheOperationalHealthStatus.Unknown,
-                        DocumentCacheStatusReason.RuntimeNotObserved,
-                        "Current-generation DocumentCache projection runtime has not been observed."
+                        healthReason,
+                        statusMessage
                     ),
                     new DocumentCacheCaughtUpComponent(
                         DocumentCacheCaughtUpStatus.Unknown,
-                        DocumentCacheStatusReason.RuntimeNotObserved,
-                        "Current-generation DocumentCache projection runtime has not been observed."
+                        healthReason,
+                        statusMessage
                     ),
                     new DocumentCacheStatusQueueSummary(
-                        DocumentCacheStatusQueuePresence.Empty,
+                        isDurableTimeout
+                            ? DocumentCacheStatusQueuePresence.Unknown
+                            : DocumentCacheStatusQueuePresence.Empty,
                         oldestWorkFirstEnqueuedAt: null,
                         oldestWorkAgeSeconds: null,
                         DocumentCacheStatusBacklogEstimate.Unavailable
@@ -404,6 +424,10 @@ public sealed class Given_DocumentCacheAdminStatusCommand
                 ),
             ]
         );
+    }
+
+    private static DocumentCacheStatusResponse TimedOutStatusResponse(DocumentCacheStatusReason reason) =>
+        StatusResponse(reason);
 
     private static DocumentCacheStatusResponse UnresolvedStatusResponse()
     {
