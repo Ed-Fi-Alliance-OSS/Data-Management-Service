@@ -860,9 +860,14 @@ public static class CdcProviderSetupResultMapper
         bool captureJob
     )
     {
-        if (!BoolValue(databaseHistory, $"{jobType}_job_present"))
+        if (IsFalseValue(databaseHistory, $"{jobType}_job_present"))
         {
             return CoreCdc.CdcSqlServerCdcJobState.Missing;
+        }
+
+        if (!BoolValue(databaseHistory, $"{jobType}_job_present"))
+        {
+            return CoreCdc.CdcSqlServerCdcJobState.Unknown;
         }
 
         if (IsFalseValue(databaseHistory, $"{jobType}_job_enabled"))
@@ -870,9 +875,19 @@ public static class CdcProviderSetupResultMapper
             return CoreCdc.CdcSqlServerCdcJobState.Stopped;
         }
 
+        if (!BoolValue(databaseHistory, $"{jobType}_job_enabled"))
+        {
+            return CoreCdc.CdcSqlServerCdcJobState.Unknown;
+        }
+
         if (captureJob && IsFalseValue(databaseHistory, $"{jobType}_job_running"))
         {
             return CoreCdc.CdcSqlServerCdcJobState.Stopped;
+        }
+
+        if (captureJob && !BoolValue(databaseHistory, $"{jobType}_job_running"))
+        {
+            return CoreCdc.CdcSqlServerCdcJobState.Unknown;
         }
 
         return ObservedValue(databaseHistory, $"{jobType}_job_last_run_status") == "0"

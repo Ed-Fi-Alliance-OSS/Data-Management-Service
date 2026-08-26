@@ -624,6 +624,56 @@ public class Given_CdcProviderSetupResultMapper
         result.IncidentCandidate.Should().BeNull();
     }
 
+    [TestCase("capture_job_enabled", null, true)]
+    [TestCase("capture_job_running", "not-readable", true)]
+    [TestCase("cleanup_job_enabled", "", false)]
+    public void It_maps_sql_server_present_job_with_incomplete_runtime_evidence_to_unknown(
+        string runtimeKey,
+        string? runtimeValue,
+        bool expectCaptureJobUnknown
+    )
+    {
+        CoreCdc.CdcBinding binding = BuildBinding(CoreCdc.CdcProvider.SqlServer);
+        CoreCdc.CdcArtifactInventory inventory = RecoverInventory(binding);
+        Dictionary<string, string> observedValues = SqlServerDatabaseHistory(
+            captureJobRunning: true,
+            cleanupJobRunning: true
+        )
+            .SafeObservedValues.ToDictionary(pair => pair.Key, pair => pair.Value);
+        if (runtimeValue is null)
+        {
+            observedValues.Remove(runtimeKey);
+        }
+        else
+        {
+            observedValues[runtimeKey] = runtimeValue;
+        }
+
+        CdcProviderSetupObservationMapping mapping = MapSqlServerProviderSetup(
+            binding,
+            History(CdcProviderArtifactKind.ProviderHistory, "sqlserver_database_cdc", observedValues)
+        );
+
+        CoreCdc.CdcSourceHistoryClassificationResult result = ClassifySqlServer(binding, inventory, mapping);
+
+        CoreCdc.CdcSqlServerCdcJobState expectedCaptureState = expectCaptureJobUnknown
+            ? CoreCdc.CdcSqlServerCdcJobState.Unknown
+            : CoreCdc.CdcSqlServerCdcJobState.Healthy;
+        CoreCdc.CdcSqlServerCdcJobState expectedCleanupState = expectCaptureJobUnknown
+            ? CoreCdc.CdcSqlServerCdcJobState.Healthy
+            : CoreCdc.CdcSqlServerCdcJobState.Unknown;
+        mapping.ProviderHistory.SqlServerJobs!.CaptureJobState.Should().Be(expectedCaptureState);
+        mapping.ProviderHistory.SqlServerJobs.CleanupJobState.Should().Be(expectedCleanupState);
+        result.Observation.Continuity.Should().Be(CoreCdc.CdcSourceHistoryContinuity.Unknown);
+        result
+            .Observation.Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CoreCdc.CdcDiagnosticCategory.LocalStateUnavailable
+                && diagnostic.Path == "$.providerHistory.sqlServerJobs"
+            );
+        result.IncidentCandidate.Should().BeNull();
+    }
+
     [Test]
     public void It_maps_sql_server_unavailable_history_to_unknown_job_evidence()
     {
