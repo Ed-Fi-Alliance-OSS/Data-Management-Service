@@ -958,6 +958,35 @@ internal sealed class DocumentCacheAdminCliStateInspector(
         return RequireInt64(row, "WaitingLockCount");
     }
 
+    public async Task<long> ReadPostgresqlGuardedActivationDocumentLockWaitingCountAsync()
+    {
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await RequirePostgresqlDatabase()
+            .QueryRowsAsync(
+                """
+                SELECT COUNT(*) AS "WaitingLockCount"
+                FROM pg_locks
+                WHERE locktype = 'relation'
+                  AND database = (
+                      SELECT database.oid
+                      FROM pg_database AS database
+                      WHERE database.datname = current_database()
+                  )
+                  AND relation = 'dms."Document"'::regclass
+                  AND mode = 'ShareLock'
+                  AND NOT granted;
+                """
+            );
+
+        if (rows.Count != 1)
+        {
+            throw new InvalidOperationException(
+                $"Expected one PostgreSQL guarded activation lock row but received {rows.Count}."
+            );
+        }
+
+        return RequireInt64(rows[0], "WaitingLockCount");
+    }
+
     private PostgresqlGeneratedDdlTestDatabase RequirePostgresqlDatabase() =>
         postgresqlDatabase
         ?? throw new InvalidOperationException("This helper is only available for PostgreSQL targets.");

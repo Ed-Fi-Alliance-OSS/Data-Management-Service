@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.DocumentCacheAdmin;
 using FluentAssertions;
@@ -434,7 +435,7 @@ public sealed class Given_DocumentCacheAdminPostgresqlActivateNewEmpty
         await using DocumentCacheAdminCliProcessHarness harness =
             await DocumentCacheAdminCliProcessHarness.CreateAsync(target);
 
-        Task<DocumentCacheAdminCliProcessResult> activationTask = harness.RunAsync(
+        await using DocumentCacheAdminCliRunningProcess activationProcess = harness.Start(
             DocumentCacheAdminCommandSurface.ActivateNewEmptyCommandName,
             DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
             target.DataStoreId.ToString(),
@@ -445,10 +446,12 @@ public sealed class Given_DocumentCacheAdminPostgresqlActivateNewEmpty
             "30"
         );
 
-        await Task.Delay(TimeSpan.FromMilliseconds(250));
+        await WaitForGuardedActivationDocumentLockWaitAsync(target, activationProcess);
         await insertTransaction.CommitAsync();
 
-        DocumentCacheAdminCliProcessResult result = await activationTask.WaitAsync(TimeSpan.FromSeconds(120));
+        DocumentCacheAdminCliProcessResult result = await activationProcess.WaitForExitAsync(
+            TimeSpan.FromSeconds(120)
+        );
         JsonObject commandResult = AssertActivationResult(
             result,
             target,
@@ -463,6 +466,38 @@ public sealed class Given_DocumentCacheAdminPostgresqlActivateNewEmpty
         DocumentCacheAdminCliMutableCounts counts = await target.State.ReadMutableCountsAsync();
         counts.DocumentCacheRows.Should().Be(0);
         counts.WorkRows.Should().Be(0);
+    }
+
+    private static async Task WaitForGuardedActivationDocumentLockWaitAsync(
+        DocumentCacheAdminCliTarget target,
+        DocumentCacheAdminCliRunningProcess process
+    )
+    {
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        while (stopwatch.Elapsed < TimeSpan.FromSeconds(30))
+        {
+            if (await target.State.ReadPostgresqlGuardedActivationDocumentLockWaitingCountAsync() > 0)
+            {
+                return;
+            }
+
+            if (process.HasExited)
+            {
+                DocumentCacheAdminCliProcessResult result = await process.WaitForExitAsync(
+                    TimeSpan.FromSeconds(5)
+                );
+                Assert.Fail(
+                    "The activation process exited before waiting on the guarded activation document lock."
+                        + $"\nExit code: {result.ExitCode}"
+                        + $"\nstdout:\n{result.StandardOutput}"
+                        + $"\nstderr:\n{result.StandardError}"
+                );
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(100));
+        }
+
+        Assert.Fail("The activation process did not wait on the guarded activation document lock.");
     }
 
     private static async Task<DocumentCacheAdminCliProcessResult> RunActivateNewEmptyAsync(
