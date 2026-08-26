@@ -971,7 +971,7 @@ public class Given_CdcProviderSetupResultMapper
     )
     {
         string sourcePartitionHash = CoreCdc
-            .CdcSourcePartitionHashCalculator.ComputeSqlServer(inventory.TopicPrefix, binding.InstanceKey)
+            .CdcSourcePartitionHashCalculator.ComputeSqlServer(inventory.ConnectorName, binding.InstanceKey)
             .Hash!;
 
         return CoreCdc.CdcSourceHistoryContinuityClassifier.Evaluate(
@@ -986,7 +986,7 @@ public class Given_CdcProviderSetupResultMapper
                     CoreCdc.CdcProvider.SqlServer,
                     binding.PhysicalSourceFingerprint,
                     inventory.ConnectorName,
-                    inventory.TopicPrefix,
+                    inventory.ConnectorName,
                     CoreCdc.CdcConnectorOffsetMatchResult.Exact,
                     sourcePartitionHash,
                     false,

@@ -3081,7 +3081,7 @@ public static class CdcConnectorOffsetObservationValidator
         if (
             !string.Equals(
                 observation.TopicPrefix,
-                artifactNameResult.Inventory.TopicPrefix,
+                artifactNameResult.Inventory.ConnectorName,
                 StringComparison.Ordinal
             )
         )
@@ -3089,7 +3089,7 @@ public static class CdcConnectorOffsetObservationValidator
             diagnostics.Add(
                 CdcDiagnosticCategory.ArtifactNameMismatch,
                 "$.topicPrefix",
-                "CDC connector offset topicPrefix must match the binding-derived inventory."
+                "CDC connector offset topicPrefix must match the binding-derived connector name."
             );
         }
     }

@@ -1271,12 +1271,12 @@ public static class CdcSourceHistoryContinuityClassifier
             );
         }
 
-        if (!string.Equals(offset.TopicPrefix, inventory.TopicPrefix, StringComparison.Ordinal))
+        if (!string.Equals(offset.TopicPrefix, inventory.ConnectorName, StringComparison.Ordinal))
         {
             diagnostics.Add(
                 CdcDiagnosticCategory.ArtifactNameMismatch,
                 "$.topicPrefix",
-                "CDC connector offset topicPrefix must match the binding-derived inventory."
+                "CDC connector offset topicPrefix must match the binding-derived connector name."
             );
         }
     }

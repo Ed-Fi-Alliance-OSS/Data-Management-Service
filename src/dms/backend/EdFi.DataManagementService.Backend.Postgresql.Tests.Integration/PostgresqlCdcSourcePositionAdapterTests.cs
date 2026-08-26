@@ -538,7 +538,7 @@ public class Given_PostgresqlCdcSourcePositionAdapterTests
             CoreCdc.CdcProvider.Postgresql,
             binding.PhysicalSourceFingerprint,
             inventory.ConnectorName,
-            inventory.TopicPrefix,
+            inventory.ConnectorName,
             CoreCdc.CdcConnectorOffsetMatchResult.Exact,
             sourcePartitionHash,
             false,

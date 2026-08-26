@@ -38,7 +38,7 @@ public class Given_CdcConnectorOffsetObservation
             CdcProvider.Postgresql,
             SourceFingerprint,
             inventory.ConnectorName,
-            inventory.TopicPrefix,
+            inventory.ConnectorName,
             CdcConnectorOffsetMatchResult.Exact,
             sourcePartitionHash,
             false,
@@ -54,7 +54,7 @@ public class Given_CdcConnectorOffsetObservation
         JsonObject root = JsonNode.Parse(json)!.AsObject();
 
         root["connectorName"]!.GetValue<string>().Should().Be(inventory.ConnectorName);
-        root["topicPrefix"]!.GetValue<string>().Should().Be("edfi.dms");
+        root["topicPrefix"]!.GetValue<string>().Should().Be(inventory.ConnectorName);
         root["sourcePartitionMatchResult"]!.GetValue<string>().Should().Be("exact");
         root["connectSourcePartitionHash"]!.GetValue<string>().Should().Be(sourcePartitionHash);
         root["isSnapshot"]!.GetValue<bool>().Should().BeFalse();
@@ -82,7 +82,7 @@ public class Given_CdcConnectorOffsetObservation
         CdcArtifactInventory inventory = CdcArtifactNameGenerator.RecoverFromBinding(binding).Inventory!;
         string rawCatalogName = "EdFi \"DMS\"\\CDC";
         string sourcePartitionHash = CdcSourcePartitionHashCalculator
-            .ComputeSqlServer(inventory.TopicPrefix, rawCatalogName)
+            .ComputeSqlServer(inventory.ConnectorName, rawCatalogName)
             .Hash!;
         CdcConnectorOffsetObservation observation = new(
             CdcJsonContract.CurrentContractVersion,
@@ -92,7 +92,7 @@ public class Given_CdcConnectorOffsetObservation
             CdcProvider.SqlServer,
             SourceFingerprint,
             inventory.ConnectorName,
-            inventory.TopicPrefix,
+            inventory.ConnectorName,
             CdcConnectorOffsetMatchResult.Exact,
             sourcePartitionHash,
             false,
@@ -128,7 +128,7 @@ public class Given_CdcConnectorOffsetObservation
         CdcBinding binding = CreateBinding(CdcProvider.SqlServer);
         CdcArtifactInventory inventory = CdcArtifactNameGenerator.RecoverFromBinding(binding).Inventory!;
         string sourcePartitionHash = CdcSourcePartitionHashCalculator
-            .ComputeSqlServer(inventory.TopicPrefix, "EdFi_DMS_CDC")
+            .ComputeSqlServer(inventory.ConnectorName, "EdFi_DMS_CDC")
             .Hash!;
         CdcConnectorOffsetObservation observation = new(
             CdcJsonContract.CurrentContractVersion,
@@ -138,7 +138,7 @@ public class Given_CdcConnectorOffsetObservation
             CdcProvider.SqlServer,
             SourceFingerprint,
             inventory.ConnectorName,
-            inventory.TopicPrefix,
+            inventory.ConnectorName,
             CdcConnectorOffsetMatchResult.Exact,
             sourcePartitionHash,
             false,
@@ -211,6 +211,50 @@ public class Given_CdcConnectorOffsetObservation
             .And.Contain(CdcDiagnosticCategory.MalformedPayload)
             .And.Contain(CdcDiagnosticCategory.MissingRequiredField)
             .And.Contain(CdcDiagnosticCategory.ArtifactNameMismatch);
+    }
+
+    [Test]
+    public void It_rejects_postgresql_public_topic_prefix_as_connector_offset_topic_prefix()
+    {
+        CdcBinding binding = CreateBinding(CdcProvider.Postgresql);
+        CdcArtifactInventory inventory = CdcArtifactNameGenerator.RecoverFromBinding(binding).Inventory!;
+        string sourcePartitionHash = CdcSourcePartitionHashCalculator
+            .ComputePostgresql(inventory.ConnectorName)
+            .Hash!;
+        CdcConnectorOffsetObservation observation = new(
+            CdcJsonContract.CurrentContractVersion,
+            OperationId,
+            ObservedAt,
+            binding.ToTargetIdentity(),
+            CdcProvider.Postgresql,
+            SourceFingerprint,
+            inventory.ConnectorName,
+            inventory.TopicPrefix,
+            CdcConnectorOffsetMatchResult.Exact,
+            sourcePartitionHash,
+            false,
+            false,
+            23817297,
+            null,
+            null,
+            null,
+            []
+        );
+
+        CdcContractValidationResult result = CdcConnectorOffsetObservationValidator.ValidateForBinding(
+            observation,
+            binding,
+            new(OperationId, binding.ToTargetIdentity(), SourceFingerprint, Now),
+            sourcePartitionHash
+        );
+
+        result.Succeeded.Should().BeFalse();
+        result
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CdcDiagnosticCategory.ArtifactNameMismatch
+                && diagnostic.Path == "$.topicPrefix"
+            );
     }
 
     private static CdcBinding CreateBinding(CdcProvider provider)

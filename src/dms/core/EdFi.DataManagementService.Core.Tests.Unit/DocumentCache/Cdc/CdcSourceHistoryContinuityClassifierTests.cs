@@ -860,8 +860,7 @@ internal static class CdcContinuityFixture
     public const string OperationId = "operation-1";
     public const string SourceFingerprint =
         "sha256:8caa6b0ad6db6f60d8d7ce6e78d1e76094e2241678c6f241670319ab60810851";
-    private const string SqlServerSourcePartitionHash =
-        "sha256:678792175a93a7e810f3904d8d8e42e654289b147c3313a5c6d6a5c6593beab2";
+    private const string SqlServerRawCatalogName = "EdFi_DMS_CDC";
 
     public static CdcSourceHistoryClassificationInput CreateInput(CdcBinding binding) =>
         new(OperationId, ObservedAt, ObservedAt.AddMinutes(1), binding)
@@ -881,7 +880,7 @@ internal static class CdcContinuityFixture
                     )
                     : null,
             ExpectedConnectSourcePartitionHash =
-                binding.Provider == CdcProvider.SqlServer ? SqlServerSourcePartitionHash : null,
+                binding.Provider == CdcProvider.SqlServer ? ExpectedSourcePartitionHash(binding) : null,
         };
 
     public static CdcBinding CreateBinding(CdcProvider provider)
@@ -940,7 +939,7 @@ internal static class CdcContinuityFixture
             binding.Provider,
             SourceFingerprint,
             inventory.ConnectorName,
-            inventory.TopicPrefix,
+            inventory.ConnectorName,
             matchResult,
             resolvedSourcePartitionHash,
             isSnapshot,
@@ -959,7 +958,9 @@ internal static class CdcContinuityFixture
 
         return binding.Provider == CdcProvider.Postgresql
             ? CdcSourcePartitionHashCalculator.ComputePostgresql(inventory.ConnectorName).Hash!
-            : SqlServerSourcePartitionHash;
+            : CdcSourcePartitionHashCalculator
+                .ComputeSqlServer(inventory.ConnectorName, SqlServerRawCatalogName)
+                .Hash!;
     }
 
     public static CdcProviderSourceHistoryEvidence ProviderHistory(

@@ -879,7 +879,7 @@ public class Given_MssqlCdcSourcePositionAdapterTests
             CoreCdc.CdcProvider.SqlServer,
             binding.PhysicalSourceFingerprint,
             inventory.ConnectorName,
-            inventory.TopicPrefix,
+            inventory.ConnectorName,
             CoreCdc.CdcConnectorOffsetMatchResult.Exact,
             ExpectedSourcePartitionHash(inventory),
             false,
@@ -925,7 +925,10 @@ public class Given_MssqlCdcSourcePositionAdapterTests
 
     private string ExpectedSourcePartitionHash(CoreCdc.CdcArtifactInventory inventory) =>
         CoreCdc
-            .CdcSourcePartitionHashCalculator.ComputeSqlServer(inventory.TopicPrefix, _database.DatabaseName)
+            .CdcSourcePartitionHashCalculator.ComputeSqlServer(
+                inventory.ConnectorName,
+                _database.DatabaseName
+            )
             .Hash!;
 
     private static CoreCdc.CdcSqlServerSchemaHistoryEvidence BuildValidSchemaHistory() =>
