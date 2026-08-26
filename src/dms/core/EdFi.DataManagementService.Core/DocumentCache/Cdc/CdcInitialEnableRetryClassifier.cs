@@ -147,24 +147,30 @@ public static class CdcInitialEnableRetryClassifier
         }
 
         CdcBindingStateContract bindingState = input.BindingState;
+        CdcDiagnosticCollector bindingStateEnvelopeDiagnostics = new(observedAt);
         CdcObservationValidationRules.ValidateContractVersion(
             bindingState.ContractVersion,
             "$.bindingState.contractVersion",
-            evidence.Diagnostics
+            bindingStateEnvelopeDiagnostics
         );
         CdcObservationValidationRules.ValidateTimestamp(
             bindingState.ObservedAt,
             observedAt,
             "$.bindingState.observedAt",
-            evidence.Diagnostics
+            bindingStateEnvelopeDiagnostics
         );
 
         if (!Enum.IsDefined(bindingState.State))
         {
-            evidence.Diagnostics.InvalidEnumValue(
+            bindingStateEnvelopeDiagnostics.InvalidEnumValue(
                 "$.bindingState.state",
                 "CDC retry binding state is unsupported."
             );
+        }
+
+        AddDiagnostics(evidence.Diagnostics, bindingStateEnvelopeDiagnostics.Diagnostics);
+        if (bindingStateEnvelopeDiagnostics.HasDiagnostics)
+        {
             return Retry(
                 input,
                 observedAt,

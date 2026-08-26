@@ -12,7 +12,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.DocumentCache.Cdc;
 [TestFixture]
 [Parallelizable]
 [Category("CdcRetry")]
-public class Given_CdcInitialEnableRetryClassifier
+public class Given_CdcRetryClassifier
 {
     private static readonly DateTimeOffset IssuedAt = new(2026, 8, 17, 13, 9, 55, TimeSpan.Zero);
     private static readonly DateTimeOffset DurableObservedAt = new(2026, 8, 17, 13, 10, 10, TimeSpan.Zero);
@@ -83,6 +83,62 @@ public class Given_CdcInitialEnableRetryClassifier
         retry.Action.Should().Be(CdcRetryAction.Proceed);
         retry.PrimaryBlockingCategory.Should().Be(CdcBlockingCategory.None);
         retry.Diagnostics.Should().BeEmpty();
+    }
+
+    [TestCase(CdcLifecycleState.Disabled)]
+    [TestCase(CdcLifecycleState.Tracking)]
+    public void It_rejects_exact_binding_retry_when_binding_state_contract_version_is_invalid(
+        CdcLifecycleState lifecycleState
+    )
+    {
+        CdcRetry retry = CdcInitialEnableRetryClassifier.EvaluateRetry(
+            RetryInput(Eligibility(lifecycleState), BindingStateEnvelope(contractVersion: 2))
+        );
+
+        AssertMalformedBindingStateEnvelopeRejected(
+            retry,
+            CdcDiagnosticCategory.InvalidContractVersion,
+            "$.bindingState.contractVersion"
+        );
+    }
+
+    [TestCase(CdcLifecycleState.Disabled)]
+    [TestCase(CdcLifecycleState.Tracking)]
+    public void It_rejects_exact_binding_retry_when_binding_state_observed_at_is_not_utc(
+        CdcLifecycleState lifecycleState
+    )
+    {
+        CdcRetry retry = CdcInitialEnableRetryClassifier.EvaluateRetry(
+            RetryInput(
+                Eligibility(lifecycleState),
+                BindingStateEnvelope(
+                    observedAt: new DateTimeOffset(2026, 8, 17, 8, 10, 11, TimeSpan.FromHours(-5))
+                )
+            )
+        );
+
+        AssertMalformedBindingStateEnvelopeRejected(
+            retry,
+            CdcDiagnosticCategory.InvalidTimestamp,
+            "$.bindingState.observedAt"
+        );
+    }
+
+    [TestCase(CdcLifecycleState.Disabled)]
+    [TestCase(CdcLifecycleState.Tracking)]
+    public void It_rejects_exact_binding_retry_when_binding_state_observed_at_is_future(
+        CdcLifecycleState lifecycleState
+    )
+    {
+        CdcRetry retry = CdcInitialEnableRetryClassifier.EvaluateRetry(
+            RetryInput(Eligibility(lifecycleState), BindingStateEnvelope(observedAt: ObservedAt.AddTicks(1)))
+        );
+
+        AssertMalformedBindingStateEnvelopeRejected(
+            retry,
+            CdcDiagnosticCategory.InvalidTimestamp,
+            "$.bindingState.observedAt"
+        );
     }
 
     [TestCase(null)]
@@ -272,6 +328,31 @@ public class Given_CdcInitialEnableRetryClassifier
             eligibilityObservation,
             effectiveBindingState
         );
+    }
+
+    private static CdcBindingStateContract BindingStateEnvelope(
+        int contractVersion = CdcJsonContract.CurrentContractVersion,
+        DateTimeOffset? observedAt = null
+    )
+    {
+        CdcBinding binding = CdcTargetStatusFixture.CreateBinding();
+        return new(contractVersion, observedAt ?? ObservedAt, CdcBindingState.BindingPresent, binding, null);
+    }
+
+    private static void AssertMalformedBindingStateEnvelopeRejected(
+        CdcRetry retry,
+        CdcDiagnosticCategory expectedCategory,
+        string expectedPath
+    )
+    {
+        retry.RetryClassification.Should().Be(CdcRetryClassification.RejectNotInitialWorkflow);
+        retry.Action.Should().Be(CdcRetryAction.RetireUnusedBindingAndReprovision);
+        retry.PrimaryBlockingCategory.Should().Be(CdcBlockingCategory.StatusObservationUnavailable);
+        retry
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == expectedCategory && diagnostic.Path == expectedPath
+            );
     }
 
     private static InitialCdcProvisioningProof ProvisioningProof() =>
