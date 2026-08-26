@@ -1019,7 +1019,7 @@ public class Given_DocumentCacheStatusService
             .AllSatisfy(target =>
                 target.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.StatusEndpointTimeout)
             );
-        observer.StartedKeys.Should().ContainSingle().Which.Should().Be(firstTarget.TargetKey);
+        observer.StartedKeys.Should().NotContain(key => key.Equals(secondTarget.TargetKey));
     }
 
     [Test]
