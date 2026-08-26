@@ -143,20 +143,20 @@ public enum CdcDiagnosticComponent
 }
 
 public sealed record CdcTargetIdentity(
-    string DeploymentKey,
-    string TenantKey,
-    string DataStoreId,
-    string InstanceKey,
-    long Generation,
-    CdcProvider Provider
+    [property: JsonRequired] string DeploymentKey,
+    [property: JsonRequired] string TenantKey,
+    [property: JsonRequired] string DataStoreId,
+    [property: JsonRequired] string InstanceKey,
+    [property: JsonRequired] long Generation,
+    [property: JsonRequired] CdcProvider Provider
 );
 
 public sealed record CdcBindingIdentity(
-    string DeploymentKey,
-    string TenantKey,
-    string DataStoreId,
-    string InstanceKey,
-    long Generation
+    [property: JsonRequired] string DeploymentKey,
+    [property: JsonRequired] string TenantKey,
+    [property: JsonRequired] string DataStoreId,
+    [property: JsonRequired] string InstanceKey,
+    [property: JsonRequired] long Generation
 )
 {
     public static CdcBindingIdentity FromTargetIdentity(CdcTargetIdentity targetIdentity)
@@ -397,9 +397,11 @@ public sealed record CdcComponent
         Message = Sanitize(message);
     }
 
-    public CdcComponentState State { get; }
+    [JsonRequired]
+    public CdcComponentState State { get; init; }
 
-    public CdcBlockingCategory Category { get; }
+    [JsonRequired]
+    public CdcBlockingCategory Category { get; init; }
 
     public DateTimeOffset? ObservedAt { get; }
 
@@ -514,19 +516,26 @@ public sealed record CdcDiagnostic
         Path = NormalizePath(path);
     }
 
-    public string Code { get; }
+    [JsonRequired]
+    public string Code { get; init; }
 
-    public CdcDiagnosticCategory Category { get; }
+    [JsonRequired]
+    public CdcDiagnosticCategory Category { get; init; }
 
-    public CdcDiagnosticSeverity Severity { get; }
+    [JsonRequired]
+    public CdcDiagnosticSeverity Severity { get; init; }
 
-    public CdcDiagnosticComponent Component { get; }
+    [JsonRequired]
+    public CdcDiagnosticComponent Component { get; init; }
 
-    public DateTimeOffset ObservedAt { get; }
+    [JsonRequired]
+    public DateTimeOffset ObservedAt { get; init; }
 
-    public string Message { get; }
+    [JsonRequired]
+    public string Message { get; init; }
 
-    public bool Retryable { get; }
+    [JsonRequired]
+    public bool Retryable { get; init; }
 
     public string? ArtifactKind { get; }
 

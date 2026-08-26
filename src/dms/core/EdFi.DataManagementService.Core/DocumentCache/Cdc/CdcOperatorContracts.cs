@@ -336,7 +336,7 @@ public sealed record CdcIncidentPositionMetadata(
     long? EventSerialNo,
     string? RetainedRangeStart,
     string? RetainedRangeEnd,
-    IReadOnlyList<CdcIncidentUnavailableFact> UnavailableFacts
+    [property: JsonRequired] IReadOnlyList<CdcIncidentUnavailableFact> UnavailableFacts
 );
 
 public sealed record CdcAdoptionProof(
