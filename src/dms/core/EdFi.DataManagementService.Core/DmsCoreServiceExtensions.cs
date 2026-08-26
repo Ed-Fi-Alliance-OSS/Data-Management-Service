@@ -288,6 +288,9 @@ public static class DmsCoreServiceExtensions
         IConfigurationSection configurationServiceSettings = configuration.GetSection(
             "ConfigurationServiceSettings"
         );
+        Uri configurationServiceBaseAddress = ValidateConfigurationServiceBaseAddress(
+            configurationServiceSettings
+        );
 
         services.AddHybridCache();
         services.TryAddSingleton(_ =>
@@ -301,9 +304,7 @@ public static class DmsCoreServiceExtensions
         services
             .AddHttpClient<ConfigurationServiceApiClient>(client =>
             {
-                string baseUrl = configurationServiceSettings["BaseUrl"] ?? string.Empty;
-
-                client.BaseAddress = new Uri($"{baseUrl.TrimEnd('/')}/");
+                client.BaseAddress = configurationServiceBaseAddress;
                 client.DefaultRequestHeaders.Add("Accept", "application/json");
                 client.DefaultRequestHeaders.Add("Accept", "application/x-www-form-urlencoded");
             })
@@ -330,6 +331,41 @@ public static class DmsCoreServiceExtensions
         services.TryAddSingleton<IConfigurationServiceTokenHandler, ConfigurationServiceTokenHandler>();
 
         return services;
+    }
+
+    private static Uri ValidateConfigurationServiceBaseAddress(
+        IConfigurationSection configurationServiceSettings
+    )
+    {
+        string? baseUrl = configurationServiceSettings["BaseUrl"];
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            throw new InvalidOperationException(
+                "ConfigurationServiceSettings:BaseUrl must be an absolute HTTP or HTTPS URI."
+            );
+        }
+
+        if (
+            !Uri.TryCreate(baseUrl.Trim(), UriKind.Absolute, out Uri? parsedBaseUri)
+            || string.IsNullOrWhiteSpace(parsedBaseUri.Host)
+        )
+        {
+            throw new InvalidOperationException(
+                "ConfigurationServiceSettings:BaseUrl must be an absolute HTTP or HTTPS URI."
+            );
+        }
+
+        if (
+            !string.Equals(parsedBaseUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(parsedBaseUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            throw new InvalidOperationException(
+                "ConfigurationServiceSettings:BaseUrl must be an absolute HTTP or HTTPS URI."
+            );
+        }
+
+        return new Uri($"{parsedBaseUri.AbsoluteUri.TrimEnd('/')}/");
     }
 
     /// <summary>

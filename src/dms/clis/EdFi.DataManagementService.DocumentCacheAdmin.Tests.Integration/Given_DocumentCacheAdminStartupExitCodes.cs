@@ -98,6 +98,66 @@ public sealed class Given_DocumentCacheAdminStartupExitCodes
         }
     }
 
+    [TestCaseSource(nameof(MalformedConfigurationServiceBaseUrlCases))]
+    public async Task It_returns_configuration_error_for_malformed_configuration_service_base_url_before_status_execution(
+        MalformedConfigurationServiceBaseUrl option,
+        string expectedDiagnostic
+    )
+    {
+        string settingsPath = CreateMalformedConfigurationServiceBaseUrlSettingsFile(option);
+
+        try
+        {
+            ProcessResult result = await RunDocumentCacheAdminAsync(
+                DocumentCacheAdminCommandSurface.StatusCommandName,
+                DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
+                "1",
+                DocumentCacheAdminCommandSurface.DatastoreOptionName,
+                DocumentCacheAdminCommandSurface.PostgresqlDatastoreOptionValue,
+                DocumentCacheAdminCommandSurface.SettingsOptionName,
+                settingsPath,
+                DocumentCacheAdminCommandSurface.JsonOptionName
+            );
+
+            AssertConfigurationError(result, expectedDiagnostic);
+        }
+        finally
+        {
+            TryDelete(settingsPath);
+        }
+    }
+
+    [TestCaseSource(nameof(MalformedConfigurationServiceBaseUrlCases))]
+    public async Task It_returns_configuration_error_for_malformed_configuration_service_base_url_before_mutating_execution(
+        MalformedConfigurationServiceBaseUrl option,
+        string expectedDiagnostic
+    )
+    {
+        string settingsPath = CreateMalformedConfigurationServiceBaseUrlSettingsFile(option);
+
+        try
+        {
+            ProcessResult result = await RunDocumentCacheAdminAsync(
+                DocumentCacheAdminCommandSurface.RebuildOnlineCommandName,
+                DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
+                "1",
+                DocumentCacheAdminCommandSurface.ConfirmOptionName,
+                "onlineCacheRebuild",
+                DocumentCacheAdminCommandSurface.DatastoreOptionName,
+                DocumentCacheAdminCommandSurface.PostgresqlDatastoreOptionValue,
+                DocumentCacheAdminCommandSurface.SettingsOptionName,
+                settingsPath,
+                DocumentCacheAdminCommandSurface.JsonOptionName
+            );
+
+            AssertConfigurationError(result, expectedDiagnostic);
+        }
+        finally
+        {
+            TryDelete(settingsPath);
+        }
+    }
+
     [Test]
     public async Task It_keeps_stdout_empty_for_json_argument_errors()
     {
@@ -164,6 +224,8 @@ public sealed class Given_DocumentCacheAdminStartupExitCodes
         process.StartInfo.ArgumentList.Add("run");
         process.StartInfo.ArgumentList.Add("--project");
         process.StartInfo.ArgumentList.Add(ToolProjectPath());
+        process.StartInfo.ArgumentList.Add("--configuration");
+        process.StartInfo.ArgumentList.Add(CurrentBuildConfiguration());
         process.StartInfo.ArgumentList.Add("--no-build");
         process.StartInfo.ArgumentList.Add("--");
         foreach (string argument in arguments)
@@ -205,6 +267,30 @@ public sealed class Given_DocumentCacheAdminStartupExitCodes
         ).SetName("Projector page size");
     }
 
+    private static IEnumerable<TestCaseData> MalformedConfigurationServiceBaseUrlCases()
+    {
+        yield return new TestCaseData(
+            MalformedConfigurationServiceBaseUrl.Missing,
+            "ConfigurationServiceSettings:BaseUrl must be an absolute HTTP or HTTPS URI."
+        ).SetName("Missing");
+        yield return new TestCaseData(
+            MalformedConfigurationServiceBaseUrl.Empty,
+            "ConfigurationServiceSettings:BaseUrl must be an absolute HTTP or HTTPS URI."
+        ).SetName("Empty");
+        yield return new TestCaseData(
+            MalformedConfigurationServiceBaseUrl.Relative,
+            "ConfigurationServiceSettings:BaseUrl must be an absolute HTTP or HTTPS URI."
+        ).SetName("Relative");
+        yield return new TestCaseData(
+            MalformedConfigurationServiceBaseUrl.Malformed,
+            "ConfigurationServiceSettings:BaseUrl must be an absolute HTTP or HTTPS URI."
+        ).SetName("Malformed");
+        yield return new TestCaseData(
+            MalformedConfigurationServiceBaseUrl.NonHttpScheme,
+            "ConfigurationServiceSettings:BaseUrl must be an absolute HTTP or HTTPS URI."
+        ).SetName("Non HTTP scheme");
+    }
+
     private static string CreateMalformedSettingsFile(MalformedDocumentCacheOption option)
     {
         JsonObject settings = CreateValidSettings();
@@ -230,6 +316,42 @@ public sealed class Given_DocumentCacheAdminStartupExitCodes
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(option), option, "Unknown option case.");
+        }
+
+        string settingsPath = Path.Combine(
+            Path.GetTempPath(),
+            $"{Guid.NewGuid():N}-document-cache-admin-settings.json"
+        );
+        File.WriteAllText(settingsPath, settings.ToJsonString());
+        return settingsPath;
+    }
+
+    private static string CreateMalformedConfigurationServiceBaseUrlSettingsFile(
+        MalformedConfigurationServiceBaseUrl option
+    )
+    {
+        JsonObject settings = CreateValidSettings();
+        JsonObject configurationServiceSettings = settings["ConfigurationServiceSettings"]!.AsObject();
+
+        switch (option)
+        {
+            case MalformedConfigurationServiceBaseUrl.Missing:
+                configurationServiceSettings.Remove("BaseUrl");
+                break;
+            case MalformedConfigurationServiceBaseUrl.Empty:
+                configurationServiceSettings["BaseUrl"] = "";
+                break;
+            case MalformedConfigurationServiceBaseUrl.Relative:
+                configurationServiceSettings["BaseUrl"] = "/configuration-service";
+                break;
+            case MalformedConfigurationServiceBaseUrl.Malformed:
+                configurationServiceSettings["BaseUrl"] = "http://[::1";
+                break;
+            case MalformedConfigurationServiceBaseUrl.NonHttpScheme:
+                configurationServiceSettings["BaseUrl"] = "ftp://cms.example.org";
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(option), option, "Unknown base URL case.");
         }
 
         string settingsPath = Path.Combine(
@@ -318,6 +440,23 @@ public sealed class Given_DocumentCacheAdminStartupExitCodes
             "EdFi.DataManagementService.DocumentCacheAdmin.csproj"
         );
 
+    private static string CurrentBuildConfiguration()
+    {
+        DirectoryInfo? currentDirectory = new(AppContext.BaseDirectory);
+
+        while (currentDirectory is not null)
+        {
+            if (currentDirectory.Name is "Debug" or "Release")
+            {
+                return currentDirectory.Name;
+            }
+
+            currentDirectory = currentDirectory.Parent;
+        }
+
+        return "Debug";
+    }
+
     private static string RepositoryRoot()
     {
         DirectoryInfo? currentDirectory = new(AppContext.BaseDirectory);
@@ -350,5 +489,14 @@ public sealed class Given_DocumentCacheAdminStartupExitCodes
         Administration,
         Projector,
         Target,
+    }
+
+    public enum MalformedConfigurationServiceBaseUrl
+    {
+        Missing,
+        Empty,
+        Relative,
+        Malformed,
+        NonHttpScheme,
     }
 }
