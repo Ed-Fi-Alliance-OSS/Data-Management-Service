@@ -1323,11 +1323,7 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         }
     }
 
-    private static CdcStateStoreFailure? ValidateDirectoryEntry(
-        string directoryPath,
-        string path,
-        string fieldName
-    )
+    private CdcStateStoreFailure? ValidateDirectoryEntry(string directoryPath, string path, string fieldName)
     {
         CdcStateStoreFailure? directoryFailure = ValidateDirectory(directoryPath);
         if (directoryFailure is not null)
@@ -1345,7 +1341,7 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             : null;
     }
 
-    private static CdcStateStoreFailure? ValidateDirectory(string path)
+    private CdcStateStoreFailure? ValidateDirectory(string path)
     {
         CdcStateStoreFailure? directoryFailure = ValidateDirectoryIfExists(path, out bool directoryExists);
         if (directoryFailure is not null)
@@ -1364,7 +1360,7 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         return null;
     }
 
-    private static CdcStateStoreFailure? ValidateDirectoryIfExists(string path, out bool directoryExists)
+    private CdcStateStoreFailure? ValidateDirectoryIfExists(string path, out bool directoryExists)
     {
         directoryExists = false;
 
@@ -1382,7 +1378,7 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         if (directoryInfo.Exists)
         {
             directoryExists = true;
-            return null;
+            return ValidateSafeDirectoryPermissions(path);
         }
 
         FileInfo fileInfo = new(path);
@@ -1476,6 +1472,17 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             : CdcStateStoreFailure.LocalStateUnavailable(
                 path,
                 result.Message ?? "CDC local state file permissions are not owner-only."
+            );
+    }
+
+    private CdcStateStoreFailure? ValidateSafeDirectoryPermissions(string path)
+    {
+        CdcLocalStateStorePermissionResult result = _permissions.ValidateDirectoryNotSharedWritable(path);
+        return result.Succeeded || result.Unsupported
+            ? null
+            : CdcStateStoreFailure.LocalStateUnavailable(
+                path,
+                result.Message ?? "CDC local state directory must not be group- or world-writable."
             );
     }
 
@@ -2104,6 +2111,8 @@ internal interface ICdcLocalStateStorePermissions
 
     CdcLocalStateStorePermissionResult ApplyOwnerOnlyFile(string path);
 
+    CdcLocalStateStorePermissionResult ValidateDirectoryNotSharedWritable(string path);
+
     CdcLocalStateStorePermissionResult ValidateOwnerOnlyFile(string path);
 }
 
@@ -2122,6 +2131,8 @@ internal static class CdcLocalStateStoreUnixModes
         UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
 
     public const UnixFileMode OwnerOnlyFile = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+
+    public const UnixFileMode SharedWrite = UnixFileMode.GroupWrite | UnixFileMode.OtherWrite;
 }
 
 internal sealed class CdcLocalStateStorePermissions : ICdcLocalStateStorePermissions
@@ -2133,6 +2144,37 @@ internal sealed class CdcLocalStateStorePermissions : ICdcLocalStateStorePermiss
 
     public CdcLocalStateStorePermissionResult ApplyOwnerOnlyFile(string path) =>
         ApplyOwnerOnlyMode(path, CdcLocalStateStoreUnixModes.OwnerOnlyFile);
+
+    public CdcLocalStateStorePermissionResult ValidateDirectoryNotSharedWritable(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return CdcLocalStateStorePermissionResult.UnsupportedPlatform;
+        }
+
+        try
+        {
+#pragma warning disable CA1416
+            UnixFileMode mode = File.GetUnixFileMode(path);
+#pragma warning restore CA1416
+            return (mode & CdcLocalStateStoreUnixModes.SharedWrite) == 0
+                ? CdcLocalStateStorePermissionResult.Success
+                : CdcLocalStateStorePermissionResult.Failure(
+                    "CDC local state directory must not be group- or world-writable."
+                );
+        }
+        catch (PlatformNotSupportedException)
+        {
+            return CdcLocalStateStorePermissionResult.UnsupportedPlatform;
+        }
+        catch (Exception exception)
+            when (exception is IOException or UnauthorizedAccessException or SecurityException)
+        {
+            return CdcLocalStateStorePermissionResult.Failure(
+                "CDC local state directory permissions could not be validated."
+            );
+        }
+    }
 
     public CdcLocalStateStorePermissionResult ValidateOwnerOnlyFile(string path)
     {

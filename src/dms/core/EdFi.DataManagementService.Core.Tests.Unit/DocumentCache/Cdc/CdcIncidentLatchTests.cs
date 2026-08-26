@@ -167,6 +167,7 @@ public class Given_CdcIncidentLatch
             tempRoot.IncidentPath(SampleBinding),
             CdcJsonContract.Serialize(invalidIncident)
         );
+        SetOwnerOnlyStateDirectoriesIfSupported(tempRoot.Path);
         SetOwnerOnlyFilePermissionsIfSupported(tempRoot.IncidentPath(SampleBinding));
         CdcReadBindingStateStoreResult readBack = await store.ReadBindingAsync(
             SampleBinding.ToBindingIdentity(),
@@ -255,6 +256,25 @@ public class Given_CdcIncidentLatch
 #pragma warning restore CA1416
     }
 
+    private static void SetOwnerOnlyStateDirectoriesIfSupported(string rootPath)
+    {
+        if (OperatingSystem.IsWindows() || !Directory.Exists(rootPath))
+        {
+            return;
+        }
+
+#pragma warning disable CA1416
+        foreach (
+            string directoryPath in Directory.EnumerateDirectories(rootPath, "*", SearchOption.AllDirectories)
+        )
+        {
+            File.SetUnixFileMode(directoryPath, CdcLocalStateStoreUnixModes.OwnerOnlyDirectory);
+        }
+
+        File.SetUnixFileMode(rootPath, CdcLocalStateStoreUnixModes.OwnerOnlyDirectory);
+#pragma warning restore CA1416
+    }
+
     private sealed class TempCdcStateRoot : IDisposable
     {
         public TempCdcStateRoot()
@@ -296,6 +316,9 @@ public class Given_CdcIncidentLatch
             CdcLocalStateStorePermissionResult.Failure(
                 "CDC local state owner-only permissions could not be applied."
             );
+
+        public CdcLocalStateStorePermissionResult ValidateDirectoryNotSharedWritable(string path) =>
+            CdcLocalStateStorePermissionResult.Success;
 
         public CdcLocalStateStorePermissionResult ValidateOwnerOnlyFile(string path) =>
             CdcLocalStateStorePermissionResult.Success;

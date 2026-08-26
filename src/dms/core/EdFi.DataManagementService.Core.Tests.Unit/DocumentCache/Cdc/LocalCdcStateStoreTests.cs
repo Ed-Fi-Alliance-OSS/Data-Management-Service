@@ -593,6 +593,7 @@ public class Given_LocalCdcStateStore
         string incidentPath = tempRoot.IncidentPath(SampleBinding);
         Directory.CreateDirectory(Path.GetDirectoryName(incidentPath)!);
         await File.WriteAllTextAsync(incidentPath, CdcJsonContract.Serialize(CreateIncident(SampleBinding)));
+        SetOwnerOnlyStateDirectoriesIfSupported(tempRoot.Path);
 
         LocalCdcBindingStateStore reader = new(
             tempRoot.Path,
@@ -706,6 +707,7 @@ public class Given_LocalCdcStateStore
             orphanIncidentPath,
             CdcJsonContract.Serialize(CreateIncident(SampleBinding))
         );
+        SetOwnerOnlyStateDirectoriesIfSupported(orphanRoot.Path);
         SetOwnerOnlyFilePermissionsIfSupported(orphanIncidentPath);
         LocalCdcBindingStateStore orphanStore = new(orphanRoot.Path);
         CdcListBindingsStateStoreResult orphanList = await orphanStore.ListBindingsAsync(
@@ -795,6 +797,7 @@ public class Given_LocalCdcStateStore
         string bindingPath = symlinkRoot.BindingPath(SampleBinding);
         string targetPath = Path.Combine(symlinkRoot.Path, "target.json");
         Directory.CreateDirectory(Path.GetDirectoryName(bindingPath)!);
+        SetOwnerOnlyStateDirectoriesIfSupported(symlinkRoot.Path);
         await File.WriteAllTextAsync(targetPath, CdcJsonContract.Serialize(SampleBinding));
         File.CreateSymbolicLink(bindingPath, targetPath);
 
@@ -809,6 +812,86 @@ public class Given_LocalCdcStateStore
             .BeOfType<CdcReadBindingStateStoreResult.StateStoreFailure>()
             .Subject.Failure.Kind.Should()
             .Be(CdcStateStoreFailureKind.LocalStateUnavailable);
+    }
+
+    [Test]
+    public async Task It_rejects_group_or_world_writable_state_directory_ancestors()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Ignore("Unix directory modes are not supported on Windows.");
+        }
+
+        UnixFileMode[] unsafeWriteBits = [UnixFileMode.GroupWrite, UnixFileMode.OtherWrite];
+        int unsafeWriteBitIndex = 0;
+
+        foreach (LocalCdcSymlinkAncestor ancestor in Enum.GetValues<LocalCdcSymlinkAncestor>())
+        {
+            using TempCdcStateRoot tempRoot = new();
+            await WriteStateFileAsync(tempRoot.Path, LocalCdcStateKind.Bindings);
+
+            string unsafeDirectory = StateAncestorPath(tempRoot.Path, LocalCdcStateKind.Bindings, ancestor);
+            SetDirectoryMode(
+                unsafeDirectory,
+                CdcLocalStateStoreUnixModes.OwnerOnlyDirectory
+                    | unsafeWriteBits[unsafeWriteBitIndex % unsafeWriteBits.Length]
+            );
+            unsafeWriteBitIndex++;
+
+            LocalCdcBindingStateStore store = new(tempRoot.Path);
+            CdcReadBindingStateStoreResult readResult = await store.ReadBindingAsync(
+                SampleBinding.ToBindingIdentity(),
+                CancellationToken.None
+            );
+
+            readResult
+                .Should()
+                .BeOfType<CdcReadBindingStateStoreResult.StateStoreFailure>()
+                .Subject.Failure.Should()
+                .Match<CdcStateStoreFailure>(failure =>
+                    failure.Kind == CdcStateStoreFailureKind.LocalStateUnavailable
+                    && failure.Diagnostics.Single().Path == unsafeDirectory
+                    && failure
+                        .Diagnostics.Single()
+                        .Message.Contains("group- or world-writable", StringComparison.Ordinal)
+                );
+        }
+    }
+
+    [Test]
+    public async Task It_accepts_shared_readable_state_directory_ancestors_without_group_or_world_write()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Ignore("Unix directory modes are not supported on Windows.");
+        }
+
+        using TempCdcStateRoot tempRoot = new();
+        await WriteStateFileAsync(tempRoot.Path, LocalCdcStateKind.Bindings);
+
+        foreach (LocalCdcSymlinkAncestor ancestor in Enum.GetValues<LocalCdcSymlinkAncestor>())
+        {
+            SetDirectoryMode(
+                StateAncestorPath(tempRoot.Path, LocalCdcStateKind.Bindings, ancestor),
+                CdcLocalStateStoreUnixModes.OwnerOnlyDirectory
+                    | UnixFileMode.GroupRead
+                    | UnixFileMode.GroupExecute
+                    | UnixFileMode.OtherRead
+                    | UnixFileMode.OtherExecute
+            );
+        }
+
+        LocalCdcBindingStateStore store = new(tempRoot.Path);
+        CdcReadBindingStateStoreResult readResult = await store.ReadBindingAsync(
+            SampleBinding.ToBindingIdentity(),
+            CancellationToken.None
+        );
+
+        readResult
+            .Should()
+            .BeOfType<CdcReadBindingStateStoreResult.Found>()
+            .Subject.State.Binding.Should()
+            .Be(SampleBinding);
     }
 
     [Test]
@@ -1162,6 +1245,7 @@ public class Given_LocalCdcStateStore
         string incidentPath = tempRoot.IncidentPath(SampleBinding);
         Directory.CreateDirectory(Path.GetDirectoryName(incidentPath)!);
         await File.WriteAllTextAsync(incidentPath, incidentJson);
+        SetOwnerOnlyStateDirectoriesIfSupported(tempRoot.Path);
         SetOwnerOnlyFilePermissionsIfSupported(incidentPath);
 
         CdcReadBindingStateStoreResult readResult = await store.ReadBindingAsync(
@@ -1184,6 +1268,32 @@ public class Given_LocalCdcStateStore
 
 #pragma warning disable CA1416
         File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+#pragma warning restore CA1416
+    }
+
+    private static void SetDirectoryMode(string path, UnixFileMode mode)
+    {
+#pragma warning disable CA1416
+        File.SetUnixFileMode(path, mode);
+#pragma warning restore CA1416
+    }
+
+    private static void SetOwnerOnlyStateDirectoriesIfSupported(string rootPath)
+    {
+        if (OperatingSystem.IsWindows() || !Directory.Exists(rootPath))
+        {
+            return;
+        }
+
+#pragma warning disable CA1416
+        foreach (
+            string directoryPath in Directory.EnumerateDirectories(rootPath, "*", SearchOption.AllDirectories)
+        )
+        {
+            File.SetUnixFileMode(directoryPath, CdcLocalStateStoreUnixModes.OwnerOnlyDirectory);
+        }
+
+        File.SetUnixFileMode(rootPath, CdcLocalStateStoreUnixModes.OwnerOnlyDirectory);
 #pragma warning restore CA1416
     }
 
@@ -1283,6 +1393,7 @@ public class Given_LocalCdcStateStore
         if (parentDirectory is not null)
         {
             Directory.CreateDirectory(parentDirectory);
+            SetOwnerOnlyStateDirectoriesIfSupported(rootPath);
         }
 
         Directory.CreateSymbolicLink(linkPath, targetDirectory);
@@ -1298,6 +1409,7 @@ public class Given_LocalCdcStateStore
                 ? CdcJsonContract.Serialize(SampleBinding)
                 : CdcJsonContract.Serialize(CreateIncident(SampleBinding))
         );
+        SetOwnerOnlyStateDirectoriesIfSupported(rootPath);
         SetOwnerOnlyFilePermissionsIfSupported(path);
     }
 
@@ -1309,6 +1421,32 @@ public class Given_LocalCdcStateStore
             SampleBinding.InstanceKey,
             $"{SampleBinding.Generation}.json"
         );
+
+    private static string StateAncestorPath(
+        string rootPath,
+        LocalCdcStateKind stateKind,
+        LocalCdcSymlinkAncestor ancestor
+    )
+    {
+        string stateDirectoryName = StateDirectoryName(stateKind);
+        return ancestor switch
+        {
+            LocalCdcSymlinkAncestor.Root => rootPath,
+            LocalCdcSymlinkAncestor.StateKind => System.IO.Path.Combine(rootPath, stateDirectoryName),
+            LocalCdcSymlinkAncestor.Deployment => System.IO.Path.Combine(
+                rootPath,
+                stateDirectoryName,
+                SampleBinding.DeploymentKey
+            ),
+            LocalCdcSymlinkAncestor.Instance => System.IO.Path.Combine(
+                rootPath,
+                stateDirectoryName,
+                SampleBinding.DeploymentKey,
+                SampleBinding.InstanceKey
+            ),
+            _ => throw new InvalidOperationException("Unsupported local CDC state ancestor."),
+        };
+    }
 
     private static string StateDirectoryName(LocalCdcStateKind stateKind) =>
         stateKind switch
@@ -1381,6 +1519,9 @@ public class Given_LocalCdcStateStore
         public CdcLocalStateStorePermissionResult ApplyOwnerOnlyFile(string path) =>
             CdcLocalStateStorePermissionResult.UnsupportedPlatform;
 
+        public CdcLocalStateStorePermissionResult ValidateDirectoryNotSharedWritable(string path) =>
+            CdcLocalStateStorePermissionResult.UnsupportedPlatform;
+
         public CdcLocalStateStorePermissionResult ValidateOwnerOnlyFile(string path) =>
             CdcLocalStateStorePermissionResult.UnsupportedPlatform;
     }
@@ -1403,6 +1544,9 @@ public class Given_LocalCdcStateStore
             return CdcLocalStateStorePermissionResult.Success;
         }
 
+        public CdcLocalStateStorePermissionResult ValidateDirectoryNotSharedWritable(string path) =>
+            CdcLocalStateStorePermissionResult.Success;
+
         public CdcLocalStateStorePermissionResult ValidateOwnerOnlyFile(string path) =>
             CdcLocalStateStorePermissionResult.Success;
 
@@ -1422,6 +1566,9 @@ public class Given_LocalCdcStateStore
         public CdcLocalStateStorePermissionResult ApplyOwnerOnlyFile(string path) =>
             CdcLocalStateStorePermissionResult.Failure("Injected file permission failure.");
 
+        public CdcLocalStateStorePermissionResult ValidateDirectoryNotSharedWritable(string path) =>
+            CdcLocalStateStorePermissionResult.Success;
+
         public CdcLocalStateStorePermissionResult ValidateOwnerOnlyFile(string path) =>
             CdcLocalStateStorePermissionResult.Success;
     }
@@ -1432,6 +1579,9 @@ public class Given_LocalCdcStateStore
             CdcLocalStateStorePermissionResult.Success;
 
         public CdcLocalStateStorePermissionResult ApplyOwnerOnlyFile(string path) =>
+            CdcLocalStateStorePermissionResult.Success;
+
+        public CdcLocalStateStorePermissionResult ValidateDirectoryNotSharedWritable(string path) =>
             CdcLocalStateStorePermissionResult.Success;
 
         public CdcLocalStateStorePermissionResult ValidateOwnerOnlyFile(string path) =>
@@ -1445,6 +1595,9 @@ public class Given_LocalCdcStateStore
             CdcLocalStateStorePermissionResult.Success;
 
         public CdcLocalStateStorePermissionResult ApplyOwnerOnlyFile(string path) =>
+            CdcLocalStateStorePermissionResult.Success;
+
+        public CdcLocalStateStorePermissionResult ValidateDirectoryNotSharedWritable(string path) =>
             CdcLocalStateStorePermissionResult.Success;
 
         public CdcLocalStateStorePermissionResult ValidateOwnerOnlyFile(string path) =>
