@@ -195,7 +195,7 @@ public sealed class Given_DocumentCacheAdminApiSchemaAssets
         environment["AppSettings__BypassAuthorization"] = "true";
         environment["AppSettings__UseApiSchemaPath"] = "false";
         environment.Remove("AppSettings__ApiSchemaPath");
-        environment.Remove("ConfigurationServiceSettings__BaseUrl");
+        environment["ConfigurationServiceSettings__BaseUrl"] = "http://127.0.0.1:1";
         environment.Remove("ConfigurationServiceSettings__ClientId");
         environment.Remove("ConfigurationServiceSettings__ClientSecret");
         environment.Remove("ConfigurationServiceSettings__Scope");

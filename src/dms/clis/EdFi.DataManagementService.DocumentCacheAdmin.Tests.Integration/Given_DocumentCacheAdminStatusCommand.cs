@@ -51,6 +51,7 @@ public sealed class Given_DocumentCacheAdminStatusCommand
         }
 
         process.StartInfo.Environment["AppSettings__Datastore"] = "";
+        process.StartInfo.Environment["ConfigurationServiceSettings__BaseUrl"] = "http://127.0.0.1:1";
 
         process.Start();
         Task<string> standardOutput = process.StandardOutput.ReadToEndAsync();

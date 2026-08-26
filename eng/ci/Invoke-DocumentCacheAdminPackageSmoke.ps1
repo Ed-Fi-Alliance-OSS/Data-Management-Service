@@ -321,7 +321,7 @@ try {
             "AppSettings__BypassAuthorization" = "true"
             "AppSettings__UseApiSchemaPath" = "false"
             "AppSettings__ApiSchemaPath" = $null
-            "ConfigurationServiceSettings__BaseUrl" = $null
+            "ConfigurationServiceSettings__BaseUrl" = "http://127.0.0.1:1"
             "ConfigurationServiceSettings__ClientId" = $null
             "ConfigurationServiceSettings__ClientSecret" = $null
             "ConfigurationServiceSettings__Scope" = $null
