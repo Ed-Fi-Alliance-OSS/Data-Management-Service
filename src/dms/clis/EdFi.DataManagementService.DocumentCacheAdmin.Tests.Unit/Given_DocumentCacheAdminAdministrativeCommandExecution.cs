@@ -71,6 +71,51 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
     }
 
     [Test]
+    public async Task It_refreshes_the_non_hosted_projection_supervisor_before_mutating_dispatch()
+    {
+        RecordingMutatingCommandDispatcher dispatcher = new(_ => CompletedResult());
+        DocumentCacheAdminInvocationTarget invocationTarget = InvocationTarget();
+        RecordingProjectionSupervisor projectionSupervisor = new(
+            new DocumentCacheTargetRegistrySnapshot(
+                [
+                    DocumentCacheTargetObservation.Configured(
+                        invocationTarget.TargetKey,
+                        DocumentCacheTargetEffectiveSettings.FromOptions(new DocumentCacheOptions())
+                    ),
+                ],
+                DateTimeOffset.UtcNow
+            )
+        );
+        await using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddSingleton<IDocumentCacheProjectionSupervisor>(projectionSupervisor)
+            .AddSingleton<IDocumentCacheAdminMutatingCommandDispatcher>(dispatcher)
+            .BuildServiceProvider();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+
+        int exitCode = await DocumentCacheAdminCommandExecutor.ExecuteAsync(
+            ParseCommand(
+                DocumentCacheAdminCommandSurface.RebuildOnlineCommandName,
+                DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
+                "1",
+                DocumentCacheAdminCommandSurface.ConfirmOptionName,
+                "onlineCacheRebuild",
+                DocumentCacheAdminCommandSurface.JsonOptionName
+            ),
+            invocationTarget,
+            serviceProvider,
+            stdout,
+            stderr
+        );
+
+        exitCode.Should().Be(DocumentCacheAdminExitCodes.Success);
+        projectionSupervisor.RefreshCount.Should().Be(1);
+        projectionSupervisor.LastRefreshReason.Should().Be(DocumentCacheTargetRefreshReason.Startup);
+        dispatcher.Requests.Should().ContainSingle();
+        stderr.ToString().Should().BeEmpty();
+    }
+
+    [Test]
     public async Task It_gets_the_mapping_set_only_when_mutating_dispatch_creates_a_target_runtime_context()
     {
         ThrowingMappingSetProvider mappingSetProvider = new(
@@ -390,6 +435,27 @@ public sealed class Given_DocumentCacheAdminAdministrativeCommandExecution
             cancellationToken.ThrowIfCancellationRequested();
             _requests.Add(commandRequest);
             return Task.FromResult(execute(commandRequest));
+        }
+    }
+
+    private sealed class RecordingProjectionSupervisor(DocumentCacheTargetRegistrySnapshot refreshSnapshot)
+        : IDocumentCacheProjectionSupervisor
+    {
+        public ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> CurrentTargetContexts => [];
+
+        public int RefreshCount { get; private set; }
+
+        public DocumentCacheTargetRefreshReason? LastRefreshReason { get; private set; }
+
+        public Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
+            DocumentCacheTargetRefreshReason reason,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            RefreshCount++;
+            LastRefreshReason = reason;
+            return Task.FromResult(refreshSnapshot);
         }
     }
 
