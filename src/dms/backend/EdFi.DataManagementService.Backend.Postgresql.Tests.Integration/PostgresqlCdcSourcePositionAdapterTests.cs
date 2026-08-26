@@ -44,6 +44,7 @@ public class Given_PostgresqlCdcSourcePositionAdapterTests
     private NpgsqlDataSourceCache _dataSourceCache = null!;
     private MutableTimeProvider _timeProvider = null!;
     private PostgresqlCdcSourcePositionAdapter _adapter = null!;
+    private string _instanceKey = null!;
     private string _connectorRoleName = null!;
 
     [SetUp]
@@ -51,6 +52,7 @@ public class Given_PostgresqlCdcSourcePositionAdapterTests
     {
         _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+        _instanceKey = $"i{Guid.NewGuid():N}";
         _dataSourceCache = new NpgsqlDataSourceCache(NullLogger<NpgsqlDataSourceCache>.Instance);
         _timeProvider = new MutableTimeProvider(ProjectionCaughtUpObservedAt.AddSeconds(1));
         _adapter = new PostgresqlCdcSourcePositionAdapter(
@@ -453,7 +455,7 @@ public class Given_PostgresqlCdcSourcePositionAdapterTests
             "dms-local",
             CoreCdc.CdcTargetValidator.DefaultBindingTenantKey,
             "1",
-            _database.DatabaseName,
+            _instanceKey,
             1,
             CoreCdc.CdcProvider.Postgresql,
             sourceFingerprint,
@@ -468,7 +470,7 @@ public class Given_PostgresqlCdcSourcePositionAdapterTests
     private CoreCdc.CdcArtifactInventory BuildInventory() =>
         CoreCdc
             .CdcArtifactNameGenerator.Render(
-                new("dms-local", "edfi.dms", _database.DatabaseName, 1, CoreCdc.CdcProvider.Postgresql)
+                new("dms-local", "edfi.dms", _instanceKey, 1, CoreCdc.CdcProvider.Postgresql)
             )
             .Inventory!;
 
