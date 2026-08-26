@@ -157,6 +157,11 @@ internal static class DocumentCacheAdminJsonRequestParser
             return false;
         }
 
+        if (!TryValidateRawConfirmationToken(rootElement, contract, out failure))
+        {
+            return false;
+        }
+
         object? sharedRequest;
         try
         {
@@ -240,6 +245,39 @@ internal static class DocumentCacheAdminJsonRequestParser
         {
             failure =
                 $"Request JSON property 'offlineWriterAdmission' must be '{DocumentCacheOfflineWriterAdmission.ClosedAndDrainedJsonValue}'.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryValidateRawConfirmationToken(
+        JsonElement rootElement,
+        DocumentCacheAdminMutatingCommandContract contract,
+        out string? failure
+    )
+    {
+        failure = null;
+
+        if (!rootElement.TryGetProperty("confirmation", out JsonElement confirmationElement))
+        {
+            failure =
+                $"Request JSON property 'confirmation' is required in request and must be '{contract.ExpectedConfirmationJsonValue}'.";
+            return false;
+        }
+
+        if (confirmationElement.ValueKind != JsonValueKind.String)
+        {
+            failure =
+                $"Request JSON property 'confirmation' must be the string value '{contract.ExpectedConfirmationJsonValue}'.";
+            return false;
+        }
+
+        string? confirmation = confirmationElement.GetString();
+        if (!string.Equals(confirmation, contract.ExpectedConfirmationJsonValue, StringComparison.Ordinal))
+        {
+            failure =
+                $"Request JSON confirmation '{confirmation}' does not match command confirmation '{contract.ExpectedConfirmationJsonValue}'.";
             return false;
         }
 

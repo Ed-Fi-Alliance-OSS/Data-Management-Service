@@ -76,6 +76,53 @@ public sealed class Given_DocumentCacheAdminJsonContracts
         request.ExpectedPhysicalSourceFingerprint!.Value.Should().Be(Fingerprint);
     }
 
+    [Test]
+    public void It_rejects_differently_cased_rebuild_online_json_confirmation_before_dispatch()
+    {
+        var parseResult = ParseCommand(
+            DocumentCacheAdminCommandSurface.RebuildOnlineCommandName,
+            DocumentCacheAdminCommandSurface.RequestJsonOptionName,
+            "-"
+        );
+
+        bool parsed = DocumentCacheAdminInvocationTargetParser.TryParse(
+            parseResult,
+            _ => MutatingRequestJson("OnlineCacheRebuild"),
+            out DocumentCacheAdminInvocationTarget? invocationTarget,
+            out string? failure
+        );
+
+        parsed.Should().BeFalse();
+        invocationTarget.Should().BeNull();
+        failure.Should().Contain("OnlineCacheRebuild").And.Contain("onlineCacheRebuild");
+    }
+
+    [TestCaseSource(nameof(DifferentlyCasedConfirmationCases))]
+    public void It_rejects_differently_cased_json_confirmation_tokens_for_all_mutating_commands(
+        string commandName,
+        string expectedConfirmation,
+        string differentlyCasedConfirmation,
+        bool includeOfflineWriterAdmission
+    )
+    {
+        var parseResult = ParseCommand(
+            commandName,
+            DocumentCacheAdminCommandSurface.RequestJsonOptionName,
+            "-"
+        );
+
+        bool parsed = DocumentCacheAdminInvocationTargetParser.TryParse(
+            parseResult,
+            _ => MutatingRequestJson(differentlyCasedConfirmation, includeOfflineWriterAdmission),
+            out DocumentCacheAdminInvocationTarget? invocationTarget,
+            out string? failure
+        );
+
+        parsed.Should().BeFalse();
+        invocationTarget.Should().BeNull();
+        failure.Should().Contain("confirmation").And.Contain(expectedConfirmation);
+    }
+
     [TestCase(
         DocumentCacheAdminCommandSurface.ActivateOfflineCommandName,
         "offlineActivation",
@@ -478,6 +525,64 @@ public sealed class Given_DocumentCacheAdminJsonContracts
         yield return new TestCaseData(new NullReferenceException("loader bug")).SetName(
             "NullReferenceException"
         );
+    }
+
+    private static IEnumerable<TestCaseData> DifferentlyCasedConfirmationCases()
+    {
+        yield return new TestCaseData(
+            DocumentCacheAdminCommandSurface.ActivateNewEmptyCommandName,
+            "newEmptyActivation",
+            "NewEmptyActivation",
+            false
+        ).SetName("activate-new-empty");
+        yield return new TestCaseData(
+            DocumentCacheAdminCommandSurface.ActivateOfflineCommandName,
+            "offlineActivation",
+            "OfflineActivation",
+            true
+        ).SetName("activate-offline");
+        yield return new TestCaseData(
+            DocumentCacheAdminCommandSurface.DeactivateOfflineCommandName,
+            "offlineDeactivation",
+            "OfflineDeactivation",
+            true
+        ).SetName("deactivate-offline");
+        yield return new TestCaseData(
+            DocumentCacheAdminCommandSurface.RebuildOnlineCommandName,
+            "onlineCacheRebuild",
+            "OnlineCacheRebuild",
+            false
+        ).SetName("rebuild-online");
+        yield return new TestCaseData(
+            DocumentCacheAdminCommandSurface.ScrubCommandName,
+            "integrityScrub",
+            "IntegrityScrub",
+            false
+        ).SetName("scrub");
+        yield return new TestCaseData(
+            DocumentCacheAdminCommandSurface.RecoverCacheAheadCommandName,
+            "internalCacheAheadRecovery",
+            "InternalCacheAheadRecovery",
+            true
+        ).SetName("recover-cache-ahead");
+    }
+
+    private static string MutatingRequestJson(string confirmation, bool includeOfflineWriterAdmission = false)
+    {
+        string offlineWriterAdmission = includeOfflineWriterAdmission
+            ? """
+                ,
+                  "offlineWriterAdmission": "closedAndDrained"
+                """
+            : string.Empty;
+
+        return $$"""
+            {
+              "targetKey": { "tenantKey": "", "dataStoreId": 1 },
+              "confirmation": "{{confirmation}}",
+              "expectedPhysicalSourceFingerprint": "{{Fingerprint}}"{{offlineWriterAdmission}}
+            }
+            """;
     }
 
     private static DocumentCacheAdministrativeCommandConfirmation? RequestConfirmation(object request) =>
