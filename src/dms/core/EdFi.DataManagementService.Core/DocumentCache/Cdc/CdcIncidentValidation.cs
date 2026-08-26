@@ -8,7 +8,6 @@ namespace EdFi.DataManagementService.Core.DocumentCache.Cdc;
 public static class CdcIncidentValidator
 {
     private const int MaximumIncidentValueLength = 256;
-    private const string Sha256Prefix = "sha256:";
 
     public static CdcContractValidationResult Validate(CdcIncident incident, DateTimeOffset nowUtc)
     {
@@ -154,12 +153,14 @@ public static class CdcIncidentValidator
             diagnostics
         );
         ValidateProvider(bindingIdentity.Provider, "$.bindingIdentity.provider", diagnostics);
-        ValidateSha256(
+        CdcSha256ValueValidator.Validate(
             bindingIdentity.PhysicalSourceFingerprint,
             "$.bindingIdentity.physicalSourceFingerprint",
             "physicalSourceFingerprint",
-            true,
-            diagnostics
+            required: true,
+            diagnostics,
+            CdcDiagnosticCategory.MalformedPayload,
+            "CDC physicalSourceFingerprint must be `sha256:` plus 64 lowercase hex characters."
         );
         ValidateArtifactName(
             bindingIdentity.ConnectorName,
@@ -295,12 +296,14 @@ public static class CdcIncidentValidator
             false,
             diagnostics
         );
-        ValidateSha256(
+        CdcSha256ValueValidator.Validate(
             positionMetadata.ConnectSourcePartitionHash,
             "$.positionMetadata.connectSourcePartitionHash",
             "connectSourcePartitionHash",
-            false,
-            diagnostics
+            required: false,
+            diagnostics,
+            CdcDiagnosticCategory.MalformedPayload,
+            "CDC connectSourcePartitionHash must be `sha256:` plus 64 lowercase hex characters."
         );
         ValidateProviderPosition(
             positionMetadata.LsnProc,
@@ -458,48 +461,6 @@ public static class CdcIncidentValidator
             );
         }
     }
-
-    private static void ValidateSha256(
-        string? value,
-        string path,
-        string fieldName,
-        bool required,
-        CdcDiagnosticCollector diagnostics
-    )
-    {
-        if (value is null)
-        {
-            if (required)
-            {
-                diagnostics.MissingRequiredField(path, fieldName);
-            }
-
-            return;
-        }
-
-        if (!IsSha256Fingerprint(value))
-        {
-            diagnostics.MalformedPayload(
-                path,
-                $"CDC {fieldName} must be `sha256:` plus 64 lowercase hex characters."
-            );
-        }
-    }
-
-    private static bool IsSha256Fingerprint(string value)
-    {
-        if (
-            value.Length != Sha256Prefix.Length + 64
-            || !value.StartsWith(Sha256Prefix, StringComparison.Ordinal)
-        )
-        {
-            return false;
-        }
-
-        return value[Sha256Prefix.Length..].All(IsLowercaseHex);
-    }
-
-    private static bool IsLowercaseHex(char character) => character is >= '0' and <= '9' or >= 'a' and <= 'f';
 
     private static void ValidateProviderPosition(
         string? value,

@@ -89,8 +89,12 @@ public class Given_CdcAdmissionContract
         json.Should().NotContain("DocumentProjectionWork");
 
         CdcContractReadResult<CdcAdmission> result = CdcJsonContract.Deserialize<CdcAdmission>(json);
+        CdcAdmission expected = admission with
+        {
+            Diagnostics = [.. admission.Diagnostics.Select(diagnostic => diagnostic.WithPath("$"))],
+        };
 
         result.Succeeded.Should().BeTrue();
-        result.Contract.Should().BeEquivalentTo(admission);
+        result.Contract.Should().BeEquivalentTo(expected);
     }
 }

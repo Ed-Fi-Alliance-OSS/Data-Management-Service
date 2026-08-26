@@ -2951,7 +2951,7 @@ public static class CdcConnectorOffsetObservationValidator
         CdcDiagnosticCollector diagnostics
     )
     {
-        CdcObservationValidationRules.ValidateSha256Fingerprint(
+        CdcObservationValidationRules.ValidateHashValue(
             observation.ConnectSourcePartitionHash,
             "$.connectSourcePartitionHash",
             "connectSourcePartitionHash",
@@ -3644,7 +3644,7 @@ public static class CdcSourceHistoryObservationValidator
             false,
             diagnostics
         );
-        CdcObservationValidationRules.ValidateSha256Fingerprint(
+        CdcObservationValidationRules.ValidateHashValue(
             positionEvidence.ConnectSourcePartitionHash,
             "$.positionEvidence.connectSourcePartitionHash",
             "connectSourcePartitionHash",
@@ -3662,7 +3662,7 @@ public static class CdcSourceHistoryObservationValidator
         CdcDiagnosticCollector diagnostics
     )
     {
-        bool providerPositionRequired = RequiresProviderPosition(observation);
+        bool providerPositionRequired = RequiresProviderPosition(observation, positionEvidence);
 
         switch (provider)
         {
@@ -3745,15 +3745,36 @@ public static class CdcSourceHistoryObservationValidator
         }
     }
 
-    private static bool RequiresProviderPosition(CdcSourceHistoryObservation observation) =>
-        observation.Continuity == CdcSourceHistoryContinuity.Healthy
-        || observation.IncidentFailureCategory
+    private static bool RequiresProviderPosition(
+        CdcSourceHistoryObservation observation,
+        CdcIncidentPositionMetadata positionEvidence
+    )
+    {
+        if (observation.Continuity == CdcSourceHistoryContinuity.Healthy)
+        {
+            return true;
+        }
+
+        if (
+            positionEvidence.UnavailableFacts is not null
+            && positionEvidence.UnavailableFacts.Contains(CdcIncidentUnavailableFact.ConnectOffset)
+            && observation.IncidentFailureCategory
+                is CdcIncidentFailureCategory.ProviderArtifactMissing
+                    or CdcIncidentFailureCategory.ProviderArtifactRecreated
+                    or CdcIncidentFailureCategory.RetainedHistoryGap
+        )
+        {
+            return false;
+        }
+
+        return observation.IncidentFailureCategory
             is CdcIncidentFailureCategory.ProviderArtifactMissing
                 or CdcIncidentFailureCategory.ProviderArtifactRecreated
                 or CdcIncidentFailureCategory.RetainedHistoryGap
                 or CdcIncidentFailureCategory.SchemaHistoryMissing
                 or CdcIncidentFailureCategory.SchemaHistoryEmptyWithRetainedOffset
                 or CdcIncidentFailureCategory.SchemaHistoryRequiredRecordLost;
+    }
 
     private static void ValidateRetainedRangeEvidence(
         CdcIncidentPositionMetadata positionEvidence,
@@ -4297,7 +4318,7 @@ internal static class CdcObservationValidationRules
         {
             if (physicalSourceFingerprint is not null)
             {
-                ValidateSha256Fingerprint(
+                ValidateHashValue(
                     physicalSourceFingerprint,
                     path,
                     "physicalSourceFingerprint",
@@ -4309,14 +4330,8 @@ internal static class CdcObservationValidationRules
             return;
         }
 
-        ValidateSha256Fingerprint(
-            physicalSourceFingerprint,
-            path,
-            "physicalSourceFingerprint",
-            true,
-            diagnostics
-        );
-        if (!IsSha256Fingerprint(physicalSourceFingerprint))
+        ValidateHashValue(physicalSourceFingerprint, path, "physicalSourceFingerprint", true, diagnostics);
+        if (!CdcSha256ValueValidator.IsValid(physicalSourceFingerprint))
         {
             return;
         }
@@ -4369,7 +4384,7 @@ internal static class CdcObservationValidationRules
         }
     }
 
-    public static void ValidateSha256Fingerprint(
+    public static void ValidateHashValue(
         string? value,
         string path,
         string fieldName,
@@ -4377,38 +4392,15 @@ internal static class CdcObservationValidationRules
         CdcDiagnosticCollector diagnostics
     )
     {
-        if (value is null)
-        {
-            if (required)
-            {
-                diagnostics.MissingRequiredField(path, fieldName);
-            }
-
-            return;
-        }
-
-        const string sha256Prefix = "sha256:";
-        if (
-            value.Length != sha256Prefix.Length + 64
-            || !value.StartsWith(sha256Prefix, StringComparison.Ordinal)
-            || !value[sha256Prefix.Length..].All(IsLowercaseHex)
-        )
-        {
-            diagnostics.Add(
-                CdcDiagnosticCategory.MalformedPayload,
-                path,
-                $"CDC observation {fieldName} must be `sha256:` plus 64 lowercase hex characters."
-            );
-        }
-    }
-
-    private static bool IsSha256Fingerprint(string? value)
-    {
-        const string sha256Prefix = "sha256:";
-        return value is not null
-            && value.Length == sha256Prefix.Length + 64
-            && value.StartsWith(sha256Prefix, StringComparison.Ordinal)
-            && value[sha256Prefix.Length..].All(IsLowercaseHex);
+        CdcSha256ValueValidator.Validate(
+            value,
+            path,
+            fieldName,
+            required,
+            diagnostics,
+            CdcDiagnosticCategory.MalformedPayload,
+            $"CDC observation {fieldName} must be `sha256:` plus 64 lowercase hex characters."
+        );
     }
 
     public static void ValidateProviderPositionText(
@@ -4523,6 +4515,4 @@ internal static class CdcObservationValidationRules
 
     private static bool IsHex(char character) =>
         character is >= '0' and <= '9' or >= 'a' and <= 'f' or >= 'A' and <= 'F';
-
-    private static bool IsLowercaseHex(char character) => character is >= '0' and <= '9' or >= 'a' and <= 'f';
 }

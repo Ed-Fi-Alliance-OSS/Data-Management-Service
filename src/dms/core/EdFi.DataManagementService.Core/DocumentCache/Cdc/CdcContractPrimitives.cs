@@ -305,6 +305,80 @@ internal static class CdcSensitiveText
     }
 }
 
+public static class CdcSha256ValueValidator
+{
+    private const string RequiredPrefix = "sha256:";
+    private const int RequiredPrefixLength = 7;
+    private const int HashHexDigitCount = 64;
+    private const int RequiredLength = RequiredPrefixLength + HashHexDigitCount;
+
+    public static bool IsValid(string? value)
+    {
+        if (
+            value is null
+            || value.Length != RequiredLength
+            || !value.StartsWith(RequiredPrefix, StringComparison.Ordinal)
+        )
+        {
+            return false;
+        }
+
+        foreach (char character in value.AsSpan(RequiredPrefix.Length))
+        {
+            if (!IsLowerHexDigit(character))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public static void Validate(
+        string? value,
+        string path,
+        string fieldName,
+        bool required,
+        CdcDiagnosticCollector diagnostics,
+        CdcDiagnosticCategory malformedCategory,
+        string malformedMessage,
+        bool emptyIsMissing = false
+    )
+    {
+        if (value is null || (emptyIsMissing && value.Length == 0))
+        {
+            if (required)
+            {
+                diagnostics.MissingRequiredField(path, fieldName);
+            }
+
+            return;
+        }
+
+        if (!IsValid(value))
+        {
+            diagnostics.Add(malformedCategory, path, malformedMessage);
+        }
+    }
+
+    public static void ValidateMalformed(
+        string? value,
+        string path,
+        CdcDiagnosticCollector diagnostics,
+        CdcDiagnosticCategory malformedCategory,
+        string malformedMessage
+    )
+    {
+        if (!IsValid(value))
+        {
+            diagnostics.Add(malformedCategory, path, malformedMessage);
+        }
+    }
+
+    private static bool IsLowerHexDigit(char character) =>
+        character is >= '0' and <= '9' or >= 'a' and <= 'f';
+}
+
 public sealed record CdcComponent
 {
     private const int MaximumMessageLength = 512;

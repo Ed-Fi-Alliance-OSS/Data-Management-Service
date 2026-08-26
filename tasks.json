@@ -1170,7 +1170,7 @@
       "ConnectionStrings__MssqlAdmin='<SQL Server 2025 admin connection string>' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter FullyQualifiedName~MssqlCdcSourcePositionAdapter",
       "dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core/DocumentCache/Cdc src/dms/backend/EdFi.DataManagementService.Backend.Mssql/MssqlCdcSourcePositionAdapter.cs"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "security-correctness",

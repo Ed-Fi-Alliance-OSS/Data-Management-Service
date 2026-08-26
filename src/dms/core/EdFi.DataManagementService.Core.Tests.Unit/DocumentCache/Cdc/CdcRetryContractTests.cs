@@ -115,8 +115,12 @@ public class Given_CdcRetryContract
         json.Should().NotContain("Reject");
 
         CdcContractReadResult<CdcRetry> result = CdcJsonContract.Deserialize<CdcRetry>(json);
+        CdcRetry expected = retry with
+        {
+            Diagnostics = [.. retry.Diagnostics.Select(diagnostic => diagnostic.WithPath("$"))],
+        };
 
         result.Succeeded.Should().BeTrue();
-        result.Contract.Should().BeEquivalentTo(retry);
+        result.Contract.Should().BeEquivalentTo(expected);
     }
 }

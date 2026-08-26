@@ -7,9 +7,6 @@ namespace EdFi.DataManagementService.Core.DocumentCache.Cdc;
 
 public static class CdcBindingValidator
 {
-    private const string Sha256Prefix = "sha256:";
-    private const int Sha256FingerprintLength = 71;
-
     public static CdcContractValidationResult Validate(CdcBinding? binding, string path = "$")
     {
         CdcDiagnosticCollector diagnostics = new();
@@ -38,11 +35,15 @@ public static class CdcBindingValidator
         ValidateSafeToken(binding.InstanceKey, FieldPath(path, "instanceKey"), "instanceKey", diagnostics);
         ValidatePositive(binding.Generation, FieldPath(path, "generation"), "generation", diagnostics);
         ValidateProvider(binding.Provider, FieldPath(path, "provider"), diagnostics);
-        ValidateSha256Fingerprint(
+        CdcSha256ValueValidator.Validate(
             binding.PhysicalSourceFingerprint,
             FieldPath(path, "physicalSourceFingerprint"),
             "physicalSourceFingerprint",
-            diagnostics
+            required: true,
+            diagnostics,
+            CdcDiagnosticCategory.MalformedPayload,
+            "CDC physicalSourceFingerprint must be `sha256:` plus 64 lowercase hex characters.",
+            emptyIsMissing: true
         );
         ValidateArtifactName(
             binding.ConnectorName,
@@ -157,34 +158,6 @@ public static class CdcBindingValidator
             diagnostics.InvalidEnumValue(path, "CDC provider must be `postgresql` or `sqlServer`.");
         }
     }
-
-    private static void ValidateSha256Fingerprint(
-        string? value,
-        string path,
-        string fieldName,
-        CdcDiagnosticCollector diagnostics
-    )
-    {
-        if (value is null || value.Length == 0)
-        {
-            diagnostics.MissingRequiredField(path, fieldName);
-            return;
-        }
-
-        if (
-            value.Length != Sha256FingerprintLength
-            || !value.StartsWith(Sha256Prefix, StringComparison.Ordinal)
-            || !value[Sha256Prefix.Length..].All(IsLowercaseHex)
-        )
-        {
-            diagnostics.MalformedPayload(
-                path,
-                $"CDC {fieldName} must be `sha256:` plus 64 lowercase hex characters."
-            );
-        }
-    }
-
-    private static bool IsLowercaseHex(char character) => character is >= '0' and <= '9' or >= 'a' and <= 'f';
 
     private static void ValidateArtifactName(
         string? value,

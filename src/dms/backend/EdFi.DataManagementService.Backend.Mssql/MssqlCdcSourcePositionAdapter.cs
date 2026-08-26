@@ -411,7 +411,7 @@ internal sealed class MssqlCdcSourcePositionAdapter(
             return null;
         }
 
-        if (!IsSha256Fingerprint(expectedSourcePartitionHash))
+        if (!CdcSha256ValueValidator.IsValid(expectedSourcePartitionHash))
         {
             diagnostics.MalformedPayload(
                 "$.expectedConnectSourcePartitionHash",
@@ -441,17 +441,6 @@ internal sealed class MssqlCdcSourcePositionAdapter(
 
         return timeoutSeconds > int.MaxValue ? int.MaxValue : (int)timeoutSeconds;
     }
-
-    private static bool IsSha256Fingerprint(string value)
-    {
-        const string sha256Prefix = "sha256:";
-
-        return value.Length == sha256Prefix.Length + 64
-            && value.StartsWith(sha256Prefix, StringComparison.Ordinal)
-            && value[sha256Prefix.Length..].All(IsLowercaseHex);
-    }
-
-    private static bool IsLowercaseHex(char value) => value is >= '0' and <= '9' or >= 'a' and <= 'f';
 
     private void LogProviderObservationFailure(Exception exception, string outcome)
     {

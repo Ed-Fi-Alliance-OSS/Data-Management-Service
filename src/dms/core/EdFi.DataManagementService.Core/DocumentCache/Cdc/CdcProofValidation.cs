@@ -430,8 +430,6 @@ public static class CdcCleanupProofValidator
 internal static class CdcProofValidationRules
 {
     private const int MaximumOperationIdLength = 128;
-    private const int MaximumFingerprintLength = 71;
-    private const string Sha256Prefix = "sha256:";
 
     public static void ValidateContractVersion(
         int contractVersion,
@@ -610,11 +608,12 @@ internal static class CdcProofValidationRules
         ValidateSafeToken(bindingIdentity.InstanceKey, $"{path}.instanceKey", "instanceKey", diagnostics);
         ValidatePositive(bindingIdentity.Generation, $"{path}.generation", "generation", diagnostics);
         ValidateProvider(bindingIdentity.Provider, $"{path}.provider", diagnostics);
-        ValidateSha256(
+        CdcSha256ValueValidator.ValidateMalformed(
             bindingIdentity.PhysicalSourceFingerprint,
             $"{path}.physicalSourceFingerprint",
-            "physicalSourceFingerprint",
-            diagnostics
+            diagnostics,
+            CdcDiagnosticCategory.MalformedProof,
+            "CDC proof physicalSourceFingerprint must be `sha256:` plus 64 lowercase hex characters."
         );
         ValidateArtifactName(
             bindingIdentity.ConnectorName,
@@ -697,30 +696,6 @@ internal static class CdcProofValidationRules
             );
         }
     }
-
-    private static void ValidateSha256(
-        string? value,
-        string path,
-        string fieldName,
-        CdcDiagnosticCollector diagnostics
-    )
-    {
-        if (
-            value is null
-            || value.Length != MaximumFingerprintLength
-            || !value.StartsWith(Sha256Prefix, StringComparison.Ordinal)
-            || !value[Sha256Prefix.Length..].All(IsLowercaseHex)
-        )
-        {
-            diagnostics.Add(
-                CdcDiagnosticCategory.MalformedProof,
-                path,
-                $"CDC proof {fieldName} must be `sha256:` plus 64 lowercase hex characters."
-            );
-        }
-    }
-
-    private static bool IsLowercaseHex(char character) => character is >= '0' and <= '9' or >= 'a' and <= 'f';
 
     private static void ValidatePartitionerAlgorithm(
         string? partitionerAlgorithm,

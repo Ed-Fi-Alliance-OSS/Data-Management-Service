@@ -563,7 +563,7 @@ public static class CdcSourceHistoryContinuityClassifier
             envelopeDiagnostics
         );
         ValidateConnectorOffsetBindingNames(input.ConnectorOffset, inventory, envelopeDiagnostics);
-        CdcObservationValidationRules.ValidateSha256Fingerprint(
+        CdcObservationValidationRules.ValidateHashValue(
             input.ConnectorOffset.ConnectSourcePartitionHash,
             "$.connectSourcePartitionHash",
             "connectSourcePartitionHash",
@@ -1229,7 +1229,7 @@ public static class CdcSourceHistoryContinuityClassifier
     {
         if (input.ExpectedConnectSourcePartitionHash is not null)
         {
-            CdcObservationValidationRules.ValidateSha256Fingerprint(
+            CdcObservationValidationRules.ValidateHashValue(
                 input.ExpectedConnectSourcePartitionHash,
                 "$.expectedConnectSourcePartitionHash",
                 "expectedConnectSourcePartitionHash",

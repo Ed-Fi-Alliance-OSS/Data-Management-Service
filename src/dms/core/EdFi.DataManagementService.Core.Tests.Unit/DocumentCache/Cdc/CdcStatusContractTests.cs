@@ -103,8 +103,21 @@ public class Given_CdcStatusContract
         json.Should().NotContain("SourceHistoryLost");
 
         CdcContractReadResult<CdcStatus> result = CdcJsonContract.Deserialize<CdcStatus>(json);
+        CdcStatus expected = status with
+        {
+            Targets =
+            [
+                status.Targets[0] with
+                {
+                    Diagnostics =
+                    [
+                        .. status.Targets[0].Diagnostics.Select(diagnostic => diagnostic.WithPath("$")),
+                    ],
+                },
+            ],
+        };
 
         result.Succeeded.Should().BeTrue();
-        result.Contract.Should().BeEquivalentTo(status);
+        result.Contract.Should().BeEquivalentTo(expected);
     }
 }
