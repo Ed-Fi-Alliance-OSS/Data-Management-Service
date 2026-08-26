@@ -316,13 +316,14 @@ curl -X POST -H "Content-Type: application/json" \
 ```
 
 **Important Notes:**
-- The uploaded structure completely replaces the current claims
+- The uploaded document replaces the claims hierarchy and every non-system-reserved claim set;
+  system-reserved claim sets are preserved whether or not the document repeats them
 - Must include both `claimSets` and `claimsHierarchy` sections
 - The request body is the claims document itself. It is not nested under a `claims` property; a body
   shaped that way is rejected with HTTP 400 naming the missing `claimSets` and `claimsHierarchy`
   properties.
 - Subject to JSON Schema validation
-- Returns a reload ID header for tracking
+- Returns the new reload ID in the response body: `{ "success": true, "reloadId": "<guid>" }`
 
 ### Reload Claims from Fragments
 
@@ -333,10 +334,14 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://localhost:8081/management/reload-claims
 ```
 
-Response includes:
-- X-Reload-Id header with unique identifier
-- Status of reload operation
-- Any validation errors encountered
+On success the response body carries the status and the new reload ID:
+
+```json
+{ "success": true, "reloadId": "<guid>" }
+```
+
+A failed reload is returned as an Ed-Fi problem-details error response, not as an error list on a
+success body.
 
 ### Get Current Claims
 
@@ -347,8 +352,10 @@ curl -H "Authorization: Bearer $TOKEN" \
   http://localhost:8081/management/current-claims
 ```
 
-Returns the full Claims.json structure currently in use. This is exactly the document the upload
-endpoint accepts, so the response can be uploaded again without modification.
+Returns the full Claims.json structure currently in use, along with an `X-Reload-Id` response header
+identifying the loaded claims. This is the only endpoint that sets that header, and the body is
+exactly the document the upload endpoint accepts, so the response can be uploaded again without
+modification.
 
 ### Round-Trip: Download and Re-Upload
 
