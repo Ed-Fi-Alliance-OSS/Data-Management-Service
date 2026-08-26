@@ -1672,9 +1672,14 @@ public class Given_DocumentCacheStatusService
         );
         StaticTargetRegistry registry = new([target], [ExecutionContext(target)]);
         CapturingStatusTelemetry telemetry = new();
+        ControlledTimeProvider timeProvider = new(ProcessObservedAt);
+        TaskCompletionSource providerObservationStarted = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
         ScriptedStatusObserver observer = new(
             (_, cancellationToken) =>
             {
+                providerObservationStarted.TrySetResult();
                 cancellationToken
                     .WaitHandle.WaitOne(TimeSpan.FromSeconds(2))
                     .Should()
@@ -1695,10 +1700,17 @@ public class Given_DocumentCacheStatusService
             registry,
             ObservationStore(target),
             observer,
-            telemetry
+            telemetry,
+            timeProvider: timeProvider
         );
 
-        DocumentCacheStatusResponse response = await service.GetStatusAsync();
+        Task<DocumentCacheStatusResponse> responseTask = service.GetStatusAsync();
+        await providerObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        timeProvider.Advance(
+            TimeSpan.FromTicks(Math.Min(statusObservationTimeout.Ticks, endpointTimeout.Ticks))
+        );
+
+        DocumentCacheStatusResponse response = await responseTask.WaitAsync(TimeSpan.FromSeconds(5));
 
         DocumentCacheStatusTarget statusTarget = response.Targets.Should().ContainSingle().Which;
         statusTarget.OperationalHealth.Status.Should().Be(DocumentCacheOperationalHealthStatus.Operational);
