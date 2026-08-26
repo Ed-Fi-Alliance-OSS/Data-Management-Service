@@ -259,7 +259,7 @@ public class OwnershipTokenModuleTests
         var response = await client.PutAsync(
             "/v3/apiClients/1/ownership",
             new StringContent(
-                """{"creatorOwnershipTokenId":999,"ownershipTokenIds":[]}""",
+                """{"apiClientId":1,"creatorOwnershipTokenId":999,"ownershipTokenIds":[]}""",
                 Encoding.UTF8,
                 "application/json"
             )
@@ -285,7 +285,7 @@ public class OwnershipTokenModuleTests
         var response = await client.PutAsync(
             "/v3/apiClients/1/ownership",
             new StringContent(
-                """{"creatorOwnershipTokenId":2,"ownershipTokenIds":[3]}""",
+                """{"apiClientId":1,"creatorOwnershipTokenId":2,"ownershipTokenIds":[3]}""",
                 Encoding.UTF8,
                 "application/json"
             )
@@ -296,5 +296,26 @@ public class OwnershipTokenModuleTests
         capturedCommand!.ApiClientId.Should().Be(1);
         capturedCommand.CreatorOwnershipTokenId.Should().Be(2);
         capturedCommand.OwnershipTokenIds.Should().Equal(3);
+    }
+
+    [Test]
+    public async Task It_rejects_api_client_ownership_when_body_id_does_not_match_route_id()
+    {
+        using var client = SetUpClient();
+
+        var response = await client.PutAsync(
+            "/v3/apiClients/1/ownership",
+            new StringContent(
+                """{"apiClientId":999,"creatorOwnershipTokenId":2,"ownershipTokenIds":[3]}""",
+                Encoding.UTF8,
+                "application/json"
+            )
+        );
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        A.CallTo(() =>
+                _ownershipTokenRepository.UpdateApiClientOwnership(A<ApiClientOwnershipUpdateCommand>.Ignored)
+            )
+            .MustNotHaveHappened();
     }
 }

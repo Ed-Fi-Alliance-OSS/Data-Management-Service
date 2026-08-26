@@ -75,6 +75,7 @@ Feature: OwnershipTokens endpoints
              When a PUT request is made to "/v3/apiClients/{apiClientId}/ownership" with
                   """
                   {
+                    "apiClientId": {apiClientId},
                     "creatorOwnershipTokenId": {creatorOwnershipTokenId},
                     "ownershipTokenIds": [{readOwnershipTokenId}]
                   }
@@ -165,6 +166,7 @@ Feature: OwnershipTokens endpoints
              When a PUT request is made to "/v3/apiClients/{apiClientId}/ownership" with
                   """
                   {
+                    "apiClientId": {apiClientId},
                     "creatorOwnershipTokenId": 0,
                     "ownershipTokenIds": []
                   }
@@ -284,6 +286,7 @@ Feature: OwnershipTokens endpoints
              When a PUT request is made to "/v3/apiClients/{apiClientId}/ownership" with
                   """
                   {
+                    "apiClientId": {apiClientId},
                     "creatorOwnershipTokenId": {creatorOwnershipTokenId},
                     "ownershipTokenIds": [{readOwnershipTokenId}]
                   }
@@ -292,6 +295,7 @@ Feature: OwnershipTokens endpoints
              When a PUT request is made to "/v3/apiClients/{apiClientId}/ownership" with
                   """
                   {
+                    "apiClientId": {apiClientId},
                     "creatorOwnershipTokenId": {creatorOwnershipTokenId},
                     "ownershipTokenIds": [{readOwnershipTokenId}]
                   }

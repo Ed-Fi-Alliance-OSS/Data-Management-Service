@@ -190,6 +190,7 @@ public class OwnershipTokenModule : IEndpointModule
     )
     {
         ValidateApiClientRouteId(id);
+        PutGuards.GuardRouteIdMatchesBodyId(id, command.ApiClientId);
         command.ApiClientId = id;
         await validator.GuardAsync(command);
 
