@@ -24,20 +24,18 @@ Feature: ClaimsManagement endpoints
              When a POST request is made to "/management/upload-claims" with
                   """
                   {
-                      "claims": {
-                          "claimSets": [{"claimSetName": "TestUploadSet", "isSystemReserved": false}],
-                          "claimsHierarchy": [
-                              {
-                                  "name": "http://ed-fi.org/identity/claims/test",
-                                  "claimSets": [
-                                      {
-                                          "name": "TestUploadSet",
-                                          "actions": [{"name": "Read"}]
-                                      }
-                                  ]
-                              }
-                          ]
-                      }
+                      "claimSets": [{"claimSetName": "TestUploadSet", "isSystemReserved": false}],
+                      "claimsHierarchy": [
+                          {
+                              "name": "http://ed-fi.org/identity/claims/test",
+                              "claimSets": [
+                                  {
+                                      "name": "TestUploadSet",
+                                      "actions": [{"name": "Read"}]
+                                  }
+                              ]
+                          }
+                      ]
                   }
                   """
              Then it should respond with 200
@@ -69,10 +67,8 @@ Feature: ClaimsManagement endpoints
              When a POST request is made to "/management/upload-claims" with
                   """
                   {
-                      "claims": {
-                          "claimSets": [{"invalidProperty": "test"}],
-                          "claimsHierarchy": []
-                      }
+                      "claimSets": [{"invalidProperty": "test"}],
+                      "claimsHierarchy": []
                   }
                   """
              Then it should respond with 400

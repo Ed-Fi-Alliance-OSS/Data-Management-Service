@@ -60,25 +60,23 @@ public class ClaimsManagementStepDefinitions(ScenarioContext scenarioContext)
         // Upload test claims
         var uploadBody = """
             {
-                "claims": {
-                    "claimSets": [{"claimSetName": "TestUploadSet", "isSystemReserved": false}],
-                    "claimsHierarchy": [
-                        {
-                            "name": "http://ed-fi.org/identity/claims/test",
-                            "claimSets": [
-                                {
-                                    "name": "TestUploadSet",
-                                    "actions": [{"name": "Read"}]
-                                }
-                            ]
-                        }
-                    ]
-                }
+                "claimSets": [{"claimSetName": "TestUploadSet", "isSystemReserved": false}],
+                "claimsHierarchy": [
+                    {
+                        "name": "http://ed-fi.org/identity/claims/test",
+                        "claimSets": [
+                            {
+                                "name": "TestUploadSet",
+                                "actions": [{"name": "Read"}]
+                            }
+                        ]
+                    }
+                ]
             }
             """;
 
         await stepDefinitions.WhenSendingAPOSTRequestToWithBody("/management/upload-claims", uploadBody);
-        scenarioContext[UploadedClaimsKey] = JsonNode.Parse(uploadBody)!["claims"];
+        scenarioContext[UploadedClaimsKey] = JsonNode.Parse(uploadBody)!;
     }
 
     [Given("dynamic claims loading is disabled")]
