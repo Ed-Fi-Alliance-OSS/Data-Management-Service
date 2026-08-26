@@ -318,6 +318,9 @@ curl -X POST -H "Content-Type: application/json" \
 **Important Notes:**
 - The uploaded structure completely replaces the current claims
 - Must include both `claimSets` and `claimsHierarchy` sections
+- The request body is the claims document itself. It is not nested under a `claims` property; a body
+  shaped that way is rejected with HTTP 400 naming the missing `claimSets` and `claimsHierarchy`
+  properties.
 - Subject to JSON Schema validation
 - Returns a reload ID header for tracking
 
@@ -344,7 +347,27 @@ curl -H "Authorization: Bearer $TOKEN" \
   http://localhost:8081/management/current-claims
 ```
 
-Returns the full Claims.json structure currently in use.
+Returns the full Claims.json structure currently in use. This is exactly the document the upload
+endpoint accepts, so the response can be uploaded again without modification.
+
+### Round-Trip: Download and Re-Upload
+
+Because both endpoints use the same two-section document, a downloaded file can be uploaded as-is:
+
+```bash
+# Download the active claims
+curl -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8081/management/current-claims > claims.json
+
+# Upload it unchanged (or after editing claims.json)
+curl -X POST -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  --data-binary @claims.json \
+  http://localhost:8081/management/upload-claims
+```
+
+No wrapping, re-indenting or property renaming is required in between. The upload responds with HTTP
+200 and a new reload ID.
 
 ## Deployment Steps
 
