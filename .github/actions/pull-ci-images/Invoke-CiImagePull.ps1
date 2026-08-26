@@ -14,8 +14,9 @@ lane, and a retry with a fixed or purely exponential delay turns those jobs into
 that re-hits the registry in lockstep.
 
 Each image carries its own attempt budget. After a failed attempt the wait is drawn uniformly from
-[base/2, base), where base doubles per attempt up to a cap, so the delay grows on every retry while
-concurrent jobs still spread their retries across a widening window.
+[base/2, base), where base doubles per attempt until it reaches MaxDelaySeconds. The delay therefore
+grows on every retry while the base is still climbing, and successive retries share one band once the
+cap is reached. Either way the random draw keeps concurrent jobs from retrying in unison.
 
 Docker's output is never captured, so whatever the registry said about a failure stays visible in the
 job log, and the final failure names the image and the attempt count rather than letting a missing
@@ -94,9 +95,10 @@ foreach ($image in $imageList) {
             throw "Failed to pull $image after $MaxAttempts attempt(s)."
         }
 
-        # Equal jitter over a capped exponential base. Every wait is at least half the base and less
-        # than the base, so the delay grows on each retry while concurrent jobs spread out inside a
-        # widening window instead of retrying in unison.
+        # Equal jitter over an exponential base that doubles until it reaches $MaxDelaySeconds. Every
+        # wait is at least half the base and less than the base, so delays grow per retry while the
+        # base is still climbing and share one band after it caps. The random component is what keeps
+        # concurrent jobs from retrying in unison, at either stage.
         $baseSeconds = [Math]::Min($MaxDelaySeconds, $InitialDelaySeconds * [Math]::Pow(2, $attempt - 1))
         $halfMilliseconds = [int] ($baseSeconds * 500)
         $delayMilliseconds = $halfMilliseconds + (Get-Random -Minimum 0 -Maximum $halfMilliseconds)
