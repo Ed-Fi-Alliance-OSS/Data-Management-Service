@@ -258,12 +258,12 @@ public sealed class Given_DocumentCacheAdminPostgresqlRetryableIncompleteWorkflo
             );
             incompleteResult["command"]!.GetValue<string>().Should().Be("onlineCacheRebuild");
             incompleteResult["status"]!.GetValue<string>().Should().Be("incompleteRetryable");
-            incompleteResult["classification"]!.GetValue<string>().Should().Be("workflowTimeout");
+            incompleteResult["classification"]!.GetValue<string>().Should().Be("providerCommandTimeout");
             incompleteResult["mutated"]!.GetValue<bool>().Should().BeTrue();
             incompleteResult["lifecycle"]!.GetValue<string>().Should().Be("resetting");
             AssertPhaseDiagnostic(
                 incompleteResult,
-                expectedCategory: "workflowTimeout",
+                expectedCategory: "providerCommandTimeout",
                 expectedPhase: "clearCache",
                 expectedRetryable: true
             );
