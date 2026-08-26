@@ -6,23 +6,7 @@
 name: On DMS Pull Request
 
 on:
-  push:
-    # Running on push to main to support CodeQL on C#
-    branches:
-      - main
-    paths:
-      - ".github/workflows/**"
-      - "build-dms.ps1"
-      - "eng/**"
-      - "src/Directory.Packages.props"
-      - "src/nuget.config"
-      - "src/dms/**"
-      # The DMS E2E lanes (incl. the DS 6.1 version-coupled lane) bring up the Config Service built from
-      # src/config, so config-only changes (e.g. ds61 Claims.json, ClaimsProvider, ResourceClaim seeding)
-      # must still trigger this workflow's DMS + DS 6.1 validation.
-      - "src/config/**"
-
-  # No paths filter here (unlike push above): the merge queue requires an aggregate status
+  # No paths filter here: the merge queue requires an aggregate status
   # check (dms-ci-gate) that must report on every pull request, so this workflow runs for all
   # PRs regardless of which files changed. detect-fresh-build-changes computes dms_relevant and
   # the heavy jobs skip when no DMS-relevant file changed, so idle PRs stay cheap and the gate
@@ -90,7 +74,7 @@ jobs:
             echo "dms_relevant=$2" >> "$GITHUB_OUTPUT"
           }
 
-          # Non-pull_request events (push, merge_group, workflow_dispatch) always run the full
+          # Non-pull_request events (merge_group, workflow_dispatch) always run the full
           # suite, so dms_relevant is reported true and only fresh_build_required is meaningful.
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             emit true true
@@ -118,7 +102,7 @@ jobs:
           fi
 
           fresh_build_required=false
-          # For merge_group and push, force dms_relevant true so nothing is skipped when
+          # For merge_group, force dms_relevant true so nothing is skipped when
           # validating the merged result; only pull_request narrows to the changed area.
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             dms_relevant=false
