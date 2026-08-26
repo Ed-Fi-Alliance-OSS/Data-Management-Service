@@ -72,7 +72,6 @@ internal static class DocumentCacheAdminCommandExecutor
                 cancellationToken
             );
 
-            bool statusEvaluationStarted = false;
             try
             {
                 await ResolveStatusTargetAsync(
@@ -82,10 +81,9 @@ internal static class DocumentCacheAdminCommandExecutor
                     )
                     .ConfigureAwait(false);
 
-                statusEvaluationStarted = true;
                 DocumentCacheStatusResponse statusResponse = await GetStatusResponseAsync(
                         serviceProvider,
-                        cancellationToken
+                        statusTimeout.Token
                     )
                     .ConfigureAwait(false);
 
@@ -107,8 +105,7 @@ internal static class DocumentCacheAdminCommandExecutor
 
                 return CompleteCommand(DocumentCacheAdminExitCodes.Success, "completed", "status");
             }
-            catch (OperationCanceledException)
-                when (!statusEvaluationStarted && statusTimeout.IsTimeoutExpired)
+            catch (OperationCanceledException) when (statusTimeout.IsTimeoutExpired)
             {
                 await WriteErrorAsync(
                         standardError,
