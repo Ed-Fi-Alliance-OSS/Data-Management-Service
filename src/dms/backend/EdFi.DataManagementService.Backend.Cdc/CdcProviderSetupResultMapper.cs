@@ -130,30 +130,6 @@ public static class CdcProviderSetupResultMapper
         );
     }
 
-    public static CoreCdc.CdcProviderSourceHistoryEvidence ToProviderSourceHistoryEvidence(
-        DateTimeOffset observedAt,
-        CoreCdc.CdcBinding binding,
-        CdcProviderSetupResult result
-    )
-    {
-        ArgumentNullException.ThrowIfNull(binding);
-        ArgumentNullException.ThrowIfNull(result);
-
-        DateTimeOffset normalizedObservedAt = observedAt.ToUniversalTime();
-        CdcProviderSetupResultCorrelation correlation = CorrelateValidateOnlyResult(
-            binding,
-            result,
-            normalizedObservedAt
-        );
-        return ToProviderSourceHistoryEvidence(
-            binding,
-            result,
-            [.. MapDiagnostics(result.Diagnostics, normalizedObservedAt), .. correlation.Diagnostics],
-            correlation,
-            normalizedObservedAt
-        );
-    }
-
     private static CoreCdc.CdcProviderSourceHistoryEvidence ToProviderSourceHistoryEvidence(
         CoreCdc.CdcBinding binding,
         CdcProviderSetupResult result,

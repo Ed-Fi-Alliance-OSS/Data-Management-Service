@@ -49,8 +49,7 @@ public class Given_CdcProviderSetupResultMapper
             ]
         );
 
-        CoreCdc.CdcProviderSourceHistoryEvidence providerHistory =
-            CdcProviderSetupResultMapper.ToProviderSourceHistoryEvidence(ObservedAt, binding, setupResult);
+        CoreCdc.CdcProviderSourceHistoryEvidence providerHistory = ProviderHistoryFrom(binding, setupResult);
 
         providerHistory
             .ProviderArtifactState.Should()
@@ -98,8 +97,7 @@ public class Given_CdcProviderSetupResultMapper
             ]
         );
 
-        CoreCdc.CdcProviderSourceHistoryEvidence providerHistory =
-            CdcProviderSetupResultMapper.ToProviderSourceHistoryEvidence(ObservedAt, binding, setupResult);
+        CoreCdc.CdcProviderSourceHistoryEvidence providerHistory = ProviderHistoryFrom(binding, setupResult);
 
         providerHistory.ProviderArtifactState.Should().Be(CoreCdc.CdcProviderArtifactContinuityState.Unknown);
         providerHistory
@@ -144,8 +142,7 @@ public class Given_CdcProviderSetupResultMapper
             ],
         };
 
-        CoreCdc.CdcProviderSourceHistoryEvidence providerHistory =
-            CdcProviderSetupResultMapper.ToProviderSourceHistoryEvidence(ObservedAt, binding, setupResult);
+        CoreCdc.CdcProviderSourceHistoryEvidence providerHistory = ProviderHistoryFrom(binding, setupResult);
 
         providerHistory.ProviderArtifactState.Should().Be(expectedState);
         providerHistory.RetainedRangeState.Should().Be(CoreCdc.CdcProviderRetainedRangeState.Unknown);
@@ -186,8 +183,7 @@ public class Given_CdcProviderSetupResultMapper
             ],
         };
 
-        CoreCdc.CdcProviderSourceHistoryEvidence providerHistory =
-            CdcProviderSetupResultMapper.ToProviderSourceHistoryEvidence(ObservedAt, binding, setupResult);
+        CoreCdc.CdcProviderSourceHistoryEvidence providerHistory = ProviderHistoryFrom(binding, setupResult);
 
         providerHistory.ProviderArtifactState.Should().Be(expectedState);
         providerHistory.ProviderArtifactName.Should().Be(inventory.PostgresqlPublicationName);
@@ -233,8 +229,7 @@ public class Given_CdcProviderSetupResultMapper
             ],
         };
 
-        CoreCdc.CdcProviderSourceHistoryEvidence providerHistory =
-            CdcProviderSetupResultMapper.ToProviderSourceHistoryEvidence(ObservedAt, binding, setupResult);
+        CoreCdc.CdcProviderSourceHistoryEvidence providerHistory = ProviderHistoryFrom(binding, setupResult);
 
         providerHistory
             .ProviderArtifactState.Should()
@@ -278,8 +273,7 @@ public class Given_CdcProviderSetupResultMapper
             ]
         );
 
-        CoreCdc.CdcProviderSourceHistoryEvidence providerHistory =
-            CdcProviderSetupResultMapper.ToProviderSourceHistoryEvidence(ObservedAt, binding, setupResult);
+        CoreCdc.CdcProviderSourceHistoryEvidence providerHistory = ProviderHistoryFrom(binding, setupResult);
 
         providerHistory.ProviderArtifactState.Should().Be(expectedState);
         providerHistory.RetainedRangeState.Should().Be(CoreCdc.CdcProviderRetainedRangeState.Unknown);
@@ -301,8 +295,7 @@ public class Given_CdcProviderSetupResultMapper
             [SqlServerDatabaseHistory(), .. SqlServerCaptureHistories(inventory)]
         );
 
-        CoreCdc.CdcProviderSourceHistoryEvidence providerHistory =
-            CdcProviderSetupResultMapper.ToProviderSourceHistoryEvidence(ObservedAt, binding, setupResult);
+        CoreCdc.CdcProviderSourceHistoryEvidence providerHistory = ProviderHistoryFrom(binding, setupResult);
 
         providerHistory.ProviderArtifactState.Should().Be(CoreCdc.CdcProviderArtifactContinuityState.Unknown);
         providerHistory.RetainedRangeState.Should().Be(CoreCdc.CdcProviderRetainedRangeState.Unknown);
@@ -333,8 +326,7 @@ public class Given_CdcProviderSetupResultMapper
             ]
         );
 
-        CoreCdc.CdcProviderSourceHistoryEvidence providerHistory =
-            CdcProviderSetupResultMapper.ToProviderSourceHistoryEvidence(ObservedAt, binding, setupResult);
+        CoreCdc.CdcProviderSourceHistoryEvidence providerHistory = ProviderHistoryFrom(binding, setupResult);
 
         providerHistory
             .ProviderArtifactState.Should()
@@ -396,8 +388,7 @@ public class Given_CdcProviderSetupResultMapper
             ],
         };
 
-        CoreCdc.CdcProviderSourceHistoryEvidence providerHistory =
-            CdcProviderSetupResultMapper.ToProviderSourceHistoryEvidence(ObservedAt, binding, setupResult);
+        CoreCdc.CdcProviderSourceHistoryEvidence providerHistory = ProviderHistoryFrom(binding, setupResult);
 
         providerHistory.Diagnostics.Should().ContainSingle().Which.ObservedAt.Should().Be(ObservedAt);
     }
@@ -789,6 +780,11 @@ public class Given_CdcProviderSetupResultMapper
         CoreCdc.CdcBinding binding,
         CdcProviderSetupResult setupResult
     ) => CdcProviderSetupResultMapper.MapValidateOnlyResult("operation-id", ObservedAt, binding, setupResult);
+
+    private static CoreCdc.CdcProviderSourceHistoryEvidence ProviderHistoryFrom(
+        CoreCdc.CdcBinding binding,
+        CdcProviderSetupResult setupResult
+    ) => MapProviderSetup(binding, setupResult).ProviderHistory;
 
     private static CoreCdc.CdcContractValidationResult Validate(
         CoreCdc.CdcProviderSetupObservation observation,
