@@ -273,7 +273,6 @@ internal sealed class MssqlCdcSourcePositionAdapter(
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.Binding);
-        ArgumentNullException.ThrowIfNull(request.ConnectorOffset);
         cancellationToken.ThrowIfCancellationRequested();
 
         CdcDiagnosticCollector diagnostics = new();

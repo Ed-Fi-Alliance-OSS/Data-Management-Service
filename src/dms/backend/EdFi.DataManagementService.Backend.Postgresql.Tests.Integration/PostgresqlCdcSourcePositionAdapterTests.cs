@@ -317,6 +317,39 @@ public class Given_PostgresqlCdcSourcePositionAdapterTests
     }
 
     [Test]
+    public async Task It_reports_unknown_source_history_when_connector_offset_is_unavailable()
+    {
+        CoreCdc.CdcBinding binding = await BuildBindingAsync();
+        CoreCdc.CdcArtifactInventory inventory = BuildInventory();
+
+        CoreCdc.CdcSourceHistoryClassificationResult result = await _adapter.ObserveSourceHistoryAsync(
+            new(
+                OperationId(),
+                binding,
+                BuildProviderSetupObservation(binding),
+                null,
+                BuildHealthyProviderHistory(inventory)
+            )
+        );
+
+        result.Observation.Continuity.Should().Be(CoreCdc.CdcSourceHistoryContinuity.Unknown);
+        result.Observation.IncidentFailureCategory.Should().BeNull();
+        result.IncidentCandidate.Should().BeNull();
+        result
+            .Observation.PositionEvidence!.UnavailableFacts.Should()
+            .Contain(CoreCdc.CdcIncidentUnavailableFact.ConnectOffset);
+        result
+            .Observation.Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CoreCdc.CdcDiagnosticCategory.LocalStateUnavailable
+                && diagnostic.Path == "$.connectorOffset"
+            );
+        CoreCdc.CdcJsonContract.Serialize(result.Observation).Should().NotContain(_database.ConnectionString);
+        CoreCdc.CdcJsonContract.Serialize(result.Observation).Should().NotContain(_database.DatabaseName);
+        ValidateSourceHistoryObservation(result.Observation, binding).Succeeded.Should().BeTrue();
+    }
+
+    [Test]
     public async Task It_latches_terminal_provider_artifact_loss_when_the_binding_slot_is_missing()
     {
         AssumePostgresqlLogicalReplicationAvailable();
@@ -517,6 +550,35 @@ public class Given_PostgresqlCdcSourcePositionAdapterTests
             []
         );
     }
+
+    private CoreCdc.CdcProviderSetupObservation BuildProviderSetupObservation(CoreCdc.CdcBinding binding) =>
+        new(
+            CoreCdc.CdcJsonContract.CurrentContractVersion,
+            OperationId(),
+            _timeProvider.GetUtcNow(),
+            binding.ToTargetIdentity(),
+            CoreCdc.CdcProvider.Postgresql,
+            binding.PhysicalSourceFingerprint,
+            CoreCdc.CdcProviderSetupMode.ValidateOnly,
+            CoreCdc.CdcProviderSetupOutcome.Satisfied,
+            CoreCdc.CdcProviderSetupState.Matched,
+            CoreCdc.CdcProviderSetupState.Matched,
+            CoreCdc.CdcProviderSetupState.Matched,
+            CoreCdc.CdcProviderSetupState.Matched,
+            []
+        );
+
+    private static CoreCdc.CdcProviderSourceHistoryEvidence BuildHealthyProviderHistory(
+        CoreCdc.CdcArtifactInventory inventory
+    ) =>
+        new(
+            CoreCdc.CdcProviderArtifactContinuityState.ExactMatch,
+            CoreCdc.CdcProviderRetainedRangeState.CoversCommittedOffset,
+            inventory.PostgresqlLogicalSlotName,
+            "0/16B6C50",
+            "0/16B6C52",
+            []
+        );
 
     private CoreCdc.CdcContractValidationResult ValidateBarrierObservation(
         CoreCdc.CdcProviderBarrierObservation observation,

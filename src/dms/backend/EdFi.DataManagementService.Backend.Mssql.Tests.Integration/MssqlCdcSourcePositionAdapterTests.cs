@@ -401,6 +401,43 @@ public class Given_MssqlCdcSourcePositionAdapterTests
     }
 
     [Test]
+    public async Task It_reports_unknown_source_history_when_connector_offset_is_unavailable()
+    {
+        CoreCdc.CdcBinding binding = await BuildBindingAsync();
+        CoreCdc.CdcArtifactInventory inventory = BuildInventory();
+
+        CoreCdc.CdcSourceHistoryClassificationResult result = await _adapter.ObserveSourceHistoryAsync(
+            new(
+                OperationId(),
+                binding,
+                BuildProviderSetupObservation(binding),
+                null,
+                BuildHealthyProviderHistory(inventory)
+            )
+            {
+                SqlServerSchemaHistory = BuildValidSchemaHistory(),
+                ExpectedConnectSourcePartitionHash = ExpectedSourcePartitionHash(inventory),
+            }
+        );
+
+        result.Observation.Continuity.Should().Be(CoreCdc.CdcSourceHistoryContinuity.Unknown);
+        result.Observation.IncidentFailureCategory.Should().BeNull();
+        result.IncidentCandidate.Should().BeNull();
+        result
+            .Observation.PositionEvidence!.UnavailableFacts.Should()
+            .Contain(CoreCdc.CdcIncidentUnavailableFact.ConnectOffset);
+        result
+            .Observation.Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CoreCdc.CdcDiagnosticCategory.LocalStateUnavailable
+                && diagnostic.Path == "$.connectorOffset"
+            );
+        CoreCdc.CdcJsonContract.Serialize(result.Observation).Should().NotContain(_database.ConnectionString);
+        CoreCdc.CdcJsonContract.Serialize(result.Observation).Should().NotContain(_database.DatabaseName);
+        ValidateSourceHistoryObservation(result.Observation, binding).Succeeded.Should().BeTrue();
+    }
+
+    [Test]
     public async Task It_latches_terminal_provider_artifact_loss_when_the_capture_job_is_missing()
     {
         CoreCdc.CdcBinding binding = await BuildBindingAsync();

@@ -219,7 +219,6 @@ internal sealed class PostgresqlCdcSourcePositionAdapter(
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.Binding);
-        ArgumentNullException.ThrowIfNull(request.ConnectorOffset);
         cancellationToken.ThrowIfCancellationRequested();
 
         CdcDiagnosticCollector diagnostics = new();

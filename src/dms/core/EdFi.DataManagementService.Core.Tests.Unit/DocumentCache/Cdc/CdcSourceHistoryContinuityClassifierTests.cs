@@ -60,6 +60,36 @@ public class Given_CdcSourceHistoryContinuityClassifier
     }
 
     [Test]
+    public void It_reports_unknown_without_incident_when_connector_offset_is_unavailable()
+    {
+        CdcBinding binding = CdcContinuityFixture.CreateBinding(CdcProvider.Postgresql);
+        CdcSourceHistoryClassificationResult result = CdcSourceHistoryContinuityClassifier.Evaluate(
+            CdcContinuityFixture.CreateInput(binding) with
+            {
+                ConnectorOffset = null,
+            }
+        );
+
+        result.Observation.Continuity.Should().Be(CdcSourceHistoryContinuity.Unknown);
+        result.Observation.IncidentFailureCategory.Should().BeNull();
+        result.IncidentCandidate.Should().BeNull();
+        result.Observation.ProviderArtifactState.Should().Be(CdcProviderArtifactContinuityState.ExactMatch);
+        result
+            .Observation.RetainedRangeState.Should()
+            .Be(CdcProviderRetainedRangeState.CoversCommittedOffset);
+        result
+            .Observation.PositionEvidence!.UnavailableFacts.Should()
+            .Contain(CdcIncidentUnavailableFact.ConnectOffset);
+        result
+            .Observation.Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CdcDiagnosticCategory.LocalStateUnavailable
+                && diagnostic.Path == "$.connectorOffset"
+            );
+        ValidateObservation(result.Observation, binding).Succeeded.Should().BeTrue();
+    }
+
+    [Test]
     public void It_requires_healthy_sql_server_jobs_for_healthy_continuity()
     {
         CdcBinding binding = CdcContinuityFixture.CreateBinding(CdcProvider.SqlServer);

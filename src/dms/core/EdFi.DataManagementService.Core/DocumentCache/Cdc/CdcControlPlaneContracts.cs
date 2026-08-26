@@ -188,7 +188,7 @@ public sealed record CdcSourceHistoryObservationRequest(
     string OperationId,
     CdcBinding Binding,
     CdcProviderSetupObservation? ProviderSetup,
-    CdcConnectorOffsetObservation ConnectorOffset,
+    CdcConnectorOffsetObservation? ConnectorOffset,
     CdcProviderSourceHistoryEvidence? ProviderHistory
 )
 {
