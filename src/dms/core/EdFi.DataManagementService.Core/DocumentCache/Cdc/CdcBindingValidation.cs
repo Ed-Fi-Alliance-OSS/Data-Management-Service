@@ -5,7 +5,7 @@
 
 namespace EdFi.DataManagementService.Core.DocumentCache.Cdc;
 
-internal static class CdcBindingValidator
+public static class CdcBindingValidator
 {
     private const string Sha256Prefix = "sha256:";
     private const int Sha256FingerprintLength = 71;

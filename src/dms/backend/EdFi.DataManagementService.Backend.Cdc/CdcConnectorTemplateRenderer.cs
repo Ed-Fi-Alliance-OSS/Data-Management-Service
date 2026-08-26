@@ -6,6 +6,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.Ddl;
+using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
 
 namespace EdFi.DataManagementService.Backend.Cdc;
 
@@ -45,7 +46,7 @@ internal sealed class CdcConnectorTemplateRenderer(
         )
         {
             return new CdcConnectorTemplateResult(
-                request.BindingIdentity,
+                request.Binding,
                 CdcConnectorTemplateOutcome.ValidationFailed,
                 new SortedDictionary<string, string>(StringComparer.Ordinal),
                 registrationPayload: null,
@@ -83,7 +84,7 @@ internal sealed class CdcConnectorTemplateRenderer(
             : [.. diagnostics, artifactOutputDiagnostic];
 
         return new CdcConnectorTemplateResult(
-            request.BindingIdentity,
+            request.Binding,
             artifactOutputDiagnostic is null
                 ? CdcConnectorTemplateOutcome.Rendered
                 : CdcConnectorTemplateOutcome.ValidationFailed,
@@ -318,7 +319,7 @@ internal sealed class CdcConnectorTemplateRenderer(
     private static string PartitionerClass(string partitionerAlgorithm) =>
         partitionerAlgorithm switch
         {
-            CdcBindingIdentity.KafkaMurmur2V1PartitionerAlgorithm =>
+            CoreCdc.CdcTargetValidator.KafkaMurmur2V1PartitionerAlgorithm =>
                 "org.edfi.kafka.connect.partitioner.KafkaMurmur2V1Partitioner",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(partitionerAlgorithm),

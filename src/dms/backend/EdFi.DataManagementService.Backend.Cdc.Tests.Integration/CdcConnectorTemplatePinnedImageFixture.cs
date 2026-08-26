@@ -18,6 +18,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using NUnit.Framework;
+using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 
@@ -33,11 +34,12 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         $"CONNECT_CONFIG_PROVIDERS={EnvConfigProviderName}";
     private const string ConnectConfigProviderEnvClassEnvironmentVariable =
         $"CONNECT_CONFIG_PROVIDERS_ENV_CLASS={EnvConfigProviderClass}";
+    private const long BindingGeneration = 7;
+    private const string DeploymentKey = "dms";
+    private const string InstanceKey = "binding";
+    private const string TopicPrefix = "edfi.documents";
     private const string PostgresqlDatabaseName = "edfi_datastore";
-    private const string PostgresqlPublicationName = "dms_binding_publication";
-    private const string PostgresqlReplicationSlotName = "dms_binding_slot";
     private const string SqlServerDatabaseName = "edfi_datastore";
-    private const string SqlServerGatingRoleName = "dms_binding_gate";
     private const string DocumentStateTransformClass = "org.edfi.kafka.connect.transforms.DocumentState";
     private const string DocumentStateJsonConverterClass =
         "org.edfi.kafka.connect.converters.DocumentStateJsonConverter";
@@ -48,12 +50,22 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
     private static readonly TimeSpan ConnectorRunningTimeout = TimeSpan.FromMinutes(3);
     private static readonly TimeSpan ProviderHeartbeatTimeout = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan OffsetCommitTimeout = TimeSpan.FromMinutes(4);
+    private static readonly CoreCdc.CdcArtifactInventory PostgresqlArtifactInventory =
+        BuildCoreArtifactInventory(CdcProvider.Postgresql);
+    private static readonly CoreCdc.CdcArtifactInventory SqlServerArtifactInventory =
+        BuildCoreArtifactInventory(CdcProvider.SqlServer);
+    private static readonly string PostgresqlPublicationName =
+        PostgresqlArtifactInventory.PostgresqlPublicationName!;
+    private static readonly string PostgresqlReplicationSlotName =
+        PostgresqlArtifactInventory.PostgresqlLogicalSlotName!;
+    private static readonly string SqlServerGatingRoleName =
+        SqlServerArtifactInventory.SqlServerCdcGatingRoleName!;
     private static readonly IReadOnlyList<SqlServerCaptureInstanceDefinition> SqlServerCaptureInstances =
     [
         new(
             CdcSourceTableKind.DocumentCache,
             "DocumentCache",
-            new CdcSafeName("dms_binding_document_cache"),
+            new CdcSafeName(SqlServerArtifactInventory.SqlServerCaptureInstanceDocumentCacheName!),
             "DocumentId",
             [
                 new("DocumentId", "bigint"),
@@ -71,7 +83,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         new(
             CdcSourceTableKind.Document,
             "Document",
-            new CdcSafeName("dms_binding_document"),
+            new CdcSafeName(SqlServerArtifactInventory.SqlServerCaptureInstanceDocumentName!),
             "DocumentId",
             [
                 new("DocumentId", "bigint"),
@@ -86,7 +98,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         new(
             CdcSourceTableKind.CdcHeartbeat,
             "CdcHeartbeat",
-            new CdcSafeName("dms_binding_cdc_heartbeat_capture"),
+            new CdcSafeName(SqlServerArtifactInventory.SqlServerCaptureInstanceCdcHeartbeatName!),
             "HeartbeatId",
             [
                 new("HeartbeatId", "smallint"),
@@ -294,7 +306,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             cancellationToken
         );
         var liveReadBackProviderSetupEvidence = new CdcConnectorProviderSetupEvidence(
-            request.BindingIdentity.BindingGeneration,
+            request.BindingGeneration,
             liveProviderSetupResult
         );
         CdcConnectorTemplateResult rendered = service.Render(request);
@@ -796,7 +808,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
     private CdcConnectorTemplateRequest BuildRequest(CdcProviderSetupResult providerSetupResult) =>
         new(
             BuildBinding(Provider),
-            new CdcConnectorProviderSetupEvidence(bindingGeneration: 7, providerSetupResult),
+            new CdcConnectorProviderSetupEvidence(BindingGeneration, providerSetupResult),
             new CdcConnectorTemplateDeploymentPolicy(
                 KafkaBootstrapServers,
                 maxRecordBytes: 67_108_864,
@@ -2409,16 +2421,42 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
     private static string SqlServerBracketIdentifier(string value) =>
         $"[{value.Replace("]", "]]", StringComparison.Ordinal)}]";
 
-    private static CdcBindingIdentity BuildBinding(CdcProvider provider) =>
-        new(
-            provider,
-            new CdcSafeName("dms_binding_connector"),
-            "edfi.documents",
-            bindingGeneration: 7,
-            partitionerAlgorithm: "kafka-murmur2-v1",
-            BuildProviderArtifactNames(provider),
-            CdcConnectorTemplatePinnedImageTestData.SourceFingerprint(provider)
+    private static CoreCdc.CdcBinding BuildBinding(CdcProvider provider)
+    {
+        CoreCdc.CdcArtifactInventory artifactInventory = BuildCoreArtifactInventory(provider);
+
+        return new CoreCdc.CdcBinding(
+            CoreCdc.CdcJsonContract.CurrentContractVersion,
+            DeploymentKey,
+            CoreCdc.CdcTargetValidator.DefaultBindingTenantKey,
+            "1",
+            InstanceKey,
+            BindingGeneration,
+            ToCoreProvider(provider),
+            CdcConnectorTemplatePinnedImageTestData.SourceFingerprint(provider).Value,
+            artifactInventory.ConnectorName,
+            artifactInventory.TopicName,
+            PartitionCount: 1,
+            CoreCdc.CdcTargetValidator.KafkaMurmur2V1PartitionerAlgorithm,
+            CoreCdc.CdcJsonContract.CurrentContractVersion
         );
+    }
+
+    private static CoreCdc.CdcArtifactInventory BuildCoreArtifactInventory(CdcProvider provider)
+    {
+        CoreCdc.CdcArtifactNameResult result = CoreCdc.CdcArtifactNameGenerator.Render(
+            new CoreCdc.CdcArtifactNameInput(
+                DeploymentKey,
+                TopicPrefix,
+                InstanceKey,
+                BindingGeneration,
+                ToCoreProvider(provider)
+            )
+        );
+
+        return result.Inventory
+            ?? throw new ArgumentException("Invalid pinned-image CDC artifact input.", nameof(provider));
+    }
 
     private static CdcProviderArtifactNames BuildProviderArtifactNames(CdcProvider provider) =>
         provider switch
@@ -2434,6 +2472,18 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
                     definition => definition.CaptureInstanceName
                 )
             ),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(provider),
+                provider,
+                "Unsupported CDC provider."
+            ),
+        };
+
+    private static CoreCdc.CdcProvider ToCoreProvider(CdcProvider provider) =>
+        provider switch
+        {
+            CdcProvider.Postgresql => CoreCdc.CdcProvider.Postgresql,
+            CdcProvider.SqlServer => CoreCdc.CdcProvider.SqlServer,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(provider),
                 provider,

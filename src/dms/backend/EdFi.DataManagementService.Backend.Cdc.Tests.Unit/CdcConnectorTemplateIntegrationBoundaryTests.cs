@@ -23,7 +23,11 @@ public class Given_CdcConnectorTemplateIntegrationBoundaryTests
         "Microsoft.Extensions.DependencyInjection.Abstractions",
     ];
 
-    private static readonly string[] ExpectedProjectReferences = ["EdFi.DataManagementService.Backend.Ddl"];
+    private static readonly string[] ExpectedProjectReferences =
+    [
+        "EdFi.DataManagementService.Backend.Ddl",
+        "EdFi.DataManagementService.Core",
+    ];
 
     [Test]
     public void It_returns_render_registration_and_artifact_evidence_without_connect_lifecycle_inputs()
@@ -48,12 +52,14 @@ public class Given_CdcConnectorTemplateIntegrationBoundaryTests
         result.RedactedArtifactPayload.Should().NotBeNull();
         result
             .RedactedArtifactPayload!.FileName.Should()
-            .Be(new CdcSafeName("cdc-connector-template.sqlserver.dms_binding_connector.manifest.json"));
-        result.SchemaHistoryTopicName.Should().Be("edfi.documents.schema-history");
+            .Be(new CdcSafeName("cdc-connector-template.sqlserver.dms-binding-g7.manifest.json"));
+        result
+            .SchemaHistoryTopicName.Should()
+            .Be("edfi.documents.instance.binding-g7.documents.v1.schema-history");
         result.Config.Should().Contain("name", request.ConnectorName.Value);
         result
             .Config.Should()
-            .Contain("schema.history.internal.kafka.topic", "edfi.documents.schema-history");
+            .Contain("schema.history.internal.kafka.topic", request.SchemaHistoryTopicName!);
         result
             .Config.Keys.Should()
             .NotContain(key => key.StartsWith("topic.creation.", StringComparison.Ordinal));
@@ -94,7 +100,7 @@ public class Given_CdcConnectorTemplateIntegrationBoundaryTests
                 request,
                 rendered.Config,
                 new CdcConnectorProviderSetupEvidence(
-                    bindingGeneration: request.BindingIdentity.BindingGeneration,
+                    bindingGeneration: request.BindingGeneration,
                     BuildProviderSetupResult(CdcProvider.Postgresql)
                 )
             )
@@ -104,7 +110,7 @@ public class Given_CdcConnectorTemplateIntegrationBoundaryTests
                 request,
                 rendered.Config,
                 new CdcConnectorProviderSetupEvidence(
-                    bindingGeneration: request.BindingIdentity.BindingGeneration,
+                    bindingGeneration: request.BindingGeneration,
                     BuildProviderSetupResult(CdcProvider.Postgresql)
                 ),
                 new CdcConnectorTemplateSourcePartitionEvidence(

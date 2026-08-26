@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Backend.Ddl;
 using FluentAssertions;
 using FluentAssertions.Execution;
 using NUnit.Framework;
+using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 
@@ -106,7 +107,7 @@ public sealed class Given_PinnedImageSmokeDiagnostics
             category: CdcConnectorTemplateDiagnosticCategory.LiveReadBackMismatch,
             provider: CdcProvider.Postgresql,
             propertyName: "kafkaConnect.registration",
-            safeArtifactOrObjectName: new CdcSafeName("dms_binding_connector"),
+            safeArtifactOrObjectName: new CdcSafeName("dms-binding-g7"),
             expectedValue: "Created or OK",
             observedValue: "InternalServerError",
             redactionClassification: CdcConnectorTemplateRedactionClassification.Safe
@@ -121,7 +122,7 @@ public sealed class Given_PinnedImageSmokeDiagnostics
         diagnostic.Provider.Should().Be(CdcProvider.Postgresql);
         diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.PinnedImageSmoke);
         diagnostic.PropertyName.Should().Be("kafkaConnect.registration");
-        diagnostic.SafeArtifactOrObjectName.Should().Be(new CdcSafeName("dms_binding_connector"));
+        diagnostic.SafeArtifactOrObjectName.Should().Be(new CdcSafeName("dms-binding-g7"));
         diagnostic.ExpectedValue.Should().Be("Created or OK");
         diagnostic.ObservedValue.Should().Be("InternalServerError");
         diagnostic.RedactionClassification.Should().Be(CdcConnectorTemplateRedactionClassification.Safe);
@@ -443,11 +444,11 @@ public sealed class Given_PinnedImageConnectorCommittedSourceOffsetSelection
             """
             [
               {
-                "partition": { "server": "dms_binding_connector" },
+                "partition": { "server": "dms-binding-g7" },
                 "offset": { "snapshot": "false", "lsn_proc": 100 }
               },
               {
-                "partition": { "server": "dms_binding_connector" },
+                "partition": { "server": "dms-binding-g7" },
                 "offset": { "snapshot": "true", "lsn_proc": 101 }
               }
             ]
@@ -490,19 +491,35 @@ public sealed class Given_PinnedImageConnectorCommittedSourceOffsetSelection
             Diagnostics: []
         );
 
+        CoreCdc.CdcArtifactInventory artifactInventory = CoreCdc
+            .CdcArtifactNameGenerator.Render(
+                new CoreCdc.CdcArtifactNameInput(
+                    "dms",
+                    "edfi.documents",
+                    "binding",
+                    7,
+                    CoreCdc.CdcProvider.Postgresql
+                )
+            )
+            .Inventory!;
+        var binding = new CoreCdc.CdcBinding(
+            CoreCdc.CdcJsonContract.CurrentContractVersion,
+            "dms",
+            CoreCdc.CdcTargetValidator.DefaultBindingTenantKey,
+            "1",
+            "binding",
+            7,
+            CoreCdc.CdcProvider.Postgresql,
+            sourceFingerprint.Value,
+            artifactInventory.ConnectorName,
+            artifactInventory.TopicName,
+            PartitionCount: 1,
+            CoreCdc.CdcTargetValidator.KafkaMurmur2V1PartitionerAlgorithm,
+            CoreCdc.CdcJsonContract.CurrentContractVersion
+        );
+
         return new CdcConnectorTemplateRequest(
-            new CdcBindingIdentity(
-                CdcProvider.Postgresql,
-                new CdcSafeName("dms_binding_connector"),
-                "edfi.documents",
-                bindingGeneration: 7,
-                CdcBindingIdentity.KafkaMurmur2V1PartitionerAlgorithm,
-                CdcProviderArtifactNames.ForPostgresql(
-                    new CdcSafeName("dms_binding_publication"),
-                    new CdcSafeName("dms_binding_slot")
-                ),
-                sourceFingerprint
-            ),
+            binding,
             new CdcConnectorProviderSetupEvidence(bindingGeneration: 7, providerSetupResult),
             new CdcConnectorTemplateDeploymentPolicy("localhost:9092", maxRecordBytes: 33_554_432),
             new CdcProviderConnectionProperties(

@@ -48,7 +48,7 @@ public class Given_CdcConnectorTemplateCommonRendering
         using var _ = new AssertionScope();
         result.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
         result.RegistrationPayload.Should().NotBeNull();
-        result.RegistrationPayload!.Name.Should().Be("dms_binding_connector");
+        result.RegistrationPayload!.Name.Should().Be("dms-binding-g7");
         result.RegistrationPayload.Config.Should().Equal(result.Config);
         result.ConfigSha256.Should().MatchRegex("^sha256:[0-9a-f]{64}$");
         result.Diagnostics.Should().BeEmpty();
@@ -61,14 +61,20 @@ public class Given_CdcConnectorTemplateCommonRendering
                     "io.debezium.connector.postgresql.PostgresConnector"
                 )
             )
-            .And.Contain("name", "dms_binding_connector")
+            .And.Contain("name", "dms-binding-g7")
             .And.Contain("tasks.max", "1")
-            .And.Contain("topic.prefix", "dms_binding_connector")
+            .And.Contain("topic.prefix", "dms-binding-g7")
             .And.Contain("transforms", "documentState")
             .And.Contain("transforms.documentState.type", "org.edfi.kafka.connect.transforms.DocumentState")
             .And.Contain("transforms.documentState.provider", "postgresql")
-            .And.Contain("transforms.documentState.target.topic", "edfi.documents")
-            .And.Contain("transforms.documentState.progress.topic", "edfi.documents.cdc-progress")
+            .And.Contain(
+                "transforms.documentState.target.topic",
+                "edfi.documents.instance.binding-g7.documents.v1"
+            )
+            .And.Contain(
+                "transforms.documentState.progress.topic",
+                "edfi.documents.instance.binding-g7.documents.v1.cdc-progress"
+            )
             .And.Contain("key.converter", "org.apache.kafka.connect.storage.StringConverter")
             .And.Contain("value.converter", "org.edfi.kafka.connect.converters.DocumentStateJsonConverter")
             .And.Contain("value.converter.schemas.enable", "false")
@@ -142,7 +148,7 @@ public class Given_CdcConnectorTemplateCommonRendering
         using var _ = new AssertionScope();
         root.EnumerateObject().Select(property => property.Name).Should().Equal("name", "config");
         root.GetProperty("name").ValueKind.Should().Be(JsonValueKind.String);
-        root.GetProperty("name").GetString().Should().Be("dms_binding_connector");
+        root.GetProperty("name").GetString().Should().Be("dms-binding-g7");
         serializedConfig.Should().Equal(result.Config);
     }
 
@@ -172,7 +178,9 @@ public class Given_CdcConnectorTemplateCommonRendering
 
         using var _ = new AssertionScope();
         result.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
-        result.SchemaHistoryTopicName.Should().Be("edfi.documents.schema-history");
+        result
+            .SchemaHistoryTopicName.Should()
+            .Be("edfi.documents.instance.binding-g7.documents.v1.schema-history");
         result
             .Config.Should()
             .Contain("connector.class", "io.debezium.connector.sqlserver.SqlServerConnector");
