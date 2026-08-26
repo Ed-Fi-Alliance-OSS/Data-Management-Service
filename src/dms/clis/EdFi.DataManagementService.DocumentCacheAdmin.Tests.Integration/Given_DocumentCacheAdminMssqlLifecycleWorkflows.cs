@@ -521,8 +521,9 @@ public sealed class Given_DocumentCacheAdminMssqlOfflineAndCacheAheadRecovery
         );
 
         result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.ArgumentError);
+        result.StandardOutput.Should().BeEmpty();
         result
-            .StandardOutput.Should()
+            .StandardError.Should()
             .Contain(DocumentCacheAdminCommandSurface.OfflineWriterAdmissionOptionName);
         result.StandardError.Should().NotContain(target.ConnectionString);
         harness.ConfigurationService.TokenRequestCount.Should().Be(0);
