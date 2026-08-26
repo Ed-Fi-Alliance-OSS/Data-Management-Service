@@ -43,7 +43,7 @@ public class CursorRequestValidatorTests
         ValidateFor(PageOrderingMode.DocumentId, queryParameters);
 
     private static CursorValidationResult ValidateFor(
-        PageOrderingMode orderingMode,
+        PageOrderingMode? orderingMode,
         params (string Key, string Value)[] queryParameters
     ) =>
         CursorRequestValidator.Validate(
@@ -439,6 +439,49 @@ public class CursorRequestValidatorTests
             ErrorFor(orderingMode, ("pageToken", UndecodableToken))
                 .Should()
                 .Be(CursorRequestValidator.InvalidPageToken);
+        }
+
+        /// <summary>
+        /// A null anchor is a request whose change-version window did not parse, so it resolved none.
+        /// There is nothing for a marker to disagree with, and either token decodes to its range: the
+        /// caller is about to reject the request for the window itself, and blaming the token instead
+        /// would name the one piece of state a mid-walk client cannot rebuild.
+        /// </summary>
+        [Test]
+        public void It_compares_no_anchor_when_the_request_resolved_none()
+        {
+            ValidateFor(null, ("pageToken", ContentVersionToken))
+                .Should()
+                .BeOfType<CursorValidationResult.Valid>()
+                .Subject.Paging.Range.Should()
+                .Be(new CursorRange(1, 100));
+
+            ValidateFor(null, ("pageToken", ValidToken))
+                .Should()
+                .BeOfType<CursorValidationResult.Valid>()
+                .Subject.Paging.Range.Should()
+                .Be(new CursorRange(1, 100));
+        }
+
+        /// <summary>
+        /// Skipping the comparison skips only the comparison. Every other phase-0 and phase-1 rule
+        /// still applies to a request that resolved no anchor, so an unparseable window cannot become
+        /// a way to smuggle a malformed token or a mixed-mode parameter past validation.
+        /// </summary>
+        [Test]
+        public void It_still_applies_every_other_rule_when_the_request_resolved_no_anchor()
+        {
+            ValidateFor(null, ("pageToken", UndecodableToken))
+                .Should()
+                .BeOfType<CursorValidationResult.Invalid>()
+                .Subject.Error.Should()
+                .Be(CursorRequestValidator.InvalidPageToken);
+
+            ValidateFor(null, ("pageToken", ContentVersionToken), ("offset", "10"))
+                .Should()
+                .BeOfType<CursorValidationResult.Invalid>()
+                .Subject.Error.Should()
+                .Be(CursorRequestValidator.OffsetWithPageToken);
         }
     }
 

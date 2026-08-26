@@ -97,16 +97,17 @@ internal static class CursorRequestValidator
     /// </param>
     /// <param name="maximumPageSize">The configured maximum page size.</param>
     /// <param name="orderingMode">
-    /// The anchor this request resolved from its change-version window. A token carries the anchor it
-    /// was issued for, and replaying it under a request that resolves a different one would read its
-    /// bounds against the wrong column, so the two have to agree. The resolved value already accounts
-    /// for the legacy ordering kill switch, which is what keeps tokens issued under that setting
-    /// replayable instead of failing mid-walk.
+    /// The anchor this request resolved from its change-version window, or <see langword="null"/> when
+    /// that window did not parse and the request therefore resolves no anchor. A token carries the
+    /// anchor it was issued for, and replaying it under a request that resolves a different one would
+    /// read its bounds against the wrong column, so the two have to agree. The resolved value already
+    /// accounts for the legacy ordering kill switch, which is what keeps tokens issued under that
+    /// setting replayable instead of failing mid-walk.
     /// </param>
     internal static CursorValidationResult Validate(
         IReadOnlyDictionary<string, string> queryParameters,
         int maximumPageSize,
-        PageOrderingMode orderingMode
+        PageOrderingMode? orderingMode
     )
     {
         ArgumentNullException.ThrowIfNull(queryParameters);
@@ -153,7 +154,15 @@ internal static class CursorRequestValidator
         // same answer in both directions - a windowed token replayed without the window, and an
         // unwindowed token replayed with one - because a token is opaque and neither direction tells
         // the client anything it could act on beyond "start over".
-        if (tokenOrderingMode != orderingMode)
+        //
+        // A request whose window did not parse resolves no anchor, so there is nothing to disagree
+        // with and this comparison is skipped. Reporting a perfectly replayable token as invalid
+        // because of a typo in maxChangeVersion would name the one piece of state the client cannot
+        // rebuild, and the natural response - discard the token and restart the walk - is the
+        // expensive one. The window's own fault is reported instead, and the token survives the fix.
+        // Only the comparison is skipped: an undecodable token is still rejected above, because that
+        // fault is real whatever the window says.
+        if (orderingMode is { } resolvedOrderingMode && tokenOrderingMode != resolvedOrderingMode)
         {
             return new CursorValidationResult.Invalid(InvalidPageToken);
         }
@@ -161,6 +170,8 @@ internal static class CursorRequestValidator
         // The decoded anchor is deliberately not carried past here. Once the check above passes it
         // equals the request-level anchor by construction, and that is what the SQL compiler and the
         // token emitter read; a second copy on the paging record would be one more defaultable value.
+        // When the check was skipped there is no request-level anchor to equal, but the caller is
+        // about to reject the request for its window, so nothing downstream reads either one.
 
         // Phase 1, mixed-mode conflicts. A parameter that should not have been sent at all makes the
         // individual parameters' ranges irrelevant.

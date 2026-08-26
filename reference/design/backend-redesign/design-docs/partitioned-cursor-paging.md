@@ -898,6 +898,19 @@ while the row remains eligible, so a `ContentVersion`-anchored walk could return
 max-bearing window is a monotonic-escape window — an update pushes the row past the maximum and out
 of the window entirely — so the same movement removes the row rather than replaying it.
 
+**The escape property is a property of the ceiling, not of the parameter.** It holds while
+`maxChangeVersion` is at or below the current change version, which is what a client following the
+documented workflow supplies, because only then has the sequence already passed every value the
+window admits. A maximum above the current change version is an open-ended window wearing a ceiling:
+the next value the sequence hands out still falls inside it, so an update moves the row forward
+*within* the window, past an anchor the walk has yet to reach, and the walk returns that row a second
+time. That is the min-only hazard, reached through a max-bearing request. The anchor is resolved from
+the presence of a maximum rather than its magnitude — comparing the two would cost a
+`GetMaxChangeVersion` read on every request to detect a client that has already left the recommended
+workflow — so a client that invents a ceiling instead of reading one from `/availableChangeVersions`
+gets the weaker guarantee its own input describes. Everything else in this section assumes a ceiling
+the sequence has passed.
+
 `ContentVersion` anchoring also means a windowed walk seeks the change-version index instead of
 walking the primary key and discarding rows outside the window, so a windowed page costs what its
 page size costs rather than what its window position costs. The applicable indexes already exist:

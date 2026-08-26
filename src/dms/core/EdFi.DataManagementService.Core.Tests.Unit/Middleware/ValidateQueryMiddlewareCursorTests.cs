@@ -536,29 +536,64 @@ public class ValidateQueryMiddlewareCursorTests
         }
 
         /// <summary>
-        /// An unparseable maximum parses to null for the same reason an empty one does, which is what
-        /// makes the anchor of a request the window is about to reject deterministic. The cursor phase
-        /// runs first, so a token that disagrees with that anchor is what the client is told about.
+        /// An unparseable maximum parses to null for the same reason an empty one does — but unlike an
+        /// empty one it is a fault, and a request carrying it resolves no anchor rather than the
+        /// <c>DocumentId</c> anchor its null bounds would otherwise imply. There is nothing for the
+        /// token's marker to disagree with, so the window's own fault is what the client is told about
+        /// and the token it is holding is not blamed for a typo beside it.
         /// </summary>
+        /// <remarks>
+        /// Both tokens are asserted because the anchor comparison is what is being skipped: under the
+        /// earlier rule the windowed token was answered as invalid here while the unwindowed one
+        /// reached the window fault, so a test using only one of them could not tell the two rules
+        /// apart.
+        /// </remarks>
         [Test]
-        public async Task It_compares_against_the_document_id_anchor_of_an_unparseable_maximum()
+        public async Task It_reports_the_window_fault_for_an_unparseable_maximum_whichever_token_accompanies_it()
         {
+            const string WindowFault = "MaxChangeVersion must be a numeric value greater than or equal to 0.";
+
             AssertParameterValidationShell(
                 await Execute(true, ("pageToken", WindowedToken), ("maxChangeVersion", "abc")),
-                CursorRequestValidator.InvalidPageToken
+                WindowFault
+            );
+
+            AssertParameterValidationShell(
+                await Execute(true, ("pageToken", ValidToken), ("maxChangeVersion", "abc")),
+                WindowFault
             );
         }
 
         /// <summary>
-        /// The same request with the matching token reaches the window's own fault, so the test above
-        /// cannot pass because an unparseable maximum rejects every token that accompanies it.
+        /// The rule is about a faulty window, not about an unparseable bound. An inverted window parses
+        /// both of its bounds cleanly and still cannot be accepted, so it resolves no anchor either and
+        /// is reported by its own message rather than by the token that accompanies it.
         /// </summary>
         [Test]
-        public async Task It_reports_the_window_fault_once_the_anchors_agree()
+        public async Task It_reports_the_window_fault_for_an_inverted_window()
         {
             AssertParameterValidationShell(
-                await Execute(true, ("pageToken", ValidToken), ("maxChangeVersion", "abc")),
-                "MaxChangeVersion must be a numeric value greater than or equal to 0."
+                await Execute(
+                    true,
+                    ("pageToken", ValidToken),
+                    ("minChangeVersion", "300"),
+                    ("maxChangeVersion", "200")
+                ),
+                "MinChangeVersion must be less than or equal to MaxChangeVersion."
+            );
+        }
+
+        /// <summary>
+        /// Skipping the anchor comparison for a faulty window does not soften phase 0 itself: a token
+        /// that cannot decode is a fault of its own and is still reported as one, whatever the window
+        /// beside it says.
+        /// </summary>
+        [Test]
+        public async Task It_still_reports_an_undecodable_token_under_an_unparseable_maximum()
+        {
+            AssertParameterValidationShell(
+                await Execute(true, ("pageToken", "!!!"), ("maxChangeVersion", "abc")),
+                CursorRequestValidator.InvalidPageToken
             );
         }
 

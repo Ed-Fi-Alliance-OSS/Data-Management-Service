@@ -2072,6 +2072,16 @@ have. It also lets the database seek the change-version index instead of scannin
 selective upper-tail windows. An empty window with a stale maximum also becomes an immediate
 empty-page result instead of a full-table walk.
 
+The escape property holds for a maximum at or below the current change version, which is what the
+recommended workflow supplies. A maximum above it is an open-ended window wearing a ceiling: the
+change-version sequence has not reached that value yet, so an update lands *inside* the window
+rather than beyond it, and the row moves later in `ContentVersion` order while remaining eligible —
+the same movement described for min-only windows below, with the same consequences. Ordering is
+resolved from the presence of a maximum rather than its magnitude, because comparing it against the
+sequence would cost a read on every request to answer a question about a client that is already
+departing from `/availableChangeVersions`. Clients take the maximum from that endpoint, which is
+what keeps the ceiling at a value the sequence has already passed.
+
 A min-only window remains open as data changes. Updating a row moves it later in
 `ContentVersion` order without removing it from the window. With offset paging, that movement
 can return the row twice and shift another row past an offset boundary; with a `ContentVersion`

@@ -166,10 +166,19 @@ internal class ValidateQueryMiddleware(
         );
 
         // Resolved from the parsed window rather than from parameter presence: '?maxChangeVersion='
-        // parses to null, so it is not a max-bearing window and does not move the anchor. An
-        // unparseable maximum parses to null for the same reason, which makes the anchor of a request
-        // rejected below deterministic rather than dependent on the faulty value.
+        // parses to null, so it is not a max-bearing window and does not move the anchor.
         PageOrderingMode pageOrderingMode = _orderingPolicy.ResolveForLiveQuery(changeVersionResult.Range);
+
+        // A faulty window resolves no anchor at all, rather than whichever one its surviving bounds
+        // happen to imply. An unparseable maximum parses to null exactly as an empty one does, and an
+        // inverted window parses both bounds cleanly, so in either case the anchor above describes a
+        // window this step is about to reject. Comparing a token against it would tell a mid-walk
+        // client that the token it is holding is invalid - the one piece of state it cannot rebuild -
+        // when the fault is the parameter beside it, and the natural response, discarding the token
+        // and restarting the walk, is the expensive one. Only the marker comparison is skipped: an
+        // undecodable token is still reported as one, and the window's own error is reported below.
+        PageOrderingMode? resolvedPageOrderingMode =
+            changeVersionResult.Errors.Count == 0 ? pageOrderingMode : null;
 
         // A request that supplied either cursor parameter is validated by the cursor precedence.
         // Everything else keeps the traditional parsing and its existing messages. Both paths answer
@@ -178,7 +187,7 @@ internal class ValidateQueryMiddleware(
             ? CursorRequestValidator.Validate(
                 requestInfo.FrontendRequest.QueryParameters,
                 _maximumPageSize,
-                pageOrderingMode
+                resolvedPageOrderingMode
             )
             : CursorValidationResult.NotCursorRequest.Instance;
 
