@@ -518,7 +518,7 @@ Describe "Restore recipe repairs the security metadata the compare checks" {
         $referenceAt = $script:recipe.IndexOf('REF="${DB}_reference"')
         # An existing reference is refused, never dropped: it is the deployment an earlier attempt set
         # aside, and dropping it here is exactly how a partial restore used to become the reference.
-        $staleGuard = [regex]::Match($script:recipe, '(?m)^test -z "\$_ref_exists" \|\| \\\r?\n\s+\{ echo "\$REF already exists[^\n]*RECOVER_FROM_REF[^\n]*; exit 1; \}$')
+        $staleGuard = [regex]::Match($script:recipe, '(?m)^test -z "\$_ref_exists" \|\| \\\r?\n\s+\{ echo "\$REF already exists[^\n]*Use the \\"Recovery after a failed restore\\" block below[^\n]*; exit 1; \}$')
         $rename = [regex]::Match($script:recipe, '(?m)^docker exec -i dms-postgresql psql -U "\$DBUSER" -d postgres -v ON_ERROR_STOP=1 -q \\\r?\n\s+-v db="\$DB" -v ref="\$REF" -f - <<''SQL'' \|\| \\\r?\n\s+\{ echo [^\n]*; exit 1; \}\r?\nSELECT format\(''ALTER DATABASE %I RENAME TO %I'', :''db'', :''ref''\) \\gexec\r?\nSQL$')
         $createAt = $script:recipe.IndexOf('createdb -U "$DBUSER" --maintenance-db=postgres -- "$DB"')
         $restoreAt = $script:recipe.IndexOf('pg_restore -U "$DBUSER" -d "$DB"')
