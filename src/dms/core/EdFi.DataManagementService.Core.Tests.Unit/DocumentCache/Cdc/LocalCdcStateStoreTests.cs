@@ -361,7 +361,15 @@ public class Given_LocalCdcStateStore
             SampleBinding.ToBindingIdentity(),
             CancellationToken.None
         );
-        CdcDeleteBindingStateStoreResult deleted = await store.DeleteStateAfterVerifiedCleanupAsync(
+        string bindingPath = tempRoot.BindingPath(SampleBinding);
+        string incidentPath = tempRoot.IncidentPath(SampleBinding);
+        CapturingDeleteCdcLocalStateStoreFileSystem deleteFileSystem = new();
+        LocalCdcBindingStateStore deletingStore = new(
+            tempRoot.Path,
+            CdcLocalStateStorePermissions.Current,
+            deleteFileSystem
+        );
+        CdcDeleteBindingStateStoreResult deleted = await deletingStore.DeleteStateAfterVerifiedCleanupAsync(
             cleanupProof,
             CancellationToken.None
         );
@@ -386,8 +394,9 @@ public class Given_LocalCdcStateStore
             .BeOfType<CdcDeleteBindingStateStoreResult.Deleted>()
             .Subject.BindingIdentity.Should()
             .Be(SampleBinding.ToCompleteBindingIdentity());
-        File.Exists(tempRoot.BindingPath(SampleBinding)).Should().BeFalse();
-        File.Exists(tempRoot.IncidentPath(SampleBinding)).Should().BeFalse();
+        deleteFileSystem.DeleteCalls.Should().Equal(incidentPath, bindingPath);
+        File.Exists(bindingPath).Should().BeFalse();
+        File.Exists(incidentPath).Should().BeFalse();
         readAfterDelete.Should().BeOfType<CdcReadBindingStateStoreResult.Missing>();
     }
 
@@ -1041,7 +1050,7 @@ public class Given_LocalCdcStateStore
     }
 
     [Test]
-    public async Task It_preserves_incident_latch_on_partial_retirement_and_retries_orphan_cleanup()
+    public async Task It_deletes_incident_before_binding_and_preserves_latch_when_incident_delete_fails()
     {
         using TempCdcStateRoot bindingFailureRoot = new();
         LocalCdcBindingStateStore bindingWriter = new(bindingFailureRoot.Path);
@@ -1085,20 +1094,22 @@ public class Given_LocalCdcStateStore
                     .Diagnostics.Single()
                     .Message.Contains("delete binding state", StringComparison.Ordinal)
             );
-        bindingDeleteFailure.DeleteCalls.Should().Equal(bindingFailureBindingPath);
-        File.Exists(bindingFailureIncidentPath).Should().BeTrue();
+        bindingDeleteFailure
+            .DeleteCalls.Should()
+            .Equal(bindingFailureIncidentPath, bindingFailureBindingPath);
+        File.Exists(bindingFailureIncidentPath).Should().BeFalse();
         File.Exists(bindingFailureBindingPath).Should().BeTrue();
         bindingFailureRead
             .Should()
             .BeOfType<CdcReadBindingStateStoreResult.Found>()
             .Subject.State.Incident.Should()
-            .BeEquivalentTo(incident);
+            .BeNull();
         CdcListBindingsStateStoreResult.Listed bindingFailureListed = bindingFailureList
             .Should()
             .BeOfType<CdcListBindingsStateStoreResult.Listed>()
             .Subject;
         bindingFailureListed.States.Should().ContainSingle();
-        bindingFailureListed.States.Single().Incident.Should().BeEquivalentTo(incident);
+        bindingFailureListed.States.Single().Incident.Should().BeNull();
 
         using TempCdcStateRoot incidentFailureRoot = new();
         LocalCdcBindingStateStore incidentWriter = new(incidentFailureRoot.Path);
@@ -1139,17 +1150,20 @@ public class Given_LocalCdcStateStore
                     .Diagnostics.Single()
                     .Message.Contains("delete incident state", StringComparison.Ordinal)
             );
-        incidentDeleteFailure
-            .DeleteCalls.Should()
-            .Equal(incidentFailureBindingPath, incidentFailureIncidentPath);
+        incidentDeleteFailure.DeleteCalls.Should().Equal(incidentFailureIncidentPath);
         File.Exists(incidentFailureIncidentPath).Should().BeTrue();
-        File.Exists(incidentFailureBindingPath).Should().BeFalse();
-        incidentFailureRead.Should().BeOfType<CdcReadBindingStateStoreResult.Missing>();
-        incidentFailureList
+        File.Exists(incidentFailureBindingPath).Should().BeTrue();
+        incidentFailureRead
             .Should()
-            .BeOfType<CdcListBindingsStateStoreResult.StateStoreFailure>()
-            .Subject.Failure.Kind.Should()
-            .Be(CdcStateStoreFailureKind.InvalidPersistedIncident);
+            .BeOfType<CdcReadBindingStateStoreResult.Found>()
+            .Subject.State.Incident.Should()
+            .BeEquivalentTo(incident);
+        CdcListBindingsStateStoreResult.Listed incidentFailureListed = incidentFailureList
+            .Should()
+            .BeOfType<CdcListBindingsStateStoreResult.Listed>()
+            .Subject;
+        incidentFailureListed.States.Should().ContainSingle();
+        incidentFailureListed.States.Single().Incident.Should().BeEquivalentTo(incident);
 
         CdcDeleteBindingStateStoreResult retryDeleteResult =
             await incidentWriter.DeleteStateAfterVerifiedCleanupAsync(cleanupProof, CancellationToken.None);
@@ -1168,6 +1182,7 @@ public class Given_LocalCdcStateStore
             .Subject.BindingIdentity.Should()
             .Be(SampleBinding.ToCompleteBindingIdentity());
         File.Exists(incidentFailureIncidentPath).Should().BeFalse();
+        File.Exists(incidentFailureBindingPath).Should().BeFalse();
         retryRead.Should().BeOfType<CdcReadBindingStateStoreResult.Missing>();
         retryList
             .Should()
@@ -1684,8 +1699,7 @@ public class Given_LocalCdcStateStore
         }
     }
 
-    private sealed class FailingDeleteCdcLocalStateStoreFileSystem(string failingPath)
-        : DelegatingCdcLocalStateStoreFileSystem
+    private class CapturingDeleteCdcLocalStateStoreFileSystem : DelegatingCdcLocalStateStoreFileSystem
     {
         private readonly List<string> _deleteCalls = [];
 
@@ -1693,7 +1707,19 @@ public class Given_LocalCdcStateStore
 
         public override void DeleteFile(string path)
         {
-            _deleteCalls.Add(path);
+            RecordDeleteCall(path);
+            File.Delete(path);
+        }
+
+        protected void RecordDeleteCall(string path) => _deleteCalls.Add(path);
+    }
+
+    private sealed class FailingDeleteCdcLocalStateStoreFileSystem(string failingPath)
+        : CapturingDeleteCdcLocalStateStoreFileSystem
+    {
+        public override void DeleteFile(string path)
+        {
+            RecordDeleteCall(path);
             if (string.Equals(path, failingPath, StringComparison.Ordinal))
             {
                 throw new IOException("Injected delete failure.");
