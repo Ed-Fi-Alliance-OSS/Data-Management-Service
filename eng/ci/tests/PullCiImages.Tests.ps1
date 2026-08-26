@@ -12,12 +12,12 @@
 # source text, and no registry, image, or wall-clock delay is involved. A child process keeps the
 # shims and the script's preference assignments out of this Pester session.
 #
-# One argument is deliberately not asserted here. The script passes `--` to end Docker's option list,
-# and PowerShell forwards that token verbatim to a native command but strips it from a function call,
-# so a shim can never observe it: `& echo.exe pull -- ref` receives three arguments while a function
-# receives two. The recorded pull lines below therefore omit `--` even though the shipped command
-# includes it - do not "fix" that by removing the guard from the script. The real native command line
-# is covered by the one-time invalid-image exercise against real Docker instead.
+# One argument is deliberately not asserted here, and nothing in this suite covers it. The script
+# passes `--` to end Docker's option list, and PowerShell forwards that token verbatim to a native
+# command but strips it from a function call, so a shim can never observe it: a native
+# `echo pull -- ref` receives three arguments while a function receives two. The recorded pull lines
+# below therefore omit `--` even though the shipped command includes it - do not "fix" that by
+# removing the guard from the script. Only a real native invocation could assert it.
 #
 # Randomness is injected rather than sampled: the shim records the bounds the script asks for and
 # returns a caller-selected value from them. That makes the jitter contract - an expanding
@@ -52,7 +52,10 @@ function docker {
     $global:LASTEXITCODE = $codes[$index]
 
     if ($global:LASTEXITCODE -ne 0) {
-        Write-HarnessRecord "docker-error simulated registry failure"
+        # Emitted on the success stream on purpose. That is the stream an accidental capture
+        # (`$x = docker ...`, `| Out-Null`, `> $null`) would swallow, so asserting this line reaches the
+        # harness output is what holds the script to leaving Docker's registry error in the job log.
+        Write-Output "simulated registry failure for $($args[-1])"
     }
 }
 
@@ -78,11 +81,18 @@ $ErrorActionPreference = "Stop"
 # terminating error would be reported and the harness would still exit 0, making every failure
 # assertion vacuous.
 try {
-    & $env:DMS_PULL_SCRIPT `
-        -Images $env:DMS_PULL_IMAGES `
-        -MaxAttempts ([int] $env:DMS_PULL_MAX_ATTEMPTS) `
-        -InitialDelaySeconds ([int] $env:DMS_PULL_INITIAL_DELAY) `
-        -MaxDelaySeconds ([int] $env:DMS_PULL_MAX_DELAY)
+    if ($env:DMS_PULL_USE_SCRIPT_DEFAULTS -eq "true") {
+        # Passing nothing but the images is the only way to exercise the script's own parameter
+        # defaults; every other scenario supplies them explicitly and would mask a drift.
+        & $env:DMS_PULL_SCRIPT -Images $env:DMS_PULL_IMAGES
+    }
+    else {
+        & $env:DMS_PULL_SCRIPT `
+            -Images $env:DMS_PULL_IMAGES `
+            -MaxAttempts ([int] $env:DMS_PULL_MAX_ATTEMPTS) `
+            -InitialDelaySeconds ([int] $env:DMS_PULL_INITIAL_DELAY) `
+            -MaxDelaySeconds ([int] $env:DMS_PULL_MAX_DELAY)
+    }
 }
 catch {
     [Console]::Error.WriteLine($_.Exception.Message)
@@ -102,7 +112,8 @@ exit 0
                 [int] $MaxAttempts = 5,
                 [int] $InitialDelaySeconds = 3,
                 [int] $MaxDelaySeconds = 60,
-                [ValidateSet("floor", "ceiling", "interior")] [string] $RandomMode = "floor"
+                [ValidateSet("floor", "ceiling", "interior")] [string] $RandomMode = "floor",
+                [switch] $UseScriptDefaults
             )
 
             $logPath = Join-Path $TestDrive ("records-" + [Guid]::NewGuid().ToString("N") + ".log")
@@ -116,6 +127,7 @@ exit 0
             $env:DMS_PULL_EXIT_CODES = $ExitCodes
             $env:DMS_PULL_RANDOM_MODE = $RandomMode
             $env:DMS_PULL_LOG = $logPath
+            $env:DMS_PULL_USE_SCRIPT_DEFAULTS = if ($UseScriptDefaults) { "true" } else { "false" }
 
             $output = & pwsh -NoProfile -File $script:harnessPath 2>&1 | Out-String
             $exitCode = $LASTEXITCODE
@@ -342,6 +354,204 @@ exit 0
 
             $result.ExitCode | Should -Not -Be 0
             $result.Pulls | Should -HaveCount 0
+        }
+    }
+
+    Context "an attempt budget past the Int32 exponent boundary" {
+        # The delay arithmetic multiplies the initial base by 2^(attempt-1). Once that product
+        # exceeds Int32, computing the cap has to stay in floating point: binding Math.Min(Int32,Int32)
+        # instead narrows the double and dies with a conversion error partway through the budget,
+        # which silently caps attempts well below the 100 that ValidateRange advertises.
+        It "spends the whole declared budget instead of dying on the delay arithmetic" {
+            $result = Invoke-PullHarness -Images "registry/dms:ci" -ExitCodes "1" -MaxAttempts 40 -InitialDelaySeconds 3
+
+            $result.Pulls | Should -HaveCount 40
+            $result.Output | Should -Not -Match "Cannot convert"
+            $result.Output | Should -Match "Failed to pull registry/dms:ci after 40 attempt\(s\)\."
+        }
+
+        It "reports failure rather than an arithmetic error at the top of the declared range" {
+            $result = Invoke-PullHarness -Images "registry/dms:ci" -ExitCodes "1" -MaxAttempts 100 -InitialDelaySeconds 3600
+
+            $result.Pulls | Should -HaveCount 100
+            $result.Output | Should -Not -Match "Cannot convert"
+            $result.Output | Should -Match "Failed to pull registry/dms:ci after 100 attempt\(s\)\."
+        }
+
+        It "holds every retry past the cap at the capped band" {
+            $result = Invoke-PullHarness -Images "registry/dms:ci" -ExitCodes "1" -MaxAttempts 40 -InitialDelaySeconds 3 -RandomMode "floor"
+
+            # Base reaches the 60s cap on retry 6 and stays there, so the half-width is fixed at 30000.
+            @($result.Randoms | Select-Object -Skip 6 | Sort-Object -Unique) | Should -Be @("random 0 30000")
+        }
+    }
+
+    Context "Docker's own output" {
+        It "leaves it in the job log rather than capturing it" {
+            # The registry error explaining a failure is the whole point of not capturing the pull, so
+            # the shim's success-stream line has to survive into the harness output.
+            $result = Invoke-PullHarness -Images "registry/dms:ci" -ExitCodes "1,0"
+
+            $result.Output | Should -Match "simulated registry failure for registry/dms:ci"
+        }
+
+        It "keeps it for the final failed attempt too" {
+            $result = Invoke-PullHarness -Images "registry/dms:ci" -ExitCodes "1" -MaxAttempts 2 -InitialDelaySeconds 1
+
+            @([regex]::Matches($result.Output, "simulated registry failure")) | Should -HaveCount 2
+        }
+    }
+
+    Context "the shipped defaults" {
+        BeforeAll {
+            $script:actionPath = [System.IO.Path]::GetFullPath(
+                (Join-Path $PSScriptRoot "../../../.github/actions/pull-ci-images/action.yml")
+            )
+            $script:actionLines = @(Get-Content -LiteralPath $script:actionPath)
+
+            function Get-DeclaredInputDefault {
+                # No YAML parser is available in this lane (see DmsPullRequestMssqlWorkflow.Tests.ps1),
+                # so the input's block is found by its two-space key and scanned for its default.
+                param([Parameter(Mandatory)] [string] $InputName)
+
+                $start = -1
+                for ($i = 0; $i -lt $script:actionLines.Count; $i++) {
+                    if ($script:actionLines[$i] -match "^  $([regex]::Escape($InputName)):\s*$") {
+                        $start = $i
+                        break
+                    }
+                }
+                if ($start -lt 0) {
+                    return $null
+                }
+
+                for ($j = $start + 1; $j -lt $script:actionLines.Count; $j++) {
+                    if ($script:actionLines[$j] -match '^  \S') {
+                        break
+                    }
+                    if ($script:actionLines[$j] -match '^\s+default:\s*"?([^"]+?)"?\s*$') {
+                        return $Matches[1]
+                    }
+                }
+                return $null
+            }
+        }
+
+        It "declares the retry defaults the call sites rely on" {
+            # Every call site passes only `images`, so these declared values are the retry policy for
+            # all of them: lowering max-attempts to 1 here would disable retries fleet-wide.
+            Get-DeclaredInputDefault -InputName "max-attempts" | Should -Be "5"
+            Get-DeclaredInputDefault -InputName "initial-delay-seconds" | Should -Be "3"
+            Get-DeclaredInputDefault -InputName "max-delay-seconds" | Should -Be "60"
+        }
+
+        It "spends five attempts when the caller supplies only images" {
+            $result = Invoke-PullHarness -Images "registry/dms:ci" -ExitCodes "1" -UseScriptDefaults
+
+            $result.Pulls | Should -HaveCount 5
+            $result.Output | Should -Match "Failed to pull registry/dms:ci after 5 attempt\(s\)\."
+        }
+
+        It "starts from a three-second base when the caller supplies only images" {
+            $result = Invoke-PullHarness -Images "registry/dms:ci" -ExitCodes "1" -UseScriptDefaults
+
+            $result.Randoms[0] | Should -Be "random 0 1500"
+            $result.Sleeps[0] | Should -Be 1500
+        }
+    }
+
+    AfterAll {
+        foreach ($name in @(
+                "DMS_PULL_SCRIPT", "DMS_PULL_IMAGES", "DMS_PULL_MAX_ATTEMPTS", "DMS_PULL_INITIAL_DELAY",
+                "DMS_PULL_MAX_DELAY", "DMS_PULL_EXIT_CODES", "DMS_PULL_RANDOM_MODE", "DMS_PULL_LOG",
+                "DMS_PULL_USE_SCRIPT_DEFAULTS")) {
+            # Remove-Item rather than assigning $null: assigning leaves a defined-but-empty variable
+            # behind on some hosts, which a later spec would read as configured.
+            Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+Describe "pull-ci-images workflow wiring" {
+    # Two invariants that live purely in declarative CI wiring, so no invoked-script test can reach
+    # them, and whose regression would not surface as a failing pull-request lane. Everything else
+    # about the conversions - the gates, login order, permissions - fails a lane directly when broken
+    # and is deliberately not asserted from source here, following
+    # eng/ci/tests/DmsPullRequestMssqlWorkflow.Tests.ps1.
+    BeforeAll {
+        $script:workflowRoot = [System.IO.Path]::GetFullPath(
+            (Join-Path $PSScriptRoot "../../../.github/workflows")
+        )
+
+        function Get-JobBlock {
+            param(
+                # Not Mandatory: a mandatory string[] rejects an array holding the file's blank lines.
+                [string[]] $Lines,
+                [Parameter(Mandatory)] [string] $JobName
+            )
+
+            $start = -1
+            for ($i = 0; $i -lt $Lines.Count; $i++) {
+                if ($Lines[$i] -match "^  $([regex]::Escape($JobName)):\s*$") {
+                    $start = $i
+                    break
+                }
+            }
+            if ($start -lt 0) {
+                return @()
+            }
+
+            $end = $Lines.Count
+            for ($j = $start + 1; $j -lt $Lines.Count; $j++) {
+                if ($Lines[$j] -match '^  [A-Za-z0-9_-]+:\s*$') {
+                    $end = $j
+                    break
+                }
+            }
+
+            return @($Lines[$start..($end - 1)])
+        }
+    }
+
+    It "routes every workflow image pull through the action" {
+        # A reintroduced inline `docker pull` still succeeds, so it drops the retry this action exists
+        # to provide without failing anything.
+        $barePulls = @(
+            Get-ChildItem -LiteralPath $script:workflowRoot -Filter *.yml |
+                ForEach-Object {
+                    $file = $_
+                    Get-Content -LiteralPath $file.FullName |
+                        Where-Object { $_ -match 'docker\s+pull\b' } |
+                        ForEach-Object { "$($file.Name): $($_.Trim())" }
+                }
+        )
+
+        $barePulls | Should -HaveCount 0
+    }
+
+    It "checks out the repository before the local action in each release image-tag job" {
+        # Neither job had a checkout before this action existed, and both run only on release, so a
+        # dropped checkout would first appear during a release instead of on a pull request.
+        $releaseLines = @(Get-Content -LiteralPath (Join-Path $script:workflowRoot "on-release.yml"))
+
+        foreach ($jobName in @("tag-dms-image", "tag-cs-image")) {
+            $block = Get-JobBlock -Lines $releaseLines -JobName $jobName
+            $block | Should -Not -BeNullOrEmpty -Because "$jobName must exist"
+
+            $checkoutIndex = -1
+            $actionIndex = -1
+            for ($k = 0; $k -lt $block.Count; $k++) {
+                if ($checkoutIndex -lt 0 -and $block[$k] -match 'uses:\s+actions/checkout@') {
+                    $checkoutIndex = $k
+                }
+                if ($actionIndex -lt 0 -and $block[$k] -match 'uses:\s+\./\.github/actions/pull-ci-images\s*$') {
+                    $actionIndex = $k
+                }
+            }
+
+            $actionIndex | Should -BeGreaterOrEqual 0 -Because "$jobName must pull through the local action"
+            $checkoutIndex | Should -BeGreaterOrEqual 0 -Because "$jobName must check out the repository"
+            $checkoutIndex | Should -BeLessThan $actionIndex -Because "$jobName must check out before the local action resolves"
         }
     }
 }

@@ -14,9 +14,11 @@ lane, and a retry with a fixed or purely exponential delay turns those jobs into
 that re-hits the registry in lockstep.
 
 Each image carries its own attempt budget. After a failed attempt the wait is drawn uniformly from
-[base/2, base), where base doubles per attempt until it reaches MaxDelaySeconds. The delay therefore
-grows on every retry while the base is still climbing, and successive retries share one band once the
-cap is reached. Either way the random draw keeps concurrent jobs from retrying in unison.
+[base/2, base), where base doubles per attempt until it reaches MaxDelaySeconds. Neither bound of
+that band ever decreases, so waits trend upward, but consecutive bands overlap at the attempt where
+the clamp engages and are identical past it - a later retry can draw a shorter wait than an earlier
+one. What holds at every attempt is the random draw, which is what keeps concurrent jobs from
+retrying in unison.
 
 Docker's output is never captured, so whatever the registry said about a failure stays visible in the
 job log, and the final failure names the image and the attempt count rather than letting a missing
@@ -61,8 +63,9 @@ $ErrorActionPreference = "Stop"
 # to a terminating error, the first transient failure would abort the run instead of being retried.
 $PSNativeCommandUseErrorActionPreference = $false
 
-# A block scalar in the calling workflow always contributes a trailing newline, and its values are
-# indented, so trimming and dropping empties is required rather than cosmetic.
+# A block scalar in the calling workflow contributes a trailing newline, so the empty-line filter is
+# required. YAML strips the block's indentation before the value ever arrives, which leaves the Trim
+# defensive against a hand-edited input rather than necessary for the call sites.
 $imageList = @(
     $Images -split "\r?\n" |
         ForEach-Object { $_.Trim() } |
@@ -95,11 +98,15 @@ foreach ($image in $imageList) {
             throw "Failed to pull $image after $MaxAttempts attempt(s)."
         }
 
-        # Equal jitter over an exponential base that doubles until it reaches $MaxDelaySeconds. Every
-        # wait is at least half the base and less than the base, so delays grow per retry while the
-        # base is still climbing and share one band after it caps. The random component is what keeps
-        # concurrent jobs from retrying in unison, at either stage.
-        $baseSeconds = [Math]::Min($MaxDelaySeconds, $InitialDelaySeconds * [Math]::Pow(2, $attempt - 1))
+        # Equal jitter over an exponential base that doubles until it reaches $MaxDelaySeconds. Each
+        # wait is at least half the base and less than the base, so the bands trend upward, though
+        # they overlap where the clamp engages and are identical past it - consecutive waits are not
+        # strictly increasing. The random component, not the growth, is what stops concurrent jobs
+        # retrying in unison.
+        # The [double] cast is load-bearing. Without it PowerShell binds Math.Min(Int32, Int32) and
+        # narrows the doubling term instead of widening the cap, so once the term passes Int32 the
+        # script dies on a conversion error partway through a budget ValidateRange calls legal.
+        $baseSeconds = [Math]::Min([double] $MaxDelaySeconds, $InitialDelaySeconds * [Math]::Pow(2, $attempt - 1))
         $halfMilliseconds = [int] ($baseSeconds * 500)
         $delayMilliseconds = $halfMilliseconds + (Get-Random -Minimum 0 -Maximum $halfMilliseconds)
 
