@@ -72,10 +72,11 @@ public class ClaimsManagementStepDefinitions(ScenarioContext scenarioContext)
         // Held as the exact response text, not a reparsed document, so the upload posts it byte for byte.
         scenarioContext[CapturedClaimsKey] = await response.TextAsync();
 
-        if (response.Headers.TryGetValue("x-reload-id", out var reloadId))
-        {
-            scenarioContext[InitialReloadIdKey] = reloadId;
-        }
+        bool hasReloadId = response.Headers.TryGetValue("x-reload-id", out var reloadId);
+        hasReloadId
+            .Should()
+            .BeTrue("the upload can only be proven to change the reload id if the GET reported one");
+        scenarioContext[InitialReloadIdKey] = reloadId!;
     }
 
     /// <summary>
