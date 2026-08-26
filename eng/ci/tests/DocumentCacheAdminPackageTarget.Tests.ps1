@@ -9,6 +9,7 @@ Describe "DocumentCacheAdmin package target" {
     BeforeAll {
         $script:repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
         $script:buildScriptPath = Join-Path $script:repoRoot "build-dms.ps1"
+        $script:smokeScriptPath = Join-Path $script:repoRoot "eng/ci/Invoke-DocumentCacheAdminPackageSmoke.ps1"
 
         $parseErrors = $null
         $script:buildScriptAst = [System.Management.Automation.Language.Parser]::ParseFile(
@@ -158,5 +159,23 @@ Describe "DocumentCacheAdmin package target" {
         $pushPackage = Get-ScriptFunctionAst -FunctionName "PushPackage"
 
         $pushPackage.Extent.Text | Should -BeLike '*dotnet nuget push $PackageFile --api-key $NuGetApiKey --source $EdFiNuGetFeed*'
+    }
+
+    It "refuses to delete an existing smoke tool path without the package smoke marker" {
+        $toolPath = Join-Path ([System.IO.Path]::GetTempPath()) "dms-document-cache-shared-$([Guid]::NewGuid().ToString('N'))"
+        $keepPath = Join-Path $toolPath "keep.txt"
+
+        New-Item -ItemType Directory -Path $toolPath -Force | Out-Null
+        Set-Content -LiteralPath $keepPath -Value "keep" -Encoding utf8NoBOM
+
+        try {
+            { & $script:smokeScriptPath -SkipPackageBuild -ToolPath $toolPath } |
+                Should -Throw -ExpectedMessage "*does not contain DocumentCacheAdmin package smoke marker*"
+
+            Test-Path -LiteralPath $keepPath -PathType Leaf | Should -BeTrue
+        }
+        finally {
+            Remove-Item -LiteralPath $toolPath -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
 }

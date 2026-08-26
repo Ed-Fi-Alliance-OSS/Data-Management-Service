@@ -15,7 +15,7 @@ param(
     $Configuration = "Release",
 
     [string]
-    $ToolPath = (Join-Path ([System.IO.Path]::GetTempPath()) "dms-document-cache-tool"),
+    $ToolPath = (Join-Path ([System.IO.Path]::GetTempPath()) "dms-document-cache-admin-package-smoke-tool"),
 
     [switch]
     $SkipPackageBuild
@@ -29,6 +29,8 @@ $projectPath = Join-Path $repoRoot "src/dms/clis/EdFi.DataManagementService.Docu
 $readmePath = Join-Path $repoRoot "src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md"
 $buildScriptPath = Join-Path $repoRoot "build-dms.ps1"
 $ToolPath = [System.IO.Path]::GetFullPath($ToolPath)
+$toolPathMarkerFileName = ".dms-document-cache-admin-package-smoke"
+$toolPathMarkerPath = Join-Path $ToolPath $toolPathMarkerFileName
 
 function Assert-RequiredText {
     param(
@@ -137,6 +139,31 @@ function Get-ProjectProperty {
     return $node.InnerText
 }
 
+function Assert-ToolPathCanBeReset {
+    param(
+        [string]
+        $Path,
+
+        [string]
+        $MarkerPath,
+
+        [string]
+        $MarkerFileName
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
+        throw "ToolPath '$Path' already exists but is not a directory; refusing to use it."
+    }
+
+    if (-not (Test-Path -LiteralPath $MarkerPath -PathType Leaf)) {
+        throw "ToolPath '$Path' already exists but does not contain DocumentCacheAdmin package smoke marker '$MarkerFileName'; refusing to recursively delete it."
+    }
+}
+
 function Get-PackageEntryName {
     param(
         [string]
@@ -197,6 +224,11 @@ function Invoke-WithProcessEnvironment {
     }
 }
 
+Assert-ToolPathCanBeReset `
+    -Path $ToolPath `
+    -MarkerPath $toolPathMarkerPath `
+    -MarkerFileName $toolPathMarkerFileName
+
 [xml]$project = Get-Content -LiteralPath $projectPath -Raw
 $packageId = Get-ProjectProperty -Project $project -Name "PackageId"
 $toolCommandName = Get-ProjectProperty -Project $project -Name "ToolCommandName"
@@ -251,10 +283,18 @@ Assert-PackageEntry `
     -Context $packagePath
 
 if (Test-Path -LiteralPath $ToolPath) {
+    Assert-ToolPathCanBeReset `
+        -Path $ToolPath `
+        -MarkerPath $toolPathMarkerPath `
+        -MarkerFileName $toolPathMarkerFileName
     Remove-Item -LiteralPath $ToolPath -Recurse -Force -ErrorAction Stop
 }
 
 New-Item -ItemType Directory -Path $ToolPath -Force | Out-Null
+Set-Content `
+    -LiteralPath $toolPathMarkerPath `
+    -Encoding utf8NoBOM `
+    -Value "Created by eng/ci/Invoke-DocumentCacheAdminPackageSmoke.ps1; this directory may be reset by that script."
 
 $nugetConfigPath = Join-Path $ToolPath "nuget.config"
 $escapedRepoRoot = [System.Security.SecurityElement]::Escape($repoRoot)
