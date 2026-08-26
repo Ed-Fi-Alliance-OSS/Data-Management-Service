@@ -211,7 +211,7 @@ public sealed class Given_DocumentCacheAdminParserAndContractUnitTests
 
         parsed.Should().BeFalse();
         invocationTarget.Should().BeNull();
-        failure.Should().Contain("confirmation").And.Contain("could not be converted");
+        failure.Should().Contain("confirmation").And.Contain("must be the string value 'onlineCacheRebuild'");
     }
 
     [Test]
