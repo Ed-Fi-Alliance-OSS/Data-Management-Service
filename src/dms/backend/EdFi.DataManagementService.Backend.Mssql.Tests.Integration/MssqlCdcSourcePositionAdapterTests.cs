@@ -24,7 +24,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 [Category(MssqlCiShards.Shard4)]
 [Category("CdcProviderPosition")]
 [Category("CdcSourceHistory")]
-public class Given_MssqlCdcSourcePositionAdapter
+public class Given_MssqlCdcSourcePositionAdapterTests
 {
     private const string FixtureRelativePath =
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-extension-child-collections";
@@ -127,6 +127,22 @@ public class Given_MssqlCdcSourcePositionAdapter
         observation.PostgresqlBarrierLsn.Should().BeNull();
         observation.Diagnostics.Should().BeEmpty();
         ValidateBarrierObservation(observation, binding).Succeeded.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task It_propagates_caller_cancellation_without_returning_a_barrier_result()
+    {
+        CoreCdc.CdcBinding binding = await BuildBindingAsync();
+        using CancellationTokenSource cancellationSource = new();
+        await cancellationSource.CancelAsync();
+
+        Func<Task> act = async () =>
+            await _adapter.CaptureBarrierAsync(
+                new(_database.ConnectionString, binding),
+                cancellationSource.Token
+            );
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
     [Test]

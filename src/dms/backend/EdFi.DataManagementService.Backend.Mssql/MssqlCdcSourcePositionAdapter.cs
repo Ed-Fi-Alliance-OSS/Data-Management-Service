@@ -52,6 +52,8 @@ internal sealed class MssqlCdcSourcePositionAdapter(
             );
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         try
         {
             await using SqlConnection connection = new(request.ConnectionString);
@@ -117,6 +119,10 @@ internal sealed class MssqlCdcSourcePositionAdapter(
                 UtcNow(),
                 diagnostics.Diagnostics
             );
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (OperationCanceledException)
         {

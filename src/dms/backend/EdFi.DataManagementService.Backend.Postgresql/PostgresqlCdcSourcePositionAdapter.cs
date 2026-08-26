@@ -50,6 +50,8 @@ internal sealed class PostgresqlCdcSourcePositionAdapter(
             );
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         try
         {
             NpgsqlDataSource dataSource = _dataSourceCache.GetOrCreate(request.ConnectionString);
@@ -77,6 +79,10 @@ internal sealed class PostgresqlCdcSourcePositionAdapter(
                     UtcNow(),
                     diagnostics.Diagnostics
                 );
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (OperationCanceledException)
         {
