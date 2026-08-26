@@ -318,7 +318,7 @@ public class Given_DocumentCache_Target_Resolution_Composition
     }
 
     [Test]
-    public async Task It_keeps_failed_initialization_ineligible_until_replacement_context_is_created()
+    public async Task It_retries_recoverable_initialization_failure_for_the_same_generation()
     {
         using CompositionFixture fixture = CompositionFixture.Create(
             RelationalProviderToken.SqlServer,
@@ -374,44 +374,21 @@ public class Given_DocumentCache_Target_Resolution_Composition
         sameSignatureRefresh
             .Targets.Single()
             .EligibilityState.Should()
-            .Be(DocumentCacheTargetEligibilityState.Ineligible);
-        fixture.Registry.CurrentRuntimeSnapshot.GetExecutionContext(_defaultTargetKey).Should().BeNull();
-        fixture.ProviderAdapter.InitializationPrerequisiteCallCount("same-connection").Should().Be(1);
-
-        fixture.ProviderAdapter.SetObservation(
-            "replacement-connection",
-            lifecycle: _disabledLifecycle,
-            prerequisites: lifecycle =>
-                DocumentCacheProviderPrerequisiteValidationResult.Initialization(
-                    SatisfiedSqlServerPrerequisites(),
-                    lifecycle
-                )
-        );
-        fixture.DataStoreProvider.QueueLoadResult(
-            tenant: null,
-            CreateDataStore(1, "replacement-connection", RelationalProviderToken.SqlServer)
-        );
-
-        DocumentCacheTargetRegistrySnapshot replacementRefresh = await fixture.Registry.RefreshAsync(
-            DocumentCacheTargetRefreshReason.SupervisorTriggered
-        );
-
-        DocumentCacheTargetObservation replacementObservation = replacementRefresh.Targets.Single();
-        replacementObservation.Generation!.Value.Should().Be(2);
-        replacementObservation.EligibilityState.Should().Be(DocumentCacheTargetEligibilityState.Eligible);
-        replacementObservation
+            .Be(DocumentCacheTargetEligibilityState.Eligible);
+        sameSignatureRefresh
+            .Targets.Single()
             .Diagnostics.Should()
-            .Contain(diagnostic =>
+            .NotContain(diagnostic =>
                 diagnostic.Category == DocumentCacheTargetDiagnosticCategory.TargetReplaced
             );
         fixture
             .Registry.CurrentRuntimeSnapshot.GetExecutionContext(
                 _defaultTargetKey,
-                new DocumentCacheTargetContextGeneration(2)
+                new DocumentCacheTargetContextGeneration(1)
             )!
             .ConnectionInput.Value.Should()
-            .Be("replacement-connection");
-        fixture.ProviderAdapter.InitializationPrerequisiteCallCount("replacement-connection").Should().Be(1);
+            .Be("same-connection");
+        fixture.ProviderAdapter.InitializationPrerequisiteCallCount("same-connection").Should().Be(2);
     }
 
     [Test]

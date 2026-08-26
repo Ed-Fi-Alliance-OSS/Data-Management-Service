@@ -373,7 +373,10 @@ public sealed class DocumentCacheTargetRegistry(
             DocumentCacheTargetContextGeneration reusableGeneration = previousState
                 .StableObservation
                 .Generation!;
-            if (previousState.ProviderMetadataStatus != resolvedDataStore.RelationalProviderMetadataStatus)
+            if (
+                previousState.ProviderMetadataStatus != resolvedDataStore.RelationalProviderMetadataStatus
+                || HasRecoverableInitializationFailure(previousState.StableObservation)
+            )
             {
                 DocumentCacheTargetContextBuildResult refreshedBuildResult = await targetContextBuilder
                     .BuildAsync(targetKey, resolvedDataStore, reusableGeneration, cancellationToken)
