@@ -328,3 +328,8 @@ Key decisions: added public Core CdcSha256ValueValidator for `sha256:` plus 64 l
 Files changed: Core CDC primitives/validators/classifier; Core CDC contract/hash tests; MSSQL source-position adapter and integration test using cleanup; tasks.json; progress.txt.
 Verification: duplicate Sha256Prefix/ValidateSha256/IsSha256Fingerprint/IsLowercaseHex rg scan clean; all Core FullyQualifiedName~Cdc passed 268 tests; MssqlCdcSourcePositionAdapter passed 17 tests with SQL Server 2025 localhost,14333; csharpier passed; git diff --check passed.
 Blockers/next: none; remaining open task is owner-only create modes.
+DMS-1319 00-documentcache-cdc-prerequisites - completed owner-only create modes task.
+Key decisions: added shared local CDC Unix mode constants; directory creation now uses owner-only Unix mode where supported with fallback; binding/incident create-new writes set FileStreamOptions.UnixCreateMode before post-create hardening.
+Files changed: src/dms/core/EdFi.DataManagementService.Core/DocumentCache/Cdc/LocalCdcBindingStateStore.cs; src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/DocumentCache/Cdc/LocalCdcStateStoreTests.cs; tasks.json; progress.txt.
+Verification: LocalCdcStateStore filter passed 17 tests; required UnixCreateMode/SetUnixFileMode/GetUnixFileMode rg scan completed; csharpier passed.
+Blockers/next: none; all tasks in tasks.json completed.

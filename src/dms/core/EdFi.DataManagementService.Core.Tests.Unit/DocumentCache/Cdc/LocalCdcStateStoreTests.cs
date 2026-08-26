@@ -94,6 +94,38 @@ public class Given_LocalCdcStateStore
     }
 
     [Test]
+    public async Task It_uses_owner_only_unix_create_modes_before_permission_hardening()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Ignore("Unix create modes are not supported on Windows.");
+        }
+
+        using TempCdcStateRoot tempRoot = new();
+        CapturingCreateModeCdcLocalStateStorePermissions permissions = new();
+        LocalCdcBindingStateStore store = new(tempRoot.Path, permissions);
+
+        CdcCreateBindingStateStoreResult created = await store.CreateBindingIfAbsentAsync(
+            SampleBinding,
+            CancellationToken.None
+        );
+        CdcLatchIncidentStateStoreResult latched = await store.LatchSourceHistoryLossAsync(
+            CreateIncident(SampleBinding),
+            CancellationToken.None
+        );
+
+        created.Should().BeOfType<CdcCreateBindingStateStoreResult.Created>();
+        latched.Should().BeOfType<CdcLatchIncidentStateStoreResult.Latched>();
+        permissions
+            .DirectoryModes.Should()
+            .NotBeEmpty()
+            .And.OnlyContain(mode => mode == CdcLocalStateStoreUnixModes.OwnerOnlyDirectory);
+        permissions
+            .FileModes.Should()
+            .Equal(CdcLocalStateStoreUnixModes.OwnerOnlyFile, CdcLocalStateStoreUnixModes.OwnerOnlyFile);
+    }
+
+    [Test]
     public async Task It_lists_bindings_under_a_deployment_key_and_fails_the_whole_list_on_malformed_state()
     {
         using TempCdcStateRoot tempRoot = new();
@@ -1177,6 +1209,35 @@ public class Given_LocalCdcStateStore
 
         public CdcLocalStateStorePermissionResult ValidateOwnerOnlyFile(string path) =>
             CdcLocalStateStorePermissionResult.UnsupportedPlatform;
+    }
+
+    private sealed class CapturingCreateModeCdcLocalStateStorePermissions : ICdcLocalStateStorePermissions
+    {
+        public List<UnixFileMode> DirectoryModes { get; } = [];
+
+        public List<UnixFileMode> FileModes { get; } = [];
+
+        public CdcLocalStateStorePermissionResult ApplyOwnerOnlyDirectory(string path)
+        {
+            DirectoryModes.Add(GetUnixFileMode(path));
+            return CdcLocalStateStorePermissionResult.Success;
+        }
+
+        public CdcLocalStateStorePermissionResult ApplyOwnerOnlyFile(string path)
+        {
+            FileModes.Add(GetUnixFileMode(path));
+            return CdcLocalStateStorePermissionResult.Success;
+        }
+
+        public CdcLocalStateStorePermissionResult ValidateOwnerOnlyFile(string path) =>
+            CdcLocalStateStorePermissionResult.Success;
+
+        private static UnixFileMode GetUnixFileMode(string path)
+        {
+#pragma warning disable CA1416
+            return File.GetUnixFileMode(path);
+#pragma warning restore CA1416
+        }
     }
 
     private sealed class FailingFilePermissionCdcLocalStateStorePermissions : ICdcLocalStateStorePermissions

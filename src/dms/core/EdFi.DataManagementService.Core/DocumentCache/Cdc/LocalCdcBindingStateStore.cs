@@ -1171,7 +1171,7 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
     {
         try
         {
-            Directory.CreateDirectory(path);
+            CreateDirectoryOwnerOnlyIfSupported(path);
         }
         catch (Exception exception) when (IsFileSystemException(exception))
         {
@@ -1505,19 +1505,53 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         CancellationToken cancellationToken
     )
     {
-        await using FileStream fileStream = new(
-            filePath,
-            new FileStreamOptions
-            {
-                Mode = FileMode.CreateNew,
-                Access = FileAccess.Write,
-                Share = FileShare.None,
-                Options = FileOptions.WriteThrough,
-            }
-        );
+        await using FileStream fileStream = new(filePath, OwnerOnlyCreateNewFileOptions());
         await using StreamWriter writer = new(fileStream, new UTF8Encoding(false));
         await writer.WriteAsync(payload.AsMemory(), cancellationToken);
     }
+
+    private static void CreateDirectoryOwnerOnlyIfSupported(string path)
+    {
+        if (!UnixFileModesAreSupported())
+        {
+            Directory.CreateDirectory(path);
+            return;
+        }
+
+        try
+        {
+#pragma warning disable CA1416
+            Directory.CreateDirectory(path, CdcLocalStateStoreUnixModes.OwnerOnlyDirectory);
+#pragma warning restore CA1416
+        }
+        catch (PlatformNotSupportedException)
+        {
+            Directory.CreateDirectory(path);
+        }
+    }
+
+    private static FileStreamOptions OwnerOnlyCreateNewFileOptions()
+    {
+        FileStreamOptions options = new()
+        {
+            Mode = FileMode.CreateNew,
+            Access = FileAccess.Write,
+            Share = FileShare.None,
+            Options = FileOptions.WriteThrough,
+        };
+
+        if (UnixFileModesAreSupported())
+        {
+#pragma warning disable CA1416
+            options.UnixCreateMode = CdcLocalStateStoreUnixModes.OwnerOnlyFile;
+#pragma warning restore CA1416
+        }
+
+        return options;
+    }
+
+    private static bool UnixFileModesAreSupported() =>
+        OperatingSystem.IsLinux() || OperatingSystem.IsMacOS() || OperatingSystem.IsFreeBSD();
 
     private static IReadOnlyList<CdcDiagnostic> DetectDuplicateProperties(string json, string contractName)
     {
@@ -2041,20 +2075,23 @@ internal sealed record CdcLocalStateStorePermissionResult(bool Succeeded, bool U
     public static CdcLocalStateStorePermissionResult Failure(string message) => new(false, false, message);
 }
 
-internal sealed class CdcLocalStateStorePermissions : ICdcLocalStateStorePermissions
+internal static class CdcLocalStateStoreUnixModes
 {
-    private const UnixFileMode OwnerOnlyDirectoryMode =
+    public const UnixFileMode OwnerOnlyDirectory =
         UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
 
-    private const UnixFileMode OwnerOnlyFileMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+    public const UnixFileMode OwnerOnlyFile = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+}
 
+internal sealed class CdcLocalStateStorePermissions : ICdcLocalStateStorePermissions
+{
     public static CdcLocalStateStorePermissions Current { get; } = new();
 
     public CdcLocalStateStorePermissionResult ApplyOwnerOnlyDirectory(string path) =>
-        ApplyOwnerOnlyMode(path, OwnerOnlyDirectoryMode);
+        ApplyOwnerOnlyMode(path, CdcLocalStateStoreUnixModes.OwnerOnlyDirectory);
 
     public CdcLocalStateStorePermissionResult ApplyOwnerOnlyFile(string path) =>
-        ApplyOwnerOnlyMode(path, OwnerOnlyFileMode);
+        ApplyOwnerOnlyMode(path, CdcLocalStateStoreUnixModes.OwnerOnlyFile);
 
     public CdcLocalStateStorePermissionResult ValidateOwnerOnlyFile(string path)
     {
@@ -2068,7 +2105,7 @@ internal sealed class CdcLocalStateStorePermissions : ICdcLocalStateStorePermiss
 #pragma warning disable CA1416
             UnixFileMode mode = File.GetUnixFileMode(path);
 #pragma warning restore CA1416
-            return mode == OwnerOnlyFileMode
+            return mode == CdcLocalStateStoreUnixModes.OwnerOnlyFile
                 ? CdcLocalStateStorePermissionResult.Success
                 : CdcLocalStateStorePermissionResult.Failure(
                     "CDC local state file permissions are not owner-only."

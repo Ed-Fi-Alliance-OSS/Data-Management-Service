@@ -1188,6 +1188,6 @@
       "dotnet test src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj --filter FullyQualifiedName~LocalCdcStateStore",
       "dotnet csharpier format src/dms/core/EdFi.DataManagementService.Core/DocumentCache/Cdc/LocalCdcBindingStateStore.cs"
     ],
-    "completed": false
+    "completed": true
   }
 ]
