@@ -394,7 +394,7 @@ public class Given_LocalCdcStateStore
             .BeOfType<CdcDeleteBindingStateStoreResult.Deleted>()
             .Subject.BindingIdentity.Should()
             .Be(SampleBinding.ToCompleteBindingIdentity());
-        deleteFileSystem.DeleteCalls.Should().Equal(incidentPath, bindingPath);
+        deleteFileSystem.DeleteCalls.Should().Equal(bindingPath, incidentPath);
         File.Exists(bindingPath).Should().BeFalse();
         File.Exists(incidentPath).Should().BeFalse();
         readAfterDelete.Should().BeOfType<CdcReadBindingStateStoreResult.Missing>();
@@ -1050,7 +1050,7 @@ public class Given_LocalCdcStateStore
     }
 
     [Test]
-    public async Task It_deletes_incident_before_binding_and_preserves_latch_when_incident_delete_fails()
+    public async Task It_deletes_binding_before_incident_and_can_retry_orphan_incident_cleanup()
     {
         using TempCdcStateRoot bindingFailureRoot = new();
         LocalCdcBindingStateStore bindingWriter = new(bindingFailureRoot.Path);
@@ -1094,22 +1094,20 @@ public class Given_LocalCdcStateStore
                     .Diagnostics.Single()
                     .Message.Contains("delete binding state", StringComparison.Ordinal)
             );
-        bindingDeleteFailure
-            .DeleteCalls.Should()
-            .Equal(bindingFailureIncidentPath, bindingFailureBindingPath);
-        File.Exists(bindingFailureIncidentPath).Should().BeFalse();
+        bindingDeleteFailure.DeleteCalls.Should().Equal(bindingFailureBindingPath);
+        File.Exists(bindingFailureIncidentPath).Should().BeTrue();
         File.Exists(bindingFailureBindingPath).Should().BeTrue();
         bindingFailureRead
             .Should()
             .BeOfType<CdcReadBindingStateStoreResult.Found>()
             .Subject.State.Incident.Should()
-            .BeNull();
+            .BeEquivalentTo(incident);
         CdcListBindingsStateStoreResult.Listed bindingFailureListed = bindingFailureList
             .Should()
             .BeOfType<CdcListBindingsStateStoreResult.Listed>()
             .Subject;
         bindingFailureListed.States.Should().ContainSingle();
-        bindingFailureListed.States.Single().Incident.Should().BeNull();
+        bindingFailureListed.States.Single().Incident.Should().BeEquivalentTo(incident);
 
         using TempCdcStateRoot incidentFailureRoot = new();
         LocalCdcBindingStateStore incidentWriter = new(incidentFailureRoot.Path);
@@ -1134,10 +1132,6 @@ public class Given_LocalCdcStateStore
             SampleBinding.ToBindingIdentity(),
             CancellationToken.None
         );
-        CdcListBindingsStateStoreResult incidentFailureList = await incidentWriter.ListBindingsAsync(
-            SampleBinding.DeploymentKey,
-            CancellationToken.None
-        );
 
         incidentDeleteResult
             .Should()
@@ -1150,20 +1144,12 @@ public class Given_LocalCdcStateStore
                     .Diagnostics.Single()
                     .Message.Contains("delete incident state", StringComparison.Ordinal)
             );
-        incidentDeleteFailure.DeleteCalls.Should().Equal(incidentFailureIncidentPath);
+        incidentDeleteFailure
+            .DeleteCalls.Should()
+            .Equal(incidentFailureBindingPath, incidentFailureIncidentPath);
         File.Exists(incidentFailureIncidentPath).Should().BeTrue();
-        File.Exists(incidentFailureBindingPath).Should().BeTrue();
-        incidentFailureRead
-            .Should()
-            .BeOfType<CdcReadBindingStateStoreResult.Found>()
-            .Subject.State.Incident.Should()
-            .BeEquivalentTo(incident);
-        CdcListBindingsStateStoreResult.Listed incidentFailureListed = incidentFailureList
-            .Should()
-            .BeOfType<CdcListBindingsStateStoreResult.Listed>()
-            .Subject;
-        incidentFailureListed.States.Should().ContainSingle();
-        incidentFailureListed.States.Single().Incident.Should().BeEquivalentTo(incident);
+        File.Exists(incidentFailureBindingPath).Should().BeFalse();
+        incidentFailureRead.Should().BeOfType<CdcReadBindingStateStoreResult.Missing>();
 
         CdcDeleteBindingStateStoreResult retryDeleteResult =
             await incidentWriter.DeleteStateAfterVerifiedCleanupAsync(cleanupProof, CancellationToken.None);

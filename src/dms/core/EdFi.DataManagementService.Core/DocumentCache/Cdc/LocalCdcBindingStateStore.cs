@@ -417,15 +417,6 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             return new CdcDeleteBindingStateStoreResult.StateStoreFailure(incidentAncestorFailure);
         }
 
-        CdcStateStoreFailure? incidentDeleteFailure = DeleteStateFileIfPresent(
-            incidentPath.FilePath!,
-            "delete incident state"
-        );
-        if (incidentDeleteFailure is not null)
-        {
-            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(incidentDeleteFailure);
-        }
-
         CdcStateStoreFailure? bindingDeleteFailure = DeleteStateFile(
             bindingPath.FilePath!,
             "delete binding state"
@@ -433,6 +424,15 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         if (bindingDeleteFailure is not null)
         {
             return new CdcDeleteBindingStateStoreResult.StateStoreFailure(bindingDeleteFailure);
+        }
+
+        CdcStateStoreFailure? incidentDeleteFailure = DeleteStateFileIfPresent(
+            incidentPath.FilePath!,
+            "delete incident state"
+        );
+        if (incidentDeleteFailure is not null)
+        {
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(incidentDeleteFailure);
         }
 
         return new CdcDeleteBindingStateStoreResult.Deleted(completeIdentity);
