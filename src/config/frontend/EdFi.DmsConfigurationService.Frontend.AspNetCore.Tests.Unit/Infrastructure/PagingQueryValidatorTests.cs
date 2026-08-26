@@ -94,6 +94,79 @@ public class Given_PagingQueryValidators
     }
 
     [Test]
+    public void Limit_accepts_large_values_for_ownership_token()
+    {
+        var scenario = new ValidationScenario<FrontendOwnershipTokenQuery>(
+            new OwnershipTokenPagingQueryValidator(),
+            new FrontendOwnershipTokenQuery { Limit = 1000 },
+            true
+        );
+        var result = scenario.Validate();
+        result.IsValid.Should().BeTrue();
+    }
+
+    [TestCase("id")]
+    [TestCase("description")]
+    public void Ownership_token_orderBy_accepts_allowed_fields(string orderBy)
+    {
+        var scenario = new ValidationScenario<FrontendOwnershipTokenQuery>(
+            new OwnershipTokenPagingQueryValidator(),
+            new FrontendOwnershipTokenQuery { OrderBy = orderBy },
+            true
+        );
+        var result = scenario.Validate();
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Test]
+    public void Ownership_token_orderBy_rejects_invalid_field()
+    {
+        var scenario = new ValidationScenario<FrontendOwnershipTokenQuery>(
+            new OwnershipTokenPagingQueryValidator(),
+            new FrontendOwnershipTokenQuery { OrderBy = "invalid" },
+            false
+        );
+        var result = scenario.Validate();
+        result.IsValid.Should().BeFalse();
+    }
+
+    [Test]
+    public void Ownership_token_direction_rejects_invalid_value()
+    {
+        var scenario = new ValidationScenario<FrontendOwnershipTokenQuery>(
+            new OwnershipTokenPagingQueryValidator(),
+            new FrontendOwnershipTokenQuery { Direction = "sideways" },
+            false
+        );
+        var result = scenario.Validate();
+        result.IsValid.Should().BeFalse();
+    }
+
+    [Test]
+    public void Ownership_token_limit_rejects_zero()
+    {
+        var scenario = new ValidationScenario<FrontendOwnershipTokenQuery>(
+            new OwnershipTokenPagingQueryValidator(),
+            new FrontendOwnershipTokenQuery { Limit = 0 },
+            false
+        );
+        var result = scenario.Validate();
+        result.IsValid.Should().BeFalse();
+    }
+
+    [Test]
+    public void Ownership_token_offset_rejects_negative_value()
+    {
+        var scenario = new ValidationScenario<FrontendOwnershipTokenQuery>(
+            new OwnershipTokenPagingQueryValidator(),
+            new FrontendOwnershipTokenQuery { Offset = -1 },
+            false
+        );
+        var result = scenario.Validate();
+        result.IsValid.Should().BeFalse();
+    }
+
+    [Test]
     public void Claim_set_orderBy_accepts_claim_set_name_alias()
     {
         var scenario = new ValidationScenario<FrontendClaimSetQuery>(

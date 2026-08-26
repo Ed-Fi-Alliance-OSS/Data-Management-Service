@@ -100,9 +100,11 @@ public static class SetupHooks
 
                 // Delete in reverse dependency order
                 await DeleteData(@"""dmscs"".""DataStoreContext""");
-                await DeleteData(@"""dmscs"".""DataStore""");
+                await DeleteData(@"""dmscs"".""ApiClientOwnershipToken""");
                 await DeleteData(@"""dmscs"".""ApiClientDataStore""");
                 await DeleteData(@"""dmscs"".""ApiClient""");
+                await DeleteData(@"""dmscs"".""OwnershipToken""");
+                await DeleteData(@"""dmscs"".""DataStore""");
                 await DeleteData(@"""dmscs"".""Application""");
                 await DeleteData(@"""dmscs"".""Vendor""");
                 // Clean up test-created claimsets (not system-reserved ones)
@@ -139,9 +141,11 @@ public static class SetupHooks
 
                 // Delete in reverse dependency order
                 await DeleteData("dmscs.DataStoreContext");
-                await DeleteData("dmscs.DataStore");
+                await DeleteData("dmscs.ApiClientOwnershipToken");
                 await DeleteData("dmscs.ApiClientDataStore");
                 await DeleteData("dmscs.ApiClient");
+                await DeleteData("dmscs.OwnershipToken");
+                await DeleteData("dmscs.DataStore");
                 await DeleteData("dmscs.Application");
                 await DeleteData("dmscs.Vendor");
                 // Clean up test-created claimsets (not system-reserved ones)

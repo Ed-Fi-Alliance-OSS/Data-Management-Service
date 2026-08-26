@@ -13,5 +13,7 @@ public class ApiClientResponse
     public required Guid ClientUuid { get; set; }
     public required string Name { get; set; }
     public required bool IsApproved { get; set; }
+    public int? CreatorOwnershipTokenId { get; set; }
+    public List<int> OwnershipTokenIds { get; set; } = [];
     public List<int> DataStoreIds { get; set; } = [];
 }
