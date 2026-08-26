@@ -227,24 +227,24 @@ public class OwnershipTokenModuleTests
     }
 
     [Test]
-    public async Task It_rejects_ownership_update_when_body_api_client_id_does_not_match_route_id()
+    public async Task It_returns_api_client_ownership_without_the_route_id_in_the_response_body()
     {
+        A.CallTo(() => _ownershipTokenRepository.GetApiClientOwnership(A<int>.Ignored))
+            .Returns(
+                new ApiClientOwnershipGetResult.Success(
+                    new ApiClientOwnershipResponse { CreatorOwnershipTokenId = 2, OwnershipTokenIds = [3] }
+                )
+            );
         using var client = SetUpClient();
 
-        var response = await client.PutAsync(
-            "/v3/apiClients/1/ownership",
-            new StringContent(
-                """{"apiClientId":2,"creatorOwnershipTokenId":null,"ownershipTokenIds":[]}""",
-                Encoding.UTF8,
-                "application/json"
-            )
-        );
+        var response = await client.GetAsync("/v3/apiClients/1/ownership");
 
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        A.CallTo(() =>
-                _ownershipTokenRepository.UpdateApiClientOwnership(A<ApiClientOwnershipUpdateCommand>.Ignored)
-            )
-            .MustNotHaveHappened();
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+        body.AsObject().Should().NotContainKey("apiClientId");
+        body["creatorOwnershipTokenId"]!.GetValue<int>().Should().Be(2);
+        body["ownershipTokenIds"]!.AsArray().Count.Should().Be(1);
+        body["ownershipTokenIds"]![0]!.GetValue<int>().Should().Be(3);
     }
 
     [Test]
@@ -259,7 +259,7 @@ public class OwnershipTokenModuleTests
         var response = await client.PutAsync(
             "/v3/apiClients/1/ownership",
             new StringContent(
-                """{"apiClientId":1,"creatorOwnershipTokenId":999,"ownershipTokenIds":[]}""",
+                """{"creatorOwnershipTokenId":999,"ownershipTokenIds":[]}""",
                 Encoding.UTF8,
                 "application/json"
             )
@@ -285,7 +285,7 @@ public class OwnershipTokenModuleTests
         var response = await client.PutAsync(
             "/v3/apiClients/1/ownership",
             new StringContent(
-                """{"apiClientId":1,"creatorOwnershipTokenId":2,"ownershipTokenIds":[3]}""",
+                """{"creatorOwnershipTokenId":2,"ownershipTokenIds":[3]}""",
                 Encoding.UTF8,
                 "application/json"
             )

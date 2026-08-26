@@ -189,18 +189,9 @@ public class OwnershipTokenModule : IEndpointModule
         ILogger<OwnershipTokenModule> logger
     )
     {
-        await validator.GuardAsync(command);
         ValidateApiClientRouteId(id);
-
-        if (command.ApiClientId != id)
-        {
-            throw new ValidationException([
-                new ValidationFailure(
-                    "ApiClientId",
-                    "Request body apiClientId must match the id in the url."
-                ),
-            ]);
-        }
+        command.ApiClientId = id;
+        await validator.GuardAsync(command);
 
         ApiClientOwnershipUpdateResult updateResult = await repository.UpdateApiClientOwnership(command);
 

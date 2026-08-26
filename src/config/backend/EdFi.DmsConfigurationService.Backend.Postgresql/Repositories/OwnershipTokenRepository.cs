@@ -226,7 +226,6 @@ public class OwnershipTokenRepository(
             return new ApiClientOwnershipGetResult.Success(
                 new ApiClientOwnershipResponse
                 {
-                    ApiClientId = apiClient.Value.ApiClientId,
                     CreatorOwnershipTokenId = apiClient.Value.CreatorOwnershipTokenId,
                     OwnershipTokenIds = ownershipTokenIds,
                 }

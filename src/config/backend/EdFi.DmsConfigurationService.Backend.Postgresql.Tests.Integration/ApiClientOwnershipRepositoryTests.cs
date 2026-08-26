@@ -41,7 +41,6 @@ public class ApiClientOwnershipRepositoryTests : DatabaseTest
 
             result.Should().BeOfType<ApiClientOwnershipGetResult.Success>();
             var ownership = ((ApiClientOwnershipGetResult.Success)result).Ownership;
-            ownership.ApiClientId.Should().Be(_apiClientId);
             ownership.CreatorOwnershipTokenId.Should().BeNull();
             ownership.OwnershipTokenIds.Should().BeEmpty();
         }
@@ -68,6 +67,98 @@ public class ApiClientOwnershipRepositoryTests : DatabaseTest
             var ownership = ((ApiClientOwnershipGetResult.Success)get).Ownership;
             ownership.CreatorOwnershipTokenId.Should().Be(creatorTokenId);
             ownership.OwnershipTokenIds.Should().Equal(readTokenId2, readTokenId1);
+        }
+
+        [Test]
+        public async Task It_is_idempotent_when_replacing_with_the_same_configuration()
+        {
+            int creatorTokenId = await InsertToken(_ownershipTokenRepository, "Creator");
+            int readTokenId = await InsertToken(_ownershipTokenRepository, "Read");
+            var command = new ApiClientOwnershipUpdateCommand
+            {
+                ApiClientId = _apiClientId,
+                CreatorOwnershipTokenId = creatorTokenId,
+                OwnershipTokenIds = [readTokenId],
+            };
+
+            var first = await _ownershipTokenRepository.UpdateApiClientOwnership(command);
+            var second = await _ownershipTokenRepository.UpdateApiClientOwnership(command);
+            var get = await _ownershipTokenRepository.GetApiClientOwnership(_apiClientId);
+
+            first.Should().BeOfType<ApiClientOwnershipUpdateResult.Success>();
+            second.Should().BeOfType<ApiClientOwnershipUpdateResult.Success>();
+            ((ApiClientOwnershipGetResult.Success)get)
+                .Ownership.OwnershipTokenIds.Should()
+                .Equal(readTokenId);
+        }
+
+        [Test]
+        public async Task It_allows_the_same_token_to_be_assigned_to_multiple_api_clients()
+        {
+            int secondApiClientId = await InsertApiClient(_tenantContextProvider, "Second Ownership Client");
+            int tokenId = await InsertToken(_ownershipTokenRepository, "Shared");
+
+            var first = await _ownershipTokenRepository.UpdateApiClientOwnership(
+                new ApiClientOwnershipUpdateCommand
+                {
+                    ApiClientId = _apiClientId,
+                    CreatorOwnershipTokenId = tokenId,
+                    OwnershipTokenIds = [],
+                }
+            );
+            var second = await _ownershipTokenRepository.UpdateApiClientOwnership(
+                new ApiClientOwnershipUpdateCommand
+                {
+                    ApiClientId = secondApiClientId,
+                    CreatorOwnershipTokenId = null,
+                    OwnershipTokenIds = [tokenId],
+                }
+            );
+
+            first.Should().BeOfType<ApiClientOwnershipUpdateResult.Success>();
+            second.Should().BeOfType<ApiClientOwnershipUpdateResult.Success>();
+            (
+                (ApiClientOwnershipGetResult.Success)(
+                    await _ownershipTokenRepository.GetApiClientOwnership(_apiClientId)
+                )
+            )
+                .Ownership.CreatorOwnershipTokenId.Should()
+                .Be(tokenId);
+            (
+                (ApiClientOwnershipGetResult.Success)(
+                    await _ownershipTokenRepository.GetApiClientOwnership(secondApiClientId)
+                )
+            )
+                .Ownership.OwnershipTokenIds.Should()
+                .Equal(tokenId);
+        }
+
+        [Test]
+        public async Task It_writes_audit_values_for_ownership_assignments()
+        {
+            int tokenId = await InsertToken(_ownershipTokenRepository, "Audited");
+
+            var result = await _ownershipTokenRepository.UpdateApiClientOwnership(
+                new ApiClientOwnershipUpdateCommand
+                {
+                    ApiClientId = _apiClientId,
+                    CreatorOwnershipTokenId = tokenId,
+                    OwnershipTokenIds = [tokenId],
+                }
+            );
+            var audit = await Connection!.QuerySingleAsync<(string CreatedBy, string ModifiedBy)>(
+                """
+                SELECT acot."CreatedBy", ac."ModifiedBy"
+                FROM "dmscs"."ApiClientOwnershipToken" acot
+                JOIN "dmscs"."ApiClient" ac ON ac."Id" = acot."ApiClientId"
+                WHERE acot."ApiClientId" = @ApiClientId AND acot."OwnershipTokenId" = @TokenId;
+                """,
+                new { ApiClientId = _apiClientId, TokenId = tokenId }
+            );
+
+            result.Should().BeOfType<ApiClientOwnershipUpdateResult.Success>();
+            audit.CreatedBy.Should().Be("test-user");
+            audit.ModifiedBy.Should().Be("test-user");
         }
 
         [Test]

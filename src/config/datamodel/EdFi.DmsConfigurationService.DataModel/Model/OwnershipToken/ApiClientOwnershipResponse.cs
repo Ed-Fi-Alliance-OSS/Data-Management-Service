@@ -7,7 +7,6 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.OwnershipToken;
 
 public class ApiClientOwnershipResponse
 {
-    public int ApiClientId { get; set; }
     public int? CreatorOwnershipTokenId { get; set; }
     public List<int> OwnershipTokenIds { get; set; } = [];
 }

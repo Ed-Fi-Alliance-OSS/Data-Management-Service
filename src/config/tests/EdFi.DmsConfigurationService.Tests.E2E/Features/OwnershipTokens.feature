@@ -75,7 +75,6 @@ Feature: OwnershipTokens endpoints
              When a PUT request is made to "/v3/apiClients/{apiClientId}/ownership" with
                   """
                   {
-                    "apiClientId": {apiClientId},
                     "creatorOwnershipTokenId": {creatorOwnershipTokenId},
                     "ownershipTokenIds": [{readOwnershipTokenId}]
                   }
@@ -127,7 +126,7 @@ Feature: OwnershipTokens endpoints
                   ]
                   """
 
-        Scenario: 03 Reject API-client ownership replacement with mismatched route and body IDs
+        Scenario: 03 Reject API-client ownership replacement with an invalid creator token ID
             Given a POST request is made to "/v3/vendors" with
                   """
                   {
@@ -166,8 +165,7 @@ Feature: OwnershipTokens endpoints
              When a PUT request is made to "/v3/apiClients/{apiClientId}/ownership" with
                   """
                   {
-                    "apiClientId": 999999,
-                    "creatorOwnershipTokenId": null,
+                    "creatorOwnershipTokenId": 0,
                     "ownershipTokenIds": []
                   }
                   """
@@ -286,7 +284,6 @@ Feature: OwnershipTokens endpoints
              When a PUT request is made to "/v3/apiClients/{apiClientId}/ownership" with
                   """
                   {
-                    "apiClientId": {apiClientId},
                     "creatorOwnershipTokenId": {creatorOwnershipTokenId},
                     "ownershipTokenIds": [{readOwnershipTokenId}]
                   }
@@ -295,7 +292,6 @@ Feature: OwnershipTokens endpoints
              When a PUT request is made to "/v3/apiClients/{apiClientId}/ownership" with
                   """
                   {
-                    "apiClientId": {apiClientId},
                     "creatorOwnershipTokenId": {creatorOwnershipTokenId},
                     "ownershipTokenIds": [{readOwnershipTokenId}]
                   }

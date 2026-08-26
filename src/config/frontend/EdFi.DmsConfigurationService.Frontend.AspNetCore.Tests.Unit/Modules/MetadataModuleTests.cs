@@ -98,7 +98,6 @@ public class MetadataModuleTests
         "ApiClientCredentialsResponse.applicationId int32",
         "ApiClientInsertCommand.applicationId int32",
         "ApiClientInsertCommand.dataStoreIds int32",
-        "ApiClientOwnershipResponse.apiClientId int32",
         "ApiClientOwnershipResponse.creatorOwnershipTokenId int32",
         "ApiClientOwnershipResponse.ownershipTokenIds int32",
         "ApiClientOwnershipUpdateCommand.apiClientId int32",

@@ -13,7 +13,7 @@ public class ApiClientOwnershipUpdateCommand
     private const int MaximumOwnershipTokenId = 32767;
     private const int MaximumOwnershipTokenCount = 1999;
 
-    public required int ApiClientId { get; set; }
+    public int ApiClientId { get; set; }
     public int? CreatorOwnershipTokenId { get; set; }
     public required int[] OwnershipTokenIds { get; set; } = [];
 
