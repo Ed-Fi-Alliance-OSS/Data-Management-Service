@@ -4,11 +4,13 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.Ddl;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using FluentAssertions;
 using NUnit.Framework;
 using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
 
-namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
+namespace EdFi.DataManagementService.Backend.Tests.Unit;
 
 [TestFixture]
 [Parallelizable]
@@ -825,10 +827,8 @@ public class Given_CdcProviderSetupResultMapper
             new CdcSourceFingerprint(CdcSourceFingerprintMetadata.Version, binding.PhysicalSourceFingerprint),
             finalArtifactInventory,
             includeRequiredSetupEvidence ? RequiredGrantInventory(provider) : [],
-            includeRequiredSetupEvidence
-                ? CdcConnectorTemplateTestData.BuildRequiredSourceTableInventory(provider)
-                : [],
-            includeRequiredSetupEvidence ? CdcConnectorTemplateTestData.BuildExpectedMessageKeyColumns() : [],
+            includeRequiredSetupEvidence ? BuildRequiredSourceTableInventory(provider) : [],
+            includeRequiredSetupEvidence ? BuildExpectedMessageKeyColumns() : [],
             includeRequiredSetupEvidence ? new CdcHeartbeatActionQuery("select 1", "sha256-safe") : null,
             providerHistoryObservations,
             null,
@@ -1044,4 +1044,64 @@ public class Given_CdcProviderSetupResultMapper
 
     private static CoreCdc.CdcArtifactInventory RecoverInventory(CoreCdc.CdcBinding binding) =>
         CoreCdc.CdcArtifactNameGenerator.RecoverFromBinding(binding).Inventory!;
+
+    private static IReadOnlyList<CdcSourceTableInventory> BuildRequiredSourceTableInventory(
+        CdcProvider provider
+    ) =>
+        [
+            BuildSourceTable(
+                provider,
+                CdcSourceTableKind.DocumentCache,
+                "DocumentCache",
+                [BuildColumn(provider, "DocumentUuid")]
+            ),
+            BuildSourceTable(
+                provider,
+                CdcSourceTableKind.Document,
+                "Document",
+                [BuildColumn(provider, "DocumentUuid")]
+            ),
+            BuildSourceTable(
+                provider,
+                CdcSourceTableKind.CdcHeartbeat,
+                "CdcHeartbeat",
+                [
+                    BuildColumn(provider, "HeartbeatId"),
+                    BuildColumn(provider, "HeartbeatSequence", 2),
+                    BuildColumn(provider, "HeartbeatAt", 3),
+                ]
+            ),
+        ];
+
+    private static CdcSourceTableInventory BuildSourceTable(
+        CdcProvider provider,
+        CdcSourceTableKind tableKind,
+        string tableName,
+        IReadOnlyList<CdcSourceColumnInventory> columns
+    ) =>
+        new(
+            tableKind,
+            new DbTableName(new DbSchemaName("dms"), tableName),
+            provider == CdcProvider.Postgresql ? $"\"dms\".\"{tableName}\"" : $"[dms].[{tableName}]",
+            columns
+        );
+
+    private static CdcSourceColumnInventory BuildColumn(
+        CdcProvider provider,
+        string columnName,
+        int ordinal = 1
+    ) =>
+        new(
+            new DbColumnName(columnName),
+            provider == CdcProvider.Postgresql ? $"\"{columnName}\"" : $"[{columnName}]",
+            ordinal,
+            provider == CdcProvider.Postgresql ? "text" : "nvarchar(max)",
+            IsNullable: false
+        );
+
+    private static IReadOnlyList<CdcExpectedMessageKeyColumns> BuildExpectedMessageKeyColumns() =>
+        [
+            new(CdcSourceTableKind.DocumentCache, [new DbColumnName("DocumentUuid")]),
+            new(CdcSourceTableKind.Document, [new DbColumnName("DocumentUuid")]),
+        ];
 }

@@ -6,7 +6,7 @@
 using EdFi.DataManagementService.Backend.Ddl;
 using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
 
-namespace EdFi.DataManagementService.Backend.Cdc;
+namespace EdFi.DataManagementService.Backend.Tests.Common;
 
 public sealed record CdcProviderSetupObservationMapping(
     CoreCdc.CdcProviderSetupObservation ProviderSetup,
