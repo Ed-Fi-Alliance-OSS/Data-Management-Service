@@ -402,7 +402,8 @@ public class Given_A_Postgresql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flip
                     MaximumPageSize: MaximumPageSize
                 )
             ),
-            TraceId: new TraceId("pg-31-query-academicweek")
+            TraceId: new TraceId("pg-31-query-academicweek"),
+            PageOrderingMode: PageOrderingMode.DocumentId
         );
 
         QueryResult result = await scope

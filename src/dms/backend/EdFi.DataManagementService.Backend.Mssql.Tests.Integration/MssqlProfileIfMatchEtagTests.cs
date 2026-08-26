@@ -166,6 +166,7 @@ file static class MssqlProfileIfMatchEtagTestSupport
                 )
             ),
             TraceId: new TraceId(traceId),
+            PageOrderingMode: PageOrderingMode.DocumentId,
             ReadableProfileProjectionContext: readableProfileProjectionContext
         );
 

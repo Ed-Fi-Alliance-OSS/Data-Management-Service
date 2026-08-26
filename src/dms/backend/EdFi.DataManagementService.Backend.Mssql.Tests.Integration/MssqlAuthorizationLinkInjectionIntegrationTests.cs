@@ -360,7 +360,8 @@ public class Given_A_Mssql_AcademicWeek_Read_With_Different_Caller_Authorization
                     MaximumPageSize: MaximumPageSize
                 )
             ),
-            TraceId: new TraceId("mssql-32-query-academicweek")
+            TraceId: new TraceId("mssql-32-query-academicweek"),
+            PageOrderingMode: PageOrderingMode.DocumentId
         );
 
         QueryResult result = await scope

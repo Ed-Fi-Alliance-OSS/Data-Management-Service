@@ -1000,6 +1000,7 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
             RequestedPartitionCount: requestedPartitionCount,
             MinimumPartitionSize: minimumPartitionSize,
             TraceId: new TraceId(traceId),
+            PageOrderingMode: PageOrderingMode.DocumentId,
             ChangeVersionRange: changeVersionRange
         );
 

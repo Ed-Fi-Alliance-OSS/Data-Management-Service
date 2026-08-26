@@ -1176,7 +1176,59 @@ public class Given_RelationalQueryPageKeysetPlanner
 
         act.Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("*mirrored Int64 'ContentVersion'*no non-mirror fallback*");
+            .WithMessage("*mirrored Int64 'ContentVersion'*Neither has a non-mirror fallback*");
+    }
+
+    /// <summary>
+    /// The anchor requires the mirror column on its own, with no change-version bound to require it
+    /// first. The anchor reaches the planner as its own request value rather than being derived from the
+    /// window here, so a plan can name ContentVersion while the window carries no bound — and without
+    /// this check that plan would compile SQL against a column nothing had verified and fail at the
+    /// provider instead.
+    /// </summary>
+    [Test]
+    public void It_should_throw_when_the_content_version_anchor_is_requested_and_the_root_table_has_no_content_version_column()
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var act = () =>
+            planner.Plan(
+                CreateRootTable(contentVersionColumn: null),
+                new RelationalQueryPreprocessingResult(
+                    new RelationalQueryPreprocessingOutcome.Continue(),
+                    []
+                ),
+                new CollectionPaging.Traditional(
+                    new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+                ),
+                changeVersionRange: null,
+                orderingMode: PageOrderingMode.ContentVersion
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*mirrored Int64 'ContentVersion'*Neither has a non-mirror fallback*");
+    }
+
+    /// <summary>
+    /// The complement: a DocumentId-anchored plan with no change-version bound needs no mirror column,
+    /// so widening the check above must not start rejecting the most ordinary request there is.
+    /// </summary>
+    [Test]
+    public void It_should_plan_a_document_id_anchored_page_when_the_root_table_has_no_content_version_column()
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var keyset = planner.Plan(
+            CreateRootTable(contentVersionColumn: null),
+            new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            )
+        );
+
+        keyset.Plan.PageDocumentIdSql.Should().Contain("ORDER BY r.\"DocumentId\" ASC");
+        keyset.Plan.PageDocumentIdSql.Should().NotContain("ContentVersion");
     }
 
     [Test]

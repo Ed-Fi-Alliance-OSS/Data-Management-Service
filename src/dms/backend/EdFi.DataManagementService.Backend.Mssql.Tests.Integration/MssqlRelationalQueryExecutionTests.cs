@@ -1074,6 +1074,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
             RequestedPartitionCount: requestedPartitionCount,
             MinimumPartitionSize: minimumPartitionSize,
             TraceId: new TraceId(traceId),
+            PageOrderingMode: PageOrderingMode.DocumentId,
             ChangeVersionRange: changeVersionRange
         );
 

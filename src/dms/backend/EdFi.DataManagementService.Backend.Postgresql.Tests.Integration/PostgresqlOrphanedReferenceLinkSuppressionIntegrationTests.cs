@@ -348,7 +348,8 @@ public class Given_A_Postgresql_AcademicWeek_With_Orphaned_School_Reference
                     MaximumPageSize: MaximumPageSize
                 )
             ),
-            TraceId: new TraceId("pg-30-query-academicweek")
+            TraceId: new TraceId("pg-30-query-academicweek"),
+            PageOrderingMode: PageOrderingMode.DocumentId
         );
 
         return await scope

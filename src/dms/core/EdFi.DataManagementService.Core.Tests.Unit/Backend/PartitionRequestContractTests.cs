@@ -249,6 +249,7 @@ public class PartitionRequestContractTests
                 RequestedPartitionCount: 10,
                 MinimumPartitionSize: 2500,
                 TraceId: new TraceId("trace"),
+                PageOrderingMode: PageOrderingMode.DocumentId,
                 ChangeVersionRange: changeVersionRange
             );
 

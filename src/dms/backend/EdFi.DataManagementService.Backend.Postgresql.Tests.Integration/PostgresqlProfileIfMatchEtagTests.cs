@@ -167,6 +167,7 @@ file static class PostgresqlProfileIfMatchEtagTestSupport
                 )
             ),
             TraceId: new TraceId(traceId),
+            PageOrderingMode: PageOrderingMode.DocumentId,
             ReadableProfileProjectionContext: readableProfileProjectionContext
         );
 

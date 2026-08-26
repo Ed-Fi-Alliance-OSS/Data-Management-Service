@@ -348,7 +348,8 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
                     MaximumPageSize: MaximumPageSize
                 )
             ),
-            TraceId: new TraceId("pg-29b-query-course")
+            TraceId: new TraceId("pg-29b-query-course"),
+            PageOrderingMode: PageOrderingMode.DocumentId
         );
 
         return await scope

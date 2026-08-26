@@ -404,7 +404,8 @@ public class Given_A_Mssql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flipped_A
                     MaximumPageSize: MaximumPageSize
                 )
             ),
-            TraceId: new TraceId("mssql-31-query-academicweek")
+            TraceId: new TraceId("mssql-31-query-academicweek"),
+            PageOrderingMode: PageOrderingMode.DocumentId
         );
 
         QueryResult result = await scope

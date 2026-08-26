@@ -343,7 +343,8 @@ public class Given_A_Mssql_AcademicWeek_With_Orphaned_School_Reference
                     MaximumPageSize: MaximumPageSize
                 )
             ),
-            TraceId: new TraceId("mssql-30-query-academicweek")
+            TraceId: new TraceId("mssql-30-query-academicweek"),
+            PageOrderingMode: PageOrderingMode.DocumentId
         );
 
         return await scope

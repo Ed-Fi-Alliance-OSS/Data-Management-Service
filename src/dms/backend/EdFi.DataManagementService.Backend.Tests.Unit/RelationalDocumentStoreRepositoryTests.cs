@@ -4394,6 +4394,78 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             .Be(contentVersionSelectedDocumentUuid.Value.ToString());
     }
 
+    /// <summary>
+    /// The read-acceleration twin of the hydration reader's keyset-shape guard. A ContentVersion-anchored
+    /// selection whose result set carries no anchor column is a defect in this code rather than anything
+    /// a client did, so it is named as the disagreement it is instead of surfacing as a bare ordinal
+    /// fault raised from inside the row loop.
+    /// </summary>
+    [Test]
+    public async Task It_reports_a_keyset_shape_disagreement_when_an_anchored_candidate_selection_omits_the_anchor()
+    {
+        var mappingSet = CreateChangeVersionQuerySupportedMappingSet(_schoolResourceInfo);
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var selectedMetadata = CreateDocumentMetadataRow(
+            new DocumentUuid(Guid.Parse("efefefef-1111-2222-3333-fefefefefefe")),
+            300L,
+            20L,
+            resourceKeyId: mappingSet.ResourceKeyIdByResource[resource]
+        );
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            changeVersionRange: new ChangeVersionRange(5L, 30L),
+            pageOrderingMode: PageOrderingMode.ContentVersion
+        );
+
+        UseReadAccelerationCoordinator(new RecordingReadAccelerationCoordinator());
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<
+                        Func<
+                            IRelationalCommandReader,
+                            CancellationToken,
+                            Task<DocumentCacheReadAccelerationCandidatePage>
+                        >
+                    >._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(
+                (
+                    RelationalCommand _,
+                    Func<
+                        IRelationalCommandReader,
+                        CancellationToken,
+                        Task<DocumentCacheReadAccelerationCandidatePage>
+                    > readAsync,
+                    CancellationToken cancellationToken
+                ) =>
+                    readAsync(
+                        // DocumentId alone, which is the shape a DocumentId-anchored selection emits,
+                        // under a request that resolved the ContentVersion anchor. Reading ordinal 1
+                        // blindly would have failed here without naming what disagreed.
+                        new InMemoryRelationalCommandReader([
+                            InMemoryRelationalResultSet.Create(
+                                RelationalAccessTestData.CreateRow(
+                                    ("DocumentId", selectedMetadata.DocumentId)
+                                )
+                            ),
+                        ]),
+                        cancellationToken
+                    )
+            );
+
+        var act = async () => await _sut.QueryDocuments(queryRequest);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*disagree about the keyset shape*");
+    }
+
     [Test]
     public async Task It_reruns_the_no_cache_query_when_selected_page_fallback_metadata_drifts()
     {

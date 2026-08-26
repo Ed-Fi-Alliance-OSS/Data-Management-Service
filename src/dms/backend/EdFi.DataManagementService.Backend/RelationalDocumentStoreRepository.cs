@@ -2086,9 +2086,16 @@ public sealed class RelationalDocumentStoreRepository(
     /// returned row because neither <c>RETURNING</c> nor <c>OUTPUT</c> promises an order.
     /// </summary>
     /// <remarks>
-    /// A <c>ContentVersion</c>-anchored selection projects the anchor as a second column, so the ordinal
-    /// follows the anchor. This is the read-acceleration twin of the hydration reader, over the
-    /// candidate-metadata batch rather than the hydration batch.
+    /// A <c>ContentVersion</c>-anchored selection projects the anchor beside the ids. This is the
+    /// read-acceleration twin of the hydration reader, over the candidate-metadata batch rather than the
+    /// hydration batch, and it reports a shape disagreement the same way that twin does: a
+    /// materialization that stopped carrying the anchor is a defect in this code, and naming it beats a
+    /// bare ordinal fault raised from inside the row loop.
+    /// <para>
+    /// The anchor is located by name, from the same constant the batch builder projected it under, so
+    /// the two cannot disagree about which column it is. <c>DocumentId</c> keeps its fixed ordinal: it
+    /// is the first column of every keyset result set, anchored or not.
+    /// </para>
     /// </remarks>
     private static async Task<long?> ReadSelectedAnchorMaximumAsync(
         IRelationalCommandReader reader,
@@ -2096,7 +2103,26 @@ public sealed class RelationalDocumentStoreRepository(
         CancellationToken cancellationToken
     )
     {
-        var anchorOrdinal = carriesAnchorColumn ? SelectedAnchorOrdinal : SelectedDocumentIdOrdinal;
+        var anchorOrdinal = SelectedDocumentIdOrdinal;
+
+        if (carriesAnchorColumn)
+        {
+            try
+            {
+                anchorOrdinal = reader.GetOrdinal(HydrationSqlConventions.SelectedAnchorColumnName);
+            }
+            catch (IndexOutOfRangeException ex)
+            {
+                throw new InvalidOperationException(
+                    "Expected the selected page keyset result set to carry the continuation anchor as its "
+                        + $"'{HydrationSqlConventions.SelectedAnchorColumnName}' column, but it carries no "
+                        + "such column. The materialization SQL and this reader disagree about the keyset "
+                        + "shape.",
+                    ex
+                );
+            }
+        }
+
         long? selectedMaximum = null;
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -2113,12 +2139,10 @@ public sealed class RelationalDocumentStoreRepository(
     }
 
     /// <summary>
-    /// Ordinals in the selected page keyset result set. <c>DocumentId</c> is always first; the anchor
-    /// follows it only on a <c>ContentVersion</c>-anchored page.
+    /// <c>DocumentId</c>'s ordinal in the selected page keyset result set. Always first, on an anchored
+    /// page and an unanchored one alike; the anchor beside it is located by name instead.
     /// </summary>
     private const int SelectedDocumentIdOrdinal = 0;
-
-    private const int SelectedAnchorOrdinal = 1;
 
     private static async Task<long> ReadCandidatePageTotalCountAsync(
         IRelationalCommandReader reader,

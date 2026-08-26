@@ -35,10 +35,11 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// <see cref="External.Model.ChangeVersionRange.None"/> on the relational seam.
 /// </param>
 /// <param name="PageOrderingMode">
-/// The page anchor Core resolved from the change-version window. Defaults to
-/// <see cref="External.Model.PageOrderingMode.DocumentId" />, which is the anchor of every window
-/// shape but a max-bearing one, so a fixture that omits it selects the ordering this contract has
-/// always used rather than a new one.
+/// The page anchor Core resolved from the change-version window. Required rather than defaulted, and
+/// placed ahead of the optional parameters to stay that way: a default would let a construction site
+/// that forgot it keep compiling while anchoring a ContentVersion-ordered page on DocumentId, which
+/// hands out a continuation that skips rows. This is the same rule the descriptor request records
+/// carry, so neither contract family fails more quietly than the other.
 /// </param>
 internal sealed record RelationalQueryRequest(
     ResourceInfo ResourceInfo,
@@ -48,11 +49,11 @@ internal sealed record RelationalQueryRequest(
     AuthorizationStrategyEvaluator[] AuthorizationStrategyEvaluators,
     CollectionPaging Paging,
     TraceId TraceId,
+    PageOrderingMode PageOrderingMode,
     ReadableProfileProjectionContext? ReadableProfileProjectionContext = null,
     ChangeVersionRange? ChangeVersionRange = null,
     ResponseContentCoding ResponseContentCoding = ResponseContentCoding.Identity,
-    string TenantKey = "",
-    PageOrderingMode PageOrderingMode = External.Model.PageOrderingMode.DocumentId
+    string TenantKey = ""
 ) : IQueryRequest
 {
     ChangeVersionRange IQueryRequest.ChangeVersionRange =>
