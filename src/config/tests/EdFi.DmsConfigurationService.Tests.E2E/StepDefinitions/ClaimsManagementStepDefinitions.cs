@@ -16,6 +16,7 @@ public class ClaimsManagementStepDefinitions(ScenarioContext scenarioContext)
     private const string InitialReloadIdKey = "InitialReloadId";
     private const string CurrentReloadIdKey = "CurrentReloadId";
     private const string UploadedClaimsKey = "UploadedClaims";
+    private const string CapturedClaimsKey = "CapturedClaims";
 
     private static JsonNode? _authoritativeComposition;
 
@@ -51,6 +52,70 @@ public class ClaimsManagementStepDefinitions(ScenarioContext scenarioContext)
             scenarioContext[InitialReloadIdKey] = reloadId;
         }
     }
+
+    /// <summary>
+    /// Captures the current claims response verbatim, together with its reload id, so a later step can
+    /// upload the exact same bytes and the reload id can be proven to have changed.
+    /// </summary>
+    [Given("the current claims response is captured")]
+    public async Task GivenTheCurrentClaimsResponseIsCaptured()
+    {
+        var stepDefinitions = scenarioContext.ScenarioContainer.Resolve<StepDefinitions>();
+
+        await stepDefinitions.WhenAGETRequestIsMadeTo("/management/current-claims");
+
+        var response = GetLastApiResponse();
+        response
+            .Status.Should()
+            .Be(200, "the current claims must be readable before they can be uploaded unchanged");
+
+        // Held as the exact response text, not a reparsed document, so the upload posts it byte for byte.
+        scenarioContext[CapturedClaimsKey] = await response.TextAsync();
+
+        if (response.Headers.TryGetValue("x-reload-id", out var reloadId))
+        {
+            scenarioContext[InitialReloadIdKey] = reloadId;
+        }
+    }
+
+    /// <summary>
+    /// Uploads the captured current-claims response with no wrapping, editing or reserialization. The
+    /// verbatim POST helper is used deliberately: the shared POST step applies placeholder substitution
+    /// to the body, which would defeat the point of an unchanged upload.
+    /// </summary>
+    [When("the captured claims response is uploaded unchanged")]
+    public async Task WhenTheCapturedClaimsResponseIsUploadedUnchanged()
+    {
+        var stepDefinitions = scenarioContext.ScenarioContainer.Resolve<StepDefinitions>();
+
+        await stepDefinitions.PostVerbatimBodyAsync(
+            "/management/upload-claims",
+            (string)scenarioContext[CapturedClaimsKey]
+        );
+    }
+
+    [Then("the response body matches the captured claims response")]
+    public async Task ThenTheResponseBodyMatchesTheCapturedClaimsResponse()
+    {
+        JsonObject captured = JsonNode.Parse((string)scenarioContext[CapturedClaimsKey])!.AsObject();
+        JsonObject current = JsonNode.Parse(await GetLastApiResponse().TextAsync())!.AsObject();
+
+        // The upload deletes and re-inserts claim sets, so their order is not guaranteed; compare them
+        // as an unordered set of name / system-reserved pairs.
+        ClaimSetSummaries(current).Should().BeEquivalentTo(ClaimSetSummaries(captured));
+
+        // The hierarchy is persisted as a single document, so it must survive the round trip exactly.
+        current["claimsHierarchy"]!.ToJsonString().Should().Be(captured["claimsHierarchy"]!.ToJsonString());
+    }
+
+    private static List<string> ClaimSetSummaries(JsonObject claimsDocument) =>
+        claimsDocument["claimSets"]!
+            .AsArray()
+            .Select(claimSet =>
+                $"{claimSet!["claimSetName"]?.GetValue<string>()}|{claimSet["isSystemReserved"]?.GetValue<bool>()}"
+            )
+            .OrderBy(summary => summary, StringComparer.Ordinal)
+            .ToList();
 
     [Given("claims have been uploaded")]
     public async Task GivenClaimsHaveBeenUploaded()
