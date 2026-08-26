@@ -1,7 +1,7 @@
 ---
 jira: DMS-1394
 epic: DMS-1348
-status: proposed
+status: implemented
 related:
   - DMS-1298
 ---

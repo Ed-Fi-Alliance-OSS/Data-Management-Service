@@ -37,13 +37,14 @@ Traditional `limit`/`offset` paging has two structural problems for bulk consume
    ordering of one result set. Two workers using offsets are reading the same scan, and any write
    that shifts the ordering shifts both of them.
 
-Cursor paging replaces "skip `n` rows" with "seek to a `DocumentId` and take `pageSize` rows".
-Because every regular-resource root table and `dms.Descriptor` already order collection results by
-an indexed root `DocumentId` primary key, the seek is a range scan whose cost depends on the page
-size, not on how far into the collection the page sits.
+Cursor paging replaces "skip `n` rows" with "seek to an anchor value and take `pageSize` rows".
+Because every regular-resource root table and `dms.Descriptor` order collection results by an
+indexed column — the root `DocumentId` primary key, or the indexed `ContentVersion` mirror when the
+request carries a `maxChangeVersion` window — the seek is a range scan whose cost depends on the
+page size, not on how far into the collection the page sits.
 
-`/partitions` complements this by computing balanced, non-overlapping `DocumentId` ranges over the
-filtered, authorized candidate set. Each returned token is a self-contained starting point, so
+`/partitions` complements this by computing balanced, non-overlapping ranges over that same anchor,
+across the filtered, authorized candidate set. Each returned token is a self-contained starting point, so
 independent workers can consume disjoint slices of a collection concurrently without coordinating
 offsets.
 
@@ -106,12 +107,12 @@ rule it governs.
 
 | Input/output | Contract |
 | --- | --- |
-| `Next-Page-Token` response header | Included whenever regular-resource or descriptor GET-many page selection produces a non-null `HighestSelectedDocumentId` and orders the page by `DocumentId`, including on a `limit`/`offset` response that can begin a cursor walk and when concurrent deletes leave the hydrated response body empty. Cursor page selection always orders by `DocumentId`; traditional page selection over a max-bearing change-version window orders by `ContentVersion`, so such a page carries no token until DMS-1394 gives it a `ContentVersion` anchor — see "Consistency Under Writes" below. Absent when page selection is skipped or selects no keys, and at `Int64.MaxValue` where advancing would overflow. |
-| `pageToken` | Selects the next inclusive `DocumentId` range. It is opaque to clients and is normally copied from `Next-Page-Token` or from a `/partitions` response. |
+| `Next-Page-Token` response header | Included whenever regular-resource or descriptor GET-many page selection produces a non-null `HighestSelectedAnchor`, including on a `limit`/`offset` response that can begin a cursor walk and when concurrent deletes leave the hydrated response body empty. The token is anchored on whichever column page selection ordered by — `DocumentId` for unfiltered and min-only requests, `ContentVersion` for a max-bearing change-version window — and names that anchor in its marker, so ordering is never a reason to withhold a continuation. See "Consistency Under Writes" below. Absent when page selection is skipped or selects no keys, and at `Int64.MaxValue` where advancing would overflow. |
+| `pageToken` | Selects the next inclusive anchor range, in the units its marker names. It is opaque to clients and is normally copied from `Next-Page-Token` or from a `/partitions` response. |
 | `pageSize` | Optional, and permitted only when `pageToken` is present; integer `0..MaximumPageSize`. When omitted, the configured `MaximumPageSize` applies — initially `500`, matching the existing default GET-many size. |
 | `limit`, `offset` | Remain supported for traditional paging. When `limit` is omitted, the configured `MaximumPageSize` applies. Neither parameter may be combined with `pageToken` or `pageSize`, including when its value is zero. |
 | `totalCount` | Remains supported for traditional paging. When `pageToken` is present and valid, `totalCount=true` is invalid; an explicitly supplied `totalCount=false` is allowed. Clients wanting a count may issue `?totalCount=true&limit=0` separately before starting a cursor walk. |
-| filters | Resource-property filters and `minChangeVersion`/`maxChangeVersion` compose with the cursor range. Clients MUST repeat the same filters on every request; the token neither stores nor validates them. |
+| filters | Resource-property filters and `minChangeVersion`/`maxChangeVersion` compose with the cursor range. Clients MUST repeat the same filters on every request; the token stores none of them. The one exception is the anchor: because a token's bounds are meaningless in the wrong units, the token carries an ordering marker and a request whose change-version window resolves a different anchor than the marker names is rejected — see "Cursor Token Contract" below. |
 
 **Starting a walk.** The first cursor page is an ordinary GET-many request, optionally using
 `limit`. Its `Next-Page-Token` starts the seek-based walk *after* the page just returned. A
@@ -121,10 +122,10 @@ first accessible candidate.
 
 Emitting `Next-Page-Token` on an ordinary `limit`/`offset` response is a deliberate extension: it
 lets a client enter a cursor walk without a separate call, and it is inert for clients that ignore
-it. The extension reaches every traditional response whose page selection ordered by `DocumentId`;
-a max-bearing change-version window orders by `ContentVersion` and so cannot yet be entered this
-way. The published guidance does not describe the header for traditional responses, and the
-authoritative collection fixtures do not define it as a response header.
+it. The extension reaches every traditional response that selected keys, whichever column selection
+ordered by: a max-bearing change-version window orders by `ContentVersion` and hands out a
+`ContentVersion`-anchored token. The published guidance does not describe the header for traditional
+responses, and the authoritative collection fixtures do not define it as a response header.
 
 **Ending a walk.** The implementation does not fetch one extra row to predict the terminal page. It
 emits a token whenever cursor page selection returns a non-empty keyset, and completion is normally
@@ -135,7 +136,7 @@ request costs once. A bounded partition reaches its terminal empty page because 
 item at the upper bound produces an inverted (match-nothing) range.
 
 **Zero-size pages.** `pageSize=0` returns HTTP 200 with an empty array and no `Next-Page-Token`,
-because its selected keyset is empty and `HighestSelectedDocumentId` is null. It intentionally
+because its selected keyset is empty and `HighestSelectedAnchor` is null. It intentionally
 cannot advance a cursor walk.
 
 **Empty body with an advancing header.** If every selected row is concurrently deleted before
@@ -190,6 +191,12 @@ parsing. A client that sent `pageSize=` meant to send a page size; it should be 
 **Phase 0 — token decode**
 
 - `pageToken` present and not decodable: `The page token provided was invalid.`
+- `pageToken` decodable, but its ordering marker disagrees with the anchor the request's
+  change-version window resolves: the same message. A token whose bounds are read against the wrong
+  column is no more replayable than a malformed one, and the answer is identical in both directions
+  — a `ContentVersion`-marked token replayed without `maxChangeVersion`, and a `DocumentId`-marked
+  token replayed with it. The token is opaque, so neither direction could tell the client anything
+  it could act on beyond starting the walk over.
 
 **Phase 1 — mixed-mode conflicts**
 
@@ -377,11 +384,20 @@ minimum size    = MaximumPageSize * 5
 partition size  = max(computed size, minimum size)
 ```
 
-Select the actual `DocumentId` at candidate row numbers `1`, `1 + partition size`,
-`1 + 2 * partition size`, and so on. Each token covers its starting id through one less than the
-next starting id; the last token is unbounded above. Selecting actual identity values at those row
-numbers — rather than dividing the identity range arithmetically — is what keeps partitions
-balanced when identifiers are sparse, which they always are after deletes.
+Select the actual anchor value at candidate row numbers `1`, `1 + partition size`,
+`1 + 2 * partition size`, and so on. Each token covers its starting anchor through one less than the
+next starting anchor; the last token is unbounded above, though a max-bearing request still clips it
+to `maxChangeVersion` because that filter is reapplied on every page. Selecting actual values at
+those row numbers — rather than dividing the value range arithmetically — is what keeps partitions
+balanced when the anchor is sparse, which `DocumentId` always is after deletes and `ContentVersion`
+always is over a window that other resources also stamped.
+
+Assembling starts into ranges assumes the selected starts are strictly ascending, which is also
+where this design's `ContentVersion` uniqueness assumption is enforced: anchors and tokens carry one
+`ContentVersion`, not a `(ContentVersion, DocumentId)` pair, and a duplicate anchor could otherwise
+put a row on the wrong side of a boundary. The shared change-version sequence assigns distinct
+values, including across the rows of a multi-row write. A schema constraint enforcing that is not
+part of this design.
 
 The five-page minimum exists so that a small collection is not sliced into partitions that cost
 more to coordinate than to read. It is why a client asking for 200 partitions of a 1,000-row
@@ -400,17 +416,24 @@ joins internally.
 
 ## Cursor Token Contract
 
-Clients MUST treat tokens as opaque. The token is a transport encoding of an inclusive
-`DocumentId` range and carries nothing else.
+Clients MUST treat tokens as opaque. The token is a transport encoding of an ordering-mode marker
+and an inclusive anchor range, and carries nothing else.
 
 ### Encoding
 
-1. Format the inclusive minimum and maximum `DocumentId` values as invariant-culture signed decimal
-   `Int64` values separated by a comma.
+1. Format the ordering-mode marker — `d` for a `DocumentId`-anchored range, `c` for a
+   `ContentVersion`-anchored one — followed by the inclusive minimum and maximum anchor values as
+   invariant-culture signed decimal `Int64` values, all three separated by commas.
 2. UTF-8 encode that text.
 3. Base64url encode it: replace `+` with `-`, `/` with `_`, and remove `=` padding.
 
-The encoder always includes both values and always emits canonical unpadded base64url.
+The encoder always includes all three fields and always emits canonical unpadded base64url.
+
+**The marker is mandatory in every token, and there is no unmarked legacy form.** A token stores no
+request filters, so without the marker the server could not tell a `ContentVersion` anchor from a
+`DocumentId` one when a client changes `maxChangeVersion` mid-walk, and would replay the token's
+bounds against the wrong column. Cursor paging and the marker ship in the same release and tokens
+are opaque, so nothing holds a two-field token.
 
 ### Decoding
 
@@ -420,30 +443,49 @@ The decoder accepts correctly padded or unpadded base64url input. It rejects:
 - internal padding, and more padding than required;
 - an impossible base64url length;
 - invalid UTF-8; and
-- anything other than exactly two comma-separated fields.
+- anything other than exactly three comma-separated fields.
+
+The marker field MUST be exactly `d` or `c`. Casing variants, padding, and surrounding whitespace
+are rejected by that exact match, without a rule of their own. An unknown or empty marker is
+rejected exactly as a malformed bound is.
 
 A decimal field MUST match `-?[0-9]+`. Whitespace and a leading `+` are invalid, and the parsed
 value MUST fit `Int64`. The minimum is required. An empty maximum decodes as `Int64.MaxValue`,
 meaning unbounded above; the encoder never emits that form, but accepting it lets a client or tool
-express an open-ended range.
+express an open-ended range. The latitude is confined to the maximum bound; the marker has none.
 
 The decoder is deliberately stricter than a permissive base64 reader. Accepting forms the encoder
 never emits would create an undocumented input surface that a later change could not safely narrow
 without breaking clients that had come to depend on it.
 
+Decoding grants no authority and makes no authorization decision, so it reports success or failure
+rather than a message. Whether a successfully decoded marker agrees with the anchor the request
+resolved is request validation's decision, reported as phase 0 above.
+
 ### Range semantics
 
-The decoded value is a typed `CursorRange(InclusiveMinimum, InclusiveMaximum)`.
+The decoded value is a typed `CursorRange(InclusiveMinimum, InclusiveMaximum)` plus the marker's
+ordering mode. `CursorRange` is not renamed for the anchor: its units are whatever the marker says,
+and the bounds are compared against that anchor column.
 
 Negative bounds, and a minimum greater than the maximum, are safe match-nothing ranges rather than
 authorization bypasses or errors. An inverted range is also how a bounded partition reaches its
 terminal empty page after returning the item at its upper bound.
 
-After a non-empty selected keyset, the next token uses `HighestSelectedDocumentId + 1` and retains
+After a non-empty selected keyset, the next token uses `HighestSelectedAnchor + 1` and retains
 the request's maximum bound — which is how a partition walk stays inside its slice. A request that
 carried no `pageToken`, and therefore no maximum bound, uses `Int64.MaxValue`, so a walk entered from
-a traditional response is unbounded above. If the highest selected id is `Int64.MaxValue`, omit the
-header rather than overflowing.
+a traditional response is unbounded above. If the highest selected anchor is `Int64.MaxValue`, omit
+the header rather than overflowing.
+
+The bounds stay inclusive under either anchor. `ContentVersion > @anchor` and
+`ContentVersion >= @anchor + 1` are the same predicate over an integer sequence, so reusing the
+inclusive form keeps one bound shape, one token shape, and one partition-range assembler rather than
+a second set that would have to be kept in step with the first.
+
+The decoded ordering mode is not carried past validation. Once the marker check has passed it equals
+the anchor the request resolved, and that is what the SQL compiler and the token emitter read; a
+second copy on the paging record would be one more defaultable value.
 
 ### Security properties
 
@@ -471,10 +513,16 @@ foundation of this feature; cursor paging adds a range predicate to it rather th
 
 Extend page selection with an explicit paging-mode choice:
 
-- **traditional**: existing `ORDER BY DocumentId` plus `OFFSET`/`LIMIT` or `FETCH`;
-- **cursor**: add `DocumentId >= @cursorMin AND DocumentId <= @cursorMax`, order by `DocumentId`,
+- **traditional**: existing `ORDER BY <anchor>` plus `OFFSET`/`LIMIT` or `FETCH`;
+- **cursor**: add `<anchor> >= @cursorMin AND <anchor> <= @cursorMax`, order by the anchor,
   and take `@pageSize` with no offset operation;
 - **partition planning**: reuse the same unpaged, filtered, authorized candidate relation.
+
+Every candidate mode carries the anchor Core resolved for the request, and one resolver maps that
+choice to a column name. Ordering, bounds, and projection therefore cannot name different columns
+for one plan, and the partition compiler resolves through the same mapping rather than repeating it
+— a second mapping that drifted would rank a column the candidate relation does not project. The
+parameter names `cursorMin` and `cursorMax` are unchanged and now name anchor bounds.
 
 Represent live collection paging as a discriminated choice rather than nullable combinations, so
 "cursor request with a null range" and "traditional request with a page size" are unrepresentable:
@@ -525,15 +573,19 @@ would, and it would report the defect in production rather than in the build.
 
 ### Provider cursor SQL
 
+`<anchor>` below is `DocumentId` for an unfiltered or min-only request and `ContentVersion` for a
+max-bearing change-version window. One column name is substituted throughout: ordering, both bounds,
+and the projection all resolve from the same anchor.
+
 PostgreSQL:
 
 ```sql
-SELECT r."DocumentId"
+SELECT r."DocumentId"[, r."ContentVersion"]
 FROM <shared candidate FROM/JOIN clauses>
 WHERE <resource, change-version, and authorization predicates>
-  AND r."DocumentId" >= @cursorMin
-  AND r."DocumentId" <= @cursorMax
-ORDER BY r."DocumentId"
+  AND r."<anchor>" >= @cursorMin
+  AND r."<anchor>" <= @cursorMax
+ORDER BY r."<anchor>"
 LIMIT @pageSize;
 ```
 
@@ -541,15 +593,30 @@ SQL Server uses `TOP`, not `OFFSET 0`, so the no-offset invariant is literal rat
 semantic:
 
 ```sql
-SELECT TOP (@pageSize) r.[DocumentId]
+SELECT TOP (@pageSize) r.[DocumentId][, r.[ContentVersion]]
 FROM <shared candidate FROM/JOIN clauses>
 WHERE <resource, change-version, and authorization predicates>
-  AND r.[DocumentId] >= @cursorMin
-  AND r.[DocumentId] <= @cursorMax
-ORDER BY r.[DocumentId];
+  AND r.[<anchor>] >= @cursorMin
+  AND r.[<anchor>] <= @cursorMax
+ORDER BY r.[<anchor>];
 ```
 
-Cursor mode never compiles or runs total-count SQL.
+**The candidate projection is asymmetric, and deliberately so.** A `DocumentId`-anchored page
+projects `DocumentId` alone, byte-for-byte as before. A `ContentVersion`-anchored *page* projects
+both columns: `DocumentId` feeds the keyset insert and every downstream hydration join, while
+`ContentVersion` is the continuation anchor, and hydration can only read columns this embedded SQL
+projects. A `ContentVersion`-anchored *unpaged candidate relation* — the one partition planning
+consumes — projects the anchor alone, because its consumer ranks and cuts boundaries on that column
+and hands the value straight back.
+
+Projecting `DocumentId` alone on an anchored page would compile, and would then force a second
+lookup after selection to recover the anchor. That is the concurrent-delete stall this design was
+built against: a page whose rows are all deleted between selection and hydration must still report
+where it ended.
+
+Cursor mode never compiles or runs total-count SQL. The filter and authorization fragments are
+byte-identical to the `DocumentId` case, which is what makes cursor pages and partition boundaries
+provably the same candidate set.
 
 Existing traditional page-selection SQL MUST remain behaviorally and textually unchanged. That
 textual gate does not cover the collection hydration-batch change described next, which is required
@@ -559,54 +626,71 @@ to expose selected keys; traditional response behavior is nonetheless unchanged.
 
 A regular-resource collection page materializes its keyset once, as the current hydration batch
 already does (see [flattening-reconstitution.md](flattening-reconstitution.md) §7.10). For
-`PageKeysetSpec.Query`, surface the inserted ids as the **first** batch result set:
+`PageKeysetSpec.Query`, surface the inserted keys as the **first** batch result set:
 
 - PostgreSQL: `RETURNING "DocumentId"`
 - SQL Server: `OUTPUT INSERTED.[DocumentId]`
 
-`HydrationExecutor` calculates their maximum without depending on row order.
-`PageKeysetSpec.Single` GET-by-id hydration retains its existing batch shape and does not gain this
-result set.
+When the keyset is `ContentVersion`-anchored, and only then, the keyset temp table gains a nullable
+`ContentVersion` column, the `page_ids` selection and the insert column list carry it, and the
+returning clause names it as a second column. The conditional is what keeps every existing
+emitted-SQL golden byte-identical and leaves the "traditional page-selection SQL is textually
+unchanged" gate intact; a zero-size page and the candidate-metadata batch take the same treatment,
+so an empty page keeps the same result-set shape as any other.
 
-Carry the nullable `HighestSelectedDocumentId` through `HydratedPage` and `QuerySuccess` so Core
-can create `Next-Page-Token`. This returns at most `MaximumPageSize` bigint values and adds no
-second candidate selection, database command, transaction, or roundtrip.
+`HydrationExecutor` calculates the anchor maximum from that result set without depending on row
+order, reading the anchor ordinal when the keyset carries one and the `DocumentId` ordinal when it
+does not. `PageKeysetSpec.Single` GET-by-id hydration retains its existing batch shape and does not
+gain this result set.
 
-Deriving the boundary from the selected keyset — rather than from hydrated document metadata — is
+Carry the nullable `HighestSelectedAnchor` through `HydratedPage` and `QuerySuccess` so Core
+can create `Next-Page-Token`. This returns at most `MaximumPageSize` bigint values per column and
+adds no second candidate selection, database command, transaction, or roundtrip.
+
+Deriving the anchor from the selected keyset — rather than from hydrated document metadata — is
 what makes concurrent deletion safe. Any or all selected rows may be deleted before hydration
-completes; a body-derived boundary would then stall the walk on the last surviving document, or
-stop it entirely when the body came back empty. Descriptor query rows already carry `DocumentId`,
-so the descriptor handler simply takes their maximum.
+completes; a body-derived anchor would then stall the walk on the last surviving document, or
+stop it entirely when the body came back empty. That reasoning is why widening the selected keyset
+is the only place the anchor can come from, and it holds under either anchor. Descriptor query rows
+already carry both `DocumentId` and `ContentVersion`, so the descriptor handler simply takes the
+maximum of whichever column the request's anchor names, with no SQL change on that path.
 
-`HighestSelectedDocumentId` is null when page selection is skipped or the selected keyset is empty
+`HighestSelectedAnchor` is null when page selection is skipped or the selected keyset is empty
 — including authorization, preprocessing, and planner early-empty paths, and zero-size pages. An
 empty response array alone cannot distinguish those cases from concurrent deletion after selection,
-which is precisely why the boundary is a separate nullable value rather than an inference from the
-body. Core emits the token whenever `HighestSelectedDocumentId` is present, regardless of the final
-response-body count, except in the `Int64.MaxValue` overflow case.
+which is precisely why the anchor is a separate nullable value rather than an inference from the
+body. Core emits the token whenever `HighestSelectedAnchor` is present, regardless of the final
+response-body count, except in the `Int64.MaxValue` overflow case. There is no separate flag saying
+whether a page may be continued: the anchor's presence is the whole rule, and the token names which
+anchor it is.
 
 ### Partition planning
 
 Compile the already filtered and authorized candidate relation into one provider-specific statement
 that:
 
-1. orders unique candidates by `DocumentId`;
+1. orders unique candidates by the request's anchor;
 2. derives row number and candidate count;
 3. computes the partition size; and
-4. returns only the starting `DocumentId` values.
+4. returns only the starting anchor values.
+
+`<anchor>` below is `DocumentId` for an unfiltered or min-only request and `ContentVersion` for a
+max-bearing change-version window — the same resolution a page of the same request uses, so
+boundaries and pages cannot be computed over different columns. The unpaged candidate relation
+projects that one column and nothing else, which is why the CTEs name it directly.
 
 PostgreSQL has this illustrative logical shape:
 
 ```sql
 WITH candidates AS (
-    SELECT r."DocumentId"
+    SELECT r."<anchor>"
     FROM <shared candidate relation>
     WHERE <all predicates>
 ),
 ranked AS (
     SELECT
-        "DocumentId",
-        ROW_NUMBER() OVER (ORDER BY "DocumentId") AS row_number,
+        "<anchor>",
+        ROW_NUMBER() OVER (ORDER BY "<anchor>") AS row_number,
         COUNT(*) OVER () AS candidate_count
     FROM candidates
 ),
@@ -618,18 +702,20 @@ sized AS (
         ) AS partition_size
     FROM ranked
 )
-SELECT "DocumentId"
+SELECT "<anchor>"
 FROM sized
 WHERE (row_number - 1) % partition_size = 0
-ORDER BY "DocumentId";
+ORDER BY "<anchor>";
 ```
 
 SQL Server uses the equivalent CTE with `COUNT_BIG`, `ROW_NUMBER`, and a provider-appropriate
 ceiling expression.
 
-The database returns starting ids only. Backend code converts each non-final start to the inclusive
-range `start..nextStart-1` and the final start to `start..Int64.MaxValue`; Core token-encodes those
-typed ranges.
+The database returns starting anchor values only. Backend code converts each non-final start to the
+inclusive range `start..nextStart-1` and the final start to `start..Int64.MaxValue`; Core
+token-encodes those typed ranges and stamps the request's anchor marker on every one of them. Range
+assembly is anchor-agnostic — ascending starts become inclusive ranges identically over either
+column — so there is one assembler, not two.
 
 The endpoint performs one database command for its boundary selection and does not hydrate
 documents, project profiles, resolve descriptors, inject links, or return a total count.
@@ -658,12 +744,19 @@ existing root, filter, and authorization indexes cannot serve.
   and then a partition handler. Partitions do not hydrate or profile-project documents.
 - **Backend contracts.** Add a dedicated `IPartitionQueryHandler`; do not route partition work
   through `QueryDocuments`, whose contract is built around hydrated documents and total count.
-  Query success carries the nullable selected-keyset maximum, and partition success carries typed
+  Query success carries the nullable selected anchor maximum, and partition success carries typed
   ranges. SQL planners and executors never parse token strings.
+- **Anchor ownership.** Core resolves the anchor once, from the parsed change-version window plus
+  the legacy ordering setting, and carries it on the request contracts the backend consumes —
+  including the descriptor query and partition request records, which do not travel on those
+  contracts and would otherwise have no source for it. The backend never re-resolves it. Two
+  resolutions of one rule would be two rules: Core has to know the anchor to validate an incoming
+  token's marker before the backend runs and to stamp the marker on an outgoing one, and the backend
+  has to know it to compile the SQL, so the choice is made in one place and passed down.
 - **Candidate planning.** Extend `PageDocumentIdQuerySpec` and `PageDocumentIdSqlCompiler` with
-  cursor and partition roles, share Core filter and change-version parsing, and assert that
-  traditional pages, cursor pages, and partition boundaries all consume one unique candidate row
-  per document.
+  cursor and partition roles and the request's anchor, share Core filter and change-version parsing,
+  and assert that traditional pages, cursor pages, and partition boundaries all consume one unique
+  candidate row per document.
 
 ## OpenAPI Assembly
 
@@ -735,11 +828,14 @@ Cursor paging is part of the API contract and is not feature-toggled.
 Cursor paging is not a snapshot protocol:
 
 - deletes create harmless identity gaps;
-- updates retain `DocumentId` and do not move between ranges, but can change filter,
-  change-version, ownership, namespace, or relationship membership;
+- under a `DocumentId` anchor, updates retain `DocumentId` and do not move between ranges, but can
+  change filter, change-version, ownership, namespace, or relationship membership;
+- under a `ContentVersion` anchor, an update advances the row past the window maximum, so the row
+  leaves the window rather than moving to a later range within it — nothing else shifts;
 - an item that becomes eligible behind the current lower bound can be missed, while an item that
   becomes ineligible before its page is reached disappears;
-- new documents receive larger identity values and may appear in the final unbounded partition;
+- new documents receive larger identity values and larger change versions, and may appear in the
+  final unbounded partition;
 - a deleted and recreated document receives a new `DocumentId` and may appear later in the walk;
 - changing filters, claims, ownership, or relationship authorization during a walk may change later
   results; and
@@ -762,8 +858,9 @@ and none of the others.
 Under "Using limit/offset without using snapshots", a document whose `ChangeVersion` moves out of
 the requested window mid-extraction shifts every later document one position earlier, so an
 *unrelated, unchanged* document can slide into an already-paged offset and be silently skipped.
-Cursor ranges are anchored to `DocumentId`, not to a position in a shifting result set, so a
-mid-walk eligibility change cannot move another document across a page boundary. The document that
+Cursor ranges are anchored to a value — `DocumentId` or `ContentVersion` — rather than to a position
+in a shifting result set, so a mid-walk eligibility change cannot move another document across a
+page boundary. The document that
 itself left the window is still not returned, but its `ChangeVersion` is now above the client's
 watermark, so the next synchronization picks it up. That is the specific mechanism reverse paging
 was introduced to work around.
@@ -773,20 +870,35 @@ not using snapshots, key changes observed without a `maxChangeVersion` filter, o
 newly accessible behind the client's change window. The mitigations recorded in
 [change-queries.md](change-queries.md) continue to apply to those.
 
-**Conditional change-window ordering.** Traditional offset
-paging orders max-bearing change-version windows by `ContentVersion`; see "Page-selection
-ordering" in [change-queries.md](change-queries.md).
+**Conditional change-window ordering.** Page selection orders a max-bearing change-version window by
+`ContentVersion`; see "Page-selection ordering" in [change-queries.md](change-queries.md).
 
-The first page of a cursor walk uses the same page-selection query as an offset request. A token
-based on `HighestSelectedDocumentId` is unsafe when that query orders by `ContentVersion`.
-Replaying such a token could skip qualifying rows that have a smaller `DocumentId` but a later
-`ContentVersion`.
+The first page of a cursor walk uses the same page-selection query as an offset request, so a token
+based on a `DocumentId` boundary would be unsafe whenever that query orders by `ContentVersion`:
+replaying it could skip qualifying rows with a smaller `DocumentId` and a later `ContentVersion`.
 
 Windowed (max-bearing) requests therefore anchor cursor pages, partition boundaries, and
-continuation tokens on `ContentVersion`, delivered by DMS-1394
-([`14-contentversion-windowed-cursor-anchoring.md`](../epics/20-partitioned-cursor-paging/14-contentversion-windowed-cursor-anchoring.md))
-in the same release as cursor execution. Invariant: a page emits a continuation token only when
-the token's anchor is the page's ordering key.
+continuation tokens on `ContentVersion`. **Invariant: the anchor follows the ordering.** A page's
+ordering key, its cursor bounds, and the anchor stamped on the token it hands out are always the
+same column, and the token names which column that was.
+
+Min-only and unfiltered walks keep `DocumentId` anchors, and the asymmetry is not an omission. A
+min-only window stays open as data changes: an update moves a row later in `ContentVersion` order
+while the row remains eligible, so a `ContentVersion`-anchored walk could return it twice. A
+max-bearing window is a monotonic-escape window — an update pushes the row past the maximum and out
+of the window entirely — so the same movement removes the row rather than replaying it.
+
+`ContentVersion` anchoring also means a windowed walk seeks the change-version index instead of
+walking the primary key and discarding rows outside the window, so a windowed page costs what its
+page size costs rather than what its window position costs. The applicable indexes already exist:
+`IX_<Table>_ContentVersion` for regular resources, and
+`IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId` for descriptors, whose page selection filters
+on the authoritative `ResourceKeyId`. This anchoring adds no DDL.
+
+`AppSettings:UseLegacyDocumentIdOrderingForChangeQueries` governs cursor and partition anchoring
+along with traditional page selection, from one shared resolver. A deployment running with legacy
+ordering keeps issuing and accepting `DocumentId`-marked windowed tokens rather than breaking a walk
+in progress.
 
 ## Performance Invariants
 
@@ -795,11 +907,14 @@ violates one of these has not implemented this design.
 
 ### Structural invariants
 
-- Cursor SQL contains no `OFFSET`, no row-number skip, and no count query, and uses the root
-  `DocumentId` key as a range predicate.
+- Cursor SQL contains no `OFFSET`, no row-number skip, and no count query, and uses an indexed
+  anchor column as a range predicate: the root `DocumentId` key, or `ContentVersion` under a
+  max-bearing window.
 - Cursor implementation does not otherwise change traditional `limit`/`offset` page-selection
-  SQL. The DMS-1298 conditional ordering rule and the selected-id result set added to collection
-  hydration batches are the explicit exceptions.
+  SQL. The conditional ordering rule and the selected-key result set added to collection
+  hydration batches are the explicit exceptions, and the latter widens only when the keyset is
+  `ContentVersion`-anchored — `DocumentId`-anchored batch text is byte-identical to its pre-cursor
+  form.
 - Cursor hydration performs one database command and adds no roundtrip over the existing
   single-command page-keyset architecture.
 - `/partitions` performs one database command for its boundary selection and returns identifiers
@@ -834,6 +949,9 @@ these invariants independently or the design is not satisfied.
 ### Access-path expectations
 
 - Unfiltered cursor plans use primary-key range access.
+- A `ContentVersion`-anchored first page over an upper-tail window seeks the change-version index —
+  `IX_<Table>_ContentVersion` for a regular resource, `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId`
+  for a descriptor — with no dead-run primary-key scan ahead of the first qualifying row.
 - Filtered and authorized plans retain applicable existing indexes without repeated full candidate
   scans.
 - A partition plan may scan and sort the candidate set once — that single linear pass is the

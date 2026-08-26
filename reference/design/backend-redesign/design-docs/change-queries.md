@@ -1325,7 +1325,9 @@ bounds on that path are residual predicates because `ContentVersion` is not an i
 Non-legacy max-bearing requests use `ContentVersion` page ordering and can use the derived
 `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId (ResourceKeyId, ContentVersion, DocumentId)`
 index for the `ResourceKeyId` equality, `ContentVersion` range, and page ordering. The trailing
-`DocumentId` covers the page key returned by selection.
+`DocumentId` covers the page key returned by selection. Windowed cursor pages and windowed partition
+boundary calculation anchor on the same column and ride the same index; a cursor bound is one more
+range predicate on the `ContentVersion` key, not a different access path.
 
 No `Discriminator`-leading index is emitted on the live `dms.Descriptor` table. Shared descriptor
 tracked-change queries may filter their own historical rows by the routing-only `Discriminator`, but
@@ -2050,13 +2052,17 @@ Reads of `_lastModifiedDate` and per-item `ChangeVersion` in response bodies rem
 #### Page-selection ordering
 
 For live resource and descriptor GET-many queries, the change-version filter determines the
-page-selection order:
+page-selection order, and with it the cursor and partition anchor:
 
-| Request shape | Page-selection ordering |
+| Request shape | Page-selection ordering and anchor |
 | --- | --- |
 | `maxChangeVersion` present, with or without `minChangeVersion` | `ContentVersion` |
 | `minChangeVersion` only | `DocumentId` |
 | No change-version filters | `DocumentId` |
+
+One resolver answers this question for every live collection read, and the resolved value travels on
+the request rather than being derived again downstream. Ordering and anchoring cannot disagree
+because they are the same choice.
 
 A window with `maxChangeVersion` is a monotonic-escape window: when a row changes, its
 `ContentVersion` advances beyond the maximum and the row leaves the window. Ordering by
@@ -2068,8 +2074,9 @@ empty-page result instead of a full-table walk.
 
 A min-only window remains open as data changes. Updating a row moves it later in
 `ContentVersion` order without removing it from the window. With offset paging, that movement
-can return the row twice and shift another row past an offset boundary. Min-only requests
-therefore retain `DocumentId` ordering.
+can return the row twice and shift another row past an offset boundary; with a `ContentVersion`
+cursor anchor it moves the row past an anchor the walk has yet to reach, which returns it twice.
+Min-only requests therefore retain `DocumentId` ordering and `DocumentId` anchors.
 
 The optimized path matches the recommended synchronization workflow: always supply a maximum.
 
@@ -2077,18 +2084,34 @@ Client-visible behavior:
 
 - With `ContentVersion` page selection, pages progress by ChangeVersion. Hydration still orders
   items within each page by `DocumentId`.
-- Clients must follow the documented offset workflow. They must not use the last response item's
-  ChangeVersion as a cursor.
+- Clients using `limit`/`offset` must follow the documented offset workflow. They must not use the
+  last response item's ChangeVersion as a cursor. A client that wants a value-anchored walk uses
+  `pageToken`, whose token carries a server-issued anchor rather than one read off a response body.
 - Total-Count behavior does not change.
 - Page progression now depends on the request shape. Response order was not previously a
   documented contract; this section makes the variation explicit.
 - `AppSettings:UseLegacyDocumentIdOrderingForChangeQueries` defaults to `false`. Setting it to
-  `true` restores `DocumentId` page selection for all clients in the deployment. This setting is
-  an operator escape hatch, not a per-client option.
+  `true` restores `DocumentId` ordering and `DocumentId` anchoring for all clients in the
+  deployment. This setting is an operator escape hatch, not a per-client option.
 
-This rule applies only to traditional `limit`/`offset` page selection. It does not affect
-`/deletes`, `/keyChanges`, `/availableChangeVersions`, unfiltered GET-many, GET-by-id, or writes.
-See [partitioned-cursor-paging.md](partitioned-cursor-paging.md) for the cursor-paging behavior.
+**Scope.** This rule governs page selection for live resource and descriptor GET-many collection
+reads in all three of their paging shapes: traditional `limit`/`offset` pages, `pageToken` cursor
+pages, and `/partitions` boundary calculation. A max-bearing window orders and anchors all three by
+`ContentVersion`; the tokens a windowed request issues carry `ContentVersion` bounds and are marked
+as such, so a client replaying one under a different window is rejected rather than served rows read
+against the wrong column. See
+[partitioned-cursor-paging.md](partitioned-cursor-paging.md) for the token contract, the anchored
+cursor and partition SQL, and the consistency consequences.
+
+Because the kill switch governs anchoring as well as ordering, tokens issued while it is set stay
+replayable while it stays set: a deployment running with legacy ordering issues and accepts
+`DocumentId`-marked windowed tokens throughout, instead of breaking walks in progress. Flipping the
+switch mid-walk invalidates tokens already handed out, which is the expected cost of an operator
+escape hatch and the reason it is deployment-wide rather than per-request.
+
+The rule does not affect `/deletes`, `/keyChanges`, `/availableChangeVersions`, unfiltered GET-many,
+GET-by-id, or writes. The change-query endpoints page traditionally over the tracked-change tables
+and do not accept cursor parameters at all.
 
 ### Snapshot support is deferred
 

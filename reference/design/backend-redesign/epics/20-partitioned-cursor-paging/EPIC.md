@@ -360,7 +360,7 @@ The approved intentional ODS differences are:
   assigned-profile-usage enforcement filter and so does not enforce assigned profile usage on that
   endpoint, unlike its data-management controller base, whose GET-many, GET-by-id, PUT, and POST
   actions each apply that filter;
-- gate `Next-Page-Token` on a non-null `HighestSelectedDocumentId`, including when concurrent
+- gate `Next-Page-Token` on a non-null `HighestSelectedAnchor`, including when concurrent
   deletion leaves an empty hydrated body, while ODS gates the header on hydrated body count;
 - retain DMS's existing `Offset must be a numeric value greater than or equal to 0.` text rather
   than ODS's `Offset cannot be a negative value.`;
