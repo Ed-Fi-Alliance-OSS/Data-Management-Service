@@ -232,6 +232,69 @@ internal static class WindowedCursorAnchoringScenario
     }
 
     /// <summary>
+    /// A windowed <c>limit</c>/<c>offset</c> response hands out a continuation, and that continuation
+    /// really enters the walk: the traditional page and the pages that follow it tile the window exactly
+    /// once between them, with no row lost at the join and none delivered twice.
+    /// </summary>
+    /// <remarks>
+    /// This is the seam the two halves of windowed anchoring meet at, and only here. A traditional page
+    /// over a max-bearing window is ordered by <c>ContentVersion</c>, so its continuation has to be
+    /// stamped and bounded in that column — a token anchored on the page's highest <c>DocumentId</c>
+    /// would look identical to a client and skip every row with a smaller id and a later version.
+    /// Entering a walk this way is also newly possible: before <c>ContentVersion</c> anchoring, a
+    /// windowed traditional page was ordered by a column its token could not express and was served with
+    /// no continuation at all.
+    /// <para>
+    /// The entry page is deliberately not the whole window, so the join is a real one: five documents
+    /// and a limit of two leave three rows for the cursor pages to deliver.
+    /// </para>
+    /// </remarks>
+    public static async Task It_enters_a_windowed_walk_from_a_traditional_page(ApiIntegrationHarness harness)
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+
+        var seeded = await SeedWindowedMergeItemsAsync(harness, "traditional-entry");
+
+        // A plain limit/offset request: no pageToken, no pageSize. Read through the same reader the walk
+        // uses, so the continuation it carries is held to the same marker rule every walked page is.
+        var (entryPageIds, entryPageToken) = await ReadWindowedPageAsync(
+            harness,
+            $"{MergeItemsEndpoint}?{seeded.Window}&limit=2",
+            PageOrderingMode.ContentVersion
+        );
+
+        entryPageIds
+            .Should()
+            .HaveCount(2, "a limit of two over a five-document window returns a partial first page");
+        entryPageToken
+            .Should()
+            .NotBeNull(
+                "a windowed traditional page selects keys, so it can hand out a continuation anchored on "
+                    + "the ContentVersion it was ordered by"
+            );
+
+        var walk = await WalkWindowAsync(
+            harness,
+            MergeItemsEndpoint,
+            seeded.Window,
+            pageSize: 2,
+            entryPageToken: entryPageToken
+        );
+
+        walk.ReturnedIds.Should()
+            .NotIntersectWith(
+                entryPageIds,
+                "the continuation starts after the traditional page rather than replaying it"
+            );
+        walk.ReturnedIds.Concat(entryPageIds)
+            .Should()
+            .BeEquivalentTo(
+                seeded.Ids,
+                "the traditional page and the walk it started tile the window exactly once between them"
+            );
+    }
+
+    /// <summary>
     /// A partition token is walked by the same cursor path a page token is, so it carries the same
     /// anchor marker and the same replay rule: a windowed token replayed without its window is answered
     /// with the standard invalid-token response rather than with bounds read against the wrong column.
@@ -343,18 +406,24 @@ internal static class WindowedCursorAnchoringScenario
     /// because it is what the walk is asserting: a window that resolved the other anchor would reject
     /// this walk's entry token instead of silently walking the wrong column.
     /// </param>
+    /// <param name="entryPageToken">
+    /// The token to enter on, when the walk is being entered from a token the host itself issued rather
+    /// than from one covering the whole window. Omitted by every walk that means to cover the window,
+    /// which synthesizes an entry token instead.
+    /// </param>
     private static async Task<WindowedWalk> WalkWindowAsync(
         ApiIntegrationHarness harness,
         string endpoint,
         string window,
         int pageSize,
         Func<Task>? afterFirstPage = null,
-        PageOrderingMode anchor = PageOrderingMode.ContentVersion
+        PageOrderingMode anchor = PageOrderingMode.ContentVersion,
+        string? entryPageToken = null
     )
     {
         // Encoded by the codec that decodes it, and stamped with the anchor this window resolves, so the
         // entry token is one the host accepts by construction rather than by transcription.
-        string pageToken = PageTokenCodec.Encode(CursorRange.From(1), anchor);
+        string pageToken = entryPageToken ?? PageTokenCodec.Encode(CursorRange.From(1), anchor);
 
         HashSet<string> returnedIds = [];
         var pages = 0;

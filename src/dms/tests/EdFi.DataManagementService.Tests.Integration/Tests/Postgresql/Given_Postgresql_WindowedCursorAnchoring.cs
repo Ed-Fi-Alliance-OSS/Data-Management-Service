@@ -47,6 +47,10 @@ public sealed class Given_Postgresql_WindowedCursorAnchoring : PostgresqlApiInte
         WindowedCursorAnchoringScenario.It_keeps_the_document_id_anchor_for_a_min_only_walk(Harness);
 
     [Test]
+    public Task It_enters_a_windowed_walk_from_a_traditional_page() =>
+        WindowedCursorAnchoringScenario.It_enters_a_windowed_walk_from_a_traditional_page(Harness);
+
+    [Test]
     public Task It_rejects_a_windowed_partition_token_replayed_without_the_window() =>
         WindowedCursorAnchoringScenario.It_rejects_a_windowed_partition_token_replayed_without_the_window(
             Harness
