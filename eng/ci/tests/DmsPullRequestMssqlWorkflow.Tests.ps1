@@ -259,4 +259,9 @@ Describe "on-dms-pullrequest.yml bootstrap Pester registry" {
         $script:pesterPaths | Should -Contain "eng/docker-compose/tests/DockerComposeLogging.Tests.ps1" `
             -Because "the DMS-1407 compose logging guard must run on every DMS-relevant pull request"
     }
+
+    It "runs the DocumentCacheAdmin package-target guard in the pull request Pester lane" {
+        $script:pesterPaths | Should -Contain "eng/ci/tests/DocumentCacheAdminPackageTarget.Tests.ps1" `
+            -Because "DocumentCacheAdmin package-target wiring must run on every DMS-relevant pull request"
+    }
 }
