@@ -3,6 +3,8 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
+#Requires -Version 7
+
 <#
 .SYNOPSIS
 Pulls container images, retrying transient registry failures with jittered exponential backoff.
@@ -15,10 +17,11 @@ that re-hits the registry in lockstep.
 
 Each image carries its own attempt budget. After a failed attempt the wait is drawn uniformly from
 [base/2, base), where base doubles per attempt until it reaches MaxDelaySeconds. Neither bound of
-that band ever decreases, so waits trend upward, but consecutive bands overlap at the attempt where
-the clamp engages and are identical past it - a later retry can draw a shorter wait than an earlier
-one. What holds at every attempt is the random draw, which is what keeps concurrent jobs from
-retrying in unison.
+that band ever decreases, so waits trend upward, but the bands stop being disjoint once the cap
+binds: every band past the one where the base pins to MaxDelaySeconds is identical to it, and a cap
+that falls between two doublings makes that first pinned band overlap its predecessor as well.
+Either way a later retry can draw a shorter wait than an earlier one. What holds at every attempt is
+the random draw, which is what keeps concurrent jobs from retrying in unison.
 
 Docker's output is never captured, so whatever the registry said about a failure stays visible in the
 job log, and the final failure names the image and the attempt count rather than letting a missing
@@ -99,10 +102,11 @@ foreach ($image in $imageList) {
         }
 
         # Equal jitter over an exponential base that doubles until it reaches $MaxDelaySeconds. Each
-        # wait is at least half the base and less than the base, so the bands trend upward, though
-        # they overlap where the clamp engages and are identical past it - consecutive waits are not
-        # strictly increasing. The random component, not the growth, is what stops concurrent jobs
-        # retrying in unison.
+        # wait is at least half the base and less than the base, so the bands trend upward, but they
+        # stop being disjoint once the cap binds: bands repeat while the base is pinned, and a cap
+        # that falls between two doublings makes the first pinned band overlap its predecessor too.
+        # Consecutive waits are therefore not strictly increasing. The random component, not the
+        # growth, is what stops concurrent jobs retrying in unison.
         # The [double] cast is load-bearing. Without it PowerShell binds Math.Min(Int32, Int32) and
         # narrows the doubling term instead of widening the cap, so once the term passes Int32 the
         # script dies on a conversion error partway through a budget ValidateRange calls legal.

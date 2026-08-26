@@ -8,16 +8,26 @@
 # Runtime behavior of the shipped .github/actions/pull-ci-images/Invoke-CiImagePull.ps1.
 #
 # The primitive is invoked in a child pwsh with `docker`, `Get-Random`, and `Start-Sleep` replaced by
-# recording functions, so every assertion is on what the real script actually does rather than on its
-# source text, and no registry, image, or wall-clock delay is involved. A child process keeps the
-# shims and the script's preference assignments out of this Pester session.
+# recording functions, so the retry, backoff, and failure assertions are on what the real script
+# actually does, and no registry, image, or wall-clock delay is involved. A child process keeps the
+# shims and the script's preference assignments out of this Pester session. Three tests here do read
+# source text instead, because nothing invoked can reach what they cover: the declared action.yml
+# defaults below, and the two wiring invariants in the second Describe.
 #
-# One argument is deliberately not asserted here, and nothing in this suite covers it. The script
-# passes `--` to end Docker's option list, and PowerShell forwards that token verbatim to a native
-# command but strips it from a function call, so a shim can never observe it: a native
-# `echo pull -- ref` receives three arguments while a function receives two. The recorded pull lines
-# below therefore omit `--` even though the shipped command includes it - do not "fix" that by
-# removing the guard from the script. Only a real native invocation could assert it.
+# Two things the shipped script does are deliberately not asserted anywhere in this suite, because
+# the shim pattern cannot observe either one:
+#
+#   - The `--` that ends Docker's option list. PowerShell forwards that token verbatim to a native
+#     command but strips it from a function call, so a shim can never see it: a native
+#     `echo pull -- ref` receives three arguments while a function receives two. The recorded pull
+#     lines below therefore omit `--` even though the shipped command includes it - do not "fix"
+#     that by removing the guard from the script. Only a real native invocation could assert it.
+#   - `$PSNativeCommandUseErrorActionPreference = $false`. That preference governs native commands
+#     only, so a function shim is indifferent to it and deleting the assignment leaves this suite
+#     green. It is defensive rather than load-bearing on a current host, where the default is
+#     already false: a host that had turned it on would promote the first failed pull to a
+#     terminating error under `$ErrorActionPreference = "Stop"` and abort the run instead of
+#     retrying.
 #
 # Randomness is injected rather than sampled: the shim records the bounds the script asks for and
 # returns a caller-selected value from them. That makes the jitter contract - an expanding
@@ -238,7 +248,10 @@ exit 0
             $script:interior.Sleeps | Should -Be @(2250, 4500, 9000, 18000)
         }
 
-        It "keeps every band strictly increasing and inside [base/2, base)" {
+        It "keeps every wait inside [base/2, base) and rising while the base still doubles" {
+            # Only while the base doubles. The cap is what breaks strict growth, and the default 60s
+            # cap never binds inside four retries from a 3s base; the two capped specs below cover
+            # the bands that repeat instead.
             foreach ($run in @($script:floor, $script:ceiling, $script:interior)) {
                 $delays = $run.Sleeps
                 $delays | Should -HaveCount 4
@@ -381,8 +394,9 @@ exit 0
         It "holds every retry past the cap at the capped band" {
             $result = Invoke-PullHarness -Images "registry/dms:ci" -ExitCodes "1" -MaxAttempts 40 -InitialDelaySeconds 3 -RandomMode "floor"
 
-            # Base reaches the 60s cap on retry 6 and stays there, so the half-width is fixed at 30000.
-            @($result.Randoms | Select-Object -Skip 6 | Sort-Object -Unique) | Should -Be @("random 0 30000")
+            # Base reaches the 60s cap on retry 6 and stays there, so the half-width is fixed at
+            # 30000 from that retry on. Skipping the five uncapped retries starts the slice at 6.
+            @($result.Randoms | Select-Object -Skip 5 | Sort-Object -Unique) | Should -Be @("random 0 30000")
         }
     }
 
@@ -474,14 +488,18 @@ exit 0
 
 Describe "pull-ci-images workflow wiring" {
     # Two invariants that live purely in declarative CI wiring, so no invoked-script test can reach
-    # them, and whose regression would not surface as a failing pull-request lane. Everything else
-    # about the conversions - the gates, login order, permissions - fails a lane directly when broken
-    # and is deliberately not asserted from source here, following
-    # eng/ci/tests/DmsPullRequestMssqlWorkflow.Tests.ps1.
+    # them, and whose regression would not surface as a failing pull-request lane. The rest of the
+    # conversion - login order, permissions, and the `use_prebuilt_images` condition on each pull
+    # step - is left to review, following eng/ci/tests/DmsPullRequestMssqlWorkflow.Tests.ps1. Be
+    # clear about what that leaves exposed: `dms_image` and `config_image` are emitted
+    # unconditionally, and `use_prebuilt_images` goes false only for a fork pull request or when the
+    # REBUILD_DOWNSTREAM_IMAGES repository variable is set, so a dropped condition still passes on
+    # an internal pull request - including the one that drops it - and breaks fork lanes only.
     BeforeAll {
-        $script:workflowRoot = [System.IO.Path]::GetFullPath(
-            (Join-Path $PSScriptRoot "../../../.github/workflows")
+        $script:githubRoot = [System.IO.Path]::GetFullPath(
+            (Join-Path $PSScriptRoot "../../../.github")
         )
+        $script:workflowRoot = Join-Path $script:githubRoot "workflows"
 
         function Get-JobBlock {
             param(
@@ -513,15 +531,20 @@ Describe "pull-ci-images workflow wiring" {
         }
     }
 
-    It "routes every workflow image pull through the action" {
+    It "routes every declarative image pull through the action" {
         # A reintroduced inline `docker pull` still succeeds, so it drops the retry this action exists
-        # to provide without failing anything.
+        # to provide without failing anything. The whole .github tree is in scope, not just
+        # workflows: a composite action under .github/actions is as good a place to hide a bare pull.
+        # `docker image pull` is the same command spelled long-hand, and .yaml is the same file type
+        # spelled differently - neither appears today, and neither should slip past this if it does.
+        # Only YAML is scanned: Invoke-CiImagePull.ps1 is the one .ps1 under .github and its
+        # `docker pull` is the call this guard exists to funnel every other site into.
         $barePulls = @(
-            Get-ChildItem -LiteralPath $script:workflowRoot -Filter *.yml |
+            Get-ChildItem -LiteralPath $script:githubRoot -Recurse -File -Include *.yml, *.yaml |
                 ForEach-Object {
                     $file = $_
                     Get-Content -LiteralPath $file.FullName |
-                        Where-Object { $_ -match 'docker\s+pull\b' } |
+                        Where-Object { $_ -match 'docker\s+(image\s+)?pull\b' } |
                         ForEach-Object { "$($file.Name): $($_.Trim())" }
                 }
         )
