@@ -220,7 +220,7 @@ public class Given_CdcConnectorTemplateContractTests
         request.ArtifactOutput.Should().BeSameAs(artifactOutput);
         request
             .ProviderArtifactNames.Postgresql!.PublicationName.Should()
-            .Be(new CdcSafeName("edfi_dms_dms_binding_g7_pub"));
+            .Be(new CdcSafeName("edfi_dms_dms_binding_g7_de1bb4313908_pub"));
         artifactOutput.IncludeRedactedArtifactPayload.Should().BeTrue();
     }
 

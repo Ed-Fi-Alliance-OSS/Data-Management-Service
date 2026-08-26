@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
@@ -31,8 +32,12 @@ public class Given_CdcArtifactNameGenerator
             .ProgressTopicName.Should()
             .Be("edfi.dms.instance.data-store-1-g1.documents.v1.cdc-progress");
         inventory.SchemaHistoryTopicName.Should().BeNull();
-        inventory.PostgresqlPublicationName.Should().Be("edfi_dms_dms_local_data_store_1_g1_pub");
-        inventory.PostgresqlLogicalSlotName.Should().Be("edfi_dms_dms_local_data_store_1_g1_slot");
+        inventory
+            .PostgresqlPublicationName.Should()
+            .Be("edfi_dms_dms_local_data_store_1_g1_56c4668b1b24_pub");
+        inventory
+            .PostgresqlLogicalSlotName.Should()
+            .Be("edfi_dms_dms_local_data_store_1_g1_56c4668b1b24_slot");
         inventory.SqlServerCdcGatingRoleName.Should().BeNull();
         inventory
             .GovernedArtifacts.Should()
@@ -87,16 +92,18 @@ public class Given_CdcArtifactNameGenerator
         inventory
             .SchemaHistoryTopicName.Should()
             .Be("edfi.dms.instance.data-store-1-g7.documents.v1.schema-history");
-        inventory.SqlServerCdcGatingRoleName.Should().Be("edfi_dms_dms_local_data_store_1_g7_cdc_reader");
+        inventory
+            .SqlServerCdcGatingRoleName.Should()
+            .Be("edfi_dms_dms_local_data_store_1_g7_3ac400fa3057_cdc_reader");
         inventory
             .SqlServerCaptureInstanceDocumentName.Should()
-            .Be("edfi_dms_dms_local_data_store_1_g7_document");
+            .Be("edfi_dms_dms_local_data_store_1_g7_3ac400fa3057_document");
         inventory
             .SqlServerCaptureInstanceDocumentCacheName.Should()
-            .Be("edfi_dms_dms_local_data_store_1_g7_documentcache");
+            .Be("edfi_dms_dms_local_data_store_1_g7_3ac400fa3057_documentcache");
         inventory
             .SqlServerCaptureInstanceCdcHeartbeatName.Should()
-            .Be("edfi_dms_dms_local_data_store_1_g7_cdcheartbeat");
+            .Be("edfi_dms_dms_local_data_store_1_g7_3ac400fa3057_cdcheartbeat");
         inventory.PostgresqlPublicationName.Should().BeNull();
         inventory
             .GovernedArtifacts.Select(artifact => artifact.Kind)
@@ -126,22 +133,22 @@ public class Given_CdcArtifactNameGenerator
     public void It_keeps_provider_artifact_names_that_are_at_their_exact_limits()
     {
         CdcArtifactInventory postgresqlPublicationLimit = Render(
-            new(new string('a', 23), "x", new string('b', 23), 1, CdcProvider.Postgresql)
+            new(new string('a', 16), "x", new string('b', 17), 1, CdcProvider.Postgresql)
         );
         CdcArtifactInventory postgresqlSlotLimit = Render(
-            new(new string('a', 22), "x", new string('b', 23), 1, CdcProvider.Postgresql)
+            new(new string('a', 16), "x", new string('b', 16), 1, CdcProvider.Postgresql)
         );
         CdcArtifactInventory sqlServerRoleLimit = Render(
-            new(new string('a', 52), "x", new string('b', 52), 1, CdcProvider.SqlServer)
+            new(new string('a', 45), "x", new string('b', 46), 1, CdcProvider.SqlServer)
         );
         CdcArtifactInventory sqlServerDocumentLimit = Render(
-            new(new string('a', 39), "x", new string('b', 39), 1, CdcProvider.SqlServer)
+            new(new string('a', 32), "x", new string('b', 33), 1, CdcProvider.SqlServer)
         );
         CdcArtifactInventory sqlServerDocumentCacheLimit = Render(
-            new(new string('a', 36), "x", new string('b', 37), 1, CdcProvider.SqlServer)
+            new(new string('a', 30), "x", new string('b', 30), 1, CdcProvider.SqlServer)
         );
         CdcArtifactInventory sqlServerCdcHeartbeatLimit = Render(
-            new(new string('a', 37), "x", new string('b', 37), 1, CdcProvider.SqlServer)
+            new(new string('a', 30), "x", new string('b', 31), 1, CdcProvider.SqlServer)
         );
 
         postgresqlPublicationLimit.PostgresqlPublicationName.Should().HaveLength(63);
@@ -167,10 +174,11 @@ public class Given_CdcArtifactNameGenerator
         string instanceKey = new('b', 23);
         string sqlServerDeploymentKey = new('a', 45);
         string sqlServerInstanceKey = new('b', 45);
-        string postgresqlPublication = $"edfi_dms_{deploymentKey}_{instanceKey}_g1_pub";
-        string postgresqlSlot = $"edfi_dms_{deploymentKey}_{instanceKey}_g1_slot";
-        string sqlServerCapture =
-            $"edfi_dms_{sqlServerDeploymentKey}_{sqlServerInstanceKey}_g1_documentcache";
+        string postgresqlPrefix = ProviderPrefix(deploymentKey, instanceKey, 1);
+        string sqlServerPrefix = ProviderPrefix(sqlServerDeploymentKey, sqlServerInstanceKey, 1);
+        string postgresqlPublication = $"{postgresqlPrefix}_pub";
+        string postgresqlSlot = $"{postgresqlPrefix}_slot";
+        string sqlServerCapture = $"{sqlServerPrefix}_documentcache";
 
         CdcArtifactInventory postgresqlInventory = Render(
             new(deploymentKey, "x", instanceKey, 1, CdcProvider.Postgresql)
@@ -192,6 +200,62 @@ public class Given_CdcArtifactNameGenerator
             .SqlServerCaptureInstanceDocumentCacheName.Should()
             .Be(Truncate("sqlserver-capture-instance-documentcache", sqlServerCapture, 100));
         sqlServerInventory.SqlServerCaptureInstanceDocumentCacheName.Should().HaveLength(100);
+    }
+
+    [Test]
+    public void It_discriminates_provider_artifacts_before_separator_normalization()
+    {
+        string[] instanceKeys = ["data-store-1", "data_store_1", "data.store.1"];
+
+        CdcArtifactInventory[] postgresqlInventories = instanceKeys
+            .Select(instanceKey =>
+                Render(new("dms-local", "edfi.dms", instanceKey, 1, CdcProvider.Postgresql))
+            )
+            .ToArray();
+        CdcArtifactInventory[] sqlServerInventories = instanceKeys
+            .Select(instanceKey =>
+                Render(new("dms-local", "edfi.dms", instanceKey, 1, CdcProvider.SqlServer))
+            )
+            .ToArray();
+
+        postgresqlInventories
+            .Select(inventory => inventory.PostgresqlPublicationName)
+            .Should()
+            .OnlyHaveUniqueItems();
+        postgresqlInventories
+            .Select(inventory => inventory.PostgresqlLogicalSlotName)
+            .Should()
+            .OnlyHaveUniqueItems();
+        sqlServerInventories
+            .Select(inventory => inventory.SqlServerCdcGatingRoleName)
+            .Should()
+            .OnlyHaveUniqueItems();
+        sqlServerInventories
+            .Select(inventory => inventory.SqlServerCaptureInstanceDocumentName)
+            .Should()
+            .OnlyHaveUniqueItems();
+        sqlServerInventories
+            .Select(inventory => inventory.SqlServerCaptureInstanceDocumentCacheName)
+            .Should()
+            .OnlyHaveUniqueItems();
+        sqlServerInventories
+            .Select(inventory => inventory.SqlServerCaptureInstanceCdcHeartbeatName)
+            .Should()
+            .OnlyHaveUniqueItems();
+
+        postgresqlInventories[0]
+            .PostgresqlPublicationName.Should()
+            .Contain($"g1_{ProviderDiscriminator("dms-local", "data-store-1", 1)}_pub");
+        postgresqlInventories[1]
+            .PostgresqlPublicationName.Should()
+            .Contain($"g1_{ProviderDiscriminator("dms-local", "data_store_1", 1)}_pub");
+        postgresqlInventories[2]
+            .PostgresqlPublicationName.Should()
+            .Contain($"g1_{ProviderDiscriminator("dms-local", "data.store.1", 1)}_pub");
+
+        Render(new("dms-local", "edfi.dms", "data-store-1", 1, CdcProvider.Postgresql))
+            .PostgresqlPublicationName.Should()
+            .Be(postgresqlInventories[0].PostgresqlPublicationName);
     }
 
     [Test]
@@ -240,5 +304,21 @@ public class Given_CdcArtifactNameGenerator
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{artifactKind}\0{untruncatedName}"));
         string suffix = $"_{Convert.ToHexString(hash).ToLowerInvariant()[..12]}";
         return $"{untruncatedName[..(limit - suffix.Length)]}{suffix}";
+    }
+
+    private static string ProviderPrefix(string deploymentKey, string instanceKey, long generation) =>
+        $"edfi_dms_{ToProviderSafeToken(deploymentKey)}_{ToProviderSafeToken(instanceKey)}_g{generation.ToString(CultureInfo.InvariantCulture)}_{ProviderDiscriminator(deploymentKey, instanceKey, generation)}";
+
+    private static string ToProviderSafeToken(string value) => value.Replace('.', '_').Replace('-', '_');
+
+    private static string ProviderDiscriminator(string deploymentKey, string instanceKey, long generation)
+    {
+        byte[] hash = SHA256.HashData(
+            Encoding.UTF8.GetBytes(
+                $"{deploymentKey}\0{instanceKey}\0{generation.ToString(CultureInfo.InvariantCulture)}"
+            )
+        );
+
+        return Convert.ToHexString(hash).ToLowerInvariant()[..12];
     }
 }

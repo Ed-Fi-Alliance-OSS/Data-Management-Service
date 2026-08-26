@@ -180,7 +180,7 @@ public class Given_CdcBindingStateStore
                 binding.TopicName,
                 $"{binding.TopicName}.cdc-progress",
                 null,
-                "edfi_dms_dms_local_data_store_1_g1_slot",
+                "edfi_dms_dms_local_data_store_1_g1_56c4668b1b24_slot",
                 "sha256:9605ac115e4c82a0a9f1b2e7e0687c09fce12c699903be5189c8527efa3d2f40",
                 "42",
                 null,

@@ -84,6 +84,7 @@ public static class CdcArtifactNameGenerator
         "sqlserver-capture-instance-cdcheartbeat";
 
     private const int ProviderArtifactHashLength = 12;
+    private const int ProviderArtifactDiscriminatorLength = 12;
 
     public static CdcArtifactNameResult Render(CdcArtifactNameInput input)
     {
@@ -420,11 +421,30 @@ public static class CdcArtifactNameGenerator
     {
         string providerDeploymentKey = ToProviderSafeToken(deploymentKey);
         string providerInstanceKey = ToProviderSafeToken(instanceKey);
+        string providerDiscriminator = ComputeProviderArtifactDiscriminator(
+            deploymentKey,
+            instanceKey,
+            generation
+        );
 
-        return $"edfi_dms_{providerDeploymentKey}_{providerInstanceKey}_g{generation.ToString(CultureInfo.InvariantCulture)}";
+        return $"edfi_dms_{providerDeploymentKey}_{providerInstanceKey}_g{generation.ToString(CultureInfo.InvariantCulture)}_{providerDiscriminator}";
     }
 
     private static string ToProviderSafeToken(string value) => value.Replace('.', '_').Replace('-', '_');
+
+    private static string ComputeProviderArtifactDiscriminator(
+        string deploymentKey,
+        string instanceKey,
+        long generation
+    )
+    {
+        byte[] payload = Encoding.UTF8.GetBytes(
+            $"{deploymentKey}\0{instanceKey}\0{generation.ToString(CultureInfo.InvariantCulture)}"
+        );
+        byte[] hash = SHA256.HashData(payload);
+
+        return Convert.ToHexString(hash).ToLowerInvariant()[..ProviderArtifactDiscriminatorLength];
+    }
 
     private static string TruncateProviderArtifactName(string name, string artifactKind, int maximumLength)
     {

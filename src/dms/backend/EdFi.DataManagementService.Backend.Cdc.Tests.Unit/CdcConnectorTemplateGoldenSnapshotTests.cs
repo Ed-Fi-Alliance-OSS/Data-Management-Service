@@ -61,8 +61,8 @@ public class Given_CdcConnectorTemplateGoldenSnapshots
                 producer.override.sasl.jaas.config=${env:CDC_KAFKA_JAAS_CONFIG}
                 producer.override.security.protocol=SASL_SSL
                 publication.autocreate.mode=disabled
-                publication.name=edfi_dms_dms_binding_g7_pub
-                slot.name=edfi_dms_dms_binding_g7_slot
+                publication.name=edfi_dms_dms_binding_g7_de1bb4313908_pub
+                slot.name=edfi_dms_dms_binding_g7_de1bb4313908_slot
                 snapshot.mode=initial
                 statistics.metrics.enabled=true
                 table.include.list=dms\.DocumentCache,dms\.Document,dms\.CdcHeartbeat

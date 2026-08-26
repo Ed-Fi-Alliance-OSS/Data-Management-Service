@@ -92,7 +92,11 @@ public class Given_CdcConnectorTemplateArtifactTests
             .GetString()
             .Should()
             .Be(result.Config["connector.class"]);
-        redactedConfig.GetProperty("publication.name").GetString().Should().Be("edfi_dms_dms_binding_g7_pub");
+        redactedConfig
+            .GetProperty("publication.name")
+            .GetString()
+            .Should()
+            .Be("edfi_dms_dms_binding_g7_de1bb4313908_pub");
         redactedConfig.GetProperty("database.hostname").GetString().Should().Be("[redacted]");
         redactedConfig.GetProperty("database.dbname").GetString().Should().Be("[redacted]");
         redactedConfig.GetProperty("database.user").GetString().Should().Be("[redacted]");
