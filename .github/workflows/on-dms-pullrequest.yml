@@ -55,8 +55,9 @@ jobs:
     outputs:
       fresh_build_required: ${{ steps.detect.outputs.fresh_build_required }}
       # True when the pull request changed a file relevant to DMS validation. The heavy jobs
-      # gate on this so that a PR touching only unrelated areas (e.g. config-only) skips the
-      # DMS suite while this workflow still runs and reports dms-ci-gate.
+      # gate on this so that a PR touching only unrelated areas (e.g. docs-only) skips the DMS
+      # suite while this workflow still runs and reports dms-ci-gate. src/config counts as
+      # DMS-relevant, so a config-only PR does not skip.
       dms_relevant: ${{ steps.detect.outputs.dms_relevant }}
     steps:
       - name: Checkout the Repo
@@ -92,13 +93,11 @@ jobs:
               exit 0
             fi
           else
-            before="${{ github.event.before }}"
-
-            if [[ "$before" == "0000000000000000000000000000000000000000" ]]; then
-              changed_files="$(git diff-tree --no-commit-id --no-renames --name-only -r HEAD)"
-            else
-              changed_files="$(git diff --no-renames --name-only "$before" "${{ github.sha }}")"
-            fi
+            # Unreachable with the current triggers: workflow_dispatch returned above and the
+            # only other events are pull_request and merge_group. Run the full suite rather
+            # than infer a diff base for an event this script does not model.
+            emit true true
+            exit 0
           fi
 
           fresh_build_required=false
@@ -623,6 +622,9 @@ jobs:
     env:
       # Set repository variable REBUILD_DOWNSTREAM_IMAGES=true to keep downstream
       # E2E/OpenAPI jobs rebuilding local images while rolling this change back or forward.
+      # Doing so also stops this job building at all, which stops the shared build cache tags
+      # from refreshing - for this workflow and for On Config Pull Request, which restores the
+      # Config tag. Both degrade to cold builds rather than failing.
       REBUILD_DOWNSTREAM_IMAGES: ${{ vars.REBUILD_DOWNSTREAM_IMAGES }}
       IS_FORK_PULL_REQUEST: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
       PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -696,11 +698,17 @@ jobs:
           push: true
           tags: ${{ steps.prepare-images.outputs.dms_image }}
           # A registry cache is not branch-scoped, so one shared ref serves every event and any
-          # run can restore it. Only non-pull_request runs export to it: the merge queue builds
-          # the tree that is about to become main, while concurrent pull request exports would
-          # race on the same tag and fill it with branch-specific layers.
+          # run can restore it; the GitHub Actions backend scopes entries by ref, so only a run
+          # on the default branch could seed one that every pull request restores. Exporting is
+          # limited to non-pull_request runs: the merge queue builds the tree about to become
+          # main, and workflow_dispatch stays eligible as the manual lever for re-seeding a
+          # pruned tag. Concurrent merge queue entries can still race on this tag; last writer
+          # wins and the blobs are content-addressed, so the loser costs only a cache refresh.
+          # ignore-error keeps a registry hiccup during export from failing a job that
+          # dms-ci-gate requires; buildx still prints an ERROR vertex for the failed export, so
+          # a green run can legitimately carry one.
           cache-from: type=registry,ref=${{ steps.prepare-images.outputs.dms_cache_ref }}
-          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,mode=max,ref={0}', steps.prepare-images.outputs.dms_cache_ref) || '' }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,mode=max,ignore-error=true,ref={0}', steps.prepare-images.outputs.dms_cache_ref) || '' }}
 
       - name: Build and push Config CI Docker image
         if: steps.prepare-images.outputs.use_prebuilt_images == 'true'
@@ -712,8 +720,11 @@ jobs:
             parentdir=./src
           push: true
           tags: ${{ steps.prepare-images.outputs.config_image }}
+          # Same export rules as the DMS image above. On Config Pull Request restores this same
+          # tag for its E2E jobs rather than writing its own, which is why that workflow needs
+          # no packages: write anywhere.
           cache-from: type=registry,ref=${{ steps.prepare-images.outputs.config_cache_ref }}
-          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,mode=max,ref={0}', steps.prepare-images.outputs.config_cache_ref) || '' }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,mode=max,ignore-error=true,ref={0}', steps.prepare-images.outputs.config_cache_ref) || '' }}
 
   run-backend-mssql-integration-tests:
     name: Run Backend MSSQL Integration Tests (${{ matrix.shard-name }})

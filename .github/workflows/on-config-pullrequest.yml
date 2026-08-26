@@ -44,7 +44,8 @@ jobs:
       config_relevant: ${{ steps.detect.outputs.config_relevant }}
       # Registry reference for the shared Config image build cache. Computed once here because
       # a container registry reference must be lowercase and the expression language has no
-      # lowercase function; every job that builds the image consumes this output.
+      # lowercase function. The E2E jobs consume it; fresh-rebuild-docker-image does not,
+      # because it deliberately builds with --no-cache.
       config_cache_ref: ${{ steps.cache-ref.outputs.config_cache_ref }}
     steps:
       - name: Resolve the build cache reference
@@ -52,7 +53,7 @@ jobs:
         shell: bash
         run: |
           owner="${GITHUB_REPOSITORY_OWNER,,}"
-          echo "config_cache_ref=ghcr.io/${owner}/data-management-service-ed-fi-api-config-ci:e2e-buildcache" >> "$GITHUB_OUTPUT"
+          echo "config_cache_ref=ghcr.io/${owner}/data-management-service-ed-fi-api-config-ci:buildcache" >> "$GITHUB_OUTPUT"
 
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -87,13 +88,11 @@ jobs:
               exit 0
             fi
           else
-            before="${{ github.event.before }}"
-
-            if [[ "$before" == "0000000000000000000000000000000000000000" ]]; then
-              changed_files="$(git diff-tree --no-commit-id --no-renames --name-only -r HEAD)"
-            else
-              changed_files="$(git diff --no-renames --name-only "$before" "${{ github.sha }}")"
-            fi
+            # Unreachable with the current triggers: workflow_dispatch returned above and the
+            # only other events are pull_request and merge_group. Run the full suite rather
+            # than infer a diff base for an event this script does not model.
+            emit true true
+            exit 0
           fi
 
           fresh_build_required=false
@@ -353,8 +352,9 @@ jobs:
 
       - name: Log in to GitHub Container Registry
         # Only needed to restore the build cache. A fork pull request token may not be able to
-        # read the cache package, and buildx treats an unreadable cache as a warning rather than
-        # an error, so a failure here must degrade to a cold build instead of failing the job.
+        # read the cache package; buildx logs an ERROR vertex for a cache import it cannot read
+        # but still completes the build, so a failure here must degrade to a cold build rather
+        # than fail the job.
         continue-on-error: true
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
@@ -372,9 +372,11 @@ jobs:
             parentdir=./src
           push: false
           tags: ed-fi-api-config-local:latest
-          # Restore only. seed-config-build-cache is the sole writer, so no job that runs pull
-          # request code needs packages: write. An absent or unreadable cache is a warning in
-          # buildx, not a failure, so a cold build still succeeds.
+          # Restore only, from the tag the merge queue run of On DMS Pull Request writes. That
+          # workflow builds this same image from the same context, Dockerfile and build
+          # contexts, so its layers are reusable here and no job in this workflow needs
+          # packages: write. An unreadable or absent cache import logs an ERROR vertex but does
+          # not fail the build, so a cold build still succeeds.
           cache-from: type=registry,ref=${{ needs.detect-fresh-build-changes.outputs.config_cache_ref }}
 
       - name: Cache Nuget packages
@@ -437,8 +439,9 @@ jobs:
 
       - name: Log in to GitHub Container Registry
         # Only needed to restore the build cache. A fork pull request token may not be able to
-        # read the cache package, and buildx treats an unreadable cache as a warning rather than
-        # an error, so a failure here must degrade to a cold build instead of failing the job.
+        # read the cache package; buildx logs an ERROR vertex for a cache import it cannot read
+        # but still completes the build, so a failure here must degrade to a cold build rather
+        # than fail the job.
         continue-on-error: true
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
@@ -456,9 +459,11 @@ jobs:
             parentdir=./src
           push: false
           tags: ed-fi-api-config-local:latest
-          # Restore only. seed-config-build-cache is the sole writer, so no job that runs pull
-          # request code needs packages: write. An absent or unreadable cache is a warning in
-          # buildx, not a failure, so a cold build still succeeds.
+          # Restore only, from the tag the merge queue run of On DMS Pull Request writes. That
+          # workflow builds this same image from the same context, Dockerfile and build
+          # contexts, so its layers are reusable here and no job in this workflow needs
+          # packages: write. An unreadable or absent cache import logs an ERROR vertex but does
+          # not fail the build, so a cold build still succeeds.
           cache-from: type=registry,ref=${{ needs.detect-fresh-build-changes.outputs.config_cache_ref }}
 
       - name: Cache Nuget packages
@@ -521,8 +526,9 @@ jobs:
 
       - name: Log in to GitHub Container Registry
         # Only needed to restore the build cache. A fork pull request token may not be able to
-        # read the cache package, and buildx treats an unreadable cache as a warning rather than
-        # an error, so a failure here must degrade to a cold build instead of failing the job.
+        # read the cache package; buildx logs an ERROR vertex for a cache import it cannot read
+        # but still completes the build, so a failure here must degrade to a cold build rather
+        # than fail the job.
         continue-on-error: true
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
@@ -540,9 +546,11 @@ jobs:
             parentdir=./src
           push: false
           tags: ed-fi-api-config-local:latest
-          # Restore only. seed-config-build-cache is the sole writer, so no job that runs pull
-          # request code needs packages: write. An absent or unreadable cache is a warning in
-          # buildx, not a failure, so a cold build still succeeds.
+          # Restore only, from the tag the merge queue run of On DMS Pull Request writes. That
+          # workflow builds this same image from the same context, Dockerfile and build
+          # contexts, so its layers are reusable here and no job in this workflow needs
+          # packages: write. An unreadable or absent cache import logs an ERROR vertex but does
+          # not fail the build, so a cold build still succeeds.
           cache-from: type=registry,ref=${{ needs.detect-fresh-build-changes.outputs.config_cache_ref }}
 
       - name: Cache Nuget packages
@@ -618,48 +626,6 @@ jobs:
         working-directory: eng/docker-compose
         run: |
           docker compose -f postgresql.yml -f local-config.yml -f keycloak.yml --env-file "./.env.config.e2e" -p cs-local build --no-cache
-
-  # Sole writer of the shared Config image build cache. A container registry cache is not
-  # branch-scoped, so one reference serves every event: the GitHub Actions cache backend scopes
-  # entries by ref, which means only a run on the default branch could seed an entry every pull
-  # request is able to restore. Restricting the export to non-pull_request events keeps
-  # packages: write out of every job that executes pull request code, and lets the merge queue -
-  # which builds the tree that is about to become main - refresh the cache without adding a run
-  # to the pull request path. Deliberately omitted from config-ci-gate, like event_file: this is
-  # a build-time optimization and a registry hiccup must never block a merge.
-  seed-config-build-cache:
-    name: Seed Config Build Cache
-    needs: detect-fresh-build-changes
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Checkout the Repo
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-
-      - name: Build the Config image and export its build cache
-        uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc # v6.11.0
-        with:
-          context: ./src/config
-          file: ./src/config/Dockerfile
-          build-contexts: |
-            parentdir=./src
-          # No load or push: this job exists to populate the cache, not to produce an image.
-          push: false
-          cache-from: type=registry,ref=${{ needs.detect-fresh-build-changes.outputs.config_cache_ref }}
-          cache-to: type=registry,mode=max,ref=${{ needs.detect-fresh-build-changes.outputs.config_cache_ref }}
 
   event_file:
     name: Upload Event File
