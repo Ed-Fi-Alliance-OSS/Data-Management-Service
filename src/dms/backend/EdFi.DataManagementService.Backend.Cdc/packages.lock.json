@@ -214,6 +214,9 @@
           "System.Composition.Runtime": "8.0.0"
         }
       },
+      "EdFi.Api.CustomValidation": {
+        "type": "Project"
+      },
       "edfi.datamanagementservice.backend.ddl": {
         "type": "Project",
         "dependencies": {
@@ -237,6 +240,7 @@
         "type": "Project",
         "dependencies": {
           "Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic": "[4.0.0, )",
+          "EdFi.Api.CustomValidation": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.External": "[1.0.0, )",
           "EdFi.DataManagementService.Core.External": "[1.0.0, )",
           "FastGuid": "[1.4.1, )",
