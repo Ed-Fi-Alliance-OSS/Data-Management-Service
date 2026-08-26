@@ -126,6 +126,175 @@ public class Given_LocalCdcStateStore
     }
 
     [Test]
+    public async Task It_removes_temporary_files_after_binding_and_incident_write_failures()
+    {
+        using TempCdcStateRoot bindingFailureRoot = new();
+        FailingWriteCdcLocalStateStoreFileSystem bindingFailureFileSystem = new();
+        LocalCdcBindingStateStore bindingFailureStore = new(
+            bindingFailureRoot.Path,
+            CdcLocalStateStorePermissions.Current,
+            bindingFailureFileSystem
+        );
+
+        CdcCreateBindingStateStoreResult bindingCreateResult =
+            await bindingFailureStore.CreateBindingIfAbsentAsync(SampleBinding, CancellationToken.None);
+
+        string bindingPath = bindingFailureRoot.BindingPath(SampleBinding);
+        bindingCreateResult
+            .Should()
+            .BeOfType<CdcCreateBindingStateStoreResult.StateStoreFailure>()
+            .Subject.Failure.Should()
+            .Match<CdcStateStoreFailure>(failure =>
+                failure.Kind == CdcStateStoreFailureKind.LocalStateUnavailable
+                && failure.Diagnostics.Single().Path == bindingPath
+                && failure
+                    .Diagnostics.Single()
+                    .Message.Contains("write binding state", StringComparison.Ordinal)
+            );
+        File.Exists(bindingPath).Should().BeFalse();
+        TemporaryStateFiles(bindingFailureRoot.Path).Should().BeEmpty();
+        bindingFailureFileSystem
+            .WritePaths.Should()
+            .ContainSingle(path => path.EndsWith(".tmp", StringComparison.Ordinal));
+
+        using TempCdcStateRoot incidentFailureRoot = new();
+        LocalCdcBindingStateStore bindingWriter = new(incidentFailureRoot.Path);
+        await bindingWriter.CreateBindingIfAbsentAsync(SampleBinding, CancellationToken.None);
+
+        FailingWriteCdcLocalStateStoreFileSystem incidentFailureFileSystem = new();
+        LocalCdcBindingStateStore incidentFailureStore = new(
+            incidentFailureRoot.Path,
+            CdcLocalStateStorePermissions.Current,
+            incidentFailureFileSystem
+        );
+
+        CdcLatchIncidentStateStoreResult incidentLatchResult =
+            await incidentFailureStore.LatchSourceHistoryLossAsync(
+                CreateIncident(SampleBinding),
+                CancellationToken.None
+            );
+
+        string incidentPath = incidentFailureRoot.IncidentPath(SampleBinding);
+        incidentLatchResult
+            .Should()
+            .BeOfType<CdcLatchIncidentStateStoreResult.StateStoreFailure>()
+            .Subject.Failure.Should()
+            .Match<CdcStateStoreFailure>(failure =>
+                failure.Kind == CdcStateStoreFailureKind.LocalStateUnavailable
+                && failure.Diagnostics.Single().Path == incidentPath
+                && failure
+                    .Diagnostics.Single()
+                    .Message.Contains("write incident state", StringComparison.Ordinal)
+            );
+        File.Exists(incidentPath).Should().BeFalse();
+        File.Exists(incidentFailureRoot.BindingPath(SampleBinding)).Should().BeTrue();
+        TemporaryStateFiles(incidentFailureRoot.Path).Should().BeEmpty();
+        incidentFailureFileSystem
+            .WritePaths.Should()
+            .ContainSingle(path => path.EndsWith(".tmp", StringComparison.Ordinal));
+    }
+
+    [Test]
+    public async Task It_removes_temporary_files_and_propagates_caller_cancellation_during_publication()
+    {
+        using TempCdcStateRoot bindingCancellationRoot = new();
+        using CancellationTokenSource bindingCancellation = new();
+        LocalCdcBindingStateStore bindingCancellationStore = new(
+            bindingCancellationRoot.Path,
+            CdcLocalStateStorePermissions.Current,
+            new CancelingWriteCdcLocalStateStoreFileSystem(bindingCancellation)
+        );
+
+        Func<Task> createBinding = async () =>
+            await bindingCancellationStore.CreateBindingIfAbsentAsync(
+                SampleBinding,
+                bindingCancellation.Token
+            );
+
+        await createBinding.Should().ThrowAsync<OperationCanceledException>();
+        File.Exists(bindingCancellationRoot.BindingPath(SampleBinding)).Should().BeFalse();
+        TemporaryStateFiles(bindingCancellationRoot.Path).Should().BeEmpty();
+
+        using TempCdcStateRoot incidentCancellationRoot = new();
+        LocalCdcBindingStateStore bindingWriter = new(incidentCancellationRoot.Path);
+        await bindingWriter.CreateBindingIfAbsentAsync(SampleBinding, CancellationToken.None);
+
+        using CancellationTokenSource incidentCancellation = new();
+        LocalCdcBindingStateStore incidentCancellationStore = new(
+            incidentCancellationRoot.Path,
+            CdcLocalStateStorePermissions.Current,
+            new CancelingWriteCdcLocalStateStoreFileSystem(incidentCancellation)
+        );
+
+        Func<Task> latchIncident = async () =>
+            await incidentCancellationStore.LatchSourceHistoryLossAsync(
+                CreateIncident(SampleBinding),
+                incidentCancellation.Token
+            );
+
+        await latchIncident.Should().ThrowAsync<OperationCanceledException>();
+        File.Exists(incidentCancellationRoot.BindingPath(SampleBinding)).Should().BeTrue();
+        File.Exists(incidentCancellationRoot.IncidentPath(SampleBinding)).Should().BeFalse();
+        TemporaryStateFiles(incidentCancellationRoot.Path).Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_accepts_concurrent_final_path_publication_after_temporary_write()
+    {
+        using TempCdcStateRoot bindingRaceRoot = new();
+        string bindingPath = bindingRaceRoot.BindingPath(SampleBinding);
+        LocalCdcBindingStateStore bindingRaceStore = new(
+            bindingRaceRoot.Path,
+            CdcLocalStateStorePermissions.Current,
+            new ConcurrentPublishCdcLocalStateStoreFileSystem(
+                bindingPath,
+                CdcJsonContract.Serialize(SampleBinding)
+            )
+        );
+
+        CdcCreateBindingStateStoreResult bindingResult = await bindingRaceStore.CreateBindingIfAbsentAsync(
+            SampleBinding,
+            CancellationToken.None
+        );
+
+        bindingResult.Should().BeOfType<CdcCreateBindingStateStoreResult.ExistingExactMatch>();
+        File.Exists(bindingPath).Should().BeTrue();
+        TemporaryStateFiles(bindingRaceRoot.Path).Should().BeEmpty();
+
+        using TempCdcStateRoot incidentRaceRoot = new();
+        LocalCdcBindingStateStore bindingWriter = new(incidentRaceRoot.Path);
+        await bindingWriter.CreateBindingIfAbsentAsync(SampleBinding, CancellationToken.None);
+
+        CdcIncident requestedIncident = CreateIncident(SampleBinding);
+        CdcIncident concurrentIncident = requestedIncident with
+        {
+            FailureCategory = CdcIncidentFailureCategory.ProviderArtifactMissing,
+        };
+        string incidentPath = incidentRaceRoot.IncidentPath(SampleBinding);
+        LocalCdcBindingStateStore incidentRaceStore = new(
+            incidentRaceRoot.Path,
+            CdcLocalStateStorePermissions.Current,
+            new ConcurrentPublishCdcLocalStateStoreFileSystem(
+                incidentPath,
+                CdcJsonContract.Serialize(concurrentIncident)
+            )
+        );
+
+        CdcLatchIncidentStateStoreResult incidentResult = await incidentRaceStore.LatchSourceHistoryLossAsync(
+            requestedIncident,
+            CancellationToken.None
+        );
+
+        incidentResult
+            .Should()
+            .BeOfType<CdcLatchIncidentStateStoreResult.AlreadyLatched>()
+            .Subject.State.Incident.Should()
+            .BeEquivalentTo(concurrentIncident);
+        File.Exists(incidentPath).Should().BeTrue();
+        TemporaryStateFiles(incidentRaceRoot.Path).Should().BeEmpty();
+    }
+
+    [Test]
     public async Task It_lists_bindings_under_a_deployment_key_and_fails_the_whole_list_on_malformed_state()
     {
         using TempCdcStateRoot tempRoot = new();
@@ -1018,6 +1187,11 @@ public class Given_LocalCdcStateStore
 #pragma warning restore CA1416
     }
 
+    private static IReadOnlyList<string> TemporaryStateFiles(string rootPath) =>
+        Directory.Exists(rootPath)
+            ? Directory.EnumerateFiles(rootPath, "*.tmp", SearchOption.AllDirectories).ToArray()
+            : [];
+
     private static string ReplaceRequired(string source, string oldValue, string newValue)
     {
         int index = source.IndexOf(oldValue, StringComparison.Ordinal);
@@ -1279,16 +1453,92 @@ public class Given_LocalCdcStateStore
                 : CdcLocalStateStorePermissionResult.Success;
     }
 
+    private class DelegatingCdcLocalStateStoreFileSystem : ICdcLocalStateStoreFileSystem
+    {
+        public virtual bool FileExists(string path) => File.Exists(path);
+
+        public virtual Task WriteAllTextCreateNewFlushAsync(
+            string path,
+            string payload,
+            FileStreamOptions options,
+            CancellationToken cancellationToken
+        ) =>
+            CdcLocalStateStoreFileSystem.Current.WriteAllTextCreateNewFlushAsync(
+                path,
+                payload,
+                options,
+                cancellationToken
+            );
+
+        public virtual void MoveFileWithoutOverwrite(string sourcePath, string destinationPath) =>
+            File.Move(sourcePath, destinationPath, overwrite: false);
+
+        public virtual void DeleteFile(string path) => File.Delete(path);
+    }
+
+    private sealed class FailingWriteCdcLocalStateStoreFileSystem : DelegatingCdcLocalStateStoreFileSystem
+    {
+        private readonly List<string> _writePaths = [];
+
+        public IReadOnlyList<string> WritePaths => _writePaths;
+
+        public override Task WriteAllTextCreateNewFlushAsync(
+            string path,
+            string payload,
+            FileStreamOptions options,
+            CancellationToken cancellationToken
+        )
+        {
+            _writePaths.Add(path);
+            File.WriteAllText(path, "{ partial");
+            throw new IOException("Injected write failure.");
+        }
+    }
+
+    private sealed class CancelingWriteCdcLocalStateStoreFileSystem(
+        CancellationTokenSource cancellationTokenSource
+    ) : DelegatingCdcLocalStateStoreFileSystem
+    {
+        public override Task WriteAllTextCreateNewFlushAsync(
+            string path,
+            string payload,
+            FileStreamOptions options,
+            CancellationToken cancellationToken
+        )
+        {
+            File.WriteAllText(path, "{ partial");
+            cancellationTokenSource.Cancel();
+            throw new OperationCanceledException(cancellationToken);
+        }
+    }
+
+    private sealed class ConcurrentPublishCdcLocalStateStoreFileSystem(
+        string publishedDestinationPath,
+        string destinationPayload
+    ) : DelegatingCdcLocalStateStoreFileSystem
+    {
+        public override void MoveFileWithoutOverwrite(string sourcePath, string destinationPath)
+        {
+            if (!string.Equals(destinationPath, publishedDestinationPath, StringComparison.Ordinal))
+            {
+                base.MoveFileWithoutOverwrite(sourcePath, destinationPath);
+                return;
+            }
+
+            File.WriteAllText(publishedDestinationPath, destinationPayload);
+            SetOwnerOnlyFilePermissionsIfSupported(publishedDestinationPath);
+            throw new IOException("Injected concurrent final-path publication.");
+        }
+    }
+
     private sealed class FailingDeleteCdcLocalStateStoreFileSystem(string failingPath)
-        : ICdcLocalStateStoreFileSystem
+        : DelegatingCdcLocalStateStoreFileSystem
     {
         private readonly List<string> _deleteCalls = [];
 
         public IReadOnlyList<string> DeleteCalls => _deleteCalls;
 
-        public bool FileExists(string path) => File.Exists(path);
-
-        public void DeleteFile(string path)
+        public override void DeleteFile(string path)
         {
             _deleteCalls.Add(path);
             if (string.Equals(path, failingPath, StringComparison.Ordinal))

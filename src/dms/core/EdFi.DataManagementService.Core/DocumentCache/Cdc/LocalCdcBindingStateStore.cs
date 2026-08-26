@@ -250,15 +250,13 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             return new CdcLatchIncidentStateStoreResult.StateStoreFailure(collisionFailure);
         }
 
-        try
-        {
-            await WriteContractFileCreateNewAsync(
-                incidentPath.FilePath!,
-                CdcJsonContract.Serialize(incident),
-                cancellationToken
-            );
-        }
-        catch (IOException) when (File.Exists(incidentPath.FilePath!))
+        LocalContractFilePublishResult publishResult = await PublishContractFileCreateNewAsync(
+            incidentPath.FilePath!,
+            CdcJsonContract.Serialize(incident),
+            "incident",
+            cancellationToken
+        );
+        if (publishResult.DestinationAlreadyExists)
         {
             LocalIncidentReadResult existingIncidentResult = await ReadIncidentStateAsync(
                 currentState.Binding,
@@ -283,18 +281,10 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
                 ),
             };
         }
-        catch (Exception exception) when (IsFileSystemException(exception))
-        {
-            return new CdcLatchIncidentStateStoreResult.StateStoreFailure(
-                FileSystemFailure(incidentPath.FilePath!, "write incident state")
-            );
-        }
 
-        CdcStateStoreFailure? permissionFailure = ApplyOwnerOnlyFilePermissions(incidentPath.FilePath!);
-        if (permissionFailure is not null)
+        if (publishResult.Failure is not null)
         {
-            CdcStateStoreFailure? deleteFailure = DeleteIncompleteIncidentFile(incidentPath.FilePath!);
-            return new CdcLatchIncidentStateStoreResult.StateStoreFailure(deleteFailure ?? permissionFailure);
+            return new CdcLatchIncidentStateStoreResult.StateStoreFailure(publishResult.Failure);
         }
 
         LocalIncidentReadResult readBackIncident = await ReadIncidentStateAsync(
@@ -544,30 +534,20 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             return LocalCreateBindingResult.Failed(collisionFailure);
         }
 
-        try
-        {
-            await WriteContractFileCreateNewAsync(
-                bindingPath.FilePath!,
-                CdcJsonContract.Serialize(binding),
-                cancellationToken
-            );
-        }
-        catch (IOException) when (File.Exists(bindingPath.FilePath!))
+        LocalContractFilePublishResult publishResult = await PublishContractFileCreateNewAsync(
+            bindingPath.FilePath!,
+            CdcJsonContract.Serialize(binding),
+            "binding",
+            cancellationToken
+        );
+        if (publishResult.DestinationAlreadyExists)
         {
             return await ExistingBindingResultAsync(binding, cancellationToken);
         }
-        catch (Exception exception) when (IsFileSystemException(exception))
-        {
-            return LocalCreateBindingResult.Failed(
-                FileSystemFailure(bindingPath.FilePath!, "write binding state")
-            );
-        }
 
-        CdcStateStoreFailure? permissionFailure = ApplyOwnerOnlyFilePermissions(bindingPath.FilePath!);
-        if (permissionFailure is not null)
+        if (publishResult.Failure is not null)
         {
-            CdcStateStoreFailure? deleteFailure = DeleteIncompleteBindingFile(bindingPath.FilePath!);
-            return LocalCreateBindingResult.Failed(deleteFailure ?? permissionFailure);
+            return LocalCreateBindingResult.Failed(publishResult.Failure);
         }
 
         LocalBindingReadResult readBack = await ReadBindingStateAsync(
@@ -1477,13 +1457,13 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             );
     }
 
-    private CdcStateStoreFailure? ApplyOwnerOnlyFilePermissions(string path)
+    private CdcStateStoreFailure? ApplyOwnerOnlyFilePermissions(string path, string? diagnosticPath = null)
     {
         CdcLocalStateStorePermissionResult result = _permissions.ApplyOwnerOnlyFile(path);
         return result.Succeeded || result.Unsupported
             ? null
             : CdcStateStoreFailure.LocalStateUnavailable(
-                path,
+                diagnosticPath ?? path,
                 result.Message ?? "CDC local state file permissions could not be applied."
             );
     }
@@ -1499,15 +1479,66 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             );
     }
 
-    private static async Task WriteContractFileCreateNewAsync(
-        string filePath,
+    private async Task<LocalContractFilePublishResult> PublishContractFileCreateNewAsync(
+        string finalFilePath,
         string payload,
+        string stateName,
         CancellationToken cancellationToken
     )
     {
-        await using FileStream fileStream = new(filePath, OwnerOnlyCreateNewFileOptions());
-        await using StreamWriter writer = new(fileStream, new UTF8Encoding(false));
-        await writer.WriteAsync(payload.AsMemory(), cancellationToken);
+        string tempFilePath = CreateTemporaryFilePath(finalFilePath);
+        try
+        {
+            await _fileSystem.WriteAllTextCreateNewFlushAsync(
+                tempFilePath,
+                payload,
+                OwnerOnlyCreateNewFileOptions(),
+                cancellationToken
+            );
+
+            CdcStateStoreFailure? permissionFailure = ApplyOwnerOnlyFilePermissions(
+                tempFilePath,
+                finalFilePath
+            );
+            if (permissionFailure is not null)
+            {
+                CdcStateStoreFailure? deleteFailure = DeleteUnpublishedStateFile(tempFilePath, stateName);
+                return LocalContractFilePublishResult.Failed(deleteFailure ?? permissionFailure);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            _fileSystem.MoveFileWithoutOverwrite(tempFilePath, finalFilePath);
+            return LocalContractFilePublishResult.Published();
+        }
+        catch (IOException) when (_fileSystem.FileExists(finalFilePath))
+        {
+            CdcStateStoreFailure? deleteFailure = DeleteUnpublishedStateFile(tempFilePath, stateName);
+            return deleteFailure is null
+                ? LocalContractFilePublishResult.DestinationExists()
+                : LocalContractFilePublishResult.Failed(deleteFailure);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            DeleteUnpublishedStateFile(tempFilePath, stateName);
+            throw;
+        }
+        catch (Exception exception) when (IsFileSystemException(exception))
+        {
+            CdcStateStoreFailure? deleteFailure = DeleteUnpublishedStateFile(tempFilePath, stateName);
+            return LocalContractFilePublishResult.Failed(
+                deleteFailure ?? FileSystemFailure(finalFilePath, $"write {stateName} state")
+            );
+        }
+    }
+
+    private static string CreateTemporaryFilePath(string finalFilePath)
+    {
+        string directoryPath =
+            Path.GetDirectoryName(finalFilePath)
+            ?? throw new InvalidOperationException("CDC local state file path has no parent directory.");
+        string fileName = Path.GetFileName(finalFilePath);
+
+        return Path.Combine(directoryPath, $".{fileName}.{Guid.NewGuid():N}.tmp");
     }
 
     private static void CreateDirectoryOwnerOnlyIfSupported(string path)
@@ -1743,11 +1774,8 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             : CdcStateStoreFailure.InvalidOperation(validationResult.Diagnostics);
     }
 
-    private CdcStateStoreFailure? DeleteIncompleteBindingFile(string filePath) =>
-        DeleteStateFileIfPresent(filePath, "remove incomplete binding state");
-
-    private CdcStateStoreFailure? DeleteIncompleteIncidentFile(string filePath) =>
-        DeleteStateFileIfPresent(filePath, "remove incomplete incident state");
+    private CdcStateStoreFailure? DeleteUnpublishedStateFile(string filePath, string stateName) =>
+        DeleteStateFileIfPresent(filePath, $"remove unpublished {stateName} state");
 
     private CdcStateStoreFailure? DeleteStateFileIfPresent(string filePath, string action)
     {
@@ -1890,6 +1918,19 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
 
         public static LocalCreateBindingResult Failed(CdcStateStoreFailure failure) =>
             new(LocalCreateBindingOutcome.StateStoreFailure, null, null, failure);
+    }
+
+    private sealed record LocalContractFilePublishResult(
+        bool DestinationAlreadyExists,
+        CdcStateStoreFailure? Failure
+    )
+    {
+        public static LocalContractFilePublishResult Published() => new(false, null);
+
+        public static LocalContractFilePublishResult DestinationExists() => new(true, null);
+
+        public static LocalContractFilePublishResult Failed(CdcStateStoreFailure failure) =>
+            new(false, failure);
     }
 
     private sealed record LocalStoredBindingState(CdcStoredBindingState State, string BindingJson);
@@ -2156,6 +2197,15 @@ internal interface ICdcLocalStateStoreFileSystem
 {
     bool FileExists(string path);
 
+    Task WriteAllTextCreateNewFlushAsync(
+        string path,
+        string payload,
+        FileStreamOptions options,
+        CancellationToken cancellationToken
+    );
+
+    void MoveFileWithoutOverwrite(string sourcePath, string destinationPath);
+
     void DeleteFile(string path);
 }
 
@@ -2164,6 +2214,23 @@ internal sealed class CdcLocalStateStoreFileSystem : ICdcLocalStateStoreFileSyst
     public static CdcLocalStateStoreFileSystem Current { get; } = new();
 
     public bool FileExists(string path) => File.Exists(path);
+
+    public async Task WriteAllTextCreateNewFlushAsync(
+        string path,
+        string payload,
+        FileStreamOptions options,
+        CancellationToken cancellationToken
+    )
+    {
+        await using FileStream fileStream = new(path, options);
+        await using StreamWriter writer = new(fileStream, new UTF8Encoding(false));
+        await writer.WriteAsync(payload.AsMemory(), cancellationToken);
+        await writer.FlushAsync(cancellationToken);
+        fileStream.Flush(flushToDisk: true);
+    }
+
+    public void MoveFileWithoutOverwrite(string sourcePath, string destinationPath) =>
+        File.Move(sourcePath, destinationPath, overwrite: false);
 
     public void DeleteFile(string path) => File.Delete(path);
 }
