@@ -147,8 +147,14 @@ Stores derivative data stores (read replicas and snapshots) associated with a pa
 **Foreign Key:** CASCADE DELETE on `DataStoreId` - when a parent DataStore is
 deleted, all its derivative data stores are automatically deleted.
 
-**Index:** `idx_datastorederivative_datastoreid` on DataStoreId for efficient
-queries.
+**Constraint:** `UNIQUE (DataStoreId, DerivativeType)` ensures each data store
+has at most one ReadReplica and at most one Snapshot. Its backing index leads
+with DataStoreId, so it also serves lookups by parent data store and the
+child-side foreign-key maintenance.
+
+**Constraint:** a check constraint restricts `DerivativeType` to exactly
+"ReadReplica" or "Snapshot", compared ordinally including length, so case and
+whitespace variants are rejected in both engines.
 
 #### ApiClient
 

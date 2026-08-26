@@ -10,6 +10,7 @@ using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.DataStore;
+using EdFi.DmsConfigurationService.DataModel.Model.DataStoreDerivative;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -937,6 +938,99 @@ public class DataStoreTests : DatabaseTest
                 .ToList();
             names.Should().HaveCount(3);
             names.Should().ContainInOrder("Charlie-Instance", "November-Instance", "Zulu-Instance");
+        }
+    }
+
+    /// <summary>
+    /// DataStoreRepository composes derivatives through a separate repository, and the two read paths
+    /// use different lookups: GetDataStore resolves a single parent while QueryDataStore resolves a
+    /// batch and groups the result. Both swallow a failed derivative lookup into an empty collection,
+    /// so only an assertion on the composed response can prove the derivatives actually arrive.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_data_store_with_both_derivative_types : DataStoreTests
+    {
+        private int _dataStoreId;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var insertResult = await _repository.InsertDataStore(
+                new DataStoreInsertCommand
+                {
+                    DataStoreType = "Production",
+                    Name = "Derivative Composition Instance",
+                    ConnectionString = "Server=localhost;Database=CompositionDb;",
+                }
+            );
+            _dataStoreId = insertResult.Should().BeOfType<DataStoreInsertResult.Success>().Subject.Id;
+
+            await InsertDerivative("Snapshot", "Server=localhost;Database=SnapshotDb;");
+            await InsertDerivative("ReadReplica", "Server=localhost;Database=ReadReplicaDb;");
+        }
+
+        private async Task InsertDerivative(string derivativeType, string connectionString)
+        {
+            var result = await _derivativeRepository.InsertDataStoreDerivative(
+                new DataStoreDerivativeInsertCommand
+                {
+                    DataStoreId = _dataStoreId,
+                    DerivativeType = derivativeType,
+                    ConnectionString = connectionString,
+                }
+            );
+            result.Should().BeOfType<DataStoreDerivativeInsertResult.Success>();
+        }
+
+        [Test]
+        public async Task It_should_include_both_derivatives_in_the_single_data_store_response()
+        {
+            var getResult = await _repository.GetDataStore(_dataStoreId);
+
+            DataStoreResponse dataStore = getResult
+                .Should()
+                .BeOfType<DataStoreGetResult.Success>()
+                .Subject.DataStoreResponse;
+
+            AssertCarriesBothDerivatives(dataStore);
+        }
+
+        [Test]
+        public async Task It_should_include_both_derivatives_in_the_queried_data_store_response()
+        {
+            var queryResult = await _repository.QueryDataStore(new DataStoreQuery { Limit = 25, Offset = 0 });
+
+            DataStoreResponse dataStore = queryResult
+                .Should()
+                .BeOfType<DataStoreQueryResult.Success>()
+                .Subject.DataStoreResponses.Should()
+                .ContainSingle(response => response.Id == _dataStoreId)
+                .Subject;
+
+            AssertCarriesBothDerivatives(dataStore);
+        }
+
+        private void AssertCarriesBothDerivatives(DataStoreResponse dataStore)
+        {
+            var derivatives = dataStore.DataStoreDerivatives.ToList();
+
+            derivatives
+                .Select(derivative => new { derivative.DataStoreId, derivative.DerivativeType })
+                .Should()
+                .BeEquivalentTo(
+                    new[]
+                    {
+                        new { DataStoreId = _dataStoreId, DerivativeType = "ReadReplica" },
+                        new { DataStoreId = _dataStoreId, DerivativeType = "Snapshot" },
+                    }
+                );
+
+            derivatives
+                .Should()
+                .OnlyContain(
+                    derivative => derivative.Id > 0,
+                    "the composed response carries each derivative's persisted identity"
+                );
         }
     }
 }

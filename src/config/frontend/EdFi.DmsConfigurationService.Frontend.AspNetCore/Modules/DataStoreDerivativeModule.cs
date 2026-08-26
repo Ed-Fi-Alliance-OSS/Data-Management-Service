@@ -53,6 +53,13 @@ public class DataStoreDerivativeModule : IEndpointModule
                 ),
                 statusCode: (int)HttpStatusCode.Conflict
             ),
+            DataStoreDerivativeInsertResult.FailureDuplicateDataStoreDerivative duplicate => Results.Json(
+                FailureResponse.ForConflict(
+                    DuplicateDerivativeDetail(duplicate.DataStoreId, duplicate.DerivativeType),
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.Conflict
+            ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
@@ -127,9 +134,19 @@ public class DataStoreDerivativeModule : IEndpointModule
                 ),
                 statusCode: (int)HttpStatusCode.Conflict
             ),
+            DataStoreDerivativeUpdateResult.FailureDuplicateDataStoreDerivative duplicate => Results.Json(
+                FailureResponse.ForConflict(
+                    DuplicateDerivativeDetail(duplicate.DataStoreId, duplicate.DerivativeType),
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.Conflict
+            ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
+
+    private static string DuplicateDerivativeDetail(int dataStoreId, string derivativeType) =>
+        $"A DataStoreDerivative of type {derivativeType} already exists for DataStore {dataStoreId}.";
 
     private static async Task<IResult> Delete(
         int id,

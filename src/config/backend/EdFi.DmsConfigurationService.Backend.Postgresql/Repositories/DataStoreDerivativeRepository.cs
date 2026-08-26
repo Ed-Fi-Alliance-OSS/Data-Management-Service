@@ -6,6 +6,7 @@
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
+using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.DataStoreDerivative;
@@ -88,6 +89,22 @@ public class DataStoreDerivativeRepository(
         {
             logger.LogWarning(ex, "Data store not found");
             return new DataStoreDerivativeInsertResult.FailureForeignKeyViolation();
+        }
+        catch (PostgresException ex)
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName == "UX_DataStoreDerivative_DataStoreId_DerivativeType"
+            )
+        {
+            logger.LogWarning(
+                ex,
+                "Data store derivative already exists for DataStoreId '{DataStoreId}' and DerivativeType '{DerivativeType}'",
+                command.DataStoreId,
+                LoggingUtility.SanitizeForLog(command.DerivativeType)
+            );
+            return new DataStoreDerivativeInsertResult.FailureDuplicateDataStoreDerivative(
+                command.DataStoreId,
+                command.DerivativeType
+            );
         }
         catch (Exception ex)
         {
@@ -242,6 +259,22 @@ public class DataStoreDerivativeRepository(
         {
             logger.LogWarning(ex, "Data store not found");
             return new DataStoreDerivativeUpdateResult.FailureForeignKeyViolation();
+        }
+        catch (PostgresException ex)
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation
+                && ex.ConstraintName == "UX_DataStoreDerivative_DataStoreId_DerivativeType"
+            )
+        {
+            logger.LogWarning(
+                ex,
+                "Data store derivative already exists for DataStoreId '{DataStoreId}' and DerivativeType '{DerivativeType}'",
+                command.DataStoreId,
+                LoggingUtility.SanitizeForLog(command.DerivativeType)
+            );
+            return new DataStoreDerivativeUpdateResult.FailureDuplicateDataStoreDerivative(
+                command.DataStoreId,
+                command.DerivativeType
+            );
         }
         catch (Exception ex)
         {
