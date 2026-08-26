@@ -501,6 +501,32 @@ public class ValidateQueryMiddlewareCursorTests
         }
 
         /// <summary>
+        /// Moving the ceiling mid-walk is accepted, which is the published rule. What the marker
+        /// compares is the anchor the window resolves, not the window itself, so a ceiling that moved is
+        /// still a ceiling and the token is still read in the units it names. The bounds pass through
+        /// untouched — they are a position in the anchor's sequence, not a slice of the window — while
+        /// the window the request carries is the new one, so the same token position now reads a
+        /// different result set. That is a filter change like any other, not a token fault.
+        /// </summary>
+        [Test]
+        public async Task It_accepts_a_windowed_token_replayed_under_a_moved_maximum()
+        {
+            RequestInfo requestInfo = await Execute(
+                true,
+                ("pageToken", WindowedToken),
+                ("minChangeVersion", "100"),
+                ("maxChangeVersion", "999")
+            );
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.ContentVersion);
+            requestInfo
+                .CollectionPaging.Should()
+                .Be(new CollectionPaging.Cursor(new CursorRange(7, 42), new PageSize(MaximumPageSize)));
+            requestInfo.ChangeVersionRange.Should().Be(new ChangeVersionRange(100L, 999L));
+        }
+
+        /// <summary>
         /// A min-only window keeps the <c>DocumentId</c> anchor, because an update inside a window that
         /// is open above moves a row past a <c>ContentVersion</c> anchor while it remains eligible.
         /// </summary>
