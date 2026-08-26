@@ -16,8 +16,12 @@
     a full outer join that reports three separate figures: left-only resources, right-only resources,
     and shared resources whose counts differ.
 
-    Count mode reads dms.Document joined to dms.ResourceKey, which is the same grouping on both
-    engines, so the two sides are comparable by construction.
+    Count mode reads dms.Document joined to dms.ResourceKey, grouped by ProjectName and ResourceName
+    -- the pair dms.ResourceKey is unique on, so two projects that share a resource name stay two
+    rows -- which is the same grouping on both engines, so the two sides are comparable by
+    construction. Every non-blank line the client tool prints has to parse as that pair and a count;
+    one that does not stops the run, because a skipped row is a resource that silently drops out of
+    both the count set and the reconciliation.
 
     Reconcile mode refuses three ways of passing while proving nothing. One file passed as both sides
     is rejected, because a count set reconciled against itself differs nowhere and hits every
@@ -143,11 +147,11 @@ function Get-PostgresqlResourceCount {
     )
 
     $sql = @"
-SELECT rk."ResourceName" || '|' || COUNT(*)::text
+SELECT rk."ProjectName" || '|' || rk."ResourceName" || '|' || COUNT(*)::text
 FROM dms."Document" d
 JOIN dms."ResourceKey" rk ON rk."ResourceKeyId" = d."ResourceKeyId"
-GROUP BY rk."ResourceName"
-ORDER BY rk."ResourceName";
+GROUP BY rk."ProjectName", rk."ResourceName"
+ORDER BY rk."ProjectName", rk."ResourceName";
 "@
 
     $output = $sql | docker exec -i $ContainerName psql -U $User -d $DatabaseName `
@@ -169,11 +173,11 @@ function Get-MssqlResourceCount {
         [Parameter(Mandatory)] [string] $DatabaseName
     )
 
-    # Emits the same 'name|count' shape as the PostgreSQL query so both sides parse identically.
+    # Emits the same 'project|name|count' shape as the PostgreSQL query so both sides parse identically.
     $sql = "SET NOCOUNT ON; " +
-        "SELECT rk.ResourceName + '|' + CAST(COUNT_BIG(*) AS varchar(32)) " +
+        "SELECT rk.ProjectName + '|' + rk.ResourceName + '|' + CAST(COUNT_BIG(*) AS varchar(32)) " +
         "FROM dms.Document d JOIN dms.ResourceKey rk ON rk.ResourceKeyId = d.ResourceKeyId " +
-        "GROUP BY rk.ResourceName ORDER BY rk.ResourceName;"
+        "GROUP BY rk.ProjectName, rk.ResourceName ORDER BY rk.ProjectName, rk.ResourceName;"
 
     # The running container is the authoritative source for the SA password: .env keeps
     # MSSQL_SA_PASSWORD commented out and the live value is resolved into the derived env file. Reading
@@ -192,6 +196,11 @@ function Get-MssqlResourceCount {
     return $output
 }
 
+# Every non-blank line is 'ProjectName|ResourceName|Count', and one that is not stops the run. psql and
+# sqlcmd print their diagnostics on the same stream the rows arrive on, so a warning, a banner or a
+# truncated row would otherwise be skipped -- and a skipped row is a resource missing from the count
+# set with nothing to say so, which the reconciliation reads as agreement when the other side is
+# missing it too. Blank lines are the tools' trailing empty element and carry no row.
 function ConvertTo-CountRow {
     [CmdletBinding()]
     [OutputType([System.Collections.Generic.List[object]])]
@@ -201,23 +210,84 @@ function ConvertTo-CountRow {
 
     foreach ($item in $Line) {
         $text = ([string]$item).Trim()
-        if ([string]::IsNullOrWhiteSpace($text) -or -not $text.Contains("|")) {
+        if ([string]::IsNullOrWhiteSpace($text)) {
             continue
         }
 
-        $separatorIndex = $text.LastIndexOf("|")
-        $name = $text.Substring(0, $separatorIndex).Trim()
-        $countText = $text.Substring($separatorIndex + 1).Trim()
+        $field = $text.Split("|")
+        if ($field.Count -ne 3) {
+            throw "Count output line '$text' is not 'ProjectName|ResourceName|Count' (found $($field.Count - 1) separator(s)); refusing to skip it."
+        }
+
+        $projectName = $field[0].Trim()
+        $resourceName = $field[1].Trim()
+        $countText = $field[2].Trim()
+        if ([string]::IsNullOrWhiteSpace($projectName) -or [string]::IsNullOrWhiteSpace($resourceName)) {
+            throw "Count output line '$text' has an empty ProjectName or ResourceName; refusing to skip it."
+        }
 
         $parsedCount = [long]0
-        if (-not [long]::TryParse($countText, [ref] $parsedCount)) {
-            continue
+        if (-not [long]::TryParse($countText, [System.Globalization.NumberStyles]::None, [System.Globalization.CultureInfo]::InvariantCulture, [ref] $parsedCount)) {
+            throw "Count output line '$text' has a count '$countText' that is not a non-negative integer; refusing to skip it."
         }
 
-        $rows.Add([pscustomobject]@{ ResourceName = $name; DocumentCount = $parsedCount })
+        $rows.Add([pscustomobject]@{ ProjectName = $projectName; ResourceName = $resourceName; DocumentCount = $parsedCount })
     }
 
     return $rows
+}
+
+# The reconciliation key is the pair dms.ResourceKey is unique on. Keyed by ResourceName alone, two
+# projects' resources of one name -- core and an extension both defining, say, a Student -- collapse
+# to one entry: the second is refused as a repeat or overwrites the first, and either way a count that
+# should have been compared per project is not. The key joins the pair with a control character no
+# project or resource name carries; the label shown in output is ProjectName/ResourceName.
+function Get-CountSetKey {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)] [string] $ProjectName,
+        [Parameter(Mandatory)] [string] $ResourceName
+    )
+
+    return $ProjectName + [char]0x1F + $ResourceName
+}
+
+function ConvertTo-CountMap {
+    [CmdletBinding()]
+    [OutputType([System.Collections.Generic.Dictionary[string, object]])]
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Row,
+        [Parameter(Mandatory)] [string] $Label
+    )
+
+    $map = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::Ordinal)
+    foreach ($item in $Row) {
+        foreach ($column in @("ProjectName", "ResourceName", "DocumentCount")) {
+            if (-not ($item.PSObject.Properties.Name -ccontains $column)) {
+                throw "$Label has no $column column. A count set keyed by ResourceName alone cannot be reconciled per project -- regenerate it in Count mode."
+            }
+        }
+
+        $projectName = [string]$item.ProjectName
+        $resourceName = [string]$item.ResourceName
+        if ([string]::IsNullOrWhiteSpace($projectName) -or [string]::IsNullOrWhiteSpace($resourceName)) {
+            throw "$Label has a row with an empty ProjectName or ResourceName."
+        }
+
+        $parsedCount = [long]0
+        if (-not [long]::TryParse([string]$item.DocumentCount, [System.Globalization.NumberStyles]::None, [System.Globalization.CultureInfo]::InvariantCulture, [ref] $parsedCount)) {
+            throw "$Label has a DocumentCount '$($item.DocumentCount)' for $projectName/$resourceName that is not a non-negative integer."
+        }
+
+        $key = Get-CountSetKey -ProjectName $projectName -ResourceName $resourceName
+        if ($map.ContainsKey($key)) {
+            throw "$Label repeats resource '$projectName/$resourceName'."
+        }
+        $map[$key] = [pscustomobject]@{ ProjectName = $projectName; ResourceName = $resourceName; DocumentCount = $parsedCount }
+    }
+
+    return $map
 }
 
 # Reconcile mode's two paths have to name two files. The empty-set and expected-total checks cannot
@@ -275,7 +345,7 @@ if ($PSCmdlet.ParameterSetName -eq "Count") {
         New-Item -Path $outputParent -ItemType Directory -Force | Out-Null
     }
 
-    $rows | Sort-Object -Property ResourceName | Export-Csv -LiteralPath $OutputPath -NoTypeInformation
+    $rows | Sort-Object -Property ProjectName, ResourceName | Export-Csv -LiteralPath $OutputPath -NoTypeInformation
 
     $total = ($rows | Measure-Object -Property DocumentCount -Sum).Sum
     Write-Output "Resources: $($rows.Count)"
@@ -305,56 +375,45 @@ if ($emptyInput.Count -gt 0) {
     throw "Nothing to reconcile: $($emptyInput -join '; '). An empty count set is a failure, not a pass -- regenerate it in Count mode."
 }
 
-$leftMap = [System.Collections.Generic.Dictionary[string, long]]::new([System.StringComparer]::Ordinal)
-foreach ($row in $left) {
-    if ($leftMap.ContainsKey($row.ResourceName)) {
-        throw "Left count set '$LeftPath' repeats resource '$($row.ResourceName)'."
-    }
-    $leftMap[$row.ResourceName] = [long]$row.DocumentCount
-}
+$leftMap = ConvertTo-CountMap -Row $left -Label "Left count set '$LeftPath'"
+$rightMap = ConvertTo-CountMap -Row $right -Label "Right count set '$RightPath'"
 
-$rightMap = [System.Collections.Generic.Dictionary[string, long]]::new([System.StringComparer]::Ordinal)
-foreach ($row in $right) {
-    if ($rightMap.ContainsKey($row.ResourceName)) {
-        throw "Right count set '$RightPath' repeats resource '$($row.ResourceName)'."
-    }
-    $rightMap[$row.ResourceName] = [long]$row.DocumentCount
-}
-
-$leftTotal = ($leftMap.Values | Measure-Object -Sum).Sum
-$rightTotal = ($rightMap.Values | Measure-Object -Sum).Sum
+$leftTotal = ($leftMap.Values | Measure-Object -Property DocumentCount -Sum).Sum
+$rightTotal = ($rightMap.Values | Measure-Object -Property DocumentCount -Sum).Sum
 
 $leftLabel = Split-Path -Path $LeftPath -Leaf
 $rightLabel = Split-Path -Path $RightPath -Leaf
 
-# A full outer join over the union of names: a resource missing from either side has to be visible,
+# A full outer join over the union of keys: a resource missing from either side has to be visible,
 # which a per-side loop over one map cannot show.
-$allNameSet = [System.Collections.Generic.SortedSet[string]]::new([System.StringComparer]::Ordinal)
-foreach ($name in @($leftMap.Keys) + @($rightMap.Keys)) {
-    [void]$allNameSet.Add([string]$name)
+$allKeySet = [System.Collections.Generic.SortedSet[string]]::new([System.StringComparer]::Ordinal)
+foreach ($key in @($leftMap.Keys) + @($rightMap.Keys)) {
+    [void]$allKeySet.Add([string]$key)
 }
-$allName = [string[]]@($allNameSet)
+$allKey = [string[]]@($allKeySet)
 
 $leftOnly = [System.Collections.Generic.List[object]]::new()
 $rightOnly = [System.Collections.Generic.List[object]]::new()
 $countDiffer = [System.Collections.Generic.List[object]]::new()
 
-foreach ($name in $allName) {
-    $inLeft = $leftMap.ContainsKey($name)
-    $inRight = $rightMap.ContainsKey($name)
+foreach ($key in $allKey) {
+    $inLeft = $leftMap.ContainsKey($key)
+    $inRight = $rightMap.ContainsKey($key)
+    $entry = if ($inLeft) { $leftMap[$key] } else { $rightMap[$key] }
+    $label = "$($entry.ProjectName)/$($entry.ResourceName)"
 
     if ($inLeft -and -not $inRight) {
-        $leftOnly.Add([pscustomobject]@{ ResourceName = $name; Left = $leftMap[$name]; Right = $null })
+        $leftOnly.Add([pscustomobject]@{ Resource = $label; Left = $entry.DocumentCount; Right = $null })
     }
     elseif ($inRight -and -not $inLeft) {
-        $rightOnly.Add([pscustomobject]@{ ResourceName = $name; Left = $null; Right = $rightMap[$name] })
+        $rightOnly.Add([pscustomobject]@{ Resource = $label; Left = $null; Right = $entry.DocumentCount })
     }
-    elseif ($leftMap[$name] -ne $rightMap[$name]) {
+    elseif ($leftMap[$key].DocumentCount -ne $rightMap[$key].DocumentCount) {
         $countDiffer.Add([pscustomobject]@{
-                ResourceName = $name
-                Left         = $leftMap[$name]
-                Right        = $rightMap[$name]
-                Difference   = $rightMap[$name] - $leftMap[$name]
+                Resource   = $label
+                Left       = $leftMap[$key].DocumentCount
+                Right      = $rightMap[$key].DocumentCount
+                Difference = $rightMap[$key].DocumentCount - $leftMap[$key].DocumentCount
             })
     }
 }
@@ -372,13 +431,13 @@ Write-Output "  Shared, counts differ     : $($countDiffer.Count)"
 $failure = [System.Collections.Generic.List[string]]::new()
 
 foreach ($row in $leftOnly) {
-    Write-Output "  left-only : $($row.ResourceName) = $($row.Left)"
+    Write-Output "  left-only : $($row.Resource) = $($row.Left)"
 }
 foreach ($row in $rightOnly) {
-    Write-Output "  right-only: $($row.ResourceName) = $($row.Right)"
+    Write-Output "  right-only: $($row.Resource) = $($row.Right)"
 }
 foreach ($row in $countDiffer) {
-    Write-Output "  differs   : $($row.ResourceName) left=$($row.Left) right=$($row.Right) diff=$($row.Difference)"
+    Write-Output "  differs   : $($row.Resource) left=$($row.Left) right=$($row.Right) diff=$($row.Difference)"
 }
 
 if ($leftOnly.Count -gt 0) { $failure.Add("$($leftOnly.Count) resource(s) present only on the left") }

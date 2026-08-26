@@ -12,13 +12,19 @@
 # Each It names the false pass it kills:
 #   Compare-DmsSchemaSnapshot.ps1   two database names differing only in case collapsing to one
 #                                   snapshot file, so the diff read one file twice
-#   Get-DmsResourceCount.ps1        one CSV passed as both sides of the reconciliation
+#   Get-DmsResourceCount.ps1        one CSV passed as both sides of the reconciliation; a count row
+#                                   that does not parse skipped instead of refused; two projects'
+#                                   resources of one name collapsed to one key
 #   Copy-NorthridgeDataForward.ps1  a dms base table on none of the classification lists; a target
 #                                   used as its own source or reference; a measured checkpoint value
-#                                   with no expected value
+#                                   with no expected value; the descriptor load rewriting data rows
+#                                   through a host string that also carried pg_restore's diagnostics
 #   Add-NorthridgeGapDocument.ps1   a deferred read recorded with its mid-manifest status; two
-#                                   documents sharing a label
-#   README restore recipe           hard-coded 8080/8081 and unbounded health waits
+#                                   documents sharing a label; a date-time field thrown on instead
+#                                   of compared
+#   README restore recipe           hard-coded 8080/8081 and unbounded health waits; "start again
+#                                   from step 4" after a failed restore, which set the partial
+#                                   restore aside as the reference over the intact deployment
 
 BeforeAll {
     $script:northridgeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
@@ -149,8 +155,8 @@ Describe "Get-DmsResourceCount.ps1 reconcile mode refuses one file as both sides
         $script:leftCsv = Join-Path $TestDrive "pg.csv"
         $script:twinCsv = Join-Path $TestDrive "mssql.csv"
         $countSet = @(
-            [pscustomobject]@{ ResourceName = "schools"; DocumentCount = 2 },
-            [pscustomobject]@{ ResourceName = "students"; DocumentCount = 3 }
+            [pscustomobject]@{ ProjectName = "Ed-Fi"; ResourceName = "schools"; DocumentCount = 2 },
+            [pscustomobject]@{ ProjectName = "Ed-Fi"; ResourceName = "students"; DocumentCount = 3 }
         )
         $countSet | Export-Csv -LiteralPath $script:leftCsv -NoTypeInformation
         $countSet | Export-Csv -LiteralPath $script:twinCsv -NoTypeInformation
@@ -196,6 +202,166 @@ Describe "Get-DmsResourceCount.ps1 reconcile mode refuses one file as both sides
     It "names a missing file rather than reconciling nothing" {
         { & $script:countScript -LeftPath (Join-Path $TestDrive "absent.csv") -RightPath $script:twinCsv -ExpectedDocumentCount 5 -ExpectedResourceCount 2 } |
             Should -Throw "*does not exist or is not a file*"
+    }
+}
+
+Describe "Get-DmsResourceCount.ps1 refuses count output it cannot parse" {
+    BeforeAll {
+        . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:countScript -FunctionName "ConvertTo-CountRow")))
+        $script:goodRow = @("Ed-Fi|students|3", "TPDM|students|4")
+    }
+
+    It "parses ProjectName|ResourceName|Count rows and ignores the tools' trailing blank line" {
+        $rows = ConvertTo-CountRow -Line ($script:goodRow + "")
+        $rows.Count | Should -Be 2
+        $rows[0].ProjectName | Should -Be "Ed-Fi"
+        $rows[0].ResourceName | Should -Be "students"
+        $rows[0].DocumentCount | Should -Be 3
+        $rows[1].ProjectName | Should -Be "TPDM"
+        $rows[1].DocumentCount | Should -Be 4
+    }
+
+    It "throws on '<Line>' (<Reason>) instead of skipping it" -ForEach @(
+        @{ Line = "psql: warning: something"; Reason = "a diagnostic on the row stream" },
+        @{ Line = "Ed-Fi|students"; Reason = "a truncated row" },
+        @{ Line = "Ed-Fi|students|abc"; Reason = "a non-numeric count" },
+        @{ Line = "Ed-Fi|students|-1"; Reason = "a negative count" },
+        @{ Line = "a|b|c|4"; Reason = "a row with too many separators" },
+        @{ Line = "|students|3"; Reason = "an empty project name" }
+    ) {
+        # The false pass: the row was skipped, the resource dropped out of the count set, and the
+        # reconciliation read its absence on both sides as agreement.
+        { ConvertTo-CountRow -Line ($script:goodRow + $Line) } | Should -Throw "*refusing to skip it*"
+    }
+
+    It "is the only parser the script reads counts through, and both engines emit the same three fields" {
+        $text = Get-Content -Raw -LiteralPath $script:countScript
+        $text | Should -Not -Match 'LastIndexOf\("\|"\)' -Because "no lenient parsing may remain outside the helper that fails closed"
+        $text | Should -Match 'GROUP BY rk\."ProjectName", rk\."ResourceName"' -Because "the PostgreSQL count is per project and resource"
+        $text | Should -Match 'GROUP BY rk\.ProjectName, rk\.ResourceName' -Because "the SQL Server count is per project and resource"
+        $text | Should -Match 'Sort-Object -Property ProjectName, ResourceName \| Export-Csv'
+    }
+}
+
+Describe "Get-DmsResourceCount.ps1 keys every count by project and resource" {
+    BeforeAll {
+        . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:countScript -FunctionName "Get-CountSetKey")))
+        . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:countScript -FunctionName "ConvertTo-CountMap")))
+        $script:twoProject = @(
+            [pscustomobject]@{ ProjectName = "Ed-Fi"; ResourceName = "students"; DocumentCount = 3 },
+            [pscustomobject]@{ ProjectName = "TPDM"; ResourceName = "students"; DocumentCount = 4 }
+        )
+
+        # The script throws after it has written its report, so the report is collected as it streams
+        # and the terminating message separately.
+        function script:Invoke-Reconcile {
+            param([string] $Left, [string] $Right, [long] $Documents, [int] $Resources)
+            $line = [System.Collections.Generic.List[string]]::new()
+            $thrown = $null
+            try {
+                & $script:countScript -LeftPath $Left -RightPath $Right -ExpectedDocumentCount $Documents -ExpectedResourceCount $Resources |
+                    ForEach-Object { $line.Add([string]$_) }
+            }
+            catch {
+                $thrown = $_.Exception.Message
+            }
+            return [pscustomobject]@{ Report = ($line -join "`n"); Thrown = $thrown }
+        }
+    }
+
+    It "keeps two projects' resources of one name as two entries" {
+        # The false pass: keyed by ResourceName alone, the second Student row was refused as a repeat
+        # or overwrote the first, and a per-project count was never compared.
+        $map = ConvertTo-CountMap -Row $script:twoProject -Label "left"
+        $map.Count | Should -Be 2
+        $map.Comparer | Should -Be ([System.StringComparer]::Ordinal)
+        $map[(Get-CountSetKey -ProjectName "Ed-Fi" -ResourceName "students")].DocumentCount | Should -Be 3
+        $map[(Get-CountSetKey -ProjectName "TPDM" -ResourceName "students")].DocumentCount | Should -Be 4
+        (Get-CountSetKey -ProjectName "Ed-Fi" -ResourceName "students") | Should -Not -Be (Get-CountSetKey -ProjectName "TPDM" -ResourceName "students")
+    }
+
+    It "reconciles two identical two-project count sets to PASS" {
+        $left = Join-Path $TestDrive "two-project-left.csv"
+        $right = Join-Path $TestDrive "two-project-right.csv"
+        $script:twoProject | Export-Csv -LiteralPath $left -NoTypeInformation
+        $script:twoProject | Export-Csv -LiteralPath $right -NoTypeInformation
+        $run = Invoke-Reconcile -Left $left -Right $right -Documents 7 -Resources 2
+        $run.Thrown | Should -BeNullOrEmpty
+        $run.Report | Should -Match "PASS: zero differences in both directions"
+        $run.Report | Should -Match "Resources, left           : 2"
+    }
+
+    It "reports a resource one project has and the other lacks, by project" {
+        $left = Join-Path $TestDrive "two-project.csv"
+        $right = Join-Path $TestDrive "other-project.csv"
+        $script:twoProject | Export-Csv -LiteralPath $left -NoTypeInformation
+        @($script:twoProject[0], [pscustomobject]@{ ProjectName = "TPDM"; ResourceName = "candidates"; DocumentCount = 4 }) |
+            Export-Csv -LiteralPath $right -NoTypeInformation
+        $run = Invoke-Reconcile -Left $left -Right $right -Documents 7 -Resources 2
+        $run.Thrown | Should -Match "1 resource\(s\) present only on the left; 1 resource\(s\) present only on the right"
+        $run.Report | Should -Match "left-only : TPDM/students = 4"
+        $run.Report | Should -Match "right-only: TPDM/candidates = 4"
+        $run.Report | Should -Not -Match "differs"
+    }
+
+    It "refuses a count set keyed by ResourceName alone" {
+        # An older CSV has no project column; reconciled by name it would collapse the projects again.
+        $old = Join-Path $TestDrive "old.csv"
+        $new = Join-Path $TestDrive "new.csv"
+        @([pscustomobject]@{ ResourceName = "students"; DocumentCount = 7 }) | Export-Csv -LiteralPath $old -NoTypeInformation
+        $script:twoProject | Export-Csv -LiteralPath $new -NoTypeInformation
+        { & $script:countScript -LeftPath $old -RightPath $new -ExpectedDocumentCount 7 -ExpectedResourceCount 2 } |
+            Should -Throw "*has no ProjectName column*"
+    }
+}
+
+Describe "Add-NorthridgeGapDocument.ps1 compares a date-time field instead of throwing on it" {
+    BeforeAll {
+        . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:gapScript -FunctionName "Test-NumericValue")))
+        . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:gapScript -FunctionName "Compare-SentField")))
+        # As the script sees them: the manifest body and the GET response both come through
+        # ConvertFrom-Json, which materialises an ISO 8601 date-time as [datetime] and leaves a
+        # date-only value a string.
+        $script:sent = '{"beginDate":"2024-08-01T00:00:00Z","birthDate":"2005-01-15","orderOfAssignment":1.0,"name":"Krystal"}' | ConvertFrom-Json
+    }
+
+    It "passes a document whose date-time field round-trips" {
+        # The false failure: [double] has no conversion from [datetime], so the comparison threw and no
+        # document carrying a date-time could be verified at all.
+        $script:sent.beginDate | Should -BeOfType [datetime] -Because "the case exists only because ConvertFrom-Json materialises the value"
+        $fetched = '{"id":"x","beginDate":"2024-08-01T00:00:00Z","birthDate":"2005-01-15","orderOfAssignment":1,"name":"Krystal","_etag":"e"}' | ConvertFrom-Json
+        $mismatch = Compare-SentField -Sent $script:sent -Fetched $fetched
+        $mismatch.Count | Should -Be 0
+    }
+
+    It "reports a date-time that came back different, comparing instants" {
+        $fetched = '{"beginDate":"2024-08-02T00:00:00Z","birthDate":"2005-01-15","orderOfAssignment":1,"name":"Krystal"}' | ConvertFrom-Json
+        $mismatch = Compare-SentField -Sent $script:sent -Fetched $fetched
+        $mismatch.Count | Should -Be 1
+        $mismatch[0] | Should -Be 'beginDate sent=2024-08-01T00:00:00.0000000Z fetched=2024-08-02T00:00:00.0000000Z'
+        # The same instant written with an offset is not a difference.
+        $offset = '{"beginDate":"2024-08-01T02:00:00+02:00","birthDate":"2005-01-15","orderOfAssignment":1,"name":"Krystal"}' | ConvertFrom-Json
+        (Compare-SentField -Sent $script:sent -Fetched $offset).Count | Should -Be 0
+    }
+
+    It "keeps a date-only value a string comparison" {
+        $script:sent.birthDate | Should -BeOfType [string]
+        $fetched = '{"beginDate":"2024-08-01T00:00:00Z","birthDate":"2005-01-16","orderOfAssignment":1,"name":"Krystal"}' | ConvertFrom-Json
+        $mismatch = Compare-SentField -Sent $script:sent -Fetched $fetched
+        $mismatch.Count | Should -Be 1
+        $mismatch[0] | Should -Be 'birthDate sent="2005-01-15" fetched="2005-01-16"'
+    }
+
+    It "still compares numbers by value, and a date-time on one side only is a mismatch" {
+        $fetched = '{"beginDate":"2024-08-01","birthDate":"2005-01-15","orderOfAssignment":1,"name":"Krystal"}' | ConvertFrom-Json
+        $mismatch = Compare-SentField -Sent $script:sent -Fetched $fetched
+        $mismatch.Count | Should -Be 1
+        $mismatch[0] | Should -Match '^beginDate sent='
+        Test-NumericValue -Value ([datetime]::UtcNow) | Should -BeFalse
+        Test-NumericValue -Value ([System.Numerics.BigInteger]::Parse("10000000000000000000")) | Should -BeTrue
+        Test-NumericValue -Value 1.5 | Should -BeTrue
+        Test-NumericValue -Value $true | Should -BeFalse
+        Test-NumericValue -Value $null | Should -BeFalse
     }
 }
 
@@ -599,5 +765,223 @@ Describe "Copy-NorthridgeDataForward.ps1 stamp distributions cover every sampled
         $text = Get-ScriptFunctionText -ScriptPath $script:copyScript -FunctionName "Get-StampDistribution"
         $text | Should -Match 'return ConvertTo-StampDistributionMap -Row @\(\$rows\) -ExpectedTable \(@\("dms\.Document"\) \+ \$SampleTable\)'
         $text | Should -Not -Match 'IndexOf\("\|"\)' -Because "no parsing may remain outside the helper that fails closed"
+    }
+}
+
+Describe "Copy-NorthridgeDataForward.ps1 re-points only the Descriptor COPY header, inside the container" {
+    BeforeAll {
+        $script:copyText = Get-Content -Raw -LiteralPath $script:copyScript
+        . ([scriptblock]::Create((Get-ScriptAssignmentText -ScriptPath $script:copyScript -VariablePath "script:DescriptorRedirectScript")))
+        # The rewrite is a POSIX shell script the copy tool feeds to `sh -s` inside the container. It is
+        # run here with the host's sh when there is one (the pull-request lane runs on ubuntu; Git for
+        # Windows supplies one too) and skipped otherwise; the structural case below runs everywhere.
+        $script:posixShell = Get-Command sh -ErrorAction SilentlyContinue
+
+        function script:Invoke-DescriptorRedirect {
+            param([Parameter(Mandatory)] [string] $Content)
+            $in = Join-Path $TestDrive ("descriptor-" + [guid]::NewGuid().ToString("N") + ".sql")
+            $out = "$in.staging"
+            [System.IO.File]::WriteAllText($in, $Content, [System.Text.UTF8Encoding]::new($false))
+            $output = $script:DescriptorRedirectScript | & $script:posixShell.Source -s ($in -replace '\\', '/') ($out -replace '\\', '/') "northridge_staging" 2>&1
+            return [pscustomobject]@{
+                ExitCode = $LASTEXITCODE
+                Output   = (@($output | ForEach-Object { [string]$_ }) -join "`n")
+                Result   = if (Test-Path -LiteralPath $out) { [System.IO.File]::ReadAllText($out) } else { $null }
+            }
+        }
+
+        $script:copyHeader = 'COPY dms."Descriptor" ("DocumentId", "Namespace", "CodeValue") FROM stdin;'
+        $script:emitted = @(
+            '--',
+            '-- Data for Name: Descriptor; Type: TABLE DATA; Schema: dms; Owner: -',
+            '--',
+            '',
+            $script:copyHeader,
+            "1`turi://ed-fi.org/x`tCOPY dms.""Descriptor"" (in a value",
+            "2`tsee dms.""Descriptor"" for details`tplain",
+            '\.',
+            ''
+        ) -join "`n"
+    }
+
+    It "restores the descriptor entry to a file inside the container and never into a PowerShell string" {
+        # The false pass: `pg_restore -f - ... 2>&1` captured SQL and diagnostics into one array, a
+        # global Replace rewrote every dms."Descriptor" in it -- data rows included -- and the result
+        # was piped back into psql through the host's string and encoding handling.
+        $script:copyText | Should -Not -Match 'pg_restore [^\n]*-f - ' -Because "the emitted SQL must land in the container, not in the host"
+        $script:copyText | Should -Not -Match '\.Replace\(''dms\."Descriptor"''' -Because "a global replace rewrites data rows"
+        $script:copyText | Should -Not -Match '\$redirected = |\$redirected \|' -Because "no PowerShell string may carry the descriptor SQL or be piped into psql"
+        $script:copyText | Should -Match '--exit-on-error -L \$containerListPath -f \$containerDescriptorSqlPath \$containerDumpPath 2>&1'
+        $script:copyText | Should -Match '\$script:DescriptorRedirectScript \| docker exec -i \$Container sh -s `\r?\n\s+\$containerDescriptorSqlPath \$containerStagingSqlPath \$script:StagingSchema 2>&1'
+        $script:copyText | Should -Match 'psql -U \$PostgresUser -d \$TargetDatabase `\r?\n\s+-v ON_ERROR_STOP=1 --quiet -f \$containerStagingSqlPath 2>&1' -Because "psql reads the rewritten file in the container"
+        $script:copyText | Should -Match 'rm -f \$containerDumpPath \$containerListPath `\r?\n\s+\$containerDescriptorSqlPath \$containerStagingSqlPath' -Because "both emitted files are removed with the dump"
+        $script:copyText.IndexOf('$redirectOutput = $script:DescriptorRedirectScript') | Should -BeGreaterThan $script:copyText.IndexOf('-Description "pg_restore of dms.Descriptor to text"') -Because "the diagnostics scan runs before the rewrite"
+        $script:DescriptorRedirectScript | Should -Match '(?m)^set -eu$'
+        $script:DescriptorRedirectScript | Should -Match 'header=''\^COPY dms\\\."Descriptor" \(''' -Because "the rewrite is anchored to the start of the COPY header line"
+        $script:DescriptorRedirectScript | Should -Match 'if \[ "\$count" != 1 \]' -Because "exactly one header may be rewritten"
+    }
+
+    It "rewrites the header and leaves data rows carrying the table name untouched" {
+        if (-not $script:posixShell) { Set-ItResult -Skipped -Because "no POSIX sh on PATH; the pull-request lane runs this on ubuntu" }
+        $run = Invoke-DescriptorRedirect -Content $script:emitted
+        $run.ExitCode | Should -Be 0 -Because $run.Output
+        $run.Result | Should -Match '(?m)^COPY "northridge_staging"\."Descriptor" \("DocumentId", "Namespace", "CodeValue"\) FROM stdin;$'
+        $run.Result | Should -Not -Match '(?m)^COPY dms\."Descriptor" \('
+        $run.Result | Should -Match ([regex]::Escape("1`turi://ed-fi.org/x`tCOPY dms.""Descriptor"" (in a value")) -Because "a data row that carries the table name is data"
+        $run.Result | Should -Match ([regex]::Escape("2`tsee dms.""Descriptor"" for details`tplain"))
+        ($run.Result -split "`n").Count | Should -Be ($script:emitted -split "`n").Count -Because "only the header line changed"
+    }
+
+    It "refuses SQL with no header or with two, writing nothing to load" {
+        if (-not $script:posixShell) { Set-ItResult -Skipped -Because "no POSIX sh on PATH; the pull-request lane runs this on ubuntu" }
+        $none = Invoke-DescriptorRedirect -Content "SET client_encoding = 'UTF8';`n"
+        $none.ExitCode | Should -Be 2
+        $none.Output | Should -Match 'found 0'
+        $none.Result | Should -BeNullOrEmpty
+        $two = Invoke-DescriptorRedirect -Content ($script:emitted + $script:copyHeader + "`n\.`n")
+        $two.ExitCode | Should -Be 2
+        $two.Output | Should -Match 'found 2'
+        $two.Result | Should -BeNullOrEmpty
+    }
+}
+
+Describe "Restore recipe recovers from a failed restore without touching the reference" {
+    BeforeAll {
+        $script:helper = [regex]::Match($script:recipe, '(?ms)^RECOVER_FROM_REF\(\) \{.*?^\}').Value
+        $script:activeHelper = (($script:helper -split "\r?\n") | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
+        $script:step5to6 = [regex]::Match($script:recipe, '(?ms)^# 5\. Stop the applications.*?(?=^# 7\. )').Value
+        $script:activeStep5to6 = (($script:step5to6 -split "\r?\n") | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
+        $script:readme = Get-Content -Raw -LiteralPath $script:readmePath
+    }
+
+    It "defines RECOVER_FROM_REF once, after DB and REF are known and before anything that can fail past the rename" {
+        # The false pass: every failure said "start again from step 4"; the bootstrap does not reset
+        # volumes, so the partial $DB survived it, and a second pass through step 5 dropped the intact
+        # reference as stale and renamed the partial database onto its name.
+        $script:helper | Should -Not -BeNullOrEmpty -Because "the recipe must define RECOVER_FROM_REF"
+        @([regex]::Matches($script:recipe, '(?m)^RECOVER_FROM_REF\(\) \{')).Count | Should -Be 1
+        $helperAt = $script:recipe.IndexOf('RECOVER_FROM_REF() {')
+        $helperAt | Should -BeGreaterThan $script:recipe.IndexOf('REF="${DB}_reference"')
+        $helperAt | Should -BeGreaterThan $script:recipe.IndexOf('DBUSER=$(docker exec dms-postgresql printenv POSTGRES_USER)')
+        $helperAt | Should -BeLessThan $script:recipe.IndexOf('createdb -U "$DBUSER"')
+    }
+
+    It "reads its inputs from the container, so the same text works pasted alone into a fresh shell" {
+        # The false pass: the helper read DB, DBUSER and REF from the shell that defined it, and every
+        # failure guard ended that shell with exit 1 -- so the recovery, and the variables it needed,
+        # were gone exactly when the operator was told to run it.
+        $script:activeHelper | Should -Match '(?m)^\s+_db=\$\(docker exec dms-postgresql printenv POSTGRES_DB_NAME\)$'
+        $script:activeHelper | Should -Match '(?m)^\s+_dbuser=\$\(docker exec dms-postgresql printenv POSTGRES_USER\)$'
+        $script:activeHelper | Should -Match '(?m)^\s+_ref="\$\{_db\}_reference"$'
+        $script:activeHelper | Should -Match 'test -n "\$_db" -a -n "\$_dbuser" \|\|' -Because "an unreadable container must stop the helper before it touches anything"
+        $script:activeHelper | Should -Not -Match '\$(DB|DBUSER|REF)\b' -Because "nothing in the helper may depend on the recipe's shell variables"
+        $script:activeHelper | Should -Not -Match '\bexit\b' -Because "the helper is pasted into the operator's shell and must return, not end it"
+        $script:activeHelper | Should -Match 'resume at step 5' -Because "the helper must say where to resume"
+    }
+
+    It "proves the reference exists before it drops anything, drops only the partial target, then renames the reference back" {
+        $existsAt = $script:activeHelper.IndexOf('SELECT 1 FROM pg_database WHERE datname = :''ref'';')
+        $refuseAt = $script:activeHelper.IndexOf('test -n "$_ref_exists" ||')
+        $dropAt = $script:activeHelper.IndexOf('dropdb -U "$_dbuser" --maintenance-db=postgres --if-exists -- "$_db"')
+        $renameAt = $script:activeHelper.IndexOf("SELECT format('ALTER DATABASE %I RENAME TO %I', :'ref', :'db') \gexec")
+        $existsAt | Should -BeGreaterThan -1
+        $refuseAt | Should -BeGreaterThan $existsAt
+        $dropAt | Should -BeGreaterThan $refuseAt -Because "nothing may be dropped until the reference is known to exist"
+        $renameAt | Should -BeGreaterThan $dropAt -Because "the reference takes the target's name only once the partial target is gone"
+        $script:activeHelper | Should -Not -Match 'dropdb [^\n]*_ref"' -Because "the helper must never drop the reference"
+        @([regex]::Matches($script:activeHelper, 'return 1')).Count | Should -Be 5 -Because "the container read, the existence query, the refusal, the drop and the rename each stop the helper"
+        $script:activeHelper | Should -Match '-v ref="\$_ref" -v db="\$_db" -f - <<''SQL'''
+    }
+
+    It "refuses to proceed past an existing reference instead of dropping it" {
+        $guard = [regex]::Match($script:step5to6, '(?m)^test -z "\$_ref_exists" \|\| \\\r?\n\s+\{ echo "\$REF already exists[^\n]*Use the \\"Recovery after a failed restore\\" block below if you mean to redo the restore, then resume at step 5\.[^\n]*Do NOT drop \$REF[^\n]*; exit 1; \}$')
+        $guard.Success | Should -BeTrue -Because "an existing reference is the deployment an earlier attempt set aside, and exit 1 ends the shell that defined the helper, so the guard must send the operator to the paste-alone Recovery block"
+        $guard.Index | Should -BeGreaterThan $script:step5to6.IndexOf('RECOVER_FROM_REF() {') -Because "the guard belongs to the step 5 preflight that follows the helper definition"
+        $guard.Index | Should -BeLessThan $script:step5to6.IndexOf("SELECT format('ALTER DATABASE %I RENAME TO %I', :'db', :'ref') \gexec") -Because "the guard runs before the rename that would collide"
+        $guard.Value | Should -Not -Match 'RECOVER_FROM_REF; exit' -Because "a reference left behind is refused, not recovered over: the target may be a finished restore the operator wants"
+        $guard.Value | Should -Not -Match 'Run RECOVER_FROM_REF' -Because "the in-shell helper is gone once exit 1 ends the shell, so telling the operator to run it there is not actionable"
+        $script:step5to6 | Should -Not -Match 'dropdb [^\n]*--if-exists -- "\$REF"' -Because "dropping a stale reference is the destructive step this closes"
+    }
+
+    It "runs the helper inside every failure guard from createdb through step 6, before the shell stops" {
+        # The false pass: the guards said "run RECOVER_FROM_REF" and then ran exit 1, which ended the
+        # shell the helper lived in. Each guard now recovers itself. The docker cp guard is one of them:
+        # it fails after the rename and createdb, with an empty $DB and the reference set aside. So is
+        # the repair.sql write: it fails with $DB restored but unrepaired and the reference set aside,
+        # and "re-run from step 5b" was no way out -- the next step 5 met its own stale-reference guard.
+        $script:recipe | Should -Not -Match 'start again from step 4'
+        $script:recipe | Should -Not -Match 'start over from step 4'
+        $script:recipe | Should -Not -Match 'RESUME POINT' -Because "after the shell has stopped there is no point inside step 5 to resume at; the next attempt starts step 5 over"
+        foreach ($failure in @(
+                'could not create database \$DB',
+                'could not copy the dump into the container',
+                'holds a PARTIAL restore',
+                'entries were skipped',
+                'could not write \$ART/repair\.sql',
+                'step 5c failed',
+                'step 6 failed'
+            )) {
+            $at = [regex]::Match($script:activeStep5to6, '(?m)^[^\n]*' + $failure + '[^\n]*$')
+            $at.Success | Should -BeTrue -Because "the failure '$failure' must still be reported"
+            $tail = $script:activeStep5to6.Substring($at.Index)
+            $stop = $tail.IndexOf('exit 1')
+            $stop | Should -BeGreaterThan -1 -Because "the failure '$failure' must stop the recipe"
+            $tail.Substring(0, $stop + 6) | Should -Match 'RECOVER_FROM_REF; exit 1$' -Because "the guard for '$failure' must put the deployment back before the shell stops"
+        }
+        @([regex]::Matches($script:activeStep5to6, 'RECOVER_FROM_REF; exit 1')).Count | Should -Be 7 -Because "createdb, docker cp, the two pg_restore checks, the repair.sql write, 5c and 6 recover; nothing else does"
+        # A failed rename changed nothing, so it must not recover: there is no reference yet.
+        $rename = [regex]::Match($script:activeStep5to6, '(?m)^[^\n]*could not rename \$DB to \$REF[^\n]*$').Value
+        $rename | Should -Not -BeNullOrEmpty
+        $rename | Should -Not -Match 'RECOVER_FROM_REF'
+        # A rolled-back repair is re-run in place first; the recovery is the fallback, in either shell.
+        # It is the one guard in the range that does not recover, so wherever the prose describes the
+        # range it must name 5b as the exception rather than claim that every guard recovers.
+        $step5b = [regex]::Match($script:activeStep5to6, '(?m)^[^\n]*step 5b failed[^\n]*$').Value
+        $step5b | Should -Match 're-run step 5b'
+        $step5b | Should -Match 'RECOVER_FROM_REF \(here, or the Recovery block after the recipe from a fresh shell\)'
+        $step5b | Should -Not -Match 'RECOVER_FROM_REF; exit'
+        $recoveryProse = [regex]::Match($script:step5to6, '(?ms)^#\s+Recovery\. .*?(?=^RECOVER_FROM_REF\(\) \{)').Value
+        $recoveryProse | Should -Match 'RECOVER_FROM_REF itself before it stops -- all but one: the 5b apply' -Because "the step 5 prose describes the recovered range and must name its one exception"
+        $recoverySection = [regex]::Match($script:readme, '(?ms)^### Recovery after a failed restore\r?\n(?<prose>.*?)^```shell').Groups["prose"].Value
+        $recoverySection | Should -Match 'all but the 5b apply' -Because "the Recovery section describes the recovered range and must name its one exception"
+        $repairSql = [regex]::Match($script:recipe, "(?ms)<<'REPAIR_SQL'[^\r\n]*\r?\n(?<sql>.*?)^REPAIR_SQL\s*$").Groups["sql"].Value
+        $repairSql | Should -Not -BeNullOrEmpty
+        $repairSql | Should -Not -Match 'start (again|over) from step 4' -Because "a cluster without the role was never deployed to; the way back is a wipe, not step 4"
+        $repairSql | Should -Match 'bootstrap-local-dms\.ps1 -d -v[^\n]*start over from step 3'
+    }
+
+    It "publishes the same helper as a paste-alone Recovery block after the recipe" {
+        # The block a fresh shell needs is the second fenced shell block of the README. It must be the
+        # helper byte for byte -- two copies that drift are two recoveries -- followed by one call.
+        $block = @([regex]::Matches($script:readme, '(?ms)^```shell\r?\n(?<body>.*?)^```'))
+        $block.Count | Should -Be 2 -Because "the recipe and the Recovery block, and nothing else"
+        $recovery = $block[1].Groups["body"].Value
+        $recoveryHelper = [regex]::Match($recovery, '(?ms)^RECOVER_FROM_REF\(\) \{.*?^\}').Value
+        $recoveryHelper | Should -Be $script:helper -Because "the Recovery block must be the step 5 helper, unchanged"
+        ($recovery -split "\r?\n" | Where-Object { $_ -notmatch '^\s*#' -and $_.Trim() -ne '' })[-1] | Should -Be 'RECOVER_FROM_REF' -Because "the block ends by running the helper"
+        $recovery | Should -Not -Match '\bexit\b' -Because "a pasted block must not end the operator's shell"
+        $heading = $script:readme.IndexOf('### Recovery after a failed restore')
+        $heading | Should -BeGreaterThan $script:readme.IndexOf($block[0].Value) -Because "the section follows the recipe"
+        $block[1].Index | Should -BeGreaterThan $heading
+        $script:readme.Substring($block[1].Index + $block[1].Length, 400) | Should -Match 'resume at step 5' -Because "the section must say where the next attempt starts"
+    }
+
+    It "drops the reference exactly once, only after step 6 has passed" {
+        $drop = @([regex]::Matches($script:recipe, '(?m)^docker exec dms-postgresql dropdb -U "\$DBUSER" --maintenance-db=postgres -- "\$REF" \|\| \\$'))
+        $drop.Count | Should -Be 1
+        $drop[0].Index | Should -BeGreaterThan $script:recipe.IndexOf('#    Expect: NOTICE: restore verified') -Because "step 6 is the last gate that recovers through the reference"
+        $drop[0].Index | Should -BeLessThan $script:recipe.IndexOf('# 7. REQUIRED')
+        $step5c = [regex]::Match($script:recipe, '(?ms)^# 5c\..*?(?=^# 6\. )').Value
+        $step5c | Should -Not -BeNullOrEmpty
+        $step5c | Should -Not -Match 'dropdb'
+    }
+
+    It "sends the reader to the helper and the Recovery block, not to step 4, in the note after the recipe" {
+        $note = [regex]::Match($script:readme, '(?ms)^> \*\*Do not drop and recreate the database.*?(?=\r?\n\r?\n)').Value
+        $note | Should -Not -BeNullOrEmpty
+        $note | Should -Match 'RECOVER_FROM_REF'
+        $note | Should -Match 'Recovery after a failed restore'
+        $note | Should -Not -Match 'start over from step 4'
+        $note | Should -Match 'bootstrap-local-dms\.ps1 -d -v'
     }
 }

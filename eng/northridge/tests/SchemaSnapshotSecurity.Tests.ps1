@@ -516,29 +516,44 @@ Describe "Restore recipe repairs the security metadata the compare checks" {
 
         $stopAt = $script:recipe.IndexOf('docker stop ed-fi-api ed-fi-api-config-service')
         $referenceAt = $script:recipe.IndexOf('REF="${DB}_reference"')
-        $staleDropAt = $script:recipe.IndexOf('dropdb -U "$DBUSER" --maintenance-db=postgres --if-exists -- "$REF"')
+        # An existing reference is refused, never dropped: it is the deployment an earlier attempt set
+        # aside, and dropping it here is exactly how a partial restore used to become the reference.
+        $staleGuard = [regex]::Match($script:recipe, '(?m)^test -z "\$_ref_exists" \|\| \\\r?\n\s+\{ echo "\$REF already exists[^\n]*RECOVER_FROM_REF[^\n]*; exit 1; \}$')
         $rename = [regex]::Match($script:recipe, '(?m)^docker exec -i dms-postgresql psql -U "\$DBUSER" -d postgres -v ON_ERROR_STOP=1 -q \\\r?\n\s+-v db="\$DB" -v ref="\$REF" -f - <<''SQL'' \|\| \\\r?\n\s+\{ echo [^\n]*; exit 1; \}\r?\nSELECT format\(''ALTER DATABASE %I RENAME TO %I'', :''db'', :''ref''\) \\gexec\r?\nSQL$')
         $createAt = $script:recipe.IndexOf('createdb -U "$DBUSER" --maintenance-db=postgres -- "$DB"')
         $restoreAt = $script:recipe.IndexOf('pg_restore -U "$DBUSER" -d "$DB"')
         $repairAt = $script:recipe.IndexOf("<<'REPAIR_SQL'")
         $compare = [regex]::Match($script:recipe, '(?m)^.*Compare-DmsSchemaSnapshot\.ps1 -Database \$env:DB, \$env:REF .*-PostgresUser \$env:DBUSER.*$')
-        $referenceDropAt = $script:recipe.IndexOf('dropdb -U "$DBUSER" --maintenance-db=postgres -- "$REF"')
+        $contentGatePassedAt = $script:recipe.IndexOf('#    Expect: NOTICE: restore verified')
+        $referenceDrop = @([regex]::Matches($script:recipe, 'dropdb -U "\$DBUSER" --maintenance-db=postgres -- "\$REF"'))
 
         $stopAt | Should -BeGreaterThan -1
         $referenceAt | Should -BeGreaterThan $stopAt -Because "nothing may hold a connection while the deployment is renamed"
-        $staleDropAt | Should -BeGreaterThan $referenceAt -Because "a reference left by an earlier attempt must be dropped before the rename can collide with it"
+        $staleGuard.Success | Should -BeTrue -Because "a reference left by an earlier attempt must stop the recipe and name the recovery, not be dropped"
+        $staleGuard.Index | Should -BeGreaterThan $referenceAt
+        $script:recipe | Should -Not -Match 'dropdb [^\n]*--if-exists -- "\$REF"' -Because "no path may drop an existing reference; it is the deployment"
         $rename.Success | Should -BeTrue -Because "the deployment must be renamed through psql variables and format('%I'), fail-closed"
-        $rename.Index | Should -BeGreaterThan $staleDropAt
+        $rename.Index | Should -BeGreaterThan $staleGuard.Index
         $createAt | Should -BeGreaterThan $rename.Index -Because "the artifact's database is created only once the deployment is safely out of the way"
         $restoreAt | Should -BeGreaterThan $createAt
         $repairAt | Should -BeGreaterThan $restoreAt
         $compare.Success | Should -BeTrue -Because "the compare must run the script's two-database mode on the live superuser"
         $compare.Index | Should -BeGreaterThan $repairAt -Because "the proof follows the repair"
-        $referenceDropAt | Should -BeGreaterThan $compare.Index -Because "the reference is scratch once the compare has passed"
+        $referenceDrop.Count | Should -Be 1 -Because "the reference is dropped exactly once"
+        $contentGatePassedAt | Should -BeGreaterThan $compare.Index
+        $referenceDrop[0].Index | Should -BeGreaterThan $contentGatePassedAt -Because "the reference is scratch only once step 6 has passed; a step 6 failure recovers through it"
 
         [regex]::Matches($script:recipe, '(?m)^docker exec dms-postgresql pg_restore ').Count | Should -Be 1 -Because "one restore, the artifact into `$DB; the reference is never restored"
         [regex]::Matches($script:activeRecipe, 'Compare-DmsSchemaSnapshot\.ps1').Count | Should -Be 1 -Because "one live compare, against the deployment itself"
+        # The recipe never drops $DB: the only dropdb of the target is the recovery helper's, on the name
+        # it reads back from the container, and only after it has proven that the reference -- the
+        # deployment -- exists.
+        $helper = [regex]::Match($script:recipe, '(?ms)^RECOVER_FROM_REF\(\) \{.*?^\}').Value
+        $helper | Should -Not -BeNullOrEmpty -Because "the recipe must define RECOVER_FROM_REF"
         $script:recipe | Should -Not -Match 'dropdb [^\n]* -- "\$DB"' -Because "the deployment is renamed, never dropped"
+        @([regex]::Matches($script:recipe, 'dropdb [^\n]* -- "\$_db"')).Count | Should -Be 1 -Because "only the helper drops the partial restore"
+        $helper | Should -Match 'dropdb [^\n]*--if-exists -- "\$_db"'
+        $helper.IndexOf('test -n "$_ref_exists"') | Should -BeLessThan $helper.IndexOf('dropdb') -Because "the helper must prove the reference exists before it drops anything"
     }
 
     It "never pastes a database name into SQL text" {
@@ -556,7 +571,7 @@ Describe "Restore recipe repairs the security metadata the compare checks" {
         }
         $active | Should -Not -Match 'ALTER DATABASE\s+"?\$' -Because "the rename must go through format('%I'), never a pasted name"
         foreach ($line in ($joined -split "\n" | Where-Object { $_ -match '\b(dropdb|createdb)\b' })) {
-            $line | Should -Match ' -- "\$(DB|REF)"' -Because "dropdb/createdb must take the name as a guarded argument: $line"
+            $line | Should -Match ' -- "\$(DB|REF|_db|_ref)"' -Because "dropdb/createdb must take the name as a guarded argument: $line"
         }
     }
 

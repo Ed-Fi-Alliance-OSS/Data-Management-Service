@@ -243,6 +243,28 @@ $script:DmsDerivedTable = "Descriptor"
 $script:BulkSchema = @("edfi", "tracked_changes_edfi", "auth")
 $script:StagingSchema = "northridge_staging"
 
+# Runs inside the database container, on the file pg_restore wrote there. Positional parameters: the
+# emitted SQL, the file to write, the staging schema. Exactly one line may be the COPY header naming
+# dms."Descriptor" -- the count is checked before and after -- and only that line is rewritten: the
+# pattern is anchored to the start of the line and to the COPY keyword, so a data row carrying the
+# table's name in a value is untouched. Any failure exits non-zero, and the load never runs on it.
+$script:DescriptorRedirectScript = @'
+set -eu
+in=$1; out=$2; staging=$3
+header='^COPY dms\."Descriptor" ('
+count=$(grep -c -e "$header" "$in" || true)
+if [ "$count" != 1 ]; then
+    echo "expected exactly one COPY header naming dms.\"Descriptor\" in $in, found $count" >&2
+    exit 2
+fi
+sed -e "s/$header/COPY \"$staging\".\"Descriptor\" (/" "$in" > "$out"
+redirected=$(grep -c -e "^COPY \"$staging\".\"Descriptor\" (" "$out" || true)
+if [ "$redirected" != 1 ]; then
+    echo "the COPY header was not re-pointed at $staging in $out, found $redirected" >&2
+    exit 3
+fi
+'@
+
 # The DMS-owned schemas, matching the default set Compare-DmsSchemaSnapshot.ps1 diffs. Both the
 # foreign-key sweep and the disabled-trigger check are scoped to these, so neither can drift from
 # what the schema compare covers.
@@ -1392,10 +1414,11 @@ $requestedTable = @($script:DmsDataTable | ForEach-Object { "dms.$_" }) + $bulkT
 $containerDumpPath = "/tmp/northridge-dataforward.dump"
 $containerListPath = "/tmp/northridge-dataforward.list"
 
-docker cp $DumpPath "${Container}:${containerDumpPath}"
-if ($LASTEXITCODE -ne 0) { throw "docker cp of the dump into '$Container' failed." }
-
 try {
+    # Inside the try, so a copy that fails part-way is removed by the finally like everything else.
+    docker cp $DumpPath "${Container}:${containerDumpPath}"
+    if ($LASTEXITCODE -ne 0) { throw "docker cp of the dump into '$Container' failed." }
+
     # A TOC filtered to TABLE DATA alone drops the archive's SEQUENCE SET entries, which is how the
     # sequences stay at their fresh-database position while the copied data runs to millions. The row
     # counts would still reconcile and the first write after restore would collide, so the sequence
@@ -1458,10 +1481,13 @@ SELECT 'staging ready';
 "@
 Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser -DatabaseName $TargetDatabase -Sql $stagingSetup | Out-Null
 
-docker cp $DumpPath "${Container}:${containerDumpPath}"
-if ($LASTEXITCODE -ne 0) { throw "docker cp of the dump for the Descriptor load failed." }
+$containerDescriptorSqlPath = "/tmp/northridge-descriptor.sql"
+$containerStagingSqlPath = "/tmp/northridge-descriptor.staging.sql"
 
 try {
+    docker cp $DumpPath "${Container}:${containerDumpPath}"
+    if ($LASTEXITCODE -ne 0) { throw "docker cp of the dump for the Descriptor load failed." }
+
     # Exact TOC selection here too. '-n dms -t Descriptor' is unambiguous because a single schema is
     # selected, but selecting the archive entry keeps one mechanism for both restores rather than two
     # with different failure modes.
@@ -1473,26 +1499,32 @@ try {
     $descriptorListContent | docker exec -i $Container sh -c "cat > $containerListPath"
     if ($LASTEXITCODE -ne 0) { throw "writing the Descriptor restore list into '$Container' failed." }
 
-    # Emitted as text and re-pointed at the staging table, so the dump's COPY lands on the staging
-    # copy rather than the real table, which cannot accept the artifact's column list.
-    $descriptorSql = docker exec $Container pg_restore --data-only --no-owner --no-privileges `
-        --exit-on-error -L $containerListPath -f - $containerDumpPath 2>&1
-    $descriptorExit = $LASTEXITCODE
-    Assert-RestoreOutputClean -Output $descriptorSql -ExitCode $descriptorExit `
+    # Emitted as text into a file inside the container and re-pointed there, so the dump's COPY lands
+    # on the staging copy rather than the real table, which cannot accept the artifact's column list.
+    # The SQL never crosses into a PowerShell string: pg_restore's diagnostics stay on stderr, where
+    # the scan below reads them, instead of being merged into the text that reaches psql; no host
+    # encoding or newline handling touches the data rows; and the rewrite is anchored to the one COPY
+    # header line, so a data row that happens to carry the table's name is never text a replacement
+    # could match. The rewrite refuses to run unless exactly one header names dms."Descriptor".
+    $descriptorRestoreOutput = docker exec $Container pg_restore --data-only --no-owner --no-privileges `
+        --exit-on-error -L $containerListPath -f $containerDescriptorSqlPath $containerDumpPath 2>&1
+    Assert-RestoreOutputClean -Output $descriptorRestoreOutput -ExitCode $LASTEXITCODE `
         -Description "pg_restore of dms.Descriptor to text"
 
-    $redirected = ($descriptorSql -join "`n").Replace('dms."Descriptor"', """$script:StagingSchema"".""Descriptor""")
-    if ($redirected -notmatch [regex]::Escape("""$script:StagingSchema"".""Descriptor""")) {
-        throw "The Descriptor COPY statement was not re-pointed at the staging table; refusing to run SQL that would target dms.Descriptor directly."
+    $redirectOutput = $script:DescriptorRedirectScript | docker exec -i $Container sh -s `
+        $containerDescriptorSqlPath $containerStagingSqlPath $script:StagingSchema 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "The Descriptor COPY header was not re-pointed at the staging table (exit $LASTEXITCODE): $(@($redirectOutput | ForEach-Object { [string]$_ }) -join ' | '). Refusing to run SQL that would target dms.Descriptor directly."
     }
 
-    $stagingLoadOutput = $redirected | docker exec -i $Container psql -U $PostgresUser `
-        -d $TargetDatabase -v ON_ERROR_STOP=1 --quiet 2>&1
+    $stagingLoadOutput = docker exec $Container psql -U $PostgresUser -d $TargetDatabase `
+        -v ON_ERROR_STOP=1 --quiet -f $containerStagingSqlPath 2>&1
     Assert-RestoreOutputClean -Output $stagingLoadOutput -ExitCode $LASTEXITCODE `
         -Description "Loading dms.Descriptor into staging"
 }
 finally {
-    docker exec -u 0 $Container rm -f $containerDumpPath $containerListPath | Out-Null
+    docker exec -u 0 $Container rm -f $containerDumpPath $containerListPath `
+        $containerDescriptorSqlPath $containerStagingSqlPath | Out-Null
 }
 
 $deriveSql = @"

@@ -394,3 +394,76 @@ Describe "Start scripts pass the resolved database identity and role names to th
         }
     }
 }
+
+Describe "setup-keycloak.ps1 percent-encodes the role name in both role lookup URLs" {
+    # The role names are configured values, routed in by the start scripts through identityRoleParams
+    # (asserted above), and each travels as one path segment of a Keycloak admin URL. Interpolated raw,
+    # a space, '#', '?' or '/' ends the path, starts a fragment or a query, or adds a segment: the
+    # lookup answers 404 for a role that exists, and Create_Role then creates a second one under the raw
+    # name. Both lookups -- the realm role and the realm-management client role -- encode the segment,
+    # and the encoded URL reads back as exactly the role name.
+    BeforeAll {
+        $composeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        $keycloakScript = Join-Path $composeRoot "setup-keycloak.ps1"
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($keycloakScript, [ref]$null, [ref]$null)
+        foreach ($name in @("Get_Role", "Get_Realm_Admin_Role")) {
+            $function = $ast.FindAll({
+                    param($node)
+                    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name
+                }, $true) | Select-Object -First 1
+            if ($null -eq $function) { throw "setup-keycloak.ps1 must define $name" }
+            . ([scriptblock]::Create($function.Extent.Text))
+        }
+        # The lifted functions read these from the script scope -- this file's, once lifted here -- and
+        # the token unqualified, from the calling scope; Set-Variable, because the analyzer cannot see
+        # that dynamic read and would report the assignment as unused.
+        $script:KeycloakServer = "http://keycloak.test:8045"
+        $script:Realm = "edfi"
+        Set-Variable -Name access_token -Value "token"
+        function Get_Realm_Management_ClientId { return "rm-client-id" }
+    }
+
+    It "requests '<Role>' as the single segment '<Encoded>' in both lookups" -ForEach @(
+        @{ Role = "cms client"; Encoded = "cms%20client" },
+        @{ Role = "role#1"; Encoded = "role%231" },
+        @{ Role = "what?x"; Encoded = "what%3Fx" },
+        @{ Role = "a/b"; Encoded = "a%2Fb" },
+        @{ Role = "cms-client"; Encoded = "cms-client" }
+    ) {
+        # The false pass: the raw name produced a URL whose path, query or fragment differed from the
+        # role, Keycloak answered 404, Get_Role returned null and Create_Role created the role again.
+        # AbsoluteUri is the form the request goes out with; [uri]::ToString() would unescape %20 back
+        # to a space and hide exactly the case under test.
+        Mock Invoke-RestMethod { [pscustomobject]@{ name = "found"; requested = $Uri.AbsoluteUri } }
+
+        $realmRole = Get_Role $Role
+        $realmRole.requested | Should -Be "http://keycloak.test:8045/admin/realms/edfi/roles/$Encoded"
+        ([uri]$realmRole.requested).Query | Should -BeNullOrEmpty
+        ([uri]$realmRole.requested).Fragment | Should -BeNullOrEmpty
+        ([uri]$realmRole.requested).Segments.Count | Should -Be 6 -Because "the role is one segment, however many separators it carries"
+        [uri]::UnescapeDataString(([uri]$realmRole.requested).Segments[-1]) | Should -Be $Role
+
+        $adminRole = Get_Realm_Admin_Role $Role
+        $adminRole.requested | Should -Be "http://keycloak.test:8045/admin/realms/edfi/clients/rm-client-id/roles/$Encoded"
+        ([uri]$adminRole.requested).Query | Should -BeNullOrEmpty
+        ([uri]$adminRole.requested).Fragment | Should -BeNullOrEmpty
+        [uri]::UnescapeDataString(([uri]$adminRole.requested).Segments[-1]) | Should -Be $Role
+
+        Should -Invoke Invoke-RestMethod -Times 2 -Exactly
+    }
+
+    It "still answers null for a role Keycloak does not have" {
+        Mock Invoke-RestMethod {
+            throw [Microsoft.PowerShell.Commands.HttpResponseException]::new("not found", [System.Net.Http.HttpResponseMessage]::new([System.Net.HttpStatusCode]::NotFound))
+        }
+
+        Get_Role "cms client" | Should -BeNullOrEmpty
+        Get_Realm_Admin_Role "cms client" | Should -BeNullOrEmpty
+    }
+
+    It "escapes at both lookup sites and nowhere interpolates a raw role name into a URL" {
+        $text = Get-Content -Raw -LiteralPath $keycloakScript
+        @([regex]::Matches($text, '/roles/\$\(\[uri\]::EscapeDataString\(\$roleName\)\)"')).Count | Should -Be 2 -Because "the realm role and the realm-management client role lookups both take the name as a segment"
+        $text | Should -Not -Match '/roles/\$roleName' -Because "a raw interpolation is the shape this closes"
+    }
+}

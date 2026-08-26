@@ -21,6 +21,7 @@ param (
     [string] $NewClientId = "DmsConfigurationService",
     [string] $NewClientName = "DMS Configuration Service",
     [string] $NewClientSecret = "ValidClientSecret1234567890!Abcd",
+    [string] $NewClientSecretEnvironmentVariable = "",
     [int] $ClientSecretMinimumLength = 32,
     [int] $ClientSecretMaximumLength = 128,
     [string] $DmsClientRole = "dms-client",
@@ -53,6 +54,19 @@ $script:ClientSecretMinimumLength = $ClientSecretMinimumLength
 $script:ClientSecretMaximumLength = $ClientSecretMaximumLength
 $script:EncryptionKey = $EncryptionKey
 $script:HashIterations = $HashIterations
+
+# -NewClientSecret is always the literal secret. The complexity rule admits ':', so a valid secret may
+# itself begin with "ENV:", and unlike the database parameters it is never read as an indirection. A
+# caller that must keep the secret out of this process's argument list names the environment variable
+# holding it with -NewClientSecretEnvironmentVariable instead; the two parameters are alternatives.
+if ($PSBoundParameters.ContainsKey("NewClientSecretEnvironmentVariable")) {
+    if ($PSBoundParameters.ContainsKey("NewClientSecret")) {
+        throw "Specify either -NewClientSecret or -NewClientSecretEnvironmentVariable, not both."
+    }
+    if ([string]::IsNullOrWhiteSpace($NewClientSecretEnvironmentVariable)) {
+        throw "-NewClientSecretEnvironmentVariable must name the environment variable that holds the client secret."
+    }
+}
 
 Write-Verbose "TokenLifespan is not applied by setup-openiddict.ps1; OpenIddict token lifetime is configured by the service. Requested value: $TokenLifespan"
 
@@ -898,9 +912,17 @@ if ($InitDb) {
 }
 
 if ($InsertData) {
-    Test-ClientSecretLength -ClientSecret $NewClientSecret
-    Test-ClientSecretComplexity -ClientSecret $NewClientSecret
-    $appId = New-OpenIddictApplication -ClientId $NewClientId -ClientName $NewClientName -ClientSecret $NewClientSecret
+    # The literal, unless the caller named the environment variable that holds the secret: that is read
+    # with the same Compose-precedence resolver the ENV: parameters use (ambient process value first,
+    # then the env file; throws by name when it is configured nowhere), and before validation and
+    # hashing, so both see the secret rather than the variable's name.
+    $clientSecret = $NewClientSecret
+    if ($NewClientSecretEnvironmentVariable) {
+        $clientSecret = Get-RequiredComposeResolvedEnvValue -EnvironmentValues $envValues -Name $NewClientSecretEnvironmentVariable
+    }
+    Test-ClientSecretLength -ClientSecret $clientSecret
+    Test-ClientSecretComplexity -ClientSecret $clientSecret
+    $appId = New-OpenIddictApplication -ClientId $NewClientId -ClientName $NewClientName -ClientSecret $clientSecret
 
     $dmsRoleId = New-OpenIddictRole -RoleName $DmsClientRole
     Add-OpenIddictClientRole -AppId $appId.Trim() -RoleId $dmsRoleId.Trim()

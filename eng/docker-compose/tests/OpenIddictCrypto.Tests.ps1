@@ -461,12 +461,21 @@ Describe "OpenIddict PostgreSQL client provisioning from configured values" {
                 )
             }.GetNewClosure()
 
+            # The hostile secret is the default; a case may replace it through -Parameter, which would
+            # otherwise be a second binding of the same parameter, or name the environment variable that
+            # holds the secret instead, in which case the literal parameter is not bound at all.
+            $bound = @{}
+            if (-not ($Parameter.ContainsKey("NewClientSecret") -or $Parameter.ContainsKey("NewClientSecretEnvironmentVariable"))) {
+                $bound.NewClientSecret = $script:HostileSecret
+            }
+            foreach ($key in $Parameter.Keys) { $bound[$key] = $Parameter[$key] }
+
             Push-Location $script:DockerComposePath
             try {
                 . ./setup-openiddict.ps1 -InsertData -EnvironmentFile "" -DbType "Postgresql" `
                     -ConnectionString "Host=localhost;Port=5432;Database=edfi_configurationservice;Username=postgres;" `
                     -PostgresContainerName "dms-postgresql-test" -HashIterations "1000" `
-                    -NewClientSecret $script:HostileSecret @Parameter | Out-Null
+                    @bound | Out-Null
             }
             finally {
                 Pop-Location
@@ -497,6 +506,26 @@ Describe "OpenIddict PostgreSQL client provisioning from configured values" {
         $script:StatementFor = {
             param([string[]]$Sql, [string]$Pattern)
             return @($Sql | Where-Object { $_ -match $Pattern })
+        }
+
+        # Reads the ClientSecret hash out of a captured OpenIddictApplication INSERT -- the third literal
+        # of its VALUES -- and checks it against a plain text the way ASP.NET Identity would:
+        # New-AspNetPasswordHash writes a version byte, the salt length, the salt and a PBKDF2-SHA256
+        # subkey, so the subkey is re-derived from the candidate with the stored salt and compared.
+        function script:Test-StoredClientSecretHash {
+            [OutputType([bool])]
+            param([string]$InsertSql, [string]$Secret, [int]$Iterations = 1000)
+
+            $hash = [regex]::Match($InsertSql, "(?s)VALUES \('[^']*', '(?:[^']|'')*', '(?<hash>[^']*)'").Groups["hash"].Value
+            if (-not $hash) { throw "no ClientSecret literal in: $InsertSql" }
+            $bytes = [Convert]::FromBase64String($hash)
+            $saltLength = [BitConverter]::ToInt32($bytes, 1)
+            $salt = [byte[]]$bytes[5..(4 + $saltLength)]
+            $stored = [byte[]]$bytes[(5 + $saltLength)..($bytes.Length - 1)]
+            $derived = [System.Security.Cryptography.Rfc2898DeriveBytes]::Pbkdf2(
+                [System.Text.Encoding]::UTF8.GetBytes($Secret), $salt, $Iterations,
+                [System.Security.Cryptography.HashAlgorithmName]::SHA256, $stored.Length)
+            return [System.Linq.Enumerable]::SequenceEqual([byte[]]$derived, $stored)
         }
     }
 
@@ -580,6 +609,57 @@ Describe "OpenIddict PostgreSQL client provisioning from configured values" {
         $permissions | Should -HaveCount 1
         $permissions[0] | Should -Match 'SET "Permissions" = ARRAY\[''edfi_admin_api/full,access''\]::varchar\[\]'
         $permissions[0] | Should -Not -Match "'\{" -Because "an array-text literal re-parses the value by array syntax"
+    }
+
+    It "hashes a literal -NewClientSecret that begins with ENV: as that literal, reading no environment variable" {
+        # Every start script passes the secret it resolved from .env as a literal, and the complexity
+        # rule admits ':', so a valid secret may begin with "ENV:". Read as an indirection, such a secret
+        # either fails by the name of a variable that does not exist or -- were one to exist -- hashes
+        # that variable's value in place of the secret, and DMS can no longer authenticate to CMS.
+        $literal = "ENV:LiteralSecret1234567890!Abcd"
+        $literal.Length | Should -Be 32 -Because "the literal must satisfy the default 32-character minimum on its own"
+        [System.Environment]::GetEnvironmentVariable($literal.Substring(4)) | Should -BeNullOrEmpty -Because "nothing but the literal may be what gets hashed"
+
+        $sql = Invoke-InsertDataCapture -Parameter @{ NewClientSecret = $literal }
+
+        $insert = @(& $script:StatementFor $sql 'INSERT INTO "dmscs"\."OpenIddictApplication"')
+        $insert | Should -HaveCount 1
+        $insert[0] | Should -Not -Match ([regex]::Escape($literal)) -Because "the secret is stored as a hash"
+        Test-StoredClientSecretHash -InsertSql $insert[0] -Secret $literal | Should -BeTrue -Because "the hash must be of the literal, ENV: prefix included"
+    }
+
+    It "reads the secret from the environment variable -NewClientSecretEnvironmentVariable names, before validating and hashing it, and fails by that name when it is unset" {
+        # What the restore recipe's step 10 uses: setup-openiddict.ps1 is a new process whose argument
+        # list is readable by every process on the host, so the secret travels as one variable of that
+        # process's environment and this parameter names it. Resolved before the length and complexity
+        # checks -- "NR_TEST_CLIENT_SECRET" is 21 characters and would fail the 32-character minimum on
+        # its own, so a pass here is the proof of the order.
+        $name = "NR_TEST_CLIENT_SECRET"
+        try {
+            [System.Environment]::SetEnvironmentVariable($name, $script:HostileSecret)
+            $sql = Invoke-InsertDataCapture -Parameter @{ NewClientSecretEnvironmentVariable = $name }
+        }
+        finally {
+            Remove-Item -LiteralPath "Env:\$name" -ErrorAction SilentlyContinue
+        }
+
+        $insert = @(& $script:StatementFor $sql 'INSERT INTO "dmscs"\."OpenIddictApplication"')
+        $insert | Should -HaveCount 1
+        ($sql -join "`n") | Should -Not -Match $name -Because "the variable's name must not be what is stored"
+        ($sql -join "`n") | Should -Not -Match ([regex]::Escape($script:HostileSecret)) -Because "the secret is stored as a hash"
+        Test-StoredClientSecretHash -InsertSql $insert[0] -Secret $script:HostileSecret | Should -BeTrue -Because "the hash must be of the variable's value"
+
+        # Configured nowhere, the parameter fails by the variable's name rather than validating anything.
+        { Invoke-InsertDataCapture -Parameter @{ NewClientSecretEnvironmentVariable = $name } } | Should -Throw "*$name*"
+    }
+
+    It "refuses -NewClientSecret and -NewClientSecretEnvironmentVariable together, and a blank variable name" {
+        # Two sources for one secret is a caller mistake either way, and a blank name would fall through
+        # to the default literal -- a secret the caller never chose, hashed without a word.
+        { Invoke-InsertDataCapture -Parameter @{ NewClientSecret = $script:HostileSecret; NewClientSecretEnvironmentVariable = "NR_TEST_CLIENT_SECRET" } } |
+            Should -Throw "*either -NewClientSecret or -NewClientSecretEnvironmentVariable*"
+        { Invoke-InsertDataCapture -Parameter @{ NewClientSecretEnvironmentVariable = "" } } |
+            Should -Throw "*-NewClientSecretEnvironmentVariable must name the environment variable*"
     }
 
     It "leaves no value outside a string literal anywhere in the sequence, with every configured value hostile" {
@@ -711,7 +791,7 @@ Describe "Northridge PostgreSQL restore recipe identity handoff" {
             $lines = $script:NorthridgeRecipe -split "`r?`n"
             $start = [array]::FindIndex($lines, [Predicate[string]] {
                     param($line)
-                    $line -match '^\s*pwsh -NoProfile -File \./setup-openiddict\.ps1 -InsertData'
+                    $line -match '^\s*(CSEC="\$CSEC" )?pwsh -NoProfile -File \./setup-openiddict\.ps1 -InsertData'
                 })
             $start | Should -BeGreaterOrEqual 0
 
@@ -747,6 +827,11 @@ Describe "Northridge PostgreSQL restore recipe identity handoff" {
         # its status and prints the body, so a 4xx/5xx there stops the recipe instead of surfacing at the
         # token check as a misleading signing-key failure.
         $script:NorthridgeActiveRecipe | Should -Not -Match '(?im)^[^\n]*\bcurl\b[^\n]*secret=' -Because "no curl invocation may carry a secret in its arguments"
+        # Nor may any pwsh invocation: a secret-bearing shell variable may appear before `pwsh` only, as
+        # the environment prefix of that one process, never among its arguments -- continuation lines
+        # are joined so a multi-line invocation is read whole.
+        $joined = $script:NorthridgeActiveRecipe -replace '\\\n\s*', ' '
+        $joined | Should -Not -Match '(?m)\bpwsh\b[^\n]*"\$(CSEC|SEC|ADMIN_SECRET|CMS_SECRET|IDK|KEY_SQL|PW|T|DT|TOKEN|BODY|DS_BODY)"' -Because "no pwsh argument may carry a secret; the environment prefix before pwsh is the only place one may appear"
         $script:NorthridgeActiveRecipe | Should -Not -Match '(?i)--data-urlencode "[^"]*secret='
         @([regex]::Matches($script:NorthridgeActiveRecipe, '(?m)^CMS_SECRET="\$(ADMIN_SECRET|CSEC|SEC)"$')).Count | Should -Be 3 -Because "each secret is scoped to CMS_SECRET from a variable the recipe already holds"
         @([regex]::Matches($script:NorthridgeActiveRecipe, '(?m)^\w+=\$\(CMS_TOKEN ')).Count | Should -Be 3 -Because "restore-admin, the DMS-to-CMS client and the consumer's client each mint one token"
@@ -770,10 +855,91 @@ Describe "Northridge PostgreSQL restore recipe identity handoff" {
         $token | Should -Not -Match 'curl'
     }
 
-    It "passes the live PostgreSQL user, roles and client-secret bounds into setup-openiddict" {
+    It "keeps every bearer token out of curl's argument list and routes token-bearing calls through AUTH_HTTP" {
+        # The same class as the client secrets: a token in a curl argument is readable by every process
+        # on the host while curl runs. Every request that carries one goes through AUTH_HTTP, which
+        # reads the token from TOKEN and the JSON body from BODY in its own environment, prints the
+        # status on its first line and the body after it, and writes the headers to a file -- so each
+        # caller keeps the status check and the body diagnostics it had.
+        $script:NorthridgeActiveRecipe | Should -Not -Match 'Authorization: Bearer \$' -Because "no command line may carry a token"
+        $script:NorthridgeActiveRecipe | Should -Not -Match '(?m)^[^\n]*\bcurl\b[^\n]*(Bearer|-H "Authorization|/v3/|/data/)' -Because "no token-bearing or API call may be a curl call"
+
+        $helper = [regex]::Match($script:NorthridgeRecipe, '(?ms)^AUTH_HTTP\(\) \{.*?^\}').Value
+        $helper | Should -Not -BeNullOrEmpty -Because "the recipe must define AUTH_HTTP"
+        $helper | Should -Match 'TOKEN="\$TOKEN" BODY="\$\{BODY:-\}" pwsh -NoProfile -Command'
+        $helper | Should -Match 'Authorization = "Bearer \$env:TOKEN"'
+        $helper | Should -Match '\$request\.Body = \$env:BODY'
+        $helper | Should -Match 'SkipHttpErrorCheck = \$true' -Because "a 4xx/5xx must come back as a status the caller asserts, not as an exception"
+        $helper | Should -Match 'TimeoutSec = [1-9]\d*' -Because "the request replaced a curl call and must not hang on a service that accepts and never answers"
+        $helper | Should -Match '\[Console\]::Out\.WriteLine\(\[int\]\$response\.StatusCode\)'
+        $helper | Should -Match 'Set-Content -Path \$env:HEADERS_FILE'
+        $helper | Should -Not -Match 'curl'
+
+        $call = @([regex]::Matches($script:NorthridgeActiveRecipe, '(?m)^\w+=\$\(AUTH_HTTP (?<method>[A-Z]+) "(?<url>[^"]+)" "\$ART/[^"]+"\) \|\| \\$'))
+        @($call | ForEach-Object { $_.Groups["method"].Value + " " + $_.Groups["url"].Value }) |
+            Should -Be @('PUT $CMS/v3/dataStores/1', 'POST $CMS/v3/vendors', 'POST $CMS/v3/applications', 'GET $DMS/data/ed-fi/students?limit=1&totalCount=true')
+        # Each call is preceded by the token it needs; the GET is preceded by an emptied BODY.
+        @([regex]::Matches($script:NorthridgeActiveRecipe, '(?m)^TOKEN="\$(T|DT)"$')).Count | Should -Be 3
+        $script:NorthridgeActiveRecipe | Should -Match '(?m)^TOKEN="\$DT"\nBODY=\nSMOKE_RESPONSE=\$\(AUTH_HTTP GET '
+        # The statuses are still asserted against exact values and the bodies still shown on failure.
+        $script:NorthridgeActiveRecipe | Should -Match '(?m)^DS=\$\(printf ''%s\\n'' "\$DS_RESPONSE" \| sed -n 1p\)\nif \[ "\$DS" != "204" \]; then'
+        $script:NorthridgeActiveRecipe | Should -Match 'printf ''%s\\n'' "\$DS_RESPONSE" \| sed 1d'
+        $script:NorthridgeActiveRecipe | Should -Match '(?m)^SC=\$\(printf ''%s\\n'' "\$SMOKE_RESPONSE" \| sed -n 1p\)$'
+        $script:NorthridgeActiveRecipe | Should -Match 'if \[ "\$SC" != "200" \] \|\| \[ "\$TC" != "21628" \]; then'
+        $script:NorthridgeActiveRecipe | Should -Match 'sed -n ''s\|\^\[Ll\]ocation:\.\*/v3/vendors/' -Because "the vendor id is still read from the Location header, now from the headers file"
+        # The data store body holds the database password and travels as BODY, never as a file.
+        $script:NorthridgeActiveRecipe | Should -Not -Match 'datastore\.json'
+        $script:NorthridgeActiveRecipe | Should -Match '(?m)^DS_BODY=\$\(PW="\$PW" DB="\$DB" DBUSER="\$DBUSER" pwsh -NoProfile -Command ''$'
+        $script:NorthridgeActiveRecipe | Should -Match '(?m)^BODY="\$DS_BODY"$'
+        $script:NorthridgeActiveRecipe | Should -Match '(?m)^unset BODY DS_BODY$'
+    }
+
+    It "asserts the exact success status of every AUTH_HTTP response before trusting its headers or body" {
+        # AUTH_HTTP prints the status on its first line and never throws on a 4xx/5xx, so a caller that
+        # reads Location or the body without reading the status first turns a 401, 403 or 500 into "no
+        # Location" or "no credentials" with the cause gone. CMS answers the data store PUT with 204, a
+        # new vendor with 201 (200, Location set, for a company it already holds: VendorModule creates by
+        # company name), a new application with 201 and its credentials, and DMS the smoke read with 200.
+        $active = $script:NorthridgeActiveRecipe
+
+        # Data store: the status is compared before anything else is done with the response.
+        $active | Should -Match '(?m)^DS=\$\(printf ''%s\\n'' "\$DS_RESPONSE" \| sed -n 1p\)\nif \[ "\$DS" != "204" \]; then\n[^\n]*\n  printf ''%s\\n'' "\$DS_RESPONSE" \| sed 1d\n  exit 1\nfi$'
+
+        # Vendor: the status is matched, and only 201 or 200 continue, before the Location header is read.
+        $vendor = [regex]::Match($active, '(?ms)^VENDOR_RESPONSE=\$\(AUTH_HTTP POST "\$CMS/v3/vendors".*?^VID=').Value
+        $vendor | Should -Not -BeNullOrEmpty
+        $vendor | Should -Match '(?m)^VS=\$\(printf ''%s\\n'' "\$VENDOR_RESPONSE" \| sed -n 1p\)\ncase "\$VS" in\n  201\) [^\n]*;;\n  200\) [^\n]*;;\n  \*\) [^\n]*expected 201[^\n]*printf ''%s\\n'' "\$VENDOR_RESPONSE" \| sed 1d[^\n]*; exit 1 ;;\nesac$'
+        $vendor.IndexOf('case "$VS" in') | Should -BeLessThan $vendor.IndexOf('VID=') -Because "the status is asserted before the Location header is parsed"
+        $active | Should -Match '(?m)^test -n "\$VID" \|\| \\\n  \{ [^\n]*; exit 1; \}$' -Because "a success status with no Location still stops the recipe"
+
+        # Application: exactly 201 before the body is parsed for the credentials.
+        $app = [regex]::Match($active, '(?ms)^APP_RESPONSE=\$\(AUTH_HTTP POST "\$CMS/v3/applications".*?^KEY=').Value
+        $app | Should -Not -BeNullOrEmpty
+        $app | Should -Match '(?m)^AS=\$\(printf ''%s\\n'' "\$APP_RESPONSE" \| sed -n 1p\)\nif \[ "\$AS" != "201" \]; then\n[^\n]*expected 201[^\n]*\n  printf ''%s\\n'' "\$APP_RESPONSE" \| sed 1d\n  exit 1\nfi$'
+        $app.IndexOf('if [ "$AS" != "201" ]') | Should -BeLessThan $app.IndexOf('APP=$(') -Because "the status is asserted before the body is parsed for credentials"
+
+        # Smoke: exactly 200, together with the count.
+        $active | Should -Match '(?m)^SC=\$\(printf ''%s\\n'' "\$SMOKE_RESPONSE" \| sed -n 1p\)$'
+        $active | Should -Match 'if \[ "\$SC" != "200" \] \|\| \[ "\$TC" != "21628" \]; then'
+
+        # Each response has its status line read into a variable exactly once, so no caller reads the
+        # status only inside a failure message after it has already trusted the response.
+        foreach ($response in @('DS_RESPONSE', 'VENDOR_RESPONSE', 'APP_RESPONSE', 'SMOKE_RESPONSE')) {
+            @([regex]::Matches($active, [regex]::Escape("printf '%s\n' `"`$$response`" | sed -n 1p"))).Count | Should -Be 1 -Because "$response must have its status line read once, into a variable that is compared"
+        }
+    }
+
+    It "passes the live PostgreSQL user, roles and client-secret bounds into setup-openiddict, with the secret in the environment" {
         $invocation = & $script:SetupOpenIddictInvocation
 
-        $invocation | Should -Match '-NewClientSecret "\$CSEC"'
+        # setup-openiddict.ps1 is a new process, so its argument list is readable by every process on
+        # the host: the secret travels as CSEC in that process's environment and
+        # -NewClientSecretEnvironmentVariable names the variable. -NewClientSecret is a literal for every
+        # caller -- a secret may itself begin with "ENV:" -- so the recipe must not use it at all.
+        $invocation | Should -Match '^CSEC="\$CSEC" pwsh -NoProfile -File \./setup-openiddict\.ps1 -InsertData'
+        $invocation | Should -Match '-NewClientSecretEnvironmentVariable CSEC'
+        $invocation | Should -Not -Match '-NewClientSecret\b' -Because "the secret must not be an argument, and the literal parameter never reads a variable"
+        $invocation | Should -Not -Match 'ENV:CSEC' -Because "spelled as an indirection, the eight characters ENV:CSEC would be the secret validated and hashed"
         $invocation | Should -Match '-ConfigServiceRole "\$CMSROLE"'
         $invocation | Should -Match '-DmsClientRole "\$DMSROLE"'
         $invocation | Should -Match '-DbUser "\$DBUSER"'
@@ -791,20 +957,26 @@ Describe "Northridge PostgreSQL restore recipe identity handoff" {
         $step7 = [regex]::Match($script:NorthridgeRecipe, '(?ms)^# 7\. REQUIRED: install your own OpenIddict signing key\..*?(?=^# 8\. )').Value
         $step7 | Should -Not -BeNullOrEmpty
 
-        $step7 | Should -Match '(?m)^pwsh -NoProfile -File \./Generate-OpenIddictKey-Insert\.ps1 -EncryptionKey "\$IDK" > "\$ART/newkey-insert\.sql" \|\| \\\r?\n\s+\{ .*; exit 1; \}$'
-        $step7 | Should -Match '(?m)^grep -q ''\^INSERT INTO "dmscs"\."OpenIddictKey" '' "\$ART/newkey-insert\.sql" \|\| \\\r?\n\s+\{ .*; exit 1; \}$'
-        $step7 | Should -Match '(?m)^\} > "\$ART/newkey\.sql" \|\| \\\r?\n\s+\{ .*; exit 1; \}$'
-        $step7 | Should -Match '(?m)^docker exec -i dms-postgresql psql -U "\$DBUSER" -d "\$DB" -v ON_ERROR_STOP=1 -q -1 -f - < "\$ART/newkey\.sql" \|\| \\\r?\n\s+\{ .*; exit 1; \}$'
+        # The identity encryption key reaches the generator through the environment of that one pwsh
+        # process, never as an argument, and the generated SQL -- private key and encryption key in
+        # clear -- is held in the shell as KEY_SQL and piped, never written under $ART.
+        $step7 | Should -Match '(?m)^KEY_SQL=\$\(IDK="\$IDK" pwsh -NoProfile -Command ''& \./Generate-OpenIddictKey-Insert\.ps1 -EncryptionKey \$env:IDK''\) \|\| \\\r?\n\s+\{ unset KEY_SQL IDK; .*; exit 1; \}$'
+        $step7 | Should -Not -Match '-EncryptionKey "\$IDK"' -Because "the key must not be an argument of any process"
+        $step7 | Should -Not -Match 'newkey' -Because "no key SQL file may be written"
+        $step7 | Should -Not -Match '> "\$ART/' -Because "nothing in step 7 may be written under the scratch directory"
+        $step7 | Should -Match '(?m)^printf ''%s\\n'' "\$KEY_SQL" \| grep -q ''\^INSERT INTO "dmscs"\."OpenIddictKey" '' \|\| \\\r?\n\s+\{ unset KEY_SQL IDK; .*; exit 1; \}$'
+        $step7 | Should -Match '(?m)^\} \| docker exec -i dms-postgresql psql -U "\$DBUSER" -d "\$DB" -v ON_ERROR_STOP=1 -q -1 -f - \|\| \\\r?\n\s+\{ unset KEY_SQL IDK; .*; exit 1; \}$'
 
-        # One psql run over one file: no separate deactivate, no copy into the container.
-        @([regex]::Matches($step7, '(?m)^docker exec .*psql')).Count | Should -Be 1
+        # One psql run over one stream: no separate deactivate, no copy into the container.
+        $activeStep7 = (($step7 -split "`r?`n") | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
+        @([regex]::Matches($activeStep7, 'docker exec .*psql')).Count | Should -Be 1
         $step7 | Should -Not -Match 'psql .*-c ''UPDATE dmscs\."OpenIddictKey"'
         $step7 | Should -Not -Match 'docker cp'
 
-        $assembled = [regex]::Match($step7, '(?ms)^\{\r?\n(?<body>.*?)^\} > "\$ART/newkey\.sql"').Groups["body"].Value
+        $assembled = [regex]::Match($step7, '(?ms)^\{\r?\n(?<body>.*?)^\} \| docker exec').Groups["body"].Value
         $assembled | Should -Not -BeNullOrEmpty
         $deactivateAt = $assembled.IndexOf('echo ''UPDATE dmscs."OpenIddictKey" SET "IsActive" = FALSE;''')
-        $insertAt = $assembled.IndexOf('cat "$ART/newkey-insert.sql"')
+        $insertAt = $assembled.IndexOf('printf ''%s\n'' "$KEY_SQL"')
         $assertAt = $assembled.IndexOf("<<'KEY_ASSERT_SQL'")
         $deactivateAt | Should -BeGreaterThan -1
         $insertAt | Should -BeGreaterThan $deactivateAt -Because "the producer's key is deactivated before the new one is inserted"
@@ -814,8 +986,15 @@ Describe "Northridge PostgreSQL restore recipe identity handoff" {
         $assertion | Should -Match 'SELECT COUNT\(\*\) INTO active FROM dmscs\."OpenIddictKey" WHERE "IsActive"'
         $assertion | Should -Match '(?s)IF active <> 1 THEN\s+RAISE EXCEPTION' -Because "an insert that succeeded beside a still-active producer key must roll back"
 
-        # The key material does not outlive the step, on the success path or the failure path.
-        @([regex]::Matches($step7, 'rm -f "\$ART/newkey\.sql" "\$ART/newkey-insert\.sql"')).Count | Should -BeGreaterOrEqual 2
+        # The key material does not outlive the step: KEY_SQL and IDK are unset on the success path and
+        # inside every failure guard that follows the generator call.
+        $afterGenerate = $step7.Substring($step7.IndexOf('KEY_SQL=$('))
+        $guard = @([regex]::Matches($afterGenerate, '\{ [^\n]*; exit 1; \}'))
+        $guard.Count | Should -Be 3 -Because "the generator, the INSERT check and the psql run are each guarded"
+        foreach ($item in $guard) {
+            $item.Value | Should -Match '^\{ unset KEY_SQL IDK; ' -Because "a failure path must not leave the key material in the shell: $($item.Value)"
+        }
+        $afterGenerate | Should -Match '(?m)^unset KEY_SQL IDK$' -Because "the success path must clear the key material too"
 
         # The token check stays, after the replacement, as the second proof rather than the only one,
         # and its failure text still points at this step.

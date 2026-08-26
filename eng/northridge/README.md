@@ -71,9 +71,12 @@ the four scripts and the recipe to the guards that stop a run from passing on no
 names that differ only in case cannot collapse to one snapshot, one count file cannot be reconciled
 against itself, a `dms` base table on none of the copy tool's lists stops the copy before it loads, a
 target cannot be its own source or reference, a measured checkpoint value cannot lack an
-expectation, a deferred read is recorded with its final status, and the recipe reads the service
-ports from the containers and bounds every wait. It needs no database and runs in the same
-pull-request lane.
+expectation, a deferred read is recorded with its final status, a date-time field is compared rather
+than thrown on, a count row that does not parse stops the count instead of being skipped, two
+projects' resources of one name stay two resources, the descriptor load re-points only the COPY header
+and only inside the container, the recipe reads the service ports from the containers and bounds
+every wait, and a failed restore is recovered from without touching the reference deployment. It
+needs no database and runs in the same pull-request lane.
 
 ## Why the client tools run in containers
 
@@ -102,10 +105,19 @@ fails for its reader, so the scripts and the recipe below use the same container
 
 ## Restore recipe -- PostgreSQL
 
-Verified from a clean slate on 2026-08-19, on a stack deliberately configured with a non-default
-PostgreSQL password, a non-default `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` and a non-default
-`DMS_CONFIG_IDENTITY_ENCRYPTION_KEY`, so that nothing could pass by sharing a default with the
-machine that produced the artifact.
+Two different things are on record about this recipe, and they must not be read as one. The recipe
+text **as it stood at publication** -- eleven steps, branch head `b303450ab5fd689526696cb088a76a90b7ef6c14`,
+recorded unchanged in `a0eecb58a5e4051730f82ec4c12288a443307250`: no step 5b, no step 5c, and DMS started
+as its step 10 -- was executed from a clean slate on 2026-08-19, on a stack deliberately configured with
+a non-default PostgreSQL password, a non-default `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` and a non-default
+`DMS_CONFIG_IDENTITY_ENCRYPTION_KEY`, so that nothing could pass by sharing a default with the machine
+that produced the artifact. The fourteen-step text below is that recipe plus the review hardening added
+after publication -- steps 5b and 5c, the fail-closed status checks, the bounded waits, the in-memory
+secret handling and the recovery helper -- and the current text has **not** been executed end to end
+against the published artifact as one run. Its added gates are covered piecewise by the two suites
+named above; until a run of the current text is performed and recorded with its date and commit (see
+*Recipe execution record* at the end of this document), the clean-slate claim is a claim about the
+publication-time text only.
 
 The three producer-identity and data-model steps called out on DMS-1406 are mandatory rather than
 conditional on your configuration differing from the producer's:
@@ -227,21 +239,70 @@ docker stop ed-fi-api ed-fi-api-config-service
 #    eng/docker-compose/postgresql-init.sh uses to create this database, for the same reason. There
 #    is no client tool for ALTER DATABASE, so the rename is generated server-side: :'db' and :'ref'
 #    are psql variables read as string literals, format('%I') quotes each as an identifier, and
-#    \gexec runs the statement it produced. A stale reference left by an earlier attempt is dropped
-#    first, so the rename cannot collide with it.
+#    \gexec runs the statement it produced. A reference left by an earlier attempt is refused, not
+#    dropped: if $REF exists, that attempt set the deployment aside and did not finish, and $REF IS
+#    the intact deployment -- see the recovery helper below.
 REF="${DB}_reference"
-docker exec dms-postgresql dropdb -U "$DBUSER" --maintenance-db=postgres --if-exists -- "$REF" || \
-  { echo "could not drop a stale reference database $REF -- something still holds a connection to it"; exit 1; }
+
+#    Recovery. A failure anywhere from createdb below through step 6 leaves $DB holding an empty,
+#    partial or unproven restore and the deployment intact as $REF. Do NOT go back to step 4: the
+#    bootstrap does not reset volumes, so that $DB survives it, and a second pass through this step
+#    would set it aside as $REF -- over the intact deployment, which is the reference step 5c compares
+#    against and cannot be rebuilt short of a wipe. Every failure guard from createdb to the end of
+#    step 6 therefore runs RECOVER_FROM_REF itself before it stops -- all but one: the 5b apply, which
+#    psql rolled back whole, is re-run in place, and its message says when to run the helper instead.
+#    The helper refuses to touch anything unless $REF exists, drops the $DB the attempt left, renames
+#    $REF back to $DB and reports what it did -- so by the time the shell stops, the cluster is as
+#    step 4 left it and the next attempt resumes at step 5. The evidence of the failure outlives the
+#    recovery: restore.log, the 5c diff file and the printed step 6 mismatches are all outside the
+#    database that is dropped.
+#    The helper reads the database name and superuser from the container rather than from this
+#    shell, so the same text works pasted alone into a fresh shell -- which is what "Recovery after a
+#    failed restore", after the recipe, is for: the helper itself reported a failure (a connection
+#    still held), or the run was interrupted before a guard could call it. $REF is dropped only once
+#    step 6 has passed, because step 6 is the last gate that needs it. The helper returns rather than
+#    exits, so it never ends the shell it is pasted into.
+RECOVER_FROM_REF() { # puts the deployment back under its own name after a failed restore; reads its inputs from the container
+  _db=$(docker exec dms-postgresql printenv POSTGRES_DB_NAME)
+  _dbuser=$(docker exec dms-postgresql printenv POSTGRES_USER)
+  _ref="${_db}_reference"
+  test -n "$_db" -a -n "$_dbuser" || \
+    { echo "recovery: could not read the database name and superuser from dms-postgresql; nothing was changed"; return 1; }
+  _ref_exists=$(docker exec -i dms-postgresql psql -U "$_dbuser" -d postgres -v ON_ERROR_STOP=1 -tA -v ref="$_ref" -f - <<'SQL'
+SELECT 1 FROM pg_database WHERE datname = :'ref';
+SQL
+  ) || { echo "recovery: could not ask the cluster whether $_ref exists; nothing was changed"; return 1; }
+  test -n "$_ref_exists" || \
+    { echo "recovery: there is no $_ref, so the deployment was never set aside and $_db is still the deployment; nothing was changed"; return 1; }
+  docker exec dms-postgresql dropdb -U "$_dbuser" --maintenance-db=postgres --if-exists -- "$_db" || \
+    { echo "recovery: could not drop $_db -- something still holds a connection to it; the deployment is intact as $_ref; close that connection and run the recovery again (see Recovery after a failed restore)"; return 1; }
+  docker exec -i dms-postgresql psql -U "$_dbuser" -d postgres -v ON_ERROR_STOP=1 -q \
+    -v ref="$_ref" -v db="$_db" -f - <<'SQL' || \
+    { echo "recovery: could not rename $_ref back to $_db; the deployment is intact as $_ref -- run the recovery again (see Recovery after a failed restore)"; return 1; }
+SELECT format('ALTER DATABASE %I RENAME TO %I', :'ref', :'db') \gexec
+SQL
+  echo "recovery: the deployment is back as $_db; fix the cause, then resume at step 5"
+}
+
+#    An existing $REF is the deployment an earlier attempt set aside and did not put back. It is
+#    refused, never dropped: use the paste-alone "Recovery after a failed restore" block below if you
+#    mean to redo the restore, then resume at step 5.
+_ref_exists=$(docker exec -i dms-postgresql psql -U "$DBUSER" -d postgres -v ON_ERROR_STOP=1 -tA -v ref="$REF" -f - <<'SQL'
+SELECT 1 FROM pg_database WHERE datname = :'ref';
+SQL
+) || { echo "could not ask the cluster whether $REF exists; nothing was changed"; exit 1; }
+test -z "$_ref_exists" || \
+  { echo "$REF already exists: an earlier attempt set the deployment aside and did not put it back. Use the \"Recovery after a failed restore\" block below if you mean to redo the restore, then resume at step 5. Do NOT drop $REF -- it is the intact deployment"; exit 1; }
 docker exec -i dms-postgresql psql -U "$DBUSER" -d postgres -v ON_ERROR_STOP=1 -q \
   -v db="$DB" -v ref="$REF" -f - <<'SQL' || \
   { echo "could not rename $DB to $REF -- something still holds a connection to it; nothing was restored"; exit 1; }
 SELECT format('ALTER DATABASE %I RENAME TO %I', :'db', :'ref') \gexec
 SQL
 docker exec dms-postgresql createdb -U "$DBUSER" --maintenance-db=postgres -- "$DB" || \
-  { echo "could not create database $DB; the deployment is intact as $REF"; exit 1; }
+  { echo "could not create database $DB; putting the deployment back under its own name"; RECOVER_FROM_REF; exit 1; }
 
 docker cp "$DUMP" dms-postgresql:/tmp/nr.dump || \
-  { echo "could not copy the dump into the container; nothing was restored"; exit 1; }
+  { echo "could not copy the dump into the container; nothing was restored, but $DB already exists empty -- putting the deployment back under its own name"; RECOVER_FROM_REF; exit 1; }
 
 #    --exit-on-error stops at the first failed archive entry. Without it pg_restore skips the entry,
 #    carries on to the end of the archive, and summarises what it swallowed as
@@ -255,13 +316,13 @@ docker exec -u 0 dms-postgresql rm -f /tmp/nr.dump
 #    database holds a partial restore, and an "errors ignored" line names entries that were skipped.
 if [ "$RC" -ne 0 ]; then
   tail -20 "$ART/restore.log"
-  echo "pg_restore exited $RC. This database holds a PARTIAL restore -- start again from step 4."
-  exit 1
+  echo "pg_restore exited $RC. $DB holds a PARTIAL restore -- putting the deployment back under its own name; the log is $ART/restore.log"
+  RECOVER_FROM_REF; exit 1
 fi
 if grep -Eiq 'errors ignored on restore|pg_restore: error' "$ART/restore.log"; then
   grep -Ei 'errors ignored on restore|pg_restore: error' "$ART/restore.log"
-  echo "pg_restore reported errors, so entries were skipped -- start again from step 4."
-  exit 1
+  echo "pg_restore reported errors, so entries were skipped -- putting the deployment back under its own name; the log is $ART/restore.log"
+  RECOVER_FROM_REF; exit 1
 fi
 echo "pg_restore finished with no reported errors"
 
@@ -291,12 +352,13 @@ echo "pg_restore finished with no reported errors"
 #     DDL's security block fails there before it can fail here. Written to a file so the statement
 #     that applies it runs the block from disk as one transaction, and a re-run after a fix applies
 #     the same text. Guarded like every other write here: a file that could not be written must not
-#     leave a stale one from an earlier attempt to be applied in its place.
-cat > "$ART/repair.sql" <<'REPAIR_SQL' || { echo "could not write $ART/repair.sql, so step 5b did not run; fix the cause and re-run from step 5b"; exit 1; }
+#     leave a stale one from an earlier attempt to be applied in its place -- and, like the guards
+#     around it, the failure puts the deployment back under its own name before it stops.
+cat > "$ART/repair.sql" <<'REPAIR_SQL' || { echo "could not write $ART/repair.sql, so step 5b did not run -- putting the deployment back under its own name"; RECOVER_FROM_REF; exit 1; }
 DO $$
 BEGIN
     IF pg_catalog.to_regrole('edfi_dms_enqueue_owner') IS NULL THEN
-        RAISE EXCEPTION 'role edfi_dms_enqueue_owner does not exist in this cluster; the bootstrap in step 4 creates it -- start again from step 4';
+        RAISE EXCEPTION 'role edfi_dms_enqueue_owner does not exist in this cluster, so step 4 never deployed to it -- tear the stack down with volumes (./bootstrap-local-dms.ps1 -d -v) and start over from step 3; do not re-run step 4 over a database that holds a restore';
     END IF;
 END $$;
 GRANT CREATE ON SCHEMA "dms" TO "edfi_dms_enqueue_owner";
@@ -315,9 +377,10 @@ GRANT SELECT ON TABLE "dms"."DocumentCacheState" TO "edfi_dms_enqueue_owner";
 GRANT SELECT, INSERT, UPDATE ON TABLE "dms"."DocumentProjectionWork" TO "edfi_dms_enqueue_owner";
 REPAIR_SQL
 #     -1 runs the file as one transaction and ON_ERROR_STOP aborts it at the first error, so a
-#     failure applies nothing and a re-run after a fix starts from the same state.
+#     failure applies nothing and a re-run after a fix starts from the same state -- which is why a
+#     failure here is re-run in place, and only a cause that cannot be fixed sends you to the recovery.
 docker exec -i dms-postgresql psql -U "$DBUSER" -d "$DB" -v ON_ERROR_STOP=1 -q -1 -f - < "$ART/repair.sql" || \
-  { echo "step 5b failed: the security metadata was not repaired, so this database is NOT the deployed schema -- start again from step 4"; exit 1; }
+  { echo "step 5b failed: the security metadata was not repaired, so this database is NOT the deployed schema -- fix the cause and re-run step 5b; if it cannot be fixed, run RECOVER_FROM_REF (here, or the Recovery block after the recipe from a fresh shell) and resume at step 5"; exit 1; }
 echo "security metadata repaired"
 
 # 5c. Prove it. A restore of this artifact must be indistinguishable from the same-revision deployment
@@ -342,12 +405,12 @@ echo "security metadata repaired"
 #     $ART/schema/schema-diff.<db>-vs-<db>_reference.txt and names the section of every difference.
 if ! DB="$DB" REF="$REF" DBUSER="$DBUSER" ART="$ART" pwsh -NoProfile -Command \
      '& ../northridge/Compare-DmsSchemaSnapshot.ps1 -Database $env:DB, $env:REF -OutputDirectory "$env:ART/schema" -PostgresUser $env:DBUSER'; then
-  echo "step 5c failed: the restored artifact is not the deployed schema -- see the diff named above; start again from step 4"
-  exit 1
+  echo "step 5c failed: the restored artifact is not the deployed schema -- see the diff named above; putting the deployment back under its own name"
+  RECOVER_FROM_REF; exit 1
 fi
-docker exec dms-postgresql dropdb -U "$DBUSER" --maintenance-db=postgres -- "$REF" || \
-  { echo "could not drop the reference database $REF; the compare passed, so drop it by hand before continuing"; exit 1; }
 echo "schema compare PASS: the restored artifact is the deployed schema, ownership and privileges included"
+#     $REF stays until step 6 has passed: a content failure there is recovered from through
+#     RECOVER_FROM_REF like every failure before it, and that needs the deployment to still exist.
 
 # 6. Verify the restore by content as well as by status. A clean exit says the archive was applied;
 #    it does not say the database holds the published dataset. This block compares 22 values across
@@ -502,10 +565,18 @@ BEGIN
 END $$;
 SQL
 then
-  echo "step 6 failed: the restored database is not the published dataset -- start again from step 4"
-  exit 1
+  echo "step 6 failed: the restored database is not the published dataset -- putting the deployment back under its own name"
+  RECOVER_FROM_REF; exit 1
 fi
 #    Expect: NOTICE: restore verified: all 22 published values and invariants match
+
+#    Step 6 was the last gate whose failure recovers through RECOVER_FROM_REF, so the reference is
+#    scratch from here on and is dropped now rather than in 5c, where a step 6 failure would have found
+#    it gone.
+#    Nothing after this point is recovered by re-restoring; steps 7 to 12 each say how they are re-run.
+docker exec dms-postgresql dropdb -U "$DBUSER" --maintenance-db=postgres -- "$REF" || \
+  { echo "could not drop the reference database $REF; every restore gate passed, so drop it by hand before continuing"; exit 1; }
+echo "reference database $REF dropped"
 
 # 7. REQUIRED: install your own OpenIddict signing key.
 #    The artifact carries the producer's dmscs."OpenIddictKey" row, whose private key is encrypted
@@ -524,19 +595,25 @@ test -n "$IDK" || { echo "could not read the CMS identity encryption key"; exit 
 #    Deactivating the producer's key and inserting yours are one operation or none. Run as two
 #    statements, a failed insert leaves NO active key, and a failed deactivate leaves the producer's
 #    key active and trusted beside yours -- and neither shows until step 9 asks for a token. So the
-#    generator's INSERT is assembled into one file with the deactivate before it and an assertion
-#    after it, and the file runs under -1 (one transaction) and ON_ERROR_STOP: a failure anywhere,
-#    the assertion included, rolls the whole thing back and the recipe stops here. The token check
-#    in step 9 stays as a second proof, not the only one. Every command is guarded because this
-#    recipe carries no `set -e`. The file holds the private key and the encryption key, so it is
-#    removed on both paths.
-pwsh -NoProfile -File ./Generate-OpenIddictKey-Insert.ps1 -EncryptionKey "$IDK" > "$ART/newkey-insert.sql" || \
-  { rm -f "$ART/newkey-insert.sql"; echo "could not generate the OpenIddict key; nothing was changed"; exit 1; }
-grep -q '^INSERT INTO "dmscs"."OpenIddictKey" ' "$ART/newkey-insert.sql" || \
-  { rm -f "$ART/newkey-insert.sql"; echo "the generator wrote no INSERT for dmscs.OpenIddictKey; nothing was changed"; exit 1; }
+#    generator's INSERT is assembled between the deactivate and an assertion into one stream, and
+#    that stream runs under -1 (one transaction) and ON_ERROR_STOP: a failure anywhere, the
+#    assertion included, rolls the whole thing back and the recipe stops here. The token check in
+#    step 9 stays as a second proof, not the only one. Every command is guarded because this recipe
+#    carries no `set -e`.
+#    The key material never touches disk or an argument list. The identity encryption key reaches the
+#    generator as IDK in that one pwsh process's environment -- the channel the client secrets use in
+#    step 9 -- not as an argument, which every process on the host could read for as long as the
+#    generator ran. The generated INSERT carries the private key and the encryption key in clear, so
+#    it is held in this shell's memory as KEY_SQL and fed to psql through a pipe, and both variables
+#    are unset on every path out of this step. Nothing is written under $ART, so there is nothing to
+#    remove and nothing left behind under the scratch directory's permissions.
+KEY_SQL=$(IDK="$IDK" pwsh -NoProfile -Command '& ./Generate-OpenIddictKey-Insert.ps1 -EncryptionKey $env:IDK') || \
+  { unset KEY_SQL IDK; echo "could not generate the OpenIddict key; nothing was changed"; exit 1; }
+printf '%s\n' "$KEY_SQL" | grep -q '^INSERT INTO "dmscs"."OpenIddictKey" ' || \
+  { unset KEY_SQL IDK; echo "the generator wrote no INSERT for dmscs.OpenIddictKey; nothing was changed"; exit 1; }
 {
   echo 'UPDATE dmscs."OpenIddictKey" SET "IsActive" = FALSE;'
-  cat "$ART/newkey-insert.sql"
+  printf '%s\n' "$KEY_SQL"
   cat <<'KEY_ASSERT_SQL'
 DO $$
 DECLARE
@@ -548,11 +625,9 @@ BEGIN
     END IF;
 END $$;
 KEY_ASSERT_SQL
-} > "$ART/newkey.sql" || \
-  { rm -f "$ART/newkey.sql" "$ART/newkey-insert.sql"; echo "could not assemble the key replacement; nothing was changed"; exit 1; }
-docker exec -i dms-postgresql psql -U "$DBUSER" -d "$DB" -v ON_ERROR_STOP=1 -q -1 -f - < "$ART/newkey.sql" || \
-  { rm -f "$ART/newkey.sql" "$ART/newkey-insert.sql"; echo "step 7 failed: the key replacement was rolled back, so the producer's key is still the active one -- fix the cause and re-run step 7"; exit 1; }
-rm -f "$ART/newkey.sql" "$ART/newkey-insert.sql"
+} | docker exec -i dms-postgresql psql -U "$DBUSER" -d "$DB" -v ON_ERROR_STOP=1 -q -1 -f - || \
+  { unset KEY_SQL IDK; echo "step 7 failed: the key replacement was rolled back, so the producer's key is still the active one -- fix the cause and re-run step 7"; exit 1; }
+unset KEY_SQL IDK
 echo "OpenIddict signing key replaced: exactly one active key, and it is yours"
 
 # 8. REQUIRED: rotate dms.DataStoreIdentity.SourceIdentity.
@@ -667,6 +742,24 @@ CMS_TOKEN() { # CMS_TOKEN <client-id> <scope>; the secret is read from CMS_SECRE
     [Console]::Out.Write($token)
   '
 }
+#    The bearer tokens those requests mint are under the same rule. Every call that carries one -- the
+#    data store re-save below, and the vendor creation, application creation and smoke read in step 12
+#    -- goes through AUTH_HTTP, which reads the token from TOKEN and the JSON body, if any, from BODY
+#    in its own environment, so neither is ever an argument. It prints the status on its first line
+#    and the body after it, and writes the response headers to the file named, so every caller keeps
+#    the status check and the body diagnostics it had; a request that could not be made at all exits
+#    non-zero, which each caller guards.
+AUTH_HTTP() { # AUTH_HTTP <method> <url> <headers-file>; token from TOKEN, JSON body (if any) from BODY; prints the status, then the body
+  METHOD="$1" URL="$2" HEADERS_FILE="$3" TOKEN="$TOKEN" BODY="${BODY:-}" pwsh -NoProfile -Command '
+    $request = @{ Method = $env:METHOD; Uri = $env:URL; Headers = @{ Authorization = "Bearer $env:TOKEN" }; SkipHttpErrorCheck = $true; TimeoutSec = 60 }
+    if (-not [string]::IsNullOrEmpty($env:BODY)) { $request.ContentType = "application/json"; $request.Body = $env:BODY }
+    $response = Invoke-WebRequest @request
+    $headerLine = foreach ($header in $response.Headers.GetEnumerator()) { "$($header.Key): $($header.Value -join ", ")" }
+    Set-Content -Path $env:HEADERS_FILE -Encoding utf8NoBOM -Value ($headerLine -join "`n")
+    [Console]::Out.WriteLine([int]$response.StatusCode)
+    [Console]::Out.Write([string]$response.Content)
+  '
+}
 CMS_SECRET="$ADMIN_SECRET"
 CMS_REGISTER restore-admin "Restore Admin" || { echo "restore-admin was not registered, so nothing else in step 9 can succeed"; exit 1; }
 T=$(CMS_TOKEN restore-admin edfi_admin_api/full_access) || \
@@ -687,7 +780,7 @@ test -n "$PW" -a -n "$DB" -a -n "$DBUSER" || { echo "could not read the database
 #    `.PSBase` is required when SETTING ConnectionString: without it PowerShell's dictionary adapter
 #    stores a keyword literally named ConnectionString instead of parsing the string, and the check
 #    below would pass on an empty builder.
-PW="$PW" DB="$DB" DBUSER="$DBUSER" ART="$ART" pwsh -NoProfile -Command '
+DS_BODY=$(PW="$PW" DB="$DB" DBUSER="$DBUSER" pwsh -NoProfile -Command '
   $csb = [System.Data.Common.DbConnectionStringBuilder]::new()
   $csb.Add("host", "dms-postgresql")
   $csb.Add("port", "5432")
@@ -709,19 +802,23 @@ PW="$PW" DB="$DB" DBUSER="$DBUSER" ART="$ART" pwsh -NoProfile -Command '
       name             = "Local Development Data Store"
       connectionString = $connectionString
   }
-  Set-Content -Path "$env:ART/datastore.json" -Encoding utf8NoBOM -Value ($body | ConvertTo-Json -Compress)
-' || { echo "the data store request body could not be built; nothing was sent"; exit 1; }
+  [Console]::Out.Write(($body | ConvertTo-Json -Compress))
+') || { echo "the data store request body could not be built; nothing was sent"; exit 1; }
 
-#    curl exits 0 on a 4xx or 5xx, so the status is asserted rather than printed. CMS answers this PUT
-#    with 204 No Content on success; on anything else the stored connection string is still the
-#    producer's, and DMS restart-loops on it in step 11 rather than failing here where you can see why.
-DS=$(curl -s -o "$ART/datastore-put.txt" -w '%{http_code}' -X PUT "$CMS/v3/dataStores/1" \
-  -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
-  --data-binary "@$ART/datastore.json")
-rm -f "$ART/datastore.json"
+#    The status is asserted rather than printed. CMS answers this PUT with 204 No Content on success;
+#    on anything else the stored connection string is still the producer's, and DMS restart-loops on
+#    it in step 11 rather than failing here where you can see why. The body carries the database
+#    password, so it travels to AUTH_HTTP as BODY in that process's environment and is never written
+#    to disk; the token travels the same way as TOKEN.
+TOKEN="$T"
+BODY="$DS_BODY"
+DS_RESPONSE=$(AUTH_HTTP PUT "$CMS/v3/dataStores/1" "$ART/datastore-put.headers") || \
+  { unset BODY DS_BODY; echo "the data store re-save request could not be made"; exit 1; }
+unset BODY DS_BODY
+DS=$(printf '%s\n' "$DS_RESPONSE" | sed -n 1p)
 if [ "$DS" != "204" ]; then
   echo "the data store re-save answered HTTP ${DS:-none}, expected 204"
-  cat "$ART/datastore-put.txt"; echo
+  printf '%s\n' "$DS_RESPONSE" | sed 1d
   exit 1
 fi
 echo "data store re-saved -> HTTP 204"
@@ -770,9 +867,15 @@ SQL
 #     setup-openiddict.ps1 builds each PostgreSQL literal with the shared quoting helper, so a client
 #     id, scope or role name containing a single quote is inserted as data rather than ending the
 #     statement -- the same property the DELETE above gets from :'cid'.
-pwsh -NoProfile -File ./setup-openiddict.ps1 -InsertData \
+#     The secret is the one value here that must not be an argument: setup-openiddict.ps1 is a new
+#     process, and its argument list is readable by every process on the host while it runs. So the
+#     secret travels as CSEC in that one process's environment, and -NewClientSecretEnvironmentVariable
+#     names the variable; the script reads it with the same Compose-precedence resolver its ENV:
+#     parameters use, the ambient environment first. -NewClientSecret is always a literal -- a secret
+#     may itself begin with "ENV:" -- which is why the variable has a parameter of its own.
+CSEC="$CSEC" pwsh -NoProfile -File ./setup-openiddict.ps1 -InsertData \
   -NewClientId "$CID" -NewClientName "CMS ReadOnly Access" -ClientScopeName "$CSCOPE" \
-  -NewClientSecret "$CSEC" -ConfigServiceRole "$CMSROLE" -DmsClientRole "$DMSROLE" \
+  -NewClientSecretEnvironmentVariable CSEC -ConfigServiceRole "$CMSROLE" -DmsClientRole "$DMSROLE" \
   -EnvironmentFile ./.env -DbName ENV:DMS_CONFIG_DATABASE_NAME -DbUser "$DBUSER" \
   -ClientSecretMinimumLength "$CLIENT_SECRET_MIN" -ClientSecretMaximumLength "$CLIENT_SECRET_MAX" || \
   { echo "setup-openiddict.ps1 failed; the DMS-to-CMS client was not recreated"; exit 1; }
@@ -797,21 +900,44 @@ echo "DMS healthy at $DMS"
 #     application and client rows in dmscs, whose secrets you do not have, so create your own.
 #     `EdFiAPIPublisherWriter` is the claim set to ask for: API Publisher loaded this dataset
 #     originally, so that claim set already covers every resource present.
-#     POST /v3/vendors answers 201 with an EMPTY body, so read the new id from the Location header.
-VID=$(curl -s -D - -o /dev/null -X POST "$CMS/v3/vendors" -H "Authorization: Bearer $T" \
-  -H "Content-Type: application/json" \
-  -d '{"company":"Local Consumer","contactName":"Consumer",
-       "contactEmailAddress":"consumer@example.com","namespacePrefixes":"uri://ed-fi.org"}' \
-  | sed -n 's|^[Ll]ocation:.*/v3/vendors/\([0-9]*\).*|\1|p' | tr -d '\r')
-test -n "$VID" || { echo "vendor was not created"; exit 1; }
+#     POST /v3/vendors answers 201 with an EMPTY body, so read the new id from the Location header,
+#     which AUTH_HTTP writes to the headers file named. Both calls carry the admin token as TOKEN.
+#     Each status is asserted before the response is trusted, as the data store PUT's is: a 4xx or
+#     5xx comes with no Location and no credentials, and unasserted it would surface one line later
+#     as "no Location" or "no credentials" with the cause gone. CMS creates vendors by company name
+#     (VendorModule.InsertVendor): a new company answers 201; one it already holds answers 200 with
+#     Location set and the row updated, which is what a re-run of this step meets. Nothing else may
+#     continue.
+TOKEN="$T"
+BODY='{"company":"Local Consumer","contactName":"Consumer","contactEmailAddress":"consumer@example.com","namespacePrefixes":"uri://ed-fi.org"}'
+VENDOR_RESPONSE=$(AUTH_HTTP POST "$CMS/v3/vendors" "$ART/vendor-post.headers") || \
+  { echo "the vendor request could not be made"; exit 1; }
+VS=$(printf '%s\n' "$VENDOR_RESPONSE" | sed -n 1p)
+case "$VS" in
+  201) echo "vendor created -> HTTP 201" ;;
+  200) echo "vendor 'Local Consumer' already existed; CMS updated it and answered HTTP 200, so its id is reused" ;;
+  *) echo "the vendor was not created: HTTP ${VS:-none}, expected 201"; printf '%s\n' "$VENDOR_RESPONSE" | sed 1d; exit 1 ;;
+esac
+VID=$(sed -n 's|^[Ll]ocation:.*/v3/vendors/\([0-9]*\).*|\1|p' "$ART/vendor-post.headers" | tr -d '\r')
+test -n "$VID" || \
+  { echo "HTTP $VS, but no Location header names the vendor id"; cat "$ART/vendor-post.headers"; exit 1; }
 
-APP=$(curl -s -X POST "$CMS/v3/applications" -H "Authorization: Bearer $T" \
-  -H "Content-Type: application/json" \
-  -d "{\"applicationName\":\"Local Consumer Read\",\"vendorId\":${VID},\"claimSetName\":\"EdFiAPIPublisherWriter\",\"educationOrganizationIds\":[255901],\"dataStoreIds\":[1]}")
-#     This response is the only place the secret is ever shown -- keep it if you want the client again.
+BODY="{\"applicationName\":\"Local Consumer Read\",\"vendorId\":${VID},\"claimSetName\":\"EdFiAPIPublisherWriter\",\"educationOrganizationIds\":[255901],\"dataStoreIds\":[1]}"
+APP_RESPONSE=$(AUTH_HTTP POST "$CMS/v3/applications" "$ART/application-post.headers") || \
+  { echo "the application request could not be made"; exit 1; }
+unset BODY
+#     POST /v3/applications answers 201 with the credentials as its body (ApplicationModule), and that
+#     response is the only place the secret is ever shown -- keep it if you want the client again.
+AS=$(printf '%s\n' "$APP_RESPONSE" | sed -n 1p)
+if [ "$AS" != "201" ]; then
+  echo "the application was not created: HTTP ${AS:-none}, expected 201"
+  printf '%s\n' "$APP_RESPONSE" | sed 1d
+  exit 1
+fi
+APP=$(printf '%s\n' "$APP_RESPONSE" | sed 1d)
 KEY=$(echo "$APP" | sed -n 's/.*"key"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
 SEC=$(echo "$APP" | sed -n 's/.*"secret"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-test -n "$KEY" -a -n "$SEC" || { echo "no credentials issued: $APP"; exit 1; }
+test -n "$KEY" -a -n "$SEC" || { echo "HTTP 201, but no key and secret in the body: $APP"; exit 1; }
 
 CMS_SECRET="$SEC"
 DT=$(CMS_TOKEN "$KEY" edfi_admin_api/full_access) || { echo "no DMS token minted"; exit 1; }
@@ -820,9 +946,13 @@ DT=$(CMS_TOKEN "$KEY" edfi_admin_api/full_access) || { echo "no DMS token minted
 #     one answers 401, which tells you nothing about the data.
 #     A 401, 403, 500 or 503 all match "HTTP/" and every one of them leaves the dataset unproven, so
 #     the status and the count are captured and compared to exact values rather than grepped for.
-SC=$(curl -s -D "$ART/smoke-headers.txt" -o "$ART/smoke-body.json" -w '%{http_code}' \
-  -H "Authorization: Bearer $DT" \
-  "$DMS/data/ed-fi/students?limit=1&totalCount=true")
+#     BODY is cleared first: a GET must not inherit the application body above.
+TOKEN="$DT"
+BODY=
+SMOKE_RESPONSE=$(AUTH_HTTP GET "$DMS/data/ed-fi/students?limit=1&totalCount=true" "$ART/smoke-headers.txt") || \
+  { echo "the smoke read could not be made"; exit 1; }
+SC=$(printf '%s\n' "$SMOKE_RESPONSE" | sed -n 1p)
+printf '%s\n' "$SMOKE_RESPONSE" | sed 1d > "$ART/smoke-body.json"
 TC=$(grep -i '^total-count:' "$ART/smoke-headers.txt" | tail -1 | tr -d '\r' |
      sed 's/^[^:]*:[[:space:]]*//')
 if [ "$SC" != "200" ] || [ "$TC" != "21628" ]; then
@@ -837,8 +967,52 @@ echo "DMS served the restored dataset: HTTP 200, Total-Count 21628"
 > **Do not drop and recreate the database part-way through this recipe and expect a CMS restart to
 > recover.** CMS deploys the `dmscs` schema on startup but does not seed an OpenIddict signing key, so
 > a recreated database leaves `dmscs."OpenIddictKey"` empty, `POST /connect/token` answers 500, and no
-> CMS API call can succeed. Recovering means re-running step 7, or re-running the bootstrap. If you
-> need to start over, start over from step 4.
+> CMS API call can succeed. Recovering means re-running step 7. Before step 6 has passed, a failed
+> attempt puts the deployment back under its own name itself -- its guards run `RECOVER_FROM_REF`, and
+> *Recovery after a failed restore* below covers a helper that could not -- and the next attempt
+> resumes at step 5; to start over after that, tear the stack down with volumes
+> (`./bootstrap-local-dms.ps1 -d -v`) and begin again at step 3 -- never at step 4 over a database that
+> already holds a restore, which is how a partial restore ends up set aside as the reference.
+
+### Recovery after a failed restore
+
+Every failure guard from `createdb` in step 5 through step 6 runs `RECOVER_FROM_REF` before it stops --
+all but the 5b apply, which psql rolled back whole and which is re-run in place -- so in the normal case
+the deployment is already back under its own name when the shell exits, and the next attempt simply
+resumes at step 5. The block below is for the cases where that did not happen: the helper itself
+reported a failure (a connection was still held on one of the databases), the run was interrupted
+before a guard could call it, or a 5b apply failed for a cause that cannot be fixed in place. It is the
+same function as in step 5 -- the pull-request lane holds the two copies to be identical -- and it
+reads everything it needs from the running container, so it can be pasted into a fresh shell on its
+own. It returns rather than exits.
+
+```shell
+RECOVER_FROM_REF() { # puts the deployment back under its own name after a failed restore; reads its inputs from the container
+  _db=$(docker exec dms-postgresql printenv POSTGRES_DB_NAME)
+  _dbuser=$(docker exec dms-postgresql printenv POSTGRES_USER)
+  _ref="${_db}_reference"
+  test -n "$_db" -a -n "$_dbuser" || \
+    { echo "recovery: could not read the database name and superuser from dms-postgresql; nothing was changed"; return 1; }
+  _ref_exists=$(docker exec -i dms-postgresql psql -U "$_dbuser" -d postgres -v ON_ERROR_STOP=1 -tA -v ref="$_ref" -f - <<'SQL'
+SELECT 1 FROM pg_database WHERE datname = :'ref';
+SQL
+  ) || { echo "recovery: could not ask the cluster whether $_ref exists; nothing was changed"; return 1; }
+  test -n "$_ref_exists" || \
+    { echo "recovery: there is no $_ref, so the deployment was never set aside and $_db is still the deployment; nothing was changed"; return 1; }
+  docker exec dms-postgresql dropdb -U "$_dbuser" --maintenance-db=postgres --if-exists -- "$_db" || \
+    { echo "recovery: could not drop $_db -- something still holds a connection to it; the deployment is intact as $_ref; close that connection and run the recovery again (see Recovery after a failed restore)"; return 1; }
+  docker exec -i dms-postgresql psql -U "$_dbuser" -d postgres -v ON_ERROR_STOP=1 -q \
+    -v ref="$_ref" -v db="$_db" -f - <<'SQL' || \
+    { echo "recovery: could not rename $_ref back to $_db; the deployment is intact as $_ref -- run the recovery again (see Recovery after a failed restore)"; return 1; }
+SELECT format('ALTER DATABASE %I RENAME TO %I', :'ref', :'db') \gexec
+SQL
+  echo "recovery: the deployment is back as $_db; fix the cause, then resume at step 5"
+}
+RECOVER_FROM_REF
+```
+
+Then resume at step 5. In a fresh shell, first re-run the three assignments at the top of the recipe,
+`DUMP="$ART/${ARTIFACT}.dump"` from step 2, and `cd "$DC"`.
 
 ### Consumer checklist
 
@@ -867,7 +1041,10 @@ Every published artifact records the following, on its ticket and in this direct
    full immutable SHA rather than a branch name, the branch, date produced, and what changed relative
    to the artifact it supersedes.
 3. **Restore recipe** -- the text above with placeholders filled, validated by execution from a clean
-   slate against non-default credentials.
+   slate against non-default credentials, recorded with the date of the run and the commit whose text
+   was run. Text changed after that run is not covered by it: the record has to name the revision
+   that was executed and say that later revisions were not, until a run of the later text is
+   recorded the same way.
 4. **Validation evidence** -- schema compare result, effective schema hash agreement, DMS smoke
    results, the full resource-by-resource reconciliation with both-direction diff counts, per-table
    row-count reconciliation, sequence-position assertions, and the invariant checkpoint table. The
@@ -886,13 +1063,14 @@ Every published artifact records the following, on its ticket and in this direct
 | Sourced from | the Northridge ODS artifact named above, added through the DMS API with GET-by-id verification of every field on every document — not via API Publisher, whose exit code can be 0 after silently dropping documents on 4xx |
 | DMS revision built | `087eaa013df22a88d0046ac6f0e211bf47ec79e4` — the branch's merge base with `main` at publication. At the publication head `b303450ab5fd689526696cb088a76a90b7ef6c14` the branch's changes were confined to `eng/northridge/` (`git diff --name-only 087eaa013df22a88d0046ac6f0e211bf47ec79e4...b303450ab5fd689526696cb088a76a90b7ef6c14`), so the DMS that produced and served the dataset carried exactly that revision's `src/` source. Review hardening after publication added restore and OpenIddict tooling changes under `eng/docker-compose/`, but no DMS production `src/` code changed on this branch (`git diff --name-only origin/main...DMS-1406 -- src` is empty) |
 | Branch head at publication | `b303450ab5fd689526696cb088a76a90b7ef6c14` on `DMS-1406` — the workflow tooling and restore recipe as they stood when the artifact was uploaded |
+| Recipe text executed | the eleven-step text at `b303450ab5fd689526696cb088a76a90b7ef6c14` (no 5b, no 5c, DMS started as step 10), from a clean slate with non-default credentials on 2026-08-19. The current fourteen-step text has **not** been executed end to end against the published artifact — see *Recipe execution record* below |
 | `SourceIdentity` as shipped | `8b962de6-b979-49aa-bce0-ca59e0a1ad51` — rotate it (step 8); a consumer whose value still reads this has skipped the step |
 | Engine image | `postgres:16.8-alpine@sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0` — `eng/docker-compose/postgresql.yml` at the DMS revision built, unchanged at the publication head; the archive header reads `Dumped from database version: 16.8` and `Dumped by pg_dump version: 16.8` (`pg_restore -l`) |
 | `ResourceKeySeedHash` | `fae376b7b81722efe1878226a49200d74ae68febac7d21f5121a0824236e981b` — `dms."EffectiveSchema"` of the restored artifact and of the fresh same-revision deployment step 5c compares it against (section `11-fingerprint` of both snapshots), and asserted against the reference in every checkpoint record |
 | `ResourceKey` rows | 351 |
 | `dms."Descriptor"` rows | 2,968 |
 | `ChangeVersionSequence` | 21,553,810, equal to `MAX("IdentityVersion")` |
-| Reconciliation evidence | The full per-resource output is **not** summarised in this file, and is not committed (see **Never commit**). The evidence set is the files written by the scripts plus the transcripts captured by the run: the two per-resource count CSVs from `Get-DmsResourceCount.ps1` count mode, one per engine; the captured transcript from that script's reconcile mode; the gap-document CSV passed to `Add-NorthridgeGapDocument.ps1 -OutputPath`; `rowcount.<source>-vs-<target>.tsv`; `restore-list.<target>.txt`; `restore-list.descriptor.txt`; `restore-output.<target>.txt`; the `checkpoint.<name>.<target>.txt` series; and `schema-snapshot.<database>.txt` -- or `schema-snapshot.<position>.<database>.txt`, the form `Compare-DmsSchemaSnapshot.ps1` writes when the two compared names differ only in case, so the files stay distinct on a case-insensitive file system. `schema-diff.<left>-vs-<right>.txt` exists only for a failing schema compare; a passing compare is represented by the PASS transcript and matching snapshots. That set belongs with the ticket as attachments rather than in this repository. DMS-1406 carries the summary comment for this artifact; the file set named here is what has to accompany it, and a reader who cannot find these files has not been given the reconciliation |
+| Reconciliation evidence | The full per-resource output is **not** summarised in this file, and is not committed (see **Never commit**). The evidence set is the files written by the scripts plus the transcripts captured by the run: the two per-resource count CSVs from `Get-DmsResourceCount.ps1` count mode, one per engine; the captured transcript from that script's reconcile mode; the gap-document CSV passed to `Add-NorthridgeGapDocument.ps1 -OutputPath`; `rowcount.<source>-vs-<target>.tsv`; `restore-list.<target>.txt`; `restore-list.descriptor.txt`; `restore-output.<target>.txt`; the `checkpoint.<name>.<target>.txt` records for C1 through C4 -- C5, the checkpoint taken on the consumer-side restore, was measured inside the captured clean-slate transcript, `phase12-g12-clean-slate.txt`, and exists there rather than as a `checkpoint.C5.*` file, so that transcript is part of this set; and `schema-snapshot.<database>.txt` -- or `schema-snapshot.<position>.<database>.txt`, the form `Compare-DmsSchemaSnapshot.ps1` writes when the two compared names differ only in case, so the files stay distinct on a case-insensitive file system. `schema-diff.<left>-vs-<right>.txt` exists only for a failing schema compare; a passing compare is represented by the PASS transcript and matching snapshots. That set belongs with the ticket as attachments rather than in this repository. DMS-1406 carries the summary comment for this artifact; the file set named here is what has to accompany it, and a reader who cannot find these files has not been given the reconciliation |
 
 Validation, all on the restored artifact rather than on the database that produced it: the
 startup-computed `EffectiveSchemaHash` equals the value stored in `dms.EffectiveSchema` and equals the
@@ -927,9 +1105,22 @@ tier `Cool`; the blob was then re-downloaded from the public URL and hashed to
 `49129363581eab342146e8dd9a4da95dd6f7b035f0c39ee39c9691176cd856a0`, and `cmp` confirmed it
 byte-for-byte identical to the file that was uploaded rather than merely equal in digest. Finally,
 **step 1 of the recipe above was executed verbatim against the published URL** — `curl -O` followed by
-`sha256sum -c` — and reported `EdFi_DMS_Northridge_v80_20260819_PG.7z: OK`. The clean-slate restore
-flow has been run end to end; the recipe above keeps those gates and adds the fail-closed checks
-called out during review.
+`sha256sum -c` — and reported `EdFi_DMS_Northridge_v80_20260819_PG.7z: OK`.
+
+### Recipe execution record
+
+The clean-slate, non-default-credential run of 2026-08-19 executed the eleven-step recipe text of the
+publication head, `b303450ab5fd689526696cb088a76a90b7ef6c14`, recorded unchanged in
+`a0eecb58a5e4051730f82ec4c12288a443307250`: steps 1 to 11, with no step 5b, no step 5c, and DMS
+started as step 10. Every change to the recipe text since then is post-publication review hardening
+(`git log a0eecb58a..HEAD -- eng/northridge/README.md`), and the fourteen-step text above has **not**
+been executed end to end against the published artifact. Its added gates are covered piecewise
+instead -- the repair block statement by statement against the emitter's fixture, dump → bare restore
+→ 5b → compare as a live scenario, and the fail-closed guards database-free -- by the two suites named
+at the top of this document. A future end-to-end run of the current text belongs here, with its date
+and the commit whose text was run; nothing above may claim it before then. The DMS-1406 summary
+comment predates this distinction and carries the earlier unqualified wording; amending it is a
+separate action and is not recorded here.
 
 ## Never commit
 

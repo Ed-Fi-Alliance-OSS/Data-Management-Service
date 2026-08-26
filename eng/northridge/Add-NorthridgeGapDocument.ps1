@@ -164,6 +164,18 @@ function Get-DmsAccessToken {
 # Compares only the fields that were sent. The server legitimately adds id, _etag, and
 # _lastModifiedDate, so a whole-body equality check would fail for the wrong reason. Reference
 # enrichment and numeric normalisation are handled inline below for the same reason.
+# The JSON number types ConvertFrom-Json produces, and nothing else that happens to be a struct.
+function Test-NumericValue {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([Parameter(Mandatory)] [AllowNull()] [object] $Value)
+
+    return $Value -is [byte] -or $Value -is [sbyte] -or $Value -is [int16] -or $Value -is [uint16] -or
+        $Value -is [int32] -or $Value -is [uint32] -or $Value -is [int64] -or $Value -is [uint64] -or
+        $Value -is [single] -or $Value -is [double] -or $Value -is [decimal] -or
+        $Value -is [System.Numerics.BigInteger]
+}
+
 function Compare-SentField {
     [CmdletBinding()]
     [OutputType([System.Object[]])]
@@ -186,10 +198,23 @@ function Compare-SentField {
         $fetchedValue = $Fetched.$name
 
         # JSON numeric normalisation renders a sent 1.0 as 1, so numbers compare by value not text.
-        if ($sentValue -is [ValueType] -and $sentValue -isnot [bool] -and
-            $fetchedValue -is [ValueType] -and $fetchedValue -isnot [bool]) {
+        # Numbers only: ConvertFrom-Json materialises an ISO 8601 date-time such as
+        # "2024-08-01T00:00:00Z" as [datetime], which is a [ValueType] too and has no conversion to
+        # [double], so a date-time field used to throw here instead of being compared.
+        if ((Test-NumericValue -Value $sentValue) -and (Test-NumericValue -Value $fetchedValue)) {
             if ([double]$sentValue -ne [double]$fetchedValue) {
                 $mismatch.Add("$name sent=$sentValue fetched=$fetchedValue")
+            }
+            continue
+        }
+
+        # Date-times compare as instants, so "Z" against "+00:00" is one value and the serialiser's
+        # local rendering of an offset is not a difference. A date-only value such as "2005-01-15"
+        # is left as a string by ConvertFrom-Json and is compared as text below, as is a date-time
+        # that is one on only one side.
+        if ($sentValue -is [datetime] -and $fetchedValue -is [datetime]) {
+            if ([System.DateTimeOffset]$sentValue -ne [System.DateTimeOffset]$fetchedValue) {
+                $mismatch.Add("$name sent=$($sentValue.ToString('o')) fetched=$($fetchedValue.ToString('o'))")
             }
             continue
         }
