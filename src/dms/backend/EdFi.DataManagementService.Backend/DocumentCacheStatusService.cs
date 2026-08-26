@@ -111,15 +111,14 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         TimeSpan endpointTimeout = targetObservations.Min(target =>
             target.EffectiveSettings.StatusEndpointTimeout
         );
-        using CancellationTokenSource endpointTimeoutSource = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken
-        );
-        endpointTimeoutSource.CancelAfter(endpointTimeout);
+        using CancellationTokenSource endpointTimeoutSource = new(endpointTimeout, _timeProvider);
+        using CancellationTokenSource endpointCancellationSource =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, endpointTimeoutSource.Token);
 
         ConcurrentDictionary<int, DocumentCacheStatusTarget> results = new();
         ParallelOptions parallelOptions = new()
         {
-            CancellationToken = endpointTimeoutSource.Token,
+            CancellationToken = endpointCancellationSource.Token,
             MaxDegreeOfParallelism = SelectMaxDegreeOfParallelism(targetObservations),
         };
 
@@ -315,7 +314,10 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             );
         }
 
-        using CancellationTokenSource statusObservationTimeoutSource = new();
+        using CancellationTokenSource statusObservationTimeoutSource = new(
+            executionContext.EffectiveSettings.StatusObservationTimeout,
+            _timeProvider
+        );
         int firstCancellationSource = (int)ProviderObservationCancellationSource.None;
 
         void RecordFirstCancellationSource(ProviderObservationCancellationSource cancellationSource)
@@ -341,10 +343,6 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
                 callerCancellationToken,
                 statusObservationTimeoutSource.Token
             );
-        statusObservationTimeoutSource.CancelAfter(
-            executionContext.EffectiveSettings.StatusObservationTimeout
-        );
-
         ProviderObservationCancellationSource GetFirstCancellationSource() =>
             SelectFirstCancellationSource(
                 (ProviderObservationCancellationSource)Volatile.Read(ref firstCancellationSource),

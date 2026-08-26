@@ -933,17 +933,50 @@ public class Given_DocumentCacheStatusService
             firstTarget,
             secondTarget
         );
+        TaskCompletionSource firstObservationStarted = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
         ScriptedStatusObserver observer = new(
-            async (_, cancellationToken) =>
+            async (request, cancellationToken) =>
             {
+                if (request.TargetExecutionContext.TargetKey.Equals(firstTarget.TargetKey))
+                {
+                    firstObservationStarted.TrySetResult();
+                }
+
                 await WaitForCancellationAsync(cancellationToken);
                 return DocumentCacheStatusCurrentSourceObservationResult.Cancelled("cancelled");
             }
         );
         CapturingStatusTelemetry telemetry = new();
-        DocumentCacheStatusService service = CreateService(registry, observationStore, observer, telemetry);
+        ControlledTimeProvider timeProvider = new(ProcessObservedAt);
+        DocumentCacheStatusService service = CreateService(
+            registry,
+            observationStore,
+            observer,
+            telemetry,
+            timeProvider: timeProvider
+        );
 
-        DocumentCacheStatusResponse response = await service.GetStatusAsync();
+        DocumentCacheStatusResponse response;
+        using (CancellationTokenSource callerCancellationTokenSource = new())
+        {
+            Task<DocumentCacheStatusResponse> responseTask = service.GetStatusAsync(
+                callerCancellationTokenSource.Token
+            );
+
+            try
+            {
+                await firstObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                timeProvider.Advance(effectiveSettings.StatusEndpointTimeout);
+                response = await responseTask.WaitAsync(TimeSpan.FromSeconds(2));
+            }
+            catch
+            {
+                await callerCancellationTokenSource.CancelAsync();
+                throw;
+            }
+        }
 
         DocumentCacheStatusTarget firstStatus = response.Targets.Single(target =>
             target.TargetKey.DataStoreId == 1
@@ -1273,14 +1306,15 @@ public class Given_DocumentCacheStatusService
         DocumentCacheProjectionObservationStore? observationStore = null,
         ScriptedStatusObserver? observer = null,
         IDocumentCacheStatusTelemetry? statusTelemetry = null,
-        IDocumentCacheEnqueueFailureObservationProvider? enqueueFailureObservationProvider = null
+        IDocumentCacheEnqueueFailureObservationProvider? enqueueFailureObservationProvider = null,
+        TimeProvider? timeProvider = null
     ) =>
         new(
             registry,
             observationStore
                 ?? new DocumentCacheProjectionObservationStore(new FixedTimeProvider(ProcessObservedAt)),
             observer is null ? [] : [observer],
-            new FixedTimeProvider(ProcessObservedAt),
+            timeProvider ?? new FixedTimeProvider(ProcessObservedAt),
             enqueueFailureObservationProvider,
             statusTelemetry: statusTelemetry
         );
@@ -1999,5 +2033,198 @@ public class Given_DocumentCacheStatusService
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => utcNow;
+    }
+
+    private sealed class ControlledTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        private readonly object _sync = new();
+        private readonly List<ControlledTimer> _timers = [];
+        private DateTimeOffset _utcNow = utcNow;
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            lock (_sync)
+            {
+                return _utcNow;
+            }
+        }
+
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period
+        )
+        {
+            ArgumentNullException.ThrowIfNull(callback);
+
+            ControlledTimer timer = new(this, callback, state, dueTime, period);
+            ImmutableArray<TimerCallbackRegistration> dueCallbacks;
+            lock (_sync)
+            {
+                _timers.Add(timer);
+                dueCallbacks = CollectDueCallbacksNoLock();
+            }
+
+            QueueCallbacks(dueCallbacks);
+            return timer;
+        }
+
+        public void Advance(TimeSpan delay)
+        {
+            if (delay < TimeSpan.Zero)
+            {
+                throw new ArgumentOutOfRangeException(nameof(delay), "Delay must be nonnegative.");
+            }
+
+            ImmutableArray<TimerCallbackRegistration> dueCallbacks;
+            lock (_sync)
+            {
+                _utcNow += delay;
+                dueCallbacks = CollectDueCallbacksNoLock();
+            }
+
+            QueueCallbacks(dueCallbacks);
+        }
+
+        private ImmutableArray<TimerCallbackRegistration> CollectDueCallbacksNoLock()
+        {
+            ImmutableArray<TimerCallbackRegistration>.Builder callbacks =
+                ImmutableArray.CreateBuilder<TimerCallbackRegistration>();
+
+            foreach (ControlledTimer timer in _timers.ToArray())
+            {
+                if (!timer.TryConsumeDueNoLock(_utcNow, out TimerCallbackRegistration? callback))
+                {
+                    continue;
+                }
+
+                callbacks.Add(callback);
+                if (timer.IsDisposedNoLock)
+                {
+                    _timers.Remove(timer);
+                }
+            }
+
+            return callbacks.ToImmutable();
+        }
+
+        private static void QueueCallbacks(ImmutableArray<TimerCallbackRegistration> callbacks)
+        {
+            foreach (TimerCallbackRegistration callback in callbacks)
+            {
+                ThreadPool.QueueUserWorkItem(
+                    static state =>
+                    {
+                        TimerCallbackRegistration registration = (TimerCallbackRegistration)state!;
+                        registration.Callback(registration.State);
+                    },
+                    callback
+                );
+            }
+        }
+
+        private sealed class ControlledTimer(
+            ControlledTimeProvider timeProvider,
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period
+        ) : ITimer
+        {
+            private DateTimeOffset? _dueAt = CalculateDueAtNoLock(timeProvider, dueTime);
+            private TimeSpan _period = RequireValidPeriod(period);
+            private bool _disposed;
+
+            public bool IsDisposedNoLock => _disposed;
+
+            public bool Change(TimeSpan dueTime, TimeSpan period)
+            {
+                ImmutableArray<TimerCallbackRegistration> dueCallbacks;
+                lock (timeProvider._sync)
+                {
+                    if (_disposed)
+                    {
+                        return false;
+                    }
+
+                    _dueAt = CalculateDueAtNoLock(timeProvider, dueTime);
+                    _period = RequireValidPeriod(period);
+                    dueCallbacks = timeProvider.CollectDueCallbacksNoLock();
+                }
+
+                QueueCallbacks(dueCallbacks);
+                return true;
+            }
+
+            public bool TryConsumeDueNoLock(
+                DateTimeOffset now,
+                out TimerCallbackRegistration callbackRegistration
+            )
+            {
+                callbackRegistration = null!;
+                if (_disposed || _dueAt is null || _dueAt > now)
+                {
+                    return false;
+                }
+
+                callbackRegistration = new TimerCallbackRegistration(callback, state);
+                if (_period > TimeSpan.Zero)
+                {
+                    _dueAt = now + _period;
+                }
+                else
+                {
+                    _disposed = true;
+                }
+
+                return true;
+            }
+
+            public void Dispose()
+            {
+                lock (timeProvider._sync)
+                {
+                    _disposed = true;
+                    timeProvider._timers.Remove(this);
+                }
+            }
+
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
+
+            private static DateTimeOffset? CalculateDueAtNoLock(
+                ControlledTimeProvider timeProvider,
+                TimeSpan dueTime
+            )
+            {
+                if (dueTime == Timeout.InfiniteTimeSpan)
+                {
+                    return null;
+                }
+
+                if (dueTime < TimeSpan.Zero)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(dueTime), "Due time must be nonnegative.");
+                }
+
+                return timeProvider._utcNow + dueTime;
+            }
+
+            private static TimeSpan RequireValidPeriod(TimeSpan period)
+            {
+                if (period < TimeSpan.Zero && period != Timeout.InfiniteTimeSpan)
+                {
+                    throw new ArgumentOutOfRangeException(nameof(period), "Period must be nonnegative.");
+                }
+
+                return period;
+            }
+        }
+
+        private sealed record TimerCallbackRegistration(TimerCallback Callback, object? State);
     }
 }
