@@ -41,16 +41,23 @@ internal sealed record CandidateQueryPlan(
 /// filter parameter that does not actually collide with anything this query emits, which would change
 /// the SQL of a mode that has no stake in the name.
 /// </param>
-/// <param name="OrderingMode">
-/// The anchor <paramref name="Mode" /> carries, surfaced here so a planner can stamp it onto the
-/// compiled plan without re-inspecting which candidate mode it happens to be holding.
-/// </param>
 internal readonly record struct PlannedCandidateMode(
     PageCandidateMode Mode,
     IReadOnlyList<KeyValuePair<string, object?>> ParameterValues,
-    IReadOnlyList<string> OwnedParameterNames,
-    PageOrderingMode OrderingMode
-);
+    IReadOnlyList<string> OwnedParameterNames
+)
+{
+    /// <summary>
+    /// The anchor <see cref="Mode" /> carries, so a planner can stamp it onto the compiled plan without
+    /// re-inspecting which candidate mode it happens to be holding.
+    /// </summary>
+    /// <remarks>
+    /// Read off the mode rather than stored beside it. Every candidate mode already names its own
+    /// anchor, and the compiler resolves ordering, bounds, and projection through the same reader, so a
+    /// stored second copy would be a value that could disagree with the mode the SQL is compiled from.
+    /// </remarks>
+    public PageOrderingMode OrderingMode => PageDocumentIdSqlCompiler.ResolveOrderingMode(Mode);
+}
 
 /// <summary>
 /// Translates the Core paging choice into the backend candidate mode shared by the regular-resource
@@ -110,7 +117,7 @@ internal static class PageCandidateModePlanning
     /// </param>
     public static PlannedCandidateMode ForUnpagedCandidates(PageOrderingMode orderingMode)
     {
-        return Plan(UnpagedCandidatesModeFor(orderingMode), orderingMode, []);
+        return Plan(UnpagedCandidatesModeFor(orderingMode), []);
     }
 
     /// <summary>
@@ -135,7 +142,6 @@ internal static class PageCandidateModePlanning
 
         return Plan(
             mode,
-            orderingMode,
             [
                 new(mode.OffsetParameterName, (long)(traditional.Parameters.Offset ?? 0)),
                 new(
@@ -155,7 +161,6 @@ internal static class PageCandidateModePlanning
 
         return Plan(
             mode,
-            orderingMode,
             [
                 new(mode.InclusiveMinimumParameterName, cursor.Range.InclusiveMinimum),
                 new(mode.InclusiveMaximumParameterName, cursor.Range.InclusiveMaximum),
@@ -171,15 +176,9 @@ internal static class PageCandidateModePlanning
     /// </summary>
     private static PlannedCandidateMode Plan(
         PageCandidateMode mode,
-        PageOrderingMode orderingMode,
         IReadOnlyList<KeyValuePair<string, object?>> parameterValues
     )
     {
-        return new PlannedCandidateMode(
-            mode,
-            parameterValues,
-            PageCandidateModeParameters.OwnedNames(mode),
-            orderingMode
-        );
+        return new PlannedCandidateMode(mode, parameterValues, PageCandidateModeParameters.OwnedNames(mode));
     }
 }

@@ -32,11 +32,6 @@ namespace EdFi.DataManagementService.Core.Paging;
 internal sealed class ChangeQueryPageOrderingPolicy(bool useLegacyDocumentIdOrdering)
 {
     /// <summary>
-    /// The default policy: kill switch disabled, conditional ordering active.
-    /// </summary>
-    public static ChangeQueryPageOrderingPolicy Default { get; } = new(useLegacyDocumentIdOrdering: false);
-
-    /// <summary>
     /// Resolves the page-selection ordering for a query against live (mutable) data.
     /// </summary>
     /// <param name="changeVersionRange">The validated change-version window, if any.</param>

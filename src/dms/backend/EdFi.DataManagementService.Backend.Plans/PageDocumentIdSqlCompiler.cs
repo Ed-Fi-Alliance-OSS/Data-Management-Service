@@ -666,7 +666,13 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// <summary>
     /// Reads the anchor off whichever mode this is. Every candidate mode carries one.
     /// </summary>
-    private static PageOrderingMode ResolveOrderingMode(PageCandidateMode mode) =>
+    /// <remarks>
+    /// Public because candidate planning asks the same question before this compiler ever runs, when it
+    /// stamps the anchor onto the plan a partition-boundary statement is later compiled against. Asking
+    /// here rather than keeping a copy beside the mode is what keeps the anchor a plan is stamped with
+    /// and the anchor its SQL is compiled from the same value.
+    /// </remarks>
+    public static PageOrderingMode ResolveOrderingMode(PageCandidateMode mode) =>
         mode switch
         {
             PageCandidateMode.Traditional traditional => traditional.OrderingMode,

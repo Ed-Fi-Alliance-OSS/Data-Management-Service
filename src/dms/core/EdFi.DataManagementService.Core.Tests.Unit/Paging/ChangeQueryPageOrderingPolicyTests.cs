@@ -14,7 +14,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Paging;
 [TestFixture]
 public class Given_ChangeQueryPageOrderingPolicy_With_The_Kill_Switch_Disabled
 {
-    private readonly ChangeQueryPageOrderingPolicy _policy = ChangeQueryPageOrderingPolicy.Default;
+    private readonly ChangeQueryPageOrderingPolicy _policy = new(useLegacyDocumentIdOrdering: false);
 
     [Test]
     public void It_orders_by_document_id_when_no_range_is_supplied()
@@ -118,7 +118,9 @@ public class Given_ChangeQueryPageOrderingPolicy_With_The_Kill_Switch_Enabled
 [TestFixture]
 public class Given_ChangeQueryPageOrderingPolicy_Resolving_From_Parsed_Query_Parameters
 {
-    private readonly ChangeQueryPageOrderingPolicy _conditionalPolicy = ChangeQueryPageOrderingPolicy.Default;
+    private readonly ChangeQueryPageOrderingPolicy _conditionalPolicy = new(
+        useLegacyDocumentIdOrdering: false
+    );
     private readonly ChangeQueryPageOrderingPolicy _legacyPolicy = new(useLegacyDocumentIdOrdering: true);
 
     private static PageOrderingMode Resolve(
