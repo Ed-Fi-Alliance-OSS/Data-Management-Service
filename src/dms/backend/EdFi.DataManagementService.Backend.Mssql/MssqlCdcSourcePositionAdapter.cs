@@ -169,6 +169,10 @@ internal sealed class MssqlCdcSourcePositionAdapter(
         ValidateSqlServerBinding(request.Binding, "$.binding.provider", diagnostics);
         AddDiagnostics(diagnostics, request.CapturedBarrier.Diagnostics);
         ValidateSqlServerCaptureResult(request.CapturedBarrier, "$.capturedBarrier.provider", diagnostics);
+        string? expectedSourcePartitionHash = ValidateExpectedSourcePartitionHash(
+            request.ExpectedConnectSourcePartitionHash,
+            diagnostics
+        );
 
         CdcContractValidationResult connectorOffsetValidation =
             CdcConnectorOffsetObservationValidator.ValidateForBinding(
@@ -180,7 +184,7 @@ internal sealed class MssqlCdcSourcePositionAdapter(
                     request.Binding.PhysicalSourceFingerprint,
                     UtcNow()
                 ),
-                request.ExpectedConnectSourcePartitionHash
+                expectedSourcePartitionHash
             );
         AddDiagnostics(diagnostics, connectorOffsetValidation.Diagnostics);
 
@@ -393,6 +397,32 @@ internal sealed class MssqlCdcSourcePositionAdapter(
         }
     }
 
+    private static string? ValidateExpectedSourcePartitionHash(
+        string? expectedSourcePartitionHash,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        if (expectedSourcePartitionHash is null)
+        {
+            diagnostics.LocalStateUnavailable(
+                "$.expectedConnectSourcePartitionHash",
+                "CDC SQL Server expected Connect source-partition hash evidence is unavailable."
+            );
+            return null;
+        }
+
+        if (!IsSha256Fingerprint(expectedSourcePartitionHash))
+        {
+            diagnostics.MalformedPayload(
+                "$.expectedConnectSourcePartitionHash",
+                "CDC SQL Server expected Connect source-partition hash must be `sha256:` plus 64 lowercase hex characters."
+            );
+            return null;
+        }
+
+        return expectedSourcePartitionHash;
+    }
+
     private DateTimeOffset UtcNow() => _timeProvider.GetUtcNow().ToUniversalTime();
 
     private static bool IsKnownNotReached(CdcProviderPositionComparisonResult comparison) =>
@@ -411,6 +441,17 @@ internal sealed class MssqlCdcSourcePositionAdapter(
 
         return timeoutSeconds > int.MaxValue ? int.MaxValue : (int)timeoutSeconds;
     }
+
+    private static bool IsSha256Fingerprint(string value)
+    {
+        const string sha256Prefix = "sha256:";
+
+        return value.Length == sha256Prefix.Length + 64
+            && value.StartsWith(sha256Prefix, StringComparison.Ordinal)
+            && value[sha256Prefix.Length..].All(IsLowercaseHex);
+    }
+
+    private static bool IsLowercaseHex(char value) => value is >= '0' and <= '9' or >= 'a' and <= 'f';
 
     private void LogProviderObservationFailure(Exception exception, string outcome)
     {

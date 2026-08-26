@@ -247,6 +247,42 @@ public class Given_MssqlCdcSourcePositionAdapter
     }
 
     [Test]
+    public async Task It_returns_unknown_barrier_when_expected_source_partition_hash_is_unavailable()
+    {
+        CoreCdc.CdcBinding binding = await BuildBindingAsync();
+        CoreCdc.CdcArtifactInventory inventory = BuildInventory();
+        CoreCdc.CdcProviderBarrierCaptureResult capture =
+            CoreCdc.CdcProviderBarrierCaptureResult.SqlServerSuccess(
+                "00000000:016b6c50:0001",
+                "00000000:016b6c50:0002",
+                ProjectionCaughtUpObservedAt.AddSeconds(1)
+            );
+
+        _timeProvider.Set(ProjectionCaughtUpObservedAt.AddSeconds(2));
+        CoreCdc.CdcConnectorOffsetObservation connectorOffset = BuildConnectorOffset(
+            binding,
+            inventory,
+            capture.SqlServerCommitLsn!,
+            capture.SqlServerChangeLsn!,
+            capture.SqlServerEventSerialNo!.Value
+        );
+
+        _timeProvider.Set(ProjectionCaughtUpObservedAt.AddSeconds(3));
+        CoreCdc.CdcProviderBarrierObservation observation = _adapter.ObserveProviderBarrier(
+            new(OperationId(), binding, ProjectionCaughtUpObservedAt, capture, connectorOffset)
+        );
+
+        observation.BarrierState.Should().Be(CoreCdc.CdcProviderBarrierState.Unknown);
+        observation.CommittedPosition.Should().BeNull();
+        observation
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CoreCdc.CdcDiagnosticCategory.LocalStateUnavailable
+                && diagnostic.Path == "$.expectedConnectSourcePartitionHash"
+            );
+    }
+
+    [Test]
     public async Task It_provisions_capture_columns_from_the_shared_sql_server_source_inventory()
     {
         CoreCdc.CdcBinding binding = await BuildBindingAsync();
@@ -307,6 +343,44 @@ public class Given_MssqlCdcSourcePositionAdapter
             .Observation.Diagnostics.Should()
             .NotContain(diagnostic => diagnostic.Severity == CoreCdc.CdcDiagnosticSeverity.Error);
         result.IncidentCandidate.Should().BeNull();
+        ValidateSourceHistoryObservation(result.Observation, binding).Succeeded.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task It_reports_unknown_source_history_when_expected_source_partition_hash_is_unavailable()
+    {
+        CoreCdc.CdcBinding binding = await BuildBindingAsync();
+        CoreCdc.CdcArtifactInventory inventory = BuildInventory();
+        CoreCdc.CdcConnectorOffsetObservation connectorOffset = BuildConnectorOffset(
+            binding,
+            inventory,
+            "00000023:00000138:0002",
+            "00000023:00000139:0001",
+            2
+        );
+
+        CoreCdc.CdcSourceHistoryClassificationResult result = await _adapter.ObserveSourceHistoryAsync(
+            new(
+                OperationId(),
+                binding,
+                BuildProviderSetupObservation(binding),
+                connectorOffset,
+                BuildHealthyProviderHistory(inventory)
+            )
+            {
+                SqlServerSchemaHistory = BuildValidSchemaHistory(),
+            }
+        );
+
+        result.Observation.Continuity.Should().Be(CoreCdc.CdcSourceHistoryContinuity.Unknown);
+        result.Observation.IncidentFailureCategory.Should().BeNull();
+        result.IncidentCandidate.Should().BeNull();
+        result
+            .Observation.Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CoreCdc.CdcDiagnosticCategory.LocalStateUnavailable
+                && diagnostic.Path == "$.expectedConnectSourcePartitionHash"
+            );
         ValidateSourceHistoryObservation(result.Observation, binding).Succeeded.Should().BeTrue();
     }
 
@@ -763,6 +837,38 @@ public class Given_MssqlCdcSourcePositionAdapter
             eventSerialNo,
             []
         );
+
+    private CoreCdc.CdcProviderSetupObservation BuildProviderSetupObservation(CoreCdc.CdcBinding binding) =>
+        new(
+            CoreCdc.CdcJsonContract.CurrentContractVersion,
+            OperationId(),
+            _timeProvider.GetUtcNow(),
+            binding.ToTargetIdentity(),
+            CoreCdc.CdcProvider.SqlServer,
+            binding.PhysicalSourceFingerprint,
+            CoreCdc.CdcProviderSetupMode.ValidateOnly,
+            CoreCdc.CdcProviderSetupOutcome.Satisfied,
+            CoreCdc.CdcProviderSetupState.Matched,
+            CoreCdc.CdcProviderSetupState.Matched,
+            CoreCdc.CdcProviderSetupState.Matched,
+            CoreCdc.CdcProviderSetupState.Matched,
+            []
+        );
+
+    private static CoreCdc.CdcProviderSourceHistoryEvidence BuildHealthyProviderHistory(
+        CoreCdc.CdcArtifactInventory inventory
+    ) =>
+        new(
+            CoreCdc.CdcProviderArtifactContinuityState.ExactMatch,
+            CoreCdc.CdcProviderRetainedRangeState.CoversCommittedOffset,
+            inventory.SqlServerCaptureInstanceCdcHeartbeatName,
+            "00000023:00000138:0000",
+            "00000023:00000140:0000",
+            []
+        )
+        {
+            SqlServerJobs = CoreCdc.CdcSqlServerCdcJobEvidence.Healthy,
+        };
 
     private string ExpectedSourcePartitionHash(CoreCdc.CdcArtifactInventory inventory) =>
         CoreCdc

@@ -74,6 +74,30 @@ public class Given_CdcSourceHistoryContinuityClassifier
     }
 
     [Test]
+    public void It_reports_unknown_when_sql_server_expected_source_partition_hash_is_unavailable()
+    {
+        CdcBinding binding = CdcContinuityFixture.CreateBinding(CdcProvider.SqlServer);
+
+        CdcSourceHistoryClassificationResult result = CdcSourceHistoryContinuityClassifier.Evaluate(
+            CdcContinuityFixture.CreateInput(binding) with
+            {
+                ExpectedConnectSourcePartitionHash = null,
+            }
+        );
+
+        result.Observation.Continuity.Should().Be(CdcSourceHistoryContinuity.Unknown);
+        result.Observation.IncidentFailureCategory.Should().BeNull();
+        result.IncidentCandidate.Should().BeNull();
+        result
+            .Observation.Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CdcDiagnosticCategory.LocalStateUnavailable
+                && diagnostic.Path == "$.expectedConnectSourcePartitionHash"
+            );
+        ValidateObservation(result.Observation, binding).Succeeded.Should().BeTrue();
+    }
+
+    [Test]
     public void It_latches_terminal_provider_artifact_loss_when_sql_server_capture_job_is_missing()
     {
         CdcBinding binding = CdcContinuityFixture.CreateBinding(CdcProvider.SqlServer);

@@ -1241,6 +1241,10 @@ public static class CdcSourceHistoryContinuityClassifier
 
         if (input.Binding.Provider != CdcProvider.Postgresql)
         {
+            diagnostics.LocalStateUnavailable(
+                "$.expectedConnectSourcePartitionHash",
+                "CDC SQL Server expected Connect source-partition hash evidence is unavailable."
+            );
             return null;
         }
 
