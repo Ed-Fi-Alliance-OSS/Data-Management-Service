@@ -24,6 +24,23 @@ internal interface IDescriptorReadCandidateMetadata
     string CodeValue { get; }
 
     string? Discriminator { get; }
+
+    /// <summary>
+    /// The <c>ContentVersion</c> page selection ordered this row by, projected out of the page-selection
+    /// relation itself, or <see langword="null"/> when this row did not come from a
+    /// <c>ContentVersion</c>-anchored page selection.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not <see cref="ContentVersion"/>, even though the two hold the same value for a
+    /// committed row. <see cref="ContentVersion"/> is the canonical <c>dms.Document</c> value and is
+    /// what the response body, the served ETag, and the cache-admission comparison are built from.
+    /// This one is the root <c>dms.Descriptor</c> mirror that page selection actually ordered, bounded,
+    /// and indexed on, and it is the only one that can anchor a continuation: the two are read from
+    /// different tables in one statement, so under a provider that admits intra-statement read skew a
+    /// concurrent update can make the document value the larger of the pair — and a continuation
+    /// anchored on it would start the next page past rows this one never returned.
+    /// </remarks>
+    long? SelectedAnchor { get; }
 }
 
 internal sealed record DescriptorReadRow(
@@ -38,7 +55,8 @@ internal sealed record DescriptorReadRow(
     string? Description,
     DateOnly? EffectiveBeginDate,
     DateOnly? EffectiveEndDate,
-    string? Discriminator
+    string? Discriminator,
+    long? SelectedAnchor = null
 ) : IDescriptorReadCandidateMetadata;
 
 internal sealed record DescriptorReadCandidateRow(
@@ -49,7 +67,8 @@ internal sealed record DescriptorReadCandidateRow(
     short ResourceKeyId,
     string? Namespace,
     string CodeValue,
-    string? Discriminator
+    string? Discriminator,
+    long? SelectedAnchor = null
 ) : IDescriptorReadCandidateMetadata;
 
 internal sealed class DescriptorReadInvariantException(string message) : InvalidOperationException(message);
@@ -72,6 +91,13 @@ internal static class DescriptorReadRowReader
     private const string EffectiveBeginDateColumnName = "EffectiveBeginDate";
     private const string EffectiveEndDateColumnName = "EffectiveEndDate";
     private const string DiscriminatorColumnName = "Discriminator";
+
+    /// <summary>
+    /// The alias the page-rows statement projects the page-selection anchor under. Deliberately not
+    /// <c>ContentVersion</c>: that name is already taken by the canonical <c>dms.Document</c> column in
+    /// the same projection, and the whole point of this column is that it comes from somewhere else.
+    /// </summary>
+    internal const string SelectedAnchorColumnName = "SelectedAnchor";
 
     public static async Task<DescriptorReadRow?> ReadSingleOrDefaultAsync(
         IRelationalCommandReader reader,
@@ -152,7 +178,8 @@ internal static class DescriptorReadRowReader
             Description: reader.GetNullableFieldValue<string>(DescriptionColumnName),
             EffectiveBeginDate: reader.GetNullableDateFieldValue(EffectiveBeginDateColumnName),
             EffectiveEndDate: reader.GetNullableDateFieldValue(EffectiveEndDateColumnName),
-            Discriminator: ReadOptionalStringField(reader, DiscriminatorColumnName)
+            Discriminator: ReadOptionalStringField(reader, DiscriminatorColumnName),
+            SelectedAnchor: ReadOptionalInt64Field(reader, SelectedAnchorColumnName)
         );
     }
 
@@ -222,7 +249,8 @@ internal static class DescriptorReadRowReader
                 documentId,
                 resourceKeyId
             ),
-            Discriminator: ReadOptionalStringField(reader, DiscriminatorColumnName)
+            Discriminator: ReadOptionalStringField(reader, DiscriminatorColumnName),
+            SelectedAnchor: ReadOptionalInt64Field(reader, SelectedAnchorColumnName)
         );
     }
 
@@ -294,6 +322,28 @@ internal static class DescriptorReadRowReader
         }
 
         return reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<string>(ordinal);
+    }
+
+    /// <summary>
+    /// Reads a column that only some of the statements feeding this reader project, returning
+    /// <see langword="null"/> when it is absent rather than failing. The GET-by-id statements and the
+    /// selected-page fallback have no page-selection relation to take an anchor from, so absence is a
+    /// property of the statement rather than a fault; a caller that requires the value says so itself.
+    /// </summary>
+    private static long? ReadOptionalInt64Field(IRelationalCommandReader reader, string columnName)
+    {
+        int ordinal;
+
+        try
+        {
+            ordinal = reader.GetOrdinal(columnName);
+        }
+        catch (IndexOutOfRangeException)
+        {
+            return null;
+        }
+
+        return reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<long>(ordinal);
     }
 
     private static string BuildRequiredDescriptorColumnNullMessage(

@@ -102,16 +102,16 @@ public sealed class RelationalDocumentStoreRepository(
         edOrgAuthorizationSubjectSelector
     );
 
-    /// <param name="OrderingMode">
-    /// The ordering the page was planned with. Carried rather than re-resolved so the continuation
-    /// decision is made from the ordering page selection actually used.
-    /// </param>
+    /// <remarks>
+    /// Carries no anchor of its own. <see cref="PlannedQuery" /> was compiled against one and reports
+    /// it, and the selected-keyset result set this preparation leads to is shaped by that same value,
+    /// so a second copy here could name a different column than the one the keyset actually projects.
+    /// </remarks>
     private sealed record RelationalQueryPreparation(
         QualifiedResourceName Resource,
         ResourceReadPlan ReadPlan,
         PageKeysetSpec.Query PlannedQuery,
-        PageDocumentIdAuthorizationSpec? Authorization,
-        PageOrderingMode OrderingMode
+        PageDocumentIdAuthorizationSpec? Authorization
     );
 
     private abstract record RelationalQueryPreparationResult
@@ -1386,9 +1386,10 @@ public sealed class RelationalDocumentStoreRepository(
 
         PageKeysetSpec.Query? plannedQuery;
 
-        // Read off the request rather than resolved here, and reused for the selected-keyset boundary
-        // below, so the ordering the page was actually selected with is the ordering the continuation
-        // decision is made from — and the ordering Core stamped on the token it will hand back.
+        // Read off the request rather than resolved here, so the ordering the page is selected with is
+        // the ordering Core stamped on the token it will hand back. It is handed to the planner and
+        // then read back off the planned keyset wherever the selected-keyset boundary is interpreted,
+        // rather than carried alongside it, so the anchor and the column list cannot disagree.
         PageOrderingMode orderingMode = queryRequest.PageOrderingMode;
 
         try
@@ -1468,13 +1469,7 @@ public sealed class RelationalDocumentStoreRepository(
         }
 
         return new RelationalQueryPreparationResult.Prepared(
-            new RelationalQueryPreparation(
-                resource,
-                readPlan,
-                plannedQuery,
-                pageQueryAuthorization,
-                orderingMode
-            )
+            new RelationalQueryPreparation(resource, readPlan, plannedQuery, pageQueryAuthorization)
         );
     }
 
@@ -1821,7 +1816,6 @@ public sealed class RelationalDocumentStoreRepository(
                     preparation.ReadPlan,
                     preparation.PlannedQuery,
                     queryRequest.Paging,
-                    preparation.OrderingMode,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -1956,7 +1950,6 @@ public sealed class RelationalDocumentStoreRepository(
         ResourceReadPlan readPlan,
         PageKeysetSpec.Query plannedQuery,
         CollectionPaging paging,
-        PageOrderingMode orderingMode,
         CancellationToken cancellationToken
     )
     {
@@ -1971,7 +1964,11 @@ public sealed class RelationalDocumentStoreRepository(
                         reader,
                         plannedQuery.Plan.TotalCountSql is not null,
                         paging,
-                        orderingMode,
+                        // The anchor of the keyset the command was built from, not a separately
+                        // supplied one: the shape of the selected-keys result set below follows this
+                        // same value, so reading it off the keyset is what keeps the ordinal and the
+                        // column list that produced it from disagreeing.
+                        plannedQuery.OrderingMode,
                         resourceKeyId,
                         ct
                     ),

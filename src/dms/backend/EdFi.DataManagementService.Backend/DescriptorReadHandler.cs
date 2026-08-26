@@ -551,7 +551,8 @@ internal sealed class DescriptorReadHandler(
             DescriptorQueryNoCacheReadResult.Complete complete => complete.Result,
             DescriptorQueryNoCacheReadResult.RowsPage rowsPage => MaterializeDescriptorQuerySuccess(
                 request,
-                rowsPage.Page
+                rowsPage.Page,
+                SelectedMaximumOf(rowsPage.Page.Rows, request.PageOrderingMode)
             ),
             _ => throw new InvalidOperationException(
                 $"Unsupported descriptor query no-cache read result '{noCacheReadResult.GetType().Name}'."
@@ -711,7 +712,8 @@ internal sealed class DescriptorReadHandler(
         {
             return MaterializeDescriptorQuerySuccess(
                 request,
-                new DescriptorQueryRowsPage(candidatePage.TotalCount, [])
+                new DescriptorQueryRowsPage(candidatePage.TotalCount, []),
+                candidatePage.HighestSelectedAnchor
             );
         }
 
@@ -786,7 +788,11 @@ internal sealed class DescriptorReadHandler(
 
         return MaterializeDescriptorQuerySuccess(
             request,
-            new DescriptorQueryRowsPage(candidatePage.TotalCount, orderedRows)
+            new DescriptorQueryRowsPage(candidatePage.TotalCount, orderedRows),
+            // The boundary selection took, carried through rather than re-derived: these rows came from
+            // the retrieval statement, which ranges over dms.Document by id and never touches the
+            // page-selection relation the anchor belongs to.
+            candidatePage.HighestSelectedAnchor
         );
     }
 
@@ -1295,12 +1301,18 @@ internal sealed class DescriptorReadHandler(
     /// <see langword="null"/> when the page selected none.
     /// </summary>
     /// <remarks>
-    /// The units follow the anchor the request resolved, exactly as they do for a regular resource.
-    /// Descriptors need no SQL change to report either one: the rows selection returns already carry
-    /// both <c>DocumentId</c> and <c>ContentVersion</c>, so this only has to take the right column.
+    /// The units follow the anchor the request resolved, exactly as they do for a regular resource, and
+    /// under either anchor the value read is the one page selection itself produced: <c>DocumentId</c>
+    /// comes out of the page-selection relation, and so does
+    /// <see cref="IDescriptorReadCandidateMetadata.SelectedAnchor" />. The row's plain
+    /// <c>ContentVersion</c> is deliberately not used — it is <c>dms.Document</c>'s copy of the same
+    /// value, read through a different join, and a continuation anchored on it can name a version this
+    /// page never selected.
+    /// <para>
     /// Taken across every row rather than from the last one: the page query orders ascending today, but
     /// a boundary that depended on that could not survive an ordering change, and the maximum costs the
     /// same either way.
+    /// </para>
     /// </remarks>
     private static long? SelectedMaximumOf(
         IReadOnlyList<IDescriptorReadCandidateMetadata> descriptorRows,
@@ -1312,9 +1324,35 @@ internal sealed class DescriptorReadHandler(
             return null;
         }
 
-        return orderingMode is PageOrderingMode.ContentVersion
-            ? descriptorRows.Max(static descriptorRow => descriptorRow.ContentVersion)
-            : descriptorRows.Max(static descriptorRow => descriptorRow.DocumentId);
+        if (orderingMode is not PageOrderingMode.ContentVersion)
+        {
+            return descriptorRows.Max(static descriptorRow => descriptorRow.DocumentId);
+        }
+
+        long? selectedMaximum = null;
+
+        foreach (IDescriptorReadCandidateMetadata descriptorRow in descriptorRows)
+        {
+            // Absent means the statement that produced these rows projected no anchor while the request
+            // resolved one, which is a defect in this handler rather than anything a client did. Falling
+            // back to the document's ContentVersion would hand out a continuation that looks right and
+            // silently skips rows, so it fails instead.
+            if (descriptorRow.SelectedAnchor is not { } selectedAnchor)
+            {
+                throw new InvalidOperationException(
+                    "Expected a ContentVersion-anchored descriptor page to carry the anchor page "
+                        + "selection ordered it by, but the selected rows carry none. The page-rows SQL "
+                        + "and this boundary disagree about the request's anchor."
+                );
+            }
+
+            if (selectedMaximum is null || selectedAnchor > selectedMaximum)
+            {
+                selectedMaximum = selectedAnchor;
+            }
+        }
+
+        return selectedMaximum;
     }
 
     /// <summary>
@@ -1688,17 +1726,23 @@ internal sealed class DescriptorReadHandler(
     /// Builds the descriptor query response, including the selected-keyset boundary a cursor walk
     /// continues from.
     /// </summary>
+    /// <param name="highestSelectedAnchor">
+    /// The boundary, supplied by whichever path selected the page rather than re-derived here.
+    /// </param>
     /// <remarks>
-    /// The rows reaching here are the selected keyset, so their maximum is the boundary. That holds on
-    /// both read paths. Uncached selection retrieves rows in the same statement that selects them. The
-    /// cache-accelerated path selects candidates and retrieves rows separately, but it admits a page
-    /// only when every selected candidate is still present and unchanged, and otherwise re-reads through
-    /// the uncached path — so a page that lost rows between selection and retrieval never arrives here
-    /// with a short row set that would understate the boundary and stall the walk.
+    /// The two read paths reach the boundary differently, which is why it arrives as an argument.
+    /// Uncached selection retrieves rows in the same statement that selects them, so those rows carry
+    /// the anchor and their maximum is the boundary. The cache-accelerated path selects candidates and
+    /// retrieves rows in two statements: only the first ranges over the page-selection relation, so the
+    /// boundary is the one taken at selection and the retrieved rows carry no anchor to re-derive it
+    /// from. That path admits a page only when every selected candidate is still present and unchanged,
+    /// and otherwise re-reads through the uncached path, so passing the selection-time boundary through
+    /// cannot overstate what the response body holds.
     /// </remarks>
     private QueryResult.QuerySuccess MaterializeDescriptorQuerySuccess(
         DescriptorQueryRequest request,
-        DescriptorQueryRowsPage queryRowsPage
+        DescriptorQueryRowsPage queryRowsPage,
+        long? highestSelectedAnchor
     )
     {
         return new QueryResult.QuerySuccess(
@@ -1710,7 +1754,7 @@ internal sealed class DescriptorReadHandler(
                     "descriptor query"
                 )
                 : null,
-            SelectedMaximumOf(queryRowsPage.Rows, request.PageOrderingMode)
+            highestSelectedAnchor
         );
     }
 
@@ -1842,7 +1886,14 @@ internal sealed class DescriptorReadHandler(
     {
         ArgumentNullException.ThrowIfNull(plannedQuery);
 
-        var pageRowsSql = BuildPageRowsSql(dialect, plannedQuery.Plan.PageDocumentIdSql, projection);
+        // Read off the planned keyset rather than off the request, so the column this statement carries
+        // out is the one the embedded page-selection SQL was actually compiled to project.
+        var pageRowsSql = BuildPageRowsSql(
+            dialect,
+            plannedQuery.Plan.PageDocumentIdSql,
+            projection,
+            includeSelectedAnchor: plannedQuery.OrderingMode is PageOrderingMode.ContentVersion
+        );
         var commandText = plannedQuery.Plan.TotalCountSql is null
             ? pageRowsSql
             : $"{PlanSqlStatementText.AsTerminatedStatement(plannedQuery.Plan.TotalCountSql)}{Environment.NewLine}{Environment.NewLine}{pageRowsSql}";
@@ -1956,17 +2007,30 @@ internal sealed class DescriptorReadHandler(
         return Convert.ToInt64(totalCountValue, CultureInfo.InvariantCulture);
     }
 
+    /// <param name="includeSelectedAnchor">
+    /// Projects the page-selection anchor out of the embedded relation, for a
+    /// <c>ContentVersion</c>-anchored page only. That relation projects the anchor beside its ids under
+    /// that anchor, and carrying it out here is what keeps the continuation expressed in the value
+    /// selection ordered by rather than in the <c>dms.Document</c> copy this statement joins to.
+    /// </param>
     private static string BuildPageRowsSql(
         SqlDialect dialect,
         string pageDocumentIdSql,
-        DescriptorRowProjection projection
+        DescriptorRowProjection projection,
+        bool includeSelectedAnchor
     )
     {
         var pageDocumentIdSqlBody = PlanSqlStatementText.AsEmbeddableBody(pageDocumentIdSql);
-        var projectionSql = BuildDescriptorProjectionSql(dialect, "page_document_ids", projection);
+        var projectionSql = BuildDescriptorProjectionSql(
+            dialect,
+            "page_document_ids",
+            projection,
+            selectedAnchorSourceAlias: includeSelectedAnchor ? "page_document_ids" : null
+        );
 
-        // The shared page compiler intentionally returns only a DocumentId keyset. Descriptor queries
-        // root on dms.Descriptor, so this performs a page-sized PK lookup instead of widening that contract.
+        // The shared page compiler returns a DocumentId keyset, widened to carry the anchor beside it
+        // when the page is ContentVersion-anchored. Descriptor queries root on dms.Descriptor, so this
+        // performs a page-sized PK lookup against dms.Document instead of widening that contract further.
         return dialect switch
         {
             SqlDialect.Pgsql => $$"""
@@ -1999,10 +2063,18 @@ internal sealed class DescriptorReadHandler(
         };
     }
 
+    /// <param name="selectedAnchorSourceAlias">
+    /// The relation to project the page-selection anchor from, or <see langword="null"/> when this
+    /// statement has none. Supplied only for a <c>ContentVersion</c>-anchored page, where it is the
+    /// page-selection relation itself — the anchor has to be the value selection ordered and bounded
+    /// on, and the <c>ContentVersion</c> column above is <c>dms.Document</c>'s, read through a
+    /// different join in the same statement.
+    /// </param>
     private static string BuildDescriptorProjectionSql(
         SqlDialect dialect,
         string documentIdSourceAlias,
-        DescriptorRowProjection projection
+        DescriptorRowProjection projection,
+        string? selectedAnchorSourceAlias = null
     )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(documentIdSourceAlias);
@@ -2039,12 +2111,21 @@ internal sealed class DescriptorReadHandler(
 
         columns.Add(("descriptor", "Discriminator"));
 
-        return string.Join(
-            $",{Environment.NewLine}",
-            columns.Select(column =>
-                $"    {column.SourceAlias}.{QuoteIdentifier(dialect, column.ColumnName)} AS {QuoteIdentifier(dialect, column.ColumnName)}"
-            )
+        IEnumerable<string> projectedColumns = columns.Select(column =>
+            $"    {column.SourceAlias}.{QuoteIdentifier(dialect, column.ColumnName)} AS {QuoteIdentifier(dialect, column.ColumnName)}"
         );
+
+        // Aliased away from its own column name, because ContentVersion is already projected above from
+        // dms.Document and the reader has to be able to tell the two apart.
+        if (selectedAnchorSourceAlias is not null)
+        {
+            projectedColumns = projectedColumns.Append(
+                $"    {selectedAnchorSourceAlias}.{QuoteIdentifier(dialect, "ContentVersion")} "
+                    + $"AS {QuoteIdentifier(dialect, DescriptorReadRowReader.SelectedAnchorColumnName)}"
+            );
+        }
+
+        return string.Join($",{Environment.NewLine}", projectedColumns);
     }
 
     private static string QuoteIdentifier(SqlDialect dialect, string identifier) =>

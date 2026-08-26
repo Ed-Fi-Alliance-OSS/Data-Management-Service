@@ -564,15 +564,28 @@ public partial class Given_DescriptorReadHandler
         commandExecutor.Commands[0].CommandText.Should().NotContain("COUNT(1)");
     }
 
-    // A traditional descriptor page whose request anchors on ContentVersion reports that anchor, not the
-    // row's DocumentId. The anchor arrives on the request, so it is supplied here alongside the window
-    // Core resolved it from rather than inferred from that window by the handler.
+    // A traditional descriptor page whose request anchors on ContentVersion reports the anchor page
+    // selection ordered it by, not the row's DocumentId and not dms.Document's copy of the change
+    // version. The anchor arrives on the request, so it is supplied here alongside the window Core
+    // resolved it from rather than inferred from that window by the handler.
+    //
+    // The three values are deliberately distinct. DocumentId is 205, the joined dms.Document
+    // ContentVersion is 42, and the page-selection relation carried out 77. Only reading the projected
+    // anchor produces 77, so this fails if the boundary ever goes back to the document column — which
+    // is read through a different join in the same statement and can therefore name a version this page
+    // never selected.
     [Test]
     public async Task It_reports_a_content_version_boundary_for_a_windowed_traditional_descriptor_page()
     {
         var sut = CreateHandler(
             CreateQueryRowsExecutor(
-                CreateDescriptorRow(Guid.NewGuid(), documentId: 205L, codeValue: "Charter")
+                CreateDescriptorRow(
+                    Guid.NewGuid(),
+                    documentId: 205L,
+                    contentVersion: 42L,
+                    codeValue: "Charter",
+                    selectedAnchor: 77L
+                )
             )
         );
 
@@ -584,9 +597,52 @@ public partial class Given_DescriptorReadHandler
             )
         );
 
-        // 42 is the row's ContentVersion; its DocumentId is 205. Only the anchor gives this value.
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
-        success.HighestSelectedAnchor.Should().Be(42L);
+        success.HighestSelectedAnchor.Should().Be(77L);
+    }
+
+    // The guard behind the assertion above. A request that resolved a ContentVersion anchor whose rows
+    // carry none means the page-rows statement and this boundary disagree about the request's anchor.
+    // Falling back to the document's ContentVersion would hand out a continuation that looks right and
+    // starts the next page past rows this one never returned, so the disagreement fails loudly instead.
+    [Test]
+    public async Task It_refuses_a_windowed_descriptor_page_whose_rows_carry_no_selected_anchor()
+    {
+        var sut = CreateHandler(
+            CreateQueryRowsExecutor(
+                CreateDescriptorRow(Guid.NewGuid(), documentId: 205L, codeValue: "Charter")
+            )
+        );
+
+        var act = async () =>
+            await sut.HandleQueryAsync(
+                CreateQueryRequest(
+                    SqlDialect.Pgsql,
+                    changeVersionRange: new ChangeVersionRange(null, 900L),
+                    pageOrderingMode: PageOrderingMode.ContentVersion
+                )
+            );
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*anchor*");
+    }
+
+    // A DocumentId-anchored descriptor page reports its DocumentId and needs no projected anchor, which
+    // is what keeps the unwindowed statement emitting the projection it always has.
+    [Test]
+    public async Task It_reports_a_document_id_boundary_without_a_selected_anchor_column()
+    {
+        var sut = CreateHandler(
+            CreateQueryRowsExecutor(
+                CreateDescriptorRow(Guid.NewGuid(), documentId: 205L, contentVersion: 42L)
+            )
+        );
+
+        var result = await sut.HandleQueryAsync(
+            CreateQueryRequest(SqlDialect.Pgsql, pageOrderingMode: PageOrderingMode.DocumentId)
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.HighestSelectedAnchor.Should().Be(205L);
     }
 
     private static InMemoryRelationalCommandExecutor CreateQueryRowsExecutor(
@@ -2005,8 +2061,11 @@ public partial class Given_DescriptorReadHandler
     }
 
     // A traditional descriptor page anchored on ContentVersion shapes a cache-served response from a
-    // candidate page whose boundary is that anchor. The row's DocumentId (205) and ContentVersion (42)
-    // differ on purpose: only the anchor can produce the value asserted below.
+    // candidate page whose boundary is that anchor. The candidate row's three values differ on purpose —
+    // DocumentId 205, the joined dms.Document ContentVersion 42, and the projected page-selection anchor
+    // 77 — so only reading the anchor produces the value asserted below. Candidate selection is the one
+    // statement on this path that ranges over the page-selection relation, which is why the boundary has
+    // to be taken here rather than re-derived from the rows retrieved afterwards.
     [Test]
     public async Task It_exposes_a_content_version_boundary_on_a_windowed_descriptor_candidate_page()
     {
@@ -2015,7 +2074,13 @@ public partial class Given_DescriptorReadHandler
         var commandExecutor = new InMemoryRelationalCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
-                    CreateDescriptorRow(documentUuid, documentId: 205L, codeValue: "Charter")
+                    CreateDescriptorRow(
+                        documentUuid,
+                        documentId: 205L,
+                        contentVersion: 42L,
+                        codeValue: "Charter",
+                        selectedAnchor: 77L
+                    )
                 ),
             ]),
         ]);
@@ -2051,7 +2116,7 @@ public partial class Given_DescriptorReadHandler
             )
         );
 
-        capturedSelection.AuthorizedCandidatePage.HighestSelectedAnchor.Should().Be(42L);
+        capturedSelection.AuthorizedCandidatePage.HighestSelectedAnchor.Should().Be(77L);
     }
 
     // An accelerated selection that returned no rows still ran, so it reports the same absent boundary a
@@ -2856,6 +2921,12 @@ public partial class Given_DescriptorReadHandler
         );
     }
 
+    /// <param name="selectedAnchor">
+    /// The <c>SelectedAnchor</c> column a ContentVersion-anchored page-rows statement projects out of
+    /// the page-selection relation. Omitted by default, which is the shape every other descriptor
+    /// statement returns — GET-by-id, the selected-page fallback, and any DocumentId-anchored page all
+    /// project no anchor at all, so a row that carries one has to say so.
+    /// </param>
     private static IReadOnlyDictionary<string, object?> CreateDescriptorRow(
         Guid documentUuid,
         long documentId = 101L,
@@ -2867,10 +2938,12 @@ public partial class Given_DescriptorReadHandler
         string? description = "Alternative school type",
         DateOnly? effectiveBeginDate = null,
         DateOnly? effectiveEndDate = null,
-        string? discriminator = "SchoolTypeDescriptor"
+        string? discriminator = "SchoolTypeDescriptor",
+        long? selectedAnchor = null
     )
     {
-        return RelationalAccessTestData.CreateRow(
+        List<(string, object?)> columns =
+        [
             ("DocumentId", documentId),
             ("DocumentUuid", documentUuid),
             ("ContentVersion", contentVersion),
@@ -2885,8 +2958,15 @@ public partial class Given_DescriptorReadHandler
             ("Description", description),
             ("EffectiveBeginDate", effectiveBeginDate),
             ("EffectiveEndDate", effectiveEndDate),
-            ("Discriminator", discriminator)
-        );
+            ("Discriminator", discriminator),
+        ];
+
+        if (selectedAnchor is not null)
+        {
+            columns.Add(("SelectedAnchor", selectedAnchor));
+        }
+
+        return RelationalAccessTestData.CreateRow([.. columns]);
     }
 
     private static string ExpectedComposedDescriptorEtag(long contentVersion) =>

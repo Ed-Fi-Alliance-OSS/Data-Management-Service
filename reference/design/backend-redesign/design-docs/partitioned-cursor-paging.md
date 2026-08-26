@@ -651,9 +651,19 @@ Deriving the anchor from the selected keyset — rather than from hydrated docum
 what makes concurrent deletion safe. Any or all selected rows may be deleted before hydration
 completes; a body-derived anchor would then stall the walk on the last surviving document, or
 stop it entirely when the body came back empty. That reasoning is why widening the selected keyset
-is the only place the anchor can come from, and it holds under either anchor. Descriptor query rows
-already carry both `DocumentId` and `ContentVersion`, so the descriptor handler simply takes the
-maximum of whichever column the request's anchor names, with no SQL change on that path.
+is the only place the anchor can come from, and it holds under either anchor.
+
+Descriptor page selection retrieves its rows in the same statement that selects them, so it needs no
+keyset temp table — but it does need the same discipline about *which* column the anchor is. Under a
+`ContentVersion` anchor the descriptor page-rows statement projects the anchor out of the embedded
+page-selection relation, aliased away from the `ContentVersion` it also projects from `dms.Document`,
+and the handler takes its maximum from that alias. The two columns hold the same value for a
+committed row — the stamping triggers keep the root mirror in lock-step with the canonical
+`dms.Document` value — but they are read through different joins in one statement, so under a
+provider that admits intra-statement read skew a concurrent update can make the document copy the
+larger of the pair. A continuation anchored on that copy would start the next page past rows the
+current one never returned. The anchor is therefore always the value page selection ordered,
+bounded, and indexed on, on this path exactly as on the regular-resource path.
 
 `HighestSelectedAnchor` is null when page selection is skipped or the selected keyset is empty
 — including authorization, preprocessing, and planner early-empty paths, and zero-size pages. An
