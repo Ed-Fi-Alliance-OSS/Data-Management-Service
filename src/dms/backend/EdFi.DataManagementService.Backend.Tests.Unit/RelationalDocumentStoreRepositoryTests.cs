@@ -5034,13 +5034,13 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         success.SelectionSkipped.Should().BeFalse();
     }
 
-    // A traditional page anchored on ContentVersion has a highest selected DocumentId that is a real
-    // selected maximum but does not describe where the page ended, so the maximum is reported as
-    // selected while only continuation eligibility is withheld. The anchor arrives on the request, so
-    // it is supplied alongside the window Core resolved it from rather than inferred from that window
-    // here.
+    // A traditional page over a max-bearing window anchors on ContentVersion, and the boundary it
+    // reports is a ContentVersion — 875, inside the request's window, not a DocumentId. Nothing is
+    // withheld from such a page any more: it reports its anchor like any other, and Core stamps that
+    // anchor on the continuation token it hands out. The anchor arrives on the request, so it is
+    // supplied alongside the window Core resolved it from rather than inferred from that window here.
     [Test]
-    public async Task It_keeps_the_real_boundary_but_disallows_continuation_for_a_windowed_traditional_page()
+    public async Task It_reports_a_content_version_boundary_for_a_windowed_traditional_page()
     {
         var mappingSet = CreateQuerySupportedMappingSet(
             _schoolResourceInfo,
@@ -5060,12 +5060,12 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             pageOrderingMode: PageOrderingMode.ContentVersion
         );
 
-        StubHydrationWithBoundary(readPlan, 2509L);
+        StubHydrationWithBoundary(readPlan, 875L);
 
         var result = await _sut.QueryDocuments(queryRequest);
 
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
-        success.HighestSelectedAnchor.Should().Be(2509L);
+        success.HighestSelectedAnchor.Should().Be(875L);
     }
 
     // A deployment running with the legacy ordering switch resolves a DocumentId anchor even for a
@@ -5194,7 +5194,11 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         readAccelerationCoordinator.QueryAttempts.Should().Be(1);
     }
 
-    private void StubHydrationWithBoundary(ResourceReadPlan readPlan, long highestSelectedDocumentId)
+    /// <param name="highestSelectedAnchor">
+    /// The boundary hydration reports. Not a DocumentId in particular: its units are whichever anchor
+    /// the request resolved, and the repository passes it through without reinterpreting it.
+    /// </param>
+    private void StubHydrationWithBoundary(ResourceReadPlan readPlan, long highestSelectedAnchor)
     {
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
@@ -5207,7 +5211,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             .Returns(
                 new HydratedPage(null, [], [new HydratedTableRows(readPlan.Model.Root, [])], [])
                 {
-                    HighestSelectedAnchor = highestSelectedDocumentId,
+                    HighestSelectedAnchor = highestSelectedAnchor,
                 }
             );
         A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
