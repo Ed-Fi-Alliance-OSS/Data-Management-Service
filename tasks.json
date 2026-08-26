@@ -1152,7 +1152,7 @@
       "dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~CdcProviderSetupResultMapper",
       "dotnet csharpier format src/dms/backend"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "duplication",
