@@ -1005,7 +1005,8 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
         new(
             DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
             AdministrativeTargetKey,
-            expectedPhysicalSourceFingerprint: Fingerprint
+            expectedPhysicalSourceFingerprint: Fingerprint,
+            confirmation: DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild
         );
 
     private static async Task CommitLifecycleTransitionAsync(
