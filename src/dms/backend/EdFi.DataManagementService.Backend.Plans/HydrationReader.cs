@@ -49,10 +49,11 @@ public static class HydrationReader
     /// </remarks>
     /// <param name="reader">The data reader positioned at the selected keyset result set.</param>
     /// <param name="carriesAnchorColumn">
-    /// Whether the materialization projected the anchor as a second column. Supplied by the caller from
-    /// the same keyset the batch was built from rather than inferred from the reader's shape: inferring
-    /// it would read <c>DocumentId</c> as the anchor if the projection ever narrowed, which is a wrong
-    /// continuation token rather than a failure.
+    /// Whether the materialization projected the anchor beside the ids. Supplied by the caller from
+    /// <c>HydrationBatchBuilder.CarriesSelectedAnchor</c>, the same predicate the batch emitted its
+    /// column list from, rather than inferred from the reader's shape: inferring it would read
+    /// <c>DocumentId</c> as the anchor if the projection ever narrowed, which is a wrong continuation
+    /// token rather than a failure.
     /// </param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The maximum selected anchor value, or null when nothing was selected.</returns>
@@ -64,16 +65,7 @@ public static class HydrationReader
     {
         ArgumentNullException.ThrowIfNull(reader);
 
-        var anchorOrdinal = carriesAnchorColumn ? AnchorColumnOrdinal : DocumentIdColumnOrdinal;
-
-        if (carriesAnchorColumn && reader.FieldCount <= AnchorColumnOrdinal)
-        {
-            throw new InvalidOperationException(
-                "Expected the selected page keyset result set to carry the continuation anchor as a "
-                    + $"second column, but it returned {reader.FieldCount.ToString(CultureInfo.InvariantCulture)} "
-                    + "column(s). The materialization SQL and this reader disagree about the keyset shape."
-            );
-        }
+        var anchorOrdinal = carriesAnchorColumn ? FindSelectedAnchorOrdinal(reader) : DocumentIdColumnOrdinal;
 
         long? selectedMaximum = null;
 
@@ -91,13 +83,49 @@ public static class HydrationReader
     }
 
     /// <summary>
-    /// Ordinals in the selected page keyset result set. <c>DocumentId</c> is always first; the anchor
-    /// follows it only on a <c>ContentVersion</c>-anchored page, where both are projected because
-    /// <c>DocumentId</c> feeds hydration and the anchor continues the walk.
+    /// Locates the continuation anchor in the selected page keyset result set by the same name the
+    /// batch builder projected it under, and reports a shape disagreement when it is absent.
+    /// </summary>
+    /// <remarks>
+    /// By name rather than at a fixed ordinal, matching the read-acceleration twin in the repository:
+    /// the anchor's position is a property of the emitted <c>RETURNING</c> and <c>OUTPUT</c> clauses,
+    /// and a column added ahead of it would leave a fixed ordinal reading a plausible <c>long</c> that
+    /// is not the anchor — a continuation token that names the wrong position in the sequence rather
+    /// than a failure. A missing column is a defect in this code, not anything a client did, so it is
+    /// named here instead of surfacing as a bare ordinal fault from inside the row loop.
+    /// <para>
+    /// Scanned rather than resolved through <see cref="DbDataReader.GetOrdinal" />, which reports an
+    /// absent name by throwing a type that varies by provider.
+    /// </para>
+    /// </remarks>
+    private static int FindSelectedAnchorOrdinal(DbDataReader reader)
+    {
+        for (var ordinal = 0; ordinal < reader.FieldCount; ordinal++)
+        {
+            if (
+                string.Equals(
+                    reader.GetName(ordinal),
+                    HydrationSqlConventions.SelectedAnchorColumnName,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                return ordinal;
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Expected the selected page keyset result set to carry the continuation anchor as its "
+                + $"'{HydrationSqlConventions.SelectedAnchorColumnName}' column, but it carries no such "
+                + "column. The materialization SQL and this reader disagree about the keyset shape."
+        );
+    }
+
+    /// <summary>
+    /// <c>DocumentId</c>'s ordinal in the selected page keyset result set. Always first, on an anchored
+    /// page and an unanchored one alike; the anchor beside it is located by name instead.
     /// </summary>
     private const int DocumentIdColumnOrdinal = 0;
-
-    private const int AnchorColumnOrdinal = 1;
 
     /// <summary>
     /// Expected column count for the document metadata result set, defined by

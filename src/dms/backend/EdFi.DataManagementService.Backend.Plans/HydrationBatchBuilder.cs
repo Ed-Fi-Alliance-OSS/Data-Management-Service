@@ -456,8 +456,15 @@ public static class HydrationBatchBuilder
     /// performs page selection at all, so every one of them emits the batch text it always has. The
     /// table DDL, the insert column list, and the returning clause all read this one predicate, because
     /// three separate decisions could disagree and name a column the keyset table does not have.
+    /// <para>
+    /// Public for the same reason, across the assembly boundary: every reader of a batch built here has
+    /// to decide whether to expect the anchor column, and a reader that answered that question its own
+    /// way would be a fourth decision able to drift from the three above. Both readers ask here — the
+    /// hydration reader through <c>HydrationExecutor</c>, and the read-acceleration reader in the
+    /// repository that consumes <see cref="BuildCandidateMetadataBatch" />.
+    /// </para>
     /// </remarks>
-    internal static bool CarriesSelectedAnchor(PageKeysetSpec spec) =>
+    public static bool CarriesSelectedAnchor(PageKeysetSpec spec) =>
         spec is PageKeysetSpec.Query { OrderingMode: PageOrderingMode.ContentVersion };
 
     /// <summary>

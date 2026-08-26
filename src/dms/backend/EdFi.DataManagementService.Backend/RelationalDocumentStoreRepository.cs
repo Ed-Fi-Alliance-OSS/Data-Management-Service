@@ -1964,11 +1964,10 @@ public sealed class RelationalDocumentStoreRepository(
                         reader,
                         plannedQuery.Plan.TotalCountSql is not null,
                         paging,
-                        // The anchor of the keyset the command was built from, not a separately
-                        // supplied one: the shape of the selected-keys result set below follows this
-                        // same value, so reading it off the keyset is what keeps the ordinal and the
-                        // column list that produced it from disagreeing.
-                        plannedQuery.OrderingMode,
+                        // Asked of the same predicate the batch above emitted its column list from,
+                        // rather than re-derived from the keyset's anchor here. Both answers would be
+                        // the same today; only this one still is if that predicate ever narrows.
+                        HydrationBatchBuilder.CarriesSelectedAnchor(plannedQuery),
                         resourceKeyId,
                         ct
                     ),
@@ -2018,7 +2017,7 @@ public sealed class RelationalDocumentStoreRepository(
         IRelationalCommandReader reader,
         bool hasTotalCount,
         CollectionPaging paging,
-        PageOrderingMode orderingMode,
+        bool carriesSelectedAnchor,
         short resourceKeyId,
         CancellationToken cancellationToken
     )
@@ -2030,7 +2029,7 @@ public sealed class RelationalDocumentStoreRepository(
         // selection chose even when a row is deleted before the metadata select reaches it.
         long? selectedMaximum = await ReadSelectedAnchorMaximumAsync(
                 reader,
-                orderingMode is PageOrderingMode.ContentVersion,
+                carriesSelectedAnchor,
                 cancellationToken
             )
             .ConfigureAwait(false);

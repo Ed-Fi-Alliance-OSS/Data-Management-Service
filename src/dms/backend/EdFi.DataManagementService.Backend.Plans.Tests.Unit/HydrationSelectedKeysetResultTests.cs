@@ -690,9 +690,24 @@ public class Given_HydrationReader_With_A_Selected_Keyset_Result_Set
         // anchor and handing the client a token in the wrong sequence.
         var act = async () => await ReadMaximum(CreateSelectedIdsTable(42L), carriesAnchorColumn: true);
 
-        await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*continuation anchor as a second column*");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*'ContentVersion' column*");
+    }
+
+    [Test]
+    public async Task It_reads_the_anchor_by_name_rather_than_from_the_column_beside_the_document_id()
+    {
+        // A column between the ids and the anchor is exactly what a fixed second-column ordinal cannot
+        // survive: it would read a plausible long that is not the anchor and continue the walk from a
+        // position in the wrong sequence, with nothing failing. The interposed values are higher than
+        // every anchor so reading the wrong column would change the answer.
+        var selectedKeys = new DataTable();
+        selectedKeys.Columns.Add("DocumentId", typeof(long));
+        selectedKeys.Columns.Add("Ordinal", typeof(long));
+        selectedKeys.Columns.Add("ContentVersion", typeof(long));
+        selectedKeys.Rows.Add(7L, 5000L, 900L);
+        selectedKeys.Rows.Add(2509L, 6000L, 100L);
+
+        (await ReadMaximum(selectedKeys, carriesAnchorColumn: true)).Should().Be(900L);
     }
 
     internal static DataTable CreateSelectedIdsTable(params long[] selectedDocumentIds)
