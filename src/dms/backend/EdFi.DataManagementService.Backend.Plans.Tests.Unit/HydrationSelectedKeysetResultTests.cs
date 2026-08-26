@@ -795,7 +795,16 @@ public class Given_HydrationExecutor_With_A_Selected_Keyset_Result_Set
                 (84L, 44L),
                 (42L, 46L)
             ),
-            CreateDocumentMetadataTable((42L, DocumentUuid, 46L, 45L), (84L, OtherDocumentUuid, 44L, 47L)),
+            CreateDocumentMetadataTable(
+                (42L, DocumentUuid, 46L, new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero), (short)1),
+                (
+                    84L,
+                    OtherDocumentUuid,
+                    44L,
+                    new DateTimeOffset(2026, 4, 2, 12, 1, 0, TimeSpan.Zero),
+                    (short)1
+                )
+            ),
             CreateRootTableRows((42L, 255901), (84L, 255902)),
             CreateChildTableRows((100L, 42L, 0, "Springfield"))
         );
