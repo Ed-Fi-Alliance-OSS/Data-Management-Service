@@ -1067,29 +1067,54 @@ public class Given_DocumentCacheStatusService
             effectiveSettings
         );
         StaticTargetRegistry registry = new([target], [ExecutionContext(target)]);
+        TaskCompletionSource providerObservationStarted = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
         ScriptedStatusObserver observer = new(
             (_, _) =>
-                new TaskCompletionSource<DocumentCacheStatusCurrentSourceObservationResult>(
+            {
+                providerObservationStarted.TrySetResult();
+                return new TaskCompletionSource<DocumentCacheStatusCurrentSourceObservationResult>(
                     TaskCreationOptions.RunContinuationsAsynchronously
-                ).Task
+                ).Task;
+            }
         );
         CapturingStatusTelemetry telemetry = new();
+        ControlledTimeProvider timeProvider = new(ProcessObservedAt);
         DocumentCacheStatusService service = CreateService(
             registry,
             ObservationStore(target),
             observer,
-            telemetry
+            telemetry,
+            timeProvider: timeProvider
         );
 
-        DocumentCacheStatusResponse response = await service
-            .GetStatusAsync()
-            .WaitAsync(TimeSpan.FromSeconds(2));
+        DocumentCacheStatusResponse response;
+        using (CancellationTokenSource callerCancellationTokenSource = new())
+        {
+            Task<DocumentCacheStatusResponse> responseTask = service.GetStatusAsync(
+                callerCancellationTokenSource.Token
+            );
+
+            try
+            {
+                await providerObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                timeProvider.Advance(effectiveSettings.StatusEndpointTimeout);
+                response = await responseTask.WaitAsync(TimeSpan.FromSeconds(2));
+            }
+            catch
+            {
+                await callerCancellationTokenSource.CancelAsync();
+                throw;
+            }
+        }
 
         DocumentCacheStatusTarget statusTarget = response.Targets.Should().ContainSingle().Which;
         statusTarget.OperationalHealth.Status.Should().Be(DocumentCacheOperationalHealthStatus.Unknown);
         statusTarget.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.StatusEndpointTimeout);
         statusTarget.CaughtUp.Status.Should().Be(DocumentCacheCaughtUpStatus.Unknown);
         statusTarget.CaughtUp.Reason.Should().Be(DocumentCacheStatusReason.StatusEndpointTimeout);
+        observer.StartedKeys.Should().ContainSingle(key => key.Equals(target.TargetKey));
 
         CapturedProviderObservation providerObservation = telemetry
             .ProviderObservations.Should()
