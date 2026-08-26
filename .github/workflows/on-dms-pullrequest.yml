@@ -701,12 +701,20 @@ jobs:
           # run can restore it; the GitHub Actions backend scopes entries by ref, so only a run
           # on the default branch could seed one that every pull request restores. Exporting is
           # limited to non-pull_request runs: the merge queue builds the tree about to become
-          # main, and workflow_dispatch stays eligible as the manual lever for re-seeding a
-          # pruned tag. Concurrent merge queue entries can still race on this tag; last writer
-          # wins and the blobs are content-addressed, so the loser costs only a cache refresh.
+          # main, and workflow_dispatch stays eligible as the manual lever for re-seeding the
+          # tag. Concurrent merge queue entries can still race on this tag; last writer wins
+          # and the blobs are content-addressed, so the loser costs only a cache refresh.
           # ignore-error keeps a registry hiccup during export from failing a job that
           # dms-ci-gate requires; buildx still prints an ERROR vertex for the failed export, so
-          # a green run can legitimately carry one.
+          # a green run can legitimately carry one. Since that leaves a broken export looking
+          # green here, Cleanup DMS CI GHCR Images owns the failing signal instead: it excludes
+          # the version this tag points at from its own prune, and fails when the tag stops
+          # resolving.
+          #
+          # This tag is an input to every other pull request's build, and the gate deciding who
+          # writes it is a line in this file. Fork pull requests cannot reach it - they clear
+          # use_prebuilt_images - so changing it takes write access to this repository and
+          # lands in a reviewable diff.
           cache-from: type=registry,ref=${{ steps.prepare-images.outputs.dms_cache_ref }}
           cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,mode=max,ignore-error=true,ref={0}', steps.prepare-images.outputs.dms_cache_ref) || '' }}
 

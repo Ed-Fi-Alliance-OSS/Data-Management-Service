@@ -46,6 +46,16 @@ jobs:
       # a container registry reference must be lowercase and the expression language has no
       # lowercase function. The E2E jobs consume it; fresh-rebuild-docker-image does not,
       # because it deliberately builds with --no-cache.
+      #
+      # This workflow only ever restores from the tag. On DMS Pull Request writes it, from its
+      # Build CI Docker Images job, on non-pull_request runs only - which is why no job here
+      # needs packages: write. Two things stop that writer, and neither fails anything here:
+      # setting the repository variable REBUILD_DOWNSTREAM_IMAGES skips that job's build steps
+      # altogether, and the GHCR pruner could evict the tag. The recovery for both is a
+      # workflow_dispatch run of On DMS Pull Request on main, which is also eligible to export.
+      # Cleanup DMS CI GHCR Images excludes the tag from its own prune and fails when the tag
+      # stops resolving, so an evicted or unwritten cache surfaces there instead of silently
+      # slowing every build in this file.
       config_cache_ref: ${{ steps.cache-ref.outputs.config_cache_ref }}
     steps:
       - name: Resolve the build cache reference
@@ -337,6 +347,12 @@ jobs:
       github.event_name != 'pull_request' ||
       needs.detect-fresh-build-changes.outputs.config_relevant == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      # packages: read is load-bearing here, not boilerplate: the CI packages are private, so
+      # restoring the build cache below authenticates with this token. Narrowing this block to
+      # contents: read alone would silently make every build in this job cold.
+      contents: read
+      packages: read
     defaults:
       run:
         shell: pwsh
@@ -372,10 +388,11 @@ jobs:
             parentdir=./src
           push: false
           tags: ed-fi-api-config-local:latest
-          # Restore only, from the tag the merge queue run of On DMS Pull Request writes. That
-          # workflow builds this same image from the same context, Dockerfile and build
-          # contexts, so its layers are reusable here and no job in this workflow needs
-          # packages: write. An unreadable or absent cache import logs an ERROR vertex but does
+          # Restore only, from the tag On DMS Pull Request writes; the writer, the conditions
+          # that stop it writing and the recovery for each are described on the
+          # config_cache_ref output of detect-fresh-build-changes. That workflow builds this
+          # same image from the same context, Dockerfile and build contexts, so its layers are
+          # reusable here. An unreadable or absent cache import logs an ERROR vertex but does
           # not fail the build, so a cold build still succeeds.
           cache-from: type=registry,ref=${{ needs.detect-fresh-build-changes.outputs.config_cache_ref }}
 
@@ -424,6 +441,12 @@ jobs:
       github.event_name != 'pull_request' ||
       needs.detect-fresh-build-changes.outputs.config_relevant == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      # packages: read is load-bearing here, not boilerplate: the CI packages are private, so
+      # restoring the build cache below authenticates with this token. Narrowing this block to
+      # contents: read alone would silently make every build in this job cold.
+      contents: read
+      packages: read
     defaults:
       run:
         shell: pwsh
@@ -459,10 +482,11 @@ jobs:
             parentdir=./src
           push: false
           tags: ed-fi-api-config-local:latest
-          # Restore only, from the tag the merge queue run of On DMS Pull Request writes. That
-          # workflow builds this same image from the same context, Dockerfile and build
-          # contexts, so its layers are reusable here and no job in this workflow needs
-          # packages: write. An unreadable or absent cache import logs an ERROR vertex but does
+          # Restore only, from the tag On DMS Pull Request writes; the writer, the conditions
+          # that stop it writing and the recovery for each are described on the
+          # config_cache_ref output of detect-fresh-build-changes. That workflow builds this
+          # same image from the same context, Dockerfile and build contexts, so its layers are
+          # reusable here. An unreadable or absent cache import logs an ERROR vertex but does
           # not fail the build, so a cold build still succeeds.
           cache-from: type=registry,ref=${{ needs.detect-fresh-build-changes.outputs.config_cache_ref }}
 
@@ -511,6 +535,12 @@ jobs:
       github.event_name != 'pull_request' ||
       needs.detect-fresh-build-changes.outputs.config_relevant == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      # packages: read is load-bearing here, not boilerplate: the CI packages are private, so
+      # restoring the build cache below authenticates with this token. Narrowing this block to
+      # contents: read alone would silently make every build in this job cold.
+      contents: read
+      packages: read
     defaults:
       run:
         shell: pwsh
@@ -546,10 +576,11 @@ jobs:
             parentdir=./src
           push: false
           tags: ed-fi-api-config-local:latest
-          # Restore only, from the tag the merge queue run of On DMS Pull Request writes. That
-          # workflow builds this same image from the same context, Dockerfile and build
-          # contexts, so its layers are reusable here and no job in this workflow needs
-          # packages: write. An unreadable or absent cache import logs an ERROR vertex but does
+          # Restore only, from the tag On DMS Pull Request writes; the writer, the conditions
+          # that stop it writing and the recovery for each are described on the
+          # config_cache_ref output of detect-fresh-build-changes. That workflow builds this
+          # same image from the same context, Dockerfile and build contexts, so its layers are
+          # reusable here. An unreadable or absent cache import logs an ERROR vertex but does
           # not fail the build, so a cold build still succeeds.
           cache-from: type=registry,ref=${{ needs.detect-fresh-build-changes.outputs.config_cache_ref }}
 
