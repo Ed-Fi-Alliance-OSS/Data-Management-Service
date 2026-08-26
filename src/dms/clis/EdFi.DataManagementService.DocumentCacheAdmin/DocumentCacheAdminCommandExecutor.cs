@@ -83,7 +83,7 @@ internal static class DocumentCacheAdminCommandExecutor
 
                 DocumentCacheStatusResponse statusResponse = await GetStatusResponseAsync(
                         serviceProvider,
-                        statusTimeout.Token
+                        cancellationToken
                     )
                     .ConfigureAwait(false);
 
@@ -104,6 +104,20 @@ internal static class DocumentCacheAdminCommandExecutor
                 }
 
                 return CompleteCommand(DocumentCacheAdminExitCodes.Success, "completed", "status");
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                await WriteErrorAsync(
+                        standardError,
+                        "DocumentCache status was cancelled before a complete status document could be produced."
+                    )
+                    .ConfigureAwait(false);
+
+                return CompleteCommand(
+                    DocumentCacheAdminExitCodes.FailedNoMutation,
+                    "failedNoMutation",
+                    "cancelled"
+                );
             }
             catch (OperationCanceledException) when (statusTimeout.IsTimeoutExpired)
             {

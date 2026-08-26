@@ -259,5 +259,4 @@ Describe "on-dms-pullrequest.yml bootstrap Pester registry" {
         $script:pesterPaths | Should -Contain "eng/docker-compose/tests/DockerComposeLogging.Tests.ps1" `
             -Because "the DMS-1407 compose logging guard must run on every DMS-relevant pull request"
     }
-
 }

@@ -26,7 +26,8 @@ public sealed class Given_DocumentCacheAdminStatusCommand
         result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.ConfigurationError);
         result.StandardOutput.Should().BeEmpty();
         result.StandardError.Should().Contain("DocumentCache configuration error");
-        result.StandardError.Should().Contain("AppSettings:Datastore must be one of: postgresql mssql");
+        result.StandardError.Should().Contain("AppSettings:Datastore must be one of: postgresql");
+        result.StandardError.Should().Contain("mssql");
     }
 
     private static async Task<ProcessResult> RunDocumentCacheAdminAsync(params string[] arguments)

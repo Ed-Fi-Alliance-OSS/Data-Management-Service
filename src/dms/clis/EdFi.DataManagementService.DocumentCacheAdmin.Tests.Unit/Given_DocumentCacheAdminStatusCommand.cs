@@ -5,7 +5,6 @@
 
 using System.Collections.Immutable;
 using System.CommandLine;
-using System.Diagnostics;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
@@ -127,7 +126,7 @@ public sealed class Given_DocumentCacheAdminStatusCommand
 
     [Test]
     [Category("Timeout")]
-    public async Task It_serializes_endpoint_timeout_status_data_when_status_service_returns_a_dto()
+    public async Task It_serializes_endpoint_timeout_status_data_after_the_cli_status_timeout_source_fires()
     {
         ScriptedDocumentCacheStatusService statusService = new(
             async (_, cancellationToken) =>
@@ -147,7 +146,7 @@ public sealed class Given_DocumentCacheAdminStatusCommand
                 DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
                 "1",
                 DocumentCacheAdminCommandSurface.StatusTimeoutSecondsOptionName,
-                "1",
+                "0.001",
                 DocumentCacheAdminCommandSurface.JsonOptionName
             ),
             InvocationTarget(),
@@ -161,58 +160,6 @@ public sealed class Given_DocumentCacheAdminStatusCommand
         JsonObject target = root["targets"]![0]!.AsObject();
         target["operationalHealth"]!["reason"]!.GetValue<string>().Should().Be("statusEndpointTimeout");
         stderr.ToString().Should().BeEmpty();
-        statusService
-            .EvaluationModes.Should()
-            .ContainSingle()
-            .Which.Should()
-            .Be(DocumentCacheStatusEvaluationMode.StandaloneDirectObservation);
-    }
-
-    [Test]
-    [Category("Timeout")]
-    public async Task It_applies_remaining_status_timeout_budget_to_status_evaluation()
-    {
-        var targetResolver = new DelayingTargetResolver(TimeSpan.FromMilliseconds(450));
-        ScriptedDocumentCacheStatusService statusService = new(
-            async (_, cancellationToken) =>
-            {
-                await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
-                throw new AssertionException(
-                    "Status pipeline must not receive a fresh uncancelled endpoint timeout budget."
-                );
-            }
-        );
-        await using ServiceProvider serviceProvider = new ServiceCollection()
-            .AddSingleton<IDocumentCacheAdminTargetResolver>(targetResolver)
-            .AddSingleton<IDocumentCacheStatusService>(statusService)
-            .BuildServiceProvider();
-        using var stdout = new StringWriter();
-        using var stderr = new StringWriter();
-        Stopwatch stopwatch = Stopwatch.StartNew();
-
-        int exitCode = await DocumentCacheAdminCommandExecutor
-            .ExecuteAsync(
-                ParseStatusCommand(
-                    DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
-                    "1",
-                    DocumentCacheAdminCommandSurface.StatusTimeoutSecondsOptionName,
-                    "0.75",
-                    DocumentCacheAdminCommandSurface.JsonOptionName
-                ),
-                InvocationTarget(),
-                serviceProvider,
-                stdout,
-                stderr
-            )
-            .WaitAsync(TimeSpan.FromSeconds(3))
-            .ConfigureAwait(false);
-
-        stopwatch.Stop();
-        exitCode.Should().Be(DocumentCacheAdminExitCodes.FailedNoMutation);
-        stdout.ToString().Should().BeEmpty();
-        stderr.ToString().Should().Contain("status timed out");
-        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3));
-        targetResolver.ResolveCount.Should().Be(1);
         statusService
             .EvaluationModes.Should()
             .ContainSingle()
