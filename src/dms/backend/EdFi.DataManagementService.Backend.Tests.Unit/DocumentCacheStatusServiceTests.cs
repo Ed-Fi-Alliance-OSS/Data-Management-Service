@@ -1165,20 +1165,48 @@ public class Given_DocumentCacheStatusService
             [startedTarget, unstartedInvalidTarget],
             [ExecutionContext(startedTarget)]
         );
+        TaskCompletionSource startedObservationStarted = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
         ScriptedStatusObserver observer = new(
-            async (_, cancellationToken) =>
+            async (request, cancellationToken) =>
             {
+                if (request.TargetExecutionContext.TargetKey.Equals(startedTarget.TargetKey))
+                {
+                    startedObservationStarted.TrySetResult();
+                }
+
                 await WaitForCancellationAsync(cancellationToken);
                 return DocumentCacheStatusCurrentSourceObservationResult.Cancelled("cancelled");
             }
         );
+        ControlledTimeProvider timeProvider = new(ProcessObservedAt);
         DocumentCacheStatusService service = CreateService(
             registry,
             ObservationStore(startedTarget),
-            observer
+            observer,
+            timeProvider: timeProvider
         );
 
-        DocumentCacheStatusResponse response = await service.GetStatusAsync();
+        DocumentCacheStatusResponse response;
+        using (CancellationTokenSource callerCancellationTokenSource = new())
+        {
+            Task<DocumentCacheStatusResponse> responseTask = service.GetStatusAsync(
+                callerCancellationTokenSource.Token
+            );
+
+            try
+            {
+                await startedObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                timeProvider.Advance(effectiveSettings.StatusEndpointTimeout);
+                response = await responseTask.WaitAsync(TimeSpan.FromSeconds(2));
+            }
+            catch
+            {
+                await callerCancellationTokenSource.CancelAsync();
+                throw;
+            }
+        }
 
         DocumentCacheStatusTarget startedStatus = response.Targets.Single(target =>
             target.TargetKey.DataStoreId == 1
@@ -1199,7 +1227,8 @@ public class Given_DocumentCacheStatusService
         unstartedStatus.Lifecycle.Availability.Should().Be(DocumentCacheStatusAvailability.Unavailable);
         unstartedStatus.QueueSummary.Presence.Should().Be(DocumentCacheStatusQueuePresence.Unavailable);
         unstartedStatus.DurableObservedAt.Should().BeNull();
-        observer.StartedKeys.Should().ContainSingle(key => key.Equals(startedTarget.TargetKey));
+        observer.StartedKeys.Should().Contain(key => key.Equals(startedTarget.TargetKey));
+        observer.StartedKeys.Should().NotContain(key => key.Equals(unstartedInvalidTarget.TargetKey));
     }
 
     [Test]
