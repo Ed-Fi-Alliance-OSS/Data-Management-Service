@@ -668,6 +668,45 @@ public static class DocumentCachePreflightClassifier
         return null;
     }
 
+    public static DocumentCacheAdministrativeCommandResult? ClassifyCommandConfirmation(
+        DocumentCacheAdministrativeCommand command,
+        DocumentCacheAdministrativeTargetKey targetKey,
+        DocumentCacheAdministrativeCommandConfirmation? confirmation,
+        DocumentCacheTargetObservation? targetObservation = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(targetKey);
+
+        if (confirmation is null)
+        {
+            return Rejected(
+                command,
+                targetKey,
+                targetObservation,
+                DocumentCacheAdministrativeCommandClassification.MissingCommandConfirmation,
+                DocumentCacheAdministrativeDiagnosticCategory.MissingCommandConfirmation,
+                "Command confirmation is required for this administrative command."
+            );
+        }
+
+        DocumentCacheAdministrativeCommandConfirmation expectedConfirmation = ExpectedCommandConfirmation(
+            command
+        );
+        if (!Enum.IsDefined(confirmation.Value) || confirmation.Value != expectedConfirmation)
+        {
+            return Rejected(
+                command,
+                targetKey,
+                targetObservation,
+                DocumentCacheAdministrativeCommandClassification.MismatchedCommandConfirmation,
+                DocumentCacheAdministrativeDiagnosticCategory.MismatchedCommandConfirmation,
+                "Command confirmation must match the command-specific confirmation token."
+            );
+        }
+
+        return null;
+    }
+
     public static DocumentCacheAdministrativeCommandResult? ClassifyTargetObservationFailure(
         DocumentCacheAdministrativeCommand command,
         DocumentCacheAdministrativeTargetKey targetKey,
@@ -703,6 +742,10 @@ public static class DocumentCachePreflightClassifier
             ? confirmation
             : null;
     }
+
+    public static DocumentCacheAdministrativeCommandConfirmation ExpectedCommandConfirmation(
+        DocumentCacheAdministrativeCommand command
+    ) => DocumentCacheAdministrativeCommandContracts.ExpectedCommandConfirmation(command);
 
     private static DocumentCacheAdministrativeCommandResult? ClassifyCommonTargetState(
         DocumentCacheAdministrativeCommand command,
@@ -791,27 +834,11 @@ public static class DocumentCachePreflightClassifier
     }
 
     private static bool RequiresOfflineWriterAdmission(DocumentCacheAdministrativeCommand command) =>
-        command
-            is DocumentCacheAdministrativeCommand.OfflineActivation
-                or DocumentCacheAdministrativeCommand.OfflineDeactivation
-                or DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery;
+        DocumentCacheAdministrativeCommandContracts.RequiresOfflineWriterAdmission(command);
 
     private static DocumentCacheOfflineWriterAdmissionConfirmation ExpectedOfflineWriterAdmissionConfirmation(
         DocumentCacheAdministrativeCommand command
-    ) =>
-        command switch
-        {
-            DocumentCacheAdministrativeCommand.OfflineActivation =>
-                DocumentCacheOfflineWriterAdmissionConfirmation.OfflineActivationWritersClosedAndDrained,
-            DocumentCacheAdministrativeCommand.OfflineDeactivation =>
-                DocumentCacheOfflineWriterAdmissionConfirmation.OfflineDeactivationWritersClosedAndDrained,
-            DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery =>
-                DocumentCacheOfflineWriterAdmissionConfirmation.InternalOnlyCacheAheadRecoveryWritersClosedAndDrained,
-            _ => throw new ArgumentException(
-                "The command does not require offline writer admission.",
-                nameof(command)
-            ),
-        };
+    ) => DocumentCacheAdministrativeCommandContracts.ExpectedOfflineWriterAdmissionConfirmation(command);
 
     private static DocumentCacheAdministrativeCommandResult? ClassifyTargetContextFailure(
         DocumentCacheAdministrativeCommand command,

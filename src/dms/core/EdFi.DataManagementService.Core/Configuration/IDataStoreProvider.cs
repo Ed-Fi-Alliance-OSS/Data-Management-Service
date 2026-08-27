@@ -14,14 +14,19 @@ public interface IDataStoreProvider
     /// Loads data stores from the Configuration Service and stores them in memory
     /// </summary>
     /// <param name="tenant">Optional tenant identifier for multi-tenant environments</param>
+    /// <param name="cancellationToken">Cancellation token for the Configuration Service refresh operation.</param>
     /// <returns>A list of loaded data stores</returns>
-    Task<IList<DataStore>> LoadDataStores(string? tenant = null);
+    Task<IList<DataStore>> LoadDataStores(
+        string? tenant = null,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Refreshes the cached data stores for a tenant when the configured TTL has elapsed.
     /// </summary>
     /// <param name="tenant">Optional tenant identifier for multi-tenant environments</param>
-    Task RefreshInstancesIfExpiredAsync(string? tenant = null);
+    /// <param name="cancellationToken">Cancellation token for the cache-refresh operation.</param>
+    Task RefreshInstancesIfExpiredAsync(string? tenant = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets all stored data stores for a tenant

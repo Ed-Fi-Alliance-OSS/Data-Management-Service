@@ -589,7 +589,7 @@ public class MetadataModuleTests
                 ("districtId", "255902"),
                 ("schoolYear", "2025")
             );
-            A.CallTo(() => dataStoreProvider.LoadDataStores(A<string?>.Ignored))
+            A.CallTo(() => dataStoreProvider.LoadDataStores(A<string?>.Ignored, A<CancellationToken>._))
                 .Returns([tenantADataStore, tenantBDataStore]);
             A.CallTo(() => dataStoreProvider.LoadTenants())
                 .Returns(new List<string> { "tenantA", "tenantB" });

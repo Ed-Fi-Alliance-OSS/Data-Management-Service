@@ -209,5 +209,10 @@ internal sealed class DocumentCacheGuardedNewEmptyActivationCommand(
 
     private static DocumentCacheGuardedNewEmptyActivationRequest Request(
         DocumentCacheAdministrativeCommandExecutionContext context
-    ) => new(context.Request.TargetKey, context.Request.ExpectedPhysicalSourceFingerprint);
+    ) =>
+        new(
+            context.Request.TargetKey,
+            context.Request.ExpectedPhysicalSourceFingerprint,
+            context.Request.Confirmation
+        );
 }

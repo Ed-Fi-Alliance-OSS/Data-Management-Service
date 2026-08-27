@@ -78,10 +78,28 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
     }
 
     public async Task<DocumentCacheStatusResponse> GetStatusAsync(
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken = default,
+        DocumentCacheStatusEvaluationMode evaluationMode = DocumentCacheStatusEvaluationMode.RuntimeEndpoint,
+        TimeSpan? endpointTimeoutOverride = null
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (!Enum.IsDefined(evaluationMode))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(evaluationMode),
+                evaluationMode,
+                "Unsupported DocumentCache status evaluation mode."
+            );
+        }
+        if (endpointTimeoutOverride is not null && endpointTimeoutOverride.Value < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(endpointTimeoutOverride),
+                endpointTimeoutOverride,
+                "Endpoint timeout override must be nonnegative."
+            );
+        }
 
         DocumentCacheTargetStatusSnapshot statusSnapshot = _targetRegistry.CurrentStatusSnapshot;
         DocumentCacheTargetRegistrySnapshot registrySnapshot = statusSnapshot.RegistrySnapshot;
@@ -102,15 +120,18 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         TimeSpan endpointTimeout = targetObservations.Min(target =>
             target.EffectiveSettings.StatusEndpointTimeout
         );
-        using CancellationTokenSource endpointTimeoutSource = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken
-        );
-        endpointTimeoutSource.CancelAfter(endpointTimeout);
+        if (endpointTimeoutOverride is not null && endpointTimeoutOverride.Value < endpointTimeout)
+        {
+            endpointTimeout = endpointTimeoutOverride.Value;
+        }
+        using CancellationTokenSource endpointTimeoutSource = new(endpointTimeout, _timeProvider);
+        using CancellationTokenSource endpointCancellationSource =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, endpointTimeoutSource.Token);
 
         ConcurrentDictionary<int, DocumentCacheStatusTarget> results = new();
         ParallelOptions parallelOptions = new()
         {
-            CancellationToken = endpointTimeoutSource.Token,
+            CancellationToken = endpointCancellationSource.Token,
             MaxDegreeOfParallelism = SelectMaxDegreeOfParallelism(targetObservations),
         };
 
@@ -128,6 +149,7 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
                                 observedAt,
                                 runtimeSnapshot,
                                 projectionSnapshot,
+                                evaluationMode,
                                 endpointCancellationToken,
                                 cancellationToken
                             )
@@ -154,6 +176,7 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
                     registrySnapshot.ObservedAt,
                     observedAt,
                     projectionSnapshot,
+                    evaluationMode,
                     EndpointTimeoutNotStartedMessage
                 );
         }
@@ -167,6 +190,7 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         DateTimeOffset processObservedAt,
         DocumentCacheTargetRuntimeSnapshot runtimeSnapshot,
         DocumentCacheProjectionObservationSnapshot projectionSnapshot,
+        DocumentCacheStatusEvaluationMode evaluationMode,
         CancellationToken endpointCancellationToken,
         CancellationToken callerCancellationToken
     )
@@ -186,6 +210,7 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
                 registryObservedAt,
                 processObservedAt,
                 projectionSnapshot,
+                evaluationMode,
                 EndpointTimeoutStartedMessage,
                 targetHealth,
                 runtimeObservation
@@ -195,13 +220,14 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         DocumentCacheStatusProcessEligibility processEligibility =
             DocumentCacheStatusClassifier.ClassifyProcessEligibility(targetObservation, runtimeObservation);
 
-        if (!processEligibility.IsEligible)
+        if (!ShouldObserveDurableStatus(processEligibility, evaluationMode))
         {
             DocumentCacheStatusClassificationResult processClassification =
                 DocumentCacheStatusClassifier.Classify(
                     targetObservation,
                     runtimeObservation,
-                    durableObservation: null
+                    durableObservation: null,
+                    evaluationMode
                 );
 
             return BuildStatusTarget(
@@ -225,7 +251,8 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         DocumentCacheStatusClassificationResult classification = DocumentCacheStatusClassifier.Classify(
             targetObservation,
             runtimeObservation,
-            observedDurableStatus.DurableObservation
+            observedDurableStatus.DurableObservation,
+            evaluationMode
         );
 
         return BuildStatusTarget(
@@ -238,6 +265,17 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             observedDurableStatus.ProviderObservationDuration
         );
     }
+
+    private static bool ShouldObserveDurableStatus(
+        DocumentCacheStatusProcessEligibility processEligibility,
+        DocumentCacheStatusEvaluationMode evaluationMode
+    ) =>
+        processEligibility.IsEligible
+        || (
+            evaluationMode == DocumentCacheStatusEvaluationMode.StandaloneDirectObservation
+            && processEligibility.Status == DocumentCacheStatusProcessEligibilityStatus.Unknown
+            && processEligibility.Reason == DocumentCacheStatusReason.RuntimeNotObserved
+        );
 
     private async Task<ObservedDurableStatus> ObserveDurableStatusAsync(
         DocumentCacheTargetObservation targetObservation,
@@ -289,7 +327,10 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             );
         }
 
-        using CancellationTokenSource statusObservationTimeoutSource = new();
+        using CancellationTokenSource statusObservationTimeoutSource = new(
+            executionContext.EffectiveSettings.StatusObservationTimeout,
+            _timeProvider
+        );
         int firstCancellationSource = (int)ProviderObservationCancellationSource.None;
 
         void RecordFirstCancellationSource(ProviderObservationCancellationSource cancellationSource)
@@ -315,10 +356,6 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
                 callerCancellationToken,
                 statusObservationTimeoutSource.Token
             );
-        statusObservationTimeoutSource.CancelAfter(
-            executionContext.EffectiveSettings.StatusObservationTimeout
-        );
-
         ProviderObservationCancellationSource GetFirstCancellationSource() =>
             SelectFirstCancellationSource(
                 (ProviderObservationCancellationSource)Volatile.Read(ref firstCancellationSource),
@@ -614,6 +651,7 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         DateTimeOffset registryObservedAt,
         DateTimeOffset processObservedAt,
         DocumentCacheProjectionObservationSnapshot projectionSnapshot,
+        DocumentCacheStatusEvaluationMode evaluationMode,
         string message,
         DocumentCacheProjectionTargetHealthSnapshot? targetHealth = null,
         DocumentCacheStatusRuntimeObservation? runtimeObservation = null
@@ -625,7 +663,8 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         DocumentCacheStatusClassificationResult classification = DocumentCacheStatusClassifier.Classify(
             targetObservation,
             runtimeObservation,
-            DocumentCacheStatusDurableObservation.EndpointTimeout(message)
+            DocumentCacheStatusDurableObservation.EndpointTimeout(message),
+            evaluationMode
         );
 
         return BuildStatusTarget(
@@ -668,7 +707,7 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
             ToExecutionStateComponent(targetHealth),
             ToActiveCommand(GetCurrentGenerationActiveCommand(targetObservation, projectionSnapshot)),
             ToLastEndedDiagnostic(
-                GetCurrentGenerationLastEndedAdministrativeCommandDiagnostic(
+                GetCurrentGenerationEndedAdministrativeCommandDiagnostic(
                     targetObservation,
                     projectionSnapshot
                 )
@@ -800,7 +839,7 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         return snapshot?.TargetGeneration == targetObservation.Generation ? snapshot : null;
     }
 
-    private static DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot? GetCurrentGenerationLastEndedAdministrativeCommandDiagnostic(
+    private static DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot? GetCurrentGenerationEndedAdministrativeCommandDiagnostic(
         DocumentCacheTargetObservation targetObservation,
         DocumentCacheProjectionObservationSnapshot projectionSnapshot
     )
@@ -811,7 +850,7 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         }
 
         DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot? snapshot =
-            projectionSnapshot.GetCurrentGenerationLastEndedAdministrativeCommandDiagnostic(
+            projectionSnapshot.GetCurrentGenerationEndedAdministrativeCommandDiagnostic(
                 targetObservation.TargetKey
             );
 

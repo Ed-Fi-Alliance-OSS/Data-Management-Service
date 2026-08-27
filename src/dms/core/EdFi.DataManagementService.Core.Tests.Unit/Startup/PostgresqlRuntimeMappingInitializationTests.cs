@@ -168,6 +168,7 @@ public class PostgresqlRuntimeMappingInitializationTests
         );
         services.AddSingleton<EffectiveSchemaSetBuilder>();
         services.AddSingleton<IEffectiveSchemaSetProvider, EffectiveSchemaSetProvider>();
+        services.AddSingleton<IEffectiveSchemaBootstrapper, EffectiveSchemaBootstrapper>();
         services.AddSingleton<DmsStartupOrchestrator>();
         services.AddSingleton<IDmsStartupTask, LoadAndBuildEffectiveSchemaTask>();
         services.AddSingleton<IDmsStartupTask, BackendMappingInitializationTask>();

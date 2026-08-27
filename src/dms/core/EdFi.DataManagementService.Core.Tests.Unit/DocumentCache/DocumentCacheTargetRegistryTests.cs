@@ -193,6 +193,49 @@ public class DocumentCacheTargetRegistryTests
 
             fixture.DataStoreProvider.LoadDataStoreCalls.Should().Equal("TenantA", "");
         }
+
+        [Test]
+        public async Task It_forwards_the_refresh_cancellation_token_to_direct_load_hooks()
+        {
+            RegistryFixture fixture = new(Targets: [("TenantA", 7)]);
+            fixture.DataStoreProvider.QueueLoadResult("TenantA", CreateDataStore(7, "connection-a"));
+            using var cancellationTokenSource = new CancellationTokenSource();
+
+            await fixture.Registry.RefreshAsync(
+                DocumentCacheTargetRefreshReason.Startup,
+                cancellationTokenSource.Token
+            );
+
+            fixture
+                .DataStoreProvider.LoadDataStoreCancellationTokens.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(cancellationTokenSource.Token);
+        }
+
+        [Test]
+        public async Task It_forwards_the_refresh_cancellation_token_to_expiration_refresh_hooks()
+        {
+            RegistryFixture fixture = new(Targets: [("TenantA", 7)]);
+            fixture.DataStoreProvider.QueueLoadResult("TenantA", CreateDataStore(7, "connection-a"));
+            await fixture.Registry.RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+            fixture.DataStoreProvider.QueueExpirationRefreshResult(
+                "TenantA",
+                CreateDataStore(7, "connection-a")
+            );
+            using var cancellationTokenSource = new CancellationTokenSource();
+
+            await fixture.Registry.RefreshAsync(
+                DocumentCacheTargetRefreshReason.SupervisorTriggered,
+                cancellationTokenSource.Token
+            );
+
+            fixture
+                .DataStoreProvider.RefreshIfExpiredCancellationTokens.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(cancellationTokenSource.Token);
+        }
     }
 
     [TestFixture]
@@ -670,6 +713,10 @@ public class DocumentCacheTargetRegistryTests
             DocumentCacheTargetRegistrySnapshot initialSnapshot = await fixture.Registry.RefreshAsync(
                 DocumentCacheTargetRefreshReason.Startup
             );
+            fixture.DataStoreProvider.QueueExpirationRefreshResult(
+                "TenantA",
+                CreateDataStore(7, "connection-a", RelationalProviderToken.SqlServer)
+            );
 
             fixture.DataStoreProvider.QueueLoadResult(
                 "TenantA",
@@ -695,6 +742,48 @@ public class DocumentCacheTargetRegistryTests
                 .NotContain(diagnostic =>
                     diagnostic.Category == DocumentCacheTargetDiagnosticCategory.TargetReplaced
                 );
+            fixture.ContextBuilder.BuildCalls.Select(call => call.Generation.Value).Should().Equal(1, 1);
+            fixture
+                .Registry.CurrentRuntimeSnapshot.GetExecutionContext(
+                    _tenantTargetKey,
+                    new DocumentCacheTargetContextGeneration(1)
+                )
+                .Should()
+                .NotBeNull();
+            fixture.DataStoreProvider.LoadDataStoreCalls.Should().Equal("TenantA", "TenantA");
+            fixture.DataStoreProvider.RefreshIfExpiredCalls.Should().BeEmpty();
+        }
+
+        [Test]
+        public async Task It_retries_recoverable_SqlServerDocumentCachePrerequisite_failures_after_forced_Cms_refresh()
+        {
+            RegistryFixture fixture = new(Targets: [("TenantA", 7)]);
+            fixture.ContextBuilder.QueueProviderPrerequisiteFailure(DocumentCacheLifecycleState.Disabled);
+            fixture.DataStoreProvider.QueueLoadResult(
+                "TenantA",
+                CreateDataStore(7, "connection-a", RelationalProviderToken.SqlServer)
+            );
+            DocumentCacheTargetRegistrySnapshot initialSnapshot = await fixture.Registry.RefreshAsync(
+                DocumentCacheTargetRefreshReason.Startup
+            );
+            fixture.DataStoreProvider.QueueLoadResult(
+                "TenantA",
+                CreateDataStore(7, "connection-a", RelationalProviderToken.SqlServer)
+            );
+
+            DocumentCacheTargetRegistrySnapshot cmsRefreshSnapshot = await fixture.Registry.RefreshAsync(
+                DocumentCacheTargetRefreshReason.CmsRefreshNotification
+            );
+
+            initialSnapshot
+                .Targets.Single()
+                .Diagnostics.Should()
+                .ContainSingle(diagnostic =>
+                    diagnostic.Category == DocumentCacheTargetDiagnosticCategory.ProviderPrerequisiteFailed
+                );
+            DocumentCacheTargetObservation observation = cmsRefreshSnapshot.Targets.Single();
+            observation.EligibilityState.Should().Be(DocumentCacheTargetEligibilityState.Eligible);
+            observation.Generation!.Value.Should().Be(1);
             fixture.ContextBuilder.BuildCalls.Select(call => call.Generation.Value).Should().Equal(1, 1);
             fixture
                 .Registry.CurrentRuntimeSnapshot.GetExecutionContext(
@@ -1346,6 +1435,10 @@ public class DocumentCacheTargetRegistryTests
 
         public List<string> RefreshIfExpiredCalls { get; } = [];
 
+        public List<CancellationToken> LoadDataStoreCancellationTokens { get; } = [];
+
+        public List<CancellationToken> RefreshIfExpiredCancellationTokens { get; } = [];
+
         public List<(long Id, string TenantKey)> GetByIdCalls { get; } = [];
 
         public int LoadTenantsCallCount { get; private set; }
@@ -1366,10 +1459,14 @@ public class DocumentCacheTargetRegistryTests
         public void QueueMutationAfterNextGetById(string? tenant, params DataStore[] dataStores) =>
             GetGetByIdMutationQueue(tenant).Enqueue(dataStores);
 
-        public Task<IList<DataStore>> LoadDataStores(string? tenant = null)
+        public Task<IList<DataStore>> LoadDataStores(
+            string? tenant = null,
+            CancellationToken cancellationToken = default
+        )
         {
             string tenantKey = GetTenantKey(tenant);
             LoadDataStoreCalls.Add(tenantKey);
+            LoadDataStoreCancellationTokens.Add(cancellationToken);
 
             Queue<LoadDataStoresResult> queue = GetQueue(tenant);
             if (queue.Count == 0)
@@ -1388,10 +1485,14 @@ public class DocumentCacheTargetRegistryTests
             return Task.FromResult(result.DataStores);
         }
 
-        public Task RefreshInstancesIfExpiredAsync(string? tenant = null)
+        public Task RefreshInstancesIfExpiredAsync(
+            string? tenant = null,
+            CancellationToken cancellationToken = default
+        )
         {
             string tenantKey = GetTenantKey(tenant);
             RefreshIfExpiredCalls.Add(tenantKey);
+            RefreshIfExpiredCancellationTokens.Add(cancellationToken);
 
             Queue<LoadDataStoresResult> queue = GetExpirationRefreshQueue(tenant);
             if (queue.Count == 0)

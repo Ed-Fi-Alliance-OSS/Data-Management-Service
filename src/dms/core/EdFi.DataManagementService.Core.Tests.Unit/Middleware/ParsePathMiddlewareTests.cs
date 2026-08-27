@@ -117,7 +117,7 @@ public class ParsePathMiddlewareTests
         services.AddTransient<ResolveDataStoreMiddleware>();
 
         var dataStoreProvider = A.Fake<IDataStoreProvider>();
-        A.CallTo(() => dataStoreProvider.RefreshInstancesIfExpiredAsync(A<string?>._))
+        A.CallTo(() => dataStoreProvider.RefreshInstancesIfExpiredAsync(A<string?>._, A<CancellationToken>._))
             .Returns(Task.CompletedTask);
         A.CallTo(() => dataStoreProvider.GetById(1, A<string?>.Ignored))
             .Returns(

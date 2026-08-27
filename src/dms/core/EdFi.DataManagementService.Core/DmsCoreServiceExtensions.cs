@@ -22,6 +22,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Polly;
@@ -77,6 +78,7 @@ public static class DmsCoreServiceExtensions
             )
             .AddSingleton<EffectiveSchemaSetBuilder>()
             .AddSingleton<IEffectiveSchemaSetProvider, EffectiveSchemaSetProvider>()
+            .AddSingleton<IEffectiveSchemaBootstrapper, EffectiveSchemaBootstrapper>()
             // Startup orchestration
             .AddSingleton<DmsStartupOrchestrator>()
             .AddSingleton<IDmsStartupTask, ValidateDatabaseFingerprintReaderRegistrationTask>()
@@ -236,6 +238,188 @@ public static class DmsCoreServiceExtensions
                 builder.AddRetry(retryOptions);
             }
         }
+    }
+
+    /// <summary>
+    /// Adds the shared DocumentCache option binding and validation used by hosted DMS and tools.
+    /// </summary>
+    public static IServiceCollection AddDmsDocumentCacheOptions(
+        this IServiceCollection services,
+        IConfiguration configuration
+    )
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        if (
+            !services.Any(descriptor =>
+                descriptor.ServiceType == typeof(IConfigureOptions<DocumentCacheOptions>)
+            )
+        )
+        {
+            services
+                .AddOptions<DocumentCacheOptions>()
+                .Bind(configuration.GetSection(DocumentCacheOptions.SectionName))
+                .ValidateOnStart();
+        }
+
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<
+                IValidateOptions<DocumentCacheOptions>,
+                DocumentCacheOptionsValidator
+            >()
+        );
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds the shared CMS-backed data store provider and connection-string provider used by DMS
+    /// runtime services and non-web tools.
+    /// </summary>
+    public static IServiceCollection AddDmsConfigurationServiceDataStoreProvider(
+        this IServiceCollection services,
+        IConfiguration configuration
+    )
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        IConfigurationSection configurationServiceSettings = configuration.GetSection(
+            "ConfigurationServiceSettings"
+        );
+        Uri configurationServiceBaseAddress = ValidateConfigurationServiceBaseAddress(
+            configurationServiceSettings
+        );
+
+        services.AddHybridCache();
+        services.TryAddSingleton(_ =>
+        {
+            CacheSettings cacheSettings = new();
+            configuration.GetSection("CacheSettings").Bind(cacheSettings);
+            return cacheSettings;
+        });
+
+        services.AddTransient<ConfigurationServiceResponseHandler>();
+        services
+            .AddHttpClient<ConfigurationServiceApiClient>(client =>
+            {
+                client.BaseAddress = configurationServiceBaseAddress;
+                client.DefaultRequestHeaders.Add("Accept", "application/json");
+                client.DefaultRequestHeaders.Add("Accept", "application/x-www-form-urlencoded");
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler())
+            .AddHttpMessageHandler<ConfigurationServiceResponseHandler>();
+
+        services.TryAddSingleton(
+            new ConfigurationServiceContext(
+                configurationServiceSettings["ClientId"] ?? string.Empty,
+                configurationServiceSettings["ClientSecret"] ?? string.Empty,
+                configurationServiceSettings["Scope"] ?? string.Empty
+            )
+        );
+        services.TryAddSingleton<IConnectionStringDecryptionService>(
+            new ConnectionStringDecryptionService(
+                configurationServiceSettings["EncryptionKey"] ?? string.Empty
+            )
+        );
+        services.TryAddSingleton<ConfigurationServiceDataStoreProvider>();
+        services.TryAddSingleton<IDataStoreProvider>(serviceProvider =>
+            serviceProvider.GetRequiredService<ConfigurationServiceDataStoreProvider>()
+        );
+        services.TryAddSingleton<IConnectionStringProvider, DmsConnectionStringProvider>();
+        services.TryAddSingleton<IConfigurationServiceTokenHandler, ConfigurationServiceTokenHandler>();
+
+        return services;
+    }
+
+    private static Uri ValidateConfigurationServiceBaseAddress(
+        IConfigurationSection configurationServiceSettings
+    )
+    {
+        string? baseUrl = configurationServiceSettings["BaseUrl"];
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            throw new InvalidOperationException(
+                "ConfigurationServiceSettings:BaseUrl must be an absolute HTTP or HTTPS URI."
+            );
+        }
+
+        if (
+            !Uri.TryCreate(baseUrl.Trim(), UriKind.Absolute, out Uri? parsedBaseUri)
+            || string.IsNullOrWhiteSpace(parsedBaseUri.Host)
+        )
+        {
+            throw new InvalidOperationException(
+                "ConfigurationServiceSettings:BaseUrl must be an absolute HTTP or HTTPS URI."
+            );
+        }
+
+        if (
+            !string.Equals(parsedBaseUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(parsedBaseUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            throw new InvalidOperationException(
+                "ConfigurationServiceSettings:BaseUrl must be an absolute HTTP or HTTPS URI."
+            );
+        }
+
+        return new Uri($"{parsedBaseUri.AbsoluteUri.TrimEnd('/')}/");
+    }
+
+    /// <summary>
+    /// Adds shared DocumentCache target resolution services without registering any background
+    /// projector host.
+    /// </summary>
+    public static IServiceCollection AddDmsDocumentCacheTargetRegistry(
+        this IServiceCollection services,
+        IConfiguration configuration
+    )
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        services.AddDmsDocumentCacheOptions(configuration);
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<DocumentCacheProcessProviderToken>(_ =>
+        {
+            string? datastore = configuration.GetSection("AppSettings:Datastore").Value;
+            if (
+                !DocumentCacheProcessProviderToken.TryCreate(
+                    datastore,
+                    out DocumentCacheProcessProviderToken? providerToken
+                )
+            )
+            {
+                throw new InvalidOperationException(
+                    "Unable to normalize AppSettings:Datastore for DocumentCache target resolution."
+                );
+            }
+
+            return providerToken!;
+        });
+        services.AddSingleton<IDocumentCacheTargetContextBuilder, DocumentCacheTargetContextBuilder>();
+        services.AddSingleton<IDocumentCacheTargetRegistry>(serviceProvider =>
+        {
+            IDataStoreProvider dataStoreProvider =
+                serviceProvider.GetService<ConfigurationServiceDataStoreProvider>()
+                ?? serviceProvider.GetRequiredService<IDataStoreProvider>();
+
+            return new DocumentCacheTargetRegistry(
+                dataStoreProvider,
+                serviceProvider.GetRequiredService<IDocumentCacheTargetContextBuilder>(),
+                serviceProvider.GetRequiredService<IOptions<DocumentCacheOptions>>(),
+                serviceProvider.GetRequiredService<TimeProvider>(),
+                serviceProvider.GetRequiredService<ILogger<DocumentCacheTargetRegistry>>()
+            );
+        });
+        services.AddSingleton<
+            IDocumentCacheDiagnosticSnapshotProvider,
+            DocumentCacheDiagnosticSnapshotProvider
+        >();
+
+        return services;
     }
 
     /// <summary>

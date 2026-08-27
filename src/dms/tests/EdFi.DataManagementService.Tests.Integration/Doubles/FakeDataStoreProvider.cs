@@ -58,10 +58,15 @@ internal static class FakeDataStoreProvider
                 .ToArray();
         }
 
-        public Task<IList<DataStore>> LoadDataStores(string? tenant = null) =>
-            Task.FromResult<IList<DataStore>>([.. _instances]);
+        public Task<IList<DataStore>> LoadDataStores(
+            string? tenant = null,
+            CancellationToken cancellationToken = default
+        ) => Task.FromResult<IList<DataStore>>([.. _instances]);
 
-        public Task RefreshInstancesIfExpiredAsync(string? tenant = null) => Task.CompletedTask;
+        public Task RefreshInstancesIfExpiredAsync(
+            string? tenant = null,
+            CancellationToken cancellationToken = default
+        ) => Task.CompletedTask;
 
         public IReadOnlyList<DataStore> GetAll(string? tenant = null) => _instances;
 

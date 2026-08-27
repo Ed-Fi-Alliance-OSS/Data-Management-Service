@@ -320,6 +320,7 @@ internal sealed class DocumentCacheOfflineDeactivationCommand(
         new(
             context.Request.TargetKey,
             context.Request.OfflineWriterAdmission,
-            context.Request.ExpectedPhysicalSourceFingerprint
+            context.Request.ExpectedPhysicalSourceFingerprint,
+            context.Request.Confirmation
         );
 }

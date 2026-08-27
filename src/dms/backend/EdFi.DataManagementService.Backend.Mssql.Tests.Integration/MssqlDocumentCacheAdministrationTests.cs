@@ -216,7 +216,11 @@ public class Given_A_Mssql_DocumentCacheAdministration_Workflow
         );
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheOnlineCacheRebuildRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheOnlineCacheRebuildRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild
+            )
         );
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.IncompleteRetryable);
@@ -560,7 +564,11 @@ public class Given_A_Mssql_DocumentCacheAdministration_Workflow
         );
 
         DocumentCacheAdministrativeCommandResult activationResult = await guardedActivation.ExecuteAsync(
-            new DocumentCacheGuardedNewEmptyActivationRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheGuardedNewEmptyActivationRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.NewEmptyActivation
+            )
         );
 
         activationResult.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
@@ -573,7 +581,11 @@ public class Given_A_Mssql_DocumentCacheAdministration_Workflow
         );
 
         DocumentCacheAdministrativeCommandResult rebuildResult = await onlineRebuild.ExecuteAsync(
-            new DocumentCacheOnlineCacheRebuildRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheOnlineCacheRebuildRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild
+            )
         );
 
         rebuildResult.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
@@ -597,7 +609,8 @@ public class Given_A_Mssql_DocumentCacheAdministration_Workflow
                 new DocumentCacheOfflineActivationRequest(
                     AdministrativeTargetKey,
                     OfflineActivationAdmission,
-                    Fingerprint
+                    Fingerprint,
+                    DocumentCacheAdministrativeCommandConfirmation.OfflineActivation
                 )
             );
 
@@ -612,7 +625,8 @@ public class Given_A_Mssql_DocumentCacheAdministration_Workflow
                 new DocumentCacheOfflineActivationRequest(
                     AdministrativeTargetKey,
                     OfflineDeactivationAdmission,
-                    Fingerprint
+                    Fingerprint,
+                    DocumentCacheAdministrativeCommandConfirmation.OfflineActivation
                 )
             );
 
@@ -635,7 +649,8 @@ public class Given_A_Mssql_DocumentCacheAdministration_Workflow
                 new DocumentCacheOfflineDeactivationRequest(
                     AdministrativeTargetKey,
                     OfflineDeactivationAdmission,
-                    Fingerprint
+                    Fingerprint,
+                    DocumentCacheAdministrativeCommandConfirmation.OfflineDeactivation
                 )
             );
 
@@ -655,7 +670,8 @@ public class Given_A_Mssql_DocumentCacheAdministration_Workflow
             new DocumentCacheInternalOnlyCacheAheadRecoveryRequest(
                 AdministrativeTargetKey,
                 CacheAheadRecoveryAdmission,
-                Fingerprint
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.InternalCacheAheadRecovery
             )
         );
 
@@ -670,7 +686,8 @@ public class Given_A_Mssql_DocumentCacheAdministration_Workflow
             new DocumentCacheInternalOnlyCacheAheadRecoveryRequest(
                 AdministrativeTargetKey,
                 OfflineActivationAdmission,
-                Fingerprint
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.InternalCacheAheadRecovery
             )
         );
 
@@ -693,7 +710,11 @@ public class Given_A_Mssql_DocumentCacheAdministration_Workflow
         );
 
         DocumentCacheAdministrativeCommandResult scrubResult = await scrub.ExecuteAsync(
-            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheExplicitIntegrityScrubRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub
+            )
         );
 
         scrubResult.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
@@ -706,7 +727,11 @@ public class Given_A_Mssql_DocumentCacheAdministration_Workflow
                 new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, true)
             )
             .ExecuteAsync(
-                new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+                new DocumentCacheExplicitIntegrityScrubRequest(
+                    AdministrativeTargetKey,
+                    Fingerprint,
+                    DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub
+                )
             );
 
         latchedScrubResult.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
@@ -1009,7 +1034,8 @@ public class Given_A_Mssql_DocumentCacheAdministration_Workflow
         new(
             DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
             AdministrativeTargetKey,
-            expectedPhysicalSourceFingerprint: Fingerprint
+            expectedPhysicalSourceFingerprint: Fingerprint,
+            confirmation: DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild
         );
 
     private static async Task CommitLifecycleTransitionAsync(

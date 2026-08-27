@@ -152,9 +152,13 @@ internal static class DocumentCacheAdministrativeWorkflow
         ArgumentNullException.ThrowIfNull(shouldCommit);
 
         IDocumentCacheAdministrativeMutexLease mutexLease = context.MutexLease;
-        await using IRelationalWriteSession session = await mutexLease
+        IRelationalWriteSession rawSession = await mutexLease
             .BeginTransactionAsync(isolationLevel, cancellationToken)
             .ConfigureAwait(false);
+        await using IRelationalWriteSession session = new CommandTimeoutRelationalWriteSession(
+            rawSession,
+            () => context.RemainingWorkflowTimeout
+        );
 
         // Once an administrative database transaction starts, cancellation is observed at the
         // workflow/page boundary; the active transaction must commit or roll back under its

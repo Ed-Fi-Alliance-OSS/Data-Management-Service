@@ -959,7 +959,7 @@ public sealed record DocumentCacheProjectionObservationSnapshot
         DocumentCacheLastEndedTargetDiagnosticSnapshots lastEndedTargetDiagnostics,
         DocumentCacheActiveAdministrativeCommandSnapshots activeAdministrativeCommands,
         DocumentCacheCurrentGenerationActiveAdministrativeCommandSnapshots currentGenerationActiveAdministrativeCommands,
-        DocumentCacheCurrentGenerationEndedAdministrativeCommandDiagnosticSnapshots currentGenerationLastEndedAdministrativeCommandDiagnostics,
+        DocumentCacheCurrentGenerationEndedAdministrativeCommandDiagnosticSnapshots currentGenerationEndedAdministrativeCommandDiagnostics,
         DateTimeOffset observedAt
     )
     {
@@ -973,10 +973,10 @@ public sealed record DocumentCacheProjectionObservationSnapshot
         CurrentGenerationActiveAdministrativeCommands =
             currentGenerationActiveAdministrativeCommands
             ?? throw new ArgumentNullException(nameof(currentGenerationActiveAdministrativeCommands));
-        CurrentGenerationLastEndedAdministrativeCommandDiagnostics =
-            currentGenerationLastEndedAdministrativeCommandDiagnostics
+        CurrentGenerationEndedAdministrativeCommandDiagnostics =
+            currentGenerationEndedAdministrativeCommandDiagnostics
             ?? throw new ArgumentNullException(
-                nameof(currentGenerationLastEndedAdministrativeCommandDiagnostics)
+                nameof(currentGenerationEndedAdministrativeCommandDiagnostics)
             );
         ObservedAt = observedAt;
     }
@@ -989,7 +989,7 @@ public sealed record DocumentCacheProjectionObservationSnapshot
 
     public DocumentCacheCurrentGenerationActiveAdministrativeCommandSnapshots CurrentGenerationActiveAdministrativeCommands { get; }
 
-    public DocumentCacheCurrentGenerationEndedAdministrativeCommandDiagnosticSnapshots CurrentGenerationLastEndedAdministrativeCommandDiagnostics { get; }
+    public DocumentCacheCurrentGenerationEndedAdministrativeCommandDiagnosticSnapshots CurrentGenerationEndedAdministrativeCommandDiagnostics { get; }
 
     public DateTimeOffset ObservedAt { get; }
 
@@ -1042,13 +1042,13 @@ public sealed record DocumentCacheProjectionObservationSnapshot
             : null;
     }
 
-    public DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot? GetCurrentGenerationLastEndedAdministrativeCommandDiagnostic(
+    public DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot? GetCurrentGenerationEndedAdministrativeCommandDiagnostic(
         DocumentCacheTargetKey targetKey
     )
     {
         ArgumentNullException.ThrowIfNull(targetKey);
 
-        return CurrentGenerationLastEndedAdministrativeCommandDiagnostics.TryGetValue(
+        return CurrentGenerationEndedAdministrativeCommandDiagnostics.TryGetValue(
             targetKey,
             out DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot? snapshot
         )

@@ -115,7 +115,7 @@ public class Given_Default_App_Settings
     }
 
     [Test]
-    public void It_shares_one_literal_between_the_property_default_and_the_constant()
+    public void It_shares_one_literal_between_the_partition_count_property_default_and_the_constant()
     {
         new AppSettings { AllowIdentityUpdateOverrides = string.Empty }
             .DefaultPartitionCount.Should()

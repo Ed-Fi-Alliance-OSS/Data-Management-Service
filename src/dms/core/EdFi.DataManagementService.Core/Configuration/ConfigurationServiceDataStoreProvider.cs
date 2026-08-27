@@ -47,7 +47,10 @@ public class ConfigurationServiceDataStoreProvider(
     /// Loads data stores from the Configuration Service API and stores them in memory
     /// </summary>
     /// <param name="tenant">Optional tenant identifier for multi-tenant environments</param>
-    public async Task<IList<DataStore>> LoadDataStores(string? tenant = null)
+    public async Task<IList<DataStore>> LoadDataStores(
+        string? tenant = null,
+        CancellationToken cancellationToken = default
+    )
     {
         logger.LogInformation(
             "Requesting authentication token from Configuration Service at {BaseUrl}",
@@ -60,12 +63,18 @@ public class ConfigurationServiceDataStoreProvider(
             string? configurationServiceToken = await configurationServiceTokenHandler.GetTokenAsync(
                 configurationServiceContext.clientId,
                 configurationServiceContext.clientSecret,
-                configurationServiceContext.scope
+                configurationServiceContext.scope,
+                cancellationToken
             );
 
             logger.LogInformation("Fetching data stores from Configuration Service");
 
-            IList<DataStore> instances = await FetchDataStores(configurationServiceToken, tenant);
+            IList<DataStore> instances = await FetchDataStores(
+                configurationServiceToken,
+                tenant,
+                cancellationToken
+            );
+            cancellationToken.ThrowIfCancellationRequested();
 
             logger.LogInformation("Successfully fetched {InstanceCount} data stores", instances.Count);
 
@@ -121,7 +130,10 @@ public class ConfigurationServiceDataStoreProvider(
     }
 
     /// <inheritdoc />
-    public async Task RefreshInstancesIfExpiredAsync(string? tenant = null)
+    public async Task RefreshInstancesIfExpiredAsync(
+        string? tenant = null,
+        CancellationToken cancellationToken = default
+    )
     {
         if (
             !_cacheSettings.DataStoreCacheRefreshEnabled
@@ -144,7 +156,7 @@ public class ConfigurationServiceDataStoreProvider(
         }
 
         SemaphoreSlim tenantLock = GetTenantLock(tenantKey);
-        await tenantLock.WaitAsync();
+        await tenantLock.WaitAsync(cancellationToken);
         try
         {
             if (
@@ -161,7 +173,7 @@ public class ConfigurationServiceDataStoreProvider(
                 _cacheSettings.DataStoreCacheExpirationSeconds
             );
 
-            await LoadDataStores(tenant);
+            await LoadDataStores(tenant, cancellationToken);
         }
         finally
         {
@@ -298,7 +310,11 @@ public class ConfigurationServiceDataStoreProvider(
     /// <summary>
     /// Fetches data stores from the Configuration Service API
     /// </summary>
-    private async Task<IList<DataStore>> FetchDataStores(string configurationServiceToken, string? tenant)
+    private async Task<IList<DataStore>> FetchDataStores(
+        string configurationServiceToken,
+        string? tenant,
+        CancellationToken cancellationToken
+    )
     {
         const string DataStoresEndpoint = "v3/dataStores/";
 
@@ -310,7 +326,9 @@ public class ConfigurationServiceDataStoreProvider(
         {
             request.Headers.Add(TenantHeaderName, tenant);
         }
-        HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(request);
+        HttpResponseMessage response = await configurationServiceApiClient
+            .Client.SendAsync(request, cancellationToken)
+            .ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
         {
@@ -322,7 +340,8 @@ public class ConfigurationServiceDataStoreProvider(
 
         response.EnsureSuccessStatusCode();
 
-        string dataStoresJson = await response.Content.ReadAsStringAsync();
+        string dataStoresJson = await response.Content.ReadAsStringAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
 
         logger.LogDebug(
             "Received response from Configuration Service, deserializing {ByteCount} bytes",

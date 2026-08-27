@@ -267,7 +267,12 @@ public class ResolveDataStoreMiddlewareTests
                 ),
             };
 
-            A.CallTo(() => dataStoreProvider.RefreshInstancesIfExpiredAsync(A<string?>.Ignored))
+            A.CallTo(() =>
+                    dataStoreProvider.RefreshInstancesIfExpiredAsync(
+                        A<string?>.Ignored,
+                        A<CancellationToken>._
+                    )
+                )
                 .Returns(Task.CompletedTask);
 
             A.CallTo(() => dataStoreProvider.GetById(1, A<string?>.Ignored))
@@ -295,7 +300,10 @@ public class ResolveDataStoreMiddlewareTests
         public void It_calls_refresh_for_the_tenant()
         {
             _nextCalled.Should().BeTrue();
-            A.CallTo(() => _dataStoreProvider.RefreshInstancesIfExpiredAsync("TenantA")).MustHaveHappened();
+            A.CallTo(() =>
+                    _dataStoreProvider.RefreshInstancesIfExpiredAsync("TenantA", A<CancellationToken>._)
+                )
+                .MustHaveHappened();
         }
     }
 
@@ -335,7 +343,12 @@ public class ResolveDataStoreMiddlewareTests
                 ),
             };
 
-            A.CallTo(() => dataStoreProvider.RefreshInstancesIfExpiredAsync(A<string?>.Ignored))
+            A.CallTo(() =>
+                    dataStoreProvider.RefreshInstancesIfExpiredAsync(
+                        A<string?>.Ignored,
+                        A<CancellationToken>._
+                    )
+                )
                 .Throws<InvalidOperationException>();
 
             A.CallTo(() => dataStoreProvider.GetById(1, A<string?>.Ignored))
@@ -364,7 +377,12 @@ public class ResolveDataStoreMiddlewareTests
         {
             _nextCalled.Should().BeTrue();
             _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
-            A.CallTo(() => _dataStoreProvider.RefreshInstancesIfExpiredAsync(A<string?>.Ignored))
+            A.CallTo(() =>
+                    _dataStoreProvider.RefreshInstancesIfExpiredAsync(
+                        A<string?>.Ignored,
+                        A<CancellationToken>._
+                    )
+                )
                 .MustHaveHappened();
         }
     }

@@ -24,7 +24,7 @@
         * IntegrationTest: executes NUnit test in projects named `*.IntegrationTests`,
           which connect to a database.
         * BuildAndPublish: build and publish with `dotnet publish`
-        * Package: builds NuGet packages. The DMS API application and SchemaTools packages are published by the release workflows; the custom-validation abstractions package is built and verified only, and is deliberately not published yet. Use -PackageTarget to build only one package.
+        * Package: builds NuGet packages. The DMS API application, SchemaTools, and DocumentCacheAdmin packages are published by the release workflows; the custom-validation abstractions package is built and verified only, and is deliberately not published yet. Use -PackageTarget to build only one package.
         * Push: uploads a NuGet package to the NuGet feed.
         * DockerBuild: builds a Docker image from source code
         * DockerRun: runs the Docker image that was built from source code
@@ -71,7 +71,7 @@ param(
 
     # Selects which NuGet package(s) the Package command builds.
     [string]
-    [ValidateSet("All", "Api", "SchemaTools", "CustomValidation")]
+    [ValidateSet("All", "Api", "SchemaTools", "CustomValidation", "DocumentCacheAdmin")]
     $PackageTarget = "All",
 
     # When set, `dotnet restore` runs with `--locked-mode`, failing the build if a committed
@@ -169,10 +169,12 @@ $coreRoot = "$solutionRoot/core"
 $projectName = "EdFi.DataManagementService.Frontend.AspNetCore"
 $schemaDownloaderProjectName = "EdFi.DataManagementService.ApiSchemaDownloader"
 $schemaToolsProjectName = "EdFi.DataManagementService.SchemaTools"
+$documentCacheAdminProjectName = "EdFi.DataManagementService.DocumentCacheAdmin"
 $packageName = "EdFi.Api"
 $schemaToolsPackageName = "EdFi.Api.SchemaTools"
 $customValidationPackageName = "EdFi.Api.CustomValidation"
 $customValidationProjectName = "EdFi.DataManagementService.CustomValidation"
+$documentCacheAdminPackageName = "EdFi.Api.DocumentCacheAdmin"
 $testResults = "$PSScriptRoot/TestResults"
 #Coverage
 $thresholdCoverage = 58
@@ -1837,12 +1839,41 @@ function BuildCustomValidationPackage {
     }
 }
 
+function BuildDocumentCacheAdminPackage {
+    $projectPath = "$clisRoot/$documentCacheAdminProjectName/$documentCacheAdminProjectName.csproj"
+    $expectedPackagePath = "$PSScriptRoot/$documentCacheAdminPackageName.$DMSVersion.nupkg"
+
+    Write-Info "Building $documentCacheAdminPackageName package"
+
+    Invoke-Execute {
+        if (Test-Path $expectedPackagePath) {
+            Remove-Item -LiteralPath $expectedPackagePath -ErrorAction Stop
+        }
+
+        $restoreArgs = @()
+        if ($LockedMode) { $restoreArgs += "--locked-mode" }
+
+        dotnet restore $projectPath --verbosity:normal @restoreArgs
+
+        dotnet pack $projectPath `
+            -c $Configuration `
+            --no-restore `
+            --output $PSScriptRoot `
+            -p:PackageVersion=$DMSVersion
+
+        if (-not (Test-Path $expectedPackagePath)) {
+            throw "Expected DocumentCacheAdmin package was not created: $expectedPackagePath"
+        }
+    }
+}
+
 function BuildPackage {
     switch ($PackageTarget) {
         "All" {
             BuildApiPackage
             BuildSchemaToolsPackage
             BuildCustomValidationPackage
+            BuildDocumentCacheAdminPackage
         }
         "Api" {
             BuildApiPackage
@@ -1852,6 +1883,9 @@ function BuildPackage {
         }
         "CustomValidation" {
             BuildCustomValidationPackage
+        }
+        "DocumentCacheAdmin" {
+            BuildDocumentCacheAdminPackage
         }
         default {
             throw "PackageTarget '$PackageTarget' is not recognized"

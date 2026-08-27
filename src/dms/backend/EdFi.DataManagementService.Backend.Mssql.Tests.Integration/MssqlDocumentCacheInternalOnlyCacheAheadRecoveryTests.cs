@@ -129,7 +129,8 @@ public class Given_A_Mssql_DocumentCacheInternalOnlyCacheAheadRecovery_Command
             new DocumentCacheInternalOnlyCacheAheadRecoveryRequest(
                 AdministrativeTargetKey,
                 Admission,
-                Fingerprint
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.InternalCacheAheadRecovery
             )
         );
 
@@ -192,7 +193,8 @@ public class Given_A_Mssql_DocumentCacheInternalOnlyCacheAheadRecovery_Command
             new DocumentCacheInternalOnlyCacheAheadRecoveryRequest(
                 AdministrativeTargetKey,
                 Admission,
-                Fingerprint
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.InternalCacheAheadRecovery
             )
         );
 
@@ -232,7 +234,8 @@ public class Given_A_Mssql_DocumentCacheInternalOnlyCacheAheadRecovery_Command
             new DocumentCacheInternalOnlyCacheAheadRecoveryRequest(
                 AdministrativeTargetKey,
                 Admission,
-                Fingerprint
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.InternalCacheAheadRecovery
             )
         );
 
@@ -266,7 +269,8 @@ public class Given_A_Mssql_DocumentCacheInternalOnlyCacheAheadRecovery_Command
             new DocumentCacheInternalOnlyCacheAheadRecoveryRequest(
                 AdministrativeTargetKey,
                 Admission,
-                Fingerprint
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.InternalCacheAheadRecovery
             )
         );
 

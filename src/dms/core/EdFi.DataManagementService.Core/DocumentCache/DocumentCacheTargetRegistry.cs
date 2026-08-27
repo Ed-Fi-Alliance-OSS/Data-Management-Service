@@ -291,12 +291,14 @@ public sealed class DocumentCacheTargetRegistry(
                 string? providerTenant = tenantKey.Length == 0 ? null : tenantKey;
                 if (ShouldForceLoadTenant(reason, tenantKey))
                 {
-                    await dataStoreProvider.LoadDataStores(providerTenant).ConfigureAwait(false);
+                    await dataStoreProvider
+                        .LoadDataStores(providerTenant, cancellationToken)
+                        .ConfigureAwait(false);
                 }
                 else
                 {
                     await dataStoreProvider
-                        .RefreshInstancesIfExpiredAsync(providerTenant)
+                        .RefreshInstancesIfExpiredAsync(providerTenant, cancellationToken)
                         .ConfigureAwait(false);
                 }
 

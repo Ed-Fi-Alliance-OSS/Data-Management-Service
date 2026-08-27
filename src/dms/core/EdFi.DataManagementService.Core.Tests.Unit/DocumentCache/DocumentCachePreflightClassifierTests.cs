@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using FluentAssertions;
@@ -71,6 +70,104 @@ public class DocumentCachePreflightClassifierTests
         DocumentCacheEnqueueTriggerStatus.Satisfied,
         "Enqueue trigger satisfied."
     );
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Command_Confirmation : DocumentCachePreflightClassifierTests
+    {
+        [TestCaseSource(nameof(AdministrativeCommands))]
+        public void It_should_accept_the_command_specific_confirmation(
+            DocumentCacheAdministrativeCommand command
+        )
+        {
+            DocumentCacheAdministrativeCommandResult? result =
+                DocumentCachePreflightClassifier.ClassifyCommandConfirmation(
+                    command,
+                    _administrativeTargetKey,
+                    DocumentCachePreflightClassifier.ExpectedCommandConfirmation(command)
+                );
+
+            result.Should().BeNull();
+        }
+
+        [TestCaseSource(nameof(AdministrativeCommands))]
+        public void It_should_reject_missing_confirmation(DocumentCacheAdministrativeCommand command)
+        {
+            DocumentCacheAdministrativeCommandResult result =
+                DocumentCachePreflightClassifier.ClassifyCommandConfirmation(
+                    command,
+                    _administrativeTargetKey,
+                    confirmation: null
+                )!;
+
+            AssertCommandConfirmationRejected(
+                result,
+                command,
+                DocumentCacheAdministrativeCommandClassification.MissingCommandConfirmation,
+                DocumentCacheAdministrativeDiagnosticCategory.MissingCommandConfirmation
+            );
+        }
+
+        [TestCaseSource(nameof(AdministrativeCommands))]
+        public void It_should_reject_command_incompatible_confirmation(
+            DocumentCacheAdministrativeCommand command
+        )
+        {
+            DocumentCacheAdministrativeCommandResult result =
+                DocumentCachePreflightClassifier.ClassifyCommandConfirmation(
+                    command,
+                    _administrativeTargetKey,
+                    WrongConfirmationFor(command)
+                )!;
+
+            AssertCommandConfirmationRejected(
+                result,
+                command,
+                DocumentCacheAdministrativeCommandClassification.MismatchedCommandConfirmation,
+                DocumentCacheAdministrativeDiagnosticCategory.MismatchedCommandConfirmation
+            );
+        }
+
+        private static IEnumerable<TestCaseData> AdministrativeCommands()
+        {
+            return Enum.GetValues<DocumentCacheAdministrativeCommand>()
+                .Select(command => new TestCaseData(command).SetName($"Command {command}"));
+        }
+
+        private static DocumentCacheAdministrativeCommandConfirmation WrongConfirmationFor(
+            DocumentCacheAdministrativeCommand command
+        )
+        {
+            DocumentCacheAdministrativeCommandConfirmation expectedConfirmation =
+                DocumentCachePreflightClassifier.ExpectedCommandConfirmation(command);
+            return expectedConfirmation == DocumentCacheAdministrativeCommandConfirmation.NewEmptyActivation
+                ? DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild
+                : DocumentCacheAdministrativeCommandConfirmation.NewEmptyActivation;
+        }
+
+        private static void AssertCommandConfirmationRejected(
+            DocumentCacheAdministrativeCommandResult result,
+            DocumentCacheAdministrativeCommand command,
+            DocumentCacheAdministrativeCommandClassification classification,
+            DocumentCacheAdministrativeDiagnosticCategory diagnosticCategory
+        )
+        {
+            result.Command.Should().Be(command);
+            result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
+            result.Classification.Should().Be(classification);
+            result.Mutated.Should().BeFalse();
+            result.Diagnostics.Should().Contain(diagnostic => diagnostic.Category == diagnosticCategory);
+            result
+                .PhaseDiagnostics.Should()
+                .ContainSingle(diagnostic =>
+                    diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.Preflight
+                    && diagnostic.DiagnosticCategory == diagnosticCategory
+                );
+            result.NoMutationGuarantee.Should().NotBeNull();
+            result.NoMutationGuarantee!.Guaranteed.Should().BeTrue();
+            result.NoMutationGuarantee.Message.Should().Be(ClassifierNoMutationMessage);
+        }
+    }
 
     [TestFixture]
     [Parallelizable]
@@ -508,12 +605,6 @@ public class DocumentCachePreflightClassifierTests
                 DocumentCacheAdministrativeCommandClassification.MismatchedOfflineWriterAdmission,
                 DocumentCacheAdministrativeDiagnosticCategory.MismatchedOfflineWriterAdmission
             ).SetName("Mismatched admission");
-
-            yield return new TestCaseData(
-                UnknownOfflineWriterAdmission(),
-                DocumentCacheAdministrativeCommandClassification.MismatchedOfflineWriterAdmission,
-                DocumentCacheAdministrativeDiagnosticCategory.MismatchedOfflineWriterAdmission
-            ).SetName("Unknown admission");
         }
     }
 
@@ -1239,16 +1330,6 @@ public class DocumentCachePreflightClassifierTests
             _cacheAheadRecoveryAdmission,
             expectedPhysicalSourceFingerprint ?? _fingerprint
         );
-
-    protected static DocumentCacheOfflineWriterAdmission UnknownOfflineWriterAdmission() =>
-        JsonSerializer.Deserialize<DocumentCacheOfflineWriterAdmission>(
-            """
-            {
-              "confirmed": true,
-              "confirmation": "unknownWritersClosedAndDrained"
-            }
-            """
-        )!;
 
     protected static DocumentCacheGuardedNewEmptyActivationPreflightFacts GuardedFacts(
         DocumentCacheTargetContextGeneration? expectedTargetContextGeneration = null,

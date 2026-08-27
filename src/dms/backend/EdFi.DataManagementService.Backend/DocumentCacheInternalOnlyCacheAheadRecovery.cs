@@ -377,6 +377,7 @@ internal sealed class DocumentCacheInternalOnlyCacheAheadRecoveryCommand(
         new(
             context.Request.TargetKey,
             context.Request.OfflineWriterAdmission,
-            context.Request.ExpectedPhysicalSourceFingerprint
+            context.Request.ExpectedPhysicalSourceFingerprint,
+            context.Request.Confirmation
         );
 }

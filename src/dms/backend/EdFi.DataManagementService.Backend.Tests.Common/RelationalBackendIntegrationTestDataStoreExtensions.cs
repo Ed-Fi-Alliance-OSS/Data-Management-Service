@@ -29,10 +29,15 @@ public static class RelationalBackendIntegrationTestDataStoreExtensions
     {
         private const string DefaultTenantKey = "";
 
-        public Task<IList<DataStore>> LoadDataStores(string? tenant = null) =>
-            Task.FromResult<IList<DataStore>>(GetAll(tenant).ToList());
+        public Task<IList<DataStore>> LoadDataStores(
+            string? tenant = null,
+            CancellationToken cancellationToken = default
+        ) => Task.FromResult<IList<DataStore>>(GetAll(tenant).ToList());
 
-        public Task RefreshInstancesIfExpiredAsync(string? tenant = null) => Task.CompletedTask;
+        public Task RefreshInstancesIfExpiredAsync(
+            string? tenant = null,
+            CancellationToken cancellationToken = default
+        ) => Task.CompletedTask;
 
         public IReadOnlyList<DataStore> GetAll(string? tenant = null) =>
             dataStoreSelection.IsSet ? [dataStoreSelection.GetSelectedDataStore()] : [];

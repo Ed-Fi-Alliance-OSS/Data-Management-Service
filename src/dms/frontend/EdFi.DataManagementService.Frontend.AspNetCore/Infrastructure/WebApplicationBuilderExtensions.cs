@@ -14,8 +14,6 @@ using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.Configuration;
-using EdFi.DataManagementService.Core.DocumentCache;
-using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.OAuth;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
@@ -72,10 +70,8 @@ public static class WebApplicationBuilderExtensions
             .Configure<ResourceLinksOptions>(
                 webAppBuilder.Configuration.GetSection("DataManagement:ResourceLinks")
             )
-            .AddOptions<DocumentCacheOptions>()
-            .Bind(webAppBuilder.Configuration.GetSection(DocumentCacheOptions.SectionName))
-            .ValidateOnStart()
-            .Services.AddSingleton<IStartupStatusSignal, FileStartupStatusSignal>()
+            .AddDmsDocumentCacheOptions(webAppBuilder.Configuration)
+            .AddSingleton<IStartupStatusSignal, FileStartupStatusSignal>()
             .AddSingleton<IStartupProcessExit, EnvironmentStartupProcessExit>()
             .AddSingleton<StartupPhaseExecutor>()
             .AddSingleton<
@@ -88,7 +84,6 @@ public static class WebApplicationBuilderExtensions
                 ConfigurationServiceSettingsValidator
             >()
             .AddSingleton<IValidateOptions<ReverseProxySettings>, ReverseProxySettingsValidator>()
-            .AddSingleton<IValidateOptions<DocumentCacheOptions>, DocumentCacheOptionsValidator>()
             .AddSingleton<IValidateOptions<MappingSetProviderOptions>, MappingSetProviderOptionsValidator>();
 
         if (webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
@@ -127,54 +122,9 @@ public static class WebApplicationBuilderExtensions
             return configureLogging;
         }
 
-        ConfigurationManager config = webAppBuilder.Configuration;
-
-        // MemoryCache backs claim-set caching; HybridCache backs token, application-context, and profile caches.
+        // MemoryCache backs claim-set caching. HybridCache is registered by the shared CMS data-store provider.
         webAppBuilder.Services.AddMemoryCache();
-        webAppBuilder.Services.AddHybridCache();
-
-        // Access Configuration service
-        var configServiceSettings = config
-            .GetSection("ConfigurationServiceSettings")
-            .Get<ConfigurationServiceSettings>();
-        if (configServiceSettings == null)
-        {
-            logger.Error("Error reading ConfigurationServiceSettings");
-            throw new InvalidOperationException(
-                "Unable to read ConfigurationServiceSettings from appsettings"
-            );
-        }
-
-        webAppBuilder.Services.AddTransient<ConfigurationServiceResponseHandler>();
-        webAppBuilder
-            .Services.AddHttpClient<ConfigurationServiceApiClient>(
-                (serviceProvider, client) =>
-                {
-                    client.BaseAddress = new Uri($"{configServiceSettings.BaseUrl.Trim('/')}/");
-                    client.DefaultRequestHeaders.Add("Accept", "application/json");
-                    client.DefaultRequestHeaders.Add("Accept", "application/x-www-form-urlencoded");
-                }
-            )
-            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler())
-            .AddHttpMessageHandler<ConfigurationServiceResponseHandler>();
-
-        webAppBuilder.Services.AddSingleton(
-            new ConfigurationServiceContext(
-                configServiceSettings.ClientId,
-                configServiceSettings.ClientSecret,
-                configServiceSettings.Scope
-            )
-        );
-
-        // Bind CacheSettings from configuration
-        var cacheSettings = new CacheSettings();
-        webAppBuilder.Configuration.GetSection("CacheSettings").Bind(cacheSettings);
-        webAppBuilder.Services.AddSingleton(cacheSettings);
-
-        webAppBuilder.Services.AddTransient<
-            IConfigurationServiceTokenHandler,
-            ConfigurationServiceTokenHandler
-        >();
+        webAppBuilder.Services.AddDmsConfigurationServiceDataStoreProvider(webAppBuilder.Configuration);
 
         // Register ConfigurationServiceClaimSetProvider as its interface
         webAppBuilder.Services.AddSingleton<
@@ -188,60 +138,11 @@ public static class WebApplicationBuilderExtensions
             serviceProvider.GetRequiredService<CachedClaimSetProvider>()
         );
 
-        // Register data store services
-        webAppBuilder.Services.AddSingleton<IConnectionStringDecryptionService>(
-            new ConnectionStringDecryptionService(configServiceSettings.EncryptionKey)
+        webAppBuilder.Services.Replace(
+            ServiceDescriptor.Singleton<IDataStoreProvider, DocumentCacheRefreshNotifyingDataStoreProvider>()
         );
-        webAppBuilder.Services.AddSingleton<ConfigurationServiceDataStoreProvider>();
-        webAppBuilder.Services.AddSingleton<
-            IDataStoreProvider,
-            DocumentCacheRefreshNotifyingDataStoreProvider
-        >();
-        webAppBuilder.Services.AddSingleton<IConnectionStringProvider, DmsConnectionStringProvider>();
-        webAppBuilder.Services.AddSingleton<DocumentCacheProcessProviderToken>(_ =>
-        {
-            string? datastore = webAppBuilder.Configuration.GetSection("AppSettings:Datastore").Value;
-            if (
-                !DocumentCacheProcessProviderToken.TryCreate(
-                    datastore,
-                    out DocumentCacheProcessProviderToken? providerToken
-                )
-            )
-            {
-                throw new InvalidOperationException(
-                    "Unable to normalize AppSettings:Datastore for DocumentCache target resolution."
-                );
-            }
-
-            return providerToken!;
-        });
-        webAppBuilder.Services.AddSingleton<
-            IDocumentCacheTargetContextBuilder,
-            DocumentCacheTargetContextBuilder
-        >();
-        webAppBuilder.Services.AddSingleton<IDocumentCacheTargetRegistry>(
-            serviceProvider => new DocumentCacheTargetRegistry(
-                serviceProvider.GetRequiredService<ConfigurationServiceDataStoreProvider>(),
-                serviceProvider.GetRequiredService<IDocumentCacheTargetContextBuilder>(),
-                serviceProvider.GetRequiredService<IOptions<DocumentCacheOptions>>(),
-                serviceProvider.GetRequiredService<TimeProvider>(),
-                serviceProvider.GetRequiredService<ILogger<DocumentCacheTargetRegistry>>()
-            )
-        );
-        webAppBuilder.Services.AddSingleton<DocumentCacheProjectionSupervisor>();
-        webAppBuilder.Services.AddSingleton<IDocumentCacheProjectionSupervisor>(serviceProvider =>
-            serviceProvider.GetRequiredService<DocumentCacheProjectionSupervisor>()
-        );
-        webAppBuilder.Services.AddSingleton<IDocumentCacheProjectionRefreshSignal>(serviceProvider =>
-            serviceProvider.GetRequiredService<DocumentCacheProjectionSupervisor>()
-        );
-        webAppBuilder.Services.AddHostedService(serviceProvider =>
-            serviceProvider.GetRequiredService<DocumentCacheProjectionSupervisor>()
-        );
-        webAppBuilder.Services.AddSingleton<
-            IDocumentCacheDiagnosticSnapshotProvider,
-            DocumentCacheDiagnosticSnapshotProvider
-        >();
+        webAppBuilder.Services.AddDmsDocumentCacheTargetRegistry(webAppBuilder.Configuration);
+        webAppBuilder.Services.AddDocumentCacheProjectionSupervisor(registerHostedService: true);
 
         // Add JWT authentication services from Core
         webAppBuilder.Services.AddJwtAuthentication(webAppBuilder.Configuration);
@@ -260,66 +161,15 @@ public static class WebApplicationBuilderExtensions
             logger.Information(
                 "Injecting PostgreSQL as the primary backend datastore with per-request connection strings"
             );
-            webAppBuilder.Services.AddPostgresqlDatastore(webAppBuilder.Configuration);
             logger.Information("Injecting PostgreSQL relational write runtime services");
-            webAppBuilder.Services.AddPostgresqlReferenceResolver();
-            webAppBuilder.Services.AddPostgresqlRelationalTokenInfoEducationOrganizationLookup();
-            webAppBuilder.Services.AddSingleton<
-                IDatabaseFingerprintReader,
-                Backend.Postgresql.PostgresqlDatabaseFingerprintReader
-            >();
-            webAppBuilder.Services.AddSingleton<
-                IDocumentCachePhysicalSourceFingerprintReader,
-                Backend.Postgresql.PostgresqlDocumentCachePhysicalSourceFingerprintReader
-            >();
-            webAppBuilder.Services.AddSingleton<
-                IDocumentCacheInventoryValidator,
-                Backend.Postgresql.PostgresqlDocumentCacheInventoryValidator
-            >();
-            webAppBuilder.Services.AddSingleton<
-                IDocumentCacheLifecycleReader,
-                Backend.Postgresql.PostgresqlDocumentCacheLifecycleReader
-            >();
-            webAppBuilder.Services.AddSingleton<
-                IDocumentCacheProviderPrerequisiteValidator,
-                Backend.Postgresql.PostgresqlDocumentCacheProviderPrerequisiteValidator
-            >();
-            webAppBuilder.Services.AddSingleton<
-                IResourceKeyRowReader,
-                Backend.Postgresql.PostgresqlResourceKeyRowReader
-            >();
+            webAppBuilder.Services.AddPostgresqlDocumentCacheRuntimeServices(webAppBuilder.Configuration);
         }
         else
         {
             logger.Information("Injecting MSSQL as the primary backend datastore");
 
             logger.Information("Injecting MSSQL relational write runtime services");
-            AddMssqlRelationalRuntimeServices(webAppBuilder.Services, webAppBuilder.Configuration);
-            webAppBuilder.Services.AddMssqlRelationalTokenInfoEducationOrganizationLookup();
-            webAppBuilder.Services.AddSingleton<
-                IDatabaseFingerprintReader,
-                Backend.Mssql.MssqlDatabaseFingerprintReader
-            >();
-            webAppBuilder.Services.AddSingleton<
-                IDocumentCachePhysicalSourceFingerprintReader,
-                Backend.Mssql.MssqlDocumentCachePhysicalSourceFingerprintReader
-            >();
-            webAppBuilder.Services.AddSingleton<
-                IDocumentCacheInventoryValidator,
-                Backend.Mssql.MssqlDocumentCacheInventoryValidator
-            >();
-            webAppBuilder.Services.AddSingleton<
-                IDocumentCacheLifecycleReader,
-                Backend.Mssql.MssqlDocumentCacheLifecycleReader
-            >();
-            webAppBuilder.Services.AddSingleton<
-                IDocumentCacheProviderPrerequisiteValidator,
-                Backend.Mssql.MssqlDocumentCacheProviderPrerequisiteValidator
-            >();
-            webAppBuilder.Services.AddSingleton<
-                IResourceKeyRowReader,
-                Backend.Mssql.MssqlResourceKeyRowReader
-            >();
+            webAppBuilder.Services.AddMssqlDocumentCacheRuntimeServices(webAppBuilder.Configuration);
         }
 
         logger.Information("Injecting relational document store repository surface");
@@ -399,15 +249,6 @@ public static class WebApplicationBuilderExtensions
             ),
             cancellationToken
         );
-    }
-
-    private static void AddMssqlRelationalRuntimeServices(
-        IServiceCollection services,
-        IConfiguration configuration
-    )
-    {
-        services.AddRelationalMappingSetServices(configuration, SqlDialect.Mssql, new MssqlDialectRules());
-        services.AddMssqlReferenceResolver();
     }
 }
 

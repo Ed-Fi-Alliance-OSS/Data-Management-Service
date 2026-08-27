@@ -300,5 +300,10 @@ internal sealed class DocumentCacheOnlineCacheRebuildCommand(
 
     private static DocumentCacheOnlineCacheRebuildRequest Request(
         DocumentCacheAdministrativeCommandExecutionContext context
-    ) => new(context.Request.TargetKey, context.Request.ExpectedPhysicalSourceFingerprint);
+    ) =>
+        new(
+            context.Request.TargetKey,
+            context.Request.ExpectedPhysicalSourceFingerprint,
+            context.Request.Confirmation
+        );
 }

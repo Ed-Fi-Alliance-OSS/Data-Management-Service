@@ -590,7 +590,8 @@ public class Given_DocumentCacheAdministrativeDrain
             new DocumentCacheAdministrativeCommandRunnerRequest(
                 DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
                 AdministrativeTargetKey,
-                Fingerprint
+                Fingerprint,
+                confirmation: DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild
             ),
             targetContext,
             lease,

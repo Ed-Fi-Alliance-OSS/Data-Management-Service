@@ -6,9 +6,9 @@
 using System.Collections.Immutable;
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.CompilerServices;
-using System.Text.Json;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Mssql;
@@ -130,7 +130,8 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             new DocumentCacheAdministrativeCommandRunnerRequest(
                 DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
                 AdministrativeTargetKey,
-                OtherFingerprint
+                OtherFingerprint,
+                confirmation: DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild
             ),
             SucceedingWorkflow.Instance
         );
@@ -145,14 +146,14 @@ public class Given_DocumentCacheAdministrativeCommandRunner
     }
 
     [Test]
-    public async Task It_starts_the_workflow_timeout_only_after_mutex_acquisition()
+    public async Task It_bounds_mutex_acquisition_with_the_administration_workflow_timeout()
     {
         DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
             generation: 1,
-            workflowTimeout: TimeSpan.FromMilliseconds(250)
+            workflowTimeout: TimeSpan.FromMilliseconds(30)
         );
         DocumentCacheProjectionTargetRuntimeContext runtimeContext = RuntimeContext(executionContext);
-        var mutex = new RecordingAdministrativeMutex(acquireDelay: TimeSpan.FromMilliseconds(400));
+        var mutex = new RecordingAdministrativeMutex(acquireDelay: TimeSpan.FromMilliseconds(500));
         MutableTargetRegistry registry = RegistryFor(executionContext);
         DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
             registry,
@@ -165,10 +166,59 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             SucceedingWorkflow.Instance
         );
 
-        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
-        result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
-        result.ElapsedCommandTime.Should().NotBeNull();
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.MutexAcquisitionCancelled);
+        result.Mutated.Should().BeFalse();
+        result.ElapsedCommandTime.Should().BeNull();
+        result
+            .PhaseDiagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.AcquireMutex
+                && diagnostic.LastCompletedPhase == DocumentCacheAdministrativeCommandPhase.ResolveTarget
+                && diagnostic.DiagnosticCategory
+                    == DocumentCacheAdministrativeDiagnosticCategory.MutexAcquisitionCancelled
+                && !diagnostic.Retryable
+            );
         mutex.AcquireCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_bounds_administrative_target_retention_with_the_administration_workflow_timeout()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
+            generation: 1,
+            workflowTimeout: TimeSpan.FromMilliseconds(30)
+        );
+        DocumentCacheProjectionTargetRuntimeContext runtimeContext = RuntimeContext(executionContext);
+        var mutex = new RecordingAdministrativeMutex();
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new DelayingAdministrativeTargetRetainerProjectionSupervisor(
+                EligibleObservation(executionContext),
+                runtimeContext,
+                TimeSpan.FromMilliseconds(500)
+            ),
+            mutex
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(
+            Request(),
+            SucceedingWorkflow.Instance
+        );
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
+        result.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.WorkflowTimeout);
+        result.Mutated.Should().BeFalse();
+        result
+            .PhaseDiagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.ResolveTarget
+                && diagnostic.DiagnosticCategory
+                    == DocumentCacheAdministrativeDiagnosticCategory.WorkflowTimeout
+            );
+        mutex.AcquireCount.Should().Be(0);
     }
 
     [Test]
@@ -214,7 +264,8 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             new DocumentCacheAdministrativeCommandRunnerRequest(
                 DocumentCacheAdministrativeCommand.GuardedNewEmptyActivation,
                 AdministrativeTargetKey,
-                Fingerprint
+                Fingerprint,
+                confirmation: DocumentCacheAdministrativeCommandConfirmation.NewEmptyActivation
             ),
             workflow
         );
@@ -389,7 +440,8 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             command,
             AdministrativeTargetKey,
             Fingerprint,
-            offlineWriterAdmission
+            offlineWriterAdmission,
+            DocumentCachePreflightClassifier.ExpectedCommandConfirmation(command)
         );
         DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(
             request,
@@ -407,6 +459,67 @@ public class Given_DocumentCacheAdministrativeCommandRunner
                 diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.Preflight
                 && diagnostic.DiagnosticCategory == expectedDiagnosticCategory
             );
+        mutex.AcquireCount.Should().Be(0);
+    }
+
+    [TestCaseSource(nameof(AdministrativeCommands))]
+    public async Task It_rejects_missing_command_confirmation_before_acquiring_the_mutex(
+        DocumentCacheAdministrativeCommand command
+    )
+    {
+        var mutex = new RecordingAdministrativeMutex();
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(ExecutionContext(generation: 1)),
+            new StubProjectionSupervisor([]),
+            mutex
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(
+            new DocumentCacheAdministrativeCommandRunnerRequest(
+                command,
+                AdministrativeTargetKey,
+                Fingerprint,
+                OfflineWriterAdmissionFor(command)
+            ),
+            ThrowingWorkflow()
+        );
+
+        AssertRejectedCommandConfirmation(
+            result,
+            DocumentCacheAdministrativeCommandClassification.MissingCommandConfirmation,
+            DocumentCacheAdministrativeDiagnosticCategory.MissingCommandConfirmation
+        );
+        mutex.AcquireCount.Should().Be(0);
+    }
+
+    [TestCaseSource(nameof(AdministrativeCommands))]
+    public async Task It_rejects_wrong_command_confirmation_before_acquiring_the_mutex(
+        DocumentCacheAdministrativeCommand command
+    )
+    {
+        var mutex = new RecordingAdministrativeMutex();
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(ExecutionContext(generation: 1)),
+            new StubProjectionSupervisor([]),
+            mutex
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(
+            new DocumentCacheAdministrativeCommandRunnerRequest(
+                command,
+                AdministrativeTargetKey,
+                Fingerprint,
+                OfflineWriterAdmissionFor(command),
+                WrongConfirmationFor(command)
+            ),
+            ThrowingWorkflow()
+        );
+
+        AssertRejectedCommandConfirmation(
+            result,
+            DocumentCacheAdministrativeCommandClassification.MismatchedCommandConfirmation,
+            DocumentCacheAdministrativeDiagnosticCategory.MismatchedCommandConfirmation
+        );
         mutex.AcquireCount.Should().Be(0);
     }
 
@@ -517,6 +630,73 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             .NotContain(diagnostic =>
                 diagnostic.DiagnosticCategory == DocumentCacheAdministrativeDiagnosticCategory.WorkflowTimeout
             );
+    }
+
+    [Test]
+    public async Task It_applies_remaining_workflow_budget_to_administrative_transaction_commands()
+    {
+        DocumentCacheTargetExecutionContext executionContext = ExecutionContext(
+            generation: 1,
+            workflowTimeout: TimeSpan.FromSeconds(7.2)
+        );
+        List<CancellationToken> transactionTokens = [];
+        List<RecordingDbCommand> createdCommands = [];
+        var commandSession = new RecordingWriteSession(
+            RelationalProviderToken.Postgresql,
+            connection: new TestNpgsqlConnection(),
+            transaction: new TestDbTransaction(),
+            createCommand: _ =>
+            {
+                var command = new RecordingDbCommand(new DataTable().CreateDataReader());
+                createdCommands.Add(command);
+                return command;
+            }
+        );
+        RecordingMutexLease lease = LeaseWith(NormalSession(), commandSession);
+        DocumentCacheAdministrativeCommandRunner runner = CreateRunner(
+            RegistryFor(executionContext),
+            new StubProjectionSupervisor([RuntimeContext(executionContext)]),
+            new RecordingAdministrativeMutex(lease: lease)
+        );
+        var workflow = new DelegatingWorkflow(
+            preflight: static (context, _) => Task.FromResult(context.EligiblePreflightResult()),
+            execute: async (context, cancellationToken) =>
+            {
+                await DocumentCacheAdministrativeWorkflow
+                    .ExecuteInTransactionAsync(
+                        context,
+                        IsolationLevel.ReadCommitted,
+                        async (session, transactionCancellationToken) =>
+                        {
+                            transactionTokens.Add(transactionCancellationToken);
+                            await using DbCommand directCommand = session.CreateCommand(
+                                new RelationalCommand("select 1")
+                            );
+                            await session
+                                .CreateCommandExecutor()
+                                .ExecuteReaderAsync(
+                                    new RelationalCommand("select 2"),
+                                    static (_, _) => Task.FromResult(true),
+                                    transactionCancellationToken
+                                )
+                                .ConfigureAwait(false);
+
+                            return true;
+                        },
+                        commit: true,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                return context.Completed();
+            }
+        );
+
+        DocumentCacheAdministrativeCommandResult result = await runner.ExecuteAsync(Request(), workflow);
+
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
+        transactionTokens.Should().ContainSingle().Which.Should().Be(CancellationToken.None);
+        createdCommands.Select(command => command.CommandTimeout).Should().Equal(8, 8);
     }
 
     [TestCase(false)]
@@ -837,7 +1017,11 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         var command = new DocumentCacheExplicitIntegrityScrubCommand(runner);
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheExplicitIntegrityScrubRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub
+            )
         );
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
@@ -890,7 +1074,11 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         var command = new DocumentCacheExplicitIntegrityScrubCommand(runner);
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheExplicitIntegrityScrubRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub
+            )
         );
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
@@ -933,7 +1121,11 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         var command = new DocumentCacheExplicitIntegrityScrubCommand(runner);
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheExplicitIntegrityScrubRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub
+            )
         );
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
@@ -983,7 +1175,11 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         var command = new DocumentCacheGuardedNewEmptyActivationCommand(runner);
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheGuardedNewEmptyActivationRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheGuardedNewEmptyActivationRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.NewEmptyActivation
+            )
         );
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.FailedNoMutation);
@@ -1247,7 +1443,7 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         DocumentCacheProjectionObservationSnapshot snapshot = observationStore.CurrentSnapshot;
         snapshot.ActiveAdministrativeCommands.Should().BeEmpty();
         DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot endedDiagnostic =
-            snapshot.GetCurrentGenerationLastEndedAdministrativeCommandDiagnostic(TargetKey)!;
+            snapshot.GetCurrentGenerationEndedAdministrativeCommandDiagnostic(TargetKey)!;
         endedDiagnostic.Should().NotBeNull();
         endedDiagnostic.Outcome.Should().Be(DocumentCacheAdministrativeCommandEndedOutcome.Succeeded);
         endedDiagnostic.Phase.Should().Be(DocumentCacheAdministrativeCommandPhase.Complete);
@@ -1725,7 +1921,11 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         var command = new DocumentCacheOnlineCacheRebuildCommand(runner, seeder, drainer);
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheOnlineCacheRebuildRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheOnlineCacheRebuildRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild
+            )
         );
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
@@ -1915,7 +2115,11 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         var command = new DocumentCacheExplicitIntegrityScrubCommand(runner);
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheExplicitIntegrityScrubRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub
+            )
         );
 
         result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
@@ -1974,7 +2178,11 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         var command = new DocumentCacheExplicitIntegrityScrubCommand(runner);
 
         DocumentCacheAdministrativeCommandResult result = await command.ExecuteAsync(
-            new DocumentCacheExplicitIntegrityScrubRequest(AdministrativeTargetKey, Fingerprint)
+            new DocumentCacheExplicitIntegrityScrubRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub
+            )
         );
 
         AssertSessionLossAfterMutation(
@@ -2124,8 +2332,34 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         new(
             DocumentCacheAdministrativeCommand.OnlineCacheRebuild,
             AdministrativeTargetKey,
-            expectedPhysicalSourceFingerprint: Fingerprint
+            expectedPhysicalSourceFingerprint: Fingerprint,
+            confirmation: DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild
         );
+
+    private static DelegatingWorkflow ThrowingWorkflow() =>
+        new(
+            preflight: static (_, _) => throw new AssertionException("Preflight must not run."),
+            execute: static (_, _) => throw new AssertionException("Command work must not run.")
+        );
+
+    private static void AssertRejectedCommandConfirmation(
+        DocumentCacheAdministrativeCommandResult result,
+        DocumentCacheAdministrativeCommandClassification expectedClassification,
+        DocumentCacheAdministrativeDiagnosticCategory expectedDiagnosticCategory
+    )
+    {
+        result.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.RejectedNoMutation);
+        result.Classification.Should().Be(expectedClassification);
+        result.Mutated.Should().BeFalse();
+        result.ElapsedCommandTime.Should().BeNull();
+        result.OfflineWriterAdmission.Should().BeNull();
+        result
+            .PhaseDiagnostics.Should()
+            .ContainSingle(diagnostic =>
+                diagnostic.CurrentPhase == DocumentCacheAdministrativeCommandPhase.Preflight
+                && diagnostic.DiagnosticCategory == expectedDiagnosticCategory
+            );
+    }
 
     private static void AssertSessionLossAfterMutation(
         DocumentCacheAdministrativeCommandResult result,
@@ -2270,13 +2504,43 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             DocumentCacheAdministrativeCommandClassification.MismatchedOfflineWriterAdmission,
             DocumentCacheAdministrativeDiagnosticCategory.MismatchedOfflineWriterAdmission
         ).SetName("Mismatched admission");
+    }
 
-        yield return new TestCaseData(
-            DocumentCacheAdministrativeCommand.OfflineActivation,
-            UnknownOfflineWriterAdmission(),
-            DocumentCacheAdministrativeCommandClassification.MismatchedOfflineWriterAdmission,
-            DocumentCacheAdministrativeDiagnosticCategory.MismatchedOfflineWriterAdmission
-        ).SetName("Unknown admission");
+    private static IEnumerable<TestCaseData> AdministrativeCommands()
+    {
+        return Enum.GetValues<DocumentCacheAdministrativeCommand>()
+            .Select(command => new TestCaseData(command).SetName($"Command {command}"));
+    }
+
+    private static DocumentCacheOfflineWriterAdmission? OfflineWriterAdmissionFor(
+        DocumentCacheAdministrativeCommand command
+    ) =>
+        command switch
+        {
+            DocumentCacheAdministrativeCommand.OfflineActivation => new(
+                confirmed: true,
+                DocumentCacheOfflineWriterAdmissionConfirmation.OfflineActivationWritersClosedAndDrained
+            ),
+            DocumentCacheAdministrativeCommand.OfflineDeactivation => new(
+                confirmed: true,
+                DocumentCacheOfflineWriterAdmissionConfirmation.OfflineDeactivationWritersClosedAndDrained
+            ),
+            DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery => new(
+                confirmed: true,
+                DocumentCacheOfflineWriterAdmissionConfirmation.InternalOnlyCacheAheadRecoveryWritersClosedAndDrained
+            ),
+            _ => null,
+        };
+
+    private static DocumentCacheAdministrativeCommandConfirmation WrongConfirmationFor(
+        DocumentCacheAdministrativeCommand command
+    )
+    {
+        DocumentCacheAdministrativeCommandConfirmation expectedConfirmation =
+            DocumentCachePreflightClassifier.ExpectedCommandConfirmation(command);
+        return expectedConfirmation == DocumentCacheAdministrativeCommandConfirmation.NewEmptyActivation
+            ? DocumentCacheAdministrativeCommandConfirmation.OnlineCacheRebuild
+            : DocumentCacheAdministrativeCommandConfirmation.NewEmptyActivation;
     }
 
     private static IEnumerable<TestCaseData> ProviderCommandTimeoutCases()
@@ -2339,16 +2603,6 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             new MssqlRelationalWriteExceptionClassifier()
         ).SetName("SQL Server deadlock victim 1205");
     }
-
-    private static DocumentCacheOfflineWriterAdmission UnknownOfflineWriterAdmission() =>
-        JsonSerializer.Deserialize<DocumentCacheOfflineWriterAdmission>(
-            """
-            {
-              "confirmed": true,
-              "confirmation": "unknownWritersClosedAndDrained"
-            }
-            """
-        )!;
 
     private static MutableTargetRegistry RegistryFor(DocumentCacheTargetExecutionContext executionContext) =>
         new(Snapshot([EligibleObservation(executionContext)]), RuntimeSnapshot([executionContext]));
@@ -2780,6 +3034,32 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         }
     }
 
+    private sealed class DelayingAdministrativeTargetRetainerProjectionSupervisor(
+        DocumentCacheTargetObservation targetObservation,
+        DocumentCacheProjectionTargetRuntimeContext targetContext,
+        TimeSpan retainDelay
+    ) : IDocumentCacheProjectionSupervisor, IDocumentCacheProjectionAdministrativeTargetRetainer
+    {
+        public ImmutableArray<DocumentCacheProjectionTargetRuntimeContext> CurrentTargetContexts { get; } =
+            ImmutableArray.Create(targetContext);
+
+        public Task<DocumentCacheTargetRegistrySnapshot> RefreshAsync(
+            DocumentCacheTargetRefreshReason reason,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
+        public async Task<DocumentCacheProjectionAdministrativeTargetRetainResult> TryRetainCurrentTargetForAdministrativeCommandAsync(
+            DocumentCacheTargetKey targetKey,
+            CancellationToken cancellationToken = default
+        )
+        {
+            targetKey.Should().Be(targetContext.TargetKey);
+            await Task.Delay(retainDelay, cancellationToken).ConfigureAwait(false);
+
+            return new(targetObservation, targetContext, targetContext.TryRetainForAdministrativeCommand());
+        }
+    }
+
     private sealed class ThrowingEndAdministrativeCommandObservationSink(Exception endException)
         : IDocumentCacheProjectionObservationSink
     {
@@ -2971,7 +3251,10 @@ public class Given_DocumentCacheAdministrativeCommandRunner
         RelationalProviderToken providerToken,
         IsolationLevel isolationLevel = IsolationLevel.ReadCommitted,
         Func<RecordingWriteSession, CancellationToken, Task>? commitAsync = null,
-        Func<RecordingWriteSession, CancellationToken, Task>? rollbackAsync = null
+        Func<RecordingWriteSession, CancellationToken, Task>? rollbackAsync = null,
+        DbConnection? connection = null,
+        DbTransaction? transaction = null,
+        Func<RelationalCommand, DbCommand>? createCommand = null
     ) : IRelationalWriteSession
     {
         private RecordingMutexLease? _lease;
@@ -2980,11 +3263,12 @@ public class Given_DocumentCacheAdministrativeCommandRunner
 
         public IsolationLevel IsolationLevel { get; } = isolationLevel;
 
-        public DbConnection Connection => throw new NotSupportedException();
+        public DbConnection Connection => connection ?? throw new NotSupportedException();
 
-        public DbTransaction Transaction => throw new NotSupportedException();
+        public DbTransaction Transaction => transaction ?? throw new NotSupportedException();
 
-        public DbCommand CreateCommand(RelationalCommand command) => throw new NotSupportedException();
+        public DbCommand CreateCommand(RelationalCommand command) =>
+            createCommand?.Invoke(command) ?? throw new NotSupportedException();
 
         public void Attach(RecordingMutexLease lease) => _lease = lease;
 
@@ -3000,6 +3284,45 @@ public class Given_DocumentCacheAdministrativeCommandRunner
             rollbackAsync?.Invoke(this, cancellationToken) ?? Task.CompletedTask;
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class TestNpgsqlConnection : DbConnection
+    {
+        [AllowNull]
+        public override string ConnectionString { get; set; } = "Host=localhost;Database=test";
+
+        public override string Database => "test";
+
+        public override string DataSource => "test";
+
+        public override string ServerVersion => "1.0";
+
+        public override ConnectionState State => ConnectionState.Open;
+
+        public override void ChangeDatabase(string databaseName) => throw new NotSupportedException();
+
+        public override void Close() { }
+
+        public override void Open() { }
+
+        protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) =>
+            new TestDbTransaction(this, isolationLevel);
+
+        protected override DbCommand CreateDbCommand() => throw new NotSupportedException();
+    }
+
+    private sealed class TestDbTransaction(
+        DbConnection? connection = null,
+        IsolationLevel isolationLevel = IsolationLevel.ReadCommitted
+    ) : DbTransaction
+    {
+        protected override DbConnection? DbConnection { get; } = connection;
+
+        public override IsolationLevel IsolationLevel { get; } = isolationLevel;
+
+        public override void Commit() { }
+
+        public override void Rollback() { }
     }
 
     private sealed class StubAdministrativePrimitives(

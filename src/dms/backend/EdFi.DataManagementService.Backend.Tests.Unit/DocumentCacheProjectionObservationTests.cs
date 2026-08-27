@@ -133,7 +133,7 @@ public class Given_DocumentCacheProjectionObservationProvider
 
         snapshot.ActiveAdministrativeCommands.Should().BeEmpty();
         DocumentCacheAdministrativeCommandEndedDiagnosticSnapshot endedDiagnostic =
-            snapshot.GetCurrentGenerationLastEndedAdministrativeCommandDiagnostic(TargetKey)!;
+            snapshot.GetCurrentGenerationEndedAdministrativeCommandDiagnostic(TargetKey)!;
         endedDiagnostic.Should().NotBeNull();
         endedDiagnostic.ExecutionId.Should().Be(executionId);
         endedDiagnostic.Command.Should().Be(DocumentCacheAdministrativeCommand.OnlineCacheRebuild);
@@ -143,7 +143,7 @@ public class Given_DocumentCacheProjectionObservationProvider
         endedDiagnostic.Outcome.Should().Be(DocumentCacheAdministrativeCommandEndedOutcome.Succeeded);
         endedDiagnostic.Message.Should().Be("Administrative command succeeded.");
         snapshot
-            .CurrentGenerationLastEndedAdministrativeCommandDiagnostics.Should()
+            .CurrentGenerationEndedAdministrativeCommandDiagnostics.Should()
             .ContainSingle()
             .Which.Value.Should()
             .BeSameAs(endedDiagnostic);
@@ -172,8 +172,8 @@ public class Given_DocumentCacheProjectionObservationProvider
 
         DocumentCacheProjectionObservationSnapshot snapshot = store.CurrentSnapshot;
 
-        snapshot.GetCurrentGenerationLastEndedAdministrativeCommandDiagnostic(TargetKey).Should().BeNull();
-        snapshot.CurrentGenerationLastEndedAdministrativeCommandDiagnostics.Should().BeEmpty();
+        snapshot.GetCurrentGenerationEndedAdministrativeCommandDiagnostic(TargetKey).Should().BeNull();
+        snapshot.CurrentGenerationEndedAdministrativeCommandDiagnostics.Should().BeEmpty();
     }
 
     [Test]
