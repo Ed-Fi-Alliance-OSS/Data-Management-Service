@@ -647,6 +647,42 @@ public class PipelineOrderingTests
     public class Given_The_Routed_Resource_Pipelines : PipelineOrderingTests
     {
         [TestCase("CreateUpsertPipeline")]
+        [TestCase("CreateGetByIdPipeline")]
+        [TestCase("CreateQueryPipeline")]
+        [TestCase("CreateGetPartitionsPipeline")]
+        [TestCase("CreateUpdatePipeline")]
+        [TestCase("CreateDeleteByIdPipeline")]
+        [TestCase("CreateGetTrackedChangesPipeline")]
+        public void It_places_the_application_context_gate_immediately_after_strategy_selection(
+            string factoryMethodName
+        )
+        {
+            var stepTypes = GetRoutedResourcePipelineStepTypes(factoryMethodName);
+            var authorizationIndex = stepTypes.IndexOf(typeof(ResourceActionAuthorizationMiddleware));
+            var requirementIndex = stepTypes.LastIndexOf(typeof(ApplicationContextRequirementMiddleware));
+
+            authorizationIndex.Should().BeGreaterThanOrEqualTo(0);
+            requirementIndex
+                .Should()
+                .Be(
+                    authorizationIndex + 1,
+                    "the selected strategies must be available before application context is demanded"
+                );
+        }
+
+        [Test]
+        public void It_places_the_POST_demand_after_authentication_and_before_profile_resolution()
+        {
+            var stepTypes = GetRoutedResourcePipelineStepTypes("CreateUpsertPipeline");
+            var authenticationIndex = stepTypes.IndexOf(typeof(JwtAuthenticationMiddleware));
+            var requirementIndex = stepTypes.IndexOf(typeof(ApplicationContextRequirementMiddleware));
+            var profileIndex = stepTypes.IndexOf(typeof(ProfileResolutionMiddleware));
+
+            requirementIndex.Should().BeGreaterThan(authenticationIndex);
+            requirementIndex.Should().BeLessThan(profileIndex);
+        }
+
+        [TestCase("CreateUpsertPipeline")]
         [TestCase("CreateUpdatePipeline")]
         [TestCase("CreateDeleteByIdPipeline")]
         public void It_places_validate_route_semantics_after_validate_endpoint(string factoryMethodName)

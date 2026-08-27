@@ -285,6 +285,15 @@ public class UpsertHandlerTests
                 ],
                 DataStoreIds: []
             );
+            _requestInfo.ApplicationContext = new(
+                Id: 1,
+                ApplicationId: 2,
+                ClientId: "client",
+                ClientUuid: Guid.Parse("11111111-1111-1111-1111-111111111111"),
+                DataStoreIds: [],
+                CreatorOwnershipTokenId: 303,
+                OwnershipTokenIds: [404, 202, 404]
+            );
 
             var (upsertHandler, serviceProvider) = Handler(_repository);
             _requestInfo.ScopedServiceProvider = serviceProvider;
@@ -309,6 +318,8 @@ public class UpsertHandlerTests
             _repository
                 .CapturedRequest.AuthorizationContext.NamespacePrefixes.Should()
                 .Equal("uri://ed-fi.org", "uri://sample.org");
+            _repository.CapturedRequest.AuthorizationContext.CreatorOwnershipTokenId.Should().Be(303);
+            _repository.CapturedRequest.AuthorizationContext.OwnershipTokenIds.Should().Equal(404, 202, 404);
         }
     }
 

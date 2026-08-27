@@ -20,18 +20,29 @@ public static class RelationalAuthorizationParameterNameConstants
 public sealed record RelationalAuthorizationContext
 {
     public RelationalAuthorizationContext(IReadOnlyList<long> claimEducationOrganizationIds)
-        : this(claimEducationOrganizationIds, []) { }
+        : this(claimEducationOrganizationIds, [], null, []) { }
 
     public RelationalAuthorizationContext(
         IReadOnlyList<long> claimEducationOrganizationIds,
         IReadOnlyList<string> namespacePrefixes
     )
+        : this(claimEducationOrganizationIds, namespacePrefixes, null, []) { }
+
+    public RelationalAuthorizationContext(
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        IReadOnlyList<string> namespacePrefixes,
+        short? creatorOwnershipTokenId,
+        IReadOnlyList<short> ownershipTokenIds
+    )
     {
         ArgumentNullException.ThrowIfNull(claimEducationOrganizationIds);
         ArgumentNullException.ThrowIfNull(namespacePrefixes);
+        ArgumentNullException.ThrowIfNull(ownershipTokenIds);
 
         ClaimEducationOrganizationIds = NormalizeClaimEducationOrganizationIds(claimEducationOrganizationIds);
         NamespacePrefixes = NormalizeNamespacePrefixes(namespacePrefixes);
+        CreatorOwnershipTokenId = creatorOwnershipTokenId;
+        OwnershipTokenIds = [.. ownershipTokenIds];
     }
 
     /// <summary>
@@ -44,7 +55,22 @@ public sealed record RelationalAuthorizationContext
     /// </summary>
     public IReadOnlyList<string> NamespacePrefixes { get; }
 
-    public static RelationalAuthorizationContext Create(ClientAuthorizations clientAuthorizations)
+    /// <summary>
+    /// CMS application ownership token that created the API client, when configured.
+    /// </summary>
+    public short? CreatorOwnershipTokenId { get; }
+
+    /// <summary>
+    /// CMS application ownership tokens available for reading and modifying data.
+    /// Preserves the CMS-provided order and duplicates.
+    /// </summary>
+    public IReadOnlyList<short> OwnershipTokenIds { get; }
+
+    public static RelationalAuthorizationContext Create(
+        ClientAuthorizations clientAuthorizations,
+        short? creatorOwnershipTokenId = null,
+        IReadOnlyList<short>? ownershipTokenIds = null
+    )
     {
         ArgumentNullException.ThrowIfNull(clientAuthorizations);
 
@@ -58,7 +84,9 @@ public sealed record RelationalAuthorizationContext
                 .. clientAuthorizations.NamespacePrefixes.Select(static namespacePrefix =>
                     namespacePrefix.Value
                 ),
-            ]
+            ],
+            creatorOwnershipTokenId,
+            ownershipTokenIds ?? []
         );
     }
 

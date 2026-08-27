@@ -837,6 +837,15 @@ actual: {_requestInfo.FrontendResponse.Body}
                 ],
                 DataStoreIds: []
             );
+            _requestInfo.ApplicationContext = new(
+                Id: 1,
+                ApplicationId: 2,
+                ClientId: "client-id",
+                ClientUuid: Guid.Parse("55555555-5555-5555-5555-555555555555"),
+                DataStoreIds: [],
+                CreatorOwnershipTokenId: 303,
+                OwnershipTokenIds: [404, 202, 404]
+            );
 
             var (deleteByIdHandler, serviceProvider) = Handler(_repository);
             _requestInfo.ScopedServiceProvider = serviceProvider;
@@ -869,6 +878,8 @@ actual: {_requestInfo.FrontendResponse.Body}
             relationalRequest
                 .AuthorizationContext.NamespacePrefixes.Should()
                 .Equal("uri://sample-a.org", "uri://sample-b.org");
+            relationalRequest.AuthorizationContext.CreatorOwnershipTokenId.Should().Be(303);
+            relationalRequest.AuthorizationContext.OwnershipTokenIds.Should().Equal(404, 202, 404);
         }
     }
 }

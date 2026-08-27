@@ -1617,8 +1617,10 @@ DMS uses JWT Bearer tokens validated against an OpenID Connect (OIDC) identity p
 The following auth metadata is stored in the Configuration Service (CMS):
 - Claim Sets (i.e., what strategies apply for a given endpoint, and the order in which `AND` strategies execute).
   - Cached during DMS startup, TTL is 600s by default, configurable in appsettings.json: `CacheSettings.ClaimSetsCacheExpirationSeconds`
-- Granted EducationOrganizationIds, Namespace prefixes, and Ownership tokens.
+- Granted EducationOrganizationIds and Namespace prefixes.
   - These get encoded in the JWT during token generation, token TTL is 30m by default, configurable in CMS appsettings.json `IdentitySettings.TokenExpirationMinutes`
+- API-client creator and read/modify ownership tokens.
+  - DMS retrieves these from the CMS application-context contract (`GET /v3/apiClients/{clientId}`) and caches successful contexts according to `CacheSettings.ApplicationContextCacheExpirationSeconds`.
 
 DMS's current authentication implementation is mostly unaffected by this redesign.
 

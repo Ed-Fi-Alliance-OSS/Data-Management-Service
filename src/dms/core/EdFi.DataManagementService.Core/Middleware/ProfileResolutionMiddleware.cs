@@ -59,27 +59,29 @@ internal class ProfileResolutionMiddleware(
         // Get application context to find ApplicationId
         var applicationContextProvider =
             requestInfo.ScopedServiceProvider.GetRequiredService<IApplicationContextProvider>();
-        ApplicationContext? appContext = await applicationContextProvider.GetApplicationByClientIdAsync(
-            requestInfo.ClientAuthorizations.ClientId
-        );
+        ApplicationContextResult applicationContextResult =
+            await applicationContextProvider.GetApplicationByClientIdAsync(
+                requestInfo.ClientAuthorizations.ClientId,
+                requestInfo.FrontendRequest.Tenant
+            );
 
-        if (appContext == null)
+        if (applicationContextResult is not ApplicationContextResult.Success success)
         {
             logger.LogWarning(
-                "Application context not found for client during profile resolution. ClientId: {ClientId} - {TraceId}",
-                LoggingSanitizer.SanitizeForLogging(requestInfo.ClientAuthorizations.ClientId),
+                "Application context could not be resolved for client during profile resolution - {TraceId}",
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
             // If no application context and no profile header, continue without profile
-            if (parseResult.ParsedHeader == null)
+            if (parseResult.ParsedHeader is null)
             {
                 await next();
                 return;
             }
 
-            // If profile header was specified but we can't find app context, return error
-            requestInfo.FrontendResponse = CreateProfileError(
+            // Strategy selection must run before this response is returned so a mandatory application
+            // context demand can take precedence without performing another CMS lookup.
+            requestInfo.DeferredProfileContextFailureResponse = CreateProfileError(
                 statusCode: GetNotFoundStatusCode(requestInfo.Method),
                 errorType: "urn:ed-fi:api:profile:invalid-profile-usage",
                 title: "Invalid Profile Usage",
@@ -87,8 +89,12 @@ internal class ProfileResolutionMiddleware(
                 errors: ["Unable to resolve application context for profile validation."],
                 traceId: requestInfo.FrontendRequest.TraceId
             );
+            await next();
             return;
         }
+
+        ApplicationContext appContext = success.ApplicationContext;
+        requestInfo.ApplicationContext = appContext;
 
         // Get tenant ID if multi-tenancy is enabled
         string? tenantId = requestInfo.FrontendRequest.Tenant;

@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -173,6 +174,18 @@ internal class RequestInfo(
     /// ResourceActionAuthStrategies for the request
     /// </summary>
     public IReadOnlyList<string> ResourceActionAuthStrategies { get; set; } = [];
+
+    /// <summary>
+    /// The application context resolved for a request that requires ownership configuration.
+    /// Null when the request has not required application context or resolution did not succeed.
+    /// </summary>
+    public ApplicationContext? ApplicationContext { get; set; }
+
+    /// <summary>
+    /// The method-specific profile response to return after resource-action strategy selection when
+    /// an explicit profile could not be validated because application context was unavailable.
+    /// </summary>
+    public IFrontendResponse? DeferredProfileContextFailureResponse { get; set; }
 
     /// <summary>
     /// ApiDetails retrieved from the token, used for resource authorization.

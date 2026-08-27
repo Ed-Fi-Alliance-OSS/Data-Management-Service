@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using Microsoft.Extensions.Options;
+
 namespace EdFi.DataManagementService.Core.Configuration;
 
 /// <summary>
@@ -26,4 +28,15 @@ public class CacheSettings
     /// Set to 0 or a negative value to keep the cached configuration until the next explicit reload.
     /// </summary>
     public int DataStoreCacheExpirationSeconds { get; set; } = 600; // 10 minutes
+}
+
+public sealed class CacheSettingsValidator : IValidateOptions<CacheSettings>
+{
+    public const string ApplicationContextExpirationValidationError =
+        "ApplicationContextCacheExpirationSeconds must be positive.";
+
+    public ValidateOptionsResult Validate(string? name, CacheSettings options) =>
+        options.ApplicationContextCacheExpirationSeconds > 0
+            ? ValidateOptionsResult.Success
+            : ValidateOptionsResult.Fail(ApplicationContextExpirationValidationError);
 }

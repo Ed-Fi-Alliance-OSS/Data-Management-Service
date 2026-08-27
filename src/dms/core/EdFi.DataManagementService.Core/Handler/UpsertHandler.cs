@@ -62,7 +62,9 @@ internal class UpsertHandler(ILogger _logger, ResiliencePipeline _resiliencePipe
                     {
                         AuthorizationStrategyEvaluators = requestInfo.AuthorizationStrategyEvaluators,
                         AuthorizationContext = RelationalAuthorizationContext.Create(
-                            requestInfo.ClientAuthorizations
+                            requestInfo.ClientAuthorizations,
+                            requestInfo.ApplicationContext?.CreatorOwnershipTokenId,
+                            requestInfo.ApplicationContext?.OwnershipTokenIds
                         ),
                     }
                 );

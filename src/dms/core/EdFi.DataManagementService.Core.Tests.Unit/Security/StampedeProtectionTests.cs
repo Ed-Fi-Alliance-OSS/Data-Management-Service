@@ -116,7 +116,7 @@ public class StampedeProtectionTests
             _factoryExecutionCount = 0;
             _mockProvider = A.Fake<IConfigurationServiceApplicationProvider>();
 
-            A.CallTo(() => _mockProvider.GetApplicationByClientIdAsync(A<string>.Ignored))
+            A.CallTo(() => _mockProvider.GetApplicationByClientIdAsync(A<string>.Ignored, tenant: null))
                 .ReturnsLazily(_ => FetchApplicationContextAsync());
 
             _cachedProvider = new CachedApplicationContextProvider(
@@ -127,64 +127,90 @@ public class StampedeProtectionTests
             );
         }
 
-        private async Task<ApplicationContext?> FetchApplicationContextAsync()
+        private async Task<ApplicationContextResult> FetchApplicationContextAsync()
         {
             Interlocked.Increment(ref _factoryExecutionCount);
             await Task.Delay(100);
-            return new ApplicationContext(1, 100, "testClient", Guid.NewGuid(), [1, 2, 3]);
+            return new ApplicationContextResult.Success(
+                new ApplicationContext(1, 100, "testClient", Guid.NewGuid(), [1, 2, 3], null, [])
+            );
         }
 
         [Test]
-        public async Task It_Should_Execute_Factory_Only_Once_For_Same_ClientId()
+        public async Task It_Should_Memoize_The_First_Lookup_Task_For_Concurrent_Calls_In_The_Same_Scope()
         {
-            // Arrange
-            const string clientId = "test-client";
-            var tasks = Enumerable
-                .Range(0, 10)
-                .Select(_ => _cachedProvider.GetApplicationByClientIdAsync(clientId))
-                .ToList();
+            var tasks = new[]
+            {
+                _cachedProvider.GetApplicationByClientIdAsync("first-client", tenant: null),
+                _cachedProvider.GetApplicationByClientIdAsync("second-client", "north"),
+                _cachedProvider.GetApplicationByClientIdAsync("third-client", "south"),
+            };
 
-            // Act
             var results = await Task.WhenAll(tasks);
 
-            // Assert: Factory should execute only once for same clientId
             _factoryExecutionCount.Should().Be(1);
-
-            // All results should be non-null
-            results.Should().AllSatisfy(r => r.Should().NotBeNull());
+            results.Should().AllSatisfy(result => result.Should().BeSameAs(results[0]));
+            A.CallTo(() => _mockProvider.GetApplicationByClientIdAsync("first-client", tenant: null))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => _mockProvider.GetApplicationByClientIdAsync(A<string>.Ignored, A<string?>.Ignored))
+                .MustHaveHappenedOnceExactly();
         }
 
         [Test]
-        public async Task It_Should_Execute_Factory_Separately_For_Different_ClientIds()
+        public async Task It_Should_Coalesce_The_Same_Key_Across_Independent_Scopes()
         {
-            // Arrange - Reset factory count and reconfigure mock
-            _factoryExecutionCount = 0;
-            A.CallTo(() => _mockProvider.GetApplicationByClientIdAsync(A<string>.Ignored))
-                .ReturnsLazily(call =>
-                {
-                    var clientId = call.GetArgument<string>(0) ?? "unknown";
-                    return FetchApplicationContextForClientAsync(clientId);
-                });
+            HybridCache sharedHybridCache = CreateHybridCache();
+            var firstScopeProvider = new CachedApplicationContextProvider(
+                _mockProvider,
+                sharedHybridCache,
+                CreateCacheSettings(),
+                NullLogger<CachedApplicationContextProvider>.Instance
+            );
+            var secondScopeProvider = new CachedApplicationContextProvider(
+                _mockProvider,
+                sharedHybridCache,
+                CreateCacheSettings(),
+                NullLogger<CachedApplicationContextProvider>.Instance
+            );
 
             var tasks = new[]
             {
-                _cachedProvider.GetApplicationByClientIdAsync("client1"),
-                _cachedProvider.GetApplicationByClientIdAsync("client2"),
-                _cachedProvider.GetApplicationByClientIdAsync("client3"),
+                firstScopeProvider.GetApplicationByClientIdAsync("client-id", tenant: null),
+                secondScopeProvider.GetApplicationByClientIdAsync("client-id", tenant: null),
             };
 
-            // Act
-            await Task.WhenAll(tasks);
+            var results = await Task.WhenAll(tasks);
 
-            // Assert: Each unique client should trigger factory once
-            _factoryExecutionCount.Should().Be(3);
+            _factoryExecutionCount.Should().Be(1);
+            var applicationContexts = results
+                .Select(result =>
+                    result.Should().BeOfType<ApplicationContextResult.Success>().Subject.ApplicationContext
+                )
+                .ToArray();
+            applicationContexts.Should().AllBeEquivalentTo(applicationContexts[0]);
         }
 
-        private async Task<ApplicationContext?> FetchApplicationContextForClientAsync(string clientId)
+        [Test]
+        public async Task It_Should_Execute_Factories_Independently_For_Distinct_Keys_Across_Scopes()
         {
-            Interlocked.Increment(ref _factoryExecutionCount);
-            await Task.Delay(50);
-            return new ApplicationContext(1, 100, clientId, Guid.NewGuid(), [1, 2, 3]);
+            HybridCache sharedHybridCache = CreateHybridCache();
+            var providers = Enumerable
+                .Range(0, 3)
+                .Select(_ => new CachedApplicationContextProvider(
+                    _mockProvider,
+                    sharedHybridCache,
+                    CreateCacheSettings(),
+                    NullLogger<CachedApplicationContextProvider>.Instance
+                ))
+                .ToArray();
+
+            await Task.WhenAll(
+                providers[0].GetApplicationByClientIdAsync("client1", tenant: null),
+                providers[1].GetApplicationByClientIdAsync("client2", tenant: null),
+                providers[2].GetApplicationByClientIdAsync("client3", tenant: null)
+            );
+
+            _factoryExecutionCount.Should().Be(3);
         }
     }
 

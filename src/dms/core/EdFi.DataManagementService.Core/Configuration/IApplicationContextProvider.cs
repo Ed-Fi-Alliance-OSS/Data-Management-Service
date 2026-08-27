@@ -14,13 +14,15 @@ public interface IApplicationContextProvider
     /// Retrieves application context by client ID
     /// </summary>
     /// <param name="clientId">The client identifier from the JWT token</param>
-    /// <returns>ApplicationContext if found, null otherwise</returns>
-    Task<ApplicationContext?> GetApplicationByClientIdAsync(string clientId);
+    /// <param name="tenant">The optional tenant context for the request</param>
+    /// <returns>The typed application-context lookup outcome</returns>
+    Task<ApplicationContextResult> GetApplicationByClientIdAsync(string clientId, string? tenant);
 
     /// <summary>
     /// Forces a reload of application data from CMS, bypassing cache
     /// </summary>
     /// <param name="clientId">The client identifier to reload</param>
-    /// <returns>ApplicationContext if found, null otherwise</returns>
-    Task<ApplicationContext?> ReloadApplicationByClientIdAsync(string clientId);
+    /// <param name="tenant">The optional tenant context for the request</param>
+    /// <returns>The typed application-context reload outcome</returns>
+    Task<ApplicationContextResult> ReloadApplicationByClientIdAsync(string clientId, string? tenant);
 }

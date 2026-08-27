@@ -66,8 +66,10 @@ public class ProfileResolutionMiddlewareTests
 
         if (appContextProvider is null)
         {
-            A.CallTo(() => applicationContextProvider.GetApplicationByClientIdAsync(A<string>._))
-                .Returns(Task.FromResult<ApplicationContext?>(null));
+            A.CallTo(() =>
+                    applicationContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null)
+                )
+                .Returns(Task.FromResult<ApplicationContextResult>(new ApplicationContextResult.NotFound()));
         }
 
         return new ServiceCollection()
@@ -83,7 +85,9 @@ public class ProfileResolutionMiddlewareTests
             ApplicationId: applicationId,
             ClientId: "client123",
             ClientUuid: Guid.NewGuid(),
-            DataStoreIds: []
+            DataStoreIds: [],
+            CreatorOwnershipTokenId: null,
+            OwnershipTokenIds: []
         );
 
     private static RequestInfo CreateRequestInfo(
@@ -198,8 +202,8 @@ public class ProfileResolutionMiddlewareTests
         public async Task Setup()
         {
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._))
-                .Returns(Task.FromResult<ApplicationContext?>(null));
+            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+                .Returns(Task.FromResult<ApplicationContextResult>(new ApplicationContextResult.NotFound()));
 
             _requestInfo = CreateRequestInfo(
                 RequestMethod.GET,
@@ -241,8 +245,8 @@ public class ProfileResolutionMiddlewareTests
             };
 
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._))
-                .Returns(Task.FromResult<ApplicationContext?>(null));
+            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+                .Returns(Task.FromResult<ApplicationContextResult>(new ApplicationContextResult.NotFound()));
 
             _requestInfo = CreateRequestInfo(
                 RequestMethod.GET,
@@ -264,22 +268,22 @@ public class ProfileResolutionMiddlewareTests
         }
 
         [Test]
-        public void It_does_not_call_next()
+        public void It_calls_next_to_allow_strategy_selection()
         {
-            _nextCalled.Should().BeFalse();
+            _nextCalled.Should().BeTrue();
         }
 
         [Test]
         public void It_returns_406_for_GET()
         {
-            _requestInfo.FrontendResponse!.StatusCode.Should().Be(406);
+            _requestInfo.DeferredProfileContextFailureResponse!.StatusCode.Should().Be(406);
         }
 
         [Test]
         public void It_returns_the_expected_problem_details_payload()
         {
             AssertExpectedProblemDetailsResponse(
-                _requestInfo.FrontendResponse!,
+                _requestInfo.DeferredProfileContextFailureResponse!,
                 expectedStatusCode: 406,
                 expectedType: "urn:ed-fi:api:profile:invalid-profile-usage",
                 expectedTitle: "Invalid Profile Usage",
@@ -304,8 +308,8 @@ public class ProfileResolutionMiddlewareTests
             };
 
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._))
-                .Returns(Task.FromResult<ApplicationContext?>(null));
+            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+                .Returns(Task.FromResult<ApplicationContextResult>(new ApplicationContextResult.NotFound()));
 
             _requestInfo = CreateRequestInfo(
                 RequestMethod.POST,
@@ -321,14 +325,14 @@ public class ProfileResolutionMiddlewareTests
         [Test]
         public void It_returns_415_for_POST()
         {
-            _requestInfo.FrontendResponse!.StatusCode.Should().Be(415);
+            _requestInfo.DeferredProfileContextFailureResponse!.StatusCode.Should().Be(415);
         }
 
         [Test]
         public void It_returns_the_expected_problem_details_payload()
         {
             AssertExpectedProblemDetailsResponse(
-                _requestInfo.FrontendResponse!,
+                _requestInfo.DeferredProfileContextFailureResponse!,
                 expectedStatusCode: 415,
                 expectedType: "urn:ed-fi:api:profile:invalid-profile-usage",
                 expectedTitle: "Invalid Profile Usage",
@@ -353,8 +357,8 @@ public class ProfileResolutionMiddlewareTests
             };
 
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._))
-                .Returns(Task.FromResult<ApplicationContext?>(null));
+            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+                .Returns(Task.FromResult<ApplicationContextResult>(new ApplicationContextResult.NotFound()));
 
             _requestInfo = CreateRequestInfo(
                 RequestMethod.PUT,
@@ -370,7 +374,7 @@ public class ProfileResolutionMiddlewareTests
         [Test]
         public void It_returns_415_for_PUT()
         {
-            _requestInfo.FrontendResponse!.StatusCode.Should().Be(415);
+            _requestInfo.DeferredProfileContextFailureResponse!.StatusCode.Should().Be(415);
         }
     }
 
@@ -389,8 +393,8 @@ public class ProfileResolutionMiddlewareTests
             };
 
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._))
-                .Returns(CreateApplicationContext());
+            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+                .Returns(new ApplicationContextResult.Success(CreateApplicationContext()));
 
             _requestInfo = CreateRequestInfo(
                 RequestMethod.GET,
@@ -481,8 +485,8 @@ public class ProfileResolutionMiddlewareTests
             };
 
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._))
-                .Returns(CreateApplicationContext());
+            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+                .Returns(new ApplicationContextResult.Success(CreateApplicationContext()));
 
             _requestInfo = CreateRequestInfo(
                 RequestMethod.GET,
@@ -555,8 +559,8 @@ public class ProfileResolutionMiddlewareTests
         public async Task Setup()
         {
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._))
-                .Returns(CreateApplicationContext());
+            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+                .Returns(new ApplicationContextResult.Success(CreateApplicationContext()));
 
             _requestInfo = CreateRequestInfo(
                 RequestMethod.GET,
@@ -616,8 +620,8 @@ public class ProfileResolutionMiddlewareTests
             };
 
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._))
-                .Returns(CreateApplicationContext());
+            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+                .Returns(new ApplicationContextResult.Success(CreateApplicationContext()));
 
             _requestInfo = CreateRequestInfo(
                 RequestMethod.PUT,
@@ -690,8 +694,8 @@ public class ProfileResolutionMiddlewareTests
         public async Task Setup()
         {
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._))
-                .Returns(CreateApplicationContext());
+            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+                .Returns(new ApplicationContextResult.Success(CreateApplicationContext()));
 
             _requestInfo = CreateRequestInfo(
                 RequestMethod.DELETE,
@@ -761,8 +765,8 @@ public class ProfileResolutionMiddlewareTests
             };
 
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._))
-                .Returns(CreateApplicationContext());
+            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+                .Returns(new ApplicationContextResult.Success(CreateApplicationContext()));
 
             _requestInfo = CreateRequestInfo(
                 RequestMethod.GET,
@@ -828,12 +832,16 @@ public class ProfileResolutionMiddlewareTests
         public async Task Setup()
         {
             _firstApplicationContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => _firstApplicationContextProvider.GetApplicationByClientIdAsync("client123"))
-                .Returns(CreateApplicationContext(11));
+            A.CallTo(() =>
+                    _firstApplicationContextProvider.GetApplicationByClientIdAsync("client123", tenant: null)
+                )
+                .Returns(new ApplicationContextResult.Success(CreateApplicationContext(11)));
 
             _secondApplicationContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => _secondApplicationContextProvider.GetApplicationByClientIdAsync("client123"))
-                .Returns(CreateApplicationContext(22));
+            A.CallTo(() =>
+                    _secondApplicationContextProvider.GetApplicationByClientIdAsync("client123", tenant: null)
+                )
+                .Returns(new ApplicationContextResult.Success(CreateApplicationContext(22)));
 
             _profileService = A.Fake<IProfileService>();
             A.CallTo(() =>

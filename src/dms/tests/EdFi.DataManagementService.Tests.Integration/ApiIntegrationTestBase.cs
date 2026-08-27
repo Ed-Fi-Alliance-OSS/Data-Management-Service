@@ -85,6 +85,18 @@ public abstract class ApiIntegrationTestBase
     /// <summary>Enables ASP.NET Core response compression for scenarios that exercise coding variants.</summary>
     protected virtual bool EnableAspNetCompression => false;
 
+    /// <summary>Enables the <c>/{tenant}</c> route-qualifier segment for multitenancy-aware scenarios.</summary>
+    protected virtual bool MultiTenancy => false;
+
+    /// <summary>
+    /// When supplied, replaces only the singleton CMS-facing <c>IConfigurationServiceApplicationProvider</c>
+    /// instead of the whole <c>IApplicationContextProvider</c>, so a scenario can observe the real per-request
+    /// memoization performed by the production <c>CachedApplicationContextProvider</c>. Null keeps every other
+    /// scenario's historical always-stable fake.
+    /// </summary>
+    protected virtual IConfigurationServiceApplicationProvider? ApplicationContextConfigurationProviderOverride =>
+        null;
+
     /// <summary>Enables the DMS DocumentCache read-acceleration path for cache-backed read scenarios.</summary>
     protected virtual bool EnableDocumentCacheReadAcceleration => false;
 
@@ -189,6 +201,8 @@ public abstract class ApiIntegrationTestBase
         var clientNamespacePrefixes = ClientNamespacePrefixes;
         var assignedProfileNames = AssignedProfileNames;
         var suppressHydratedRowsOnce = SuppressHydratedRowsOnce;
+        var multiTenancy = MultiTenancy;
+        var applicationContextConfigurationProviderOverride = ApplicationContextConfigurationProviderOverride;
 
         _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -202,6 +216,7 @@ public abstract class ApiIntegrationTestBase
             builder.UseSetting("AppSettings:StartupStatusFilePath", startupStatusFilePath);
             builder.UseSetting("AppSettings:Datastore", Datastore);
             builder.UseSetting("AppSettings:BypassAuthorization", BypassAuthorization ? "true" : "false");
+            builder.UseSetting("AppSettings:MultiTenancy", multiTenancy ? "true" : "false");
             builder.UseSetting(
                 "AppSettings:EnableAspNetCompression",
                 EnableAspNetCompression ? "true" : "false"
@@ -254,7 +269,8 @@ public abstract class ApiIntegrationTestBase
                     documentCacheReadAcquisitionFailureRecorder,
                     documentCacheDirectFillTimeoutRecorder,
                     documentCacheReadTelemetryRecorder,
-                    assignedProfileNames
+                    assignedProfileNames,
+                    applicationContextConfigurationProviderOverride
                 );
 
                 if (queryRecorder is not null)

@@ -58,7 +58,9 @@ internal class UpdateByIdHandler(ILogger _logger, ResiliencePipeline _resilience
                     {
                         AuthorizationStrategyEvaluators = requestInfo.AuthorizationStrategyEvaluators,
                         AuthorizationContext = RelationalAuthorizationContext.Create(
-                            requestInfo.ClientAuthorizations
+                            requestInfo.ClientAuthorizations,
+                            requestInfo.ApplicationContext?.CreatorOwnershipTokenId,
+                            requestInfo.ApplicationContext?.OwnershipTokenIds
                         ),
                     }
                 ),

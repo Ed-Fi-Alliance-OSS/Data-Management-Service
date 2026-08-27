@@ -24,13 +24,14 @@ internal static class FakeApplicationContextProvider
             ExternalDoublesConstants.StableApplicationId,
             ExternalDoublesConstants.SmokeClientId,
             ExternalDoublesConstants.StableClientUuid,
-            [ExternalDoublesConstants.StableDataStoreId]
+            [ExternalDoublesConstants.StableDataStoreId],
+            CreatorOwnershipTokenId: null,
+            OwnershipTokenIds: []
         );
+        ApplicationContextResult result = new ApplicationContextResult.Success(context);
 
-        A.CallTo(() => fake.GetApplicationByClientIdAsync(A<string>._))
-            .Returns(Task.FromResult<ApplicationContext?>(context));
-        A.CallTo(() => fake.ReloadApplicationByClientIdAsync(A<string>._))
-            .Returns(Task.FromResult<ApplicationContext?>(context));
+        A.CallTo(() => fake.GetApplicationByClientIdAsync(A<string>._, A<string?>._)).Returns(result);
+        A.CallTo(() => fake.ReloadApplicationByClientIdAsync(A<string>._, A<string?>._)).Returns(result);
 
         return fake;
     }

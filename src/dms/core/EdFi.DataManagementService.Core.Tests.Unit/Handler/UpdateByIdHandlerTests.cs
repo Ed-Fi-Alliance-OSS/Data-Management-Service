@@ -414,6 +414,23 @@ public class UpdateByIdHandlerTests
             _requestInfo.ProfileContext = CreateWriteProfileContext(_readContentType);
             _requestInfo.BackendProfileWriteContext = CreateBackendProfileWriteContext(_writableRequestBody);
             _requestInfo.ParsedBody = JsonNode.Parse("""{"studentUniqueId":"1000","firstName":"Lincoln"}""")!;
+            _requestInfo.ClientAuthorizations = new ClientAuthorizations(
+                TokenId: "token-id",
+                ClientId: "client-id",
+                ClaimSetName: "claim-set",
+                EducationOrganizationIds: [new EducationOrganizationId(255902), new(255901)],
+                NamespacePrefixes: [new NamespacePrefix("uri://sample.org")],
+                DataStoreIds: []
+            );
+            _requestInfo.ApplicationContext = new(
+                Id: 1,
+                ApplicationId: 2,
+                ClientId: "client-id",
+                ClientUuid: Guid.Parse("44444444-4444-4444-4444-444444444444"),
+                DataStoreIds: [],
+                CreatorOwnershipTokenId: 303,
+                OwnershipTokenIds: [404, 202, 404]
+            );
 
             var (updateByIdHandler, serviceProvider) = Handler(_repository);
             _requestInfo.ScopedServiceProvider = serviceProvider;
@@ -429,6 +446,19 @@ public class UpdateByIdHandlerTests
             _repository
                 .CapturedRequest.BackendProfileWriteContext!.Request.WritableRequestBody.Should()
                 .BeSameAs(_writableRequestBody);
+        }
+
+        [Test]
+        public void It_carries_JWT_and_ownership_authorization_inputs()
+        {
+            _repository
+                .CapturedRequest.AuthorizationContext.ClaimEducationOrganizationIds.Should()
+                .Equal(255901L, 255902L);
+            _repository
+                .CapturedRequest.AuthorizationContext.NamespacePrefixes.Should()
+                .Equal("uri://sample.org");
+            _repository.CapturedRequest.AuthorizationContext.CreatorOwnershipTokenId.Should().Be(303);
+            _repository.CapturedRequest.AuthorizationContext.OwnershipTokenIds.Should().Equal(404, 202, 404);
         }
     }
 

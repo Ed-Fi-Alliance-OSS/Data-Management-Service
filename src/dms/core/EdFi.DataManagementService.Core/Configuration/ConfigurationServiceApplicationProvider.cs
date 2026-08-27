@@ -23,69 +23,90 @@ public class ConfigurationServiceApplicationProvider(
     private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     /// <inheritdoc />
-    public async Task<ApplicationContext?> GetApplicationByClientIdAsync(string clientId)
+    public async Task<ApplicationContextResult> GetApplicationByClientIdAsync(string clientId, string? tenant)
     {
-        return await FetchApplicationByClientIdAsync(clientId);
+        return await FetchApplicationByClientIdAsync(clientId, tenant);
     }
 
     /// <inheritdoc />
-    public async Task<ApplicationContext?> ReloadApplicationByClientIdAsync(string clientId)
+    public async Task<ApplicationContextResult> ReloadApplicationByClientIdAsync(
+        string clientId,
+        string? tenant
+    )
     {
         logger.LogInformation("Force reloading application context for clientId: {ClientId}", clientId);
-        return await FetchApplicationByClientIdAsync(clientId);
+        return await FetchApplicationByClientIdAsync(clientId, tenant);
     }
 
-    private async Task<ApplicationContext?> FetchApplicationByClientIdAsync(string clientId)
+    private async Task<ApplicationContextResult> FetchApplicationByClientIdAsync(
+        string clientId,
+        string? tenant
+    )
     {
         try
         {
-            // Get token for the Configuration Service API
-            string? configurationServiceToken = await configurationServiceTokenHandler.GetTokenAsync(
+            string configurationServiceToken = await configurationServiceTokenHandler.GetTokenAsync(
                 configurationServiceContext.clientId,
                 configurationServiceContext.clientSecret,
                 configurationServiceContext.scope
             );
 
-            configurationServiceApiClient.Client.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Bearer", configurationServiceToken);
-
             logger.LogDebug("Fetching application context for clientId: {ClientId}", clientId);
 
-            HttpResponseMessage response = await configurationServiceApiClient.Client.GetAsync(
-                $"/v3/apiClients/{clientId}"
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"/v3/apiClients/{clientId}");
+            request.Headers.Authorization = new AuthenticationHeaderValue(
+                "Bearer",
+                configurationServiceToken
+            );
+
+            if (tenant is not null)
+            {
+                request.Headers.Add("Tenant", tenant);
+            }
+
+            using HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(
+                request
             );
 
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
                 logger.LogWarning("Application not found for clientId: {ClientId}", clientId);
-                return null;
+                return new ApplicationContextResult.NotFound();
             }
 
-            response.EnsureSuccessStatusCode();
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogError(
+                    "Configuration Service returned {StatusCode} while fetching application context for clientId: {ClientId}",
+                    response.StatusCode,
+                    clientId
+                );
+                return new ApplicationContextResult.Unavailable();
+            }
 
             string responseBody = await response.Content.ReadAsStringAsync();
-            ApplicationContext? applicationContext = JsonSerializer.Deserialize<ApplicationContext>(
-                responseBody,
-                _jsonOptions
-            );
+            ApplicationContext? applicationContext = DeserializeApplicationContext(responseBody);
 
-            if (applicationContext == null)
+            if (
+                applicationContext is null
+                || !string.Equals(applicationContext.ClientId, clientId, StringComparison.Ordinal)
+                || applicationContext.ClientUuid == Guid.Empty
+            )
             {
                 logger.LogError(
                     "Failed to deserialize application context for clientId: {ClientId}",
                     clientId
                 );
-                return null;
+                return new ApplicationContextResult.Unavailable();
             }
 
             logger.LogDebug(
-                "Successfully fetched application context for clientId: {ClientId}, ApplicationId: {ApplicationId}, DataStoreIds: [{DataStoreIds}]",
+                "Successfully fetched application context for clientId: {ClientId}, ApplicationId: {ApplicationId}",
                 clientId,
-                applicationContext.ApplicationId,
-                string.Join(", ", applicationContext.DataStoreIds)
+                applicationContext.ApplicationId
             );
 
-            return applicationContext;
+            return new ApplicationContextResult.Success(applicationContext);
         }
         catch (HttpRequestException ex)
         {
@@ -94,7 +115,7 @@ public class ConfigurationServiceApplicationProvider(
                 "HTTP request failed while fetching application context for clientId: {ClientId}",
                 clientId
             );
-            return null;
+            return new ApplicationContextResult.Unavailable();
         }
         catch (JsonException ex)
         {
@@ -103,7 +124,7 @@ public class ConfigurationServiceApplicationProvider(
                 "Failed to parse application context response for clientId: {ClientId}",
                 clientId
             );
-            return null;
+            return new ApplicationContextResult.Unavailable();
         }
         catch (Exception ex)
         {
@@ -112,7 +133,51 @@ public class ConfigurationServiceApplicationProvider(
                 "Unexpected error while fetching application context for clientId: {ClientId}",
                 clientId
             );
+            return new ApplicationContextResult.Unavailable();
+        }
+    }
+
+    private static ApplicationContext? DeserializeApplicationContext(string responseBody)
+    {
+        using JsonDocument document = JsonDocument.Parse(responseBody);
+
+        if (
+            document.RootElement.ValueKind != JsonValueKind.Object
+            || !HasRequiredProperties(document.RootElement)
+        )
+        {
             return null;
         }
+
+        ApplicationContext? applicationContext = JsonSerializer.Deserialize<ApplicationContext>(
+            responseBody,
+            _jsonOptions
+        );
+
+        return
+            applicationContext is not null
+            && !string.IsNullOrWhiteSpace(applicationContext.ClientId)
+            && applicationContext.DataStoreIds is not null
+            && applicationContext.OwnershipTokenIds is not null
+            ? applicationContext
+            : null;
+    }
+
+    private static bool HasRequiredProperties(JsonElement applicationContext)
+    {
+        return HasProperty(applicationContext, "id")
+            && HasProperty(applicationContext, "applicationId")
+            && HasProperty(applicationContext, "clientId")
+            && HasProperty(applicationContext, "clientUuid")
+            && HasProperty(applicationContext, "dataStoreIds")
+            && HasProperty(applicationContext, "creatorOwnershipTokenId")
+            && HasProperty(applicationContext, "ownershipTokenIds");
+    }
+
+    private static bool HasProperty(JsonElement element, string propertyName)
+    {
+        return element
+            .EnumerateObject()
+            .Any(property => string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase));
     }
 }

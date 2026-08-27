@@ -89,6 +89,23 @@ public class PartitionRequestHandlerTests
         // that it crosses the seam has to be able to fail: DocumentId is the enum's zero value.
         requestInfo.PageOrderingMode = orderingMode;
         requestInfo.FrontendRequest = requestInfo.FrontendRequest with { Tenant = TenantKey };
+        requestInfo.ClientAuthorizations = new ClientAuthorizations(
+            TokenId: "token-id",
+            ClientId: "client-id",
+            ClaimSetName: "claim-set",
+            EducationOrganizationIds: [new EducationOrganizationId(255902), new(255901)],
+            NamespacePrefixes: [new NamespacePrefix("uri://sample.org")],
+            DataStoreIds: []
+        );
+        requestInfo.ApplicationContext = new(
+            Id: 1,
+            ApplicationId: 2,
+            ClientId: "client-id",
+            ClientUuid: Guid.Parse("66666666-6666-6666-6666-666666666666"),
+            DataStoreIds: [],
+            CreatorOwnershipTokenId: 303,
+            OwnershipTokenIds: [404, 202, 404]
+        );
 
         await new PartitionRequestHandler(
             NullLogger.Instance,
@@ -272,6 +289,19 @@ public class PartitionRequestHandlerTests
         public void It_hands_the_tenant_to_the_backend()
         {
             _handler.CapturedRequest!.TenantKey.Should().Be(TenantKey);
+        }
+
+        [Test]
+        public void It_hands_JWT_and_ownership_authorization_inputs_to_the_backend()
+        {
+            _handler
+                .CapturedRequest!.AuthorizationContext.ClaimEducationOrganizationIds.Should()
+                .Equal(255901L, 255902L);
+            _handler
+                .CapturedRequest.AuthorizationContext.NamespacePrefixes.Should()
+                .Equal("uri://sample.org");
+            _handler.CapturedRequest.AuthorizationContext.CreatorOwnershipTokenId.Should().Be(303);
+            _handler.CapturedRequest.AuthorizationContext.OwnershipTokenIds.Should().Equal(404, 202, 404);
         }
     }
 
