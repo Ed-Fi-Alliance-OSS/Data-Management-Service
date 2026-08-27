@@ -108,7 +108,7 @@ bootstrap manifest records stable prepared inputs and fingerprints only:
   "schema": {
     "selectionMode": "Standard",
     "selectedExtensions": [],
-    "selectedPackages": ["EdFi.DataStandard52.ApiSchema@1.0.333"],
+    "selectedPackages": ["EdFi.DataStandard52.ApiSchema@1.0.334"],
     "effectiveSchemaHash": "...",
     "workspaceFingerprint": "...",
     "apiSchemaManifestPath": "ApiSchema/bootstrap-api-schema-manifest.json"

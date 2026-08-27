@@ -216,7 +216,7 @@ exit $ExitCode
             script:New-FixtureNupkg `
                 -FeedFolder $feedFolder `
                 -PackageId "EdFi.DataStandard52.ApiSchema" `
-                -Version "1.0.333" `
+                -Version "1.0.334" `
                 -ProjectName "Ed-Fi" `
                 -ProjectEndpointName "ed-fi" `
                 -IsExtensionProject $false | Out-Null
@@ -411,7 +411,7 @@ exit $ExitCode
                 script:New-FixtureNupkg `
                     -FeedFolder $packagesFeedFolder `
                     -PackageId "EdFi.DataStandard52.ApiSchema" `
-                    -Version "1.0.333" `
+                    -Version "1.0.334" `
                     -ProjectName "Ed-Fi" `
                     -ProjectEndpointName "ed-fi" `
                     -IsExtensionProject $false | Out-Null
@@ -419,7 +419,7 @@ exit $ExitCode
                 script:New-FixtureNupkg `
                     -FeedFolder $packagesFeedFolder `
                     -PackageId "EdFi.DataStandard52.TPDM.ApiSchema" `
-                    -Version "1.0.333" `
+                    -Version "1.0.334" `
                     -ProjectName "TPDM" `
                     -ProjectEndpointName "tpdm" `
                     -IsExtensionProject $true | Out-Null
@@ -429,12 +429,12 @@ exit $ExitCode
                     -Packages @(
                         [pscustomobject]@{
                             name    = "EdFi.DataStandard52.ApiSchema"
-                            version = "1.0.333"
+                            version = "1.0.334"
                             feedUrl = $packagesFeedFolder
                         },
                         [pscustomobject]@{
                             name    = "EdFi.DataStandard52.TPDM.ApiSchema"
-                            version = "1.0.333"
+                            version = "1.0.334"
                             feedUrl = $packagesFeedFolder
                         }
                     )
@@ -447,8 +447,8 @@ exit $ExitCode
                 $manifest = script:Get-RootManifest
                 $manifest.schema.selectionMode | Should -Be "Standard"
                 @($manifest.schema.selectedExtensions) | Should -Contain "tpdm"
-                @($manifest.schema.selectedPackages) | Should -Contain "EdFi.DataStandard52.ApiSchema@1.0.333"
-                @($manifest.schema.selectedPackages) | Should -Contain "EdFi.DataStandard52.TPDM.ApiSchema@1.0.333"
+                @($manifest.schema.selectedPackages) | Should -Contain "EdFi.DataStandard52.ApiSchema@1.0.334"
+                @($manifest.schema.selectedPackages) | Should -Contain "EdFi.DataStandard52.TPDM.ApiSchema@1.0.334"
 
                 $apiSchemaManifest = script:Get-ApiSchemaManifest
                 $projectEndpoints = @($apiSchemaManifest.projects | ForEach-Object { $_.projectEndpointName })
@@ -478,7 +478,7 @@ exit $ExitCode
                 script:New-FixtureNupkg `
                     -FeedFolder $ds61FeedFolder `
                     -PackageId "EdFi.DataStandard61.ApiSchema" `
-                    -Version "1.0.333" `
+                    -Version "1.0.334" `
                     -ProjectName "Ed-Fi" `
                     -ProjectEndpointName "ed-fi" `
                     -IsExtensionProject $false | Out-Null
@@ -486,7 +486,7 @@ exit $ExitCode
                 script:New-FixtureNupkg `
                     -FeedFolder $ds61FeedFolder `
                     -PackageId "EdFi.DataStandard61.Sample.ApiSchema" `
-                    -Version "1.0.333" `
+                    -Version "1.0.334" `
                     -ProjectName "Sample" `
                     -ProjectEndpointName "sample" `
                     -IsExtensionProject $true | Out-Null
@@ -496,12 +496,12 @@ exit $ExitCode
                     -Packages @(
                         [pscustomobject]@{
                             name    = "EdFi.DataStandard61.ApiSchema"
-                            version = "1.0.333"
+                            version = "1.0.334"
                             feedUrl = $ds61FeedFolder
                         },
                         [pscustomobject]@{
                             name    = "EdFi.DataStandard61.Sample.ApiSchema"
-                            version = "1.0.333"
+                            version = "1.0.334"
                             feedUrl = $ds61FeedFolder
                         }
                     )
@@ -536,7 +536,7 @@ exit $ExitCode
                 script:New-FixtureNupkg `
                     -FeedFolder $extensionOnlyFeedFolder `
                     -PackageId "EdFi.DataStandard52.TPDM.ApiSchema" `
-                    -Version "1.0.333" `
+                    -Version "1.0.334" `
                     -ProjectName "TPDM" `
                     -ProjectEndpointName "tpdm" `
                     -IsExtensionProject $true | Out-Null
@@ -546,7 +546,7 @@ exit $ExitCode
                     -Packages @(
                         [pscustomobject]@{
                             name    = "EdFi.DataStandard52.TPDM.ApiSchema"
-                            version = "1.0.333"
+                            version = "1.0.334"
                             feedUrl = $extensionOnlyFeedFolder
                         }
                     )
@@ -735,7 +735,7 @@ exit $ExitCode
 
             try {
                 $corePackageId = "EdFi.DataStandard52.ApiSchema"
-                $coreNupkgName = "$($corePackageId.ToLowerInvariant()).1.0.333.nupkg"
+                $coreNupkgName = "$($corePackageId.ToLowerInvariant()).1.0.334.nupkg"
                 $coreNupkgPath = Join-Path $malformedFeedFolder $coreNupkgName
                 $libStaging = Join-Path ([System.IO.Path]::GetTempPath()) "dms-std-libcore-$([Guid]::NewGuid().ToString('N'))"
                 $libApiSchemaDir = Join-Path $libStaging "contentFiles/any/any/ApiSchema"
@@ -806,7 +806,7 @@ exit $ExitCode
 
             try {
                 $corePackageId = "EdFi.DataStandard52.ApiSchema"
-                $coreNupkgPath = Join-Path $divergentFeedFolder "$($corePackageId.ToLowerInvariant()).1.0.333.nupkg"
+                $coreNupkgPath = Join-Path $divergentFeedFolder "$($corePackageId.ToLowerInvariant()).1.0.334.nupkg"
                 $coreStaging = Join-Path ([System.IO.Path]::GetTempPath()) "dms-std-divergent-$([Guid]::NewGuid().ToString('N'))"
                 $coreApiSchemaDir = Join-Path $coreStaging "contentFiles/any/any/ApiSchema"
                 New-Item -ItemType Directory -Path $coreApiSchemaDir -Force | Out-Null
@@ -871,7 +871,7 @@ exit $ExitCode
                 script:New-FixtureNupkg `
                     -FeedFolder $assetsFeedFolder `
                     -PackageId "EdFi.DataStandard52.ApiSchema" `
-                    -Version "1.0.333" `
+                    -Version "1.0.334" `
                     -ProjectName "Ed-Fi" `
                     -ProjectEndpointName "ed-fi" `
                     -IsExtensionProject $false `
@@ -914,7 +914,7 @@ exit $ExitCode
                 script:New-FixtureNupkg `
                     -FeedFolder $undeclaredFeedFolder `
                     -PackageId "EdFi.DataStandard52.ApiSchema" `
-                    -Version "1.0.333" `
+                    -Version "1.0.334" `
                     -ProjectName "Ed-Fi" `
                     -ProjectEndpointName "ed-fi" `
                     -IsExtensionProject $false `
@@ -954,7 +954,7 @@ exit $ExitCode
                 script:New-FixtureNupkg `
                     -FeedFolder $mislabeledCoreFeedFolder `
                     -PackageId "EdFi.DataStandard52.ApiSchema" `
-                    -Version "1.0.333" `
+                    -Version "1.0.334" `
                     -ProjectName "TPDM" `
                     -ProjectEndpointName "tpdm" `
                     -IsExtensionProject $false | Out-Null
@@ -988,7 +988,7 @@ exit $ExitCode
 
             try {
                 $corePackageId = "EdFi.DataStandard52.ApiSchema"
-                $mismatchNupkgName = "$($corePackageId.ToLowerInvariant()).1.0.333.nupkg"
+                $mismatchNupkgName = "$($corePackageId.ToLowerInvariant()).1.0.334.nupkg"
                 $mismatchNupkgPath = Join-Path $mismatchFeedFolder $mismatchNupkgName
                 $mismatchStaging = Join-Path ([System.IO.Path]::GetTempPath()) "dms-std-mismatch-$([Guid]::NewGuid().ToString('N'))"
                 $mismatchApiSchemaDir = Join-Path $mismatchStaging "contentFiles/any/any/ApiSchema"
@@ -1059,8 +1059,8 @@ exit $ExitCode
         }
 
         It "It_fails_with_resolution_diagnostic_and_no_partial_workspace_when_pinned_version_is_absent_from_feed" {
-            # The catalog pins the core package at version 1.0.333. Supply the core package at version
-            # 1.0.1 only so the resolver cannot find the pinned version 1.0.333.
+            # The catalog pins the core package at version 1.0.334. Supply the core package at version
+            # 1.0.1 only so the resolver cannot find the pinned version 1.0.334.
             $wrongVersionFeed = script:New-TempDirectory
             try {
                 script:New-FixtureNupkg `
@@ -1073,7 +1073,7 @@ exit $ExitCode
 
                 {
                     script:Invoke-PrepareStandard -FeedFolder $wrongVersionFeed
-                } | Should -Throw -ExpectedMessage "*version*1.0.333*not found*"
+                } | Should -Throw -ExpectedMessage "*version*1.0.334*not found*"
 
                 # No partial workspace should exist.
                 Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "ApiSchema") |
@@ -1121,7 +1121,7 @@ exit $ExitCode
                 script:New-FixtureNupkg `
                     -FeedFolder $feedV1 `
                     -PackageId "EdFi.DataStandard52.ApiSchema" `
-                    -Version "1.0.333" `
+                    -Version "1.0.334" `
                     -ProjectName "Ed-Fi" `
                     -ProjectEndpointName "ed-fi" `
                     -IsExtensionProject $false | Out-Null
@@ -1135,7 +1135,7 @@ exit $ExitCode
                     script:New-FixtureNupkg `
                         -FeedFolder $feedV2 `
                         -PackageId "EdFi.DataStandard52.ApiSchema" `
-                        -Version "1.0.333" `
+                        -Version "1.0.334" `
                         -ProjectName "Ed-Fi" `
                         -ProjectEndpointName "ed-fi" `
                         -IsExtensionProject $false `
@@ -1168,7 +1168,7 @@ exit $ExitCode
                 # Run with SCHEMA_PACKAGES pointing to something unrelated to the fixture feed.
                 [System.Environment]::SetEnvironmentVariable(
                     "SCHEMA_PACKAGES",
-                    "EdFi.DataStandard52.Homograph.ApiSchema:1.0.333"
+                    "EdFi.DataStandard52.Homograph.ApiSchema:1.0.334"
                 )
 
                 script:Invoke-PrepareStandard -FeedFolder $script:feedFolder
