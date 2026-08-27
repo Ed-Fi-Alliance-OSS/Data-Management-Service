@@ -166,6 +166,7 @@ public static class WebApplicationBuilderExtensions
             webAppBuilder.Services.AddTransient<IApiClientRepository, ApiClientRepository>();
             webAppBuilder.Services.AddTransient<IClaimsHierarchyRepository, ClaimsHierarchyRepository>();
             webAppBuilder.Services.AddTransient<IVendorRepository, VendorRepository>();
+            webAppBuilder.Services.AddTransient<IOwnershipTokenRepository, OwnershipTokenRepository>();
             webAppBuilder.Services.AddTransient<
                 IClaimSetDataProvider,
                 Backend.Postgresql.ClaimSetDataProvider

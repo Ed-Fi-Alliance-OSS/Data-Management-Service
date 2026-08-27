@@ -13,51 +13,182 @@ on:
 permissions:
   packages: write
 
+env:
+  PACKAGE_OWNER: Ed-Fi-Alliance-OSS
+  DMS_CI_PACKAGE: data-management-service-ed-fi-api-ci
+  CONFIG_CI_PACKAGE: data-management-service-ed-fi-api-config-ci
+  # Tag holding the buildx registry cache that the image builds in On DMS Pull Request and On
+  # Config Pull Request restore from. Only a non-pull_request run of On DMS Pull Request writes
+  # it.
+  BUILD_CACHE_TAG: buildcache
+
 jobs:
   cleanup:
     name: Cleanup DMS CI GHCR Images
     runs-on: ubuntu-latest
+    permissions:
+      # Write to delete versions; the same scope covers reading them to find the build cache
+      # version that must survive the prune.
+      packages: write
     steps:
+      - name: Resolve the shared build cache versions
+        id: cache-versions
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+
+          # min-versions-to-keep protects the newest 100 versions by creation date and nothing
+          # else, so a stretch of per-commit CI image pushes with no merge in between can push
+          # the build cache version out of that window and delete it. Evicting it costs every
+          # pull request a cold build until a non-pull_request run of On DMS Pull Request
+          # rewrites the tag, so the delete steps below are given that version explicitly to
+          # skip.
+          #
+          # ignore-versions is a regex tested against the package version *name*. For a
+          # container package that name is the manifest digest, not a tag -
+          # actions/delete-package-versions reads tags from a separate metadata field - so a
+          # regex naming the tag would never match and would silently protect nothing. The
+          # digest has to be resolved here and pinned into the regex on every run.
+          resolve_cache_version() {
+            # Prints "<digest><TAB><created_at>" for the version currently carrying the build
+            # cache tag, or nothing at all. The organization endpoint is the documented one;
+            # the user endpoint is the one actions/delete-package-versions itself calls, so
+            # both are tried before concluding the tag is absent.
+            local package="$1" endpoint raw match
+            for endpoint in orgs users; do
+              raw="$(gh api --paginate \
+                "/${endpoint}/${PACKAGE_OWNER}/packages/container/${package}/versions?per_page=100" \
+                --jq '.[] | select(.metadata.container.tags // [] | index(env.BUILD_CACHE_TAG)) | "\(.name)\t\(.created_at)"' \
+                2>/dev/null)" || raw=""
+              match="$(printf '%s\n' "$raw" | grep -m 1 '^sha256:')" || match=""
+              if [[ -n "$match" ]]; then
+                printf '%s' "$match"
+                return 0
+              fi
+            done
+          }
+
+          now="$(date -u +%s)"
+
+          for entry in "dms:${DMS_CI_PACKAGE}" "config:${CONFIG_CI_PACKAGE}"; do
+            key="${entry%%:*}"
+            package="${entry#*:}"
+
+            found="$(resolve_cache_version "$package")"
+            digest="${found%%$'\t'*}"
+            created="${found#*$'\t'}"
+
+            if [[ -z "$digest" ]]; then
+              # Nothing to protect. ^$ is the action's own default and matches no version name,
+              # so the prune behaves exactly as it did before this step existed.
+              echo "${key}_ignore=^\$" >> "$GITHUB_OUTPUT"
+              echo "::warning::No ${BUILD_CACHE_TAG} tag found on ${package}. Re-seed it with a workflow_dispatch run of On DMS Pull Request on main."
+              continue
+            fi
+
+            echo "${package}: ${BUILD_CACHE_TAG} -> ${digest} (created ${created})"
+            echo "${key}_ignore=^${digest}\$" >> "$GITHUB_OUTPUT"
+
+            age_days=$(( (now - $(date -u -d "$created" +%s)) / 86400 ))
+            if (( age_days > 14 )); then
+              echo "::warning::The ${BUILD_CACHE_TAG} tag on ${package} is ${age_days} days old. Either nothing has merged since, or the export is failing - it is non-fatal by design, so a failing export leaves no other signal. Check that the repository variable REBUILD_DOWNSTREAM_IMAGES is unset or false, because setting it stops Build CI Docker Images building at all and therefore stops the export."
+            fi
+          done
+
       - name: Keep recent DMS CI images
         uses: actions/delete-package-versions@25ad4af5be03aef10e0b3376b248688b7a44c40b # v5
         with:
-          owner: Ed-Fi-Alliance-OSS
-          package-name: data-management-service-ed-fi-api-ci
+          # Named from the same variables the resolve step above reads, so the version it
+          # excludes can never drift from the package this step prunes.
+          owner: ${{ env.PACKAGE_OWNER }}
+          package-name: ${{ env.DMS_CI_PACKAGE }}
           package-type: container
           min-versions-to-keep: 100
+          ignore-versions: ${{ steps.cache-versions.outputs.dms_ignore }}
 
       - name: Keep recent Config CI images
         uses: actions/delete-package-versions@25ad4af5be03aef10e0b3376b248688b7a44c40b # v5
         with:
-          owner: Ed-Fi-Alliance-OSS
-          package-name: data-management-service-ed-fi-api-config-ci
+          owner: ${{ env.PACKAGE_OWNER }}
+          package-name: ${{ env.CONFIG_CI_PACKAGE }}
           package-type: container
           min-versions-to-keep: 100
+          ignore-versions: ${{ steps.cache-versions.outputs.config_ignore }}
+
+  verify-build-cache:
+    name: Verify Shared Build Cache
+    runs-on: ubuntu-latest
+    needs: cleanup
+    if: always()
+    # The build cache is deliberately non-fatal wherever it is used: the export carries
+    # ignore-error=true so that a registry blip cannot eject an entry from the merge queue, and
+    # an unreadable import only makes buildx build cold. That leaves no failing signal for a
+    # cache that was pruned, was never written, or that the workflow token cannot read - the
+    # builds stay green and only get slower. This job is that signal. It sits on a schedule
+    # rather than in either pull request workflow precisely so that asserting the cache can
+    # never block a merge.
+    permissions:
+      packages: read
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Verify each build cache tag is present and readable
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          owner="${PACKAGE_OWNER,,}"
+          status=0
+
+          for package in "$DMS_CI_PACKAGE" "$CONFIG_CI_PACKAGE"; do
+            ref="ghcr.io/${owner}/${package}:${BUILD_CACHE_TAG}"
+            echo "::group::${ref}"
+            # Resolves the tag through the registry with the same workflow token the restoring
+            # builds use, so an access problem or a missing tag fails here instead of silently
+            # slowing every build. The printed MediaType records the manifest form the registry
+            # is actually serving.
+            if ! docker buildx imagetools inspect "$ref"; then
+              echo "::error::${ref} is missing or unreadable. Every image build that restores it is building cold. Re-seed it with a workflow_dispatch run of On DMS Pull Request on main."
+              status=1
+            fi
+            echo "::endgroup::"
+          done
+
+          exit $status
 
   notify-results:
     name: Notify Results
     runs-on: ubuntu-latest
-    needs: cleanup
+    needs: [cleanup, verify-build-cache]
     if: always()
+    # Posts through a webhook secret, so it needs nothing from the workflow token.
+    permissions: {}
     steps:
       - name: Notify Slack on success
-        if: needs.cleanup.result == 'success'
+        if: needs.cleanup.result == 'success' && needs.verify-build-cache.result == 'success'
         uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d # v2.0.0
         with:
           payload: |
             {
-              "text": ":heavy_check_mark: DMS CI GHCR image cleanup passed"
+              "text": ":heavy_check_mark: DMS CI GHCR image cleanup passed, shared build cache verified"
             }
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook
 
       - name: Notify Slack on failure
-        if: needs.cleanup.result != 'success'
+        if: needs.cleanup.result != 'success' || needs.verify-build-cache.result != 'success'
         uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d # v2.0.0
         with:
           payload: |
             {
-              "text": ":x: DMS CI GHCR image cleanup failed"
+              "text": ":x: DMS CI GHCR image cleanup failed (cleanup: ${{ needs.cleanup.result }}, build cache: ${{ needs.verify-build-cache.result }}). A missing build cache tag is re-seeded by a workflow_dispatch run of On DMS Pull Request on main."
             }
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook

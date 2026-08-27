@@ -564,6 +564,97 @@ public class ApiClientModuleTests
     [TestFixture]
     public class Given_Invalid_Request_Data : ApiClientModuleTests
     {
+        [SetUp]
+        public void Setup()
+        {
+            A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
+                .Returns(
+                    new ApplicationGetResult.Success(
+                        new ApplicationResponse
+                        {
+                            Id = 1,
+                            ApplicationName = "Test Application",
+                            ClaimSetName = "TestClaimSet",
+                            VendorId = 1,
+                            EducationOrganizationIds = [1, 2],
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
+                .Returns(
+                    new VendorGetResult.Success(
+                        new VendorResponse
+                        {
+                            Id = 1,
+                            Company = "Test Vendor",
+                            ContactName = "Test Contact",
+                            ContactEmailAddress = "test@test.com",
+                            NamespacePrefixes = "uri://test.org",
+                        }
+                    )
+                );
+
+            A.CallTo(() => _dataStoreRepository.GetExistingDataStoreIds(A<int[]>.Ignored))
+                .Returns(new DataStoreIdsExistResult.Success([1]));
+
+            A.CallTo(() =>
+                    _identityProviderRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored
+                    )
+                )
+                .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
+
+            A.CallTo(() =>
+                    _apiClientRepository.InsertApiClient(
+                        A<ApiClientInsertCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .Returns(new ApiClientInsertResult.Success(1));
+
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<int>.Ignored))
+                .Returns(
+                    new ApiClientGetResult.Success(
+                        new ApiClientResponse
+                        {
+                            Id = 1,
+                            ApplicationId = 1,
+                            ClientId = "test-client-id",
+                            ClientUuid = Guid.NewGuid(),
+                            Name = "Test API Client",
+                            IsApproved = true,
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
+
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .Returns(new ApiClientUpdateResult.Success());
+        }
+
         [Test]
         public async Task It_returns_bad_request_for_validation_failures()
         {
@@ -623,6 +714,106 @@ public class ApiClientModuleTests
             var actualResponse = JsonNode.Parse(responseContent);
 
             actualResponse!["validationErrors"]!["Name"].Should().NotBeNull();
+        }
+
+        [Test]
+        public async Task It_rejects_ownership_fields_on_api_client_insert()
+        {
+            // Arrange
+            using var client = SetUpClient();
+
+            string invalidBody = """
+                {
+                   "applicationId": 1,
+                   "name": "Test API Client",
+                   "isApproved": true,
+                   "dataStoreIds": [1],
+                   "creatorOwnershipTokenId": 7,
+                   "ownershipTokenIds": [8]
+                }
+                """;
+
+            // Act
+            var insertResponse = await client.PostAsync(
+                "/v3/apiClients",
+                new StringContent(invalidBody, Encoding.UTF8, "application/json")
+            );
+
+            // Assert
+            insertResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            string responseContent = await insertResponse.Content.ReadAsStringAsync();
+            var actualResponse = JsonNode.Parse(responseContent);
+
+            actualResponse!["validationErrors"]!["CreatorOwnershipTokenId"].Should().NotBeNull();
+            actualResponse!["validationErrors"]!["OwnershipTokenIds"].Should().NotBeNull();
+            A.CallTo(() =>
+                    _identityProviderRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+            A.CallTo(() =>
+                    _apiClientRepository.InsertApiClient(
+                        A<ApiClientInsertCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+
+        [Test]
+        public async Task It_rejects_ownership_fields_on_api_client_update()
+        {
+            // Arrange
+            using var client = SetUpClient();
+
+            string invalidBody = """
+                {
+                   "id": 1,
+                   "applicationId": 1,
+                   "name": "Updated API Client",
+                   "isApproved": true,
+                   "dataStoreIds": [1],
+                   "creatorOwnershipTokenId": 7,
+                   "ownershipTokenIds": [8]
+                }
+                """;
+
+            // Act
+            var updateResponse = await client.PutAsync(
+                "/v3/apiClients/1",
+                new StringContent(invalidBody, Encoding.UTF8, "application/json")
+            );
+
+            // Assert
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            string responseContent = await updateResponse.Content.ReadAsStringAsync();
+            var actualResponse = JsonNode.Parse(responseContent);
+
+            actualResponse!["validationErrors"]!["CreatorOwnershipTokenId"].Should().NotBeNull();
+            actualResponse!["validationErrors"]!["OwnershipTokenIds"].Should().NotBeNull();
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .MustNotHaveHappened();
         }
     }
 
