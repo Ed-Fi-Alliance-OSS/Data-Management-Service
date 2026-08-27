@@ -7,7 +7,7 @@
 // guarded no-op fixtures across root-only, stale-compare, separate-table, and
 // top-level collection shapes. The dialect-sensitive path exercised here is the
 // freshness checker's SQL Server branch, which uses
-// WITH (UPDLOCK, HOLDLOCK, ROWLOCK) instead of PostgreSQL's FOR UPDATE.
+// WITH (UPDLOCK, ROWLOCK) instead of PostgreSQL's FOR UPDATE.
 //
 // The stale-compare fixtures substitute ContentVersion back to the before-state,
 // then assert deep equivalence.

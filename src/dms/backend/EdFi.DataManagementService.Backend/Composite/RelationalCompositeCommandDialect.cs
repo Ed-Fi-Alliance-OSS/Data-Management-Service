@@ -279,7 +279,7 @@ internal sealed class MssqlCompositeTargetCarrier : IRelationalCompositeTargetCa
                 @{DocumentIdVariable} = d.[DocumentId],
                 @{ContentVersionVariable} = d.[ContentVersion],
                 @{DocumentUuidVariable} = d.[DocumentUuid]
-            FROM [dms].[Document] d WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
+            FROM [dms].[Document] d WITH (UPDLOCK, ROWLOCK)
             WHERE {targetPredicateSql};
 
             SELECT

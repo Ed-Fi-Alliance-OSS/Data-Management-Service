@@ -2010,12 +2010,23 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         using (writer.Indent())
         {
             EmitMssqlValueDiffWorkset(writer, tableModel, trigger.IdentityProjectionColumns);
-            TrackedChangeTriggerBodyEmitter.EmitMssqlKeyChangeInsert(
-                writer,
-                _dialect,
-                trackedChangePlan,
-                keyColumn
-            );
+
+            // Identity projections change rarely; skip the key-change insert entirely when the
+            // value-diff workset is empty rather than executing its join plan against no rows.
+            writer.AppendLine("IF EXISTS (SELECT 1 FROM @changedDocs)");
+            writer.AppendLine("BEGIN");
+
+            using (writer.Indent())
+            {
+                TrackedChangeTriggerBodyEmitter.EmitMssqlKeyChangeInsert(
+                    writer,
+                    _dialect,
+                    trackedChangePlan,
+                    keyColumn
+                );
+            }
+
+            writer.AppendLine("END");
         }
         writer.AppendLine("END");
     }
@@ -2525,7 +2536,20 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         using (writer.Indent())
         {
             EmitMssqlValueDiffWorkset(writer, tableModel, identityProjectionColumns);
-            emitBlock(false);
+
+            // Identity projections change rarely, but the maintenance DML below still executes its
+            // full plan against an empty workset - and the abstract-identity UPDATE's plan carries a
+            // referential-check apparatus spanning every FK that references the identity table.
+            // Skip the whole block when nothing actually changed.
+            writer.AppendLine("IF EXISTS (SELECT 1 FROM @changedDocs)");
+            writer.AppendLine("BEGIN");
+
+            using (writer.Indent())
+            {
+                emitBlock(false);
+            }
+
+            writer.AppendLine("END");
         }
 
         writer.AppendLine("END");
@@ -2547,43 +2571,38 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         var targetTable = Quote(targetTableName);
         var documentIdCol = Quote(DocumentIdColumn);
 
-        // UPDATE existing rows first.
-        writer.AppendLine("UPDATE t");
-        writer.Append("SET ");
-        for (int i = 0; i < mappings.Count; i++)
-        {
-            if (i > 0)
-            {
-                writer.Append(", ");
-            }
-            writer.Append("t.");
-            writer.Append(Quote(mappings[i].TargetColumn));
-            writer.Append(" = s.");
-            writer.Append(Quote(mappings[i].SourceColumn));
-        }
-        writer.AppendLine();
-        writer.Append("FROM ");
-        writer.Append(targetTable);
-        writer.AppendLine(" t");
-
         if (isInsert)
         {
-            writer.Append("INNER JOIN inserted s ON t.");
-        }
-        else
-        {
-            writer.Append("INNER JOIN (SELECT i.* FROM inserted i INNER JOIN ");
-            writer.Append("@changedDocs");
-            writer.Append(" cd ON cd.");
+            // On the insert path a matching identity row only exists in reseed/repair scenarios,
+            // yet the UPDATE's plan carries a referential-check apparatus spanning every FK that
+            // references the identity table. Probe with a cheap PK seek and skip the UPDATE in the
+            // (overwhelmingly common) no-match case.
+            writer.Append("IF EXISTS (SELECT 1 FROM ");
+            writer.Append(targetTable);
+            writer.Append(" t INNER JOIN inserted i ON t.");
             writer.Append(documentIdCol);
             writer.Append(" = i.");
             writer.Append(documentIdCol);
-            writer.Append(") AS s ON t.");
+            writer.AppendLine(")");
+            writer.AppendLine("BEGIN");
+
+            using (writer.Indent())
+            {
+                EmitMssqlAbstractIdentityUpdateStatement(
+                    writer,
+                    targetTable,
+                    documentIdCol,
+                    mappings,
+                    isInsert
+                );
+            }
+
+            writer.AppendLine("END");
         }
-        writer.Append(documentIdCol);
-        writer.Append(" = s.");
-        writer.Append(documentIdCol);
-        writer.AppendLine(";");
+        else
+        {
+            EmitMssqlAbstractIdentityUpdateStatement(writer, targetTable, documentIdCol, mappings, isInsert);
+        }
 
         // INSERT only the rows that do not already exist in the target table.
         writer.Append("INSERT INTO ");
@@ -2634,6 +2653,59 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append("WHERE existing.");
         writer.Append(documentIdCol);
         writer.AppendLine(" IS NULL;");
+    }
+
+    /// <summary>
+    /// Emits the abstract-identity UPDATE statement. Its plan validates every FK that references
+    /// the identity table (~90 tables for EducationOrganizationIdentity), so it carries
+    /// KEEPFIXED PLAN: auto-stats events on any referenced table would otherwise recompile the
+    /// trigger continuously, and the optimal plan (a PK-seek update) cannot change with statistics.
+    /// </summary>
+    private void EmitMssqlAbstractIdentityUpdateStatement(
+        SqlWriter writer,
+        string targetTable,
+        string documentIdCol,
+        IReadOnlyList<TriggerColumnMapping> mappings,
+        bool isInsert
+    )
+    {
+        writer.AppendLine("UPDATE t");
+        writer.Append("SET ");
+        for (int i = 0; i < mappings.Count; i++)
+        {
+            if (i > 0)
+            {
+                writer.Append(", ");
+            }
+            writer.Append("t.");
+            writer.Append(Quote(mappings[i].TargetColumn));
+            writer.Append(" = s.");
+            writer.Append(Quote(mappings[i].SourceColumn));
+        }
+        writer.AppendLine();
+        writer.Append("FROM ");
+        writer.Append(targetTable);
+        writer.AppendLine(" t");
+
+        if (isInsert)
+        {
+            writer.Append("INNER JOIN inserted s ON t.");
+        }
+        else
+        {
+            writer.Append("INNER JOIN (SELECT i.* FROM inserted i INNER JOIN ");
+            writer.Append("@changedDocs");
+            writer.Append(" cd ON cd.");
+            writer.Append(documentIdCol);
+            writer.Append(" = i.");
+            writer.Append(documentIdCol);
+            writer.Append(") AS s ON t.");
+        }
+        writer.Append(documentIdCol);
+        writer.Append(" = s.");
+        writer.Append(documentIdCol);
+        writer.AppendLine();
+        writer.AppendLine("OPTION (KEEPFIXED PLAN);");
     }
 
     /// <summary>

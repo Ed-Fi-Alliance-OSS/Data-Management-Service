@@ -85,7 +85,7 @@ internal static class RelationalDocumentLockCommandBuilder
             SqlDialect.Mssql => """
                 SELECT
                     document.[ContentVersion] AS [ContentVersion]
-                FROM [dms].[Document] document WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
+                FROM [dms].[Document] document WITH (UPDLOCK, ROWLOCK)
                 WHERE document.[DocumentId] = @documentId
                 """,
             _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
@@ -126,7 +126,7 @@ internal static class RelationalDocumentLockCommandBuilder
                         THEN @enqueueOutcomeAlreadySatisfied
                         ELSE @enqueueOutcomeNoWorkQueued
                     END AS int) AS [DocumentCacheEnqueueOutcome]
-                FROM [dms].[Document] document WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
+                FROM [dms].[Document] document WITH (UPDLOCK, ROWLOCK)
                 WHERE document.[DocumentId] = @documentId
                 """,
             _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),

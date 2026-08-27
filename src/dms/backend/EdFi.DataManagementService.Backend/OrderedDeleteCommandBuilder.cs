@@ -39,7 +39,10 @@ internal static class OrderedDeleteCommandBuilder
         new(
             $"""
             DELETE FROM {FormatTable(dialect, rootTable)}
-            WHERE {FormatColumn(dialect, DocumentIdColumn)} = {DocumentIdParameterName};
+            WHERE {FormatColumn(
+                dialect,
+                DocumentIdColumn
+            )} = {DocumentIdParameterName}{StatementOptionsSuffix(dialect)};
             """,
             [new RelationalParameter(DocumentIdParameterName, documentId)]
         );
@@ -93,12 +96,14 @@ internal static class OrderedDeleteCommandBuilder
                     FROM [dms].[Document]
                     WHERE [DocumentUuid] = @documentUuid
                       AND [ResourceKeyId] = @resourceKeyId
-                );
+                )
+                OPTION (KEEPFIXED PLAN);
 
                 DELETE FROM [dms].[Document]
                 OUTPUT DELETED.[DocumentId]
                 WHERE [DocumentUuid] = @documentUuid
-                  AND [ResourceKeyId] = @resourceKeyId;
+                  AND [ResourceKeyId] = @resourceKeyId
+                OPTION (KEEPFIXED PLAN);
                 """,
                 [
                     new RelationalParameter("@documentUuid", documentUuid.Value),
@@ -121,12 +126,22 @@ internal static class OrderedDeleteCommandBuilder
             SqlDialect.Mssql => """
                 DELETE FROM [dms].[Document]
                 OUTPUT DELETED.[DocumentId]
-                WHERE [DocumentId] = @documentId;
+                WHERE [DocumentId] = @documentId
+                OPTION (KEEPFIXED PLAN);
                 """,
             _ => throw new NotSupportedException(
                 $"Relational delete does not support SQL dialect '{dialect}'."
             ),
         };
+
+    /// <summary>
+    /// MSSQL delete plans embed a NO ACTION referential-check apparatus spanning every table that
+    /// references the deleted row's cascade targets, so any auto-stats event on any of those tables
+    /// invalidates the plan. These are fixed unique-key seeks whose optimal plan cannot change;
+    /// KEEPFIXED PLAN suppresses the statistics-driven recompiles. PostgreSQL has no analog.
+    /// </summary>
+    private static string StatementOptionsSuffix(SqlDialect dialect) =>
+        dialect == SqlDialect.Mssql ? $"{Environment.NewLine}OPTION (KEEPFIXED PLAN)" : "";
 
     private static string FormatTable(SqlDialect dialect, DbTableName table) =>
         $"{QuoteIdentifier(dialect, table.Schema.Value)}.{QuoteIdentifier(dialect, table.Name)}";

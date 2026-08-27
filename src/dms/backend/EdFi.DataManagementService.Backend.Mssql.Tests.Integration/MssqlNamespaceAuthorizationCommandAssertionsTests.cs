@@ -22,7 +22,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.CommandAssertions;
 public class Given_The_Mssql_Namespace_Authorization_Command_Assertions
 {
     private const string LockCommand =
-        "SELECT [ContentVersion] FROM [dms].[Document] WITH (UPDLOCK, ROWLOCK, HOLDLOCK) WHERE [DocumentId] = @documentId;";
+        "SELECT [ContentVersion] FROM [dms].[Document] WITH (UPDLOCK, ROWLOCK) WHERE [DocumentId] = @documentId;";
 
     private const string DocumentInsert =
         "INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId]) VALUES (@documentUuid, @resourceKeyId);";

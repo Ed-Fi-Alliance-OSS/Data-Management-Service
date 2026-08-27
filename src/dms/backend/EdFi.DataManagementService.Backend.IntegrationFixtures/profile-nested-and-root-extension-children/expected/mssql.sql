@@ -831,11 +831,14 @@ BEGIN
         SELECT i.[DocumentId]
         FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
         WHERE (i.[ParentResourceId] <> d.[ParentResourceId] OR (i.[ParentResourceId] IS NULL AND d.[ParentResourceId] IS NOT NULL) OR (i.[ParentResourceId] IS NOT NULL AND d.[ParentResourceId] IS NULL));
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 1;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiParentResource' AS nvarchar(max)) + N'$.parentResourceId=' + CAST(i.[ParentResourceId] AS nvarchar(max))), i.[DocumentId], 1
-        FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
+        IF EXISTS (SELECT 1 FROM @changedDocs)
+        BEGIN
+            DELETE FROM [dms].[ReferentialIdentity]
+            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 1;
+            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiParentResource' AS nvarchar(max)) + N'$.parentResourceId=' + CAST(i.[ParentResourceId] AS nvarchar(max))), i.[DocumentId], 1
+            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
+        END
     END
 END;
 GO
@@ -905,21 +908,24 @@ BEGIN
         SELECT i.[DocumentId]
         FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
         WHERE (i.[ParentResourceId] <> d.[ParentResourceId] OR (i.[ParentResourceId] IS NULL AND d.[ParentResourceId] IS NOT NULL) OR (i.[ParentResourceId] IS NOT NULL AND d.[ParentResourceId] IS NULL));
-        INSERT INTO [tracked_changes_edfi].[ParentResource] (
-            [OldParentResourceId],
-            [NewParentResourceId],
-            [Id],
-            [ChangeVersion]
-        )
-        SELECT
-            del.[ParentResourceId],
-            i.[ParentResourceId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
-        FROM @changedDocs cd
-        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        IF EXISTS (SELECT 1 FROM @changedDocs)
+        BEGIN
+            INSERT INTO [tracked_changes_edfi].[ParentResource] (
+                [OldParentResourceId],
+                [NewParentResourceId],
+                [Id],
+                [ChangeVersion]
+            )
+            SELECT
+                del.[ParentResourceId],
+                i.[ParentResourceId],
+                doc.[DocumentUuid],
+                doc.[ContentVersion]
+            FROM @changedDocs cd
+            INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
+            INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+            INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        END
     END
 END;
 GO
