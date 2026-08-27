@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
@@ -208,9 +209,19 @@ public class DataStoreDerivativeRepository(
         await connection.OpenAsync();
         try
         {
+            bool preserveConnectionString = ConnectionStringWrite.PreservesExistingValue(
+                command.ConnectionString
+            );
+
+            // Left out of the SET clause when the caller provided no connection string, so the row
+            // keeps the cipher text a reader can still decrypt.
+            string connectionStringAssignment = preserveConnectionString
+                ? string.Empty
+                : "ConnectionString = @ConnectionString, ";
+
             var sql = $"""
                 UPDATE dd
-                SET DataStoreId = @DataStoreId, DerivativeType = @DerivativeType, ConnectionString = @ConnectionString,
+                SET DataStoreId = @DataStoreId, DerivativeType = @DerivativeType, {connectionStringAssignment}
                     LastModifiedAt = @LastModifiedAt, ModifiedBy = @ModifiedBy
                 FROM dmscs.DataStoreDerivative dd
                 INNER JOIN dmscs.DataStore ds ON dd.DataStoreId = ds.Id
@@ -222,16 +233,27 @@ public class DataStoreDerivativeRepository(
                   );
                 """;
 
-            var parameters = new
+            var parameters = new DynamicParameters(
+                new
+                {
+                    command.Id,
+                    command.DataStoreId,
+                    command.DerivativeType,
+                    LastModifiedAt = auditContext.GetCurrentTimestamp(),
+                    ModifiedBy = auditContext.GetCurrentUser(),
+                    TenantId,
+                }
+            );
+
+            if (!preserveConnectionString)
             {
-                command.Id,
-                command.DataStoreId,
-                command.DerivativeType,
-                ConnectionString = encryptionService.Encrypt(command.ConnectionString),
-                LastModifiedAt = auditContext.GetCurrentTimestamp(),
-                ModifiedBy = auditContext.GetCurrentUser(),
-                TenantId,
-            };
+                // Typed explicitly: a null byte[] carries no type the provider can infer.
+                parameters.Add(
+                    "ConnectionString",
+                    encryptionService.Encrypt(command.ConnectionString),
+                    DbType.Binary
+                );
+            }
 
             var affectedRows = await connection.ExecuteAsync(sql, parameters);
             if (affectedRows == 0)

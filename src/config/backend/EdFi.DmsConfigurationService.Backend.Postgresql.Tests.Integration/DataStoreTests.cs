@@ -1033,4 +1033,78 @@ public class DataStoreTests : DatabaseTest
                 );
         }
     }
+
+    /// <summary>
+    /// A get returns the stored cipher text and the write path refuses cipher text, so leaving the
+    /// field out of an update is how a client keeps the connection string it cannot resend. The
+    /// stored bytes have to come through that update untouched.
+    /// </summary>
+    [TestFixture]
+    public class Given_update_data_store_without_a_connection_string : DataStoreTests
+    {
+        private const string OriginalConnectionString = "Server=original;Database=OriginalDb;";
+
+        private int _id;
+        private string _storedValueBeforeUpdate = null!;
+        private string _storedValueAfterUpdate = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var insertResult = await _repository.InsertDataStore(
+                new DataStoreInsertCommand
+                {
+                    DataStoreType = "Staging",
+                    Name = "Original Instance",
+                    ConnectionString = OriginalConnectionString,
+                }
+            );
+            insertResult.Should().BeOfType<DataStoreInsertResult.Success>();
+            _id = ((DataStoreInsertResult.Success)insertResult).Id;
+
+            _storedValueBeforeUpdate = await StoredConnectionString(_id);
+
+            var updateResult = await _repository.UpdateDataStore(
+                new DataStoreUpdateCommand
+                {
+                    Id = _id,
+                    DataStoreType = "Production",
+                    Name = "Renamed Instance",
+                    ConnectionString = null,
+                }
+            );
+            updateResult.Should().BeOfType<DataStoreUpdateResult.Success>();
+
+            _storedValueAfterUpdate = await StoredConnectionString(_id);
+        }
+
+        private async Task<string> StoredConnectionString(int id)
+        {
+            var getResult = await _repository.GetDataStore(id);
+            getResult.Should().BeOfType<DataStoreGetResult.Success>();
+
+            string? storedValue = ((DataStoreGetResult.Success)getResult).DataStoreResponse.ConnectionString;
+            storedValue.Should().NotBeNullOrEmpty();
+            return storedValue!;
+        }
+
+        [Test]
+        public void It_leaves_the_stored_cipher_text_unchanged() =>
+            _storedValueAfterUpdate.Should().Be(_storedValueBeforeUpdate);
+
+        [Test]
+        public void It_still_decrypts_to_the_original_connection_string() =>
+            AssertIsValidEncryptedBase64(_storedValueAfterUpdate, OriginalConnectionString);
+
+        [Test]
+        public async Task It_applies_the_other_changes()
+        {
+            var getResult = await _repository.GetDataStore(_id);
+            getResult.Should().BeOfType<DataStoreGetResult.Success>();
+
+            var dataStoreFromDb = ((DataStoreGetResult.Success)getResult).DataStoreResponse;
+            dataStoreFromDb.Name.Should().Be("Renamed Instance");
+            dataStoreFromDb.DataStoreType.Should().Be("Production");
+        }
+    }
 }

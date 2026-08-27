@@ -147,13 +147,13 @@ public static class WebApplicationBuilderExtensions
         // Common service registration for all database backends
         webAppBuilder.Services.AddSingleton<IClaimsProvider, ClaimsProvider>();
 
-        if (
-            string.Equals(
-                webAppBuilder.Configuration.GetSection("AppSettings:Datastore").Value,
-                "postgresql",
-                StringComparison.OrdinalIgnoreCase
-            )
-        )
+        bool usePostgresql = string.Equals(
+            webAppBuilder.Configuration.GetSection("AppSettings:Datastore").Value,
+            "postgresql",
+            StringComparison.OrdinalIgnoreCase
+        );
+
+        if (usePostgresql)
         {
             logger.Information("Injecting PostgreSQL as the primary backend datastore");
             webAppBuilder.Services.AddPostgresqlDatastore(
@@ -198,10 +198,36 @@ public static class WebApplicationBuilderExtensions
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Mssql.Deploy.DatabaseDeploy>();
         }
 
+        AddDataStoreConnectionStringValidator(webAppBuilder.Services, usePostgresql);
+
         // Token management and client-secret hashing are datastore-agnostic and required
         // by both engines
         webAppBuilder.Services.AddTransient<ITokenManager, OpenIddictTokenManager>();
         webAppBuilder.Services.AddSingleton<IClientSecretHasher, ClientSecretHasher>();
+    }
+
+    /// <summary>
+    /// The one place that decides which engine a submitted data store connection string is validated
+    /// against. It follows the configured datastore because that is the engine this deployment runs,
+    /// and it is a single seam: a setting that names the target provider per data store replaces this
+    /// method and nothing else.
+    /// </summary>
+    private static void AddDataStoreConnectionStringValidator(IServiceCollection services, bool usePostgresql)
+    {
+        if (usePostgresql)
+        {
+            services.AddSingleton<
+                IDataStoreConnectionStringValidator,
+                PostgresqlDataStoreConnectionStringValidator
+            >();
+        }
+        else
+        {
+            services.AddSingleton<
+                IDataStoreConnectionStringValidator,
+                MssqlDataStoreConnectionStringValidator
+            >();
+        }
     }
 
     private static void ConfigureIdentityProvider(

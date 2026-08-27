@@ -173,6 +173,27 @@ Content-Type: application/json
 
 The response will include an `id` field that you'll use to associate route contexts.
 
+#### How `connectionString` Is Handled
+
+A `GET` of a data store returns `connectionString` as an encrypted, Base64-encoded
+value, not as the text that was submitted. That is deliberate: the Data Management
+Service decrypts it, and the Configuration Service never returns the plain text
+again. The write rules follow from it:
+
+- `POST` accepts a valid plaintext connection string for the configured database
+  engine. The field may also be omitted or `null`, which registers a data store
+  with no connection string.
+- `PUT` with `connectionString` omitted or `null` leaves the stored value
+  unchanged. This is how a client that read a data store updates its other fields.
+- `PUT` with a non-empty value validates that value and replaces the stored one.
+- A value taken from a `GET` response is rejected with `400`, because it is
+  encrypted text rather than a connection string. Send the plaintext connection
+  string, or leave the field out to keep the stored one.
+- An empty or whitespace-only value is rejected with `400`.
+
+There is no request that clears a stored connection string. Delete and re-create
+the data store if it must be registered without one.
+
 ### Step 3: Define Route Contexts
 
 For each data store, create route context entries that define how URL segments map

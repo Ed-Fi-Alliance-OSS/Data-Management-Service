@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using FluentValidation;
 
 namespace EdFi.DmsConfigurationService.DataModel.Model.DataStore;
@@ -15,11 +16,11 @@ public class DataStoreInsertCommand
 
     public class Validator : AbstractValidator<DataStoreInsertCommand>
     {
-        public Validator()
+        public Validator(IDataStoreConnectionStringValidator connectionStringValidator)
         {
             RuleFor(x => x.DataStoreType).NotEmpty().MaximumLength(50);
             RuleFor(x => x.Name).NotEmpty().MaximumLength(256);
-            RuleFor(x => x.ConnectionString).MaximumLength(1000);
+            RuleFor(x => x.ConnectionString).ApplyDataStoreConnectionStringRules(connectionStringValidator);
         }
     }
 }

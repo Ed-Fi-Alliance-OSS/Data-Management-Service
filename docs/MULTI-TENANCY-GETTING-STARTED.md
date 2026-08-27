@@ -263,6 +263,13 @@ Content-Type: application/json
 Create another data store for `2025` by repeating the last two requests with a
 different database and `contextValue`.
 
+A `GET` of a data store returns `connectionString` as an encrypted, Base64-encoded
+value rather than the text that was submitted, so a `PUT` cannot send that value
+back: it is rejected with `400`. Leave the field out of a `PUT` to keep the stored
+connection string, or send a plaintext connection string to replace it. See
+[How `connectionString` Is Handled](DATABASE-SEGMENTATION-STRATEGY.md#how-connectionstring-is-handled)
+for the full contract.
+
 After creating data stores and route contexts, continue to Step 5 to provision
 the tenant databases before restarting DMS.
 

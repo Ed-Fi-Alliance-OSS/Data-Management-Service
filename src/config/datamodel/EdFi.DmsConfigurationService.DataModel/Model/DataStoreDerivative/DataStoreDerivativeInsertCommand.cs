@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using FluentValidation;
 
 namespace EdFi.DmsConfigurationService.DataModel.Model.DataStoreDerivative;
@@ -34,7 +35,7 @@ public class DataStoreDerivativeInsertCommand
     {
         private static readonly string[] ValidDerivativeTypes = ["ReadReplica", "Snapshot"];
 
-        public Validator()
+        public Validator(IDataStoreConnectionStringValidator connectionStringValidator)
         {
             RuleFor(x => x.DataStoreId).GreaterThan(0).WithMessage("DataStoreId must be greater than 0.");
 
@@ -47,8 +48,10 @@ public class DataStoreDerivativeInsertCommand
                 .WithMessage("DerivativeType must be either 'ReadReplica' or 'Snapshot'.");
 
             RuleFor(x => x.ConnectionString)
-                .MaximumLength(1000)
-                .WithMessage("ConnectionString must be 1000 characters or fewer.");
+                .ApplyDataStoreConnectionStringRules(
+                    connectionStringValidator,
+                    "ConnectionString must be 1000 characters or fewer."
+                );
         }
     }
 }

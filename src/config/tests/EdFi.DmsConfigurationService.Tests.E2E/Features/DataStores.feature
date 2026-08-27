@@ -521,3 +521,123 @@ Feature: DataStores endpoints
                    "enabled": false
                   }
                   """
+
+        @MssqlRepresentative
+        Scenario: 22 Verify a connectionString from a previous response is rejected on POST
+             When a POST request is made to "/v3/dataStores" with
+                  """
+                    {
+                        "dataStoreType": "Production",
+                        "name": "Resubmitted Cipher Text Instance",
+                        "connectionString": "RE1TLTEzMzkgY2lwaGVyIHRleHQgc2hhcGVkIHZhbHVlIGZvciBlMmUgdGVzdHMh"
+                    }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                    {
+                        "detail": "Data validation failed. See 'validationErrors' for details.",
+                        "type": "urn:ed-fi:api:bad-request:data",
+                        "title": "Data Validation Failed",
+                        "status": 400,
+                        "validationErrors": {
+                            "ConnectionString": [
+                                "'Connection String' must be a plaintext connection string. The value provided appears to be an encrypted value previously returned by this API."
+                            ]
+                        },
+                        "errors": []
+                    }
+                  """
+
+        Scenario: 23 Verify a connectionString from a previous response is rejected on PUT
+             When a POST request is made to "/v3/dataStores" with
+                  """
+                    {
+                        "dataStoreType": "Staging",
+                        "name": "Round Trip Instance",
+                        "connectionString": "Server=roundtrip;Database=RoundTripDb;"
+                    }
+                  """
+             Then it should respond with 201
+             When a PUT request is made to "/v3/dataStores/{dataStoreId}" with
+                  """
+                    {
+                        "id": {dataStoreId},
+                        "dataStoreType": "Staging",
+                        "name": "Round Trip Instance Renamed",
+                        "connectionString": "RE1TLTEzMzkgY2lwaGVyIHRleHQgc2hhcGVkIHZhbHVlIGZvciBlMmUgdGVzdHMh"
+                    }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                    {
+                        "detail": "Data validation failed. See 'validationErrors' for details.",
+                        "type": "urn:ed-fi:api:bad-request:data",
+                        "title": "Data Validation Failed",
+                        "status": 400,
+                        "validationErrors": {
+                            "ConnectionString": [
+                                "'Connection String' must be a plaintext connection string. The value provided appears to be an encrypted value previously returned by this API."
+                            ]
+                        },
+                        "errors": []
+                    }
+                  """
+
+        Scenario: 24 Verify validation connectionString the configured engine cannot use
+             When a POST request is made to "/v3/dataStores" with
+                  """
+                    {
+                        "dataStoreType": "Production",
+                        "name": "Malformed Connection String Instance",
+                        "connectionString": "not-a-connection-string"
+                    }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                    {
+                        "detail": "Data validation failed. See 'validationErrors' for details.",
+                        "type": "urn:ed-fi:api:bad-request:data",
+                        "title": "Data Validation Failed",
+                        "status": 400,
+                        "validationErrors": {
+                            "ConnectionString": [
+                                "'Connection String' is not a valid connection string for the configured database engine."
+                            ]
+                        },
+                        "errors": []
+                    }
+                  """
+
+        Scenario: 25 Put an existing dataStore without a connectionString
+             When a POST request is made to "/v3/dataStores" with
+                  """
+                    {
+                        "dataStoreType": "Staging",
+                        "name": "Preserved Instance",
+                        "connectionString": "Server=preserved;Database=PreservedDb;"
+                    }
+                  """
+             Then it should respond with 201
+             When a PUT request is made to "/v3/dataStores/{dataStoreId}" with
+                  """
+                    {
+                        "id": {dataStoreId},
+                        "dataStoreType": "Production",
+                        "name": "Preserved Instance Renamed"
+                    }
+                  """
+             Then it should respond with 204
+              And the record can be retrieved with a GET request
+                  """
+                    {
+                        "id": {id},
+                        "dataStoreType": "Production",
+                        "name": "Preserved Instance Renamed",
+                        "connectionString": "{ignore}",
+                        "dataStoreContexts": [],
+                        "dataStoreDerivatives": []
+                    }
+                  """
