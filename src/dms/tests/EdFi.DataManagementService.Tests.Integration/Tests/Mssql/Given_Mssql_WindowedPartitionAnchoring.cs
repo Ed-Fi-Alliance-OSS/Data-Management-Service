@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using EdFi.DataManagementService.Tests.Integration.Mssql;
 using EdFi.DataManagementService.Tests.Integration.Scenarios;
@@ -39,6 +40,29 @@ public sealed class Given_Mssql_WindowedPartitionAnchoring : MssqlApiIntegration
     [Test]
     public Task It_partitions_a_windowed_descriptor_collection_by_content_version() =>
         WindowedPartitionAnchoringScenario.It_partitions_a_windowed_descriptor_collection_by_content_version(
+            Harness
+        );
+}
+
+/// <summary>
+/// SQL Server proof that windowed boundaries are cut over the authorized candidate relation. Bound to the
+/// authorization matrix's base rather than the fixture above, because the claim being made needs the
+/// authorization fixture, the real authorization middleware, and a principal that reaches only part of the
+/// seed — all of which that base already supplies, at the same lowered page size this scenario walks with.
+/// </summary>
+[Category("Authorization")]
+public sealed class Given_Mssql_WindowedPartitionAnchoring_NamespaceAuthorization
+    : MssqlCursorPartitionAuthorizationMatrixTestBase
+{
+    protected override IReadOnlyList<string> ClientNamespacePrefixes =>
+        [CursorPartitionAuthorizationMatrixSupport.AuthorizedNamespacePrefix];
+
+    protected override IClaimSetProvider CreateClaimSetProvider(FixtureContext fixture) =>
+        CursorPartitionAuthorizationMatrixSupport.CreateNamespaceReadClaimSetProvider(fixture);
+
+    [Test]
+    public Task It_partitions_a_windowed_collection_over_the_authorized_candidate_set() =>
+        WindowedPartitionAnchoringScenario.It_partitions_a_windowed_collection_over_the_authorized_candidate_set(
             Harness
         );
 }

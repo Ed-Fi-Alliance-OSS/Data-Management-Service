@@ -10,6 +10,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Paging;
 using FluentAssertions;
+using MatrixSupport = EdFi.DataManagementService.Tests.Integration.Scenarios.CursorPartitionAuthorizationMatrixSupport;
 
 namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 
@@ -26,6 +27,13 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 /// exact set rather than a superset. Documents are also written <em>after</em> the window closes: the
 /// last range is unbounded above, so those are what tell a range that is genuinely clipped by the
 /// window from one that merely looks bounded because nothing followed it.
+/// </para>
+///
+/// <para>
+/// One row seeds a partly inaccessible window instead, because the relation the boundaries are cut over
+/// is the <em>authorized</em> candidate relation and the <c>ContentVersion</c> anchor changed what that
+/// relation projects. Its principal and fixture come from the cursor/partition authorization matrix,
+/// whose rows hold the <c>DocumentId</c> anchor fixed; this is the same claim under the other anchor.
 /// </para>
 /// </summary>
 internal static class WindowedPartitionAnchoringScenario
@@ -101,6 +109,68 @@ internal static class WindowedPartitionAnchoringScenario
     }
 
     /// <summary>
+    /// Boundaries are cut over the authorized candidate relation, not over the window. Under a
+    /// <c>ContentVersion</c> anchor that relation projects the anchor where a <c>DocumentId</c>-anchored one
+    /// projects the id, while the namespace predicate that excludes the inaccessible documents is composed
+    /// into the same relation — so this is the combination of anchoring and authorization that neither the
+    /// unwindowed authorization matrix nor a windowed page walk reaches.
+    /// </summary>
+    /// <remarks>
+    /// Cutting boundaries before authorization is the defect this catches, and it is invisible to a page
+    /// test: a page applies its bounds and its authorization in one statement, while a boundary set is
+    /// sized in one statement and walked in another. Boundaries taken over the unauthorized population
+    /// would be sized against a larger count and start at rows the caller cannot read, which shows up here
+    /// as a partition that returns nothing, a range that begins at an excluded document, or a walk that
+    /// discloses one.
+    /// <para>
+    /// The floor is read before the seed rather than after it, so the reference data
+    /// <c>SeedNamespaceResourcesAsync</c> creates first is inside the window too. That costs nothing: the
+    /// window is only ever applied to the one collection this scenario partitions, and every document of
+    /// that collection the seed creates is a member of the matrix seed. Documents any earlier test left in
+    /// it sit below the floor and are excluded, which is what makes the expected result an exact set.
+    /// </para>
+    /// <para>
+    /// No documents are written above the window here. The clipping property the other two scenarios prove
+    /// with them is a property of the range, not of the principal, so repeating it under authorization
+    /// would seed 28 more documents to re-prove something already held.
+    /// </para>
+    /// </remarks>
+    public static async Task It_partitions_a_windowed_collection_over_the_authorized_candidate_set(
+        ApiIntegrationHarness harness
+    )
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+
+        long floor = await NewestChangeVersionAsync(harness);
+
+        var matrixSeed = await MatrixSupport.SeedNamespaceResourcesAsync(
+            harness,
+            MatrixSupport.MatrixAccessibility.Namespace
+        );
+
+        string window = await WindowSinceAsync(harness, floor);
+
+        matrixSeed
+            .InaccessibleIds.Should()
+            .NotBeEmpty(
+                "a seed the caller can read entirely would satisfy every assertion below without "
+                    + "authorization filtering anything"
+            );
+
+        await AssertWindowedPartitioningAsync(
+            harness,
+            MatrixSupport.NamespaceResourcesEndpoint,
+            $"{MatrixSupport.NamespaceResourcesEndpoint}/partitions",
+            new SeededPartitionWindow(
+                matrixSeed.AccessibleIds,
+                BeyondWindowIds: [],
+                matrixSeed.InaccessibleIds,
+                window
+            )
+        );
+    }
+
+    /// <summary>
     /// Every property the windowed boundary set has to hold, asserted against one seed: the tokens are
     /// anchored on <c>ContentVersion</c>, they never exceed the requested count, the ranges they carry
     /// tile the window without overlapping, the last one is unbounded above, each one really begins at a
@@ -156,6 +226,13 @@ internal static class WindowedPartitionAnchoringScenario
             .NotIntersectWith(
                 seeded.BeyondWindowIds,
                 "the last range is unbounded above but the request is still clipped by maxChangeVersion"
+            );
+        walked
+            .ReturnedIds.Should()
+            .NotIntersectWith(
+                seeded.InaccessibleIds,
+                "boundaries are ranked and cut over the authorized candidate relation, so a document the "
+                    + "caller may not read falls inside no partition"
             );
     }
 
@@ -376,7 +453,7 @@ internal static class WindowedPartitionAnchoringScenario
             beyondWindowIds.Add(await CreateMergeItemAsync(SeededDocumentCount + index));
         }
 
-        return new SeededPartitionWindow(seededIds, beyondWindowIds, window);
+        return new SeededPartitionWindow(seededIds, beyondWindowIds, InaccessibleIds: [], window);
     }
 
     private static async Task<SeededPartitionWindow> SeedWindowedDescriptorsAsync(
@@ -424,7 +501,7 @@ internal static class WindowedPartitionAnchoringScenario
             );
         }
 
-        return new SeededPartitionWindow(seededIds, beyondWindowIds, window);
+        return new SeededPartitionWindow(seededIds, beyondWindowIds, InaccessibleIds: [], window);
     }
 
     /// <summary>
@@ -454,11 +531,22 @@ internal static class WindowedPartitionAnchoringScenario
     }
 
     /// <summary>
-    /// The documents inside the window, the documents written after it closed, and the window itself.
+    /// The documents inside the window, the documents written after it closed, the documents inside it the
+    /// caller may not read, and the window itself.
     /// </summary>
+    /// <param name="Ids">
+    /// The documents a walk of every partition must deliver, exactly once each. For an authorized seed this
+    /// is the accessible subset of the window rather than the whole of it.
+    /// </param>
+    /// <param name="InaccessibleIds">
+    /// Documents inside the window that authorization excludes. Empty for a seed whose whole window is
+    /// readable, which is what makes the disclosure assertion a no-op there rather than a rule that only
+    /// some seeds are held to.
+    /// </param>
     private sealed record SeededPartitionWindow(
         IReadOnlyList<string> Ids,
         IReadOnlyList<string> BeyondWindowIds,
+        IReadOnlyList<string> InaccessibleIds,
         string Window
     );
 

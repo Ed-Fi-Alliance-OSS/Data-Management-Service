@@ -181,8 +181,19 @@ walks. Filters and authorization are reapplied on every subsequent request
 anyway, so a partition calculated over a different filter set describes segments
 that do not match what the walks will read.
 
+`maxChangeVersion` is stricter than a recommendation. Partition tokens carry the
+same position marker a `Next-Page-Token` does, so the rule in [Repeat your
+filters on every request](#repeat-your-filters-on-every-request) applies to them
+from the moment they are issued: if the partitions request included
+`maxChangeVersion`, every walk that replays one of its tokens must include it
+too, and if the partitions request omitted it, no walk may add it. Either
+mismatch is rejected with the invalid-token message, and the only recovery is a
+new partitions request under the window you mean to read. Resource filters and
+`minChangeVersion` are not refused this way — they change what the walks read, as
+any other filter change does.
+
 ```http
-GET /data/ed-fi/students/partitions?number=4&lastSurname=Smith HTTP/1.1
+GET /data/ed-fi/students/partitions?number=4&lastSurname=Smith&maxChangeVersion=87421 HTTP/1.1
 Host: localhost:8080
 Authorization: Bearer <access token>
 ```
@@ -190,7 +201,8 @@ Authorization: Bearer <access token>
 ### 2. Walk each partition independently
 
 Each returned token is used exactly like a `Next-Page-Token`: send it as
-`pageToken`, with the same filters and an optional `pageSize`.
+`pageToken`, with the same filters — including the change-version window the
+partitions request used — and an optional `pageSize`.
 
 ```bash
 # Each worker takes one token and walks it to completion.
@@ -198,7 +210,8 @@ curl -G "http://localhost:8080/data/ed-fi/students" \
   -H "Authorization: Bearer $TOKEN" \
   --data-urlencode "pageToken=$PARTITION_TOKEN" \
   --data-urlencode "pageSize=500" \
-  --data-urlencode "lastSurname=Smith"
+  --data-urlencode "lastSurname=Smith" \
+  --data-urlencode "maxChangeVersion=87421"
 ```
 
 Partitions are independent, so the walks may run concurrently. Within a
@@ -277,7 +290,8 @@ from. It cannot be used to advance a walk.
 | Parameter | Rules |
 | --- | --- |
 | `number` | Optional. The desired number of partitions, from `1` to `200`. Omitted means the deployment's configured `DefaultPartitionCount`. A non-numeric or out-of-range value is rejected. |
-| Resource filters, `minChangeVersion`, `maxChangeVersion` | Allowed, and should match the filters the walks will use. |
+| Resource filters, `minChangeVersion` | Allowed, and should match the filters the walks will use. A partition calculated over a different filter set describes segments that do not match what the walks read. |
+| `maxChangeVersion` | Allowed, and must match the walks that replay the returned tokens: a token from a request that included it is rejected on a walk that omits it, and a token from a request that omitted it is rejected on a walk that adds it. Same rule and same message as the `maxChangeVersion` row above. |
 | `pageToken`, `pageSize`, `limit`, `offset`, `totalCount` | Not supported on this operation and rejected. They belong to the collection GET-many. |
 
 A `/partitions` response is always `application/json` and never carries
