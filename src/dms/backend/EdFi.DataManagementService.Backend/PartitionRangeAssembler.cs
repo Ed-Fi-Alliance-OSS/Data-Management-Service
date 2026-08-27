@@ -23,9 +23,18 @@ internal static class PartitionRangeAssembler
     /// <summary>
     /// Converts ascending starting anchor values into inclusive ranges. Every range but the last ends
     /// one less than the next start, so a document that arrives later cannot move into a partition a
-    /// client has already finished; the last is unbounded above, so newly created documents are still
-    /// reachable.
+    /// client has already finished; the last is unbounded above, so nothing beyond the final boundary
+    /// is unreachable for want of a range to hold it.
     /// </summary>
+    /// <remarks>
+    /// What that last range actually reaches depends on the anchor, because the request's own filters
+    /// are reapplied on every page walked from it. Under a <c>DocumentId</c> anchor it reaches
+    /// documents created after the boundary set was calculated. Under a <c>ContentVersion</c> anchor
+    /// the request carries a <c>maxChangeVersion</c> by construction, and that ceiling still applies,
+    /// so the range reaches only what the window admits — a later write leaves the window rather than
+    /// arriving in the last partition. Unbounded above is a property of the range, not a promise about
+    /// what the walk returns.
+    /// </remarks>
     /// <param name="ascendingStarts">
     /// The starting anchor values, strictly ascending. Empty when no candidates are accessible.
     /// </param>
