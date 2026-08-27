@@ -440,12 +440,39 @@ Per-cache TTL is configured via `CacheSettings`:
     "TokenCacheExpirationSeconds": 1500,
     "ProfileCacheExpirationSeconds": 1800,
     "DataStoreCacheRefreshEnabled": true,
-    "DataStoreCacheExpirationSeconds": 600
+    "DataStoreCacheExpirationSeconds": 600,
+    "DerivativeValidationCacheExpirationSeconds": 600
   }
 }
 ```
 
-Default values: ClaimSets, AppContext, and data store = 10 minutes; Token = 25 minutes; Profile = 30 minutes.
+Default values: ClaimSets, AppContext, data store, and derivative validation = 10 minutes; Token = 25 minutes; Profile = 30 minutes.
+
+### Derivative validation cache expiration
+
+`CacheSettings.DerivativeValidationCacheExpirationSeconds` sets how long a validation verdict for a
+read replica or snapshot database stays cached.
+
+| Configured value | Effective value | Logged |
+| ---------------- | --------------- | ------ |
+| absent           | `600`           | no     |
+| `1`–`3600`       | as configured   | no     |
+| `0` or negative  | `600`           | warning naming the configured and effective value |
+| above `3600`     | `3600`          | warning naming the configured and effective value |
+
+**A non-positive value means "use the default", not "never expire."** That inverts the convention of
+`DataStoreCacheExpirationSeconds` in the same section, where `0` or a negative value keeps the cached
+configuration until an explicit reload. The inversion is deliberate and there is no way to opt out of
+expiry: a derivative is a database an operator can rebuild or repoint without telling DMS, so a
+verdict about one that never expired would outlive the database it describes.
+
+**The resolved value is further bounded by the data store cache TTL.** A derivative's connection
+string comes from the cached data store configuration, so when `DataStoreCacheRefreshEnabled` is
+`true` and `DataStoreCacheExpirationSeconds` is positive, the effective expiration is the smaller of
+the two, and a verdict never outlives the connection string it was reached for. When refresh is
+disabled, or `DataStoreCacheExpirationSeconds` is `0` or negative, that configuration is held until an
+explicit reload; there is no shorter lifetime to bound by, so the resolved value is used as is. The
+result is bounded in every case, because the resolved value already is.
 
 ---
 
@@ -553,7 +580,8 @@ schemas on-demand only when first requested.
     "TokenCacheExpirationSeconds": 1500,
     "ProfileCacheExpirationSeconds": 1800,
     "DataStoreCacheRefreshEnabled": true,
-    "DataStoreCacheExpirationSeconds": 600
+    "DataStoreCacheExpirationSeconds": 600,
+    "DerivativeValidationCacheExpirationSeconds": 600
   },
   "JwtAuthentication": {
     "RefreshIntervalMinutes": 60,

@@ -248,6 +248,34 @@ These settings configure DMS in-memory cache behavior. Expiration values are in 
 | ProfileCacheExpirationSeconds            | The duration before cached profile metadata expires and is refreshed from the Configuration Service. Default: `1800`       |
 | DataStoreCacheRefreshEnabled             | When `true`, enables TTL-based refresh of cached data store configuration from the Configuration Service. Default: `true`  |
 | DataStoreCacheExpirationSeconds          | The duration between automatic refreshes of cached data store configuration. Default: `600`                                |
+| DerivativeValidationCacheExpirationSeconds | The duration a validation verdict for a read replica or snapshot database stays cached. Default: `600`, accepted range `1`–`3600` |
+
+### DerivativeValidationCacheExpirationSeconds
+
+A read replica or snapshot is validated the first time a request is routed to it, and that verdict is
+cached for this duration.
+
+- **Default `600`.** Used when the setting is absent from configuration.
+- **Accepted range `1` to `3600`.** A value inside the range is used as configured, with no log entry.
+- **A value outside the range is clamped, and the clamp is logged as a warning** naming both the
+  configured and the effective value. A value above `3600` becomes `3600`; a value of `0` or below
+  becomes the default `600`.
+- **A non-positive value means "use the default", not "never expire."** This deliberately inverts the
+  convention of `DataStoreCacheExpirationSeconds`, where `0` or a negative value keeps the cached
+  configuration until an explicit reload. There is no way to ask for a derivative verdict that never
+  expires: a derivative is a database an operator can rebuild or repoint without telling DMS, so a
+  verdict about one that never expired would outlive the database it describes.
+- **It is further bounded by the data store cache TTL.** A derivative's connection string comes from
+  the cached data store configuration, so when `DataStoreCacheRefreshEnabled` is `true` and
+  `DataStoreCacheExpirationSeconds` is positive, the effective expiration is the smaller of the two —
+  a verdict never outlives the connection string it was reached for. When refresh is disabled, or
+  `DataStoreCacheExpirationSeconds` is `0` or negative, that configuration is held until an explicit
+  reload, so there is no shorter lifetime to bound by and the resolved value is used as is. The result
+  is bounded either way.
+
+Set it through the environment as
+`CacheSettings__DerivativeValidationCacheExpirationSeconds`, or in Docker Compose through
+`DMS_DERIVATIVE_VALIDATION_CACHE_EXPIRATION_SECONDS`.
 
 ## IdentitySettings.ClientSecretValidation
 

@@ -311,8 +311,37 @@ public static class DmsCoreServiceExtensions
             ServiceDescriptor.Singleton<IValidateOptions<CacheSettings>, CacheSettingsValidator>()
         );
         services.TryAddSingleton(serviceProvider =>
-            serviceProvider.GetRequiredService<IOptions<CacheSettings>>().Value
-        );
+        {
+            CacheSettings cacheSettings = serviceProvider
+                .GetRequiredService<IOptions<CacheSettings>>()
+                .Value;
+
+            // Read the raw value as well as the bound one. Binding leaves the property at its default
+            // when the setting is absent, so the bound value alone cannot tell an absent setting from
+            // one an operator explicitly set to the same number - and only one of those is worth a
+            // warning.
+            // Only null is checked, not blank: options binding already rejects a present-but-empty
+            // value for an int property, as it does for every other expiration in this section, so a
+            // blank one never reaches this line.
+            string? rawExpiration = configuration.GetSection("CacheSettings")[
+                "DerivativeValidationCacheExpirationSeconds"
+            ];
+            (int effectiveSeconds, string? warning) = DerivativeValidationCacheExpiration.Resolve(
+                rawExpiration is null ? null : cacheSettings.DerivativeValidationCacheExpirationSeconds
+            );
+
+            cacheSettings.DerivativeValidationCacheExpirationSeconds = effectiveSeconds;
+
+            if (warning is not null)
+            {
+                serviceProvider
+                    .GetRequiredService<ILoggerFactory>()
+                    .CreateLogger(typeof(DerivativeValidationCacheExpiration))
+                    .LogWarning("{Warning}", warning);
+            }
+
+            return cacheSettings;
+        });
 
         services.AddTransient<ConfigurationServiceResponseHandler>();
         services
