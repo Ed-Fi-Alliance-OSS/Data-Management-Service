@@ -18,7 +18,7 @@ as a placeholder for whichever release ultimately restores them — so that
 engineering, product, and the community can prioritize closing the gap.
 
 This is a **gap-driven, forward-looking PRD**: unlike the [v8.0 companion
-PRD](./ods-api-platform-prd-v8.0.md), which documents implemented behavior, the
+PRD](./PRD-v8.0.md), which documents implemented behavior, the
 requirements below describe capabilities the platform SHOULD or SHALL eventually
 provide, based on what the prior-generation platform already proved out. Some
 items are firm carryover requirements; others are flagged as open questions
@@ -68,9 +68,10 @@ already covered in the v8.0 companion PRD.
   wholly new custom capabilities or integrate an external identity/unique-ID
   system on v8.0, beyond the data-model extension mechanism already covered in
   the v8.0 companion PRD.
-- **API Client Developer (Vendor/Integrator)** — currently cannot rely on
-  high-performance paging, rostering integration, or identity-management
-  endpoints when integrating against v8.0.
+- **API Client Developer (Vendor/Integrator)** — currently cannot rely on a
+  consistent point-in-time snapshot for synchronization runs, identifier-change
+  support without delete-and-recreate, high-performance paging, rostering
+  integration, or identity-management endpoints when integrating against v8.0.
 - **Ed-Fi Alliance Core Platform Engineering** — owns prioritizing and designing
   how each of these capabilities is rebuilt (or intentionally retired) under the
   v8.0 architecture.
@@ -79,47 +80,47 @@ already covered in the v8.0 companion PRD.
 
 - When our API experiences heavy read traffic alongside write traffic, the Ops
   Engineer wants to route reads to a separate copy of the data **so that** write
-  throughput is not degraded (see [[FR-REPLICA]]).
+  throughput is not degraded (see FR-REPLICA).
 - When a downstream system needs a stable view of the data for a synchronization
   run, the Vendor wants an isolated, point-in-time snapshot **so that** the sync
-  isn't disrupted by concurrent writes (see [[FR-CQ-SNAPSHOT]]).
+  isn't disrupted by concurrent writes (see FR-CQ-SNAPSHOT).
 - When a Vendor needs to bulk-export a large resource collection, the Vendor
   wants paging that stays fast no matter how deep they page **so that** exports
   complete in reasonable time without skipped or duplicated records (see
-  [[FR-PAGE]]).
+  FR-PAGING).
 - When a host needs to grant a client access only to the records it created
   (rather than by organizational hierarchy), the Security Architect wants to
   enable ownership-based access **so that** record-level access control is
-  possible without a software change (see [[FR-OWN]]).
+  possible without a software change (see FR-OWN).
 - When a host needs an access rule that doesn't fit the built-in
   organizational/relationship-based rules (e.g., "only students enrolled in CTE
   courses"), the Security Architect wants to define a new custom rule **so
   that** it can be added without a code change or service restart (see
-  [[FR-AUTHVIEW]]).
+  FR-AUTHVIEW).
 - When the host already has an authoritative enterprise identity system, the
   Extension Developer wants to connect the platform to it for validation and/or
   identity search/creation **so that** client systems get one canonical ID per
-  person across roles (see [[FR-UID]], [[FR-IDN]]).
+  person across roles (see FR-UID, FR-IDN).
 - When a security or configuration change is made centrally, the Ops Engineer
   wants a way to make all running API instances pick it up immediately **so
-  that** the change takes effect without a full restart (see [[FR-NOTIFY]]).
+  that** the change takes effect without a full restart (see FR-NOTIFY).
 - When a host wants to expose rostering data to LMS/instructional-tool vendors
   using an industry standard, the Ops Engineer wants to enable that capability
   using the same data and credentials **so that** no second data pipeline or
-  credential system is needed (see [[FR-ONEROSTER]]).
+  credential system is needed (see FR-ONEROSTER).
 - When a source system needs to correct a previously reported identifying value,
   the Vendor wants to update the existing record **so that** it and its related
-  data don't need to be deleted and recreated from scratch (see [[FR-KEY]]).
+  data don't need to be deleted and recreated from scratch (see FR-KEY).
 - When a downstream system needs near-real-time notice of data changes rather
-  than polling the API, the Vendor wants the platform to publish those changes
-  as a stream of events **so that** integrations can react to changes as they
-  happen (see [[FR-STREAM]]).
+  than polling the API, the platform host wants the platform to publish those
+  changes as a stream of events **so that** integrations can react to changes as
+  they happen (see FR-STREAM).
 
 ## 2. Enterprise / System Context
 
 There are no changes to the enterprise context relative to the prior product
 requirements document, aside from the addition of the event streaming data
-flow introduced by [[FR-STREAM]]:
+flow introduced by FR-STREAM:
 
 ```mermaid
 graph TB
@@ -139,7 +140,9 @@ graph TB
 ### 3.1 Read Replicas (FR-REPLICA)
 
 - **FR-REPLICA-1.** Hosts SHALL be able to designate a separate, read-only copy
-  of the operational data to serve all read (`GET`) traffic, so read load can be
+  of the operational data — kept current by the host's own database-platform
+  replication technology (e.g., SQL Server Always On availability groups, Aurora
+  read replicas) — to serve all read (GET) traffic, so read load can be
   offloaded from the primary read/write environment.
 - **FR-REPLICA-2.** This capability SHALL be transparent to API clients — the
   same endpoints and the same request/response contract — requiring no
@@ -162,31 +165,41 @@ graph TB
   point-in-time view of the data that is isolated from concurrent writes and
   selectable on a per-request basis, so a client's synchronization run isn't
   disrupted by data changing while it's in progress.
+- **FR-CQ-SNAPSHOT-2.** A client SHALL request the snapshot view via an explicit,
+  per-request signal (e.g., a request header); if the host has not configured a
+  snapshot, the system SHALL return a distinct, clearly-identifiable "not
+  configured" response rather than silently falling back to the live data. Other
+  than this signal, a client's interaction with the change-query API SHALL be
+  identical whether or not a snapshot is in use.
 
 _Note:_ this extends the Change Queries capability already implemented in v8.0
 (see the v8.0 companion PRD); the operational process for creating and
 refreshing these point-in-time views SHALL remain a host responsibility, not
 something the platform schedules or orchestrates itself.
 
-### 3.3 High-Performance (Keyset) Paging (FR-PAGE)
+### 3.3 Partitioned Cursor Paging (FR-PAGING)
 
-- **FR-PAGE-1.** The system SHALL support a high-performance paging mode for
+- **FR-PAGING-1.** The system SHALL support a high-performance paging mode for
   retrieving large result sets, so that performance does not degrade as a client
-  pages deeper into a large dataset, unlike simple position-based paging.
-- **FR-PAGE-2.** Paging state SHALL be carried via an opaque token returned with
+  pages deeper into a large dataset, unlike simple limit/offset-based paging.
+- **FR-PAGING-2.** Paging state SHALL be carried via an opaque token returned with
   each page, rather than requiring the client to calculate and manage paging
   position itself.
-- **FR-PAGE-3.** The system SHALL support dividing a large, client-authorized
+- **FR-PAGING-3.** The system SHALL support dividing a large, client-authorized
   dataset into independent partitions so a client can process multiple
   partitions in parallel — a capability high-performance paging does not
   otherwise provide, since pages within it must otherwise be retrieved strictly
   in sequence.
-- **FR-PAGE-4.** High-performance paging SHALL NOT apply to change-detection
+- **FR-PAGING-4.** High-performance paging SHALL NOT apply to change-detection
   endpoints, since those already perform well at scale using their own
   version-based filtering.
-- **FR-PAGE-5.** Adopting high-performance paging SHOULD also modestly improve
+- **FR-PAGING-5.** Adopting high-performance paging SHOULD also modestly improve
   performance for clients that continue using traditional position-based paging,
   without requiring those clients to change anything.
+- **FR-PAGING-6**. High-performance paging SHALL NOT support the
+  total-count-of-results option available to traditional position-based paging;
+  a client requesting both pageToken/cursor paging and a total count SHALL
+  receive a clear rejection rather than having the parameter silently ignored.
 
 ### 3.4 Ownership-Based Authorization (FR-OWN)
 
@@ -198,18 +211,32 @@ something the platform schedules or orchestrates itself.
 - **FR-OWN-3.** Ownership-based access SHALL be usable in combination with the
   platform's other (organization-hierarchy-based) access rules for the same
   resource and action, expanding rather than replacing what a client can access.
-- **FR-OWN-4.** Enabling this capability SHALL require a one-time setup step for
-  the affected environment.
+- **FR-OWN-4.**  Enabling this capability for a resource claim and action SHALL
+  require only administrative configuration — creating one or more ownership
+  tokens, assigning them to the relevant API clients, and selecting the
+  Ownership-based strategy for that resource claim and action. Underlying
+  storage already exists for every document regardless of whether the capability
+  is used. Disabling it SHALL be achieved the same way, by removing the strategy
+  selection and/or token assignments; ownership tokens themselves are not
+  deleted or retired.
 - **FR-OWN-5.** When a host enables this capability on an environment that
-  already contains data, the host SHALL be responsible for retroactively
-  assigning ownership to that existing data, since the system only assigns
-  ownership automatically at the time a record is created going forward.
+  already contains data created before any ownership token existed, that
+  pre-existing data has no assigned owner, and the host SHALL be responsible for
+  retroactively assigning ownership to it if desired — the system only assigns
+  ownership automatically at the time a record is created going forward. This is
+  distinct from transferring ownership between API clients (e.g., a vendor
+  replacement), which is fully supported without any data change by granting the
+  new client access to the token(s) already used by the old one (see
+  FR-OWN-2)
 
 ### 3.5 Custom Access Rules (FR-AUTHVIEW)
 
 - **FR-AUTHVIEW-1.** Hosts SHALL be able to define new, custom access rules
   without requiring a software change, recompilation, or a restart of the
-  running service.
+  running service. A custom access rule is implemented as a database view
+  authored directly by the host, so this capability requires someone with direct
+  database schema-authoring access. It is not configured through the platform's
+  own administrative interface.
 - **FR-AUTHVIEW-2.** A custom access rule SHALL be able to be based on any
   entity in the data model, core or extended — not only the built-in set of
   person- and organization-based rules.
@@ -222,8 +249,14 @@ something the platform schedules or orchestrates itself.
   relationship-based rules combine, where satisfying any one of several
   applicable rules is sufficient.
 - **FR-AUTHVIEW-5.** Newly defined custom access rules SHALL take effect within
-  the platform's normal access-rule refresh cycle, without requiring a service
-  restart.
+  the platform's normal access-rule refresh cycle. In version 8.0, this refresh
+  cycle occurs either through cache timeout and refresh, or system restart.
+- **FR-AUTHVIEW-6**. When a configured custom access rule's underlying database
+  view is missing or returns an invalid shape, the system SHALL treat this as a
+  distinct system configuration error rather than an access denial, and is NOT
+  required to validate the view's existence or column shape proactively (e.g.,
+  at startup or on access-rule cache refresh) — the error surfaces only when a
+  request actually exercises that rule.
 
 ### 3.6 Unique ID System Integration (FR-UID)
 
@@ -281,18 +314,40 @@ something the platform schedules or orchestrates itself.
   modified.
 - **FR-IDN-8.** Hosts SHALL be able to enable this capability independently of
   unique-ID validation, since a host may want one without the other.
+- **FR-IDN-9**. When a host's identity-system integration itself fails or
+  returns an error while processing a request, the system SHALL surface this as
+  a distinct upstream-failure response — separate from "not implemented"
+  (FR-IDN-2) and from a normal not-found result, identifying that the failure
+  originated in the identity subsystem rather than the platform itself.
+- **FR-IDN-10**. Creating a new identity SHALL be understood as an operation the
+  client performs only after searching and confirming no existing identity is a
+  match; the platform is not responsible for detecting or preventing duplicate
+  identity creation on the client's behalf.
 
 ### 3.8 Optimized Resource Storage & Retrieval (FR-SERIAL)
 
 - **FR-SERIAL-1.** The system SHALL be capable of serving read requests for a
-  resource using a serialized representation of a document.
-- **FR-SERIAL-2.** The system SHALL enable platform hosts to disable the
-  serialization feature, to reduce database storage.
-- **FR-SERIAL-3.** The system's SHALL provide self-contained metadata alongside
+  resource using a serialized representation of a document, with a fallback to
+  standard relational retrieval when a serialized representation is unavailable
+  or stale — the serialized representation is a performance optimization, not a
+  hard dependency for read availability.
+- **FR-SERIAL-2.** Hosts SHALL be able to control, per backing data environment,
+  whether the serialized representation is stored at all — a static
+  configuration setting requiring a service restart to take effect, not a
+  runtime toggle — so hosts who don't need this capability avoid its storage and
+  background-processing cost entirely.
+- **FR-SERIAL-3.** The system SHALL provide self-contained metadata alongside
   the serialized representation, suitable for change data capture replication to
-  secondary data stores.
+  secondary data stores (see FR-STREAM). Storage of this representation is
+  controlled by the same setting as FR-SERIAL-2 — enabling it for
+  read-serving or for change-data-capture purposes draws on the same underlying
+  storage and processing cost.
 
 ### 3.9 Cross-Instance Cache-Refresh Signaling (FR-NOTIFY)
+
+> [!WARNING]
+> This feature may be cut from the scope of 8.1 in order to meet the delivery
+> timeline.
 
 - **FR-NOTIFY-1.** Hosts running multiple instances of the API service SHALL be
   able to trigger an immediate refresh of specific cached administrative
@@ -300,8 +355,7 @@ something the platform schedules or orchestrates itself.
   information's normal refresh interval to elapse.
 - **FR-NOTIFY-2.** At minimum, hosts SHALL be able to trigger an immediate
   refresh of security/access rules, client credential details, Profile
-  definitions, environment-routing details, and reference-value (descriptor)
-  mappings.
+  definitions, and environment-routing details.
 - **FR-NOTIFY-3.** The system SHALL guard against this capability being
   triggered so rapidly or repeatedly that it degrades performance, whether
   through attack or misconfiguration.
@@ -312,25 +366,7 @@ something the platform schedules or orchestrates itself.
   refresh signals (for example, no built-in admin screen); triggering them is
   the host's own operational responsibility.
 
-### 3.10 Rostering Integration — OneRoster (FR-ONEROSTER)
-
-- **FR-ONEROSTER-1.** Hosts SHALL be able to enable a separately-deployed
-  rostering service that implements a widely-adopted industry rostering
-  standard, reading from the same underlying operational data, so a second data
-  pipeline or duplicate dataset is not required.
-- **FR-ONEROSTER-2.** Clients SHALL be able to use the same credentials for both
-  the core API and the rostering service, so no separate credential management
-  is required for clients needing both.
-- **FR-ONEROSTER-3.** Access to rostering data SHALL be governed by the same
-  access-rules model used for the core API, so rostering access follows the same
-  governance clients and hosts already use.
-- **FR-ONEROSTER-4.** Supported rostering data SHALL include, at minimum,
-  organizations/schools, academic terms/sessions, courses and classes, users
-  (students and teachers), and enrollment/demographic information.
-- **FR-ONEROSTER-5.** Hosts SHALL be able to turn this capability on or off for
-  their deployment (default: off).
-
-### 3.11 Identifier Changes Without Delete-and-Recreate (FR-KEY)
+### 3.10 Identifier Changes Without Delete-and-Recreate (FR-KEY)
 
 The prior-generation platform identified most resources using real-world
 business identifiers rather than internally generated ones, since the platform
@@ -349,47 +385,51 @@ resource-identification design (see Section 7).
   client attempting to change an identifying value SHALL be clearly informed
   that the change is not supported, so the client can instead delete and
   recreate the record.
-- **FR-KEY-3.** Hosts extending the data model SHALL be able to enable this
-  identifier-change support for their own added resource types.
-- **FR-KEY-4.** Certain person-type resources (for example, students and staff)
-  SHALL support correcting their identifying value via update without requiring
-  related data to be recreated, specifically because these identifiers are more
-  prone to needing correction after initial entry.
+- **FR-KEY-3.** Hosts extending the data model SHALL be able to declare
+  identifier-change support for their own added resource types at
+  model-definition time (e.g., a MetaEd allow primary key updates construct on
+  the extension entity), consistent with how core resources are similarly
+  designated; this is a schema/model-generation-time decision, not a runtime
+  toggle.
 
-### 3.12 Environment Segmentation & Routing — Secrets Sourcing (extends FR-INST)
+### 3.11 Environment Segmentation & Routing — Secrets Sourcing (extends FR-INST)
 
-The following sub-capability extends [[FR-INST]] (Environment Segmentation &
+The following sub-capability extends FR-INST (Environment Segmentation &
 Routing, v8.0 companion PRD §3.1), which already implements environment routing
 but only sources connection details from the platform's own administrative
 service.
 
-- **FR-INST-6.** Administrators SHOULD be able to source backing data
-  environment connection details from an external secret-management system, as
-  an alternative to the platform's own administrative service, so hosts can
-  integrate with whatever secret-management approach they already use.
+- **FR-INST-6.** Hosts SHALL be able to source backing data environment
+  connection details from an external secret-management system, as an
+  alternative to the platform's own administrative service, by implementing the
+  platform's custom-startup extension point (see FR-CONFIG-6). This MAY require
+  a developer to author and deploy a plugin assembly, rather than applying a
+  configuration-only change at runtime.
 
-### 3.13 Configuration & Extensibility Extensions (extends FR-CONFIG)
+### 3.12 Configuration & Extensibility Extensions (extends FR-CONFIG)
 
-The following sub-capabilities extend [[FR-CONFIG]] (Configuration &
+The following sub-capabilities extend FR-CONFIG (Configuration &
 Extensibility, v8.0 companion PRD §3.9), which already covers basic
 optional-capability toggling and data-model extension but not these
 host-extensibility and performance-tuning needs.
 
 - **FR-CONFIG-6.** Hosts SHALL be able to inject custom startup and
-  configuration behavior without modifying the platform's own source code.
-- **FR-CONFIG-7.** The platform SHALL define a supported, documented pattern for
-  adding wholly new, independently-toggled custom capabilities, so host-specific
+  configuration behavior without modifying the platform's own source code, by
+  implementing a documented plugin interface and deploying it as a separate
+  assembly the platform loads at startup. This requires a developer to author
+  and deploy code; it is not a configuration-only change an administrator can
+  make alone.
+- **FR-CONFIG-7.** The extension mechanism in FR-CONFIG-6 SHALL be documented as
+  a supported pattern for adding wholly new, independently-toggled custom
+  capabilities — not only startup/configuration behavior — so host-specific
   additions don't require changes to unrelated parts of the system.
-- **FR-CONFIG-8.** Hosts SHALL be able to use an external caching layer, instead
-  of in-process memory, for frequently-read platform information, configurable
-  independently for each category of information.
 - **FR-CONFIG-9.** Hosts SHALL be able to trade off a minor compatibility risk
   for reduced backend load in how resource cross-references are represented in
   responses.
 
-### 3.14 Authentication — Token Management (extends FR-AUTHN)
+### 3.13 Authentication — Token Management (extends FR-AUTHN)
 
-The following sub-capability extends [[FR-AUTHN]] (Authentication, v8.0
+The following sub-capability extends FR-AUTHN (Authentication, v8.0
 companion PRD §3.5), which already covers token issuance and validation but not
 host-configurable limits on token lifetime or concurrency.
 
@@ -398,7 +438,7 @@ host-configurable limits on token lifetime or concurrency.
 - **FR-AUTHN-10.** Hosts SHALL be able to limit how many active tokens a single
   client may hold at once.
 
-### 3.15 Event Streaming (FR-STREAM)
+### 3.14 Event Streaming (FR-STREAM)
 
 - **FR-STREAM-1.** The system SHALL support streaming data changes to
   downstream consumers using Apache Kafka, so vendors and hosts can react to
@@ -408,7 +448,7 @@ host-configurable limits on token lifetime or concurrency.
   either PostgreSQL or Microsoft SQL Server, depending on which database
   engine the host has deployed as its operational data store.
 - **FR-STREAM-3.** The CDC configuration SHALL be set up to capture the
-  serialized resource representation defined in [[FR-SERIAL]] (FR-SERIAL-1)
+  serialized resource representation defined in FR-SERIAL (FR-SERIAL-1)
   along with its associated self-contained metadata (FR-SERIAL-3), so a
   downstream consumer receives a complete, self-describing record of each
   change without needing to query the API for additional context.
@@ -431,7 +471,7 @@ host-configurable limits on token lifetime or concurrency.
   the Ed-Fi resource type and version (project name, resource name, resource
   version); an incrementing content-version number for the document; a
   normalized last-modified timestamp; and the full resource document (per
-  [[FR-SERIAL]]) including its ETag. This message SHALL NOT include internal
+  FR-SERIAL) including its ETag. This message SHALL NOT include internal
   source-system metadata unrelated to the resource itself, so a consumer can
   read and interpret it using only standard JSON tooling.
 - **FR-STREAM-8.** Regardless of which supported database engine produced the
@@ -443,8 +483,12 @@ host-configurable limits on token lifetime or concurrency.
   exact JSON numbers, never as strings or lossy floating point, and properties
   absent from the source SHALL be omitted rather than represented as null.
 - **FR-STREAM-10.** The stream SHALL preserve the relative order of events for
-  any single document, so a consumer never observes that document's changes
-  out of the order they actually occurred.
+  any single document, so a consumer never observes that document's changes out
+  of the order they actually occurred.  No such ordering guarantee SHALL be made
+  across different documents, even when one document references another (e.g.,
+  an association resource and the entities it references) — consumers requiring
+  referential consistency across related documents SHALL be responsible for
+  buffering or reconciling out-of-order arrival themselves.
 - **FR-STREAM-11.** Bulk administrative operations that are not themselves a
   meaningful create, update, or delete of a specific resource (e.g., table
   truncation) SHALL NOT produce document events on the stream.
@@ -474,7 +518,9 @@ host-configurable limits on token lifetime or concurrency.
   data-minimization for sensitive information.
 - **NFR-SEC-2.** Custom access rules SHALL take effect through the platform's
   normal access-rule refresh cycle, without requiring privileged access to
-  restart the service.
+  restart the service. This does not eliminate the need for direct database
+  schema-authoring access to define the rule's underlying view (see
+  FR-AUTHVIEW-1)
 
 ### Privacy
 
@@ -500,6 +546,10 @@ host-configurable limits on token lifetime or concurrency.
   system-wide cache refresh SHALL include safeguards preventing that capability
   from being used — intentionally or accidentally — to degrade system
   performance.
+- **NFR-PERF-6**. The CDC/streaming pipeline SHALL impose minimal overhead on
+  the primary database's read/write path under normal operation. A slow,
+  disconnected, or stalled downstream consumer SHALL NOT cause unbounded
+  resource growth on the primary database.
 
 ### Operations
 
@@ -517,7 +567,6 @@ host-configurable limits on token lifetime or concurrency.
 | Component | Responsibility | Notes |
 | --- | --- | --- |
 | Rostering service (optional) | Serves industry-standard rostering data derived from the same operational data | Would share credentials and access-governance with the core API; deployed and scaled independently |
-| External cache (optional) | Improves performance and enables cross-instance cache-refresh signaling | Only required if a host enables external caching or the cache-refresh-signaling capability |
 | Custom extensions (optional) | Host-supplied configuration/secret sources, custom access rules, identity-system integrations, or wholly new capabilities | Would be the platform's primary supported way for hosts to extend behavior without forking core code |
 | External secret-management system (optional) | Alternative source for sensitive configuration such as data-store credentials | Alternative/supplement to the administrative service's own encrypted storage |
 | Operational data store derivative(s) | Read-only replica and/or point-in-time snapshot copies of the primary operational data store | Would extend the operational data store described in the v8.0 companion PRD |
@@ -530,6 +579,8 @@ host-configurable limits on token lifetime or concurrency.
   Implementation Guidelines.
 - **Everything already covered by the v8.0 companion PRD** is out of scope here,
   to avoid duplicating requirements across both documents.
+- **OneRoster API** support is deferred to version 8.2 and will be covered in a
+  future product requirements document.
 - **Bulk/batch identity creation** is not proposed as part of this gap-closing
   effort; identities would continue to be created one at a time, consistent with
   the prior-generation platform.
@@ -545,29 +596,11 @@ host-configurable limits on token lifetime or concurrency.
   are noted here only for completeness.
 - **Kafka topic schema/versioning design, broker/cluster operational tuning,
   and consumer-side integration patterns** are not specified by this PRD; only
-  the platform's requirement to produce a CDC-based event stream ([[FR-STREAM]])
+  the platform's requirement to produce a CDC-based event stream (FR-STREAM)
   is in scope.
 
 ## 7. Open Questions and Decision Log
 
-- **Rostering feature boundary:** the rostering service is delivered and
-  deployed separately from the core API, sharing only credentials and access
-  governance. It's unclear whether rostering should ultimately have its own
-  dedicated PRD rather than being folded into this platform-capabilities PRD —
-  flagged here for a scoping decision, not resolved by this document.
-- **Is optimized resource storage still needed?** ([[FR-SERIAL]]) v8.0's new
-  underlying storage design is fundamentally different from the prior
-  generation's, and it's plausible the original performance problem this
-  capability addressed no longer exists in the same form. Needs confirmation
-  with engineering before committing to rebuild it as designed previously.
-- **Is identifier-change support still needed in its prior form?** ([[FR-KEY]])
-  v8.0 gives every resource its own internally generated identifier as the
-  actual database key, with the business identifier enforced only as a
-  uniqueness rule — a departure from the prior design, where most resources'
-  relationships chained directly through business identifiers. The specific
-  problem this capability solved may not exist in the same form under the new
-  design. Needs confirmation with engineering, not assumed from documentation
-  silence.
 - **Ownership-based authorization backfill:** the prior-generation platform
   required hosts to retroactively assign ownership on pre-existing data when
   enabling this capability, but didn't specify a supported way to do so. Confirm
@@ -585,7 +618,7 @@ host-configurable limits on token lifetime or concurrency.
   product/engineering leadership informed by host and vendor migration pressure.
 - **Event streaming non-functional requirements:** this PRD defines the
   functional requirement to stream changes via Kafka/Debezium CDC
-  ([[FR-STREAM]]), including per-document delivery ordering, but has not yet
+  (FR-STREAM), including per-document delivery ordering, but has not yet
   defined message retention or topic-level access control. Needs follow-up
   before this capability is build-ready.
 
@@ -602,7 +635,9 @@ host-configurable limits on token lifetime or concurrency.
   holds.
 - **Ownership:** An access-control concept where a record is associated with the
   client that created it, used by ownership-based authorization to grant access
-  based on who created a record rather than organizational hierarchy.
+  based on who created a record — usable alongside, or instead of,
+  organizational-hierarchy-based access, depending on how a host configures it
+  for a given resource and action.
 - **Change Data Capture (CDC):** A technique for capturing row-level insert,
   update, and delete events directly from a database's change/transaction log,
   used here to detect changes to serialized resource data for downstream
