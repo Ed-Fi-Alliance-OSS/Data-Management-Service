@@ -561,6 +561,36 @@ and its SQL Server
 and
 [heartbeat guidance](https://debezium.io/documentation/reference/3.6/connectors/sqlserver.html#sqlserver-property-heartbeat-action-query).
 
+#### Source-partition hash
+
+Deployment status, incident evidence, and 19-04 orchestration identify a Connect source
+partition without persisting or exposing its raw JSON. The identifier is `sha256:` plus
+lowercase SHA-256 over these bytes:
+
+```text
+UTF-8("ed-fi-dms-connect-source-partition-v1")
++ NUL
++ UTF-8(providerToken)
++ NUL
++ canonicalSourcePartitionJson
+```
+
+`NUL` is one zero byte (`0x00`), and `providerToken` is `postgresql` or `sqlserver`.
+`canonicalSourcePartitionJson` is UTF-8, minified, object-only JSON with no additional
+properties. PostgreSQL writes `server` only. SQL Server writes `database` first and
+`server` second; `database` is the raw catalog value used only in memory as hash input.
+Both providers encode strings with the default `System.Text.Json` `Utf8JsonWriter`
+escaping behavior.
+
+The interoperability vectors are:
+
+| Provider | Canonical source-partition JSON | Required hash |
+| --- | --- | --- |
+| `postgresql` | `{"server":"edfi.dms"}` | `sha256:9605ac115e4c82a0a9f1b2e7e0687c09fce12c699903be5189c8527efa3d2f40` |
+| `sqlserver` | `{"database":"EdFi_DMS_CDC","server":"edfi.dms"}` | `sha256:678792175a93a7e810f3904d8d8e42e654289b147c3313a5c6d6a5c6593beab2` |
+| `sqlserver` | `{"database":"EdFi \u0022DMS\u0022\\CDC","server":"edfi.dms"}` | `sha256:588192bb6f07725229bc478dcdec4761cbc362edcaebe304428c386bf6cfb90b` |
+| `sqlserver` | `{"database":"EdFi \u003CDMS\u003E\u0026CDC","server":"edfi.dms"}` | `sha256:dbeeade9fcb65353dce0b01f950778bff722b3933cf4f46680de46ae1839ed27` |
+
 ### Source-History Continuity
 
 The provider source-position barrier proves catch-up only while the source history needed

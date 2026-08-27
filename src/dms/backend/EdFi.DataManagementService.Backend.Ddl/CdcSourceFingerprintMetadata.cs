@@ -61,7 +61,7 @@ public static class CdcSourceFingerprintMetadata
     {
         ArgumentNullException.ThrowIfNull(sourceFingerprint);
 
-        CdcBindingContractValidation.ValidateRequiredSafeText(
+        ValidateRequiredSafeText(
             sourceFingerprint.Version,
             $"{parameterName}.{nameof(sourceFingerprint.Version)}"
         );
@@ -70,7 +70,7 @@ public static class CdcSourceFingerprintMetadata
             throw new ArgumentException($"CDC source fingerprint version must be {Version}.", parameterName);
         }
 
-        string value = CdcBindingContractValidation.ValidateRequiredSafeText(
+        string value = ValidateRequiredSafeText(
             sourceFingerprint.Value,
             $"{parameterName}.{nameof(sourceFingerprint.Value)}"
         );
@@ -93,6 +93,27 @@ public static class CdcSourceFingerprintMetadata
         }
 
         return sourceFingerprint;
+    }
+
+    private static string ValidateRequiredSafeText(string? value, string parameterName)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException(
+                "CDC source fingerprint text values must be supplied.",
+                parameterName
+            );
+        }
+
+        if (value.Any(char.IsControl))
+        {
+            throw new ArgumentException(
+                "CDC source fingerprint text values must not contain control characters.",
+                parameterName
+            );
+        }
+
+        return value;
     }
 
     private static bool IsLowerHex(char character) => character is >= '0' and <= '9' or >= 'a' and <= 'f';

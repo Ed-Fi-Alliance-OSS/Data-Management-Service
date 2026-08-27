@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -75,7 +76,6 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
                 )
             )
         );
-
         services.AddReferenceResolver<
             MssqlReferenceResolverAdapterFactory,
             MssqlRelationalCommandExecutor,
@@ -87,6 +87,24 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
             ServiceDescriptor.Scoped<IDocumentCacheReadLookupAdapter, MssqlDocumentCacheReadLookupAdapter>()
         );
         services.AddDocumentCacheReadAccelerationCoordinator();
+        return services;
+    }
+
+    public static IServiceCollection AddMssqlDmsCdcControlPlane(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddDmsCdcControlPlane();
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheProviderCommandTimeoutClassifier,
+                MssqlDocumentCacheProviderCommandTimeoutClassifier
+            >()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<ICdcProviderSourcePositionAdapter, MssqlCdcSourcePositionAdapter>()
+        );
+
         return services;
     }
 

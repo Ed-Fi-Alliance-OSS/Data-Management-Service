@@ -5,12 +5,16 @@
 
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
+using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 
 internal static class CdcConnectorTemplateTestData
 {
     public const long BindingGeneration = 7;
+    public const string DefaultDeploymentKey = "dms";
+    public const string DefaultInstanceKey = "binding";
+    public const string DefaultTopicPrefix = "edfi.documents";
     private const string SourceIdentity = "f81d4fae-7dec-11d0-a765-00a0c91e6bf6";
     private const string OtherSourceIdentity = "86a7cc04-64cf-4b34-b66f-a7b9b4f6b6fd";
 
@@ -36,13 +40,22 @@ internal static class CdcConnectorTemplateTestData
         string heartbeatSql = "select 1",
         CdcProviderSetupOutcome outcome = CdcProviderSetupOutcome.CreatedOrMatched,
         CdcSourceFingerprint? fingerprint = null,
-        string connectorName = "dms_binding_connector"
+        string deploymentKey = DefaultDeploymentKey,
+        string topicPrefix = DefaultTopicPrefix,
+        string instanceKey = DefaultInstanceKey
     )
     {
         CdcSourceFingerprint physicalSourceFingerprint = fingerprint ?? SourceFingerprintFor(provider);
+        CoreCdc.CdcBinding binding = BuildBinding(
+            provider,
+            fingerprint: physicalSourceFingerprint,
+            deploymentKey: deploymentKey,
+            topicPrefix: topicPrefix,
+            instanceKey: instanceKey
+        );
 
         return new CdcConnectorTemplateRequest(
-            BuildBinding(provider, fingerprint: physicalSourceFingerprint, connectorName: connectorName),
+            binding,
             new CdcConnectorProviderSetupEvidence(
                 BindingGeneration,
                 BuildProviderSetupResult(
@@ -50,10 +63,11 @@ internal static class CdcConnectorTemplateTestData
                     mode: CdcProviderSetupMode.InitialCreateOrExactMatch,
                     outcome: outcome,
                     boundPhysicalSourceFingerprint: physicalSourceFingerprint,
-                    artifactInventory: artifactInventory,
+                    artifactInventory: artifactInventory ?? BuildArtifactInventory(provider, binding),
                     sourceTableInventory: sourceTableInventory,
                     expectedMessageKeyColumns: expectedMessageKeyColumns,
-                    heartbeatActionQuery: new CdcHeartbeatActionQuery(heartbeatSql, "sha256-safe")
+                    heartbeatActionQuery: new CdcHeartbeatActionQuery(heartbeatSql, "sha256-safe"),
+                    binding: binding
                 )
             ),
             deploymentPolicy ?? BuildDeploymentPolicy(provider),
@@ -68,7 +82,7 @@ internal static class CdcConnectorTemplateTestData
 
     public static CdcConnectorTemplateRequest BuildRequest(
         CdcProviderSetupResult providerSetupResult,
-        CdcBindingIdentity? binding = null,
+        CoreCdc.CdcBinding? binding = null,
         long providerSetupBindingGeneration = BindingGeneration,
         CdcProviderConnectionProperties? providerConnectionProperties = null,
         CdcConnectorTemplateDeploymentPolicy? deploymentPolicy = null,
@@ -76,49 +90,114 @@ internal static class CdcConnectorTemplateTestData
         CdcConnectorTemplateArtifactOutputRequest? artifactOutput = null
     )
     {
-        CdcBindingIdentity bindingIdentity = binding ?? BuildBinding(providerSetupResult.Provider);
+        CoreCdc.CdcBinding templateBinding = binding ?? BuildBinding(providerSetupResult.Provider);
 
         return new CdcConnectorTemplateRequest(
-            bindingIdentity,
+            templateBinding,
             new CdcConnectorProviderSetupEvidence(providerSetupBindingGeneration, providerSetupResult),
             deploymentPolicy ?? BuildDeploymentPolicy(providerSetupResult.Provider),
-            providerConnectionProperties ?? CdcProviderConnectionProperties.Empty(bindingIdentity.Provider),
+            providerConnectionProperties
+                ?? CdcProviderConnectionProperties.Empty(ToDdlProvider(templateBinding.Provider)),
             kafkaClientSecurityProperties ?? CdcKafkaClientSecurityProperties.Empty,
             artifactOutput
         );
     }
 
-    public static CdcBindingIdentity BuildBinding(
+    public static CoreCdc.CdcBinding BuildBinding(
         CdcProvider provider,
         long bindingGeneration = BindingGeneration,
-        string partitionerAlgorithm = CdcBindingIdentity.KafkaMurmur2V1PartitionerAlgorithm,
+        string partitionerAlgorithm = CoreCdc.CdcTargetValidator.KafkaMurmur2V1PartitionerAlgorithm,
         CdcSourceFingerprint? fingerprint = null,
-        string connectorName = "dms_binding_connector"
-    ) =>
-        new(
+        string deploymentKey = DefaultDeploymentKey,
+        string tenantKey = CoreCdc.CdcTargetValidator.DefaultBindingTenantKey,
+        string dataStoreId = "1",
+        string instanceKey = DefaultInstanceKey,
+        string topicPrefix = DefaultTopicPrefix
+    )
+    {
+        CoreCdc.CdcArtifactInventory artifactInventory = BuildCoreArtifactInventory(
             provider,
-            new CdcSafeName(connectorName),
-            "edfi.documents",
             bindingGeneration,
-            partitionerAlgorithm,
-            BuildProviderArtifactNames(provider),
-            fingerprint ?? SourceFingerprintFor(provider)
+            deploymentKey,
+            topicPrefix,
+            instanceKey
         );
 
-    public static CdcProviderArtifactNames BuildProviderArtifactNames(CdcProvider provider) =>
-        provider switch
+        return new CoreCdc.CdcBinding(
+            CoreCdc.CdcJsonContract.CurrentContractVersion,
+            deploymentKey,
+            tenantKey,
+            dataStoreId,
+            instanceKey,
+            bindingGeneration,
+            ToCoreProvider(provider),
+            (fingerprint ?? SourceFingerprintFor(provider)).Value,
+            artifactInventory.ConnectorName,
+            artifactInventory.TopicName,
+            PartitionCount: 1,
+            partitionerAlgorithm,
+            CoreCdc.CdcJsonContract.CurrentContractVersion
+        );
+    }
+
+    public static CoreCdc.CdcArtifactInventory BuildCoreArtifactInventory(
+        CdcProvider provider,
+        long bindingGeneration = BindingGeneration,
+        string deploymentKey = DefaultDeploymentKey,
+        string topicPrefix = DefaultTopicPrefix,
+        string instanceKey = DefaultInstanceKey
+    )
+    {
+        CoreCdc.CdcArtifactNameResult result = CoreCdc.CdcArtifactNameGenerator.Render(
+            new CoreCdc.CdcArtifactNameInput(
+                deploymentKey,
+                topicPrefix,
+                instanceKey,
+                bindingGeneration,
+                ToCoreProvider(provider)
+            )
+        );
+
+        return result.Inventory
+            ?? throw new ArgumentException("Invalid test CDC binding artifact input.", nameof(provider));
+    }
+
+    public static CoreCdc.CdcArtifactInventory BuildCoreArtifactInventory(CoreCdc.CdcBinding binding)
+    {
+        CoreCdc.CdcArtifactNameResult result = CoreCdc.CdcArtifactNameGenerator.RecoverFromBinding(binding);
+
+        return result.Inventory
+            ?? throw new ArgumentException("Invalid test CDC binding artifact input.", nameof(binding));
+    }
+
+    public static CdcProviderArtifactNames BuildProviderArtifactNames(
+        CdcProvider provider,
+        CoreCdc.CdcBinding? binding = null
+    )
+    {
+        CoreCdc.CdcArtifactInventory artifactInventory = binding is null
+            ? BuildCoreArtifactInventory(provider)
+            : BuildCoreArtifactInventory(binding);
+
+        return provider switch
         {
             CdcProvider.Postgresql => CdcProviderArtifactNames.ForPostgresql(
-                new CdcSafeName("dms_binding_publication"),
-                new CdcSafeName("dms_binding_slot")
+                new CdcSafeName(artifactInventory.PostgresqlPublicationName!),
+                new CdcSafeName(artifactInventory.PostgresqlLogicalSlotName!)
             ),
             CdcProvider.SqlServer => CdcProviderArtifactNames.ForSqlServer(
-                new CdcSafeName("dms_binding_gate"),
+                new CdcSafeName(artifactInventory.SqlServerCdcGatingRoleName!),
                 new Dictionary<CdcSourceTableKind, CdcSafeName>
                 {
-                    [CdcSourceTableKind.DocumentCache] = new("dms_binding_document_cache_capture"),
-                    [CdcSourceTableKind.Document] = new("dms_binding_document_capture"),
-                    [CdcSourceTableKind.CdcHeartbeat] = new("dms_binding_cdc_heartbeat_capture"),
+                    [CdcSourceTableKind.DocumentCache] = new(
+                        artifactInventory.SqlServerCaptureInstanceDocumentCacheName!
+                    ),
+                    [CdcSourceTableKind.Document] = new(
+                        artifactInventory.SqlServerCaptureInstanceDocumentName!
+                    ),
+                    [CdcSourceTableKind.CdcHeartbeat] = new(
+                        artifactInventory.SqlServerCaptureInstanceCdcHeartbeatName!
+                    ),
                 }
             ),
             _ => throw new ArgumentOutOfRangeException(
@@ -127,6 +206,7 @@ internal static class CdcConnectorTemplateTestData
                 "Unsupported CDC provider."
             ),
         };
+    }
 
     public static CdcConnectorTemplateDeploymentPolicy BuildDeploymentPolicy(CdcProvider provider) =>
         new(
@@ -164,7 +244,8 @@ internal static class CdcConnectorTemplateTestData
         IReadOnlyList<CdcExpectedMessageKeyColumns>? expectedMessageKeyColumns = null,
         CdcHeartbeatActionQuery? heartbeatActionQuery = null,
         bool omitHeartbeatActionQuery = false,
-        IReadOnlyList<CdcProviderHistoryObservation>? providerHistoryObservations = null
+        IReadOnlyList<CdcProviderHistoryObservation>? providerHistoryObservations = null,
+        CoreCdc.CdcBinding? binding = null
     )
     {
         CdcSourceFingerprint boundFingerprint =
@@ -176,7 +257,7 @@ internal static class CdcConnectorTemplateTestData
             Outcome: outcome,
             BoundPhysicalSourceFingerprint: boundFingerprint,
             ObservedSourceFingerprint: observedSourceFingerprint ?? boundFingerprint,
-            ArtifactInventory: artifactInventory ?? BuildArtifactInventory(provider),
+            ArtifactInventory: artifactInventory ?? BuildArtifactInventory(provider, binding),
             GrantInventory: [],
             SourceTableInventory: sourceTableInventory ?? BuildRequiredSourceTableInventory(provider),
             ExpectedMessageKeyColumns: expectedMessageKeyColumns ?? BuildExpectedMessageKeyColumns(),
@@ -184,7 +265,11 @@ internal static class CdcConnectorTemplateTestData
                 ? null
                 : heartbeatActionQuery ?? new CdcHeartbeatActionQuery("select 1", "sha256-safe"),
             ProviderHistoryObservations: providerHistoryObservations
-                ?? BuildProviderHistoryObservations(provider),
+                ?? (
+                    provider == CdcProvider.SqlServer
+                        ? BuildSqlServerProviderHistoryObservations(binding)
+                        : []
+                ),
             ManifestPayload: null,
             Diagnostics: []
         );
@@ -255,12 +340,13 @@ internal static class CdcConnectorTemplateTestData
         };
 
     public static IReadOnlyList<CdcProviderArtifactObservation> BuildArtifactInventory(
-        CdcProvider provider
+        CdcProvider provider,
+        CoreCdc.CdcBinding? binding = null
     ) =>
         provider switch
         {
-            CdcProvider.Postgresql => BuildPostgresqlArtifactInventory(),
-            CdcProvider.SqlServer => BuildSqlServerArtifactInventory(),
+            CdcProvider.Postgresql => BuildPostgresqlArtifactInventory(binding),
+            CdcProvider.SqlServer => BuildSqlServerArtifactInventory(binding),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(provider),
                 provider,
@@ -268,47 +354,63 @@ internal static class CdcConnectorTemplateTestData
             ),
         };
 
-    public static IReadOnlyList<CdcProviderArtifactObservation> BuildPostgresqlArtifactInventory() =>
-        [BuildPostgresqlPublicationArtifact(), BuildPostgresqlReplicationSlotArtifact()];
+    public static IReadOnlyList<CdcProviderArtifactObservation> BuildPostgresqlArtifactInventory(
+        CoreCdc.CdcBinding? binding = null
+    ) =>
+        [
+            BuildPostgresqlPublicationArtifact(binding: binding),
+            BuildPostgresqlReplicationSlotArtifact(binding: binding),
+        ];
 
     public static CdcProviderArtifactObservation BuildPostgresqlPublicationArtifact(
         CdcProviderArtifactState state = CdcProviderArtifactState.Matched,
-        CdcSafeName? safeArtifactName = null
+        CdcSafeName? safeArtifactName = null,
+        CoreCdc.CdcBinding? binding = null
     ) =>
         new(
             CdcProviderArtifactKind.PostgresqlPublication,
-            safeArtifactName ?? new CdcSafeName("dms_binding_publication"),
+            safeArtifactName
+                ?? BuildProviderArtifactNames(CdcProvider.Postgresql, binding).Postgresql!.PublicationName,
             state,
             new Dictionary<string, string>()
         );
 
     public static CdcProviderArtifactObservation BuildPostgresqlReplicationSlotArtifact(
         CdcProviderArtifactState state = CdcProviderArtifactState.Matched,
-        CdcSafeName? safeArtifactName = null
+        CdcSafeName? safeArtifactName = null,
+        CoreCdc.CdcBinding? binding = null
     ) =>
         new(
             CdcProviderArtifactKind.PostgresqlReplicationSlot,
-            safeArtifactName ?? new CdcSafeName("dms_binding_slot"),
+            safeArtifactName
+                ?? BuildProviderArtifactNames(
+                    CdcProvider.Postgresql,
+                    binding
+                ).Postgresql!.ReplicationSlotName,
             state,
             new Dictionary<string, string>()
         );
 
-    public static IReadOnlyList<CdcProviderArtifactObservation> BuildSqlServerArtifactInventory() =>
+    public static IReadOnlyList<CdcProviderArtifactObservation> BuildSqlServerArtifactInventory(
+        CoreCdc.CdcBinding? binding = null
+    ) =>
         [
             BuildSqlServerSnapshotIsolationArtifact(),
-            BuildSqlServerGatingRoleArtifact(),
-            BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache),
-            BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.Document),
-            BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.CdcHeartbeat),
+            BuildSqlServerGatingRoleArtifact(binding: binding),
+            BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.DocumentCache, binding: binding),
+            BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.Document, binding: binding),
+            BuildSqlServerCaptureInstanceArtifact(CdcSourceTableKind.CdcHeartbeat, binding: binding),
         ];
 
     public static CdcProviderArtifactObservation BuildSqlServerGatingRoleArtifact(
         CdcProviderArtifactState state = CdcProviderArtifactState.Matched,
-        CdcSafeName? safeArtifactName = null
+        CdcSafeName? safeArtifactName = null,
+        CoreCdc.CdcBinding? binding = null
     ) =>
         new(
             CdcProviderArtifactKind.SqlServerGatingRole,
-            safeArtifactName ?? new CdcSafeName("dms_binding_gate"),
+            safeArtifactName
+                ?? BuildProviderArtifactNames(CdcProvider.SqlServer, binding).SqlServer!.GatingRoleName,
             state,
             new Dictionary<string, string>()
         );
@@ -332,10 +434,12 @@ internal static class CdcConnectorTemplateTestData
         CdcSourceTableKind tableKind,
         CdcProviderArtifactState state = CdcProviderArtifactState.Matched,
         CdcSafeName? safeArtifactName = null,
-        IReadOnlyDictionary<string, string>? safeObservedValues = null
+        IReadOnlyDictionary<string, string>? safeObservedValues = null,
+        CoreCdc.CdcBinding? binding = null
     )
     {
-        CdcSafeName artifactName = safeArtifactName ?? DefaultSqlServerCaptureInstanceName(tableKind);
+        CdcSafeName artifactName =
+            safeArtifactName ?? DefaultSqlServerCaptureInstanceName(tableKind, binding);
         var observedValues = new Dictionary<string, string>
         {
             ["capture_instance"] = artifactName.Value,
@@ -358,12 +462,24 @@ internal static class CdcConnectorTemplateTestData
         );
     }
 
-    private static CdcSafeName DefaultSqlServerCaptureInstanceName(CdcSourceTableKind tableKind) =>
+    private static CdcSafeName DefaultSqlServerCaptureInstanceName(
+        CdcSourceTableKind tableKind,
+        CoreCdc.CdcBinding? binding
+    ) =>
         tableKind switch
         {
-            CdcSourceTableKind.DocumentCache => new CdcSafeName("dms_binding_document_cache_capture"),
-            CdcSourceTableKind.Document => new CdcSafeName("dms_binding_document_capture"),
-            CdcSourceTableKind.CdcHeartbeat => new CdcSafeName("dms_binding_cdc_heartbeat_capture"),
+            CdcSourceTableKind.DocumentCache => BuildProviderArtifactNames(
+                CdcProvider.SqlServer,
+                binding
+            ).SqlServer!.CaptureInstanceNames[tableKind],
+            CdcSourceTableKind.Document => BuildProviderArtifactNames(
+                CdcProvider.SqlServer,
+                binding
+            ).SqlServer!.CaptureInstanceNames[tableKind],
+            CdcSourceTableKind.CdcHeartbeat => BuildProviderArtifactNames(
+                CdcProvider.SqlServer,
+                binding
+            ).SqlServer!.CaptureInstanceNames[tableKind],
             _ => throw new ArgumentOutOfRangeException(
                 nameof(tableKind),
                 tableKind,
@@ -389,23 +505,35 @@ internal static class CdcConnectorTemplateTestData
     ) => provider == CdcProvider.SqlServer ? BuildSqlServerProviderHistoryObservations() : [];
 
     public static IReadOnlyList<CdcProviderHistoryObservation> BuildSqlServerProviderHistoryObservations() =>
+        BuildSqlServerProviderHistoryObservations(binding: null);
+
+    public static IReadOnlyList<CdcProviderHistoryObservation> BuildSqlServerProviderHistoryObservations(
+        CoreCdc.CdcBinding? binding
+    )
+    {
+        CdcSqlServerProviderArtifactNames sqlServerNames = BuildProviderArtifactNames(
+            CdcProvider.SqlServer,
+            binding
+        ).SqlServer!;
+        CdcSafeName documentCacheName = sqlServerNames.CaptureInstanceNames[CdcSourceTableKind.DocumentCache];
+        CdcSafeName documentName = sqlServerNames.CaptureInstanceNames[CdcSourceTableKind.Document];
+
+        return
         [
             new(
                 CdcProviderArtifactKind.SqlServerCaptureInstance,
-                new CdcSafeName("dms_binding_document_cache_capture"),
-                new Dictionary<string, string>
-                {
-                    ["capture_instance"] = "dms_binding_document_cache_capture",
-                },
+                documentCacheName,
+                new Dictionary<string, string> { ["capture_instance"] = documentCacheName.Value },
                 CdcProviderRetryContinuityClassification.None
             ),
             new(
                 CdcProviderArtifactKind.SqlServerCaptureInstance,
-                new CdcSafeName("dms_binding_document_capture"),
-                new Dictionary<string, string> { ["capture_instance"] = "dms_binding_document_capture" },
+                documentName,
+                new Dictionary<string, string> { ["capture_instance"] = documentName.Value },
                 CdcProviderRetryContinuityClassification.None
             ),
         ];
+    }
 
     public static IReadOnlyList<CdcSourceTableInventory> BuildRequiredSourceTableInventory(
         CdcProvider provider
@@ -485,4 +613,28 @@ internal static class CdcConnectorTemplateTestData
             new(CdcSourceTableKind.DocumentCache, [new DbColumnName("DocumentUuid")]),
             new(CdcSourceTableKind.Document, [new DbColumnName("DocumentUuid")]),
         ];
+
+    public static CoreCdc.CdcProvider ToCoreProvider(CdcProvider provider) =>
+        provider switch
+        {
+            CdcProvider.Postgresql => CoreCdc.CdcProvider.Postgresql,
+            CdcProvider.SqlServer => CoreCdc.CdcProvider.SqlServer,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(provider),
+                provider,
+                "Unsupported CDC provider."
+            ),
+        };
+
+    public static CdcProvider ToDdlProvider(CoreCdc.CdcProvider provider) =>
+        provider switch
+        {
+            CoreCdc.CdcProvider.Postgresql => CdcProvider.Postgresql,
+            CoreCdc.CdcProvider.SqlServer => CdcProvider.SqlServer,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(provider),
+                provider,
+                "Unsupported CDC provider."
+            ),
+        };
 }

@@ -10,6 +10,7 @@ using FluentAssertions.Execution;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Backend.Cdc.Tests.Unit.CdcConnectorTemplateTestData;
+using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 
@@ -621,7 +622,7 @@ public class Given_CdcConnectorTemplateValidationTests
                 ["database.dbname"] = "edfi_datastore",
                 ["connector.class"] = "io.debezium.connector.postgresql.PostgresConnector",
                 ["heartbeat.interval.ms"] = "5000",
-                ["topic.prefix"] = "dms_binding_connector",
+                ["topic.prefix"] = "dms-binding-g7",
                 ["producer.override.acks"] = "all",
             },
             new Dictionary<string, string> { ["schema.history.internal.producer.security.protocol"] = "SSL" }
@@ -785,7 +786,7 @@ public class Given_CdcConnectorTemplateValidationTests
         using var _ = new AssertionScope();
         diagnostic.Provider.Should().Be(CdcProvider.SqlServer);
         diagnostic.SourcePhase.Should().Be(CdcConnectorTemplateSourcePhase.Preflight);
-        diagnostic.SafeArtifactOrObjectName.Should().Be(new CdcSafeName("dms_binding_connector"));
+        diagnostic.SafeArtifactOrObjectName.Should().Be(new CdcSafeName("dms-binding-g7"));
         diagnostic.Severity.Should().Be(CdcConnectorTemplateDiagnosticSeverity.Error);
     }
 
@@ -1857,23 +1858,24 @@ public class Given_CdcConnectorTemplateValidationTests
 
     private static CdcConnectorTemplateRequest RequestForProviderSetupDomainValidation(
         CdcProviderSetupResult providerSetupResult,
-        CdcBindingIdentity? binding = null,
+        CoreCdc.CdcBinding? binding = null,
         long providerSetupBindingGeneration = BindingGeneration,
         CdcProviderConnectionProperties? providerConnectionProperties = null
     )
     {
-        CdcBindingIdentity bindingIdentity = binding ?? BuildBinding(CdcProvider.Postgresql);
+        CoreCdc.CdcBinding templateBinding = binding ?? BuildBinding(CdcProvider.Postgresql);
+        CdcProvider bindingProvider = ToDdlProvider(templateBinding.Provider);
 
         return BuildRequest(
             providerSetupResult,
-            binding: bindingIdentity,
+            binding: templateBinding,
             providerSetupBindingGeneration: providerSetupBindingGeneration,
             providerConnectionProperties: providerConnectionProperties
                 ?? new CdcProviderConnectionProperties(
-                    bindingIdentity.Provider,
-                    BuildRequiredProviderConnectionProperties(bindingIdentity.Provider)
+                    bindingProvider,
+                    BuildRequiredProviderConnectionProperties(bindingProvider)
                 ),
-            deploymentPolicy: BuildDeploymentPolicy(bindingIdentity.Provider)
+            deploymentPolicy: BuildDeploymentPolicy(bindingProvider)
         );
     }
 

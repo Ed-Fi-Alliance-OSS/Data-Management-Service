@@ -6,6 +6,7 @@
 using System.Collections.ObjectModel;
 using System.Text.Json.Serialization;
 using EdFi.DataManagementService.Backend.Ddl;
+using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
 
 namespace EdFi.DataManagementService.Backend.Cdc;
 
@@ -230,7 +231,7 @@ public sealed record CdcConnectorTemplateArtifactOutputRequest
 public sealed record CdcConnectorTemplateRequest
 {
     public CdcConnectorTemplateRequest(
-        CdcBindingIdentity bindingIdentity,
+        CoreCdc.CdcBinding binding,
         CdcConnectorProviderSetupEvidence providerSetupEvidence,
         CdcConnectorTemplateDeploymentPolicy deploymentPolicy,
         CdcProviderConnectionProperties providerConnectionProperties,
@@ -238,13 +239,15 @@ public sealed record CdcConnectorTemplateRequest
         CdcConnectorTemplateArtifactOutputRequest? artifactOutput = null
     )
     {
-        ArgumentNullException.ThrowIfNull(bindingIdentity);
+        ArgumentNullException.ThrowIfNull(binding);
         ArgumentNullException.ThrowIfNull(providerSetupEvidence);
         ArgumentNullException.ThrowIfNull(deploymentPolicy);
         ArgumentNullException.ThrowIfNull(providerConnectionProperties);
         ArgumentNullException.ThrowIfNull(kafkaClientSecurityProperties);
 
-        BindingIdentity = bindingIdentity;
+        BindingArtifacts = CdcConnectorTemplateBindingArtifacts.From(binding, nameof(binding));
+        Binding = binding;
+        ArtifactInventory = BindingArtifacts.ArtifactInventory;
         ProviderSetupEvidence = providerSetupEvidence;
         DeploymentPolicy = deploymentPolicy;
         ProviderConnectionProperties = providerConnectionProperties;
@@ -252,7 +255,9 @@ public sealed record CdcConnectorTemplateRequest
         ArtifactOutput = artifactOutput;
     }
 
-    public CdcBindingIdentity BindingIdentity { get; }
+    public CoreCdc.CdcBinding Binding { get; }
+
+    public CoreCdc.CdcArtifactInventory ArtifactInventory { get; }
 
     public CdcConnectorProviderSetupEvidence ProviderSetupEvidence { get; }
 
@@ -264,19 +269,170 @@ public sealed record CdcConnectorTemplateRequest
 
     public CdcConnectorTemplateArtifactOutputRequest? ArtifactOutput { get; }
 
-    public CdcProvider Provider => BindingIdentity.Provider;
+    internal CdcConnectorTemplateBindingArtifacts BindingArtifacts { get; }
 
-    public CdcSafeName ConnectorName => BindingIdentity.ConnectorName;
+    public CdcProvider Provider => BindingArtifacts.Provider;
 
-    public string PublicTopicName => BindingIdentity.PublicTopicName;
+    public CdcSafeName ConnectorName => BindingArtifacts.ConnectorName;
 
-    public string ProgressTopicName => BindingIdentity.ProgressTopicName;
+    public string PublicTopicName => ArtifactInventory.TopicName;
 
-    public string? SchemaHistoryTopicName => BindingIdentity.SchemaHistoryTopicName;
+    public string ProgressTopicName => ArtifactInventory.ProgressTopicName;
 
-    public string PartitionerAlgorithm => BindingIdentity.PartitionerAlgorithm;
+    public string? SchemaHistoryTopicName => ArtifactInventory.SchemaHistoryTopicName;
 
-    public CdcProviderArtifactNames ProviderArtifactNames => BindingIdentity.ProviderArtifactNames;
+    public long BindingGeneration => Binding.Generation;
+
+    public int PartitionCount => Binding.PartitionCount;
+
+    public string PartitionerAlgorithm => Binding.PartitionerAlgorithm;
+
+    public CdcSourceFingerprint BoundPhysicalSourceFingerprint =>
+        BindingArtifacts.BoundPhysicalSourceFingerprint;
+
+    public CdcProviderArtifactNames ProviderArtifactNames => BindingArtifacts.ProviderArtifactNames;
+}
+
+internal sealed record CdcConnectorTemplateBindingArtifacts
+{
+    private CdcConnectorTemplateBindingArtifacts(
+        CdcProvider provider,
+        CdcSafeName connectorName,
+        CoreCdc.CdcArtifactInventory artifactInventory,
+        CdcSourceFingerprint boundPhysicalSourceFingerprint,
+        CdcProviderArtifactNames providerArtifactNames
+    )
+    {
+        Provider = provider;
+        ConnectorName = connectorName;
+        ArtifactInventory = artifactInventory;
+        BoundPhysicalSourceFingerprint = boundPhysicalSourceFingerprint;
+        ProviderArtifactNames = providerArtifactNames;
+    }
+
+    public CdcProvider Provider { get; }
+
+    public CdcSafeName ConnectorName { get; }
+
+    public CoreCdc.CdcArtifactInventory ArtifactInventory { get; }
+
+    public CdcSourceFingerprint BoundPhysicalSourceFingerprint { get; }
+
+    public CdcProviderArtifactNames ProviderArtifactNames { get; }
+
+    public static CdcConnectorTemplateBindingArtifacts From(CoreCdc.CdcBinding binding, string parameterName)
+    {
+        CoreCdc.CdcContractValidationResult bindingValidationResult = CoreCdc.CdcBindingValidator.Validate(
+            binding
+        );
+        if (!bindingValidationResult.Succeeded)
+        {
+            throw new ArgumentException(
+                BuildValidationMessage(bindingValidationResult.Diagnostics),
+                parameterName
+            );
+        }
+
+        CoreCdc.CdcArtifactNameResult artifactNameResult =
+            CoreCdc.CdcArtifactNameGenerator.RecoverFromBinding(binding);
+        if (!artifactNameResult.Succeeded || artifactNameResult.Inventory is null)
+        {
+            throw new ArgumentException(
+                BuildValidationMessage(artifactNameResult.Diagnostics),
+                parameterName
+            );
+        }
+
+        CdcProvider provider = ToDdlProvider(binding.Provider);
+        return new(
+            provider,
+            new CdcSafeName(artifactNameResult.Inventory.ConnectorName),
+            artifactNameResult.Inventory,
+            CdcConnectorTemplateContractValidation.ValidateSourceFingerprint(
+                new CdcSourceFingerprint(
+                    CdcSourceFingerprintMetadata.Version,
+                    binding.PhysicalSourceFingerprint
+                ),
+                $"{parameterName}.{nameof(binding.PhysicalSourceFingerprint)}"
+            ),
+            ProviderArtifactNamesFrom(provider, artifactNameResult.Inventory)
+        );
+    }
+
+    private static string BuildValidationMessage(IReadOnlyList<CoreCdc.CdcDiagnostic> diagnostics)
+    {
+        string details = string.Join(
+            "; ",
+            diagnostics.Select(diagnostic => $"{diagnostic.Path}: {diagnostic.Message}")
+        );
+
+        return string.IsNullOrWhiteSpace(details)
+            ? "CDC connector template binding must be a valid Core CDC binding."
+            : $"CDC connector template binding must be a valid Core CDC binding. {details}";
+    }
+
+    private static CdcProvider ToDdlProvider(CoreCdc.CdcProvider provider) =>
+        provider switch
+        {
+            CoreCdc.CdcProvider.Postgresql => CdcProvider.Postgresql,
+            CoreCdc.CdcProvider.SqlServer => CdcProvider.SqlServer,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(provider),
+                provider,
+                "Unsupported CDC provider."
+            ),
+        };
+
+    private static CdcProviderArtifactNames ProviderArtifactNamesFrom(
+        CdcProvider provider,
+        CoreCdc.CdcArtifactInventory inventory
+    ) =>
+        provider switch
+        {
+            CdcProvider.Postgresql => CdcProviderArtifactNames.ForPostgresql(
+                RequiredSafeName(
+                    inventory.PostgresqlPublicationName,
+                    nameof(inventory.PostgresqlPublicationName)
+                ),
+                RequiredSafeName(
+                    inventory.PostgresqlLogicalSlotName,
+                    nameof(inventory.PostgresqlLogicalSlotName)
+                )
+            ),
+            CdcProvider.SqlServer => CdcProviderArtifactNames.ForSqlServer(
+                RequiredSafeName(
+                    inventory.SqlServerCdcGatingRoleName,
+                    nameof(inventory.SqlServerCdcGatingRoleName)
+                ),
+                new Dictionary<CdcSourceTableKind, CdcSafeName>
+                {
+                    [CdcSourceTableKind.Document] = RequiredSafeName(
+                        inventory.SqlServerCaptureInstanceDocumentName,
+                        nameof(inventory.SqlServerCaptureInstanceDocumentName)
+                    ),
+                    [CdcSourceTableKind.DocumentCache] = RequiredSafeName(
+                        inventory.SqlServerCaptureInstanceDocumentCacheName,
+                        nameof(inventory.SqlServerCaptureInstanceDocumentCacheName)
+                    ),
+                    [CdcSourceTableKind.CdcHeartbeat] = RequiredSafeName(
+                        inventory.SqlServerCaptureInstanceCdcHeartbeatName,
+                        nameof(inventory.SqlServerCaptureInstanceCdcHeartbeatName)
+                    ),
+                }
+            ),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(provider),
+                provider,
+                "Unsupported CDC provider."
+            ),
+        };
+
+    private static CdcSafeName RequiredSafeName(string? value, string fieldName) =>
+        value is null
+            ? throw new InvalidOperationException(
+                $"Core CDC artifact inventory did not include required {fieldName}."
+            )
+            : new CdcSafeName(value);
 }
 
 public sealed record CdcConnectorTemplateSourcePartitionEvidence
@@ -362,7 +518,7 @@ public sealed record CdcConnectorTemplateArtifactPayload
 public sealed record CdcConnectorTemplateResult
 {
     public CdcConnectorTemplateResult(
-        CdcBindingIdentity bindingIdentity,
+        CoreCdc.CdcBinding binding,
         CdcConnectorTemplateOutcome outcome,
         IReadOnlyDictionary<string, string> config,
         CdcKafkaConnectRegistrationPayload? registrationPayload,
@@ -371,26 +527,36 @@ public sealed record CdcConnectorTemplateResult
         IReadOnlyList<CdcConnectorTemplateDiagnostic> diagnostics
     )
     {
-        ArgumentNullException.ThrowIfNull(bindingIdentity);
+        ArgumentNullException.ThrowIfNull(binding);
         ArgumentNullException.ThrowIfNull(diagnostics);
 
+        CdcConnectorTemplateBindingArtifacts bindingArtifacts = CdcConnectorTemplateBindingArtifacts.From(
+            binding,
+            nameof(binding)
+        );
         Config = CdcConnectorTemplateContractValidation.NormalizeConnectorStringProperties(
             config,
             nameof(config)
         );
-        ValidateRegistrationPayload(bindingIdentity, Config, registrationPayload);
+        ValidateRegistrationPayload(bindingArtifacts, Config, registrationPayload);
 
-        Provider = bindingIdentity.Provider;
-        ConnectorName = bindingIdentity.ConnectorName;
-        PublicTopicName = bindingIdentity.PublicTopicName;
-        ProgressTopicName = bindingIdentity.ProgressTopicName;
-        SchemaHistoryTopicName = bindingIdentity.SchemaHistoryTopicName;
+        Binding = binding;
+        ArtifactInventory = bindingArtifacts.ArtifactInventory;
+        Provider = bindingArtifacts.Provider;
+        ConnectorName = bindingArtifacts.ConnectorName;
+        PublicTopicName = bindingArtifacts.ArtifactInventory.TopicName;
+        ProgressTopicName = bindingArtifacts.ArtifactInventory.ProgressTopicName;
+        SchemaHistoryTopicName = bindingArtifacts.ArtifactInventory.SchemaHistoryTopicName;
         Outcome = outcome;
         RegistrationPayload = registrationPayload;
         RedactedArtifactPayload = redactedArtifactPayload;
         ConfigSha256 = ValidateConfigHash(configSha256, nameof(configSha256));
         Diagnostics = diagnostics.ToArray();
     }
+
+    public CoreCdc.CdcBinding Binding { get; }
+
+    public CoreCdc.CdcArtifactInventory ArtifactInventory { get; }
 
     public CdcProvider Provider { get; }
 
@@ -415,7 +581,7 @@ public sealed record CdcConnectorTemplateResult
     public IReadOnlyList<CdcConnectorTemplateDiagnostic> Diagnostics { get; }
 
     private static void ValidateRegistrationPayload(
-        CdcBindingIdentity bindingIdentity,
+        CdcConnectorTemplateBindingArtifacts bindingArtifacts,
         IReadOnlyDictionary<string, string> config,
         CdcKafkaConnectRegistrationPayload? registrationPayload
     )
@@ -428,7 +594,7 @@ public sealed record CdcConnectorTemplateResult
         if (
             !string.Equals(
                 registrationPayload.Name,
-                bindingIdentity.ConnectorName.Value,
+                bindingArtifacts.ConnectorName.Value,
                 StringComparison.Ordinal
             )
         )

@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
+using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
 
 namespace EdFi.DataManagementService.Backend.Cdc;
 
@@ -53,7 +54,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
         if (!expectedTemplateRequestValidationResult.IsValid)
         {
             return BuildResult(
-                templateRequest.BindingIdentity,
+                templateRequest.Binding,
                 CdcConnectorTemplateOutcome.ValidationFailed,
                 new SortedDictionary<string, string>(StringComparer.Ordinal),
                 registrationPayload: null,
@@ -70,7 +71,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
         if (HasErrors(diagnostics))
         {
             return BuildResult(
-                templateRequest.BindingIdentity,
+                templateRequest.Binding,
                 CdcConnectorTemplateOutcome.ValidationFailed,
                 new SortedDictionary<string, string>(StringComparer.Ordinal),
                 registrationPayload: null,
@@ -98,7 +99,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
         }
 
         return BuildResult(
-            templateRequest.BindingIdentity,
+            templateRequest.Binding,
             CdcConnectorTemplateOutcome.ValidationFailed,
             expectedResult.Config,
             expectedResult.RegistrationPayload,
@@ -112,7 +113,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
         CdcConnectorProviderSetupEvidence providerSetupEvidence
     ) =>
         new(
-            templateRequest.BindingIdentity,
+            templateRequest.Binding,
             providerSetupEvidence,
             templateRequest.DeploymentPolicy,
             templateRequest.ProviderConnectionProperties,
@@ -883,7 +884,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
         );
 
     private static CdcConnectorTemplateResult BuildResult(
-        CdcBindingIdentity bindingIdentity,
+        CoreCdc.CdcBinding binding,
         CdcConnectorTemplateOutcome outcome,
         IReadOnlyDictionary<string, string> config,
         CdcKafkaConnectRegistrationPayload? registrationPayload,
@@ -891,7 +892,7 @@ internal sealed class CdcConnectorTemplateEffectiveConfigValidator(
         IEnumerable<CdcConnectorTemplateDiagnostic> diagnostics
     ) =>
         new(
-            bindingIdentity,
+            binding,
             outcome,
             config,
             registrationPayload,

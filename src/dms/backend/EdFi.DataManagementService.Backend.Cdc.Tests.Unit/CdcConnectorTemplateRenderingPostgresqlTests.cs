@@ -31,8 +31,8 @@ public class Given_CdcConnectorTemplatePostgresqlRendering
             .Contain("connector.class", "io.debezium.connector.postgresql.PostgresConnector");
         result.Config.Should().Contain("plugin.name", "pgoutput");
         result.Config.Should().Contain("publication.autocreate.mode", "disabled");
-        result.Config.Should().Contain("publication.name", "dms_binding_publication");
-        result.Config.Should().Contain("slot.name", "dms_binding_slot");
+        result.Config.Should().Contain("publication.name", "edfi_dms_dms_binding_g7_de1bb4313908_pub");
+        result.Config.Should().Contain("slot.name", "edfi_dms_dms_binding_g7_de1bb4313908_slot");
         result
             .Config.Should()
             .Contain("table.include.list", @"dms\.DocumentCache,dms\.Document,dms\.CdcHeartbeat");

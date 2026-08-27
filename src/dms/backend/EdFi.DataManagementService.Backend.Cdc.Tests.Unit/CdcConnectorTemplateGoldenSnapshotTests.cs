@@ -48,7 +48,7 @@ public class Given_CdcConnectorTemplateGoldenSnapshots
                 heartbeat.interval.ms=5000
                 key.converter=org.apache.kafka.connect.storage.StringConverter
                 message.key.columns=dms\.DocumentCache:DocumentUuid;dms\.Document:DocumentUuid
-                name=dms_binding_connector
+                name=dms-binding-g7
                 plugin.name=pgoutput
                 producer.override.acks=all
                 producer.override.buffer.memory=67108864
@@ -61,8 +61,8 @@ public class Given_CdcConnectorTemplateGoldenSnapshots
                 producer.override.sasl.jaas.config=${env:CDC_KAFKA_JAAS_CONFIG}
                 producer.override.security.protocol=SASL_SSL
                 publication.autocreate.mode=disabled
-                publication.name=dms_binding_publication
-                slot.name=dms_binding_slot
+                publication.name=edfi_dms_dms_binding_g7_de1bb4313908_pub
+                slot.name=edfi_dms_dms_binding_g7_de1bb4313908_slot
                 snapshot.mode=initial
                 statistics.metrics.enabled=true
                 table.include.list=dms\.DocumentCache,dms\.Document,dms\.CdcHeartbeat
@@ -71,11 +71,11 @@ public class Given_CdcConnectorTemplateGoldenSnapshots
                 topic.delimiter=.
                 topic.heartbeat.prefix=__debezium-heartbeat
                 topic.naming.strategy=io.debezium.schema.SchemaTopicNamingStrategy
-                topic.prefix=dms_binding_connector
+                topic.prefix=dms-binding-g7
                 transforms=documentState
-                transforms.documentState.progress.topic=edfi.documents.cdc-progress
+                transforms.documentState.progress.topic=edfi.documents.instance.binding-g7.documents.v1.cdc-progress
                 transforms.documentState.provider=postgresql
-                transforms.documentState.target.topic=edfi.documents
+                transforms.documentState.target.topic=edfi.documents.instance.binding-g7.documents.v1
                 transforms.documentState.type=org.edfi.kafka.connect.transforms.DocumentState
                 unavailable.value.placeholder=__debezium_unavailable_value
                 value.converter=org.edfi.kafka.connect.converters.DocumentStateJsonConverter
@@ -136,7 +136,7 @@ public class Given_CdcConnectorTemplateGoldenSnapshots
                 include.schema.changes=false
                 key.converter=org.apache.kafka.connect.storage.StringConverter
                 message.key.columns=dms\.DocumentCache:DocumentUuid;dms\.Document:DocumentUuid
-                name=dms_binding_connector
+                name=dms-binding-g7
                 poll.interval.ms=2000
                 producer.override.acks=all
                 producer.override.buffer.memory=67108864
@@ -151,7 +151,7 @@ public class Given_CdcConnectorTemplateGoldenSnapshots
                 schema.history.internal.consumer.sasl.jaas.config=${env:CDC_KAFKA_JAAS_CONFIG}
                 schema.history.internal.consumer.security.protocol=SASL_SSL
                 schema.history.internal.kafka.bootstrap.servers=broker-1:9092,broker-2:9092
-                schema.history.internal.kafka.topic=edfi.documents.schema-history
+                schema.history.internal.kafka.topic=edfi.documents.instance.binding-g7.documents.v1.schema-history
                 schema.history.internal.producer.acks=all
                 schema.history.internal.producer.enable.idempotence=true
                 schema.history.internal.producer.max.in.flight.requests.per.connection=1
@@ -168,11 +168,11 @@ public class Given_CdcConnectorTemplateGoldenSnapshots
                 topic.delimiter=.
                 topic.heartbeat.prefix=__debezium-heartbeat
                 topic.naming.strategy=io.debezium.schema.SchemaTopicNamingStrategy
-                topic.prefix=dms_binding_connector
+                topic.prefix=dms-binding-g7
                 transforms=documentState
-                transforms.documentState.progress.topic=edfi.documents.cdc-progress
+                transforms.documentState.progress.topic=edfi.documents.instance.binding-g7.documents.v1.cdc-progress
                 transforms.documentState.provider=sqlserver
-                transforms.documentState.target.topic=edfi.documents
+                transforms.documentState.target.topic=edfi.documents.instance.binding-g7.documents.v1
                 transforms.documentState.type=org.edfi.kafka.connect.transforms.DocumentState
                 unavailable.value.placeholder=__debezium_unavailable_value
                 value.converter=org.edfi.kafka.connect.converters.DocumentStateJsonConverter

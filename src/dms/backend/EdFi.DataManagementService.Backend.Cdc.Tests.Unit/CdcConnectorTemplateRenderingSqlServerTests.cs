@@ -48,7 +48,9 @@ public class Given_CdcConnectorTemplateSqlServerRendering
 
         using var _ = new AssertionScope();
         result.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
-        result.SchemaHistoryTopicName.Should().Be("edfi.documents.schema-history");
+        result
+            .SchemaHistoryTopicName.Should()
+            .Be("edfi.documents.instance.binding-g7.documents.v1.schema-history");
         result
             .Config.Should()
             .Contain("connector.class", "io.debezium.connector.sqlserver.SqlServerConnector");
@@ -74,7 +76,10 @@ public class Given_CdcConnectorTemplateSqlServerRendering
             .Contain("schema.history.internal.kafka.bootstrap.servers", "broker-1:9092,broker-2:9092");
         result
             .Config.Should()
-            .Contain("schema.history.internal.kafka.topic", "edfi.documents.schema-history");
+            .Contain(
+                "schema.history.internal.kafka.topic",
+                "edfi.documents.instance.binding-g7.documents.v1.schema-history"
+            );
         result.Config.Should().Contain("schema.history.internal.producer.enable.idempotence", "true");
         result.Config.Should().Contain("schema.history.internal.producer.acks", "all");
         result.Config.Should().Contain("schema.history.internal.producer.retries", "2147483647");

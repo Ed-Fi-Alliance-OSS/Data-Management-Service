@@ -9,6 +9,7 @@ using FluentAssertions;
 using FluentAssertions.Execution;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
+using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 
@@ -18,10 +19,13 @@ public sealed class Given_PostgresqlProviderSetupToConnectorTemplateHandoff
 {
     private const long BindingGeneration = 11;
     private const string SourceIdentity = "f81d4fae-7dec-11d0-a765-00a0c91e6bf6";
-    private const string ConnectorName = "dms_handoff_connector";
-    private const string PublicTopicName = "edfi.handoff.documents";
-    private const string PublicationName = "dms_handoff_publication";
-    private const string ReplicationSlotName = "dms_handoff_slot";
+    private const string DeploymentKey = "dms";
+    private const string InstanceKey = "handoff";
+    private const string TopicPrefix = "edfi.handoff.documents";
+    private static readonly CoreCdc.CdcArtifactInventory BindingArtifacts = BuildCoreArtifactInventory();
+    private static readonly string ConnectorName = BindingArtifacts.ConnectorName;
+    private static readonly string PublicationName = BindingArtifacts.PostgresqlPublicationName!;
+    private static readonly string ReplicationSlotName = BindingArtifacts.PostgresqlLogicalSlotName!;
 
     [Test]
     public async Task It_renders_and_validates_from_the_real_provider_setup_result()
@@ -141,14 +145,20 @@ public sealed class Given_PostgresqlProviderSetupToConnectorTemplateHandoff
         CdcProviderSetupResult providerSetupResult
     )
     {
-        var binding = new CdcBindingIdentity(
-            CdcProvider.Postgresql,
-            new CdcSafeName(ConnectorName),
-            PublicTopicName,
+        var binding = new CoreCdc.CdcBinding(
+            CoreCdc.CdcJsonContract.CurrentContractVersion,
+            DeploymentKey,
+            CoreCdc.CdcTargetValidator.DefaultBindingTenantKey,
+            "1",
+            InstanceKey,
             BindingGeneration,
-            CdcBindingIdentity.KafkaMurmur2V1PartitionerAlgorithm,
-            providerSetupRequest.ArtifactNames,
-            providerSetupRequest.BoundPhysicalSourceFingerprint
+            CoreCdc.CdcProvider.Postgresql,
+            providerSetupRequest.BoundPhysicalSourceFingerprint.Value,
+            BindingArtifacts.ConnectorName,
+            BindingArtifacts.TopicName,
+            PartitionCount: 1,
+            CoreCdc.CdcTargetValidator.KafkaMurmur2V1PartitionerAlgorithm,
+            CoreCdc.CdcJsonContract.CurrentContractVersion
         );
 
         return new CdcConnectorTemplateRequest(
@@ -172,6 +182,21 @@ public sealed class Given_PostgresqlProviderSetupToConnectorTemplateHandoff
             ),
             CdcKafkaClientSecurityProperties.Empty
         );
+    }
+
+    private static CoreCdc.CdcArtifactInventory BuildCoreArtifactInventory()
+    {
+        CoreCdc.CdcArtifactNameResult result = CoreCdc.CdcArtifactNameGenerator.Render(
+            new CoreCdc.CdcArtifactNameInput(
+                DeploymentKey,
+                TopicPrefix,
+                InstanceKey,
+                BindingGeneration,
+                CoreCdc.CdcProvider.Postgresql
+            )
+        );
+
+        return result.Inventory ?? throw new InvalidOperationException("Invalid handoff CDC artifact input.");
     }
 
     private static IReadOnlyList<CdcDmsManagedTableInventory> BuildDmsManagedTableInventory(

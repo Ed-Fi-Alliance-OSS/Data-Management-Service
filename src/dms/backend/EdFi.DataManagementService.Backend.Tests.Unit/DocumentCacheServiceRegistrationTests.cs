@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -142,6 +143,12 @@ public class Given_DocumentCacheServiceRegistration
             IDocumentCacheProviderCommandTimeoutClassifier,
             PostgresqlDocumentCacheProviderCommandTimeoutClassifier
         >(services);
+        services
+            .Should()
+            .NotContain(descriptor => descriptor.ServiceType == typeof(ICdcProviderSourcePositionAdapter));
+        services
+            .Should()
+            .NotContain(descriptor => descriptor.ServiceType == typeof(PostgresqlCdcSourcePositionAdapter));
         AssertSingleton<IServedEtagComposer, ServedEtagComposer>(services);
         AssertSingletonFactory<IDocumentCacheAdministrativePrimitives>(services);
         AssertSingleton<
@@ -173,6 +180,12 @@ public class Given_DocumentCacheServiceRegistration
             IDocumentCacheProviderCommandTimeoutClassifier,
             MssqlDocumentCacheProviderCommandTimeoutClassifier
         >(services);
+        services
+            .Should()
+            .NotContain(descriptor => descriptor.ServiceType == typeof(ICdcProviderSourcePositionAdapter));
+        services
+            .Should()
+            .NotContain(descriptor => descriptor.ServiceType == typeof(MssqlCdcSourcePositionAdapter));
         AssertSingleton<IServedEtagComposer, ServedEtagComposer>(services);
         AssertSingletonFactory<IDocumentCacheAdministrativePrimitives>(services);
         AssertSingleton<
@@ -211,6 +224,74 @@ public class Given_DocumentCacheServiceRegistration
                         .Be(typeof(MssqlDocumentCacheStatusCurrentSourceObserver));
                 }
             );
+    }
+
+    [Test]
+    public async Task It_resolves_the_postgresql_cdc_control_plane_only_when_opted_in()
+    {
+        using TempCdcServiceRegistrationRoot root = new();
+        IServiceCollection services = new ServiceCollection();
+
+        services.AddLogging();
+        services.Configure<CdcBindingStateStoreOptions>(options => options.RootPath = root.Path);
+        services.AddPostgresqlDmsCdcControlPlane();
+
+        ServiceDescriptor providerDescriptor = services
+            .Should()
+            .ContainSingle(descriptor => descriptor.ServiceType == typeof(ICdcProviderSourcePositionAdapter))
+            .Subject;
+        providerDescriptor.Lifetime.Should().Be(ServiceLifetime.Singleton);
+        providerDescriptor.ImplementationType.Should().Be(typeof(PostgresqlCdcSourcePositionAdapter));
+
+        using ServiceProvider serviceProvider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
+        );
+
+        serviceProvider
+            .GetRequiredService<ICdcProviderSourcePositionAdapter>()
+            .Provider.Should()
+            .Be(CdcProvider.Postgresql);
+        CdcBindingLifecycleResult result = await serviceProvider
+            .GetRequiredService<ICdcBindingLifecycleService>()
+            .ReadBindingAsync(SampleBindingIdentity(), CancellationToken.None);
+
+        result.Status.Should().Be(CdcControlPlaneOperationStatus.BindingMissing);
+        result.State.Should().NotBeNull();
+        result.State!.State.Should().Be(CdcBindingState.BindingMissing);
+    }
+
+    [Test]
+    public async Task It_resolves_the_mssql_cdc_control_plane_only_when_opted_in()
+    {
+        using TempCdcServiceRegistrationRoot root = new();
+        IServiceCollection services = new ServiceCollection();
+
+        services.AddLogging();
+        services.Configure<CdcBindingStateStoreOptions>(options => options.RootPath = root.Path);
+        services.AddMssqlDmsCdcControlPlane();
+
+        ServiceDescriptor providerDescriptor = services
+            .Should()
+            .ContainSingle(descriptor => descriptor.ServiceType == typeof(ICdcProviderSourcePositionAdapter))
+            .Subject;
+        providerDescriptor.Lifetime.Should().Be(ServiceLifetime.Singleton);
+        providerDescriptor.ImplementationType.Should().Be(typeof(MssqlCdcSourcePositionAdapter));
+
+        using ServiceProvider serviceProvider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
+        );
+
+        serviceProvider
+            .GetRequiredService<ICdcProviderSourcePositionAdapter>()
+            .Provider.Should()
+            .Be(CdcProvider.SqlServer);
+        CdcBindingLifecycleResult result = await serviceProvider
+            .GetRequiredService<ICdcBindingLifecycleService>()
+            .ReadBindingAsync(SampleBindingIdentity(), CancellationToken.None);
+
+        result.Status.Should().Be(CdcControlPlaneOperationStatus.BindingMissing);
+        result.State.Should().NotBeNull();
+        result.State!.State.Should().Be(CdcBindingState.BindingMissing);
     }
 
     private static void AddSharedReferenceResolverForTest(IServiceCollection services)
@@ -279,6 +360,9 @@ public class Given_DocumentCacheServiceRegistration
             .Subject;
     }
 
+    private static CdcBindingIdentity SampleBindingIdentity() =>
+        new("dms-local", "default", "1", "data-store-1", 1);
+
     private sealed class CustomDocumentCacheDownstreamPublicationHistoryProvider
         : IDocumentCacheDownstreamPublicationHistoryProvider
     {
@@ -287,5 +371,22 @@ public class Given_DocumentCacheServiceRegistration
             DocumentCachePhysicalSourceFingerprint? currentPhysicalSourceFingerprint,
             CancellationToken cancellationToken = default
         ) => throw new NotSupportedException();
+    }
+
+    private sealed class TempCdcServiceRegistrationRoot : IDisposable
+    {
+        public string Path { get; } =
+            System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(),
+                $"cdc-service-registration-{Guid.NewGuid():N}"
+            );
+
+        public void Dispose()
+        {
+            if (Directory.Exists(Path))
+            {
+                Directory.Delete(Path, true);
+            }
+        }
     }
 }

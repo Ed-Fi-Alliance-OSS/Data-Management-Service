@@ -360,18 +360,17 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
         List<CdcConnectorTemplateDiagnostic> diagnostics
     )
     {
-        CdcBindingIdentity bindingIdentity = request.BindingIdentity;
         CdcConnectorProviderSetupEvidence providerSetupEvidence = request.ProviderSetupEvidence;
         CdcProviderSetupResult providerSetupResult = providerSetupEvidence.Result;
 
-        if (providerSetupResult.Provider != bindingIdentity.Provider)
+        if (providerSetupResult.Provider != request.Provider)
         {
             diagnostics.Add(
                 BuildDiagnostic(
                     CdcConnectorTemplateDiagnosticCodes.BindingIdentityMismatch,
                     CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure,
                     "providerSetup.provider",
-                    bindingIdentity.Provider.ToString(),
+                    request.Provider.ToString(),
                     providerSetupResult.Provider.ToString(),
                     request,
                     sourcePhase,
@@ -380,14 +379,14 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
             );
         }
 
-        if (request.ProviderConnectionProperties.Provider != bindingIdentity.Provider)
+        if (request.ProviderConnectionProperties.Provider != request.Provider)
         {
             diagnostics.Add(
                 BuildDiagnostic(
                     CdcConnectorTemplateDiagnosticCodes.BindingIdentityMismatch,
                     CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure,
                     "providerConnection.provider",
-                    bindingIdentity.Provider.ToString(),
+                    request.Provider.ToString(),
                     request.ProviderConnectionProperties.Provider.ToString(),
                     request,
                     sourcePhase,
@@ -415,14 +414,14 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
             );
         }
 
-        if (providerSetupEvidence.BindingGeneration != bindingIdentity.BindingGeneration)
+        if (providerSetupEvidence.BindingGeneration != request.BindingGeneration)
         {
             diagnostics.Add(
                 BuildDiagnostic(
                     CdcConnectorTemplateDiagnosticCodes.BindingIdentityMismatch,
                     CdcConnectorTemplateDiagnosticCategory.BindingIdentityFailure,
                     "providerSetup.bindingGeneration",
-                    bindingIdentity.BindingGeneration.ToString(),
+                    request.BindingGeneration.ToString(),
                     providerSetupEvidence.BindingGeneration.ToString(),
                     request,
                     sourcePhase,
@@ -432,9 +431,7 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
         }
 
         if (
-            !providerSetupResult.BoundPhysicalSourceFingerprint.Equals(
-                bindingIdentity.BoundPhysicalSourceFingerprint
-            )
+            !providerSetupResult.BoundPhysicalSourceFingerprint.Equals(request.BoundPhysicalSourceFingerprint)
         )
         {
             diagnostics.Add(
@@ -453,9 +450,7 @@ internal sealed class CdcConnectorTemplateInputValidator : ICdcConnectorTemplate
 
         if (
             providerSetupResult.ObservedSourceFingerprint is null
-            || !providerSetupResult.ObservedSourceFingerprint.Equals(
-                bindingIdentity.BoundPhysicalSourceFingerprint
-            )
+            || !providerSetupResult.ObservedSourceFingerprint.Equals(request.BoundPhysicalSourceFingerprint)
         )
         {
             diagnostics.Add(

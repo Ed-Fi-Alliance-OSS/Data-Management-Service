@@ -2472,7 +2472,7 @@ public class Given_CdcConnectorTemplateLiveValidationTests
             .Where(value => value is not null)
             .Should()
             .NotContain(value =>
-                value!.Contains("dms_binding_connector", StringComparison.Ordinal)
+                value!.Contains("dms-binding-g7", StringComparison.Ordinal)
                 || value.Contains("different_connector", StringComparison.Ordinal)
                 || value.Contains("other_datastore", StringComparison.Ordinal)
             );

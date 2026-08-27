@@ -244,6 +244,19 @@ public class Given_Mssql_Reference_Resolver_Service_Collection_Extensions
     }
 
     [Test]
+    public void It_does_not_register_the_mssql_Cdc_source_position_adapter_by_default()
+    {
+        var services = new ServiceCollection();
+
+        services.AddMssqlReferenceResolver();
+
+        services
+            .Where(descriptor => descriptor.ServiceType == typeof(MssqlCdcSourcePositionAdapter))
+            .Should()
+            .BeEmpty();
+    }
+
+    [Test]
     public void ServiceCollection_replaces_existing_relational_token_info_lookup_with_mssql_lookup()
     {
         var services = new ServiceCollection();

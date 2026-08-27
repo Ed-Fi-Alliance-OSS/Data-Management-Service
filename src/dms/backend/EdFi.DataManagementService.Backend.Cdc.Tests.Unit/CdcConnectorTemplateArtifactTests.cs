@@ -57,7 +57,7 @@ public class Given_CdcConnectorTemplateArtifactTests
         result.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
         payload
             .FileName.Should()
-            .Be(new CdcSafeName("cdc-connector-template.postgresql.dms_binding_connector.manifest.json"));
+            .Be(new CdcSafeName("cdc-connector-template.postgresql.dms-binding-g7.manifest.json"));
         root.EnumerateObject()
             .Select(property => property.Name)
             .Should()
@@ -76,9 +76,9 @@ public class Given_CdcConnectorTemplateArtifactTests
         root.GetProperty("version").GetInt32().Should().Be(1);
         root.GetProperty("generatedAt").GetString().Should().Be("2026-01-02T03:04:05+00:00");
         root.GetProperty("provider").GetString().Should().Be("postgresql");
-        root.GetProperty("connectorName").GetString().Should().Be("dms_binding_connector");
-        root.GetProperty("publicTopicName").GetString().Should().Be("edfi.documents");
-        root.GetProperty("progressTopicName").GetString().Should().Be("edfi.documents.cdc-progress");
+        root.GetProperty("connectorName").GetString().Should().Be(request.ConnectorName.Value);
+        root.GetProperty("publicTopicName").GetString().Should().Be(request.PublicTopicName);
+        root.GetProperty("progressTopicName").GetString().Should().Be(request.ProgressTopicName);
         root.GetProperty("schemaHistoryTopicName").ValueKind.Should().Be(JsonValueKind.Null);
         root.GetProperty("configSha256").GetString().Should().Be(result.ConfigSha256);
         repeatedResult.RedactedArtifactPayload!.Json.Should().Be(payload.Json);
@@ -92,7 +92,11 @@ public class Given_CdcConnectorTemplateArtifactTests
             .GetString()
             .Should()
             .Be(result.Config["connector.class"]);
-        redactedConfig.GetProperty("publication.name").GetString().Should().Be("dms_binding_publication");
+        redactedConfig
+            .GetProperty("publication.name")
+            .GetString()
+            .Should()
+            .Be("edfi_dms_dms_binding_g7_de1bb4313908_pub");
         redactedConfig.GetProperty("database.hostname").GetString().Should().Be("[redacted]");
         redactedConfig.GetProperty("database.dbname").GetString().Should().Be("[redacted]");
         redactedConfig.GetProperty("database.user").GetString().Should().Be("[redacted]");
@@ -163,11 +167,11 @@ public class Given_CdcConnectorTemplateArtifactTests
         result.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
         payload
             .FileName.Should()
-            .Be(new CdcSafeName("cdc-connector-template.sqlserver.dms_binding_connector.manifest.json"));
+            .Be(new CdcSafeName("cdc-connector-template.sqlserver.dms-binding-g7.manifest.json"));
         File.Exists(manifestPath).Should().BeTrue();
         File.ReadAllText(manifestPath).Should().Be(payload.Json);
         root.GetProperty("provider").GetString().Should().Be("sqlserver");
-        root.GetProperty("schemaHistoryTopicName").GetString().Should().Be("edfi.documents.schema-history");
+        root.GetProperty("schemaHistoryTopicName").GetString().Should().Be(result.SchemaHistoryTopicName);
         redactedConfig.GetProperty("driver.trustServerCertificate").GetString().Should().Be("[redacted]");
         redactedConfig.GetProperty("driver.trustStorePassword").GetString().Should().Be("[redacted]");
         redactedConfig
@@ -221,7 +225,7 @@ public class Given_CdcConnectorTemplateArtifactTests
         result.RedactedArtifactPayload.Should().NotBeNull();
         result
             .RedactedArtifactPayload!.FileName.Should()
-            .Be(new CdcSafeName("cdc-connector-template.postgresql.dms_binding_connector.manifest.json"));
+            .Be(new CdcSafeName("cdc-connector-template.postgresql.dms-binding-g7.manifest.json"));
         result.RedactedArtifactPayload.Json.Should().Contain("\"redactedConfig\"");
         diagnostic.Code.Should().Be(CdcConnectorTemplateDiagnosticCodes.ArtifactOutputFailed);
         diagnostic.Category.Should().Be(CdcConnectorTemplateDiagnosticCategory.ArtifactOutputFailure);
@@ -249,24 +253,19 @@ public class Given_CdcConnectorTemplateArtifactTests
         );
 
         CdcConnectorTemplateResult first = Render(
-            BuildRequest(
-                CdcProvider.Postgresql,
-                artifactOutput: artifactOutput,
-                connectorName: "dms_binding_connector"
-            )
+            BuildRequest(CdcProvider.Postgresql, artifactOutput: artifactOutput, instanceKey: "binding")
         );
         CdcConnectorTemplateResult second = Render(
             BuildRequest(
                 CdcProvider.Postgresql,
                 artifactOutput: artifactOutput,
-                connectorName: "dms_second_binding_connector"
+                instanceKey: "second-binding"
             )
         );
 
-        string firstManifestFileName =
-            "cdc-connector-template.postgresql.dms_binding_connector.manifest.json";
+        string firstManifestFileName = "cdc-connector-template.postgresql.dms-binding-g7.manifest.json";
         string secondManifestFileName =
-            "cdc-connector-template.postgresql.dms_second_binding_connector.manifest.json";
+            "cdc-connector-template.postgresql.dms-second-binding-g7.manifest.json";
         string firstManifestPath = Path.Combine(artifactDirectory, firstManifestFileName);
         string secondManifestPath = Path.Combine(artifactDirectory, secondManifestFileName);
         using JsonDocument firstDocument = JsonDocument.Parse(File.ReadAllText(firstManifestPath));
@@ -283,16 +282,12 @@ public class Given_CdcConnectorTemplateArtifactTests
         File.Exists(secondManifestPath).Should().BeTrue();
         File.ReadAllText(firstManifestPath).Should().Be(first.RedactedArtifactPayload.Json);
         File.ReadAllText(secondManifestPath).Should().Be(second.RedactedArtifactPayload.Json);
-        firstDocument
-            .RootElement.GetProperty("connectorName")
-            .GetString()
-            .Should()
-            .Be("dms_binding_connector");
+        firstDocument.RootElement.GetProperty("connectorName").GetString().Should().Be("dms-binding-g7");
         secondDocument
             .RootElement.GetProperty("connectorName")
             .GetString()
             .Should()
-            .Be("dms_second_binding_connector");
+            .Be("dms-second-binding-g7");
         Directory
             .GetFiles(artifactDirectory, "cdc-connector-template.postgresql.*.manifest.json")
             .Select(Path.GetFileName)
@@ -311,7 +306,7 @@ public class Given_CdcConnectorTemplateArtifactTests
             TestContext.CurrentContext.WorkDirectory,
             $"cdc-connector-template-artifacts-{Guid.NewGuid():N}"
         );
-        string connectorName = new('a', 249);
+        string connectorName = $"{new string('a', 244)}-i-g7";
 
         CdcConnectorTemplateResult result = Render(
             BuildRequest(
@@ -320,7 +315,8 @@ public class Given_CdcConnectorTemplateArtifactTests
                     includeRedactedArtifactPayload: true,
                     manifestOutputDirectoryPath: artifactDirectory
                 ),
-                connectorName: connectorName
+                deploymentKey: new string('a', 244),
+                instanceKey: "i"
             )
         );
 
@@ -355,21 +351,23 @@ public class Given_CdcConnectorTemplateArtifactTests
             includeRedactedArtifactPayload: true,
             manifestOutputDirectoryPath: artifactDirectory
         );
-        string firstConnectorName = $"{new string('b', 248)}a";
-        string secondConnectorName = $"{new string('b', 248)}c";
+        string firstConnectorName = $"{new string('b', 243)}a-i-g7";
+        string secondConnectorName = $"{new string('b', 243)}c-i-g7";
 
         CdcConnectorTemplateResult first = Render(
             BuildRequest(
                 CdcProvider.Postgresql,
                 artifactOutput: artifactOutput,
-                connectorName: firstConnectorName
+                deploymentKey: $"{new string('b', 243)}a",
+                instanceKey: "i"
             )
         );
         CdcConnectorTemplateResult second = Render(
             BuildRequest(
                 CdcProvider.Postgresql,
                 artifactOutput: artifactOutput,
-                connectorName: secondConnectorName
+                deploymentKey: $"{new string('b', 243)}c",
+                instanceKey: "i"
             )
         );
 

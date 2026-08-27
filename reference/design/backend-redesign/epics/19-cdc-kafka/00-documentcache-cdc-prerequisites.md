@@ -10,67 +10,68 @@ related:
 
 ## Design References
 
-- **Projection health and deployment-owned CDC readiness**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness
-- **V1 readiness scope**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-readiness-scope
-- **Provider source-position barrier**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#provider-source-position-barrier
-- **Source-history continuity**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity
-- **Deployment-owned physical source binding**: reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding
+- [Authority and document ownership](../../design-docs/cdc/cdc-streaming.md#authority-and-document-ownership)
+- [V1 readiness scope](../../design-docs/cdc/cdc-streaming.md#v1-readiness-scope)
+- [Projection health and deployment-owned CDC readiness](../../design-docs/cdc/cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness)
+- [Provider source-position barrier](../../design-docs/cdc/cdc-streaming.md#provider-source-position-barrier)
+- [Source-partition hash](../../design-docs/cdc/cdc-streaming.md#source-partition-hash)
+- [Source-history continuity](../../design-docs/cdc/cdc-streaming.md#source-history-continuity)
+- [Deployment-owned CDC target and physical source binding](../../design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding)
+- [Connector topology and provider setup](../../design-docs/cdc/cdc-streaming.md#connector-topology-and-provider-setup)
+- [Enablement and initial readiness sequence](../../design-docs/cdc/cdc-streaming.md#enablement-and-initial-readiness-sequence)
+- [Security, telemetry, and operations](../../design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations)
+- [Projection operational health and CDC admission](../../design-docs/cdc/0001-relational-cdc-projector-and-sources.md#projection-operational-health-caught-up-status-and-cdc-admission)
+- [Kafka topic and message contract](../../design-docs/cdc/0002-kafka-topic-and-message-contract.md)
 
-The referenced design sections define binding, readiness, continuity, and lifecycle behavior.
-This story is only the work package for implementing them.
+The linked design documents exclusively own CDC behavior and recovery requirements. This
+story is the implementation work package and evidence index for those requirements.
 
 ## Outcome
 
-Add deployment-owned CDC state and status services that combine DMS projection
-operational-health and caught-up observations with provider, Kafka, and connector
-observations.
+Add deployment-owned CDC state and status services that combine DMS projection health and
+caught-up observations with provider, Kafka, and connector observations.
 
 ## Dependencies
 
-- Consumes target and projection observations from 18-01 and 18-06.
-- Integrated readiness scenarios consume the atomic projection path from 18-03 and durable
-  queue processing from 18-04.
-- Consumes provider artifacts from 19-01 and connector configuration/offset shapes from
-  19-02.
-- Supplies state and status behavior to 19-04.
+- Consume target and projection observations from E18-S01 and E18-S06.
+- Use the atomic projection path from E18-S03 and durable queue processing from E18-S04
+  for integrated readiness scenarios.
+- Consume provider artifacts from E19-S01 and connector configuration and offset
+  observations from E19-S02.
+- Supply binding, status, admission, retry, and provider-position services to E19-S04.
 
 ## Implementation Scope
 
-- Add CDC target input and validation models.
-- Add binding and incident state abstractions plus the local state-store implementation.
-- Add the shared deterministic CDC artifact-name helper with the binding model. Given the
-  deployment key, opaque instance key, generation, provider, and binding record, it returns
-  the provider artifact names consumed by 19-01 and the connector/topic names consumed by
-  19-02/19-04. It must not derive names from tenant display names, connection strings,
-  server names, database names, or connector JSON.
-- Add guarded binding lifecycle operations used by bootstrap and teardown.
-- Add provider source-position and source-history adapters.
-- Add per-target and aggregate status evaluation with sanitized diagnostics and telemetry.
-- Consume lifecycle/latch/process eligibility as projection operational health and indexed
-  queue absence as projection caught-up status. Do not consume scan recency, exact-zero
-  relationship counts, or process-local completeness cursors.
-- Compose initial CDC admission from caught-up status, the provider heartbeat barrier, and
-  a second caught-up observation for the same source while canonical write admission is
-  closed. After admission, queue growth does not revoke CDC admission or normal API
-  routing.
+- Add shared CDC control-plane contracts, validation, deterministic artifact identity,
+  normalized observation models, and pure status, admission, retry, and continuity logic
+  in Core.
+- Add deployment-owned binding and incident state abstractions, guarded lifecycle
+  operations, and the local filesystem state-store implementation.
+- Add PostgreSQL and SQL Server source-position and source-history adapters in their
+  provider backend assemblies.
+- Integrate E18 projection observations and E19 provider/connector observations without
+  adding CDC orchestration, provider provisioning, or Kafka/Connect mutation behavior.
+- Add focused behavioral unit, provider integration, and API integration evidence.
 
 ## Acceptance Evidence
 
-- State-store and lifecycle tests cover the binding and incident transitions in the
-  referenced design sections.
-- Artifact-name helper tests cover deterministic output, provider-specific identifier
-  limits/sanitization, generation isolation, and the complete name inventory consumed by
-  19-01, 19-02, and 19-04.
-- PostgreSQL and SQL Server adapter tests cover position, continuity, and failure
-  classifications.
-- Status tests cover the complete design-owned readiness input matrix and aggregation.
-- Status tests distinguish projection operational failure, projection backlog, enqueue
-  failure, connector failure, continuity failure, and ordinary canonical API health.
-- API integration tests preserve the separation between deployment status and DMS request
-  routing.
+The authoritative [contract-to-evidence traceability](../../design-docs/cdc/cdc-streaming.md#contract-to-evidence-traceability)
+maps the applicable CDC invariants to this story and its sibling work packages. DMS-1319
+is evidenced by these behavioral suites:
+
+- Core CDC contract, validation, state-store, status, admission, retry, continuity,
+  artifact-name, source-position, and privacy suites under
+  [`DocumentCache/Cdc`](../../../../../src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/DocumentCache/Cdc/).
+- [`PostgresqlCdcSourcePositionAdapterTests`](../../../../../src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlCdcSourcePositionAdapterTests.cs).
+- [`MssqlCdcSourcePositionAdapterTests`](../../../../../src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/MssqlCdcSourcePositionAdapterTests.cs).
+- [`Given_DocumentCacheStatusEndpointProductionService`](../../../../../src/dms/tests/EdFi.DataManagementService.Tests.Integration/Tests/DocumentCache/Given_DocumentCacheStatusEndpointProductionService.cs)
+  and the other DocumentCache API integration suites in that directory.
 
 ## Not Assigned to This Story
 
 - DMS projection implementation is assigned to E18.
-- Provider object provisioning, connector rendering, and Connect REST orchestration are
-  assigned to 19-01, 19-02, and 19-04.
+- Provider object provisioning, connector rendering, Kafka and ACL changes, Connect REST
+  orchestration, public message behavior, and end-to-end Kafka scenarios are assigned to
+  E19-S01 through E19-S06 as mapped by the authoritative traceability table.
+- Operator command and transport wiring, including source-replacement orchestration, is
+  assigned to E19-S04.

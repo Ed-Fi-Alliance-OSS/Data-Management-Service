@@ -312,6 +312,19 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
     }
 
     [Test]
+    public void It_does_not_register_the_postgresql_Cdc_source_position_adapter_by_default()
+    {
+        var services = new ServiceCollection();
+
+        services.AddPostgresqlReferenceResolver();
+
+        services
+            .Where(descriptor => descriptor.ServiceType == typeof(PostgresqlCdcSourcePositionAdapter))
+            .Should()
+            .BeEmpty();
+    }
+
+    [Test]
     public void It_extracts_postgresql_provider_failure_metadata_from_postgres_exception()
     {
         var extractor = new PostgresqlRelationshipAuthorizationProviderFailureExtractor();

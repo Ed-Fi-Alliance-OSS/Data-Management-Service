@@ -6,6 +6,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Claims;
+using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
@@ -37,6 +38,8 @@ public class Given_DocumentCacheStatusEndpointProductionService
     private const string RequiredRole = "dms-document-cache-operator";
     private const string RoleClaimType = "role";
     private const string ValidBearerToken = "valid-status-token";
+    private const string StudentsEndpoint = "/data/ed-fi/students";
+    private const string StandardJsonContentType = "application/json";
     private const long EmptyTargetDataStoreId = 1;
     private const long QueuedTargetDataStoreId = 2;
     private const long UnreachableTargetDataStoreId = 3;
@@ -173,6 +176,50 @@ public class Given_DocumentCacheStatusEndpointProductionService
             .And.NotContain(RawProviderParseText);
     }
 
+    [Test]
+    public async Task It_keeps_normal_api_routing_open_when_later_projection_work_makes_cdc_status_not_caught_up()
+    {
+        await using WebApplicationFactory<Program> factory = CreateFactory();
+        using HttpClient client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            ValidBearerToken
+        );
+
+        await factory
+            .Services.GetRequiredService<IDocumentCacheProjectionSupervisor>()
+            .RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+
+        using HttpResponseMessage initialStatusResponse = await client.GetAsync("/health/document-cache");
+        string initialStatusContent = await initialStatusResponse.Content.ReadAsStringAsync();
+        initialStatusResponse.StatusCode.Should().Be(HttpStatusCode.OK, initialStatusContent);
+        JsonNode initialStatus = JsonNode.Parse(initialStatusContent)!;
+        TargetByDataStoreId(initialStatus, EmptyTargetDataStoreId)["caughtUp"]!["status"]!
+            .GetValue<string>()
+            .Should()
+            .Be("caughtUp");
+
+        await InsertQueuedProjectionWorkAsync(_emptyTargetDatabase!);
+
+        using HttpResponseMessage laterStatusResponse = await client.GetAsync("/health/document-cache");
+        string laterStatusContent = await laterStatusResponse.Content.ReadAsStringAsync();
+        laterStatusResponse.StatusCode.Should().Be(HttpStatusCode.OK, laterStatusContent);
+        JsonNode laterStatus = JsonNode.Parse(laterStatusContent)!;
+        TargetByDataStoreId(laterStatus, EmptyTargetDataStoreId)["caughtUp"]!["status"]!
+            .GetValue<string>()
+            .Should()
+            .Be("notCaughtUp");
+
+        string locationPath = await PostStudentAsync(
+            client,
+            $"cdc-routing-open-{Guid.NewGuid():N}",
+            "Routing Open"
+        );
+        JsonObject student = await GetJsonObjectAsync(client, locationPath);
+
+        student["firstName"]!.GetValue<string>().Should().Be("Routing Open");
+    }
+
     private WebApplicationFactory<Program> CreateFactory()
     {
         string unreachableConnectionString =
@@ -259,6 +306,34 @@ public class Given_DocumentCacheStatusEndpointProductionService
         response["targets"]!
             .AsArray()
             .Single(target => target!["targetKey"]!["dataStoreId"]!.GetValue<long>() == dataStoreId)!;
+
+    private static async Task<string> PostStudentAsync(
+        HttpClient client,
+        string studentUniqueId,
+        string firstName
+    )
+    {
+        var payload = new JsonObject { ["studentUniqueId"] = studentUniqueId, ["firstName"] = firstName };
+        using var content = new StringContent(payload.ToJsonString(), Encoding.UTF8, StandardJsonContentType);
+        using HttpResponseMessage createResponse = await client.PostAsync(StudentsEndpoint, content);
+        string createBody = await createResponse.Content.ReadAsStringAsync();
+
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created, createBody);
+        createResponse.Headers.Location.Should().NotBeNull();
+
+        return createResponse.Headers.Location!.PathAndQuery;
+    }
+
+    private static async Task<JsonObject> GetJsonObjectAsync(HttpClient client, string locationPath)
+    {
+        using HttpResponseMessage response = await client.GetAsync(locationPath);
+        string body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        response.Content.Headers.ContentType?.MediaType.Should().Be(StandardJsonContentType);
+
+        return JsonNode.Parse(body)!.AsObject();
+    }
 
     private static async Task SetTrackingLifecycleAsync(
         PostgresqlGeneratedDdlTestDatabase database,

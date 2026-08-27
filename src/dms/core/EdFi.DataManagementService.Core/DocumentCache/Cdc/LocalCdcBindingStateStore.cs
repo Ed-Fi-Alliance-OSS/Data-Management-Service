@@ -1,0 +1,2278 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Security;
+using System.Text;
+using System.Text.Json;
+
+namespace EdFi.DataManagementService.Core.DocumentCache.Cdc;
+
+internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
+{
+    public const string DefaultRootPath = "eng/docker-compose/.cdc-state";
+
+    private readonly CdcStateStorePathResolver _pathResolver;
+    private readonly ICdcLocalStateStorePermissions _permissions;
+    private readonly ICdcLocalStateStoreFileSystem _fileSystem;
+    private readonly TimeProvider _timeProvider;
+
+    public LocalCdcBindingStateStore(string rootPath = DefaultRootPath)
+        : this(rootPath, CdcLocalStateStorePermissions.Current) { }
+
+    internal LocalCdcBindingStateStore(string rootPath, ICdcLocalStateStorePermissions permissions)
+        : this(rootPath, permissions, CdcLocalStateStoreFileSystem.Current) { }
+
+    internal LocalCdcBindingStateStore(
+        string rootPath,
+        ICdcLocalStateStorePermissions permissions,
+        ICdcLocalStateStoreFileSystem fileSystem
+    )
+        : this(rootPath, permissions, fileSystem, TimeProvider.System) { }
+
+    internal LocalCdcBindingStateStore(
+        string rootPath,
+        ICdcLocalStateStorePermissions permissions,
+        ICdcLocalStateStoreFileSystem fileSystem,
+        TimeProvider timeProvider
+    )
+    {
+        ArgumentNullException.ThrowIfNull(permissions);
+        ArgumentNullException.ThrowIfNull(fileSystem);
+        ArgumentNullException.ThrowIfNull(timeProvider);
+
+        _pathResolver = new(rootPath);
+        _permissions = permissions;
+        _fileSystem = fileSystem;
+        _timeProvider = timeProvider;
+    }
+
+    public async Task<CdcCreateBindingStateStoreResult> CreateBindingIfAbsentAsync(
+        CdcBinding binding,
+        CancellationToken cancellationToken
+    )
+    {
+        LocalCreateBindingResult result = await CreateOrExactMatchBindingAsync(binding, cancellationToken);
+
+        return result switch
+        {
+            { Outcome: LocalCreateBindingOutcome.Created, State: not null } =>
+                new CdcCreateBindingStateStoreResult.Created(result.State),
+            { Outcome: LocalCreateBindingOutcome.ExistingExactMatch, State: not null } =>
+                new CdcCreateBindingStateStoreResult.ExistingExactMatch(result.State),
+            { Mismatch: not null } => new CdcCreateBindingStateStoreResult.BindingMismatch(result.Mismatch),
+            { Failure: not null } => new CdcCreateBindingStateStoreResult.StateStoreFailure(result.Failure),
+            _ => new CdcCreateBindingStateStoreResult.StateStoreFailure(
+                CdcStateStoreFailure.LocalStateUnavailable("$", "CDC local binding create failed.")
+            ),
+        };
+    }
+
+    public async Task<CdcReadBindingStateStoreResult> ReadBindingAsync(
+        CdcBindingIdentity identity,
+        CancellationToken cancellationToken
+    )
+    {
+        LocalBindingReadResult readResult = await ReadBindingStateAsync(identity, cancellationToken);
+
+        return readResult switch
+        {
+            { State: not null } => new CdcReadBindingStateStoreResult.Found(readResult.State.State),
+            { Missing: true } => new CdcReadBindingStateStoreResult.Missing(identity),
+            { Failure: not null } => new CdcReadBindingStateStoreResult.StateStoreFailure(readResult.Failure),
+            _ => new CdcReadBindingStateStoreResult.StateStoreFailure(
+                CdcStateStoreFailure.LocalStateUnavailable("$", "CDC local binding read failed.")
+            ),
+        };
+    }
+
+    public async Task<CdcExactMatchBindingStateStoreResult> ExactMatchBindingAsync(
+        CdcBinding binding,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(binding);
+
+        CdcStateStoreFailure? bindingInputFailure = ValidateBindingInput(binding);
+        if (bindingInputFailure is not null)
+        {
+            return new CdcExactMatchBindingStateStoreResult.StateStoreFailure(bindingInputFailure);
+        }
+
+        CdcBindingIdentity identity = binding.ToBindingIdentity();
+        LocalBindingReadResult readResult = await ReadBindingStateAsync(identity, cancellationToken);
+        if (readResult.Failure is not null)
+        {
+            return new CdcExactMatchBindingStateStoreResult.StateStoreFailure(readResult.Failure);
+        }
+
+        if (readResult.Missing)
+        {
+            return new CdcExactMatchBindingStateStoreResult.BindingMissing(identity);
+        }
+
+        CdcBindingExactMatchResult exactMatch = CdcBindingExactMatch.Compare(
+            binding,
+            readResult.State!.BindingJson
+        );
+
+        return exactMatch.Succeeded
+            ? new CdcExactMatchBindingStateStoreResult.ExactMatch(readResult.State.State)
+            : new CdcExactMatchBindingStateStoreResult.BindingMismatch(exactMatch.ToMismatch());
+    }
+
+    public async Task<CdcListBindingsStateStoreResult> ListBindingsAsync(
+        string deploymentKey,
+        CancellationToken cancellationToken
+    )
+    {
+        CdcDeploymentStateStorePathResolution deploymentPath = _pathResolver.ResolveDeploymentPath(
+            deploymentKey
+        );
+        if (!deploymentPath.Succeeded)
+        {
+            return new CdcListBindingsStateStoreResult.StateStoreFailure(deploymentPath.ToFailure());
+        }
+
+        CdcStateStoreFailure? bindingAncestorFailure = ValidateExistingDeploymentPathAncestors(
+            CdcStateStorePathResolver.BindingsDirectoryName,
+            deploymentPath.DeploymentKey!,
+            out bool bindingDeploymentDirectoryExists
+        );
+        if (bindingAncestorFailure is not null)
+        {
+            return new CdcListBindingsStateStoreResult.StateStoreFailure(bindingAncestorFailure);
+        }
+
+        Dictionary<CdcBindingIdentity, CdcStoredBindingState> statesByIdentity = [];
+        if (bindingDeploymentDirectoryExists)
+        {
+            CdcStateStoreFailure? bindingFailure = await ReadDeploymentBindingsAsync(
+                deploymentPath,
+                statesByIdentity,
+                cancellationToken
+            );
+            if (bindingFailure is not null)
+            {
+                return new CdcListBindingsStateStoreResult.StateStoreFailure(bindingFailure);
+            }
+        }
+
+        CdcStateStoreFailure? incidentFailure = await ValidateDeploymentIncidentsAsync(
+            deploymentPath,
+            statesByIdentity.Keys.ToHashSet(),
+            cancellationToken
+        );
+        if (incidentFailure is not null)
+        {
+            return new CdcListBindingsStateStoreResult.StateStoreFailure(incidentFailure);
+        }
+
+        IReadOnlyList<CdcStoredBindingState> states = statesByIdentity
+            .Values.OrderBy(state => state.Binding.DeploymentKey, StringComparer.Ordinal)
+            .ThenBy(state => state.Binding.TenantKey, StringComparer.Ordinal)
+            .ThenBy(state => state.Binding.DataStoreId, StringComparer.Ordinal)
+            .ThenBy(state => state.Binding.InstanceKey, StringComparer.Ordinal)
+            .ThenBy(state => state.Binding.Generation)
+            .ToArray();
+
+        return new CdcListBindingsStateStoreResult.Listed(states);
+    }
+
+    public async Task<CdcLatchIncidentStateStoreResult> LatchSourceHistoryLossAsync(
+        CdcIncident incident,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(incident);
+
+        CdcStateStoreFailure? incidentInputFailure = ValidateIncidentInput(incident);
+        if (incidentInputFailure is not null)
+        {
+            return new CdcLatchIncidentStateStoreResult.StateStoreFailure(incidentInputFailure);
+        }
+
+        CdcBindingIdentity identity = incident.BindingIdentity.ToBindingIdentity();
+        LocalBindingReadResult readResult = await ReadBindingStateAsync(identity, cancellationToken);
+        if (readResult.Failure is not null)
+        {
+            return new CdcLatchIncidentStateStoreResult.StateStoreFailure(readResult.Failure);
+        }
+
+        if (readResult.Missing)
+        {
+            return new CdcLatchIncidentStateStoreResult.BindingMissing(identity);
+        }
+
+        CdcStoredBindingState currentState = readResult.State!.State;
+        if (currentState.Binding.ToCompleteBindingIdentity() != incident.BindingIdentity)
+        {
+            return new CdcLatchIncidentStateStoreResult.BindingMismatch(
+                CompleteIdentityMismatch(currentState.Binding, incident.BindingIdentity)
+            );
+        }
+
+        CdcStateStoreFailure? bindingIncidentFailure = ValidateIncidentForBinding(
+            incident,
+            currentState.Binding
+        );
+        if (bindingIncidentFailure is not null)
+        {
+            return new CdcLatchIncidentStateStoreResult.StateStoreFailure(bindingIncidentFailure);
+        }
+
+        if (currentState.Incident is not null)
+        {
+            return new CdcLatchIncidentStateStoreResult.AlreadyLatched(currentState);
+        }
+
+        CdcStateStorePathResolution incidentPath = _pathResolver.ResolveIncidentPath(identity);
+        if (!incidentPath.Succeeded)
+        {
+            return new CdcLatchIncidentStateStoreResult.StateStoreFailure(incidentPath.ToFailure());
+        }
+
+        CdcStateStoreFailure? directoryFailure = EnsureIncidentDirectory(incidentPath);
+        if (directoryFailure is not null)
+        {
+            return new CdcLatchIncidentStateStoreResult.StateStoreFailure(directoryFailure);
+        }
+
+        CdcStateStoreFailure? collisionFailure = CheckPathCaseCollision(
+            CdcStateStorePathResolver.IncidentsDirectoryName,
+            identity.DeploymentKey,
+            identity.InstanceKey,
+            $"{identity.Generation}.json"
+        );
+        if (collisionFailure is not null)
+        {
+            return new CdcLatchIncidentStateStoreResult.StateStoreFailure(collisionFailure);
+        }
+
+        LocalContractFilePublishResult publishResult = await PublishContractFileCreateNewAsync(
+            incidentPath.FilePath!,
+            CdcJsonContract.Serialize(incident),
+            "incident",
+            cancellationToken
+        );
+        if (publishResult.DestinationAlreadyExists)
+        {
+            LocalIncidentReadResult existingIncidentResult = await ReadIncidentStateAsync(
+                currentState.Binding,
+                cancellationToken
+            );
+            return existingIncidentResult switch
+            {
+                { Incident: not null } => new CdcLatchIncidentStateStoreResult.AlreadyLatched(
+                    currentState with
+                    {
+                        Incident = existingIncidentResult.Incident,
+                    }
+                ),
+                { Failure: not null } => new CdcLatchIncidentStateStoreResult.StateStoreFailure(
+                    existingIncidentResult.Failure
+                ),
+                _ => new CdcLatchIncidentStateStoreResult.StateStoreFailure(
+                    CdcStateStoreFailure.LocalStateUnavailable(
+                        incidentPath.FilePath!,
+                        "CDC local incident state changed during latch."
+                    )
+                ),
+            };
+        }
+
+        if (publishResult.Failure is not null)
+        {
+            return new CdcLatchIncidentStateStoreResult.StateStoreFailure(publishResult.Failure);
+        }
+
+        LocalIncidentReadResult readBackIncident = await ReadIncidentStateAsync(
+            currentState.Binding,
+            cancellationToken
+        );
+        if (readBackIncident.Failure is not null)
+        {
+            return new CdcLatchIncidentStateStoreResult.StateStoreFailure(readBackIncident.Failure);
+        }
+
+        if (readBackIncident.Incident is null)
+        {
+            return new CdcLatchIncidentStateStoreResult.StateStoreFailure(
+                CdcStateStoreFailure.LocalStateUnavailable(
+                    incidentPath.FilePath!,
+                    "CDC local incident state was not readable after latch."
+                )
+            );
+        }
+
+        return new CdcLatchIncidentStateStoreResult.Latched(
+            currentState with
+            {
+                Incident = readBackIncident.Incident,
+            }
+        );
+    }
+
+    public async Task<CdcImportBindingStateStoreResult> ImportVerifiedBindingAsync(
+        CdcAdoptionProof verifiedAdoptionProof,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(verifiedAdoptionProof);
+
+        CdcStateStoreFailure? proofFailure = ValidateAdoptionProof(verifiedAdoptionProof);
+        if (proofFailure is not null)
+        {
+            return new CdcImportBindingStateStoreResult.StateStoreFailure(proofFailure);
+        }
+
+        LocalCreateBindingResult result = await CreateOrExactMatchBindingAsync(
+            verifiedAdoptionProof.Binding,
+            cancellationToken
+        );
+
+        return result switch
+        {
+            { Outcome: LocalCreateBindingOutcome.Created, State: not null } =>
+                new CdcImportBindingStateStoreResult.Imported(result.State),
+            { Outcome: LocalCreateBindingOutcome.ExistingExactMatch, State: not null } =>
+                new CdcImportBindingStateStoreResult.ExistingExactMatch(result.State),
+            { Mismatch: not null } => new CdcImportBindingStateStoreResult.BindingMismatch(result.Mismatch),
+            { Failure: not null } => new CdcImportBindingStateStoreResult.StateStoreFailure(result.Failure),
+            _ => new CdcImportBindingStateStoreResult.StateStoreFailure(
+                CdcStateStoreFailure.LocalStateUnavailable("$", "CDC local binding import failed.")
+            ),
+        };
+    }
+
+    public async Task<CdcDeleteBindingStateStoreResult> DeleteStateAfterVerifiedCleanupAsync(
+        CdcCleanupProof verifiedCleanupProof,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(verifiedCleanupProof);
+
+        CdcStateStoreFailure? proofStructureFailure = ValidateCleanupProofStructure(verifiedCleanupProof);
+        if (proofStructureFailure is not null)
+        {
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(proofStructureFailure);
+        }
+
+        CdcCompleteBindingIdentity completeIdentity = verifiedCleanupProof.BindingIdentity;
+        CdcBindingIdentity identity = completeIdentity.ToBindingIdentity();
+        LocalBindingReadResult readResult = await ReadBindingStateAsync(identity, cancellationToken);
+        if (readResult.Failure is not null)
+        {
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(readResult.Failure);
+        }
+
+        if (readResult.Missing)
+        {
+            return await DeleteOrphanIncidentAfterVerifiedCleanupAsync(
+                verifiedCleanupProof,
+                completeIdentity,
+                cancellationToken
+            );
+        }
+
+        CdcStateStoreFailure? proofFailure = ValidateCleanupProofForBinding(
+            verifiedCleanupProof,
+            readResult.State!.State.Binding
+        );
+        if (proofFailure is not null)
+        {
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(proofFailure);
+        }
+
+        CdcStateStorePathResolution bindingPath = _pathResolver.ResolveBindingPath(identity);
+        CdcStateStorePathResolution incidentPath = _pathResolver.ResolveIncidentPath(identity);
+        if (!bindingPath.Succeeded)
+        {
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(bindingPath.ToFailure());
+        }
+
+        if (!incidentPath.Succeeded)
+        {
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(incidentPath.ToFailure());
+        }
+
+        CdcStateStoreFailure? bindingAncestorFailure = ValidateExistingStatePathAncestors(
+            CdcStateStorePathResolver.BindingsDirectoryName,
+            identity.DeploymentKey,
+            identity.InstanceKey
+        );
+        if (bindingAncestorFailure is not null)
+        {
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(bindingAncestorFailure);
+        }
+
+        CdcStateStoreFailure? incidentAncestorFailure = ValidateExistingStatePathAncestors(
+            CdcStateStorePathResolver.IncidentsDirectoryName,
+            identity.DeploymentKey,
+            identity.InstanceKey
+        );
+        if (incidentAncestorFailure is not null)
+        {
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(incidentAncestorFailure);
+        }
+
+        CdcStateStoreFailure? bindingDeleteFailure = DeleteStateFile(
+            bindingPath.FilePath!,
+            "delete binding state"
+        );
+        if (bindingDeleteFailure is not null)
+        {
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(bindingDeleteFailure);
+        }
+
+        CdcStateStoreFailure? incidentDeleteFailure = DeleteStateFileIfPresent(
+            incidentPath.FilePath!,
+            "delete incident state"
+        );
+        if (incidentDeleteFailure is not null)
+        {
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(incidentDeleteFailure);
+        }
+
+        return new CdcDeleteBindingStateStoreResult.Deleted(completeIdentity);
+    }
+
+    private async Task<CdcDeleteBindingStateStoreResult> DeleteOrphanIncidentAfterVerifiedCleanupAsync(
+        CdcCleanupProof verifiedCleanupProof,
+        CdcCompleteBindingIdentity completeIdentity,
+        CancellationToken cancellationToken
+    )
+    {
+        CdcBindingIdentity identity = completeIdentity.ToBindingIdentity();
+        LocalIncidentReadResult incidentRead = await ReadIncidentStateAsync(
+            completeIdentity,
+            cancellationToken
+        );
+        if (incidentRead.Failure is not null)
+        {
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(incidentRead.Failure);
+        }
+
+        if (incidentRead.Incident is null)
+        {
+            return new CdcDeleteBindingStateStoreResult.BindingMissing(completeIdentity);
+        }
+
+        CdcStateStoreFailure? proofFailure = ValidateCleanupProofForCompleteBindingIdentity(
+            verifiedCleanupProof,
+            completeIdentity
+        );
+        if (proofFailure is not null)
+        {
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(proofFailure);
+        }
+
+        CdcStateStorePathResolution incidentPath = _pathResolver.ResolveIncidentPath(identity);
+        if (!incidentPath.Succeeded)
+        {
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(incidentPath.ToFailure());
+        }
+
+        CdcStateStoreFailure? incidentAncestorFailure = ValidateExistingStatePathAncestors(
+            CdcStateStorePathResolver.IncidentsDirectoryName,
+            identity.DeploymentKey,
+            identity.InstanceKey
+        );
+        if (incidentAncestorFailure is not null)
+        {
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(incidentAncestorFailure);
+        }
+
+        CdcStateStoreFailure? incidentDeleteFailure = DeleteStateFile(
+            incidentPath.FilePath!,
+            "delete orphan incident state"
+        );
+        if (incidentDeleteFailure is not null)
+        {
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(incidentDeleteFailure);
+        }
+
+        return new CdcDeleteBindingStateStoreResult.Deleted(completeIdentity);
+    }
+
+    private async Task<LocalCreateBindingResult> CreateOrExactMatchBindingAsync(
+        CdcBinding binding,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(binding);
+
+        CdcStateStoreFailure? bindingInputFailure = ValidateBindingInput(binding);
+        if (bindingInputFailure is not null)
+        {
+            return LocalCreateBindingResult.Failed(bindingInputFailure);
+        }
+
+        CdcStateStorePathResolution bindingPath = _pathResolver.ResolveBindingPath(
+            binding.ToBindingIdentity()
+        );
+        if (!bindingPath.Succeeded)
+        {
+            return LocalCreateBindingResult.Failed(bindingPath.ToFailure());
+        }
+
+        CdcStateStoreFailure? directoryFailure = EnsureBindingDirectory(bindingPath);
+        if (directoryFailure is not null)
+        {
+            return LocalCreateBindingResult.Failed(directoryFailure);
+        }
+
+        CdcStateStoreFailure? collisionFailure = CheckPathCaseCollision(
+            CdcStateStorePathResolver.BindingsDirectoryName,
+            binding.DeploymentKey,
+            binding.InstanceKey,
+            $"{binding.Generation}.json"
+        );
+        if (collisionFailure is not null)
+        {
+            return LocalCreateBindingResult.Failed(collisionFailure);
+        }
+
+        LocalContractFilePublishResult publishResult = await PublishContractFileCreateNewAsync(
+            bindingPath.FilePath!,
+            CdcJsonContract.Serialize(binding),
+            "binding",
+            cancellationToken
+        );
+        if (publishResult.DestinationAlreadyExists)
+        {
+            return await ExistingBindingResultAsync(binding, cancellationToken);
+        }
+
+        if (publishResult.Failure is not null)
+        {
+            return LocalCreateBindingResult.Failed(publishResult.Failure);
+        }
+
+        LocalBindingReadResult readBack = await ReadBindingStateAsync(
+            binding.ToBindingIdentity(),
+            cancellationToken
+        );
+        if (readBack.Failure is not null)
+        {
+            return LocalCreateBindingResult.Failed(readBack.Failure);
+        }
+
+        if (readBack.Missing)
+        {
+            return LocalCreateBindingResult.Failed(
+                CdcStateStoreFailure.LocalStateUnavailable(
+                    bindingPath.FilePath!,
+                    "CDC local binding state was not readable after create."
+                )
+            );
+        }
+
+        CdcBindingExactMatchResult exactMatch = CdcBindingExactMatch.Compare(
+            binding,
+            readBack.State!.BindingJson
+        );
+        return exactMatch.Succeeded
+            ? LocalCreateBindingResult.Created(readBack.State.State)
+            : LocalCreateBindingResult.Failed(ToInvalidPersistedBindingFailure(exactMatch));
+    }
+
+    private async Task<LocalCreateBindingResult> ExistingBindingResultAsync(
+        CdcBinding expectedBinding,
+        CancellationToken cancellationToken
+    )
+    {
+        LocalBindingReadResult readResult = await ReadBindingStateAsync(
+            expectedBinding.ToBindingIdentity(),
+            cancellationToken
+        );
+        if (readResult.Failure is not null)
+        {
+            return LocalCreateBindingResult.Failed(readResult.Failure);
+        }
+
+        if (readResult.Missing)
+        {
+            return LocalCreateBindingResult.Failed(
+                CdcStateStoreFailure.LocalStateUnavailable(
+                    "$",
+                    "CDC local binding state changed during create."
+                )
+            );
+        }
+
+        CdcBindingExactMatchResult exactMatch = CdcBindingExactMatch.Compare(
+            expectedBinding,
+            readResult.State!.BindingJson
+        );
+        return exactMatch.Succeeded
+            ? LocalCreateBindingResult.Existing(readResult.State.State)
+            : LocalCreateBindingResult.Mismatched(exactMatch.ToMismatch());
+    }
+
+    private async Task<CdcStateStoreFailure?> ReadDeploymentBindingsAsync(
+        CdcDeploymentStateStorePathResolution deploymentPath,
+        Dictionary<CdcBindingIdentity, CdcStoredBindingState> statesByIdentity,
+        CancellationToken cancellationToken
+    )
+    {
+        IReadOnlyList<string>? instanceDirectories = EnumerateFileSystemEntries(
+            deploymentPath.BindingDeploymentDirectoryPath!,
+            out CdcStateStoreFailure? enumerationFailure
+        );
+        if (enumerationFailure is not null)
+        {
+            return enumerationFailure;
+        }
+
+        foreach (string instanceDirectory in instanceDirectories!.Order(StringComparer.Ordinal))
+        {
+            CdcStateStoreFailure? instanceFailure = ValidateDirectoryEntry(
+                instanceDirectory,
+                "$.instanceKey",
+                "instanceKey"
+            );
+            if (instanceFailure is not null)
+            {
+                return instanceFailure;
+            }
+
+            string instanceKey = Path.GetFileName(instanceDirectory);
+            IReadOnlyList<string>? bindingFiles = EnumerateFileSystemEntries(
+                instanceDirectory,
+                out CdcStateStoreFailure? bindingEnumerationFailure
+            );
+            if (bindingEnumerationFailure is not null)
+            {
+                return bindingEnumerationFailure;
+            }
+
+            foreach (string bindingFile in bindingFiles!.Order(StringComparer.Ordinal))
+            {
+                CdcStateStoreFailure? regularFileFailure = ValidateRegularFile(bindingFile);
+                if (regularFileFailure is not null)
+                {
+                    return regularFileFailure;
+                }
+
+                CdcStateStoreFailure? permissionFailure = ValidateOwnerOnlyFilePermissions(bindingFile);
+                if (permissionFailure is not null)
+                {
+                    return permissionFailure;
+                }
+
+                if (!TryParseGenerationFileName(bindingFile, out long generation))
+                {
+                    return CdcStateStoreFailure.LocalStateUnavailable(
+                        bindingFile,
+                        "CDC local binding state file name is invalid."
+                    );
+                }
+
+                LocalBindingFileReadResult bindingRead = await ReadBindingFileAsync(
+                    bindingFile,
+                    cancellationToken
+                );
+                if (bindingRead.Failure is not null)
+                {
+                    return bindingRead.Failure;
+                }
+
+                CdcBinding binding = bindingRead.Binding!;
+                if (
+                    !string.Equals(
+                        binding.DeploymentKey,
+                        deploymentPath.DeploymentKey,
+                        StringComparison.Ordinal
+                    )
+                    || !string.Equals(binding.InstanceKey, instanceKey, StringComparison.Ordinal)
+                    || binding.Generation != generation
+                )
+                {
+                    return CdcStateStoreFailure.InvalidPersistedBinding([
+                        IdentityMismatchDiagnostic("$.bindingIdentity", "binding", "state-store path"),
+                    ]);
+                }
+
+                CdcBindingIdentity identity = binding.ToBindingIdentity();
+                if (!statesByIdentity.TryAdd(identity, new(binding, null)))
+                {
+                    return CdcStateStoreFailure.LocalStateUnavailable(
+                        bindingFile,
+                        "CDC local binding state contains duplicate files for one identity."
+                    );
+                }
+            }
+        }
+
+        foreach (CdcBindingIdentity identity in statesByIdentity.Keys.ToArray())
+        {
+            CdcBinding binding = statesByIdentity[identity].Binding;
+            LocalIncidentReadResult incidentRead = await ReadIncidentStateAsync(binding, cancellationToken);
+            if (incidentRead.Failure is not null)
+            {
+                return incidentRead.Failure;
+            }
+
+            statesByIdentity[identity] = statesByIdentity[identity] with { Incident = incidentRead.Incident };
+        }
+
+        return null;
+    }
+
+    private async Task<CdcStateStoreFailure?> ValidateDeploymentIncidentsAsync(
+        CdcDeploymentStateStorePathResolution deploymentPath,
+        HashSet<CdcBindingIdentity> bindingIdentities,
+        CancellationToken cancellationToken
+    )
+    {
+        CdcStateStoreFailure? incidentAncestorFailure = ValidateExistingDeploymentPathAncestors(
+            CdcStateStorePathResolver.IncidentsDirectoryName,
+            deploymentPath.DeploymentKey!,
+            out bool incidentDeploymentDirectoryExists
+        );
+        if (incidentAncestorFailure is not null)
+        {
+            return incidentAncestorFailure;
+        }
+
+        if (!incidentDeploymentDirectoryExists)
+        {
+            return null;
+        }
+
+        IReadOnlyList<string>? instanceDirectories = EnumerateFileSystemEntries(
+            deploymentPath.IncidentDeploymentDirectoryPath!,
+            out CdcStateStoreFailure? enumerationFailure
+        );
+        if (enumerationFailure is not null)
+        {
+            return enumerationFailure;
+        }
+
+        foreach (string instanceDirectory in instanceDirectories!.Order(StringComparer.Ordinal))
+        {
+            CdcStateStoreFailure? instanceFailure = ValidateDirectoryEntry(
+                instanceDirectory,
+                "$.instanceKey",
+                "instanceKey"
+            );
+            if (instanceFailure is not null)
+            {
+                return instanceFailure;
+            }
+
+            string instanceKey = Path.GetFileName(instanceDirectory);
+            IReadOnlyList<string>? incidentFiles = EnumerateFileSystemEntries(
+                instanceDirectory,
+                out CdcStateStoreFailure? incidentEnumerationFailure
+            );
+            if (incidentEnumerationFailure is not null)
+            {
+                return incidentEnumerationFailure;
+            }
+
+            foreach (string incidentFile in incidentFiles!.Order(StringComparer.Ordinal))
+            {
+                CdcStateStoreFailure? regularFileFailure = ValidateRegularFile(incidentFile);
+                if (regularFileFailure is not null)
+                {
+                    return regularFileFailure;
+                }
+
+                CdcStateStoreFailure? permissionFailure = ValidateOwnerOnlyFilePermissions(incidentFile);
+                if (permissionFailure is not null)
+                {
+                    return permissionFailure;
+                }
+
+                if (!TryParseGenerationFileName(incidentFile, out long generation))
+                {
+                    return CdcStateStoreFailure.LocalStateUnavailable(
+                        incidentFile,
+                        "CDC local incident state file name is invalid."
+                    );
+                }
+
+                LocalIncidentFileReadResult incidentRead = await ReadIncidentFileAsync(
+                    incidentFile,
+                    cancellationToken
+                );
+                if (incidentRead.Failure is not null)
+                {
+                    return incidentRead.Failure;
+                }
+
+                CdcIncident incident = incidentRead.Incident!;
+                CdcBindingIdentity identity = incident.BindingIdentity.ToBindingIdentity();
+                if (
+                    !string.Equals(
+                        identity.DeploymentKey,
+                        deploymentPath.DeploymentKey,
+                        StringComparison.Ordinal
+                    )
+                    || !string.Equals(identity.InstanceKey, instanceKey, StringComparison.Ordinal)
+                    || identity.Generation != generation
+                    || !bindingIdentities.Contains(identity)
+                )
+                {
+                    return CdcStateStoreFailure.InvalidPersistedIncident([
+                        IdentityMismatchDiagnostic("$.bindingIdentity", "incident", "binding state"),
+                    ]);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private async Task<LocalBindingReadResult> ReadBindingStateAsync(
+        CdcBindingIdentity identity,
+        CancellationToken cancellationToken
+    )
+    {
+        CdcStateStorePathResolution bindingPath = _pathResolver.ResolveBindingPath(identity);
+        if (!bindingPath.Succeeded)
+        {
+            return LocalBindingReadResult.Failed(bindingPath.ToFailure());
+        }
+
+        CdcStateStoreFailure? ancestorFailure = ValidateExistingStatePathAncestors(
+            CdcStateStorePathResolver.BindingsDirectoryName,
+            identity.DeploymentKey,
+            identity.InstanceKey
+        );
+        if (ancestorFailure is not null)
+        {
+            return LocalBindingReadResult.Failed(ancestorFailure);
+        }
+
+        CdcStateStoreFailure? collisionFailure = CheckPathCaseCollision(
+            CdcStateStorePathResolver.BindingsDirectoryName,
+            identity.DeploymentKey,
+            identity.InstanceKey,
+            $"{identity.Generation}.json"
+        );
+        if (collisionFailure is not null)
+        {
+            return LocalBindingReadResult.Failed(collisionFailure);
+        }
+
+        if (!File.Exists(bindingPath.FilePath!))
+        {
+            return LocalBindingReadResult.MissingBinding();
+        }
+
+        CdcStateStoreFailure? regularFileFailure = ValidateRegularFile(bindingPath.FilePath!);
+        if (regularFileFailure is not null)
+        {
+            return LocalBindingReadResult.Failed(regularFileFailure);
+        }
+
+        CdcStateStoreFailure? permissionFailure = ValidateOwnerOnlyFilePermissions(bindingPath.FilePath!);
+        if (permissionFailure is not null)
+        {
+            return LocalBindingReadResult.Failed(permissionFailure);
+        }
+
+        LocalBindingFileReadResult bindingRead = await ReadBindingFileAsync(
+            bindingPath.FilePath!,
+            cancellationToken
+        );
+        if (bindingRead.Failure is not null)
+        {
+            return LocalBindingReadResult.Failed(bindingRead.Failure);
+        }
+
+        CdcBinding binding = bindingRead.Binding!;
+        if (binding.ToBindingIdentity() != identity)
+        {
+            return LocalBindingReadResult.Failed(
+                CdcStateStoreFailure.InvalidPersistedBinding([
+                    IdentityMismatchDiagnostic("$.bindingIdentity", "binding", "state-store path"),
+                ])
+            );
+        }
+
+        LocalIncidentReadResult incidentRead = await ReadIncidentStateAsync(binding, cancellationToken);
+        if (incidentRead.Failure is not null)
+        {
+            return LocalBindingReadResult.Failed(incidentRead.Failure);
+        }
+
+        return LocalBindingReadResult.Found(
+            new(new(binding, incidentRead.Incident), bindingRead.BindingJson!)
+        );
+    }
+
+    private async Task<LocalBindingFileReadResult> ReadBindingFileAsync(
+        string filePath,
+        CancellationToken cancellationToken
+    )
+    {
+        string json;
+        try
+        {
+            json = await File.ReadAllTextAsync(filePath, cancellationToken);
+        }
+        catch (Exception exception) when (IsFileSystemException(exception))
+        {
+            return LocalBindingFileReadResult.Failed(FileSystemFailure(filePath, "read binding state"));
+        }
+
+        IReadOnlyList<CdcDiagnostic> duplicateDiagnostics = DetectDuplicateProperties(json, "binding");
+        if (duplicateDiagnostics.Count != 0)
+        {
+            return LocalBindingFileReadResult.Failed(
+                CdcStateStoreFailure.InvalidPersistedBinding(duplicateDiagnostics)
+            );
+        }
+
+        CdcContractReadResult<CdcBinding> readResult = CdcJsonContract.Deserialize<CdcBinding>(json);
+        if (!readResult.Succeeded)
+        {
+            return LocalBindingFileReadResult.Failed(
+                CdcStateStoreFailure.InvalidPersistedBinding(readResult.Diagnostics)
+            );
+        }
+
+        CdcContractValidationResult bindingValidation = CdcBindingValidator.Validate(readResult.Contract!);
+        return bindingValidation.Succeeded
+            ? LocalBindingFileReadResult.Read(readResult.Contract!, json)
+            : LocalBindingFileReadResult.Failed(
+                CdcStateStoreFailure.InvalidPersistedBinding(bindingValidation.Diagnostics)
+            );
+    }
+
+    private async Task<LocalIncidentReadResult> ReadIncidentStateAsync(
+        CdcBinding binding,
+        CancellationToken cancellationToken
+    )
+    {
+        return await ReadIncidentStateForIdentityAsync(
+            binding.ToBindingIdentity(),
+            incident => ValidateIncidentForBindingState(incident, binding),
+            cancellationToken
+        );
+    }
+
+    private async Task<LocalIncidentReadResult> ReadIncidentStateAsync(
+        CdcCompleteBindingIdentity completeIdentity,
+        CancellationToken cancellationToken
+    )
+    {
+        return await ReadIncidentStateForIdentityAsync(
+            completeIdentity.ToBindingIdentity(),
+            incident => ValidateIncidentForCompleteIdentity(incident, completeIdentity),
+            cancellationToken
+        );
+    }
+
+    private async Task<LocalIncidentReadResult> ReadIncidentStateForIdentityAsync(
+        CdcBindingIdentity identity,
+        Func<CdcIncident, CdcStateStoreFailure?> validateIncident,
+        CancellationToken cancellationToken
+    )
+    {
+        CdcStateStorePathResolution incidentPath = _pathResolver.ResolveIncidentPath(identity);
+        if (!incidentPath.Succeeded)
+        {
+            return LocalIncidentReadResult.Failed(incidentPath.ToFailure());
+        }
+
+        CdcStateStoreFailure? ancestorFailure = ValidateExistingStatePathAncestors(
+            CdcStateStorePathResolver.IncidentsDirectoryName,
+            identity.DeploymentKey,
+            identity.InstanceKey
+        );
+        if (ancestorFailure is not null)
+        {
+            return LocalIncidentReadResult.Failed(ancestorFailure);
+        }
+
+        CdcStateStoreFailure? collisionFailure = CheckPathCaseCollision(
+            CdcStateStorePathResolver.IncidentsDirectoryName,
+            identity.DeploymentKey,
+            identity.InstanceKey,
+            $"{identity.Generation}.json"
+        );
+        if (collisionFailure is not null)
+        {
+            return LocalIncidentReadResult.Failed(collisionFailure);
+        }
+
+        if (!File.Exists(incidentPath.FilePath!))
+        {
+            return LocalIncidentReadResult.Absent();
+        }
+
+        CdcStateStoreFailure? regularFileFailure = ValidateRegularFile(incidentPath.FilePath!);
+        if (regularFileFailure is not null)
+        {
+            return LocalIncidentReadResult.Failed(regularFileFailure);
+        }
+
+        CdcStateStoreFailure? permissionFailure = ValidateOwnerOnlyFilePermissions(incidentPath.FilePath!);
+        if (permissionFailure is not null)
+        {
+            return LocalIncidentReadResult.Failed(permissionFailure);
+        }
+
+        LocalIncidentFileReadResult incidentRead = await ReadIncidentFileAsync(
+            incidentPath.FilePath!,
+            cancellationToken
+        );
+        if (incidentRead.Failure is not null)
+        {
+            return LocalIncidentReadResult.Failed(incidentRead.Failure);
+        }
+
+        CdcIncident incident = incidentRead.Incident!;
+        CdcStateStoreFailure? validationFailure = validateIncident(incident);
+        return validationFailure is null
+            ? LocalIncidentReadResult.Read(incident)
+            : LocalIncidentReadResult.Failed(validationFailure);
+    }
+
+    private CdcStateStoreFailure? ValidateIncidentForBindingState(CdcIncident incident, CdcBinding binding)
+    {
+        if (incident.BindingIdentity != binding.ToCompleteBindingIdentity())
+        {
+            return CdcStateStoreFailure.InvalidPersistedIncident([
+                IdentityMismatchDiagnostic("$.bindingIdentity", "incident", "binding state"),
+            ]);
+        }
+
+        CdcStateStoreFailure? validationFailure = ValidateIncidentForBinding(incident, binding);
+        return validationFailure is null
+            ? null
+            : CdcStateStoreFailure.InvalidPersistedIncident(validationFailure.Diagnostics);
+    }
+
+    private static CdcStateStoreFailure? ValidateIncidentForCompleteIdentity(
+        CdcIncident incident,
+        CdcCompleteBindingIdentity completeIdentity
+    )
+    {
+        return incident.BindingIdentity == completeIdentity
+            ? null
+            : CdcStateStoreFailure.InvalidPersistedIncident([
+                IdentityMismatchDiagnostic("$.bindingIdentity", "incident", "cleanup proof"),
+            ]);
+    }
+
+    private async Task<LocalIncidentFileReadResult> ReadIncidentFileAsync(
+        string filePath,
+        CancellationToken cancellationToken
+    )
+    {
+        string json;
+        try
+        {
+            json = await File.ReadAllTextAsync(filePath, cancellationToken);
+        }
+        catch (Exception exception) when (IsFileSystemException(exception))
+        {
+            return LocalIncidentFileReadResult.Failed(FileSystemFailure(filePath, "read incident state"));
+        }
+
+        IReadOnlyList<CdcDiagnostic> duplicateDiagnostics = DetectDuplicateProperties(json, "incident");
+        if (duplicateDiagnostics.Count != 0)
+        {
+            return LocalIncidentFileReadResult.Failed(
+                CdcStateStoreFailure.InvalidPersistedIncident(duplicateDiagnostics)
+            );
+        }
+
+        CdcContractReadResult<CdcIncident> readResult = CdcJsonContract.Deserialize<CdcIncident>(json);
+        if (!readResult.Succeeded)
+        {
+            return LocalIncidentFileReadResult.Failed(
+                CdcStateStoreFailure.InvalidPersistedIncident(readResult.Diagnostics)
+            );
+        }
+
+        CdcContractValidationResult validationResult = CdcIncidentValidator.Validate(
+            readResult.Contract!,
+            ObservedAt()
+        );
+
+        return validationResult.Succeeded
+            ? LocalIncidentFileReadResult.Read(readResult.Contract!)
+            : LocalIncidentFileReadResult.Failed(
+                CdcStateStoreFailure.InvalidPersistedIncident(validationResult.Diagnostics)
+            );
+    }
+
+    private CdcStateStoreFailure? EnsureBindingDirectory(CdcStateStorePathResolution path) =>
+        EnsureDirectoryTree([
+            CdcStateStorePathResolver.BindingsDirectoryName,
+            path.DeploymentKey!,
+            path.InstanceKey!,
+        ]);
+
+    private CdcStateStoreFailure? EnsureIncidentDirectory(CdcStateStorePathResolution path) =>
+        EnsureDirectoryTree([
+            CdcStateStorePathResolver.IncidentsDirectoryName,
+            path.DeploymentKey!,
+            path.InstanceKey!,
+        ]);
+
+    private CdcStateStoreFailure? EnsureDirectoryTree(IReadOnlyList<string> segments)
+    {
+        CdcStateStoreFailure? rootFailure = EnsureDirectory(_pathResolver.RootPath);
+        if (rootFailure is not null)
+        {
+            return rootFailure;
+        }
+
+        string currentPath = _pathResolver.RootPath;
+        foreach (string segment in segments)
+        {
+            CdcStateStoreFailure? collisionFailure = CheckCaseCollision(currentPath, segment);
+            if (collisionFailure is not null)
+            {
+                return collisionFailure;
+            }
+
+            currentPath = Path.Combine(currentPath, segment);
+            CdcStateStoreFailure? directoryFailure = EnsureDirectory(currentPath);
+            if (directoryFailure is not null)
+            {
+                return directoryFailure;
+            }
+        }
+
+        return null;
+    }
+
+    private CdcStateStoreFailure? EnsureDirectory(string path)
+    {
+        try
+        {
+            CreateDirectoryOwnerOnlyIfSupported(path);
+        }
+        catch (Exception exception) when (IsFileSystemException(exception))
+        {
+            return FileSystemFailure(path, "create state directory");
+        }
+
+        CdcStateStoreFailure? directoryFailure = ValidateDirectory(path);
+        if (directoryFailure is not null)
+        {
+            return directoryFailure;
+        }
+
+        return ApplyOwnerOnlyDirectoryPermissions(path);
+    }
+
+    private CdcStateStoreFailure? CheckPathCaseCollision(params string[] segments)
+    {
+        string currentPath = _pathResolver.RootPath;
+        foreach (string segment in segments)
+        {
+            CdcStateStoreFailure? directoryFailure = ValidateDirectoryIfExists(
+                currentPath,
+                out bool directoryExists
+            );
+            if (directoryFailure is not null)
+            {
+                return directoryFailure;
+            }
+
+            if (!directoryExists)
+            {
+                return null;
+            }
+
+            CdcStateStoreFailure? collisionFailure = CheckCaseCollision(currentPath, segment);
+            if (collisionFailure is not null)
+            {
+                return collisionFailure;
+            }
+
+            currentPath = Path.Combine(currentPath, segment);
+        }
+
+        return null;
+    }
+
+    private CdcStateStoreFailure? ValidateExistingDeploymentPathAncestors(
+        string stateDirectoryName,
+        string deploymentKey,
+        out bool deploymentDirectoryExists
+    )
+    {
+        return ValidateExistingStateDirectoryPath(
+            [stateDirectoryName, deploymentKey],
+            out deploymentDirectoryExists
+        );
+    }
+
+    private CdcStateStoreFailure? ValidateExistingStatePathAncestors(
+        string stateDirectoryName,
+        string deploymentKey,
+        string instanceKey
+    )
+    {
+        CdcStateStoreFailure? failure = ValidateExistingStateDirectoryPath(
+            [stateDirectoryName, deploymentKey, instanceKey],
+            out _
+        );
+
+        return failure;
+    }
+
+    private CdcStateStoreFailure? ValidateExistingStateDirectoryPath(
+        IReadOnlyList<string> segments,
+        out bool fullDirectoryPathExists
+    )
+    {
+        fullDirectoryPathExists = false;
+        string currentPath = _pathResolver.RootPath;
+
+        CdcStateStoreFailure? rootFailure = ValidateDirectoryIfExists(currentPath, out bool rootExists);
+        if (rootFailure is not null)
+        {
+            return rootFailure;
+        }
+
+        if (!rootExists)
+        {
+            return null;
+        }
+
+        foreach (string segment in segments)
+        {
+            CdcStateStoreFailure? collisionFailure = CheckCaseCollision(currentPath, segment);
+            if (collisionFailure is not null)
+            {
+                return collisionFailure;
+            }
+
+            currentPath = Path.Combine(currentPath, segment);
+            CdcStateStoreFailure? directoryFailure = ValidateDirectoryIfExists(
+                currentPath,
+                out bool directoryExists
+            );
+            if (directoryFailure is not null)
+            {
+                return directoryFailure;
+            }
+
+            if (!directoryExists)
+            {
+                return null;
+            }
+        }
+
+        fullDirectoryPathExists = true;
+        return null;
+    }
+
+    private CdcStateStoreFailure? CheckCaseCollision(string parentDirectory, string segment)
+    {
+        try
+        {
+            foreach (string entryPath in Directory.EnumerateFileSystemEntries(parentDirectory))
+            {
+                string entryName = Path.GetFileName(entryPath);
+                if (
+                    string.Equals(entryName, segment, StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(entryName, segment, StringComparison.Ordinal)
+                )
+                {
+                    return CdcStateStoreFailure.LocalStateUnavailable(
+                        entryPath,
+                        "CDC local state path has a case-colliding entry."
+                    );
+                }
+            }
+        }
+        catch (Exception exception) when (IsFileSystemException(exception))
+        {
+            return FileSystemFailure(parentDirectory, "inspect state directory");
+        }
+
+        return null;
+    }
+
+    private IReadOnlyList<string>? EnumerateFileSystemEntries(
+        string directoryPath,
+        out CdcStateStoreFailure? failure
+    )
+    {
+        failure = null;
+
+        CdcStateStoreFailure? directoryFailure = ValidateDirectory(directoryPath);
+        if (directoryFailure is not null)
+        {
+            failure = directoryFailure;
+            return null;
+        }
+
+        try
+        {
+            return Directory.EnumerateFileSystemEntries(directoryPath).ToArray();
+        }
+        catch (Exception exception) when (IsFileSystemException(exception))
+        {
+            failure = FileSystemFailure(directoryPath, "list state directory");
+            return null;
+        }
+    }
+
+    private CdcStateStoreFailure? ValidateDirectoryEntry(string directoryPath, string path, string fieldName)
+    {
+        CdcStateStoreFailure? directoryFailure = ValidateDirectory(directoryPath);
+        if (directoryFailure is not null)
+        {
+            return directoryFailure;
+        }
+
+        CdcDiagnosticCollector diagnostics = new();
+        CdcKafkaSafeTokenValidator.Validate(Path.GetFileName(directoryPath), path, fieldName, diagnostics);
+        return diagnostics.HasDiagnostics
+            ? CdcStateStoreFailure.LocalStateUnavailable(
+                directoryPath,
+                "CDC local state directory name is invalid."
+            )
+            : null;
+    }
+
+    private CdcStateStoreFailure? ValidateDirectory(string path)
+    {
+        CdcStateStoreFailure? directoryFailure = ValidateDirectoryIfExists(path, out bool directoryExists);
+        if (directoryFailure is not null)
+        {
+            return directoryFailure;
+        }
+
+        if (!directoryExists)
+        {
+            return CdcStateStoreFailure.LocalStateUnavailable(
+                path,
+                "CDC local state directory is unavailable."
+            );
+        }
+
+        return null;
+    }
+
+    private CdcStateStoreFailure? ValidateDirectoryIfExists(string path, out bool directoryExists)
+    {
+        directoryExists = false;
+
+        DirectoryInfo directoryInfo = new(path);
+        directoryInfo.Refresh();
+        if (IsSymbolicLink(directoryInfo))
+        {
+            directoryExists = true;
+            return CdcStateStoreFailure.LocalStateUnavailable(
+                path,
+                "CDC local state directory must not be a symlink or reparse point."
+            );
+        }
+
+        if (directoryInfo.Exists)
+        {
+            directoryExists = true;
+            return ValidateSafeDirectoryPermissions(path);
+        }
+
+        FileInfo fileInfo = new(path);
+        fileInfo.Refresh();
+        if (IsSymbolicLink(fileInfo))
+        {
+            directoryExists = true;
+            return CdcStateStoreFailure.LocalStateUnavailable(
+                path,
+                "CDC local state directory must not be a symlink or reparse point."
+            );
+        }
+
+        if (fileInfo.Exists)
+        {
+            directoryExists = true;
+            return CdcStateStoreFailure.LocalStateUnavailable(
+                path,
+                "CDC local state path is an unexpected non-directory file."
+            );
+        }
+
+        return null;
+    }
+
+    private static CdcStateStoreFailure? ValidateRegularFile(string path)
+    {
+        DirectoryInfo directoryInfo = new(path);
+        directoryInfo.Refresh();
+        if (IsSymbolicLink(directoryInfo))
+        {
+            return CdcStateStoreFailure.LocalStateUnavailable(
+                path,
+                "CDC local state file must not be a symlink or reparse point."
+            );
+        }
+
+        if (directoryInfo.Exists)
+        {
+            return CdcStateStoreFailure.LocalStateUnavailable(
+                path,
+                "CDC local state file is an unexpected directory."
+            );
+        }
+
+        FileInfo fileInfo = new(path);
+        fileInfo.Refresh();
+        if (IsSymbolicLink(fileInfo))
+        {
+            return CdcStateStoreFailure.LocalStateUnavailable(
+                path,
+                "CDC local state file must not be a symlink or reparse point."
+            );
+        }
+
+        if (!fileInfo.Exists)
+        {
+            return CdcStateStoreFailure.LocalStateUnavailable(path, "CDC local state file is unavailable.");
+        }
+
+        return null;
+    }
+
+    private CdcStateStoreFailure? ApplyOwnerOnlyDirectoryPermissions(string path)
+    {
+        CdcLocalStateStorePermissionResult result = _permissions.ApplyOwnerOnlyDirectory(path);
+        return result.Succeeded || result.Unsupported
+            ? null
+            : CdcStateStoreFailure.LocalStateUnavailable(
+                path,
+                result.Message ?? "CDC local state directory permissions could not be applied."
+            );
+    }
+
+    private CdcStateStoreFailure? ApplyOwnerOnlyFilePermissions(string path, string? diagnosticPath = null)
+    {
+        CdcLocalStateStorePermissionResult result = _permissions.ApplyOwnerOnlyFile(path);
+        return result.Succeeded || result.Unsupported
+            ? null
+            : CdcStateStoreFailure.LocalStateUnavailable(
+                diagnosticPath ?? path,
+                result.Message ?? "CDC local state file permissions could not be applied."
+            );
+    }
+
+    private CdcStateStoreFailure? ValidateOwnerOnlyFilePermissions(string path)
+    {
+        CdcLocalStateStorePermissionResult result = _permissions.ValidateOwnerOnlyFile(path);
+        return result.Succeeded || result.Unsupported
+            ? null
+            : CdcStateStoreFailure.LocalStateUnavailable(
+                path,
+                result.Message ?? "CDC local state file permissions are not owner-only."
+            );
+    }
+
+    private CdcStateStoreFailure? ValidateSafeDirectoryPermissions(string path)
+    {
+        CdcLocalStateStorePermissionResult result = _permissions.ValidateDirectoryNotSharedWritable(path);
+        return result.Succeeded || result.Unsupported
+            ? null
+            : CdcStateStoreFailure.LocalStateUnavailable(
+                path,
+                result.Message ?? "CDC local state directory must not be group- or world-writable."
+            );
+    }
+
+    private async Task<LocalContractFilePublishResult> PublishContractFileCreateNewAsync(
+        string finalFilePath,
+        string payload,
+        string stateName,
+        CancellationToken cancellationToken
+    )
+    {
+        string tempFilePath = CreateTemporaryFilePath(finalFilePath);
+        try
+        {
+            await _fileSystem.WriteAllTextCreateNewFlushAsync(
+                tempFilePath,
+                payload,
+                OwnerOnlyCreateNewFileOptions(),
+                cancellationToken
+            );
+
+            CdcStateStoreFailure? permissionFailure = ApplyOwnerOnlyFilePermissions(
+                tempFilePath,
+                finalFilePath
+            );
+            if (permissionFailure is not null)
+            {
+                CdcStateStoreFailure? deleteFailure = DeleteUnpublishedStateFile(tempFilePath, stateName);
+                return LocalContractFilePublishResult.Failed(deleteFailure ?? permissionFailure);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            _fileSystem.MoveFileWithoutOverwrite(tempFilePath, finalFilePath);
+            return LocalContractFilePublishResult.Published();
+        }
+        catch (IOException) when (_fileSystem.FileExists(finalFilePath))
+        {
+            CdcStateStoreFailure? deleteFailure = DeleteUnpublishedStateFile(tempFilePath, stateName);
+            return deleteFailure is null
+                ? LocalContractFilePublishResult.DestinationExists()
+                : LocalContractFilePublishResult.Failed(deleteFailure);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            DeleteUnpublishedStateFile(tempFilePath, stateName);
+            throw;
+        }
+        catch (Exception exception) when (IsFileSystemException(exception))
+        {
+            CdcStateStoreFailure? deleteFailure = DeleteUnpublishedStateFile(tempFilePath, stateName);
+            return LocalContractFilePublishResult.Failed(
+                deleteFailure ?? FileSystemFailure(finalFilePath, $"write {stateName} state")
+            );
+        }
+    }
+
+    private static string CreateTemporaryFilePath(string finalFilePath)
+    {
+        string directoryPath =
+            Path.GetDirectoryName(finalFilePath)
+            ?? throw new InvalidOperationException("CDC local state file path has no parent directory.");
+        string fileName = Path.GetFileName(finalFilePath);
+
+        return Path.Combine(directoryPath, $".{fileName}.{Guid.NewGuid():N}.tmp");
+    }
+
+    private static void CreateDirectoryOwnerOnlyIfSupported(string path)
+    {
+        if (!UnixFileModesAreSupported())
+        {
+            Directory.CreateDirectory(path);
+            return;
+        }
+
+        try
+        {
+#pragma warning disable CA1416
+            Directory.CreateDirectory(path, CdcLocalStateStoreUnixModes.OwnerOnlyDirectory);
+#pragma warning restore CA1416
+        }
+        catch (PlatformNotSupportedException)
+        {
+            Directory.CreateDirectory(path);
+        }
+    }
+
+    private static FileStreamOptions OwnerOnlyCreateNewFileOptions()
+    {
+        FileStreamOptions options = new()
+        {
+            Mode = FileMode.CreateNew,
+            Access = FileAccess.Write,
+            Share = FileShare.None,
+            Options = FileOptions.WriteThrough,
+        };
+
+        if (UnixFileModesAreSupported())
+        {
+#pragma warning disable CA1416
+            options.UnixCreateMode = CdcLocalStateStoreUnixModes.OwnerOnlyFile;
+#pragma warning restore CA1416
+        }
+
+        return options;
+    }
+
+    private static bool UnixFileModesAreSupported() =>
+        OperatingSystem.IsLinux() || OperatingSystem.IsMacOS() || OperatingSystem.IsFreeBSD();
+
+    private static IReadOnlyList<CdcDiagnostic> DetectDuplicateProperties(string json, string contractName)
+    {
+        CdcDiagnosticCollector diagnostics = new();
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(
+                json,
+                new JsonDocumentOptions
+                {
+                    AllowTrailingCommas = false,
+                    CommentHandling = JsonCommentHandling.Disallow,
+                }
+            );
+
+            DetectDuplicateProperties(document.RootElement, "$", contractName, diagnostics);
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+
+        return diagnostics.Diagnostics;
+    }
+
+    private static void DetectDuplicateProperties(
+        JsonElement element,
+        string path,
+        string contractName,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                DetectDuplicateObjectProperties(element, path, contractName, diagnostics);
+                break;
+            case JsonValueKind.Array:
+                int index = 0;
+                foreach (JsonElement item in element.EnumerateArray())
+                {
+                    DetectDuplicateProperties(item, $"{path}[{index}]", contractName, diagnostics);
+                    index++;
+                }
+                break;
+        }
+    }
+
+    private static void DetectDuplicateObjectProperties(
+        JsonElement element,
+        string path,
+        string contractName,
+        CdcDiagnosticCollector diagnostics
+    )
+    {
+        HashSet<string> propertyNames = new(StringComparer.Ordinal);
+        foreach (JsonProperty property in element.EnumerateObject())
+        {
+            string propertyPath = AppendJsonPathProperty(path, property.Name);
+            if (!propertyNames.Add(property.Name))
+            {
+                diagnostics.MalformedPayload(
+                    propertyPath,
+                    $"CDC persisted {contractName} state contains duplicate JSON property."
+                );
+            }
+
+            DetectDuplicateProperties(property.Value, propertyPath, contractName, diagnostics);
+        }
+    }
+
+    private static string AppendJsonPathProperty(string path, string propertyName) =>
+        IsSimpleJsonPathProperty(propertyName)
+            ? $"{path}.{propertyName}"
+            : $"{path}['{EscapeJsonPathProperty(propertyName)}']";
+
+    private static bool IsSimpleJsonPathProperty(string propertyName) =>
+        propertyName.Length != 0
+        && (char.IsAsciiLetter(propertyName[0]) || propertyName[0] == '_')
+        && propertyName.Skip(1).All(character => char.IsAsciiLetterOrDigit(character) || character == '_');
+
+    private static string EscapeJsonPathProperty(string propertyName) =>
+        propertyName
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("'", "\\'", StringComparison.Ordinal);
+
+    private static bool TryParseGenerationFileName(string filePath, out long generation)
+    {
+        generation = 0;
+
+        string fileName = Path.GetFileName(filePath);
+        if (!fileName.EndsWith(".json", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        string value = fileName[..^".json".Length];
+        if (value.Length == 0 || (value.Length > 1 && value[0] == '0'))
+        {
+            return false;
+        }
+
+        return value.All(character => character is >= '0' and <= '9')
+            && long.TryParse(value, out generation)
+            && generation > 0;
+    }
+
+    private CdcStateStoreFailure? ValidateIncidentInput(CdcIncident incident)
+    {
+        CdcContractValidationResult validationResult = CdcIncidentValidator.Validate(incident, ObservedAt());
+
+        return validationResult.Succeeded
+            ? null
+            : CdcStateStoreFailure.InvalidOperation(validationResult.Diagnostics);
+    }
+
+    private static CdcStateStoreFailure? ValidateBindingInput(CdcBinding binding)
+    {
+        CdcContractValidationResult validationResult = CdcBindingValidator.Validate(binding);
+
+        return validationResult.Succeeded
+            ? null
+            : CdcStateStoreFailure.InvalidOperation(validationResult.Diagnostics);
+    }
+
+    private CdcStateStoreFailure? ValidateIncidentForBinding(CdcIncident incident, CdcBinding binding)
+    {
+        CdcContractValidationResult validationResult = CdcIncidentValidator.ValidateForBinding(
+            incident,
+            binding,
+            ObservedAt()
+        );
+
+        return validationResult.Succeeded
+            ? null
+            : CdcStateStoreFailure.InvalidOperation(validationResult.Diagnostics);
+    }
+
+    private CdcStateStoreFailure? ValidateAdoptionProof(CdcAdoptionProof proof)
+    {
+        CdcContractValidationResult validationResult = CdcAdoptionProofValidator.Validate(
+            proof,
+            ObservedAt()
+        );
+
+        return validationResult.Succeeded
+            ? null
+            : CdcStateStoreFailure.InvalidOperation(validationResult.Diagnostics);
+    }
+
+    private CdcStateStoreFailure? ValidateCleanupProofStructure(CdcCleanupProof proof)
+    {
+        CdcContractValidationResult validationResult = CdcCleanupProofValidator.ValidateStructure(
+            proof,
+            ObservedAt()
+        );
+
+        return validationResult.Succeeded
+            ? null
+            : CdcStateStoreFailure.InvalidOperation(validationResult.Diagnostics);
+    }
+
+    private CdcStateStoreFailure? ValidateCleanupProofForBinding(CdcCleanupProof proof, CdcBinding binding)
+    {
+        CdcContractValidationResult validationResult = CdcCleanupProofValidator.Validate(
+            proof,
+            binding,
+            ObservedAt()
+        );
+
+        return validationResult.Succeeded
+            ? null
+            : CdcStateStoreFailure.InvalidOperation(validationResult.Diagnostics);
+    }
+
+    private CdcStateStoreFailure? ValidateCleanupProofForCompleteBindingIdentity(
+        CdcCleanupProof proof,
+        CdcCompleteBindingIdentity completeIdentity
+    )
+    {
+        CdcContractValidationResult validationResult = CdcCleanupProofValidator.Validate(
+            proof,
+            completeIdentity,
+            ObservedAt()
+        );
+
+        return validationResult.Succeeded
+            ? null
+            : CdcStateStoreFailure.InvalidOperation(validationResult.Diagnostics);
+    }
+
+    private CdcStateStoreFailure? DeleteUnpublishedStateFile(string filePath, string stateName) =>
+        DeleteStateFileIfPresent(filePath, $"remove unpublished {stateName} state");
+
+    private CdcStateStoreFailure? DeleteStateFileIfPresent(string filePath, string action)
+    {
+        try
+        {
+            if (_fileSystem.FileExists(filePath))
+            {
+                _fileSystem.DeleteFile(filePath);
+            }
+
+            return null;
+        }
+        catch (Exception exception) when (IsFileSystemException(exception))
+        {
+            return FileSystemFailure(filePath, action);
+        }
+    }
+
+    private CdcStateStoreFailure? DeleteStateFile(string filePath, string action)
+    {
+        try
+        {
+            _fileSystem.DeleteFile(filePath);
+            return null;
+        }
+        catch (Exception exception) when (IsFileSystemException(exception))
+        {
+            return FileSystemFailure(filePath, action);
+        }
+    }
+
+    private static CdcBindingMismatch CompleteIdentityMismatch(
+        CdcBinding persistedBinding,
+        CdcCompleteBindingIdentity expectedIdentity
+    ) =>
+        new(
+            persistedBinding,
+            persistedBinding,
+            [
+                new(
+                    CdcBindingFieldDifferenceKind.DifferentValue,
+                    "bindingIdentity",
+                    expectedIdentity.ToString(),
+                    persistedBinding.ToCompleteBindingIdentity().ToString()
+                ),
+            ]
+        );
+
+    private static CdcStateStoreFailure ToInvalidPersistedBindingFailure(
+        CdcBindingExactMatchResult exactMatch
+    )
+    {
+        IReadOnlyList<CdcDiagnostic> diagnostics =
+            exactMatch.Diagnostics.Count != 0
+                ? exactMatch.Diagnostics
+                : exactMatch
+                    .Differences.Select(difference => new CdcDiagnostic(
+                        CdcDiagnosticCategory.MalformedPayload,
+                        $"$.{difference.FieldName}",
+                        "CDC persisted binding state did not match the expected immutable field."
+                    ))
+                    .ToArray();
+
+        return CdcStateStoreFailure.InvalidPersistedBinding(diagnostics);
+    }
+
+    private static CdcDiagnostic IdentityMismatchDiagnostic(
+        string path,
+        string contractName,
+        string expectedLocation
+    ) =>
+        new(
+            CdcDiagnosticCategory.MalformedPayload,
+            path,
+            $"CDC persisted {contractName} identity does not match the {expectedLocation}."
+        );
+
+    private CdcStateStoreFailure FileSystemFailure(string path, string action) =>
+        CdcStateStoreFailure.LocalStateUnavailable(
+            path,
+            $"CDC local state store could not {action}.",
+            ObservedAt()
+        );
+
+    private DateTimeOffset ObservedAt() => _timeProvider.GetUtcNow().ToUniversalTime();
+
+    private static bool IsSymbolicLink(FileSystemInfo info)
+    {
+        if (info.LinkTarget is not null)
+        {
+            return true;
+        }
+
+        if (!info.Exists)
+        {
+            return false;
+        }
+
+        try
+        {
+            return (info.Attributes & FileAttributes.ReparsePoint) != 0;
+        }
+        catch (Exception exception) when (IsFileSystemException(exception))
+        {
+            return false;
+        }
+    }
+
+    private static bool IsFileSystemException(Exception exception) =>
+        exception
+            is IOException
+                or UnauthorizedAccessException
+                or SecurityException
+                or NotSupportedException
+                or ArgumentException;
+
+    private enum LocalCreateBindingOutcome
+    {
+        Created,
+        ExistingExactMatch,
+        BindingMismatch,
+        StateStoreFailure,
+    }
+
+    private sealed record LocalCreateBindingResult(
+        LocalCreateBindingOutcome Outcome,
+        CdcStoredBindingState? State,
+        CdcBindingMismatch? Mismatch,
+        CdcStateStoreFailure? Failure
+    )
+    {
+        public static LocalCreateBindingResult Created(CdcStoredBindingState state) =>
+            new(LocalCreateBindingOutcome.Created, state, null, null);
+
+        public static LocalCreateBindingResult Existing(CdcStoredBindingState state) =>
+            new(LocalCreateBindingOutcome.ExistingExactMatch, state, null, null);
+
+        public static LocalCreateBindingResult Mismatched(CdcBindingMismatch mismatch) =>
+            new(LocalCreateBindingOutcome.BindingMismatch, null, mismatch, null);
+
+        public static LocalCreateBindingResult Failed(CdcStateStoreFailure failure) =>
+            new(LocalCreateBindingOutcome.StateStoreFailure, null, null, failure);
+    }
+
+    private sealed record LocalContractFilePublishResult(
+        bool DestinationAlreadyExists,
+        CdcStateStoreFailure? Failure
+    )
+    {
+        public static LocalContractFilePublishResult Published() => new(false, null);
+
+        public static LocalContractFilePublishResult DestinationExists() => new(true, null);
+
+        public static LocalContractFilePublishResult Failed(CdcStateStoreFailure failure) =>
+            new(false, failure);
+    }
+
+    private sealed record LocalStoredBindingState(CdcStoredBindingState State, string BindingJson);
+
+    private sealed record LocalBindingReadResult(
+        LocalStoredBindingState? State,
+        bool Missing,
+        CdcStateStoreFailure? Failure
+    )
+    {
+        public static LocalBindingReadResult Found(LocalStoredBindingState state) => new(state, false, null);
+
+        public static LocalBindingReadResult MissingBinding() => new(null, true, null);
+
+        public static LocalBindingReadResult Failed(CdcStateStoreFailure failure) =>
+            new(null, false, failure);
+    }
+
+    private sealed record LocalBindingFileReadResult(
+        CdcBinding? Binding,
+        string? BindingJson,
+        CdcStateStoreFailure? Failure
+    )
+    {
+        public static LocalBindingFileReadResult Read(CdcBinding binding, string bindingJson) =>
+            new(binding, bindingJson, null);
+
+        public static LocalBindingFileReadResult Failed(CdcStateStoreFailure failure) =>
+            new(null, null, failure);
+    }
+
+    private sealed record LocalIncidentReadResult(CdcIncident? Incident, CdcStateStoreFailure? Failure)
+    {
+        public static LocalIncidentReadResult Read(CdcIncident incident) => new(incident, null);
+
+        public static LocalIncidentReadResult Absent() => new(null, null);
+
+        public static LocalIncidentReadResult Failed(CdcStateStoreFailure failure) => new(null, failure);
+    }
+
+    private sealed record LocalIncidentFileReadResult(CdcIncident? Incident, CdcStateStoreFailure? Failure)
+    {
+        public static LocalIncidentFileReadResult Read(CdcIncident incident) => new(incident, null);
+
+        public static LocalIncidentFileReadResult Failed(CdcStateStoreFailure failure) => new(null, failure);
+    }
+}
+
+internal sealed record CdcStateStorePathResolution(
+    string? RootPath,
+    string? DeploymentKey,
+    string? InstanceKey,
+    long? Generation,
+    string? FilePath,
+    IReadOnlyList<CdcDiagnostic> Diagnostics
+)
+{
+    public bool Succeeded => FilePath is not null && Diagnostics.Count == 0;
+
+    public CdcStateStoreFailure ToFailure() =>
+        new(
+            CdcStateStoreFailureKind.LocalStateUnavailable,
+            "CDC local state-store path is invalid.",
+            Diagnostics
+        );
+}
+
+internal sealed record CdcDeploymentStateStorePathResolution(
+    string? RootPath,
+    string? DeploymentKey,
+    string? BindingDeploymentDirectoryPath,
+    string? IncidentDeploymentDirectoryPath,
+    IReadOnlyList<CdcDiagnostic> Diagnostics
+)
+{
+    public bool Succeeded =>
+        BindingDeploymentDirectoryPath is not null
+        && IncidentDeploymentDirectoryPath is not null
+        && Diagnostics.Count == 0;
+
+    public CdcStateStoreFailure ToFailure() =>
+        new(
+            CdcStateStoreFailureKind.LocalStateUnavailable,
+            "CDC local deployment state-store path is invalid.",
+            Diagnostics
+        );
+}
+
+internal sealed class CdcStateStorePathResolver
+{
+    public const string BindingsDirectoryName = "bindings";
+    public const string IncidentsDirectoryName = "incidents";
+
+    public CdcStateStorePathResolver(string rootPath = LocalCdcBindingStateStore.DefaultRootPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(rootPath);
+
+        RootPath = Path.GetFullPath(rootPath);
+    }
+
+    public string RootPath { get; }
+
+    public CdcStateStorePathResolution ResolveBindingPath(CdcBindingIdentity identity)
+    {
+        ArgumentNullException.ThrowIfNull(identity);
+
+        return ResolveFilePath(identity, BindingsDirectoryName);
+    }
+
+    public CdcStateStorePathResolution ResolveIncidentPath(CdcBindingIdentity identity)
+    {
+        ArgumentNullException.ThrowIfNull(identity);
+
+        return ResolveFilePath(identity, IncidentsDirectoryName);
+    }
+
+    public CdcDeploymentStateStorePathResolution ResolveDeploymentPath(string? deploymentKey)
+    {
+        CdcDiagnosticCollector diagnostics = new();
+        string? validatedDeploymentKey = CdcKafkaSafeTokenValidator.Validate(
+            deploymentKey,
+            "$.deploymentKey",
+            "deploymentKey",
+            diagnostics
+        );
+        if (diagnostics.HasDiagnostics || validatedDeploymentKey is null)
+        {
+            return new(null, null, null, null, diagnostics.Diagnostics);
+        }
+
+        return new(
+            RootPath,
+            validatedDeploymentKey,
+            Path.Combine(RootPath, BindingsDirectoryName, validatedDeploymentKey),
+            Path.Combine(RootPath, IncidentsDirectoryName, validatedDeploymentKey),
+            []
+        );
+    }
+
+    private CdcStateStorePathResolution ResolveFilePath(
+        CdcBindingIdentity identity,
+        string stateDirectoryName
+    )
+    {
+        CdcContractValidationResult validationResult = CdcTargetValidator.ValidateBindingIdentity(identity);
+        if (!validationResult.Succeeded)
+        {
+            return new(null, null, null, null, null, validationResult.Diagnostics);
+        }
+
+        return new(
+            RootPath,
+            identity.DeploymentKey,
+            identity.InstanceKey,
+            identity.Generation,
+            Path.Combine(
+                RootPath,
+                stateDirectoryName,
+                identity.DeploymentKey,
+                identity.InstanceKey,
+                $"{identity.Generation}.json"
+            ),
+            []
+        );
+    }
+}
+
+internal interface ICdcLocalStateStorePermissions
+{
+    CdcLocalStateStorePermissionResult ApplyOwnerOnlyDirectory(string path);
+
+    CdcLocalStateStorePermissionResult ApplyOwnerOnlyFile(string path);
+
+    CdcLocalStateStorePermissionResult ValidateDirectoryNotSharedWritable(string path);
+
+    CdcLocalStateStorePermissionResult ValidateOwnerOnlyFile(string path);
+}
+
+internal sealed record CdcLocalStateStorePermissionResult(bool Succeeded, bool Unsupported, string? Message)
+{
+    public static CdcLocalStateStorePermissionResult Success { get; } = new(true, false, null);
+
+    public static CdcLocalStateStorePermissionResult UnsupportedPlatform { get; } = new(false, true, null);
+
+    public static CdcLocalStateStorePermissionResult Failure(string message) => new(false, false, message);
+}
+
+internal static class CdcLocalStateStoreUnixModes
+{
+    public const UnixFileMode OwnerOnlyDirectory =
+        UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+
+    public const UnixFileMode OwnerOnlyFile = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+
+    public const UnixFileMode SharedWrite = UnixFileMode.GroupWrite | UnixFileMode.OtherWrite;
+}
+
+internal sealed class CdcLocalStateStorePermissions : ICdcLocalStateStorePermissions
+{
+    public static CdcLocalStateStorePermissions Current { get; } = new();
+
+    public CdcLocalStateStorePermissionResult ApplyOwnerOnlyDirectory(string path) =>
+        ApplyOwnerOnlyMode(path, CdcLocalStateStoreUnixModes.OwnerOnlyDirectory);
+
+    public CdcLocalStateStorePermissionResult ApplyOwnerOnlyFile(string path) =>
+        ApplyOwnerOnlyMode(path, CdcLocalStateStoreUnixModes.OwnerOnlyFile);
+
+    public CdcLocalStateStorePermissionResult ValidateDirectoryNotSharedWritable(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return CdcLocalStateStorePermissionResult.UnsupportedPlatform;
+        }
+
+        try
+        {
+#pragma warning disable CA1416
+            UnixFileMode mode = File.GetUnixFileMode(path);
+#pragma warning restore CA1416
+            return (mode & CdcLocalStateStoreUnixModes.SharedWrite) == 0
+                ? CdcLocalStateStorePermissionResult.Success
+                : CdcLocalStateStorePermissionResult.Failure(
+                    "CDC local state directory must not be group- or world-writable."
+                );
+        }
+        catch (PlatformNotSupportedException)
+        {
+            return CdcLocalStateStorePermissionResult.UnsupportedPlatform;
+        }
+        catch (Exception exception)
+            when (exception is IOException or UnauthorizedAccessException or SecurityException)
+        {
+            return CdcLocalStateStorePermissionResult.Failure(
+                "CDC local state directory permissions could not be validated."
+            );
+        }
+    }
+
+    public CdcLocalStateStorePermissionResult ValidateOwnerOnlyFile(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return CdcLocalStateStorePermissionResult.UnsupportedPlatform;
+        }
+
+        try
+        {
+#pragma warning disable CA1416
+            UnixFileMode mode = File.GetUnixFileMode(path);
+#pragma warning restore CA1416
+            return mode == CdcLocalStateStoreUnixModes.OwnerOnlyFile
+                ? CdcLocalStateStorePermissionResult.Success
+                : CdcLocalStateStorePermissionResult.Failure(
+                    "CDC local state file permissions are not owner-only."
+                );
+        }
+        catch (PlatformNotSupportedException)
+        {
+            return CdcLocalStateStorePermissionResult.UnsupportedPlatform;
+        }
+        catch (Exception exception)
+            when (exception is IOException or UnauthorizedAccessException or SecurityException)
+        {
+            return CdcLocalStateStorePermissionResult.Failure(
+                "CDC local state owner-only permissions could not be validated."
+            );
+        }
+    }
+
+    private static CdcLocalStateStorePermissionResult ApplyOwnerOnlyMode(string path, UnixFileMode mode)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return CdcLocalStateStorePermissionResult.UnsupportedPlatform;
+        }
+
+        try
+        {
+#pragma warning disable CA1416
+            File.SetUnixFileMode(path, mode);
+#pragma warning restore CA1416
+            return CdcLocalStateStorePermissionResult.Success;
+        }
+        catch (PlatformNotSupportedException)
+        {
+            return CdcLocalStateStorePermissionResult.UnsupportedPlatform;
+        }
+        catch (Exception exception)
+            when (exception is IOException or UnauthorizedAccessException or SecurityException)
+        {
+            return CdcLocalStateStorePermissionResult.Failure(
+                "CDC local state owner-only permissions could not be applied."
+            );
+        }
+    }
+}
+
+internal interface ICdcLocalStateStoreFileSystem
+{
+    bool FileExists(string path);
+
+    Task WriteAllTextCreateNewFlushAsync(
+        string path,
+        string payload,
+        FileStreamOptions options,
+        CancellationToken cancellationToken
+    );
+
+    void MoveFileWithoutOverwrite(string sourcePath, string destinationPath);
+
+    void DeleteFile(string path);
+}
+
+internal sealed class CdcLocalStateStoreFileSystem : ICdcLocalStateStoreFileSystem
+{
+    public static CdcLocalStateStoreFileSystem Current { get; } = new();
+
+    public bool FileExists(string path) => File.Exists(path);
+
+    public async Task WriteAllTextCreateNewFlushAsync(
+        string path,
+        string payload,
+        FileStreamOptions options,
+        CancellationToken cancellationToken
+    )
+    {
+        await using FileStream fileStream = new(path, options);
+        await using StreamWriter writer = new(fileStream, new UTF8Encoding(false));
+        await writer.WriteAsync(payload.AsMemory(), cancellationToken);
+        await writer.FlushAsync(cancellationToken);
+        fileStream.Flush(flushToDisk: true);
+    }
+
+    public void MoveFileWithoutOverwrite(string sourcePath, string destinationPath) =>
+        File.Move(sourcePath, destinationPath, overwrite: false);
+
+    public void DeleteFile(string path) => File.Delete(path);
+}
