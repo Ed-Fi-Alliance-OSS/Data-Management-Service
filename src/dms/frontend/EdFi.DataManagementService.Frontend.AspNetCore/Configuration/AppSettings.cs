@@ -20,6 +20,7 @@ public class AppSettings
     public required string CorrelationIdHeader { get; set; }
     public string DomainsExcludedFromOpenApi { get; set; } = string.Empty;
     public string RouteQualifierSegments { get; set; } = string.Empty;
+    public int CorrelationIdMaxLength { get; set; } = DefaultCorrelationIdMaxLength;
 
     /// <summary>
     /// Maximum allowed length of a client-supplied Correlation ID header value.
