@@ -158,6 +158,12 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
 
         comparisonOperatorResolver ??= static _ => QueryComparisonOperator.Equal;
 
+        var (foldedMode, windowPredicateRange) =
+            PageCandidateModePlanning.FoldChangeVersionWindowIntoCursorBounds(
+                plannedMode,
+                changeVersionRange
+            );
+
         var rootColumnsByName = rootTable.Columns.ToDictionary(
             static column => column.ColumnName,
             static column => column
@@ -166,12 +172,12 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         var parameterNamesByIndex = DeriveParameterNames(
             preprocessingResult.QueryElementsInOrder,
             authorization,
-            plannedMode.OwnedParameterNames
+            foldedMode.OwnedParameterNames
         );
         var predicates = new List<QueryValuePredicate>(preprocessingResult.QueryElementsInOrder.Count + 2);
         Dictionary<string, object?> parameterValues = new(StringComparer.Ordinal);
 
-        foreach (var (parameterName, parameterValue) in plannedMode.ParameterValues)
+        foreach (var (parameterName, parameterValue) in foldedMode.ParameterValues)
         {
             parameterValues[parameterName] = parameterValue;
         }
@@ -210,8 +216,8 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         AppendChangeVersionPredicates(
             rootTable,
             rootColumnsByName,
-            changeVersionRange,
-            plannedMode.OrderingMode,
+            windowPredicateRange,
+            foldedMode.OrderingMode,
             predicates,
             parameterValues
         );
@@ -232,12 +238,12 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             RootTable: rootTable.Table,
             Predicates: predicates,
             UnifiedAliasMappingsByColumn: BuildUnifiedAliasMappingsByColumn(rootTable),
-            Mode: plannedMode.Mode,
+            Mode: foldedMode.Mode,
             Authorization: authorization
         );
         var sqlPlan = _sqlCompiler.Compile(querySpec);
 
-        return new CandidateQueryPlan(sqlPlan, parameterValues, plannedMode.OrderingMode);
+        return new CandidateQueryPlan(sqlPlan, parameterValues, foldedMode.OrderingMode);
     }
 
     private static PlannedPredicate? PlanPredicate(

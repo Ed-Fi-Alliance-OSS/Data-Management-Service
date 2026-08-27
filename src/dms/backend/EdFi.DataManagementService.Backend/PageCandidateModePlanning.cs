@@ -152,6 +152,92 @@ internal static class PageCandidateModePlanning
         );
     }
 
+    /// <summary>
+    /// Folds a validated change-version window into a cursor page's own bounds, and returns the mode to
+    /// compile together with the window that still needs predicates of its own —
+    /// <see langword="null" /> once the bounds carry it.
+    /// </summary>
+    /// <remarks>
+    /// Under a <c>ContentVersion</c> anchor the cursor bounds and the change-version window are two
+    /// ranges over the same column, and their conjunction is a single range: the greater floor and the
+    /// lesser ceiling. Emitting both leaves SQL Server building its seek keys from one pair and applying
+    /// the other as a residual predicate on the seek, so a page whose cursor floor sits above the window
+    /// floor reads forward from the window floor and discards every row below its own range — waste
+    /// proportional to how far into the window the page starts, which is worst on the later pages of a
+    /// walk and the later tokens of a partition. One range per column is what puts both ends in the seek
+    /// keys. PostgreSQL already folds all four bounds into one index condition, so this is a no-op there.
+    /// <para>
+    /// The rows selected are unchanged: a row satisfying both ranges is exactly a row satisfying their
+    /// intersection. An open window bound contributes no limit, so a partition's unbounded last range
+    /// still comes back clipped to <c>maxChangeVersion</c>.
+    /// </para>
+    /// <para>
+    /// Only under a <c>ContentVersion</c> anchor. A <c>DocumentId</c>-anchored page bounds its cursor on
+    /// <c>DocumentId</c> while the window filters <c>ContentVersion</c> — two ranges over two columns,
+    /// and both have to stay.
+    /// </para>
+    /// </remarks>
+    public static (
+        PlannedCandidateMode Mode,
+        ChangeVersionRange? WindowPredicateRange
+    ) FoldChangeVersionWindowIntoCursorBounds(
+        PlannedCandidateMode plannedMode,
+        ChangeVersionRange? changeVersionRange
+    )
+    {
+        if (
+            changeVersionRange is null
+            || plannedMode.Mode is not PageCandidateMode.Cursor cursorMode
+            || plannedMode.OrderingMode is not PageOrderingMode.ContentVersion
+        )
+        {
+            return (plannedMode, changeVersionRange);
+        }
+
+        var foldedValues = new KeyValuePair<string, object?>[plannedMode.ParameterValues.Count];
+
+        for (var index = 0; index < foldedValues.Length; index++)
+        {
+            var boundValue = plannedMode.ParameterValues[index];
+
+            if (boundValue.Key == cursorMode.InclusiveMinimumParameterName)
+            {
+                foldedValues[index] = new(
+                    boundValue.Key,
+                    Math.Max(
+                        CursorBoundOrThrow(boundValue),
+                        changeVersionRange.MinChangeVersion ?? long.MinValue
+                    )
+                );
+            }
+            else if (boundValue.Key == cursorMode.InclusiveMaximumParameterName)
+            {
+                foldedValues[index] = new(
+                    boundValue.Key,
+                    Math.Min(
+                        CursorBoundOrThrow(boundValue),
+                        changeVersionRange.MaxChangeVersion ?? long.MaxValue
+                    )
+                );
+            }
+            else
+            {
+                foldedValues[index] = boundValue;
+            }
+        }
+
+        return (plannedMode with { ParameterValues = foldedValues }, null);
+    }
+
+    private static long CursorBoundOrThrow(KeyValuePair<string, object?> boundValue)
+    {
+        return boundValue.Value as long?
+            ?? throw new InvalidOperationException(
+                $"Cursor page selection binds '{boundValue.Key}' as an Int64 anchor bound, but this mode "
+                    + $"bound '{boundValue.Value?.GetType().Name ?? "null"}'."
+            );
+    }
+
     private static PlannedCandidateMode ForCursor(
         CollectionPaging.Cursor cursor,
         PageOrderingMode orderingMode

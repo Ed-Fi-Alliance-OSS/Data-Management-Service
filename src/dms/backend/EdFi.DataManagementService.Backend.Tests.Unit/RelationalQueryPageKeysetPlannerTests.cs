@@ -727,6 +727,81 @@ public class Given_RelationalQueryPageKeysetPlanner
     }
 
     [Test]
+    public void It_should_fold_the_change_version_window_into_a_content_version_cursor_pages_bounds()
+    {
+        // Two ranges over one column cost a seek: SQL Server takes one pair into its seek keys and
+        // leaves the other as a residual predicate, so the page reads forward from the window floor and
+        // discards everything below its own. The intersection selects the same rows from one range.
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var cursor = planner.Plan(
+            CreateRootTable(),
+            CreateParityPreprocessingResult(),
+            new CollectionPaging.Cursor(new CursorRange(150L, 250L), new PageSize(25)),
+            changeVersionRange: new ChangeVersionRange(100L, 200L),
+            orderingMode: PageOrderingMode.ContentVersion
+        );
+
+        cursor.ParameterValues["cursorMin"].Should().Be(150L, "the cursor floor is the greater of the two");
+        cursor.ParameterValues["cursorMax"].Should().Be(200L, "the window ceiling is the lesser of the two");
+        cursor
+            .ParameterValues.Keys.Should()
+            .NotContain("minChangeVersion")
+            .And.NotContain("maxChangeVersion");
+
+        cursor.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @cursorMin");
+        cursor.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" <= @cursorMax");
+        cursor.Plan.PageDocumentIdSql.Should().NotContain("@minChangeVersion");
+        cursor.Plan.PageDocumentIdSql.Should().NotContain("@maxChangeVersion");
+    }
+
+    [Test]
+    public void It_should_clip_an_unbounded_cursor_range_to_the_window_it_folds()
+    {
+        // A partition's last range runs to long.MaxValue and relies on the window's ceiling to stop it.
+        // Folding moves that clipping from a second SQL predicate to the bound value, so it has to still
+        // happen — and an absent window bound has to contribute no limit of its own.
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var cursor = planner.Plan(
+            CreateRootTable(),
+            CreateParityPreprocessingResult(),
+            new CollectionPaging.Cursor(new CursorRange(120L, long.MaxValue), new PageSize(25)),
+            changeVersionRange: new ChangeVersionRange(null, 200L),
+            orderingMode: PageOrderingMode.ContentVersion
+        );
+
+        cursor.ParameterValues["cursorMin"].Should().Be(120L);
+        cursor.ParameterValues["cursorMax"].Should().Be(200L);
+        cursor.Plan.PageDocumentIdSql.Should().NotContain("@maxChangeVersion");
+    }
+
+    [Test]
+    public void It_should_keep_both_ranges_for_a_document_id_anchored_cursor_page()
+    {
+        // Under a DocumentId anchor the cursor bounds and the window are ranges over two different
+        // columns, so there is nothing to intersect and both have to be emitted.
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var cursor = planner.Plan(
+            CreateRootTable(),
+            CreateParityPreprocessingResult(),
+            new CollectionPaging.Cursor(new CursorRange(150L, 250L), new PageSize(25)),
+            changeVersionRange: new ChangeVersionRange(100L, 200L),
+            orderingMode: PageOrderingMode.DocumentId
+        );
+
+        cursor.ParameterValues["cursorMin"].Should().Be(150L);
+        cursor.ParameterValues["cursorMax"].Should().Be(250L);
+        cursor.ParameterValues["minChangeVersion"].Should().Be(100L);
+        cursor.ParameterValues["maxChangeVersion"].Should().Be(200L);
+
+        cursor.Plan.PageDocumentIdSql.Should().Contain("r.\"DocumentId\" >= @cursorMin");
+        cursor.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
+        cursor.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" <= @maxChangeVersion");
+    }
+
+    [Test]
     public void It_should_reach_the_same_empty_candidate_short_circuit_in_every_candidate_mode()
     {
         var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);

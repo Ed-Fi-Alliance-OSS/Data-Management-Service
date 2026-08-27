@@ -94,8 +94,10 @@ public static class HydrationReader
     /// than a failure. A missing column is a defect in this code, not anything a client did, so it is
     /// named here instead of surfacing as a bare ordinal fault from inside the row loop.
     /// <para>
-    /// Scanned rather than resolved through <see cref="DbDataReader.GetOrdinal" />, which reports an
-    /// absent name by throwing a type that varies by provider.
+    /// Scanned rather than resolved through <see cref="DbDataReader.GetOrdinal" />, which raises the
+    /// diagnostic below directly instead of by translating an <see cref="IndexOutOfRangeException" />.
+    /// A preference, not a portability requirement: an absent name is that exception under the ADO.NET
+    /// contract, which is what the read-acceleration twin in the repository catches.
     /// </para>
     /// </remarks>
     private static int FindSelectedAnchorOrdinal(DbDataReader reader)

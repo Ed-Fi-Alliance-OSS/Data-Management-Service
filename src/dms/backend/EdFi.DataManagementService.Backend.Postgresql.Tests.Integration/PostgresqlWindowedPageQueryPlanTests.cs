@@ -168,6 +168,84 @@ public class Given_A_Postgresql_Windowed_Page_Query_Plan
     }
 
     /// <summary>
+    /// The cursor twin of the regular-resource case. A cursor page is the shape this ordering exists
+    /// for, and it is not the traditional page with a different limit clause: it seeks an inclusive
+    /// range of the anchor — the cursor bounds folded together with the window's, which are ranges over
+    /// the same column — and takes its rows through <c>FETCH FIRST</c> rather than <c>OFFSET</c>.
+    /// </summary>
+    [Test]
+    public async Task It_seeks_the_content_version_index_for_a_regular_resource_cursor_upper_tail()
+    {
+        var window = await UpperTailWindowAsync("\"edfi\".\"School\"");
+        var keyset = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql).Plan(
+            _fixture.MappingSet.GetReadPlanOrThrow(SchoolResource).Model.Root,
+            new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            CursorPagingOver(window),
+            changeVersionRange: window,
+            orderingMode: PageOrderingMode.ContentVersion
+        );
+
+        var explained = await ExplainAsync(keyset);
+
+        explained.Json.Should().Contain("IX_School_ContentVersion");
+        explained
+            .Json.Should()
+            .NotContain(
+                "PK_School",
+                "a cursor page entering the window must seek the anchor index rather than walking the "
+                    + "primary key to find its first row"
+            );
+        AssertNoSequentialScan(explained.Plan, "School");
+    }
+
+    /// <summary>
+    /// The cursor twin of the descriptor case, for the same reason: the descriptor page carries a
+    /// <c>ResourceKeyId</c> equality ahead of the anchor range, so its composite index has to absorb an
+    /// equality prefix and the folded anchor range together.
+    /// </summary>
+    [Test]
+    public async Task It_seeks_the_descriptor_content_version_index_for_a_cursor_upper_tail()
+    {
+        short resourceKeyId = _fixture.MappingSet.ResourceKeyIdByResource[DescriptorResource];
+        var window = await UpperTailWindowAsync(
+            "\"dms\".\"Descriptor\"",
+            $"WHERE \"ResourceKeyId\" = {resourceKeyId}"
+        );
+        var keyset = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql).Plan(
+            _fixture.MappingSet,
+            DescriptorResource,
+            new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            CursorPagingOver(window),
+            changeVersionRange: window,
+            orderingMode: PageOrderingMode.ContentVersion
+        );
+
+        var explained = await ExplainAsync(keyset);
+
+        explained.Json.Should().Contain("IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId");
+        explained
+            .Json.Should()
+            .NotContain(
+                "PK_Descriptor",
+                "a cursor page entering the window must seek the composite anchor index rather than "
+                    + "walking the primary key to find its first row"
+            );
+        AssertNoSequentialScan(explained.Plan, "Descriptor");
+    }
+
+    /// <summary>
+    /// A cursor page starting partway into the window rather than at its floor, which is what a
+    /// continuation token and a non-first partition token both name. Bounds equal to the window's own
+    /// would be the one cursor range that cannot tell a seek on the cursor bounds apart from a seek on
+    /// the window's, and the one range whose intersection with the window changes nothing.
+    /// </summary>
+    private static CollectionPaging CursorPagingOver(ChangeVersionRange window) =>
+        new CollectionPaging.Cursor(
+            new CursorRange(window.MaxChangeVersion!.Value - PageLimit + 1, window.MaxChangeVersion!.Value),
+            new PageSize(PageLimit)
+        );
+
+    /// <summary>
     /// The window a first page of a freshly opened change-version window reads: the top
     /// <see cref="TailRowCount" /> anchors of the seeded collection. Derived from the rows themselves
     /// rather than from the values the seed supplied, because the emitted stamp triggers are what decide

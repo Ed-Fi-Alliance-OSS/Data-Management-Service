@@ -68,7 +68,7 @@ public class Given_A_Hydrated_Page
 [Parallelizable]
 public class Given_A_Query_Page_Keyset_Spec
 {
-    private static PageKeysetSpec.Query CreateKeyset(PageOrderingMode? orderingMode = null)
+    private static PageKeysetSpec.Query CreateKeyset(PageOrderingMode orderingMode)
     {
         var plan = new PageDocumentIdSqlPlan(
             "SELECT 1;",
@@ -76,27 +76,34 @@ public class Given_A_Query_Page_Keyset_Spec
             PageParametersInOrder: [],
             TotalCountParametersInOrder: null
         );
-        var parameterValues = new Dictionary<string, object?>();
 
-        return orderingMode is { } mode
-            ? new PageKeysetSpec.Query(plan, parameterValues, mode)
-            : new PageKeysetSpec.Query(plan, parameterValues);
+        return new PageKeysetSpec.Query(plan, new Dictionary<string, object?>(), orderingMode);
     }
 
-    [Test]
-    public void It_anchors_on_document_id_by_default()
+    [TestCase(PageOrderingMode.DocumentId)]
+    [TestCase(PageOrderingMode.ContentVersion)]
+    public void It_carries_the_anchor_it_was_built_with(PageOrderingMode orderingMode)
     {
-        // The default is what keeps every keyset a caller builds without naming an anchor — GET-by-id
-        // paths, traditional pages, and every existing fixture — emitting the batch text it always has.
-        CreateKeyset().OrderingMode.Should().Be(PageOrderingMode.DocumentId);
+        CreateKeyset(orderingMode).OrderingMode.Should().Be(orderingMode);
     }
 
+    /// <summary>
+    /// The anchor is a required argument, not a defaulted one. It is the value the batch builder and
+    /// both keyset readers branch on, and a keyset left on a default while its plan was compiled for
+    /// <c>ContentVersion</c> still emits valid SQL — it just hands back <c>DocumentId</c>s that Core
+    /// then stamps with a <c>ContentVersion</c> marker, which is a walk that skips rows and fails
+    /// nowhere.
+    /// </summary>
     [Test]
-    public void It_carries_a_content_version_anchor()
+    public void It_requires_an_anchor_rather_than_defaulting_one()
     {
-        CreateKeyset(PageOrderingMode.ContentVersion)
-            .OrderingMode.Should()
-            .Be(PageOrderingMode.ContentVersion);
+        typeof(PageKeysetSpec.Query)
+            .GetConstructors()
+            .Single()
+            .GetParameters()
+            .Single(parameter => parameter.Name == nameof(PageKeysetSpec.Query.OrderingMode))
+            .HasDefaultValue.Should()
+            .BeFalse();
     }
 
     [Test]

@@ -126,7 +126,8 @@ public class Given_A_Page_With_Multiple_Documents
                 ],
                 TotalCountParametersInOrder: null
             ),
-            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L }
+            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L },
+            PageOrderingMode.DocumentId
         );
 
         await using var hydrationConnection = await _dataSource.OpenConnectionAsync();
@@ -1125,7 +1126,8 @@ public class Given_A_Query_With_TotalCount_Requested
                 ],
                 TotalCountParametersInOrder: []
             ),
-            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 2L }
+            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 2L },
+            PageOrderingMode.DocumentId
         );
 
         await using var hydrationConnection = await _dataSource.OpenConnectionAsync();
@@ -1253,7 +1255,8 @@ public class Given_A_Reference_Bearing_Resource
                 ],
                 TotalCountParametersInOrder: null
             ),
-            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L }
+            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L },
+            PageOrderingMode.DocumentId
         );
 
         await using var hydrationConnection = await _dataSource.OpenConnectionAsync();
@@ -1933,7 +1936,8 @@ public class Given_A_Pgsql_Query_Keyset_That_Returns_Its_Selected_Ids
                 ["cursorMin"] = inclusiveMinimum,
                 ["cursorMax"] = inclusiveMaximum,
                 ["pageSize"] = pageSize,
-            }
+            },
+            PageOrderingMode.DocumentId
         );
 
     private static int CountOccurrences(string text, string value)

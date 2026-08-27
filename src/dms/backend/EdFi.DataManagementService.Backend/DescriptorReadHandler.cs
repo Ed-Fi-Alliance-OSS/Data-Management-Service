@@ -741,7 +741,15 @@ internal sealed class DescriptorReadHandler(
         try
         {
             descriptorRows = await _commandExecutor
-                .ExecuteReaderAsync(command, DescriptorReadRowReader.ReadAllAsync, cancellationToken)
+                .ExecuteReaderAsync(
+                    command,
+                    // No anchor to carry: this statement ranges over dms.Document by id and never
+                    // touches the page-selection relation, so the boundary is the one selection took
+                    // and is passed through below rather than re-read from these rows.
+                    (rowReader, ct) =>
+                        DescriptorReadRowReader.ReadAllAsync(rowReader, carriesSelectedAnchor: false, ct),
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
         }
         catch (DbException ex) when (customViewChecks is { Count: > 0 })
@@ -1540,6 +1548,12 @@ internal sealed class DescriptorReadHandler(
     /// Counts the change-version parameters the descriptor page query will bind: one per supplied
     /// bound (minChangeVersion / maxChangeVersion), zero when no window applies.
     /// </summary>
+    /// <remarks>
+    /// An upper bound, which is the safe direction for a ceiling this check fails closed on. A
+    /// <c>ContentVersion</c>-anchored cursor page folds the window into its own cursor bounds and binds
+    /// neither of these names, so counting them can only leave the budget more conservative than the
+    /// command it is protecting.
+    /// </remarks>
     private static int CountChangeVersionParameters(ChangeVersionRange changeVersionRange) =>
         (changeVersionRange.MinChangeVersion is null ? 0 : 1)
         + (changeVersionRange.MaxChangeVersion is null ? 0 : 1);
@@ -1654,7 +1668,13 @@ internal sealed class DescriptorReadHandler(
 
         return _commandExecutor.ExecuteReaderAsync(
             command,
-            (reader, ct) => ReadQueryRowsPageAsync(reader, plannedQuery.Plan.TotalCountSql is not null, ct),
+            (reader, ct) =>
+                ReadQueryRowsPageAsync(
+                    reader,
+                    plannedQuery.Plan.TotalCountSql is not null,
+                    CarriesSelectedAnchor(plannedQuery),
+                    ct
+                ),
             cancellationToken
         );
     }
@@ -1677,7 +1697,12 @@ internal sealed class DescriptorReadHandler(
         return _commandExecutor.ExecuteReaderAsync(
             command,
             (reader, ct) =>
-                ReadQueryCandidateRowsPageAsync(reader, plannedQuery.Plan.TotalCountSql is not null, ct),
+                ReadQueryCandidateRowsPageAsync(
+                    reader,
+                    plannedQuery.Plan.TotalCountSql is not null,
+                    CarriesSelectedAnchor(plannedQuery),
+                    ct
+                ),
             cancellationToken
         );
     }
@@ -1878,6 +1903,21 @@ internal sealed class DescriptorReadHandler(
             request.ResponseContentCoding
         );
 
+    /// <summary>
+    /// Whether the statements built for this keyset project the page-selection anchor beside the
+    /// descriptor columns.
+    /// </summary>
+    /// <remarks>
+    /// Read off the planned keyset rather than off the request, so the answer describes the column the
+    /// embedded page-selection SQL was actually compiled to project. Both the projection that emits the
+    /// column and the reader that consumes it ask here, which is the descriptor twin of
+    /// <see cref="HydrationBatchBuilder.CarriesSelectedAnchor" />: a reader that probed the result set
+    /// for the column instead would be a second decision able to drift from the one that emitted it,
+    /// and it would pay for the probe on every row of every page that has no anchor at all.
+    /// </remarks>
+    private static bool CarriesSelectedAnchor(PageKeysetSpec.Query plannedQuery) =>
+        plannedQuery.OrderingMode is PageOrderingMode.ContentVersion;
+
     private static RelationalCommand BuildQueryCommand(
         SqlDialect dialect,
         PageKeysetSpec.Query plannedQuery,
@@ -1886,13 +1926,11 @@ internal sealed class DescriptorReadHandler(
     {
         ArgumentNullException.ThrowIfNull(plannedQuery);
 
-        // Read off the planned keyset rather than off the request, so the column this statement carries
-        // out is the one the embedded page-selection SQL was actually compiled to project.
         var pageRowsSql = BuildPageRowsSql(
             dialect,
             plannedQuery.Plan.PageDocumentIdSql,
             projection,
-            includeSelectedAnchor: plannedQuery.OrderingMode is PageOrderingMode.ContentVersion
+            includeSelectedAnchor: CarriesSelectedAnchor(plannedQuery)
         );
         var commandText = plannedQuery.Plan.TotalCountSql is null
             ? pageRowsSql
@@ -1923,9 +1961,14 @@ internal sealed class DescriptorReadHandler(
         ];
     }
 
+    /// <param name="carriesSelectedAnchor">
+    /// Whether this statement projected the page-selection anchor, from the same predicate its
+    /// projection was emitted under.
+    /// </param>
     private static async Task<DescriptorQueryRowsPage> ReadQueryRowsPageAsync(
         IRelationalCommandReader reader,
         bool hasTotalCount,
+        bool carriesSelectedAnchor,
         CancellationToken cancellationToken
     )
     {
@@ -1946,15 +1989,20 @@ internal sealed class DescriptorReadHandler(
         }
 
         var rows = await DescriptorReadRowReader
-            .ReadAllAsync(reader, cancellationToken)
+            .ReadAllAsync(reader, carriesSelectedAnchor, cancellationToken)
             .ConfigureAwait(false);
 
         return new DescriptorQueryRowsPage(totalCount, rows);
     }
 
+    /// <param name="carriesSelectedAnchor">
+    /// Whether this statement projected the page-selection anchor, from the same predicate its
+    /// projection was emitted under.
+    /// </param>
     private static async Task<DescriptorQueryCandidatePage> ReadQueryCandidateRowsPageAsync(
         IRelationalCommandReader reader,
         bool hasTotalCount,
+        bool carriesSelectedAnchor,
         CancellationToken cancellationToken
     )
     {
@@ -1975,7 +2023,7 @@ internal sealed class DescriptorReadHandler(
         }
 
         var rows = await DescriptorReadRowReader
-            .ReadAllCandidatesAsync(reader, cancellationToken)
+            .ReadAllCandidatesAsync(reader, carriesSelectedAnchor, cancellationToken)
             .ConfigureAwait(false);
 
         return new DescriptorQueryCandidatePage(totalCount, rows);

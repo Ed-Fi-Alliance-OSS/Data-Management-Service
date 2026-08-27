@@ -155,10 +155,19 @@ public abstract record PageKeysetSpec
     /// keyset carries that column alongside <c>DocumentId</c> and returns both, because the anchor has
     /// to leave selection with the ids: a page whose rows are all deleted before hydration still has to
     /// report where it ended, and by then there is nothing left to look the anchor up from.
+    /// <para>
+    /// Required rather than defaulted, for the same reason the request records that carry the anchor
+    /// down to here require it — and more sharply, because this is the value the batch builder and both
+    /// keyset readers actually branch on. A keyset left on the default while its plan was compiled for
+    /// <c>ContentVersion</c> still emits valid SQL: the insert simply selects one of the two columns the
+    /// page-selection relation projects, the returning clause hands back <c>DocumentId</c>s, and the
+    /// reader takes their maximum. Core then stamps that <c>DocumentId</c> with a <c>ContentVersion</c>
+    /// marker, and the client walks on a token that skips rows with nothing having failed anywhere.
+    /// </para>
     /// </param>
     public sealed record Query(
         PageDocumentIdSqlPlan Plan,
         IReadOnlyDictionary<string, object?> ParameterValues,
-        PageOrderingMode OrderingMode = PageOrderingMode.DocumentId
+        PageOrderingMode OrderingMode
     ) : PageKeysetSpec;
 }

@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Npgsql;
 using NUnit.Framework;
@@ -689,7 +690,8 @@ public class Given_Multi_Document_Page_Created_Via_Query_Keyset_Returns_All_Desc
                 ],
                 TotalCountParametersInOrder: null
             ),
-            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L }
+            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L },
+            PageOrderingMode.DocumentId
         );
 
         await using var execConn = await _dataSource.OpenConnectionAsync();
@@ -767,7 +769,8 @@ internal static class PostgresqlDescriptorProjectionPageKeysetHelper
                 PageParametersInOrder: [],
                 TotalCountParametersInOrder: null
             ),
-            new Dictionary<string, object?>()
+            new Dictionary<string, object?>(),
+            PageOrderingMode.DocumentId
         );
     }
 }

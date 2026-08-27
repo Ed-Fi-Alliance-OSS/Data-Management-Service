@@ -53,7 +53,8 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
                 ["schoolYear"] = null,
                 ["offset"] = 0L,
                 ["limit"] = 25L,
-            }
+            },
+            PageOrderingMode.DocumentId
         );
 
         HydrationBatchBuilder.AddParameters(command, keyset);
@@ -99,7 +100,7 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
         );
         HydrationBatchBuilder.AddParameters(
             unanchoredCommand,
-            new PageKeysetSpec.Query(plan, parameterValues)
+            new PageKeysetSpec.Query(plan, parameterValues, PageOrderingMode.DocumentId)
         );
 
         anchoredCommand
@@ -144,7 +145,8 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
                 ["ClaimEducationOrganizationIds"] = new long[] { 10L, 20L, 30L },
                 ["offset"] = 0L,
                 ["limit"] = 25L,
-            }
+            },
+            PageOrderingMode.DocumentId
         );
 
         HydrationBatchBuilder.AddParameters(command, keyset);
@@ -180,7 +182,8 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
                 ["namespacePrefixes"] = new[] { "uri://ed-fi.org/%", "uri://gbisd.edu/%" },
                 ["offset"] = 0L,
                 ["limit"] = 25L,
-            }
+            },
+            PageOrderingMode.DocumentId
         );
 
         HydrationBatchBuilder.AddParameters(command, keyset);
@@ -223,7 +226,8 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
                 ["ClaimEducationOrganizationIds"] = new long[] { 10L, 20L, 30L },
                 ["offset"] = 0L,
                 ["limit"] = 25L,
-            }
+            },
+            PageOrderingMode.DocumentId
         );
 
         HydrationBatchBuilder.AddParameters(command, keyset);
@@ -268,7 +272,8 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
                 ["authorizationIds"] = new long[] { 10L, 20L },
                 ["offset"] = 0L,
                 ["limit"] = 25L,
-            }
+            },
+            PageOrderingMode.DocumentId
         );
 
         var act = () => HydrationBatchBuilder.AddParameters(command, keyset);
@@ -299,7 +304,8 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
                     new QuerySqlParameter(QuerySqlParameterRole.Filter, "localEducationAgencyId"),
                 ]
             ),
-            new Dictionary<string, object?> { ["offset"] = 0L }
+            new Dictionary<string, object?> { ["offset"] = 0L },
+            PageOrderingMode.DocumentId
         );
 
         var act = () => HydrationBatchBuilder.AddParameters(command, keyset);
@@ -335,7 +341,8 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
                 ["unsupported"] = 10L,
                 ["offset"] = 0L,
                 ["limit"] = 25L,
-            }
+            },
+            PageOrderingMode.DocumentId
         );
 
         var exception = Assert.Throws<ArgumentOutOfRangeException>(() =>
@@ -371,7 +378,8 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
                 ["ClaimEducationOrganizationIds"] = 10L,
                 ["offset"] = 0L,
                 ["limit"] = 25L,
-            }
+            },
+            PageOrderingMode.DocumentId
         );
 
         var act = () => HydrationBatchBuilder.AddParameters(command, keyset);
@@ -406,7 +414,8 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
                 ["ClaimEducationOrganizationIds"] = 10L,
                 ["offset"] = 0L,
                 ["limit"] = 25L,
-            }
+            },
+            PageOrderingMode.DocumentId
         );
 
         var act = () => HydrationBatchBuilder.AddParameters(command, keyset);

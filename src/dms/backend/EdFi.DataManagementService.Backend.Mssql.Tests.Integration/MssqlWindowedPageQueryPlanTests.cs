@@ -5,6 +5,7 @@
 
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
@@ -191,6 +192,133 @@ public class Given_A_Mssql_Windowed_Page_Query_Plan
                 "[PK_Descriptor]",
                 "reading the descriptor root through its primary key is the dead run the ContentVersion "
                     + "ordering exists to avoid"
+            );
+    }
+
+    /// <summary>
+    /// The cursor twin of the regular-resource case. A cursor page is the shape this ordering exists
+    /// for, and it is not the traditional page with a different limit clause: it seeks an inclusive
+    /// range of the anchor and takes its rows through a parameterized <c>TOP</c> rather than
+    /// <c>OFFSET</c>/<c>FETCH</c>.
+    /// </summary>
+    /// <remarks>
+    /// The page has to both reach the root through the anchor index rather than the primary key — the
+    /// walk-entry dead run the ordering exists to remove — and read no more than it returns. The second
+    /// is what makes page cost depend on page size rather than window position, and it is a claim only
+    /// SQL Server can fail: the cursor bounds and the change-version window are folded into one range
+    /// per column in planning precisely because SQL Server takes one range into its seek keys and leaves
+    /// a second as a residual predicate on the seek, reading forward from the window floor and
+    /// discarding everything below the page's own floor.
+    /// </remarks>
+    [Test]
+    public async Task It_seeks_the_content_version_index_for_a_regular_resource_cursor_upper_tail()
+    {
+        var window = await UpperTailWindowAsync("[edfi].[School]");
+        var keyset = new RelationalQueryPageKeysetPlanner(SqlDialect.Mssql).Plan(
+            _fixture.MappingSet.GetReadPlanOrThrow(SchoolResource).Model.Root,
+            new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            CursorPagingOver(window),
+            changeVersionRange: window,
+            orderingMode: PageOrderingMode.ContentVersion
+        );
+
+        string plan = await CapturePlanAsync(keyset);
+
+        plan.Should().Contain("[IX_School_ContentVersion]");
+        plan.Should()
+            .Contain(
+                "PhysicalOp=\"Index Seek\"",
+                "the folded cursor and window bounds are one range over the index's leading column, so "
+                    + "the page is sought rather than arrived at by reading forward"
+            );
+        plan.Should()
+            .NotContain(
+                "[PK_School]",
+                "a cursor page entering the window must seek the anchor index rather than walking the "
+                    + "primary key to find its first row"
+            );
+        AssertReadsNoMoreThanOnePage(plan);
+    }
+
+    /// <summary>
+    /// The cursor twin of the descriptor case, for the same reason: the descriptor page carries a
+    /// <c>ResourceKeyId</c> equality ahead of the anchor range, so its composite index has to absorb an
+    /// equality prefix and the folded anchor range together.
+    /// </summary>
+    [Test]
+    public async Task It_seeks_the_descriptor_content_version_index_for_a_cursor_upper_tail()
+    {
+        short resourceKeyId = _fixture.MappingSet.ResourceKeyIdByResource[DescriptorResource];
+        var window = await UpperTailWindowAsync(
+            "[dms].[Descriptor]",
+            $"WHERE [ResourceKeyId] = {resourceKeyId.ToString(CultureInfo.InvariantCulture)}"
+        );
+        var keyset = new DescriptorQueryPageKeysetPlanner(SqlDialect.Mssql).Plan(
+            _fixture.MappingSet,
+            DescriptorResource,
+            new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            CursorPagingOver(window),
+            changeVersionRange: window,
+            orderingMode: PageOrderingMode.ContentVersion
+        );
+
+        string plan = await CapturePlanAsync(keyset);
+
+        plan.Should().Contain("[IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId]");
+        plan.Should()
+            .Contain(
+                "PhysicalOp=\"Index Seek\"",
+                "the resource key is an equality prefix and the folded cursor and window bounds are one "
+                    + "range over the next column, so the page is sought rather than read forward"
+            );
+        plan.Should()
+            .NotContain(
+                "[PK_Descriptor]",
+                "a cursor page entering the window must seek the composite anchor index rather than "
+                    + "walking the primary key to find its first row"
+            );
+        AssertReadsNoMoreThanOnePage(plan);
+    }
+
+    /// <summary>
+    /// A cursor page starting partway into the window rather than at its floor, which is what a
+    /// continuation token and a non-first partition token both name. Bounds equal to the window's own
+    /// would be the one cursor range that cannot tell a seek on the cursor bounds apart from a seek on
+    /// the window's, and the one range whose intersection with the window changes nothing.
+    /// </summary>
+    private static CollectionPaging CursorPagingOver(ChangeVersionRange window) =>
+        new CollectionPaging.Cursor(
+            new CursorRange(window.MaxChangeVersion!.Value - PageLimit + 1, window.MaxChangeVersion!.Value),
+            new PageSize(PageLimit)
+        );
+
+    /// <summary>
+    /// No operator in the executed plan read more rows than the page returns. This is the measurement
+    /// the seek assertions cannot make: a seek whose second range on the same column is left residual
+    /// still reports <c>Index Seek</c>, and reveals itself only as rows read and thrown away — with the
+    /// bounds this fixture uses, an <c>ActualRowsRead</c> of twice the page size.
+    /// </summary>
+    /// <remarks>
+    /// Read off the runtime counters rather than the estimates, which is why the fixture captures the
+    /// plan by executing the statement under <c>SET STATISTICS XML ON</c>. Taken across every operator
+    /// that reports the counter instead of only the seek: any operator reading past the page would carry
+    /// the same cost, whichever one it turned out to be.
+    /// </remarks>
+    private static void AssertReadsNoMoreThanOnePage(string plan)
+    {
+        var rowsRead = Regex
+            .Matches(plan, "ActualRowsRead=\"(?<rows>\\d+)\"")
+            .Select(match => long.Parse(match.Groups["rows"].Value, CultureInfo.InvariantCulture))
+            .ToArray();
+
+        rowsRead.Should().NotBeEmpty("an executed plan reports what each of its operators read");
+        rowsRead
+            .Max()
+            .Should()
+            .BeLessThanOrEqualTo(
+                PageLimit,
+                "a page whose cursor floor sits above the window floor must seek to its own floor rather "
+                    + "than read forward from the window's and discard the difference"
             );
     }
 

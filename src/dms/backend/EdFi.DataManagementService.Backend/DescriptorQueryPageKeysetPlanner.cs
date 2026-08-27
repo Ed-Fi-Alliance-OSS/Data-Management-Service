@@ -109,10 +109,16 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
             );
         }
 
+        var (foldedMode, windowPredicateRange) =
+            PageCandidateModePlanning.FoldChangeVersionWindowIntoCursorBounds(
+                plannedMode,
+                changeVersionRange
+            );
+
         var parameterNamesByIndex = DeriveParameterNames(
             preprocessingResult.QueryElementsInOrder,
             authorization,
-            plannedMode.OwnedParameterNames
+            foldedMode.OwnedParameterNames
         );
         var queryPredicates = PlanPredicates(preprocessingResult.QueryElementsInOrder, parameterNamesByIndex);
         var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, requestResource);
@@ -129,13 +135,13 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
             ),
             .. queryPredicates,
         ];
-        AppendChangeVersionPredicates(changeVersionRange, predicates);
+        AppendChangeVersionPredicates(windowPredicateRange, predicates);
 
         var pageQuerySpec = new PageDocumentIdQuerySpec(
             RootTable: _descriptorTable,
             Predicates: predicates,
             UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
-            Mode: plannedMode.Mode,
+            Mode: foldedMode.Mode,
             Authorization: authorization
         );
         var sqlPlan = _sqlCompiler.Compile(pageQuerySpec);
@@ -143,12 +149,12 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
             resourceKeyId,
             preprocessingResult.QueryElementsInOrder,
             parameterNamesByIndex,
-            plannedMode,
+            foldedMode,
             authorization,
-            changeVersionRange
+            windowPredicateRange
         );
 
-        return new CandidateQueryPlan(sqlPlan, parameterValues, plannedMode.OrderingMode);
+        return new CandidateQueryPlan(sqlPlan, parameterValues, foldedMode.OrderingMode);
     }
 
     /// <summary>

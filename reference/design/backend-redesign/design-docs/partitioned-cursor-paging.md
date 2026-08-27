@@ -601,6 +601,20 @@ WHERE <resource, change-version, and authorization predicates>
 ORDER BY r.[<anchor>];
 ```
 
+**One range per column (normative).** Under a `ContentVersion` anchor the cursor bounds and the
+change-version window are two ranges over the same column. Intersect them where the bound values are
+bound — `max(cursorMin, minChangeVersion)` and `min(cursorMax, maxChangeVersion)` — and emit the cursor
+pair alone, so the window's own predicates do not appear in the statement. The rows selected are
+identical, because a row satisfying both ranges is a row satisfying their intersection; an absent window
+bound contributes no limit, so a partition's unbounded last range is still clipped to the window
+ceiling. This is not a micro-optimization: SQL Server takes one range per column into its index seek
+keys and applies a second as a residual predicate on the seek, so a page emitting both would read
+forward from the window floor and discard every row below its own — cost proportional to how far into
+the window the page starts, and therefore worst on the later pages of a walk and the later tokens of a
+partition, which is exactly where cursor paging is supposed to hold its cost flat. PostgreSQL folds the
+bounds into one index condition on its own, so the intersection changes nothing there. Under a
+`DocumentId` anchor the two ranges are over different columns and both are emitted.
+
 **The candidate projection is asymmetric, and deliberately so.** A `DocumentId`-anchored page
 projects `DocumentId` alone, byte-for-byte as before. A `ContentVersion`-anchored *page* projects
 both columns: `DocumentId` feeds the keyset insert and every downstream hydration join, while

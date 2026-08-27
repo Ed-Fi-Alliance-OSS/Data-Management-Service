@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Performance.Harness.Measurement;
 using FluentAssertions;
 
@@ -25,7 +26,8 @@ public class Given_A_Single_Query_Keyset
                 PageParametersInOrder: [],
                 TotalCountParametersInOrder: null
             ),
-            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L }
+            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L },
+            PageOrderingMode.DocumentId
         );
         _capture = PageSelectionCapture.ExtractSingleQuery([query]);
     }

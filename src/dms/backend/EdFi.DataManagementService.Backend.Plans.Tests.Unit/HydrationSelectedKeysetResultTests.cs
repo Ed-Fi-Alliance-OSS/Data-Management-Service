@@ -148,7 +148,8 @@ public class Given_HydrationBatchBuilder_With_A_Query_Keyset_Materialization
                 [mode.InclusiveMinimumParameterName] = 1L,
                 [mode.InclusiveMaximumParameterName] = long.MaxValue,
                 [mode.PageSizeParameterName] = pageSize,
-            }
+            },
+            PageOrderingMode.DocumentId
         );
     }
 
@@ -187,7 +188,8 @@ public class Given_HydrationBatchBuilder_With_A_Query_Keyset_Materialization
             {
                 [mode.OffsetParameterName] = 0L,
                 [mode.LimitParameterName] = limit,
-            }
+            },
+            PageOrderingMode.DocumentId
         );
     }
 
