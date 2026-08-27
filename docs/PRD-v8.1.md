@@ -74,9 +74,9 @@ already covered in the v8.0 companion PRD.
   identity/unique-ID system on v8.0, beyond the data-model extension mechanism
   already covered in the v8.0 companion PRD.
 - **API Client Developer (Vendor/Integrator)** — currently cannot rely on a
-  consistent point-in-time snapshot for synchronization runs, identifier-change
-  support without delete-and-recreate, high-performance paging, rostering
-  integration, or identity-management endpoints when integrating against v8.0.
+  consistent point-in-time snapshot for synchronization runs, high-performance
+  paging, rostering integration, or identity-management endpoints when
+  integrating against v8.0.
 - **Ed-Fi Alliance Core Platform Engineering** — owns prioritizing and designing
   how each of these capabilities is rebuilt (or intentionally retired) under the
   v8.0 architecture.
@@ -113,9 +113,6 @@ already covered in the v8.0 companion PRD.
   using an industry standard, the Ops Engineer wants to enable that capability
   using the same data and credentials **so that** no second data pipeline or
   credential system is needed (see FR-ONEROSTER).
-- When a source system needs to correct a previously reported identifying value,
-  the Vendor wants to update the existing record **so that** it and its related
-  data don't need to be deleted and recreated from scratch (see FR-KEY).
 - When a downstream system needs near-real-time notice of data changes rather
   than polling the API, the platform host wants the platform to publish those
   changes as a stream of events **so that** integrations can react to changes as
@@ -377,33 +374,7 @@ something the platform schedules or orchestrates itself.
   refresh signals (for example, no built-in admin screen); triggering them is
   the host's own operational responsibility.
 
-### 3.10 Identifier Changes Without Delete-and-Recreate (FR-KEY)
-
-The prior-generation platform identified most resources using real-world
-business identifiers rather than internally generated ones, since the platform
-is typically not the authoritative source system for the data it holds. This
-meant correcting an identifying value could otherwise require deleting and
-recreating a record and everything that depends on it. The requirements below
-describe where the prior-generation platform avoided that burden — and are
-proposed here pending confirmation of whether they still apply under v8.0's new
-resource-identification design (see Section 7).
-
-- **FR-KEY-1.** For a defined set of resources, the system SHALL allow a client
-  to correct an identifying value on an existing record via an update, without
-  requiring the record and its related data to be deleted and recreated; related
-  data SHALL remain correctly linked after such a change.
-- **FR-KEY-2.** For resources not covered by this capability by default, a
-  client attempting to change an identifying value SHALL be clearly informed
-  that the change is not supported, so the client can instead delete and
-  recreate the record.
-- **FR-KEY-3.** Hosts extending the data model SHALL be able to declare
-  identifier-change support for their own added resource types at
-  model-definition time (e.g., a MetaEd allow primary key updates construct on
-  the extension entity), consistent with how core resources are similarly
-  designated; this is a schema/model-generation-time decision, not a runtime
-  toggle.
-
-### 3.11 Environment Segmentation & Routing — Secrets Sourcing (extends FR-INST)
+### 3.10 Environment Segmentation & Routing — Secrets Sourcing (extends FR-INST)
 
 The following sub-capability extends FR-INST (Environment Segmentation &
 Routing, v8.0 companion PRD §3.1), which already implements environment routing
@@ -417,7 +388,7 @@ service.
   a developer to author and deploy a plugin assembly, rather than applying a
   configuration-only change at runtime.
 
-### 3.12 Configuration & Extensibility Extensions (extends FR-CONFIG)
+### 3.11 Configuration & Extensibility Extensions (extends FR-CONFIG)
 
 The following sub-capabilities extend FR-CONFIG (Configuration &
 Extensibility, v8.0 companion PRD §3.9), which already covers basic
@@ -438,7 +409,7 @@ host-extensibility and performance-tuning needs.
   for reduced backend load in how resource cross-references are represented in
   responses.
 
-### 3.13 Authentication — Token Management (extends FR-AUTHN)
+### 3.12 Authentication — Token Management (extends FR-AUTHN)
 
 The following sub-capability extends FR-AUTHN (Authentication, v8.0
 companion PRD §3.5), which already covers token issuance and validation but not
@@ -449,7 +420,7 @@ host-configurable limits on token lifetime or concurrency.
 - **FR-AUTHN-10.** Hosts SHALL be able to limit how many active tokens a single
   client may hold at once.
 
-### 3.14 Event Streaming (FR-STREAM)
+### 3.13 Event Streaming (FR-STREAM)
 
 - **FR-STREAM-1.** The system SHALL support streaming data changes to
   downstream consumers using Apache Kafka, so vendors and hosts can react to
@@ -512,10 +483,10 @@ host-configurable limits on token lifetime or concurrency.
   "no data has changed" from "the stream has stopped delivering," without that
   signal ever being mistaken for an actual document change.
 
-### 3.15 Custom Validation Extension Point (FR-CUSTVAL)
+### 3.14 Custom Validation Extension Point (FR-CUSTVAL)
 
 _Note:_ this is a concrete instance of the general custom-extension mechanism
-described in FR-CONFIG-6/7 (§3.12); see that section for the platform's
+described in FR-CONFIG-6/7 (§3.11); see that section for the platform's
 broader extensibility story.
 
 - **FR-CUSTVAL-1.** The system SHALL ship a dedicated, public, versioned
@@ -722,10 +693,6 @@ broader extensibility story.
 - **A built-in way to trigger the cache-refresh-signaling capability** (e.g., an
   admin screen or CLI) is not proposed; triggering it would remain a host
   operational responsibility, consistent with the prior-generation platform.
-- **The underlying data-modeling rationale** for why business identifiers were
-  used instead of internally generated ones in the prior-generation platform is
-  background context only; only the client- and host-observable behaviors in
-  Section 3.11 are treated as testable requirements here.
 - **Sandbox/demo administration portal and the legacy administrative UI**, both
   discontinued in v8.0, are not proposed for revival as part of this PRD; they
   are noted here only for completeness.
@@ -775,10 +742,6 @@ broader extensibility story.
 - **Snapshot:** A point-in-time, isolated copy of the operational data used to
   give a client a stable view of the data for the duration of a synchronization
   run.
-- **Natural Key:** An identifying value drawn from real-world business
-  identifiers, rather than an internally generated one, used because the
-  platform is typically not the authoritative system of record for the data it
-  holds.
 - **Ownership:** An access-control concept where a record is associated with the
   client that created it, used by ownership-based authorization to grant access
   based on who created a record — usable alongside, or instead of,
