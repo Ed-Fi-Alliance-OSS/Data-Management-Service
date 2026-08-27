@@ -11,6 +11,7 @@ public class AppSettings
 {
     public const int BytesPerMegabyte = 1024 * 1024;
     public const int DefaultMaxRequestBodySizeMegabytes = 10;
+    public const int DefaultCorrelationIdMaxLength = 255;
 
     public required string AuthenticationService { get; set; }
     public required string Datastore { get; set; }
@@ -19,6 +20,7 @@ public class AppSettings
     public required string CorrelationIdHeader { get; set; }
     public string DomainsExcludedFromOpenApi { get; set; } = string.Empty;
     public string RouteQualifierSegments { get; set; } = string.Empty;
+    public int CorrelationIdMaxLength { get; set; } = DefaultCorrelationIdMaxLength;
 
     /// <summary>
     /// When true, enables multi-tenancy mode where the tenant identifier is extracted from the URL route.
@@ -66,6 +68,13 @@ public class AppSettingsValidator : IValidateOptions<AppSettings>
         {
             return ValidateOptionsResult.Fail(
                 "AppSettings value MaxRequestBodySizeMegabytes must be greater than 0"
+            );
+        }
+
+        if (options.CorrelationIdMaxLength <= 0)
+        {
+            return ValidateOptionsResult.Fail(
+                "AppSettings value CorrelationIdMaxLength must be greater than 0"
             );
         }
 
