@@ -56,7 +56,7 @@ already covered in the v8.0 companion PRD.
 - **Custom validation** is an extensibility capability: hosts and vendors need
   a supported way to enforce business rules beyond the platform's built-in
   schema validation, without forking core code. This is a concrete instance of
-  the general custom-extension mechanism described in FR-CONFIG-6/7.
+  the general custom-extension mechanism described in NFR-OPS-14.
 - Closing this gap is a prerequisite for hosts currently on the prior-generation
   platform to migrate to v8.0 without a regression in capability.
 
@@ -85,7 +85,7 @@ already covered in the v8.0 companion PRD.
 
 - When our API experiences heavy read traffic alongside write traffic, the Ops
   Engineer wants to route reads to a separate copy of the data **so that** write
-  throughput is not degraded (see FR-REPLICA).
+  throughput is not degraded (see NFR-COMPAT-1, NFR-PERF-1).
 - When a downstream system needs a stable view of the data for a synchronization
   run, the Vendor wants an isolated, point-in-time snapshot **so that** the sync
   isn't disrupted by concurrent writes (see FR-CQ-SNAPSHOT).
@@ -108,7 +108,7 @@ already covered in the v8.0 companion PRD.
   person across roles (see FR-UID, FR-IDN).
 - When a security or configuration change is made centrally, the Ops Engineer
   wants a way to make all running API instances pick it up immediately **so
-  that** the change takes effect without a full restart (see FR-NOTIFY).
+  that** the change takes effect without a full restart (see NFR-OPS-11).
 - When a host wants to expose rostering data to LMS/instructional-tool vendors
   using an industry standard, the Ops Engineer wants to enable that capability
   using the same data and credentials **so that** no second data pipeline or
@@ -145,29 +145,15 @@ graph TB
 
 ## 3. Functional Requirements
 
-### 3.1 Read Replicas (FR-REPLICA)
+Not every capability from this gap analysis has a client-observable component.
+Read replicas, optimized resource storage/retrieval, cross-instance
+cache-refresh signaling, and the general custom-startup/secrets-sourcing
+extension mechanism are designed to be invisible to API clients or are purely
+host/deployment-facing, so they appear only as non-functional requirements in
+§4. This section covers only requirements that describe behavior an API
+client can observe.
 
-- **FR-REPLICA-1.** Hosts SHALL be able to designate a separate, read-only copy
-  of the operational data — kept current by the host's own database-platform
-  replication technology (e.g., SQL Server Always On availability groups, Aurora
-  read replicas) — to serve all read (GET) traffic, so read load can be
-  offloaded from the primary read/write environment.
-- **FR-REPLICA-2.** This capability SHALL be transparent to API clients — the
-  same endpoints and the same request/response contract — requiring no
-  client-side changes.
-- **FR-REPLICA-3.** The system SHALL always source data used to populate its
-  internal caches from the primary (read/write) environment, never from a read
-  replica, so cached information is never built from data that could be lagging
-  behind the primary.
-- **FR-REPLICA-4.** Where a host has designated a read replica, the platform
-  SHALL decide which copy to use per request on its own, based on whether the
-  request reads or writes. A host SHALL NOT have to configure this routing per
-  resource or per endpoint, and a client SHALL NOT be able to influence it.
-- **FR-REPLICA-5.** Designating a read replica SHALL be optional per backing
-  data environment, and an environment with no replica designated SHALL serve
-  all traffic from the primary with no configuration change required.
-
-### 3.2 Change Query Snapshot Isolation (FR-CQ-SNAPSHOT)
+### 3.1 Change Query Snapshot Isolation (FR-CQ-SNAPSHOT)
 
 - **FR-CQ-SNAPSHOT-1.** Hosts SHOULD be able to offer clients a consistent,
   point-in-time view of the data that is isolated from concurrent writes and
@@ -181,11 +167,11 @@ graph TB
   identical whether or not a snapshot is in use.
 
 _Note:_ this extends the Change Queries capability already implemented in v8.0
-(see the v8.0 companion PRD); the operational process for creating and
-refreshing these point-in-time views SHALL remain a host responsibility, not
-something the platform schedules or orchestrates itself.
+(see the v8.0 companion PRD); see NFR-OPS-2 for the operational responsibility
+this creates for hosts (creating and refreshing these point-in-time views is
+not something the platform schedules or orchestrates itself).
 
-### 3.3 Partitioned Cursor Paging (FR-PAGING)
+### 3.2 Partitioned Cursor Paging (FR-PAGING)
 
 - **FR-PAGING-1.** The system SHALL support a high-performance paging mode for
   retrieving large result sets, so that performance does not degrade as a client
@@ -209,7 +195,7 @@ something the platform schedules or orchestrates itself.
   a client requesting both pageToken/cursor paging and a total count SHALL
   receive a clear rejection rather than having the parameter silently ignored.
 
-### 3.4 Ownership-Based Authorization (FR-OWN)
+### 3.3 Ownership-Based Authorization (FR-OWN)
 
 - **FR-OWN-1.** Hosts SHALL be able to opt into an additional,
   disabled-by-default access model in which each record is associated with the
@@ -219,54 +205,32 @@ something the platform schedules or orchestrates itself.
 - **FR-OWN-3.** Ownership-based access SHALL be usable in combination with the
   platform's other (organization-hierarchy-based) access rules for the same
   resource and action, expanding rather than replacing what a client can access.
-- **FR-OWN-4.**  Enabling this capability for a resource claim and action SHALL
-  require only administrative configuration — creating one or more ownership
-  tokens, assigning them to the relevant API clients, and selecting the
-  Ownership-based strategy for that resource claim and action. Underlying
-  storage already exists for every document regardless of whether the capability
-  is used. Disabling it SHALL be achieved the same way, by removing the strategy
-  selection and/or token assignments; ownership tokens themselves are not
-  deleted or retired.
-- **FR-OWN-5.** When a host enables this capability on an environment that
-  already contains data created before any ownership token existed, that
-  pre-existing data has no assigned owner, and the host SHALL be responsible for
-  retroactively assigning ownership to it if desired — the system only assigns
-  ownership automatically at the time a record is created going forward. This is
-  distinct from transferring ownership between API clients (e.g., a vendor
-  replacement), which is fully supported without any data change by granting the
-  new client access to the token(s) already used by the old one (see
-  FR-OWN-2)
+- **FR-OWN-4.** Transferring ownership of records between API clients (e.g., a
+  vendor replacement) SHALL be fully supported without any change to the
+  underlying data, by granting the new client access to the ownership token(s)
+  already used by the old one (see FR-OWN-2).
 
-### 3.5 Custom Access Rules (FR-AUTHVIEW)
+_Note:_ see NFR-OPS-1 for how a host enables or disables this capability, and
+NFR-OPS-5 for backfill responsibility on data that predates the capability.
 
-- **FR-AUTHVIEW-1.** Hosts SHALL be able to define new, custom access rules
-  without requiring a software change, recompilation, or a restart of the
-  running service. A custom access rule is implemented as a database view
-  authored directly by the host, so this capability requires someone with direct
-  database schema-authoring access. It is not configured through the platform's
-  own administrative interface.
-- **FR-AUTHVIEW-2.** A custom access rule SHALL be able to be based on any
-  entity in the data model, core or extended — not only the built-in set of
-  person- and organization-based rules.
-- **FR-AUTHVIEW-3.** When an access rule denies a request, the system SHALL be
+### 3.4 Custom Access Rules (FR-AUTHVIEW)
+
+- **FR-AUTHVIEW-1.** When an access rule denies a request, the system SHALL be
   able to give the client a human-readable hint about what related data they may
   be missing, to aid self-service troubleshooting.
-- **FR-AUTHVIEW-4.** When more than one custom access rule applies to the same
+- **FR-AUTHVIEW-2.** When more than one custom access rule applies to the same
   resource and action, all of them SHALL be required to pass — each acts as an
   additional filter. This is different from how the platform's built-in
   relationship-based rules combine, where satisfying any one of several
   applicable rules is sufficient.
-- **FR-AUTHVIEW-5.** Newly defined custom access rules SHALL take effect within
-  the platform's normal access-rule refresh cycle. In version 8.0, this refresh
-  cycle occurs either through cache timeout and refresh, or system restart.
-- **FR-AUTHVIEW-6**. When a configured custom access rule's underlying database
+- **FR-AUTHVIEW-3.** When a configured custom access rule's underlying database
   view is missing or returns an invalid shape, the system SHALL treat this as a
-  distinct system configuration error rather than an access denial, and is NOT
-  required to validate the view's existence or column shape proactively (e.g.,
-  at startup or on access-rule cache refresh) — the error surfaces only when a
-  request actually exercises that rule.
+  distinct system configuration error rather than an access denial.
 
-### 3.6 Unique ID System Integration (FR-UID)
+_Note:_ see NFR-SEC-2 for the access-rule refresh cycle, and NFR-OPS-6/NFR-OPS-7
+for how a custom access rule is authored and validated.
+
+### 3.5 Unique ID System Integration (FR-UID)
 
 - **FR-UID-1.** Out of the box, the system SHALL NOT require integration with
   any external unique-ID system; standard use of the platform SHALL NOT depend
@@ -282,14 +246,12 @@ something the platform schedules or orchestrates itself.
   change it on an existing record.
 - **FR-UID-5.** Hosts SHALL be able to instead operate without any external
   unique-ID system, in which case the platform SHALL treat supplied unique IDs
-  as ordinary data (enforcing only that they are unique), and hosts SHALL be
-  responsible for instructing their clients on how to obtain or assign them.
-- **FR-UID-6.** What the platform SHALL provide is the integration point and the
-  enforcement behavior around it (FR-UID-3, FR-UID-4), not a connector to any
-  particular external system. Each host supplies the connector for its own
-  unique-ID system.
+  as ordinary data, enforcing only that they are unique.
 
-### 3.7 Identities API (FR-IDN)
+_Note:_ see NFR-OPS-8/NFR-OPS-9 for host responsibilities and platform scope
+around unique-ID integration.
+
+### 3.6 Identities API (FR-IDN)
 
 - **FR-IDN-1.** The platform SHALL optionally expose a capability for clients to
   create a new unique ID, retrieve a person record by unique ID, retrieve
@@ -332,84 +294,20 @@ something the platform schedules or orchestrates itself.
   match; the platform is not responsible for detecting or preventing duplicate
   identity creation on the client's behalf.
 
-### 3.8 Optimized Resource Storage & Retrieval (FR-SERIAL)
+### 3.7 Configuration & Extensibility Extensions (extends FR-CONFIG)
 
-- **FR-SERIAL-1.** The system SHALL be capable of serving read requests for a
-  resource using a serialized representation of a document, with a fallback to
-  standard relational retrieval when a serialized representation is unavailable
-  or stale — the serialized representation is a performance optimization, not a
-  hard dependency for read availability.
-- **FR-SERIAL-2.** Hosts SHALL be able to control, per backing data environment,
-  whether the serialized representation is stored at all — a static
-  configuration setting requiring a service restart to take effect, not a
-  runtime toggle — so hosts who don't need this capability avoid its storage and
-  background-processing cost entirely.
-- **FR-SERIAL-3.** The system SHALL provide self-contained metadata alongside
-  the serialized representation, suitable for change data capture replication to
-  secondary data stores (see FR-STREAM). Storage of this representation is
-  controlled by the same setting as FR-SERIAL-2 — enabling it for
-  read-serving or for change-data-capture purposes draws on the same underlying
-  storage and processing cost.
-
-### 3.9 Cross-Instance Cache-Refresh Signaling (FR-NOTIFY)
-
-> [!WARNING]
-> This feature may be cut from the scope of 8.1 in order to meet the delivery
-> timeline.
-
-- **FR-NOTIFY-1.** Hosts running multiple instances of the API service SHALL be
-  able to trigger an immediate refresh of specific cached administrative
-  information across all running instances, rather than waiting for that
-  information's normal refresh interval to elapse.
-- **FR-NOTIFY-2.** At minimum, hosts SHALL be able to trigger an immediate
-  refresh of security/access rules, client credential details, Profile
-  definitions, and environment-routing details.
-- **FR-NOTIFY-3.** The system SHALL guard against this capability being
-  triggered so rapidly or repeatedly that it degrades performance, whether
-  through attack or misconfiguration.
-- **FR-NOTIFY-4.** Hosts SHALL be able to extend this capability with additional
-  custom message types and handling, and to use a messaging technology of their
-  choosing.
-- **FR-NOTIFY-5.** The platform SHALL NOT itself provide a way to send these
-  refresh signals (for example, no built-in admin screen); triggering them is
-  the host's own operational responsibility.
-
-### 3.10 Environment Segmentation & Routing — Secrets Sourcing (extends FR-INST)
-
-The following sub-capability extends FR-INST (Environment Segmentation &
-Routing, v8.0 companion PRD §3.1), which already implements environment routing
-but only sources connection details from the platform's own administrative
-service.
-
-- **FR-INST-6.** Hosts SHALL be able to source backing data environment
-  connection details from an external secret-management system, as an
-  alternative to the platform's own administrative service, by implementing the
-  platform's custom-startup extension point (see FR-CONFIG-6). This MAY require
-  a developer to author and deploy a plugin assembly, rather than applying a
-  configuration-only change at runtime.
-
-### 3.11 Configuration & Extensibility Extensions (extends FR-CONFIG)
-
-The following sub-capabilities extend FR-CONFIG (Configuration &
+The following sub-capability extends FR-CONFIG (Configuration &
 Extensibility, v8.0 companion PRD §3.9), which already covers basic
-optional-capability toggling and data-model extension but not these
-host-extensibility and performance-tuning needs.
+optional-capability toggling and data-model extension but not this
+performance-tuning tradeoff. (The general custom-startup/configuration
+extension mechanism itself is host/deployment-facing rather than
+client-facing; see NFR-OPS-14.)
 
-- **FR-CONFIG-6.** Hosts SHALL be able to inject custom startup and
-  configuration behavior without modifying the platform's own source code, by
-  implementing a documented plugin interface and deploying it as a separate
-  assembly the platform loads at startup. This requires a developer to author
-  and deploy code; it is not a configuration-only change an administrator can
-  make alone.
-- **FR-CONFIG-7.** The extension mechanism in FR-CONFIG-6 SHALL be documented as
-  a supported pattern for adding wholly new, independently-toggled custom
-  capabilities — not only startup/configuration behavior — so host-specific
-  additions don't require changes to unrelated parts of the system.
 - **FR-CONFIG-9.** Hosts SHALL be able to trade off a minor compatibility risk
   for reduced backend load in how resource cross-references are represented in
   responses.
 
-### 3.12 Authentication — Token Management (extends FR-AUTHN)
+### 3.8 Authentication — Token Management (extends FR-AUTHN)
 
 The following sub-capability extends FR-AUTHN (Authentication, v8.0
 companion PRD §3.5), which already covers token issuance and validation but not
@@ -420,134 +318,116 @@ host-configurable limits on token lifetime or concurrency.
 - **FR-AUTHN-10.** Hosts SHALL be able to limit how many active tokens a single
   client may hold at once.
 
-### 3.13 Event Streaming (FR-STREAM)
+### 3.9 Event Streaming (FR-STREAM)
 
 - **FR-STREAM-1.** The system SHALL support streaming data changes to
   downstream consumers using Apache Kafka, so vendors and hosts can react to
   changes without polling the API.
-- **FR-STREAM-2.** This streaming capability SHALL use Debezium for change
-  data capture (CDC), reading the database's change/transaction log from
-  either PostgreSQL or Microsoft SQL Server, depending on which database
-  engine the host has deployed as its operational data store.
-- **FR-STREAM-3.** The CDC configuration SHALL be set up to capture the
-  serialized resource representation defined in FR-SERIAL (FR-SERIAL-1)
-  along with its associated self-contained metadata (FR-SERIAL-3), so a
-  downstream consumer receives a complete, self-describing record of each
-  change without needing to query the API for additional context.
-- **FR-STREAM-4.** Because this capability depends on the serialized
-  representation and metadata produced under FR-SERIAL, a host that disables
-  serialization (FR-SERIAL-2) SHALL NOT be able to use this CDC-based
-  streaming capability in its current form.
-- **FR-STREAM-5.** Each event on the stream SHALL be keyed by the affected
+- **FR-STREAM-2.** The CDC configuration SHALL be set up to capture the
+  serialized resource representation (see NFR-PERF-8) along with its
+  associated self-contained metadata (see NFR-OPS-10), so a downstream
+  consumer receives a complete, self-describing record of each change without
+  needing to query the API for additional context.
+- **FR-STREAM-3.** Because this capability depends on the serialized
+  representation and metadata described in NFR-PERF-8/NFR-OPS-10, a host that
+  disables serialized-representation storage SHALL NOT be able to use this
+  CDC-based streaming capability in its current form.
+- **FR-STREAM-4.** Each event on the stream SHALL be keyed by the affected
   resource's document identifier, and that key SHALL remain the same across
   every event concerning that document (create, update, and delete), so a
   consumer can correlate a document's full history by key.
-- **FR-STREAM-6.** A deleted resource SHALL be represented on the stream as a
+- **FR-STREAM-5.** A deleted resource SHALL be represented on the stream as a
   single tombstone (null-valued) message keyed by its document identifier,
   rather than as a message carrying delete metadata; no more than one
   tombstone SHALL be published per deletion.
-- **FR-STREAM-7.** A created or updated resource SHALL be represented on the
+- **FR-STREAM-6.** A created or updated resource SHALL be represented on the
   stream as a message whose value is a plain JSON object — not wrapped in any
   serialization-framework envelope — containing, at minimum: an explicit
   contract/schema version; the resource's document identifier; the identity of
   the Ed-Fi resource type and version (project name, resource name, resource
   version); an incrementing content-version number for the document; a
-  normalized last-modified timestamp; and the full resource document (per
-  FR-SERIAL) including its ETag. This message SHALL NOT include internal
+  normalized last-modified timestamp; and the full resource document (see
+  NFR-PERF-8) including its ETag. This message SHALL NOT include internal
   source-system metadata unrelated to the resource itself, so a consumer can
   read and interpret it using only standard JSON tooling.
-- **FR-STREAM-8.** Regardless of which supported database engine produced the
+- **FR-STREAM-7.** Regardless of which supported database engine produced the
   change, timestamps and document identifiers on the stream SHALL be presented
   in a single normalized format (UTC timestamps; lowercase canonical UUIDs),
   so consuming code does not need to special-case the source database.
-- **FR-STREAM-9.** The stream SHALL preserve the numeric and structural
+- **FR-STREAM-8.** The stream SHALL preserve the numeric and structural
   fidelity of the resource document: decimal/numeric values SHALL appear as
   exact JSON numbers, never as strings or lossy floating point, and properties
   absent from the source SHALL be omitted rather than represented as null.
-- **FR-STREAM-10.** The stream SHALL preserve the relative order of events for
+- **FR-STREAM-9.** The stream SHALL preserve the relative order of events for
   any single document, so a consumer never observes that document's changes out
   of the order they actually occurred.  No such ordering guarantee SHALL be made
   across different documents, even when one document references another (e.g.,
   an association resource and the entities it references) — consumers requiring
   referential consistency across related documents SHALL be responsible for
   buffering or reconciling out-of-order arrival themselves.
-- **FR-STREAM-11.** Bulk administrative operations that are not themselves a
+- **FR-STREAM-10.** Bulk administrative operations that are not themselves a
   meaningful create, update, or delete of a specific resource (e.g., table
   truncation) SHALL NOT produce document events on the stream.
-- **FR-STREAM-12.** When a consumer begins reading the stream from the
+- **FR-STREAM-11.** When a consumer begins reading the stream from the
   beginning, it SHALL receive an upsert event for every resource that
   currently exists, so a new consumer can build a complete view of current
   data without a separate bulk-export mechanism.
-- **FR-STREAM-13.** A progress/heartbeat signal SHALL be available to
+- **FR-STREAM-12.** A progress/heartbeat signal SHALL be available to
   consumers separately from document events, so it is possible to distinguish
   "no data has changed" from "the stream has stopped delivering," without that
   signal ever being mistaken for an actual document change.
 
-### 3.14 Custom Validation Extension Point (FR-CUSTVAL)
+### 3.10 Custom Validation Extension Point (FR-CUSTVAL)
 
 _Note:_ this is a concrete instance of the general custom-extension mechanism
-described in FR-CONFIG-6/7 (§3.11); see that section for the platform's
-broader extensibility story.
+(see NFR-OPS-14); §3.7 covers the one client-facing aspect of that broader
+extensibility story (FR-CONFIG-9). The packaging, composition, and
+startup-safety aspects of this capability are covered as non-functional
+requirements (see §4, Security, Reliability/Performance, Operations, and
+Maintainability & Supply Chain).
 
-- **FR-CUSTVAL-1.** The system SHALL ship a dedicated, public, versioned
-  package containing the custom-validation contract, so a host or vendor can
-  build a validator implementation without depending on, or being coupled to,
-  the platform's internal core assemblies.
-- **FR-CUSTVAL-2.** This contract SHALL define: a validator interface exposing
-  which resource(s) it targets and an asynchronous validation entry point; a
-  failure model supporting both a failure tied to a specific location in the
-  resource (path-scoped) and a failure not tied to any specific location
-  (resource-level); the resource payload provided to a validator; contextual
-  execution metadata (project name, resource name, trace identifier); the
-  ability to distinguish a create from an update; and execution-scope details
-  (tenant, routing context).
-- **FR-CUSTVAL-3.** Custom validation SHALL execute for create (POST) and
-  update (PUT) requests, after the request has passed authorization and
-  before the write is committed — so an unauthorized request is rejected
-  without ever exercising custom validation, and a request that fails custom
-  validation is never persisted.
-- **FR-CUSTVAL-4.** Each registered custom validator SHALL declare which
+- **FR-CUSTVAL-1.** The system SHALL support running host- or vendor-supplied
+  custom validation logic against a resource as part of handling a create
+  (POST) or update (PUT) request, in addition to the platform's built-in
+  schema validation.
+- **FR-CUSTVAL-2.** Custom validation SHALL run only after a write request has
+  passed authorization, and SHALL complete before the write is committed — so
+  an unauthorized request is rejected without ever exercising custom
+  validation, and a request that fails custom validation is never persisted.
+- **FR-CUSTVAL-3.** Each registered custom validator SHALL declare which
   resource type(s) it applies to. The system SHALL invoke a validator only for
   requests targeting a resource type it declares, and SHALL bypass it entirely
   for all others.
-- **FR-CUSTVAL-5.** Where more than one custom validator applies to a request,
-  they SHALL be invoked one at a time, in registration order, rather than
-  concurrently.
-- **FR-CUSTVAL-6.** Custom validation SHALL NOT apply to read (GET, by ID or
+- **FR-CUSTVAL-4.** Custom validation SHALL NOT apply to read (GET, by ID or
   by query) or delete (DELETE) requests — only to create and update requests.
-- **FR-CUSTVAL-7.** Each invoked validator SHALL receive its own isolated copy
-  of the resource body, so one validator cannot observe or corrupt mutations
-  made by another. When a writable Profile applies to a request, a validator
-  SHALL receive the Profile-shaped view of the payload rather than the full,
-  unrestricted resource body — so validation reflects what the client
-  actually sent and was authorized to send.
-- **FR-CUSTVAL-8.** The active request's cancellation signal SHALL be passed
-  into each validator's execution.
-- **FR-CUSTVAL-9.** A custom validation failure SHALL be surfaced to the
+- **FR-CUSTVAL-5.** When a writable Profile applies to a request, custom
+  validation SHALL evaluate the same Profile-shaped view of the resource the
+  client submitted, rather than the full, unrestricted resource body — so
+  validation reflects what the client actually sent and was authorized to
+  send.
+- **FR-CUSTVAL-6.** A custom validator SHALL be able to determine whether the
+  current request is a create or an update, so a rule that only makes sense
+  for one operation type is not incorrectly applied to the other.
+- **FR-CUSTVAL-7.** A custom validation failure SHALL be surfaced to the
   client as a standard HTTP 400 response, in the same response shape as the
-  platform's built-in validation errors: a path-scoped failure SHALL appear
-  under the path-keyed validation-errors collection, and a resource-level
-  failure SHALL appear in the top-level errors list. The response's top-level
-  `detail`, `type`, `title`, and `status` fields SHALL be identical in form to
-  those returned for built-in validation failures, so a client cannot
-  distinguish a custom validation failure from a built-in one except by its
-  content.
-- **FR-CUSTVAL-10.** When more than one applicable custom validator fails, or
-  a single validator reports more than one failure, all such failures SHALL be
+  platform's built-in validation errors: a failure tied to a specific location
+  in the resource SHALL appear under the path-keyed validation-errors
+  collection, and a failure not tied to a specific location SHALL appear in
+  the top-level errors list. The response's top-level `detail`, `type`,
+  `title`, and `status` fields SHALL be identical in form to those returned
+  for built-in validation failures, so a client cannot distinguish a custom
+  validation failure from a built-in one except by its content.
+- **FR-CUSTVAL-8.** When more than one applicable custom validator fails, or a
+  single validator reports more than one failure, all such failures SHALL be
   aggregated into one HTTP 400 response, rather than the client only seeing
   the first failure encountered.
-- **FR-CUSTVAL-11.** If a custom validator throws an unhandled exception or
+- **FR-CUSTVAL-9.** If a custom validator throws an unhandled exception or
   otherwise fails to produce a result, the system SHALL treat this as an
   internal error and return an HTTP 500 response, rather than silently
   succeeding or silently dropping that validator's result. If the client
   aborts the request before validation completes, the system SHALL NOT
   generate an error response for that abandoned request.
-- **FR-CUSTVAL-12.** Custom validators SHALL be registered into the system at
-  composition/startup using the platform's standard registration mechanisms.
-- **FR-CUSTVAL-13.** With no custom validators registered, the write pipelines
-  SHALL operate as a clean no-op, requiring no feature flags or configuration
-  overrides.
-- **FR-CUSTVAL-14.** Where a host operates multiple tenants or districts on a
+- **FR-CUSTVAL-10.** Where a host operates multiple tenants or districts on a
   shared deployment, a custom validator SHALL be able to apply different rules
   per tenant or per routing context, so validation can vary by district or
   tenant without deploying separate validator code per tenant.
@@ -569,16 +449,22 @@ broader extensibility story.
   data-minimization for sensitive information.
 - **NFR-SEC-2.** Custom access rules SHALL take effect through the platform's
   normal access-rule refresh cycle, without requiring privileged access to
-  restart the service. This does not eliminate the need for direct database
-  schema-authoring access to define the rule's underlying view (see
-  FR-AUTHVIEW-1)
-- **NFR-SEC-3.** Custom validators SHALL execute in-process with the same
+  restart the service.
+- **NFR-SEC-3.** As an extension of the platform's environment/routing
+  configuration (FR-INST, v8.0 companion PRD §3.1), hosts SHALL be able to
+  source backing data environment connection details from an external
+  secret-management system, as an alternative to the platform's own
+  administrative service, by implementing the platform's custom-startup
+  extension point (see NFR-OPS-14). This MAY require a developer to author
+  and deploy a plugin assembly, rather than applying a configuration-only
+  change at runtime.
+- **NFR-SEC-4.** Custom validators SHALL execute in-process with the same
   runtime security context and permissions as the rest of the API service; the
   platform SHALL NOT provide sandboxing or privilege separation for validator
   code. Trust in third-party or host-authored validator code SHALL be
   established through the host's own build and code-review process before
   deployment, not enforced by the platform at runtime.
-- **NFR-SEC-4.** The public custom-validation contract package SHALL depend
+- **NFR-SEC-5.** The public custom-validation contract package SHALL depend
   only on the base class library and standard Microsoft.Extensions
   abstractions, so that referencing it does not pull in a broader transitive
   dependency surface — and associated supply-chain risk — than necessary.
@@ -598,7 +484,9 @@ broader extensibility story.
 ### Reliability / Performance
 
 - **NFR-PERF-1.** Read-heavy and write-heavy workloads SHALL be separable via
-  read-replica support, with no changes required on the client side.
+  read-replica support; this SHALL be fully transparent to API clients — the
+  same endpoints and request/response contract apply whether or not a host has
+  designated a replica — requiring no client-side changes.
 - **NFR-PERF-2.** Retrieving large result sets SHALL remain performant as
   clients page deeper into them; paging near the end of a large collection
   SHOULD NOT perform meaningfully worse than paging near the beginning.
@@ -611,61 +499,168 @@ broader extensibility story.
 - **NFR-PERF-5.** Any capability that lets a host trigger an immediate,
   system-wide cache refresh SHALL include safeguards preventing that capability
   from being used — intentionally or accidentally — to degrade system
-  performance.
+  performance (see NFR-OPS-11 for the cache-refresh-signaling capability
+  itself).
 - **NFR-PERF-6**. The CDC/streaming pipeline SHALL impose minimal overhead on
   the primary database's read/write path under normal operation. A slow,
   disconnected, or stalled downstream consumer SHALL NOT cause unbounded
   resource growth on the primary database.
-- **NFR-PERF-7.** A custom validator's constructor and its resource-targeting
+- **NFR-PERF-7.** The system SHALL always source data used to populate its
+  internal caches from the primary (read/write) environment, never from a read
+  replica, so cached information is never built from data that could be
+  lagging behind the primary.
+- **NFR-PERF-8.** The system SHALL be capable of serving read requests for a
+  resource using a serialized representation of a document, with a fallback to
+  standard relational retrieval when a serialized representation is
+  unavailable or stale — the serialized representation is a performance
+  optimization, not a hard dependency for read availability.
+- **NFR-PERF-9.** A custom validator's constructor and its resource-targeting
   logic run on every write request, before the system even determines whether
   that validator applies — this code path SHALL be synchronous and free of I/O
   or heavy computation, so a validator that doesn't apply to a given request
   cannot meaningfully slow it down.
-- **NFR-PERF-8.** Any outbound I/O a validator performs (e.g., an external
-  HTTP call or datastore lookup) SHALL respect the cancellation signal passed
-  to it (see FR-CUSTVAL-8) and a configured timeout, so a slow, hung, or
-  abandoned validator cannot starve the request pipeline.
+- **NFR-PERF-10.** Any outbound I/O a validator performs (e.g., an external
+  HTTP call or datastore lookup) SHALL respect the cancellation signal
+  provided for the active request and a configured timeout, so a slow, hung,
+  or abandoned validator cannot starve the request pipeline.
+- **NFR-PERF-11.** Where more than one custom validator applies to a request,
+  they SHALL be invoked one at a time, in registration order, rather than
+  concurrently.
+- **NFR-PERF-12.** Each invoked validator SHALL operate on its own isolated
+  copy of the resource body, so one validator cannot observe or corrupt
+  mutations made by another.
 
 ### Operations
 
-- **NFR-OPS-1.** Enabling or disabling certain optional capabilities (e.g.,
-  ownership-based authorization) SHALL require a corresponding one-time setup or
-  removal step for the affected environment(s); the platform SHALL provide a
-  supported way to perform both directions of that step.
+- **NFR-OPS-1.** Enabling ownership-based authorization for a resource claim
+  and action SHALL require only administrative configuration: creating one or
+  more ownership tokens, assigning them to the relevant API clients, and
+  selecting the ownership-based strategy for that resource claim and action;
+  underlying storage already exists for every document regardless of whether
+  the capability is used. Disabling it SHALL be achieved the same way —
+  removing the strategy selection and/or token assignments — without deleting
+  or retiring the ownership tokens themselves.
 - **NFR-OPS-2.** A host offering isolated, point-in-time data views for
   synchronization SHALL be responsible for the operational process of creating
   and refreshing those views; the platform does not schedule or orchestrate this
   itself.
-- **NFR-OPS-3.** After the system finishes composing its dependencies but
+- **NFR-OPS-3.** Hosts SHALL be able to designate a separate, read-only copy
+  of the operational data — kept current by the host's own database-platform
+  replication technology (e.g., SQL Server Always On availability groups,
+  Aurora read replicas) — to serve all read (GET) traffic, offloading read
+  load from the primary read/write environment. Designating a replica SHALL
+  be optional per backing data environment; an environment with none
+  designated SHALL serve all traffic from the primary with no configuration
+  change required.
+- **NFR-OPS-4.** Where a host has designated a read replica, the platform
+  SHALL decide which copy to use per request on its own, based on whether the
+  request reads or writes. A host SHALL NOT have to configure this routing per
+  resource or per endpoint, and a client SHALL NOT be able to influence it.
+- **NFR-OPS-5.** When a host enables ownership-based authorization on an
+  environment that already contains data created before any ownership token
+  existed, that pre-existing data has no assigned owner, and the host SHALL be
+  responsible for retroactively assigning ownership to it if desired — the
+  system only assigns ownership automatically at the time a record is created
+  going forward.
+- **NFR-OPS-6.** A custom access rule SHALL be authored by the host directly
+  as a database view — over any entity in the data model, core or extended —
+  requiring someone with direct database schema-authoring access; it is not
+  configured through the platform's own administrative interface.
+- **NFR-OPS-7.** The platform is NOT required to validate a custom access
+  rule's underlying database view proactively (e.g., at startup or on
+  access-rule cache refresh); an error in that view SHALL surface only when a
+  request actually exercises the rule (see FR-AUTHVIEW-3).
+- **NFR-OPS-8.** When operating without an external unique-ID system, hosts
+  SHALL be responsible for instructing their own clients on how to obtain or
+  assign unique IDs; the platform does not provide this guidance itself.
+- **NFR-OPS-9.** The platform SHALL provide only the integration point and
+  enforcement behavior around unique-ID validation (see FR-UID-3, FR-UID-4),
+  not a connector to any particular external system; each host supplies the
+  connector for its own unique-ID system.
+- **NFR-OPS-10.** Hosts SHALL be able to control, per backing data
+  environment, whether the serialized representation described in NFR-PERF-8
+  is stored at all — a static configuration setting requiring a service
+  restart to take effect, not a runtime toggle — so hosts who don't need this
+  capability avoid its storage and background-processing cost entirely. The
+  system SHALL provide self-contained metadata alongside the serialized
+  representation, suitable for change-data-capture replication to secondary
+  data stores (see FR-STREAM); enabling storage for read-serving or for
+  change-data-capture purposes draws on this same underlying storage and
+  processing cost.
+
+> [!WARNING]
+> The cross-instance cache-refresh-signaling capability described in the next
+> three requirements may be cut from the scope of 8.1 in order to meet the
+> delivery timeline.
+
+- **NFR-OPS-11.** Hosts running multiple instances of the API service SHALL be
+  able to trigger an immediate refresh of specific cached administrative
+  information — at minimum, security/access rules, client credential details,
+  Profile definitions, and environment-routing details — across all running
+  instances, rather than waiting for that information's normal refresh
+  interval to elapse (see NFR-PERF-5 for abuse safeguards).
+- **NFR-OPS-12.** Hosts SHALL be able to extend this capability with
+  additional custom message types and handling, and to use a messaging
+  technology of their choosing.
+- **NFR-OPS-13.** The platform SHALL NOT itself provide a way to send these
+  refresh signals (for example, no built-in admin screen); triggering them is
+  the host's own operational responsibility.
+- **NFR-OPS-14.** As an extension of the platform's configuration and
+  extensibility model (FR-CONFIG, v8.0 companion PRD §3.9), hosts SHALL be
+  able to inject custom startup and configuration behavior without modifying
+  the platform's own source code, by implementing a documented plugin
+  interface and deploying it as a separate assembly the platform loads at
+  startup. This SHALL be documented as a supported pattern for adding wholly
+  new, independently-toggled custom capabilities — not only startup/
+  configuration behavior — so host-specific additions don't require changes to
+  unrelated parts of the system. This requires a developer to author and
+  deploy code; it is not a configuration-only change an administrator can make
+  alone.
+- **NFR-OPS-15.** The event-streaming CDC pipeline SHALL use Debezium, reading
+  the database's change/transaction log directly from whichever database
+  engine — PostgreSQL or Microsoft SQL Server — the host has deployed as its
+  operational data store (see §5, System Architecture).
+- **NFR-OPS-16.** After the system finishes composing its dependencies but
   before it begins serving traffic, the platform SHALL verify every registered
   custom validator: rejecting, with a fatal startup failure, any validator not
   registered with a per-request lifetime; rejecting any validator whose
   dependencies cannot be resolved; and logging a prominent warning — without
   failing startup — for any validator that declares a target resource not
   present in the effective schema.
+- **NFR-OPS-17.** In a deployment with no custom validators registered, write
+  requests SHALL behave exactly as they would if this capability did not
+  exist, with no feature flag or configuration override required to achieve
+  that default.
 
 ### Maintainability & Supply Chain
 
-- **NFR-MAINT-1.** The platform's build and release pipeline SHALL package
-  the custom-validation contract (FR-CUSTVAL-1) on every release, attach an
-  open-source license and repository reference, and publish accompanying
-  implementer documentation.
-- **NFR-MAINT-2.** Every published build of this contract package SHALL be
-  accompanied by a Software Bill of Materials (SPDX 2.2) and SLSA Level 3
-  build-provenance metadata, so consumers can verify what the package
-  contains and how it was built.
-- **NFR-MAINT-3.** This package SHALL follow Semantic Versioning; any breaking
+- **NFR-MAINT-1.** The system SHALL ship the custom-validation interface and
+  data model as a standalone, independently versioned package, so a host or
+  vendor can build and reference a validator implementation without depending
+  on, or being coupled to, the platform's internal core assemblies.
+- **NFR-MAINT-2.** This package SHALL follow Semantic Versioning; any breaking
   change to its interfaces SHALL require validator implementations to be
   recompiled against the updated package before they can be used with the
   corresponding platform version.
-- **NFR-MAINT-4.** A validator implementation SHALL be independently
+- **NFR-MAINT-3.** The platform's build and release pipeline SHALL package
+  this contract on every release, attach an open-source license and
+  repository reference, and publish accompanying implementer documentation.
+- **NFR-MAINT-4.** Every published build of this contract package SHALL be
+  accompanied by a Software Bill of Materials (SPDX 2.2) and SLSA Level 3
+  build-provenance metadata, so consumers can verify what the package
+  contains and how it was built.
+- **NFR-MAINT-5.** A validator implementation SHALL be independently
   compilable and unit-testable using only the contract package, without
   needing source or binary access to the platform's core assemblies.
-- **NFR-MAINT-5.** The platform's end-to-end test suite SHALL include
+- **NFR-MAINT-6.** The platform's end-to-end test suite SHALL include
   HTTP-level integration tests that exercise at least one custom validator
   through a full request, confirming that its failures produce a response
   indistinguishable in structure from built-in validation failures (see
-  FR-CUSTVAL-9).
+  FR-CUSTVAL-7).
+- **NFR-MAINT-7.** Custom validators SHALL be composed into the system using
+  the platform's standard dependency-injection registration mechanisms — the
+  same general mechanisms used for other pluggable configuration — rather
+  than a bespoke loading system built solely for this capability.
 
 ## 5. System Architecture
 
@@ -675,7 +670,7 @@ broader extensibility story.
 | Custom extensions (optional) | Host-supplied configuration/secret sources, custom access rules, identity-system integrations, or wholly new capabilities | Would be the platform's primary supported way for hosts to extend behavior without forking core code |
 | External secret-management system (optional) | Alternative source for sensitive configuration such as data-store credentials | Alternative/supplement to the administrative service's own encrypted storage |
 | Operational data store derivative(s) | Read-only replica and/or point-in-time snapshot copies of the primary operational data store | Would extend the operational data store described in the v8.0 companion PRD |
-| Event streaming pipeline (Kafka + Debezium CDC connector) | Publishes data changes captured via CDC as a Kafka event stream for downstream consumers | Reads directly from the database's change log (PostgreSQL or SQL Server); depends on the serialized resource representation and metadata from FR-SERIAL |
+| Event streaming pipeline (Kafka + Debezium CDC connector) | Publishes data changes captured via CDC as a Kafka event stream for downstream consumers | Reads directly from the database's change log (PostgreSQL or SQL Server); depends on the serialized resource representation and metadata described in NFR-PERF-8/NFR-OPS-10 |
 | Custom validation extension (optional) | Host- or vendor-authored resource-level validation logic that runs during create/update requests, in addition to built-in schema validation | Distributed as a standalone, versioned contract package (implementer's code); runs in-process with the API service; absent by default with no behavior change |
 
 ## 6. Out of Scope and Known Limitations
@@ -703,14 +698,14 @@ broader extensibility story.
 - **Sandboxing or process isolation for custom validators** beyond the host's
   own build and code-review trust boundary is out of scope; custom validators
   run with the same trust and permissions as the API service itself (see
-  NFR-SEC-3).
+  NFR-SEC-4).
 - **Concurrent (parallel) execution of multiple applicable custom validators**
   is not supported; this is an intentional trade-off favoring deterministic,
   easy-to-reason-about failure ordering over maximum throughput (see
-  FR-CUSTVAL-5).
+  NFR-PERF-11).
 - **A built-in administrative UI for registering or managing custom
   validators** is not proposed; registration remains a compiled-in,
-  deployment-time configuration step (see FR-CUSTVAL-12).
+  deployment-time configuration step (see NFR-MAINT-7).
 
 ## 7. Open Questions and Decision Log
 
@@ -769,7 +764,7 @@ broader extensibility story.
   failure can take — tied to a specific location in the resource (path-scoped)
   or not tied to any specific location (resource-level) — which determine
   where the failure appears in the standardized HTTP 400 response (see
-  FR-CUSTVAL-9).
+  FR-CUSTVAL-7).
 - **SBOM (Software Bill of Materials):** A structured manifest listing a
   software package's components and dependencies, used here (in SPDX 2.2
   format) to give consumers of the custom-validation contract package
