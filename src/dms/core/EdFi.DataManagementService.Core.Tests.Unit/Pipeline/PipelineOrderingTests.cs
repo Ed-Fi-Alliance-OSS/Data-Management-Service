@@ -63,6 +63,47 @@ public class PipelineOrderingTests
         return GetSteps(apiService, factoryMethodName).Select(step => step.GetType()).ToList();
     }
 
+    /// <summary>
+    /// The steps that decide whether the request names a real project namespace and resource. None of
+    /// them opens a database connection.
+    /// </summary>
+    private static readonly Type[] EndpointValidationPhase =
+    [
+        typeof(ApiSchemaValidationMiddleware),
+        typeof(ProvideApiSchemaMiddleware),
+        typeof(ValidateEndpointMiddleware),
+    ];
+
+    /// <summary>
+    /// The steps that read the selected database, in dependency order.
+    /// </summary>
+    private static readonly Type[] DatabaseValidationPhase =
+    [
+        typeof(ValidateDatabaseFingerprintMiddleware),
+        typeof(ValidateResourceKeySeedMiddleware),
+        typeof(ResolveMappingSetMiddleware),
+    ];
+
+    private static int FirstIndexOfPhase(List<Type> stepTypes, Type[] phase)
+    {
+        int first = phase
+            .Select(stepType => stepTypes.IndexOf(stepType))
+            .Where(index => index >= 0)
+            .DefaultIfEmpty(-1)
+            .Min();
+
+        first.Should().BeGreaterThanOrEqualTo(0, "the phase must be present to be ordered");
+        return first;
+    }
+
+    private static int LastIndexOfPhase(List<Type> stepTypes, Type[] phase)
+    {
+        int last = phase.Select(stepType => stepTypes.IndexOf(stepType)).Max();
+
+        last.Should().BeGreaterThanOrEqualTo(0, "the phase must be present to be ordered");
+        return last;
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_The_Query_Pipeline : PipelineOrderingTests
@@ -175,18 +216,17 @@ public class PipelineOrderingTests
         }
 
         [Test]
-        public void It_places_fingerprint_validation_before_the_first_schema_dependent_step()
+        public void It_places_fingerprint_validation_after_the_endpoint_validation_phase()
         {
+            var validateEndpointIndex = _stepTypes.IndexOf(typeof(ValidateEndpointMiddleware));
             var fingerprintIndex = _stepTypes.IndexOf(typeof(ValidateDatabaseFingerprintMiddleware));
-            var apiSchemaValidationIndex = _stepTypes.IndexOf(typeof(ApiSchemaValidationMiddleware));
 
-            fingerprintIndex.Should().BeGreaterThanOrEqualTo(0);
-            apiSchemaValidationIndex.Should().BeGreaterThanOrEqualTo(0);
+            validateEndpointIndex.Should().BeGreaterThanOrEqualTo(0);
             fingerprintIndex
                 .Should()
-                .BeLessThan(
-                    apiSchemaValidationIndex,
-                    "ValidateDatabaseFingerprintMiddleware must run before schema-dependent middleware"
+                .BeGreaterThan(
+                    validateEndpointIndex,
+                    "an unroutable request must receive its endpoint 404 rather than a database availability error"
                 );
         }
 
@@ -212,18 +252,17 @@ public class PipelineOrderingTests
         }
 
         [Test]
-        public void It_places_resource_key_validation_before_the_first_schema_dependent_step()
+        public void It_places_resource_key_validation_after_the_endpoint_validation_phase()
         {
+            var validateEndpointIndex = _stepTypes.IndexOf(typeof(ValidateEndpointMiddleware));
             var resourceKeyIndex = _stepTypes.IndexOf(typeof(ValidateResourceKeySeedMiddleware));
-            var apiSchemaValidationIndex = _stepTypes.IndexOf(typeof(ApiSchemaValidationMiddleware));
 
-            resourceKeyIndex.Should().BeGreaterThanOrEqualTo(0);
-            apiSchemaValidationIndex.Should().BeGreaterThanOrEqualTo(0);
+            validateEndpointIndex.Should().BeGreaterThanOrEqualTo(0);
             resourceKeyIndex
                 .Should()
-                .BeLessThan(
-                    apiSchemaValidationIndex,
-                    "ValidateResourceKeySeedMiddleware must run before schema-dependent middleware"
+                .BeGreaterThan(
+                    validateEndpointIndex,
+                    "an unroutable request must receive its endpoint 404 rather than a resource-key seed error"
                 );
         }
 
@@ -249,19 +288,34 @@ public class PipelineOrderingTests
         }
 
         [Test]
-        public void It_places_resolve_mapping_set_before_the_first_schema_dependent_step()
+        public void It_places_resolve_mapping_set_after_the_endpoint_validation_phase()
         {
+            var validateEndpointIndex = _stepTypes.IndexOf(typeof(ValidateEndpointMiddleware));
             var mappingSetIndex = _stepTypes.IndexOf(typeof(ResolveMappingSetMiddleware));
-            var apiSchemaValidationIndex = _stepTypes.IndexOf(typeof(ApiSchemaValidationMiddleware));
 
-            mappingSetIndex.Should().BeGreaterThanOrEqualTo(0);
-            apiSchemaValidationIndex.Should().BeGreaterThanOrEqualTo(0);
+            validateEndpointIndex.Should().BeGreaterThanOrEqualTo(0);
             mappingSetIndex
                 .Should()
-                .BeLessThan(
-                    apiSchemaValidationIndex,
-                    "ResolveMappingSetMiddleware must run before schema-dependent middleware"
+                .BeGreaterThan(
+                    validateEndpointIndex,
+                    "an unroutable request must receive its endpoint 404 rather than a mapping-set error"
                 );
+        }
+
+        /// <summary>
+        /// Endpoint validation reads only IApiSchemaProvider.IsSchemaValid, the startup-built effective
+        /// schema documents, and the parsed path, so hoisting it ahead of the database phase gives it no
+        /// database dependency. Pinning that here keeps a future step from acquiring one silently.
+        /// </summary>
+        [Test]
+        public void It_places_the_whole_endpoint_phase_before_the_whole_database_phase()
+        {
+            _stepTypes.Should().ContainInOrder(EndpointValidationPhase);
+            _stepTypes.Should().ContainInOrder(DatabaseValidationPhase);
+
+            LastIndexOfPhase(_stepTypes, EndpointValidationPhase)
+                .Should()
+                .BeLessThan(FirstIndexOfPhase(_stepTypes, DatabaseValidationPhase));
         }
     }
 
@@ -639,6 +693,154 @@ public class PipelineOrderingTests
             );
 
             measurements.Should().BeEmpty();
+        }
+    }
+
+    /// <summary>
+    /// The endpoint phase decides whether the request names a real resource and needs no database; the
+    /// database phase reads the selected database. Every pipeline that performs both must run them in
+    /// that order, so an unroutable request answers its endpoint 404 rather than whichever database
+    /// validation would have failed first. Asserting it per factory rather than once keeps a newly
+    /// added or recomposed pipeline from quietly reverting the dependency.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Pipeline_That_Performs_Both_Validation_Phases : PipelineOrderingTests
+    {
+        private const string Reason =
+            "endpoint validation opens no database connection, so it must answer before the database phase";
+
+        [TestCase("CreateGetByIdPipeline")]
+        [TestCase("CreateQueryPipeline")]
+        [TestCase("CreateGetPartitionsPipeline")]
+        [TestCase("CreateUpsertPipeline")]
+        [TestCase("CreateUpdatePipeline")]
+        [TestCase("CreateDeleteByIdPipeline")]
+        [TestCase("CreateGetTrackedChangesPipeline")]
+        public void It_places_the_whole_endpoint_phase_before_the_whole_database_phase(
+            string factoryMethodName
+        )
+        {
+            var stepTypes = GetRoutedResourcePipelineStepTypes(factoryMethodName);
+
+            LastIndexOfPhase(stepTypes, EndpointValidationPhase)
+                .Should()
+                .BeLessThan(FirstIndexOfPhase(stepTypes, DatabaseValidationPhase), Reason);
+        }
+
+        [TestCase("CreateGetByIdPipeline")]
+        [TestCase("CreateQueryPipeline")]
+        [TestCase("CreateGetPartitionsPipeline")]
+        [TestCase("CreateUpsertPipeline")]
+        [TestCase("CreateUpdatePipeline")]
+        [TestCase("CreateDeleteByIdPipeline")]
+        [TestCase("CreateGetTrackedChangesPipeline")]
+        public void It_keeps_the_endpoint_phase_in_its_declared_order(string factoryMethodName)
+        {
+            GetRoutedResourcePipelineStepTypes(factoryMethodName)
+                .Should()
+                .ContainInOrder(EndpointValidationPhase);
+        }
+
+        [TestCase("CreateGetByIdPipeline")]
+        [TestCase("CreateQueryPipeline")]
+        [TestCase("CreateGetPartitionsPipeline")]
+        [TestCase("CreateUpsertPipeline")]
+        [TestCase("CreateUpdatePipeline")]
+        [TestCase("CreateDeleteByIdPipeline")]
+        [TestCase("CreateGetTrackedChangesPipeline")]
+        public void It_keeps_the_database_phase_in_dependency_order(string factoryMethodName)
+        {
+            GetRoutedResourcePipelineStepTypes(factoryMethodName)
+                .Should()
+                .ContainInOrder(DatabaseValidationPhase);
+        }
+
+        /// <summary>
+        /// Path parsing supplies the components endpoint validation reads, so it stays ahead of both
+        /// phases on the pipelines that perform it.
+        /// </summary>
+        [TestCase("CreateGetByIdPipeline", typeof(ParsePathMiddleware))]
+        [TestCase("CreateQueryPipeline", typeof(ParsePathMiddleware))]
+        [TestCase("CreateGetPartitionsPipeline", typeof(ParsePathMiddleware))]
+        [TestCase("CreateUpsertPipeline", typeof(ParsePathMiddleware))]
+        [TestCase("CreateUpdatePipeline", typeof(ParsePathMiddleware))]
+        [TestCase("CreateDeleteByIdPipeline", typeof(ParsePathMiddleware))]
+        [TestCase("CreateGetTrackedChangesPipeline", typeof(ParseTrackedChangePathMiddleware))]
+        public void It_parses_the_path_before_the_endpoint_phase(string factoryMethodName, Type pathStep)
+        {
+            var stepTypes = GetRoutedResourcePipelineStepTypes(factoryMethodName);
+            var pathIndex = stepTypes.IndexOf(pathStep);
+
+            pathIndex.Should().BeGreaterThanOrEqualTo(0);
+            pathIndex
+                .Should()
+                .BeLessThan(
+                    FirstIndexOfPhase(stepTypes, EndpointValidationPhase),
+                    "endpoint validation resolves the project namespace and resource from the parsed path"
+                );
+        }
+    }
+
+    /// <summary>
+    /// A mutation pipeline rejects an invalid route shape before it reads the database, so an invalid
+    /// collection DELETE, collection PUT, or item POST answers its route-semantics 405 rather than a
+    /// database availability error.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Mutation_Pipeline : PipelineOrderingTests
+    {
+        [TestCase("CreateUpsertPipeline")]
+        [TestCase("CreateUpdatePipeline")]
+        [TestCase("CreateDeleteByIdPipeline")]
+        public void It_places_route_semantics_validation_between_the_two_phases(string factoryMethodName)
+        {
+            var stepTypes = GetRoutedResourcePipelineStepTypes(factoryMethodName);
+            var routeSemanticsIndex = stepTypes.IndexOf(typeof(ValidateRouteSemanticsMiddleware));
+
+            routeSemanticsIndex.Should().BeGreaterThanOrEqualTo(0);
+            routeSemanticsIndex.Should().BeGreaterThan(LastIndexOfPhase(stepTypes, EndpointValidationPhase));
+            routeSemanticsIndex
+                .Should()
+                .BeLessThan(
+                    FirstIndexOfPhase(stepTypes, DatabaseValidationPhase),
+                    "an invalid mutation route shape must answer 405 without reading the database"
+                );
+        }
+    }
+
+    /// <summary>
+    /// The two method-not-allowed pipelines answer without reaching a backend, so they carry the
+    /// endpoint phase and none of the database phase. Their terminal is reached only once the endpoint
+    /// is known to exist, which is what reproduces ODS/API's existence-then-method ordering.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Method_Not_Allowed_Pipeline : PipelineOrderingTests
+    {
+        [TestCase("CreateMethodNotAllowedPipeline")]
+        [TestCase("CreateTrackedChangeMethodNotAllowedPipeline")]
+        public void It_performs_no_database_validation(string factoryMethodName)
+        {
+            var stepTypes = GetRoutedResourcePipelineStepTypes(factoryMethodName);
+
+            stepTypes.Should().NotContain(DatabaseValidationPhase);
+        }
+
+        [TestCase("CreateMethodNotAllowedPipeline")]
+        [TestCase("CreateTrackedChangeMethodNotAllowedPipeline")]
+        public void It_keeps_the_endpoint_phase_before_the_terminal(string factoryMethodName)
+        {
+            var stepTypes = GetRoutedResourcePipelineStepTypes(factoryMethodName);
+
+            stepTypes.Should().ContainInOrder(EndpointValidationPhase);
+            LastIndexOfPhase(stepTypes, EndpointValidationPhase)
+                .Should()
+                .BeLessThan(
+                    stepTypes.IndexOf(typeof(MethodNotAllowedMiddleware)),
+                    "an unknown resource answers 404 rather than 405"
+                );
         }
     }
 

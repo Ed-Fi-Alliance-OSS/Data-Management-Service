@@ -169,6 +169,13 @@ public abstract class ApiIntegrationTestBase
     /// <summary>Releases (drops) the leased database identified by <paramref name="leasedConnectionString"/>.</summary>
     protected abstract Task ReleaseDatabaseAsync(string leasedConnectionString);
 
+    /// <summary>
+    /// Hook for a fixture that must substitute a production service in the booted host, for example to
+    /// force one validation stage to fail so that a precedence rule between stages becomes observable.
+    /// It runs after the standard doubles are registered, so a replacement made here wins.
+    /// </summary>
+    protected virtual void ConfigureAdditionalServices(IServiceCollection services) { }
+
     [SetUp]
     public async Task ApiIntegrationSetUp()
     {
@@ -284,6 +291,8 @@ public abstract class ApiIntegrationTestBase
                 {
                     services.SuppressHydratedRowsOnce();
                 }
+
+                ConfigureAdditionalServices(services);
             });
         });
 
