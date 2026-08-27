@@ -53,6 +53,10 @@ already covered in the v8.0 companion PRD.
   vendors who built downstream systems around a near-real-time change feed in
   the prior generation have no equivalent way to consume data changes from
   v8.0 without polling the API.
+- **Custom validation** is an extensibility capability: hosts and vendors need
+  a supported way to enforce business rules beyond the platform's built-in
+  schema validation, without forking core code. This is a concrete instance of
+  the general custom-extension mechanism described in FR-CONFIG-6/7.
 - Closing this gap is a prerequisite for hosts currently on the prior-generation
   platform to migrate to v8.0 without a regression in capability.
 
@@ -65,9 +69,10 @@ already covered in the v8.0 companion PRD.
   replicating prior-generation fine-grained authorization patterns
   (ownership-based access, custom access rules) on v8.0.
 - **Platform Host Extension Developer** — currently has no supported way to add
-  wholly new custom capabilities or integrate an external identity/unique-ID
-  system on v8.0, beyond the data-model extension mechanism already covered in
-  the v8.0 companion PRD.
+  wholly new custom capabilities, enforce custom business-rule validation
+  beyond the platform's built-in schema validation, or integrate an external
+  identity/unique-ID system on v8.0, beyond the data-model extension mechanism
+  already covered in the v8.0 companion PRD.
 - **API Client Developer (Vendor/Integrator)** — currently cannot rely on a
   consistent point-in-time snapshot for synchronization runs, identifier-change
   support without delete-and-recreate, high-performance paging, rostering
@@ -115,6 +120,12 @@ already covered in the v8.0 companion PRD.
   than polling the API, the platform host wants the platform to publish those
   changes as a stream of events **so that** integrations can react to changes as
   they happen (see FR-STREAM).
+- When a host or vendor needs to enforce a business rule beyond what the
+  platform's built-in schema validation covers (e.g., a district-specific data
+  rule), the Extension Developer wants to plug in custom validation logic that
+  runs as part of the normal write request **so that** invalid data is still
+  rejected, with the client seeing the same standardized error format as
+  built-in validation errors (see FR-CUSTVAL).
 
 ## 2. Enterprise / System Context
 
@@ -501,6 +512,75 @@ host-configurable limits on token lifetime or concurrency.
   "no data has changed" from "the stream has stopped delivering," without that
   signal ever being mistaken for an actual document change.
 
+### 3.15 Custom Validation Extension Point (FR-CUSTVAL)
+
+_Note:_ this is a concrete instance of the general custom-extension mechanism
+described in FR-CONFIG-6/7 (§3.12); see that section for the platform's
+broader extensibility story.
+
+- **FR-CUSTVAL-1.** The system SHALL ship a dedicated, public, versioned
+  package containing the custom-validation contract, so a host or vendor can
+  build a validator implementation without depending on, or being coupled to,
+  the platform's internal core assemblies.
+- **FR-CUSTVAL-2.** This contract SHALL define: a validator interface exposing
+  which resource(s) it targets and an asynchronous validation entry point; a
+  failure model supporting both a failure tied to a specific location in the
+  resource (path-scoped) and a failure not tied to any specific location
+  (resource-level); the resource payload provided to a validator; contextual
+  execution metadata (project name, resource name, trace identifier); the
+  ability to distinguish a create from an update; and execution-scope details
+  (tenant, routing context).
+- **FR-CUSTVAL-3.** Custom validation SHALL execute for create (POST) and
+  update (PUT) requests, after the request has passed authorization and
+  before the write is committed — so an unauthorized request is rejected
+  without ever exercising custom validation, and a request that fails custom
+  validation is never persisted.
+- **FR-CUSTVAL-4.** Each registered custom validator SHALL declare which
+  resource type(s) it applies to. The system SHALL invoke a validator only for
+  requests targeting a resource type it declares, and SHALL bypass it entirely
+  for all others.
+- **FR-CUSTVAL-5.** Where more than one custom validator applies to a request,
+  they SHALL be invoked one at a time, in registration order, rather than
+  concurrently.
+- **FR-CUSTVAL-6.** Custom validation SHALL NOT apply to read (GET, by ID or
+  by query) or delete (DELETE) requests — only to create and update requests.
+- **FR-CUSTVAL-7.** Each invoked validator SHALL receive its own isolated copy
+  of the resource body, so one validator cannot observe or corrupt mutations
+  made by another. When a writable Profile applies to a request, a validator
+  SHALL receive the Profile-shaped view of the payload rather than the full,
+  unrestricted resource body — so validation reflects what the client
+  actually sent and was authorized to send.
+- **FR-CUSTVAL-8.** The active request's cancellation signal SHALL be passed
+  into each validator's execution.
+- **FR-CUSTVAL-9.** A custom validation failure SHALL be surfaced to the
+  client as a standard HTTP 400 response, in the same response shape as the
+  platform's built-in validation errors: a path-scoped failure SHALL appear
+  under the path-keyed validation-errors collection, and a resource-level
+  failure SHALL appear in the top-level errors list. The response's top-level
+  `detail`, `type`, `title`, and `status` fields SHALL be identical in form to
+  those returned for built-in validation failures, so a client cannot
+  distinguish a custom validation failure from a built-in one except by its
+  content.
+- **FR-CUSTVAL-10.** When more than one applicable custom validator fails, or
+  a single validator reports more than one failure, all such failures SHALL be
+  aggregated into one HTTP 400 response, rather than the client only seeing
+  the first failure encountered.
+- **FR-CUSTVAL-11.** If a custom validator throws an unhandled exception or
+  otherwise fails to produce a result, the system SHALL treat this as an
+  internal error and return an HTTP 500 response, rather than silently
+  succeeding or silently dropping that validator's result. If the client
+  aborts the request before validation completes, the system SHALL NOT
+  generate an error response for that abandoned request.
+- **FR-CUSTVAL-12.** Custom validators SHALL be registered into the system at
+  composition/startup using the platform's standard registration mechanisms.
+- **FR-CUSTVAL-13.** With no custom validators registered, the write pipelines
+  SHALL operate as a clean no-op, requiring no feature flags or configuration
+  overrides.
+- **FR-CUSTVAL-14.** Where a host operates multiple tenants or districts on a
+  shared deployment, a custom validator SHALL be able to apply different rules
+  per tenant or per routing context, so validation can vary by district or
+  tenant without deploying separate validator code per tenant.
+
 ## 4. Non-Functional Requirements
 
 ### Compatibility
@@ -521,6 +601,16 @@ host-configurable limits on token lifetime or concurrency.
   restart the service. This does not eliminate the need for direct database
   schema-authoring access to define the rule's underlying view (see
   FR-AUTHVIEW-1)
+- **NFR-SEC-3.** Custom validators SHALL execute in-process with the same
+  runtime security context and permissions as the rest of the API service; the
+  platform SHALL NOT provide sandboxing or privilege separation for validator
+  code. Trust in third-party or host-authored validator code SHALL be
+  established through the host's own build and code-review process before
+  deployment, not enforced by the platform at runtime.
+- **NFR-SEC-4.** The public custom-validation contract package SHALL depend
+  only on the base class library and standard Microsoft.Extensions
+  abstractions, so that referencing it does not pull in a broader transitive
+  dependency surface — and associated supply-chain risk — than necessary.
 
 ### Privacy
 
@@ -528,6 +618,11 @@ host-configurable limits on token lifetime or concurrency.
   documented, minimal set of attributes by default; the platform SHALL NOT
   bundle additional sensitive identity-matching attributes (e.g., government ID
   numbers, ethnicity/race) unless a specific host integration requires them.
+- **NFR-PRIVACY-2.** Logging related to custom validator execution SHALL be
+  limited to the validator's (sanitized) name and a count of failures,
+  correlated to the request's trace identifier. It SHALL NOT include the
+  actual validation failure messages or any request payload field, so logs
+  cannot become a channel for leaking student or other sensitive data.
 
 ### Reliability / Performance
 
@@ -550,6 +645,15 @@ host-configurable limits on token lifetime or concurrency.
   the primary database's read/write path under normal operation. A slow,
   disconnected, or stalled downstream consumer SHALL NOT cause unbounded
   resource growth on the primary database.
+- **NFR-PERF-7.** A custom validator's constructor and its resource-targeting
+  logic run on every write request, before the system even determines whether
+  that validator applies — this code path SHALL be synchronous and free of I/O
+  or heavy computation, so a validator that doesn't apply to a given request
+  cannot meaningfully slow it down.
+- **NFR-PERF-8.** Any outbound I/O a validator performs (e.g., an external
+  HTTP call or datastore lookup) SHALL respect the cancellation signal passed
+  to it (see FR-CUSTVAL-8) and a configured timeout, so a slow, hung, or
+  abandoned validator cannot starve the request pipeline.
 
 ### Operations
 
@@ -561,6 +665,36 @@ host-configurable limits on token lifetime or concurrency.
   synchronization SHALL be responsible for the operational process of creating
   and refreshing those views; the platform does not schedule or orchestrate this
   itself.
+- **NFR-OPS-3.** After the system finishes composing its dependencies but
+  before it begins serving traffic, the platform SHALL verify every registered
+  custom validator: rejecting, with a fatal startup failure, any validator not
+  registered with a per-request lifetime; rejecting any validator whose
+  dependencies cannot be resolved; and logging a prominent warning — without
+  failing startup — for any validator that declares a target resource not
+  present in the effective schema.
+
+### Maintainability & Supply Chain
+
+- **NFR-MAINT-1.** The platform's build and release pipeline SHALL package
+  the custom-validation contract (FR-CUSTVAL-1) on every release, attach an
+  open-source license and repository reference, and publish accompanying
+  implementer documentation.
+- **NFR-MAINT-2.** Every published build of this contract package SHALL be
+  accompanied by a Software Bill of Materials (SPDX 2.2) and SLSA Level 3
+  build-provenance metadata, so consumers can verify what the package
+  contains and how it was built.
+- **NFR-MAINT-3.** This package SHALL follow Semantic Versioning; any breaking
+  change to its interfaces SHALL require validator implementations to be
+  recompiled against the updated package before they can be used with the
+  corresponding platform version.
+- **NFR-MAINT-4.** A validator implementation SHALL be independently
+  compilable and unit-testable using only the contract package, without
+  needing source or binary access to the platform's core assemblies.
+- **NFR-MAINT-5.** The platform's end-to-end test suite SHALL include
+  HTTP-level integration tests that exercise at least one custom validator
+  through a full request, confirming that its failures produce a response
+  indistinguishable in structure from built-in validation failures (see
+  FR-CUSTVAL-9).
 
 ## 5. System Architecture
 
@@ -571,6 +705,7 @@ host-configurable limits on token lifetime or concurrency.
 | External secret-management system (optional) | Alternative source for sensitive configuration such as data-store credentials | Alternative/supplement to the administrative service's own encrypted storage |
 | Operational data store derivative(s) | Read-only replica and/or point-in-time snapshot copies of the primary operational data store | Would extend the operational data store described in the v8.0 companion PRD |
 | Event streaming pipeline (Kafka + Debezium CDC connector) | Publishes data changes captured via CDC as a Kafka event stream for downstream consumers | Reads directly from the database's change log (PostgreSQL or SQL Server); depends on the serialized resource representation and metadata from FR-SERIAL |
+| Custom validation extension (optional) | Host- or vendor-authored resource-level validation logic that runs during create/update requests, in addition to built-in schema validation | Distributed as a standalone, versioned contract package (implementer's code); runs in-process with the API service; absent by default with no behavior change |
 
 ## 6. Out of Scope and Known Limitations
 
@@ -598,6 +733,17 @@ host-configurable limits on token lifetime or concurrency.
   and consumer-side integration patterns** are not specified by this PRD; only
   the platform's requirement to produce a CDC-based event stream (FR-STREAM)
   is in scope.
+- **Sandboxing or process isolation for custom validators** beyond the host's
+  own build and code-review trust boundary is out of scope; custom validators
+  run with the same trust and permissions as the API service itself (see
+  NFR-SEC-3).
+- **Concurrent (parallel) execution of multiple applicable custom validators**
+  is not supported; this is an intentional trade-off favoring deterministic,
+  easy-to-reason-about failure ordering over maximum throughput (see
+  FR-CUSTVAL-5).
+- **A built-in administrative UI for registering or managing custom
+  validators** is not proposed; registration remains a compiled-in,
+  deployment-time configuration step (see FR-CUSTVAL-12).
 
 ## 7. Open Questions and Decision Log
 
@@ -652,3 +798,20 @@ host-configurable limits on token lifetime or concurrency.
 - **Content Version:** An incrementing, per-document version number included
   in each stream event, letting a consumer detect duplicate or out-of-order
   delivery of the same document state.
+- **Custom Validator:** Host- or vendor-authored logic, implemented against
+  the platform's public custom-validation contract, that runs during a
+  create/update request to enforce a business rule beyond the platform's
+  built-in schema validation.
+- **Path-Scoped / Resource-Level Failure:** The two forms a custom validation
+  failure can take — tied to a specific location in the resource (path-scoped)
+  or not tied to any specific location (resource-level) — which determine
+  where the failure appears in the standardized HTTP 400 response (see
+  FR-CUSTVAL-9).
+- **SBOM (Software Bill of Materials):** A structured manifest listing a
+  software package's components and dependencies, used here (in SPDX 2.2
+  format) to give consumers of the custom-validation contract package
+  visibility into its contents.
+- **SLSA (Supply-chain Levels for Software Artifacts):** A framework of
+  increasing build-integrity guarantees for a software artifact; SLSA Level 3
+  provenance metadata lets a consumer verify how a published package was
+  built.
