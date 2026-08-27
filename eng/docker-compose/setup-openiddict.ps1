@@ -21,6 +21,7 @@ param (
     [string] $NewClientId = "DmsConfigurationService",
     [string] $NewClientName = "DMS Configuration Service",
     [string] $NewClientSecret = "ValidClientSecret1234567890!Abcd",
+    [string] $NewClientSecretEnvironmentVariable = "",
     [int] $ClientSecretMinimumLength = 32,
     [int] $ClientSecretMaximumLength = 128,
     [string] $DmsClientRole = "dms-client",
@@ -43,6 +44,7 @@ Import-Module ./OpenIddict-Crypto.psm1
 
 $script:DbType = $DbType
 $script:ConnectionString = $ConnectionString
+$script:ConnectionStringWasProvided = $PSBoundParameters.ContainsKey("ConnectionString")
 $script:PostgresContainerName = $PostgresContainerName
 $script:DbHost = $DbHost
 $script:DbPort = $DbPort
@@ -52,6 +54,19 @@ $script:ClientSecretMinimumLength = $ClientSecretMinimumLength
 $script:ClientSecretMaximumLength = $ClientSecretMaximumLength
 $script:EncryptionKey = $EncryptionKey
 $script:HashIterations = $HashIterations
+
+# -NewClientSecret is always the literal secret. The complexity rule admits ':', so a valid secret may
+# itself begin with "ENV:", and unlike the database parameters it is never read as an indirection. A
+# caller that must keep the secret out of this process's argument list names the environment variable
+# holding it with -NewClientSecretEnvironmentVariable instead; the two parameters are alternatives.
+if ($PSBoundParameters.ContainsKey("NewClientSecretEnvironmentVariable")) {
+    if ($PSBoundParameters.ContainsKey("NewClientSecret")) {
+        throw "Specify either -NewClientSecret or -NewClientSecretEnvironmentVariable, not both."
+    }
+    if ([string]::IsNullOrWhiteSpace($NewClientSecretEnvironmentVariable)) {
+        throw "-NewClientSecretEnvironmentVariable must name the environment variable that holds the client secret."
+    }
+}
 
 Write-Verbose "TokenLifespan is not applied by setup-openiddict.ps1; OpenIddict token lifetime is configured by the service. Requested value: $TokenLifespan"
 
@@ -105,17 +120,37 @@ function Get-ScalarResult {
     return $Result[2]
 }
 
+function ConvertTo-MssqlSqlLiteral {
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    return "N'" + $Value.Replace("'", "''") + "'"
+}
+
 function New-OpenIddictRole {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper is invoked non-interactively against a local setup database.')]
     param([string]$RoleName)
     $roleId = [guid]::NewGuid().ToString()
+    # Every PostgreSQL string literal below is built by ConvertTo-PostgresSqlLiteral rather than
+    # pasted between bare quotes. The role name is a configured value - local-config.yml exposes it
+    # as DMS_CONFIG_IDENTITY_CLIENT_ROLE / DMS_CONFIG_IDENTITY_SERVICE_ROLE - and one carrying a
+    # single quote would close its literal, leaving psql to reject the whole statement. The helper
+    # returns the surrounding quotes as part of its result, so the templates embed it bare.
+    $roleIdLiteral = ConvertTo-PostgresSqlLiteral -Value $roleId
+    $roleNameLiteral = ConvertTo-PostgresSqlLiteral -Value $RoleName
+    $mssqlRoleIdLiteral = ConvertTo-MssqlSqlLiteral -Value $roleId
+    $mssqlRoleNameLiteral = ConvertTo-MssqlSqlLiteral -Value $RoleName
     if ($DbType -eq "MSSQL") {
-        $sqlInsert = "IF NOT EXISTS (SELECT 1 FROM dmscs.OpenIddictRole WHERE Name = '$RoleName') INSERT INTO dmscs.OpenIddictRole (Id, Name) VALUES ('$roleId', '$RoleName');"
+        $sqlInsert = "IF NOT EXISTS (SELECT 1 FROM dmscs.OpenIddictRole WHERE Name = $mssqlRoleNameLiteral) INSERT INTO dmscs.OpenIddictRole (Id, Name) VALUES ($mssqlRoleIdLiteral, $mssqlRoleNameLiteral);"
     }
     else {
         $sqlInsert = @"
 INSERT INTO "dmscs"."OpenIddictRole" ("Id", "Name")
-VALUES ('$roleId', '$RoleName')
+VALUES ($roleIdLiteral, $roleNameLiteral)
 ON CONFLICT ON CONSTRAINT "UX_OpenIddictRole_Name" DO NOTHING
 RETURNING "Id";
 "@
@@ -123,11 +158,11 @@ RETURNING "Id";
     Invoke-DbQuery $sqlInsert | Out-Null
 
     if ($DbType -eq "MSSQL") {
-        $sqlSelect = "SELECT Id FROM dmscs.OpenIddictRole WHERE Name = '$RoleName';"
+        $sqlSelect = "SELECT Id FROM dmscs.OpenIddictRole WHERE Name = $mssqlRoleNameLiteral;"
     }
     else {
         $sqlSelect = @"
-SELECT "Id" FROM "dmscs"."OpenIddictRole" WHERE "Name" = '$RoleName';
+SELECT "Id" FROM "dmscs"."OpenIddictRole" WHERE "Name" = $roleNameLiteral;
 "@
     }
     $existing = Invoke-DbQuery $sqlSelect
@@ -138,24 +173,32 @@ function New-OpenIddictScope {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Internal bootstrap helper is invoked non-interactively against a local setup database.')]
     param([string]$ScopeName, [string]$Description)
     $scopeId = [guid]::NewGuid().ToString()
+    # The scope name is the configured CONFIG_SERVICE_CLIENT_SCOPE, quoted here for the reason given
+    # in New-OpenIddictRole.
+    $scopeIdLiteral = ConvertTo-PostgresSqlLiteral -Value $scopeId
+    $scopeNameLiteral = ConvertTo-PostgresSqlLiteral -Value $ScopeName
+    $descriptionLiteral = ConvertTo-PostgresSqlLiteral -Value $Description
+    $mssqlScopeIdLiteral = ConvertTo-MssqlSqlLiteral -Value $scopeId
+    $mssqlScopeNameLiteral = ConvertTo-MssqlSqlLiteral -Value $ScopeName
+    $mssqlDescriptionLiteral = ConvertTo-MssqlSqlLiteral -Value $Description
     if ($DbType -eq "MSSQL") {
-        $sqlInsert = "IF NOT EXISTS (SELECT 1 FROM dmscs.OpenIddictScope WHERE Name = '$ScopeName') INSERT INTO dmscs.OpenIddictScope (Id, Name, Description) VALUES ('$scopeId', '$ScopeName', '$Description');"
+        $sqlInsert = "IF NOT EXISTS (SELECT 1 FROM dmscs.OpenIddictScope WHERE Name = $mssqlScopeNameLiteral) INSERT INTO dmscs.OpenIddictScope (Id, Name, Description) VALUES ($mssqlScopeIdLiteral, $mssqlScopeNameLiteral, $mssqlDescriptionLiteral);"
     }
     else {
         $sqlInsert = @"
 INSERT INTO "dmscs"."OpenIddictScope" ("Id", "Name", "Description")
-VALUES ('$scopeId', '$ScopeName', '$Description')
+VALUES ($scopeIdLiteral, $scopeNameLiteral, $descriptionLiteral)
 ON CONFLICT ON CONSTRAINT "UX_OpenIddictScope_Name" DO NOTHING
 RETURNING "Id";
 "@
     }
     Invoke-DbQuery $sqlInsert | Out-Null
     if ($DbType -eq "MSSQL") {
-        $sqlSelect = "SELECT Id FROM dmscs.OpenIddictScope WHERE Name = '$ScopeName';"
+        $sqlSelect = "SELECT Id FROM dmscs.OpenIddictScope WHERE Name = $mssqlScopeNameLiteral;"
     }
     else {
         $sqlSelect = @"
-SELECT "Id" FROM "dmscs"."OpenIddictScope" WHERE "Name" = '$ScopeName';
+SELECT "Id" FROM "dmscs"."OpenIddictScope" WHERE "Name" = $scopeNameLiteral;
 "@
     }
     $existing = Invoke-DbQuery $sqlSelect
@@ -169,13 +212,24 @@ function New-OpenIddictApplication {
     $iterations = [int32](Resolve-EnvValue $script:HashIterations)
     # Hash the client secret using ASP.NET password hashing
     $hashedSecret = New-AspNetPasswordHash -PlainTextSecret $ClientSecret -Iterations $iterations
+    # The client id is the configured CONFIG_SERVICE_CLIENT_ID, quoted here for the reason given in
+    # New-OpenIddictRole. The hash is base64 and cannot contain a quote, but it goes through the same
+    # helper so no value in this statement is a bare-quoted exception someone has to reason about.
+    $appIdLiteral = ConvertTo-PostgresSqlLiteral -Value $appId
+    $clientIdLiteral = ConvertTo-PostgresSqlLiteral -Value $ClientId
+    $hashedSecretLiteral = ConvertTo-PostgresSqlLiteral -Value $hashedSecret
+    $clientNameLiteral = ConvertTo-PostgresSqlLiteral -Value $ClientName
+    $mssqlAppIdLiteral = ConvertTo-MssqlSqlLiteral -Value $appId
+    $mssqlClientIdLiteral = ConvertTo-MssqlSqlLiteral -Value $ClientId
+    $mssqlHashedSecretLiteral = ConvertTo-MssqlSqlLiteral -Value $hashedSecret
+    $mssqlClientNameLiteral = ConvertTo-MssqlSqlLiteral -Value $ClientName
     if ($DbType -eq "MSSQL") {
-        $sqlInsert = "IF NOT EXISTS (SELECT 1 FROM dmscs.OpenIddictApplication WHERE ClientId = '$ClientId') INSERT INTO dmscs.OpenIddictApplication (Id, ClientId, ClientSecret, DisplayName, Type) VALUES ('$appId', '$ClientId', '$hashedSecret', '$ClientName', 'confidential');"
+        $sqlInsert = "IF NOT EXISTS (SELECT 1 FROM dmscs.OpenIddictApplication WHERE ClientId = $mssqlClientIdLiteral) INSERT INTO dmscs.OpenIddictApplication (Id, ClientId, ClientSecret, DisplayName, Type) VALUES ($mssqlAppIdLiteral, $mssqlClientIdLiteral, $mssqlHashedSecretLiteral, $mssqlClientNameLiteral, N'confidential');"
     }
     else {
         $sqlInsert = @"
 INSERT INTO "dmscs"."OpenIddictApplication" ("Id", "ClientId", "ClientSecret", "DisplayName", "Type")
-VALUES ('$appId', '$ClientId', '$hashedSecret', '$ClientName', 'confidential')
+VALUES ($appIdLiteral, $clientIdLiteral, $hashedSecretLiteral, $clientNameLiteral, 'confidential')
 ON CONFLICT ON CONSTRAINT "UX_OpenIddictApplication_ClientId" DO NOTHING
 RETURNING "Id";
 "@
@@ -183,11 +237,11 @@ RETURNING "Id";
     Invoke-DbQuery $sqlInsert | Out-Null
 
     if ($DbType -eq "MSSQL") {
-        $sqlSelect = "SELECT Id FROM dmscs.OpenIddictApplication WHERE ClientId = '$ClientId';"
+        $sqlSelect = "SELECT Id FROM dmscs.OpenIddictApplication WHERE ClientId = $mssqlClientIdLiteral;"
     }
     else {
         $sqlSelect = @"
-SELECT "Id" FROM "dmscs"."OpenIddictApplication" WHERE "ClientId" = '$ClientId';
+SELECT "Id" FROM "dmscs"."OpenIddictApplication" WHERE "ClientId" = $clientIdLiteral;
 "@
     }
     $existing = Invoke-DbQuery $sqlSelect
@@ -214,13 +268,21 @@ function Test-ClientSecretComplexity {
 
 function Add-OpenIddictClientRole {
     param([string]$AppId, [string]$RoleId)
+    # Quoted by the shared helper for the reason given in New-OpenIddictRole. These two are generated
+    # identifiers rather than configured values, so they go through it for uniformity: the rule in
+    # this script is that no PostgreSQL literal is assembled with bare quotes, which is what stops a
+    # later edit from reintroducing the pattern next to values that are configurable.
+    $appIdLiteral = ConvertTo-PostgresSqlLiteral -Value $AppId
+    $roleIdLiteral = ConvertTo-PostgresSqlLiteral -Value $RoleId
+    $mssqlAppIdLiteral = ConvertTo-MssqlSqlLiteral -Value $AppId
+    $mssqlRoleIdLiteral = ConvertTo-MssqlSqlLiteral -Value $RoleId
     if ($DbType -eq "MSSQL") {
-        $sql = "IF NOT EXISTS (SELECT 1 FROM dmscs.OpenIddictClientRole WHERE ClientId = '$AppId' AND RoleId = '$RoleId') INSERT INTO dmscs.OpenIddictClientRole (ClientId, RoleId) VALUES ('$AppId', '$RoleId');"
+        $sql = "IF NOT EXISTS (SELECT 1 FROM dmscs.OpenIddictClientRole WHERE ClientId = $mssqlAppIdLiteral AND RoleId = $mssqlRoleIdLiteral) INSERT INTO dmscs.OpenIddictClientRole (ClientId, RoleId) VALUES ($mssqlAppIdLiteral, $mssqlRoleIdLiteral);"
     }
     else {
         $sql = @"
 INSERT INTO "dmscs"."OpenIddictClientRole" ("ClientId", "RoleId")
-VALUES ('$AppId', '$RoleId')
+VALUES ($appIdLiteral, $roleIdLiteral)
 ON CONFLICT ON CONSTRAINT "PK_OpenIddictClientRole" DO NOTHING;
 "@
     }
@@ -229,13 +291,18 @@ ON CONFLICT ON CONSTRAINT "PK_OpenIddictClientRole" DO NOTHING;
 
 function Add-OpenIddictApplicationScope {
     param([string]$AppId, [string]$ScopeId)
+    # Quoted by the shared helper; see Add-OpenIddictClientRole.
+    $appIdLiteral = ConvertTo-PostgresSqlLiteral -Value $AppId
+    $scopeIdLiteral = ConvertTo-PostgresSqlLiteral -Value $ScopeId
+    $mssqlAppIdLiteral = ConvertTo-MssqlSqlLiteral -Value $AppId
+    $mssqlScopeIdLiteral = ConvertTo-MssqlSqlLiteral -Value $ScopeId
     if ($DbType -eq "MSSQL") {
-        $sql = "IF NOT EXISTS (SELECT 1 FROM dmscs.OpenIddictApplicationScope WHERE ApplicationId = '$AppId' AND ScopeId = '$ScopeId') INSERT INTO dmscs.OpenIddictApplicationScope (ApplicationId, ScopeId) VALUES ('$AppId', '$ScopeId');"
+        $sql = "IF NOT EXISTS (SELECT 1 FROM dmscs.OpenIddictApplicationScope WHERE ApplicationId = $mssqlAppIdLiteral AND ScopeId = $mssqlScopeIdLiteral) INSERT INTO dmscs.OpenIddictApplicationScope (ApplicationId, ScopeId) VALUES ($mssqlAppIdLiteral, $mssqlScopeIdLiteral);"
     }
     else {
         $sql = @"
 INSERT INTO "dmscs"."OpenIddictApplicationScope" ("ApplicationId", "ScopeId")
-VALUES ('$AppId', '$ScopeId')
+VALUES ($appIdLiteral, $scopeIdLiteral)
 ON CONFLICT ON CONSTRAINT "PK_OpenIddictApplicationScope" DO NOTHING;
 "@
     }
@@ -250,32 +317,45 @@ function Add-OpenIddictCustomClaim {
     }
 
     if ($DbType -eq "MSSQL") {
+        $mapperJson = ConvertTo-Json -Compress -InputObject ([ordered]@{
+                "claim.name"     = $ClaimName
+                "claim.value"    = $ClaimValue
+                "jsonType.label" = "String"
+            })
+        $mapperJsonLiteral = ConvertTo-MssqlSqlLiteral -Value $mapperJson
+        $appIdLiteral = ConvertTo-MssqlSqlLiteral -Value $AppId
         $sql = @"
 UPDATE dmscs.OpenIddictApplication
 SET ProtocolMappers = JSON_MODIFY(
-    COALESCE(ProtocolMappers, '[]'),
+    COALESCE(ProtocolMappers, N'[]'),
     'append $',
-    JSON_QUERY('{"claim.name":"$ClaimName","claim.value":"$ClaimValue","jsonType.label":"String"}')
+    JSON_QUERY($mapperJsonLiteral)
 )
-WHERE Id = '$AppId';
+WHERE Id = $appIdLiteral;
 "@
         Invoke-DbQuery -Sql $sql
         return
     }
 
-    # Use PostgreSQL jsonb_build functions to avoid shell escaping issues entirely
-    # This builds the equivalent of [{"claim.name": "...", "claim.value": "...", "jsonType.label": "String"}]
+    # Use PostgreSQL jsonb_build functions rather than assembling JSON text, so the value is typed
+    # by PostgreSQL instead of having to be JSON-escaped here. That handles the JSON layer only: the
+    # arguments are still SQL string literals, so they are quoted by the shared helper for the reason
+    # given in New-OpenIddictRole. This builds the equivalent of
+    # [{"claim.name": "...", "claim.value": "...", "jsonType.label": "String"}]
+    $claimNameLiteral = ConvertTo-PostgresSqlLiteral -Value $ClaimName
+    $claimValueLiteral = ConvertTo-PostgresSqlLiteral -Value $ClaimValue
+    $appIdLiteral = ConvertTo-PostgresSqlLiteral -Value $AppId
     $sql = @"
 UPDATE "dmscs"."OpenIddictApplication"
 SET "ProtocolMappers" = COALESCE("ProtocolMappers", '[]'::jsonb) ||
     jsonb_build_array(
         jsonb_build_object(
-            'claim.name', '$ClaimName',
-            'claim.value', '$ClaimValue',
+            'claim.name', $claimNameLiteral,
+            'claim.value', $claimValueLiteral,
             'jsonType.label', 'String'
         )
     )
-WHERE "Id" = '$AppId';
+WHERE "Id" = $appIdLiteral;
 "@
     Invoke-DbQuery -Sql $sql
 }
@@ -285,20 +365,30 @@ function Update-OpenIddictApplicationPermissions {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Function updates the OpenIddict permissions collection column.')]
     param([string]$AppId, [string]$Scope)
     if ($DbType -eq "MSSQL") {
+        $permissionsJson = ConvertTo-Json -Compress -InputObject @($Scope)
+        $permissionsJsonLiteral = ConvertTo-MssqlSqlLiteral -Value $permissionsJson
+        $appIdLiteral = ConvertTo-MssqlSqlLiteral -Value $AppId
         $sql = @"
 UPDATE dmscs.OpenIddictApplication
-SET Permissions = '["$Scope"]'
-WHERE Id = '$AppId';
+SET Permissions = $permissionsJsonLiteral
+WHERE Id = $appIdLiteral;
 "@
         Invoke-DbQuery $sql
         return
     }
 
-    $permissionsString = "{$Scope}" -replace "'", "''"
+    # "Permissions" is varchar(100)[]. Building the array as text - '{...}' - would make the scope
+    # subject to array-literal syntax on top of SQL literal syntax: a configured
+    # CONFIG_SERVICE_CLIENT_SCOPE containing a comma splits into two permissions, and one containing
+    # a brace, a double quote or a backslash is stored altered, in both cases silently rather than as
+    # an error. An ARRAY constructor takes exactly one element whatever it contains, and the shared
+    # helper handles the SQL literal layer as it does everywhere else in this script.
+    $scopeLiteral = ConvertTo-PostgresSqlLiteral -Value $Scope
+    $appIdLiteral = ConvertTo-PostgresSqlLiteral -Value $AppId
     $sql = @"
 UPDATE "dmscs"."OpenIddictApplication"
-SET "Permissions" = '$permissionsString'
-WHERE "Id" = '$AppId';
+SET "Permissions" = ARRAY[$scopeLiteral]::varchar[]
+WHERE "Id" = $appIdLiteral;
 "@
     Invoke-DbQuery $sql
 }
@@ -328,15 +418,28 @@ function Build-ConnectionString {
     $DbPort = Resolve-EnvValue $DbPort
     $DbName = Resolve-EnvValue $DbName
     $DbUser = Resolve-EnvValue $DbUser
+    # Composed by DbConnectionStringBuilder, not by string interpolation. Every value here is
+    # configuration -- POSTGRES_USER and DMS_CONFIG_DATABASE_NAME are supported overrides -- and a
+    # value carrying ; or = would otherwise end its own keyword or begin the next one, so a user such
+    # as nr;owner reached psql as nr. The builder quotes exactly the values that need it, by the
+    # ADO.NET rules Npgsql and SqlClient both parse, and Get-ConnectionStringValue reads the result
+    # back by the same rules. The keyword spellings are the ones the interpolated form used.
+    $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
     if ($DbType -eq "Postgresql") {
-        return "Host=$DbHost;Port=$DbPort;Database=$DbName;Username=$DbUser;"
+        $builder["Host"] = $DbHost
+        $builder["Port"] = $DbPort
+        $builder["Database"] = $DbName
+        $builder["Username"] = $DbUser
     }
     elseif ($DbType -eq "MSSQL") {
-        return "Server=$DbHost,$DbPort;Database=$DbName;User Id=$DbUser;"
+        $builder["Server"] = "$DbHost,$DbPort"
+        $builder["Database"] = $DbName
+        $builder["User Id"] = $DbUser
     }
     else {
         throw "Unsupported DbType: $DbType"
     }
+    return $builder.PSBase.ConnectionString
 }
 
 function Get-EffectiveConnectionString {
@@ -365,8 +468,67 @@ function Get-EffectiveConnectionString {
     if (-not $ConnectionString) {
         return Build-ConnectionString -DbType $DbType -DbHost $DbHost -DbPort $DbPort -DbName $DbName -DbUser $DbUser
     }
+    # The parameter default is PostgreSQL-shaped for backward-compatible bare PostgreSQL use. If the
+    # caller selected SQL Server and did not explicitly pass a connection string, use the SQL Server
+    # parameter group instead of feeding Host/Port/Username keywords to SqlConnectionStringBuilder.
+    $connectionStringWasProvidedVariable = Get-Variable -Scope Script -Name "ConnectionStringWasProvided" -ErrorAction SilentlyContinue
+    $connectionStringWasProvided = if ($connectionStringWasProvidedVariable) { [bool]$connectionStringWasProvidedVariable.Value } else { $true }
+    if ($DbType -eq "MSSQL" -and -not $connectionStringWasProvided) {
+        return Build-ConnectionString -DbType $DbType -DbHost $DbHost -DbPort $DbPort -DbName $DbName -DbUser $DbUser
+    }
     # Otherwise, use the provided ConnectionString
     return $ConnectionString
+}
+
+# The one reader for every connection string this script consumes, whether Build-ConnectionString
+# composed it or a caller supplied it. DbConnectionStringBuilder applies the ADO.NET rules -- ; and =
+# inside a quoted value are data, a doubled quote is a literal quote, an unquoted value is trimmed
+# and a quoted one is not -- which are the rules Npgsql reads the same string by.
+# SqlConnectionStringBuilder does the same for SQL Server and also resolves the keyword synonyms
+# (Server / Data Source, User Id / UID) a caller-supplied string may use. Splitting on ';' and '='
+# by hand recognised none of that and truncated a user such as nr;owner to nr before psql saw it.
+function Get-ConnectionStringValue {
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ConnectionString,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DbType
+    )
+
+    if ($DbType -eq "MSSQL") {
+        $builder = [System.Data.SqlClient.SqlConnectionStringBuilder]::new($ConnectionString)
+        return [pscustomobject]@{
+            Host     = $builder.DataSource
+            Port     = ""
+            Database = $builder.InitialCatalog
+            User     = $builder.UserID
+        }
+    }
+
+    if ($DbType -ne "Postgresql") {
+        throw "Unsupported DbType: $DbType"
+    }
+
+    # .PSBase is required when SETTING ConnectionString: without it PowerShell's dictionary adapter
+    # stores a keyword literally named ConnectionString instead of parsing the string.
+    $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+    $builder.PSBase.ConnectionString = $ConnectionString
+
+    # Keywords match case-insensitively. An absent keyword reads as an empty string, which is what the
+    # callers' presence checks (`if ($port)`) already treated as "not configured".
+    $keywordValue = {
+        param([string]$Keyword)
+        if ($builder.ContainsKey($Keyword)) { return [string]$builder[$Keyword] }
+        return ""
+    }
+    return [pscustomobject]@{
+        Host     = & $keywordValue "Host"
+        Port     = & $keywordValue "Port"
+        Database = & $keywordValue "Database"
+        User     = & $keywordValue "Username"
+    }
 }
 
 function Invoke-DbQuery {
@@ -391,18 +553,11 @@ function Invoke-DbQuery {
 
     $effectiveConnectionString = Get-EffectiveConnectionString -ConnectionString $script:ConnectionString -DbType $script:DbType -DbHost $script:DbHost -DbPort $script:DbPort -DbName $script:DbName -DbUser $script:DbUser
     if ($script:DbType -eq "Postgresql") {
-        # Parse semicolon-separated connection string
-        $params = @{}
-        foreach ($pair in $effectiveConnectionString -split ';') {
-            if ($pair -match '=') {
-                $kv = $pair -split '=', 2
-                $params[$kv[0].Trim()] = $kv[1].Trim()
-            }
-        }
-        $dbHost = $params['Host']
-        $port = $params['Port']
-        $db = $params['Database']
-        $user = $params['Username']
+        $connection = Get-ConnectionStringValue -ConnectionString $effectiveConnectionString -DbType $script:DbType
+        $dbHost = $connection.Host
+        $port = $connection.Port
+        $db = $connection.Database
+        $user = $connection.User
 
         if (-not [string]::IsNullOrEmpty($script:PostgresContainerName)) {
             Write-Verbose "Executing psql in container: $($script:PostgresContainerName)"
@@ -423,15 +578,9 @@ function Invoke-DbQuery {
         }
     }
     elseif ($script:DbType -eq "MSSQL") {
-        $params = @{}
-        foreach ($pair in $effectiveConnectionString -split ';') {
-            if ($pair -match '=') {
-                $kv = $pair -split '=', 2
-                $params[$kv[0].Trim()] = $kv[1].Trim()
-            }
-        }
-        $db = if ($UseMasterDatabase) { 'master' } else { $params['Database'] }
-        $user = $params['User Id']
+        $connection = Get-ConnectionStringValue -ConnectionString $effectiveConnectionString -DbType $script:DbType
+        $db = if ($UseMasterDatabase) { 'master' } else { $connection.Database }
+        $user = $connection.User
         $password = Resolve-EnvValue $DbPassword
 
         Write-Verbose "Executing sqlcmd against $MssqlContainerName"
@@ -702,19 +851,14 @@ END;
     # otherwise fail to connect. Mirrors the SQL Server branch above.
     Write-Host "Create database if not exists"
     $pgDbName = Resolve-EnvValue $script:DbName
-    $pgConnection = Get-EffectiveConnectionString -ConnectionString $script:ConnectionString -DbType $script:DbType -DbHost $script:DbHost -DbPort $script:DbPort -DbName $script:DbName -DbUser $script:DbUser
-    $pgParams = @{}
-    foreach ($pair in $pgConnection -split ';') {
-        if ($pair -match '=') {
-            $kv = $pair -split '=', 2
-            $pgParams[$kv[0].Trim()] = $kv[1].Trim()
-        }
-    }
+    $pgConnection = Get-ConnectionStringValue -DbType $script:DbType -ConnectionString (
+        Get-EffectiveConnectionString -ConnectionString $script:ConnectionString -DbType $script:DbType -DbHost $script:DbHost -DbPort $script:DbPort -DbName $script:DbName -DbUser $script:DbUser
+    )
     Invoke-PostgresGuardedDatabaseCreate `
         -DatabaseName $pgDbName `
-        -User $pgParams['Username'] `
-        -DbHost $pgParams['Host'] `
-        -Port $pgParams['Port']
+        -User $pgConnection.User `
+        -DbHost $pgConnection.Host `
+        -Port $pgConnection.Port
 
     # Run embedded SQL script contents
     Write-Host "Create schema if not exists: dmscs"
@@ -768,9 +912,17 @@ if ($InitDb) {
 }
 
 if ($InsertData) {
-    Test-ClientSecretLength -ClientSecret $NewClientSecret
-    Test-ClientSecretComplexity -ClientSecret $NewClientSecret
-    $appId = New-OpenIddictApplication -ClientId $NewClientId -ClientName $NewClientName -ClientSecret $NewClientSecret
+    # The literal, unless the caller named the environment variable that holds the secret: that is read
+    # with the same Compose-precedence resolver the ENV: parameters use (ambient process value first,
+    # then the env file; throws by name when it is configured nowhere), and before validation and
+    # hashing, so both see the secret rather than the variable's name.
+    $clientSecret = $NewClientSecret
+    if ($NewClientSecretEnvironmentVariable) {
+        $clientSecret = Get-RequiredComposeResolvedEnvValue -EnvironmentValues $envValues -Name $NewClientSecretEnvironmentVariable
+    }
+    Test-ClientSecretLength -ClientSecret $clientSecret
+    Test-ClientSecretComplexity -ClientSecret $clientSecret
+    $appId = New-OpenIddictApplication -ClientId $NewClientId -ClientName $NewClientName -ClientSecret $clientSecret
 
     $dmsRoleId = New-OpenIddictRole -RoleName $DmsClientRole
     Add-OpenIddictClientRole -AppId $appId.Trim() -RoleId $dmsRoleId.Trim()

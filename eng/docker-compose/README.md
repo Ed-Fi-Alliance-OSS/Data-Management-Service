@@ -1044,6 +1044,7 @@ $parameters = @{
 * `$InsertData` inserts the OpenIddict client, roles, scopes, and claims.
 * `ClientSecretMinimumLength` and `ClientSecretMaximumLength` should match the configured `IdentitySettings:ClientSecretValidation` bounds used by CMS.
 * `NewClientSecret` must also satisfy the CMS complexity rule: lowercase, uppercase, number, and one special character from `!@#$%^&*()-_=+[]{}:;,.?`.
+* `NewClientSecret` is always the literal secret, even when it begins with `ENV:`. Use `NewClientSecretEnvironmentVariable` (naming the variable, in place of `NewClientSecret`) only when the secret must be read from that process's environment instead of the argument list.
 * Both switches can be used together or separately as needed.
 
 ### Expired token cleanup (self-contained identity)

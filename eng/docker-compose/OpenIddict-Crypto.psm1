@@ -68,6 +68,37 @@ function New-AspNetPasswordHash {
 
 <#
 .SYNOPSIS
+    Quotes a value as a PostgreSQL string literal.
+
+.DESCRIPTION
+    Returns the value wrapped in single quotes with every embedded single quote doubled, which is
+    the escape PostgreSQL defines for string literals. Backslashes need no handling: with
+    standard_conforming_strings on -- the default since PostgreSQL 9.1 -- a backslash inside a plain
+    literal is already an ordinary character.
+
+    The surrounding quotes are part of the returned text, so callers embed the result as-is and
+    there is no second place that has to remember to add them.
+
+.PARAMETER Value
+    The value to quote.
+
+.OUTPUTS
+    System.String. The quoted literal, including its surrounding single quotes.
+#>
+function ConvertTo-PostgresSqlLiteral {
+    [OutputType([string])]
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    return "'" + $Value.Replace("'", "''") + "'"
+}
+
+<#
+.SYNOPSIS
     Generates a 2048-bit RSA key pair for OpenIddict JWT signing.
 
 .DESCRIPTION
@@ -172,9 +203,17 @@ function New-OpenIddictKeyInsertSql {
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($KeyId)
         $encodedKey = [Convert]::ToBase64String($bytes)
 
+        # Every value below is quoted by ConvertTo-PostgresSqlLiteral rather than pasted between
+        # bare quotes: the encryption key is a configured secret that may legitimately contain a
+        # single quote, which would otherwise close the literal and produce invalid SQL.
+        $keyIdLiteral = ConvertTo-PostgresSqlLiteral -Value $encodedKey
+        $publicKeyLiteral = ConvertTo-PostgresSqlLiteral -Value $keyPair.PublicKey
+        $privateKeyLiteral = ConvertTo-PostgresSqlLiteral -Value $keyPair.PrivateKey
+        $encryptionKeyLiteral = ConvertTo-PostgresSqlLiteral -Value $EncryptionKey
+
         $sql = @"
 INSERT INTO "dmscs"."OpenIddictKey" ("KeyId", "PublicKey", "PrivateKey", "IsActive")
-VALUES ('$encodedKey', decode('$($keyPair.PublicKey)', 'base64'), pgp_sym_encrypt('$($keyPair.PrivateKey)', '$EncryptionKey'), TRUE);
+VALUES ($keyIdLiteral, decode($publicKeyLiteral, 'base64'), pgp_sym_encrypt($privateKeyLiteral, $encryptionKeyLiteral), TRUE);
 "@
 
         return $sql
@@ -297,10 +336,17 @@ function New-ClientSecretUpdateSql {
     try {
         $hashedSecret = New-AspNetPasswordHash -PlainTextSecret $PlainTextSecret
 
+        # Quoted by ConvertTo-PostgresSqlLiteral rather than pasted between bare quotes, matching
+        # every other PostgreSQL literal this module and setup-openiddict.ps1 emit: the client id is
+        # a configured value (CONFIG_SERVICE_CLIENT_ID) and one carrying a single quote would close
+        # its literal and make the statement invalid.
+        $hashedSecretLiteral = ConvertTo-PostgresSqlLiteral -Value $hashedSecret
+        $clientIdLiteral = ConvertTo-PostgresSqlLiteral -Value $ClientId
+
         $sql = @"
 UPDATE "dmscs"."OpenIddictApplication"
-SET "ClientSecret" = '$hashedSecret'
-WHERE "ClientId" = '$ClientId';
+SET "ClientSecret" = $hashedSecretLiteral
+WHERE "ClientId" = $clientIdLiteral;
 "@
 
         return $sql
@@ -312,4 +358,4 @@ WHERE "ClientId" = '$ClientId';
 }
 
 # Export module functions
-Export-ModuleMember -Function New-AspNetPasswordHash, New-OpenIddictKeyPair, New-OpenIddictKeyInsertSql, New-OpenIddictKeyInsertCommand, New-ClientSecretUpdateSql
+Export-ModuleMember -Function New-AspNetPasswordHash, New-OpenIddictKeyPair, New-OpenIddictKeyInsertSql, New-OpenIddictKeyInsertCommand, New-ClientSecretUpdateSql, ConvertTo-PostgresSqlLiteral

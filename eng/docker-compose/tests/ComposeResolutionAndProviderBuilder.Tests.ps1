@@ -513,6 +513,158 @@ Describe "Shared Compose resolution and safe provider builder (DMS-1284)" {
         }
     }
 
+    Context "setup-openiddict connection-string round trip" {
+        BeforeAll {
+            # The builder, the reader, the effective-string selector and the ENV: resolver, lifted by
+            # AST as above. Build-ConnectionString and Get-EffectiveConnectionString read
+            # $EnvironmentFile and $envValues from the caller's scope (dynamic scoping), so each test
+            # defines them locally.
+            $parseErrors = $null
+            $tokens = $null
+            $setupScript = Join-Path $script:dockerComposeRoot "setup-openiddict.ps1"
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($setupScript, [ref]$tokens, [ref]$parseErrors)
+            foreach ($functionName in @("Resolve-EnvValue", "Build-ConnectionString", "Get-EffectiveConnectionString", "Get-ConnectionStringValue")) {
+                $functionAst = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $functionName }, $true) | Select-Object -First 1
+                if ($null -eq $functionAst) { throw "$functionName was not found in setup-openiddict.ps1." }
+                . ([scriptblock]::Create($functionAst.Extent.Text))
+            }
+            $script:setupOpeniddictText = Get-Content -LiteralPath $setupScript -Raw
+
+            # ; ends a keyword, = separates a keyword from its value, either quote character opens a
+            # quoted value, and whitespace around an unquoted value is trimmed. Every value that reaches
+            # the builder is configuration -- POSTGRES_USER and DMS_CONFIG_DATABASE_NAME are supported
+            # overrides -- so each must read back exactly as it was written.
+            $script:delimiterValue = @(
+                'nr;owner',
+                'nr=owner',
+                'nr;owner=x',
+                'he said "hi"',
+                "it's",
+                'both " and '' here',
+                '  padded  '
+            )
+        }
+
+        AfterEach {
+            # No case in this Context may leave script-scope state behind for the next one: the lifted
+            # Get-EffectiveConnectionString reads $script:ConnectionStringWasProvided when it exists, so
+            # a value left over from one test would change what a later test certifies.
+            Remove-Variable -Name ConnectionStringWasProvided -Scope Script -ErrorAction SilentlyContinue
+        }
+
+        It "PostgreSQL: a user and database name carrying delimiters reach psql intact" {
+            # The start scripts' shape: -EnvironmentFile is passed, so the parameter group is what the
+            # connection string is built from, and the string is then read back to address psql.
+            $EnvironmentFile = "./.env"
+            $envValues = @{}
+            foreach ($value in $script:delimiterValue) {
+                $connectionString = Get-EffectiveConnectionString -ConnectionString "Host=ignored;Database=ignored;Username=ignored" `
+                    -DbType "Postgresql" -DbHost "dms-postgresql" -DbPort "5432" -DbName $value -DbUser $value
+                $read = Get-ConnectionStringValue -ConnectionString $connectionString -DbType "Postgresql"
+
+                $read.User | Should -BeExactly $value -Because "the user must survive the round trip: $connectionString"
+                $read.Database | Should -BeExactly $value -Because "the database must survive the round trip: $connectionString"
+                $read.Host | Should -BeExactly "dms-postgresql"
+                $read.Port | Should -BeExactly "5432"
+            }
+        }
+
+        It "PostgreSQL: ENV:-indirected values carrying delimiters resolve and survive" {
+            # The real -InitDb shape: DbName arrives as ENV:DMS_CONFIG_DATABASE_NAME and is resolved
+            # inside Build-ConnectionString, so the resolved value takes the same quoting path. An
+            # ambient value of either probe name would win over the env file (Compose precedence), so
+            # both are cleared for the test and put back afterwards.
+            $probeName = @("DMS1406_PG_USER", "DMS1406_PG_DB")
+            $prior = @{}
+            foreach ($name in $probeName) {
+                if (Test-Path "Env:$name") { $prior[$name] = (Get-Item "Env:$name").Value }
+                Remove-Item "Env:$name" -ErrorAction SilentlyContinue
+            }
+            try {
+                $EnvironmentFile = "./.env"
+                $envValues = @{ DMS1406_PG_USER = 'nr;owner=x'; DMS1406_PG_DB = 'cfg;db' }
+
+                $read = Get-ConnectionStringValue -DbType "Postgresql" -ConnectionString (
+                    Get-EffectiveConnectionString -ConnectionString "" -DbType "Postgresql" -DbHost "dms-postgresql" -DbPort "5432" `
+                        -DbName "ENV:DMS1406_PG_DB" -DbUser "ENV:DMS1406_PG_USER")
+
+                $read.User | Should -BeExactly 'nr;owner=x'
+                $read.Database | Should -BeExactly 'cfg;db'
+            }
+            finally {
+                foreach ($name in $probeName) {
+                    if ($prior.ContainsKey($name)) { Set-Item "Env:$name" -Value $prior[$name] }
+                }
+            }
+        }
+
+        It "PostgreSQL: the default connection string and plain values read back unchanged" {
+            # No env file: the script's own default -ConnectionString is taken verbatim and parsed.
+            $EnvironmentFile = ""
+            $envValues = @{}
+            $read = Get-ConnectionStringValue -DbType "Postgresql" -ConnectionString (
+                Get-EffectiveConnectionString -ConnectionString "Host=localhost;Port=5435;Database=edfi_datamanagementservice;Username=postgres;" `
+                    -DbType "Postgresql" -DbHost "" -DbPort "" -DbName "" -DbUser "")
+            $read.Host | Should -BeExactly "localhost"
+            $read.Port | Should -BeExactly "5435"
+            $read.Database | Should -BeExactly "edfi_datamanagementservice"
+            $read.User | Should -BeExactly "postgres"
+
+            # Plain values compose to the same unquoted spelling as before, and an empty port reads as
+            # absent, which is what the psql invocation tests for before adding -p.
+            $built = Build-ConnectionString -DbType "Postgresql" -DbHost "dms-postgresql" -DbPort "" -DbName "edfi_datamanagementservice" -DbUser "postgres"
+            $built | Should -BeExactly "Host=dms-postgresql;Port=;Database=edfi_datamanagementservice;Username=postgres"
+            (Get-ConnectionStringValue -ConnectionString $built -DbType "Postgresql").Port | Should -BeExactly ""
+        }
+
+        It "SQL Server: a database name and login carrying delimiters survive into SqlConnectionStringBuilder" {
+            # Both SQL Server consumers parse with SqlConnectionStringBuilder -- Invoke-DbQuery through
+            # Get-ConnectionStringValue, Invoke-MssqlParameterizedQuery directly -- so the composed
+            # string must be one it accepts and reads back exactly.
+            $EnvironmentFile = "./.env"
+            $envValues = @{}
+            foreach ($value in $script:delimiterValue) {
+                $connectionString = Get-EffectiveConnectionString -ConnectionString "" -DbType "MSSQL" -DbHost "dms-mssql" -DbPort "1433" -DbName $value -DbUser $value
+                $read = Get-ConnectionStringValue -ConnectionString $connectionString -DbType "MSSQL"
+
+                $read.Database | Should -BeExactly $value -Because "the database must survive the round trip: $connectionString"
+                $read.User | Should -BeExactly $value -Because "the login must survive the round trip: $connectionString"
+                $read.Host | Should -BeExactly "dms-mssql,1433"
+                ([System.Data.SqlClient.SqlConnectionStringBuilder]::new($connectionString)).InitialCatalog | Should -BeExactly $value
+            }
+        }
+
+        It "SQL Server: with the env file every documented caller passes, the parameter group is used and the PostgreSQL default connection string is never consulted" {
+            # setup-openiddict.ps1 carries a PostgreSQL-shaped default -ConnectionString for bare
+            # PostgreSQL use. Every documented caller -- the three start scripts and the Northridge
+            # recipe's step 10 -- passes -EnvironmentFile, and that is the path certified here: the
+            # default string is present, as it is whenever a caller does not pass -ConnectionString, and
+            # a SQL Server caller's string still comes from -DbHost/-DbPort/-DbName/-DbUser rather than
+            # from Host/Port/Username keywords SqlConnectionStringBuilder would reject. The script's
+            # fallback for a caller with no env file at all is not certified, because no documented
+            # caller reaches it.
+            $EnvironmentFile = "./.env"
+            $envValues = @{}
+
+            $connectionString = Get-EffectiveConnectionString `
+                -ConnectionString "Host=localhost;Port=5435;Database=edfi_datamanagementservice;Username=postgres;" `
+                -DbType "MSSQL" -DbHost "dms-mssql" -DbPort "1433" -DbName "edfi_configurationservice" -DbUser "sa"
+            $read = Get-ConnectionStringValue -ConnectionString $connectionString -DbType "MSSQL"
+
+            $read.Host | Should -BeExactly "dms-mssql,1433"
+            $read.Database | Should -BeExactly "edfi_configurationservice"
+            $read.User | Should -BeExactly "sa"
+        }
+
+        It "no hand-rolled delimiter parsing remains in setup-openiddict.ps1" {
+            # Splitting on ';' and then on '=' is the defect class itself: it truncates at the first
+            # delimiter inside any value. Any reintroduction, at any call site, is a regression
+            # regardless of which value it happens to truncate first.
+            $script:setupOpeniddictText | Should -Not -Match "-split\s+';'"
+            $script:setupOpeniddictText | Should -Not -Match "-split\s+'='"
+        }
+    }
+
     Context "setup-openiddict New-MssqlCreateDatabaseStatement" {
         BeforeAll {
             # Same AST extraction as above: the statement builder is a pure function, so it is exercised

@@ -201,9 +201,13 @@ function Get_Client () {
     }
 }
 
+# The role names are configured values (DMS_CONFIG_IDENTITY_SERVICE_ROLE / _CLIENT_ROLE, routed here
+# by the start scripts) and travel as one path segment, so they are percent-encoded: a space, '#',
+# '?' or '/' pasted raw would end the path, start a fragment or query, or add a segment, the lookup
+# would answer 404 for a role that exists, and Create_Role would create it again under the raw name.
 function Get_Role([string] $roleName) {
     try {
-        $existingRole = Invoke-RestMethod -Uri "$script:KeycloakServer/admin/realms/$script:Realm/roles/$roleName" `
+        $existingRole = Invoke-RestMethod -Uri "$script:KeycloakServer/admin/realms/$script:Realm/roles/$([uri]::EscapeDataString($roleName))" `
             -Method Get `
             -Headers @{ Authorization = "Bearer $access_token" }
         return $existingRole
@@ -232,7 +236,7 @@ function Get_Realm_Admin_Role([string] $roleName) {
     try {
 
         $RealmManagementClientId = Get_Realm_Management_ClientId
-        $realmAdminRole = Invoke-RestMethod -Uri "$script:KeycloakServer/admin/realms/$script:Realm/clients/$RealmManagementClientId/roles/$roleName" `
+        $realmAdminRole = Invoke-RestMethod -Uri "$script:KeycloakServer/admin/realms/$script:Realm/clients/$RealmManagementClientId/roles/$([uri]::EscapeDataString($roleName))" `
             -Method Get `
             -Headers @{ Authorization = "Bearer $access_token" }
 
