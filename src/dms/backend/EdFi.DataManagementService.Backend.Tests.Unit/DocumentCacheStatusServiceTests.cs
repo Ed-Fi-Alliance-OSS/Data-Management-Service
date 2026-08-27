@@ -1126,6 +1126,74 @@ public class Given_DocumentCacheStatusService
     }
 
     [Test]
+    public async Task It_uses_the_endpoint_timeout_override_when_it_is_shorter_than_effective_settings()
+    {
+        TimeSpan endpointTimeoutOverride = TimeSpan.FromMilliseconds(40);
+        DocumentCacheTargetEffectiveSettings effectiveSettings = EffectiveSettings(
+            statusObservationTimeout: TimeSpan.FromSeconds(5),
+            endpointTimeout: TimeSpan.FromSeconds(5)
+        );
+        DocumentCacheTargetObservation target = ResolvedTarget(
+            DocumentCacheTargetKey.Create("", 1),
+            effectiveSettings
+        );
+        StaticTargetRegistry registry = new([target], [ExecutionContext(target)]);
+        TaskCompletionSource providerObservationStarted = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        ScriptedStatusObserver observer = new(
+            async (_, cancellationToken) =>
+            {
+                providerObservationStarted.TrySetResult();
+                await WaitForCancellationAsync(cancellationToken);
+                return DocumentCacheStatusCurrentSourceObservationResult.Cancelled("cancelled");
+            }
+        );
+        CapturingStatusTelemetry telemetry = new();
+        ControlledTimeProvider timeProvider = new(ProcessObservedAt);
+        DocumentCacheStatusService service = CreateService(
+            registry,
+            ObservationStore(target),
+            observer,
+            telemetry,
+            timeProvider: timeProvider
+        );
+
+        DocumentCacheStatusResponse response;
+        using (CancellationTokenSource callerCancellationTokenSource = new())
+        {
+            Task<DocumentCacheStatusResponse> responseTask = service.GetStatusAsync(
+                callerCancellationTokenSource.Token,
+                endpointTimeoutOverride: endpointTimeoutOverride
+            );
+
+            try
+            {
+                await providerObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                timeProvider.Advance(endpointTimeoutOverride);
+                response = await responseTask.WaitAsync(TimeSpan.FromSeconds(2));
+            }
+            catch
+            {
+                await callerCancellationTokenSource.CancelAsync();
+                throw;
+            }
+        }
+
+        DocumentCacheStatusTarget statusTarget = response.Targets.Should().ContainSingle().Which;
+        statusTarget.OperationalHealth.Status.Should().Be(DocumentCacheOperationalHealthStatus.Unknown);
+        statusTarget.OperationalHealth.Reason.Should().Be(DocumentCacheStatusReason.StatusEndpointTimeout);
+        statusTarget.CaughtUp.Status.Should().Be(DocumentCacheCaughtUpStatus.Unknown);
+        statusTarget.CaughtUp.Reason.Should().Be(DocumentCacheStatusReason.StatusEndpointTimeout);
+
+        CapturedProviderObservation providerObservation = telemetry
+            .ProviderObservations.Should()
+            .ContainSingle()
+            .Which;
+        providerObservation.Reason.Should().Be(DocumentCacheStatusReason.StatusEndpointTimeout);
+    }
+
+    [Test]
     public async Task It_returns_endpoint_timeout_when_provider_ignores_cancellation()
     {
         DocumentCacheTargetEffectiveSettings effectiveSettings = EffectiveSettings(

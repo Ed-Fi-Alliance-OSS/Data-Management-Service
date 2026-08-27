@@ -6,6 +6,7 @@
 using System.Collections.Immutable;
 using System.CommandLine;
 using System.CommandLine.Parsing;
+using System.Diagnostics;
 using System.Globalization;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.Configuration;
@@ -83,7 +84,8 @@ internal static class DocumentCacheAdminCommandExecutor
 
                 DocumentCacheStatusResponse statusResponse = await GetStatusResponseAsync(
                         serviceProvider,
-                        cancellationToken
+                        cancellationToken,
+                        statusTimeout.RemainingTimeout
                     )
                     .ConfigureAwait(false);
 
@@ -740,24 +742,33 @@ internal static class DocumentCacheAdminCommandExecutor
 
     private static async Task<DocumentCacheStatusResponse> GetStatusResponseAsync(
         IServiceProvider serviceProvider,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        TimeSpan endpointTimeoutOverride
     )
     {
         IDocumentCacheStatusService statusService =
             serviceProvider.GetRequiredService<IDocumentCacheStatusService>();
 
         return await statusService
-            .GetStatusAsync(cancellationToken, DocumentCacheStatusEvaluationMode.StandaloneDirectObservation)
+            .GetStatusAsync(
+                cancellationToken,
+                DocumentCacheStatusEvaluationMode.StandaloneDirectObservation,
+                endpointTimeoutOverride
+            )
             .ConfigureAwait(false);
     }
 
     private sealed class DocumentCacheAdminTimeoutScope : IDisposable
     {
+        private readonly TimeSpan _timeout;
+        private readonly long _startedAt;
         private readonly CancellationTokenSource _timeoutSource;
         private readonly CancellationTokenSource _linkedSource;
 
         private DocumentCacheAdminTimeoutScope(TimeSpan timeout, CancellationToken callerCancellationToken)
         {
+            _timeout = timeout;
+            _startedAt = Stopwatch.GetTimestamp();
             _timeoutSource = new CancellationTokenSource();
             _timeoutSource.CancelAfter(timeout);
             _linkedSource = CancellationTokenSource.CreateLinkedTokenSource(
@@ -769,6 +780,15 @@ internal static class DocumentCacheAdminCommandExecutor
         public CancellationToken Token => _linkedSource.Token;
 
         public bool IsTimeoutExpired => _timeoutSource.IsCancellationRequested;
+
+        public TimeSpan RemainingTimeout
+        {
+            get
+            {
+                TimeSpan remaining = _timeout - Stopwatch.GetElapsedTime(_startedAt);
+                return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+            }
+        }
 
         public static DocumentCacheAdminTimeoutScope Start(
             ParseResult parseResult,

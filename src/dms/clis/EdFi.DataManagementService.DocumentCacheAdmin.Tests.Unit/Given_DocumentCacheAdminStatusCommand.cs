@@ -206,6 +206,45 @@ public sealed class Given_DocumentCacheAdminStatusCommand
         statusService.EvaluationModes.Should().BeEmpty();
     }
 
+    [Test]
+    [Category("Timeout")]
+    public async Task It_passes_the_remaining_status_timeout_after_target_resolution()
+    {
+        ScriptedDocumentCacheStatusService statusService = new(_ => Task.FromResult(StatusResponse()));
+        await using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddSingleton<IDocumentCacheAdminTargetResolver>(
+                new DelayingTargetResolver(TimeSpan.FromMilliseconds(100))
+            )
+            .AddSingleton<IDocumentCacheStatusService>(statusService)
+            .BuildServiceProvider();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+
+        int exitCode = await DocumentCacheAdminCommandExecutor.ExecuteAsync(
+            ParseStatusCommand(
+                DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
+                "1",
+                DocumentCacheAdminCommandSurface.StatusTimeoutSecondsOptionName,
+                "5",
+                DocumentCacheAdminCommandSurface.JsonOptionName
+            ),
+            InvocationTarget(),
+            serviceProvider,
+            stdout,
+            stderr
+        );
+
+        exitCode.Should().Be(DocumentCacheAdminExitCodes.Success);
+        TimeSpan? endpointTimeoutOverride = statusService
+            .EndpointTimeoutOverrides.Should()
+            .ContainSingle()
+            .Which;
+        endpointTimeoutOverride.Should().NotBeNull();
+        endpointTimeoutOverride!.Value.Should().BeGreaterThan(TimeSpan.Zero);
+        endpointTimeoutOverride.Value.Should().BeLessThan(TimeSpan.FromSeconds(5));
+        stderr.ToString().Should().BeEmpty();
+    }
+
     [TestCase(UnexpectedMembershipSnapshot.Empty)]
     [TestCase(UnexpectedMembershipSnapshot.WrongTarget)]
     [TestCase(UnexpectedMembershipSnapshot.MultipleTargets)]
@@ -571,32 +610,52 @@ public sealed class Given_DocumentCacheAdminStatusCommand
         return new(targets, ObservedAt);
     }
 
-    private sealed class ScriptedDocumentCacheStatusService(
-        Func<
+    private sealed class ScriptedDocumentCacheStatusService : IDocumentCacheStatusService
+    {
+        private readonly Func<
             DocumentCacheStatusEvaluationMode,
             CancellationToken,
+            TimeSpan?,
             Task<DocumentCacheStatusResponse>
-        > getStatusAsync
-    ) : IDocumentCacheStatusService
-    {
+        > _getStatusAsync;
+
+        public ScriptedDocumentCacheStatusService(
+            Func<
+                DocumentCacheStatusEvaluationMode,
+                CancellationToken,
+                Task<DocumentCacheStatusResponse>
+            > getStatusAsync
+        )
+        {
+            _getStatusAsync = (evaluationMode, cancellationToken, _) =>
+                getStatusAsync(evaluationMode, cancellationToken);
+        }
+
         public ScriptedDocumentCacheStatusService(
             Func<DocumentCacheStatusEvaluationMode, Task<DocumentCacheStatusResponse>> getStatusAsync
         )
-            : this((evaluationMode, _) => getStatusAsync(evaluationMode)) { }
+        {
+            _getStatusAsync = (evaluationMode, _, _) => getStatusAsync(evaluationMode);
+        }
 
         private readonly List<DocumentCacheStatusEvaluationMode> _evaluationModes = [];
+        private readonly List<TimeSpan?> _endpointTimeoutOverrides = [];
 
         public ImmutableArray<DocumentCacheStatusEvaluationMode> EvaluationModes => [.. _evaluationModes];
+        public ImmutableArray<TimeSpan?> EndpointTimeoutOverrides => [.. _endpointTimeoutOverrides];
 
         public async Task<DocumentCacheStatusResponse> GetStatusAsync(
             CancellationToken cancellationToken = default,
             DocumentCacheStatusEvaluationMode evaluationMode =
-                DocumentCacheStatusEvaluationMode.RuntimeEndpoint
+                DocumentCacheStatusEvaluationMode.RuntimeEndpoint,
+            TimeSpan? endpointTimeoutOverride = null
         )
         {
             _evaluationModes.Add(evaluationMode);
+            _endpointTimeoutOverrides.Add(endpointTimeoutOverride);
             cancellationToken.ThrowIfCancellationRequested();
-            return await getStatusAsync(evaluationMode, cancellationToken).ConfigureAwait(false);
+            return await _getStatusAsync(evaluationMode, cancellationToken, endpointTimeoutOverride)
+                .ConfigureAwait(false);
         }
     }
 

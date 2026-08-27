@@ -1086,10 +1086,12 @@ public sealed class Given_DocumentCacheAdminInProcessCommandRunner
         public Task<DocumentCacheStatusResponse> GetStatusAsync(
             CancellationToken cancellationToken = default,
             DocumentCacheStatusEvaluationMode evaluationMode =
-                DocumentCacheStatusEvaluationMode.RuntimeEndpoint
+                DocumentCacheStatusEvaluationMode.RuntimeEndpoint,
+            TimeSpan? endpointTimeoutOverride = null
         )
         {
             cancellationToken.ThrowIfCancellationRequested();
+            endpointTimeoutOverride.Should().NotBeNull();
             _evaluationModes.Add(evaluationMode);
             return Task.FromResult(CreateStatusResponse());
         }

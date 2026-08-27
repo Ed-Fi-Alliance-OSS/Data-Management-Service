@@ -79,7 +79,8 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
 
     public async Task<DocumentCacheStatusResponse> GetStatusAsync(
         CancellationToken cancellationToken = default,
-        DocumentCacheStatusEvaluationMode evaluationMode = DocumentCacheStatusEvaluationMode.RuntimeEndpoint
+        DocumentCacheStatusEvaluationMode evaluationMode = DocumentCacheStatusEvaluationMode.RuntimeEndpoint,
+        TimeSpan? endpointTimeoutOverride = null
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -89,6 +90,14 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
                 nameof(evaluationMode),
                 evaluationMode,
                 "Unsupported DocumentCache status evaluation mode."
+            );
+        }
+        if (endpointTimeoutOverride is not null && endpointTimeoutOverride.Value < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(endpointTimeoutOverride),
+                endpointTimeoutOverride,
+                "Endpoint timeout override must be nonnegative."
             );
         }
 
@@ -111,6 +120,10 @@ internal sealed class DocumentCacheStatusService : IDocumentCacheStatusService
         TimeSpan endpointTimeout = targetObservations.Min(target =>
             target.EffectiveSettings.StatusEndpointTimeout
         );
+        if (endpointTimeoutOverride is not null && endpointTimeoutOverride.Value < endpointTimeout)
+        {
+            endpointTimeout = endpointTimeoutOverride.Value;
+        }
         using CancellationTokenSource endpointTimeoutSource = new(endpointTimeout, _timeProvider);
         using CancellationTokenSource endpointCancellationSource =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, endpointTimeoutSource.Token);

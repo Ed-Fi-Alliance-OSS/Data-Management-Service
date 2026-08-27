@@ -668,11 +668,13 @@ public sealed class Given_DocumentCacheAdminParserAndContractUnitTests
         public Task<DocumentCacheStatusResponse> GetStatusAsync(
             CancellationToken cancellationToken = default,
             DocumentCacheStatusEvaluationMode evaluationMode =
-                DocumentCacheStatusEvaluationMode.RuntimeEndpoint
+                DocumentCacheStatusEvaluationMode.RuntimeEndpoint,
+            TimeSpan? endpointTimeoutOverride = null
         )
         {
             cancellationToken.ThrowIfCancellationRequested();
             evaluationMode.Should().Be(DocumentCacheStatusEvaluationMode.StandaloneDirectObservation);
+            endpointTimeoutOverride.Should().NotBeNull();
             return Task.FromResult(response);
         }
     }

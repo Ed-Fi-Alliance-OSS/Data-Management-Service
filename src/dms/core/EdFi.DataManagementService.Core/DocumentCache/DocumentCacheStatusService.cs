@@ -15,6 +15,7 @@ public interface IDocumentCacheStatusService
 {
     Task<DocumentCacheStatusResponse> GetStatusAsync(
         CancellationToken cancellationToken = default,
-        DocumentCacheStatusEvaluationMode evaluationMode = DocumentCacheStatusEvaluationMode.RuntimeEndpoint
+        DocumentCacheStatusEvaluationMode evaluationMode = DocumentCacheStatusEvaluationMode.RuntimeEndpoint,
+        TimeSpan? endpointTimeoutOverride = null
     );
 }
