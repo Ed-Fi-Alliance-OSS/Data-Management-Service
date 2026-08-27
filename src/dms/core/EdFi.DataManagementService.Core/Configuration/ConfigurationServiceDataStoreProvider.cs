@@ -432,11 +432,17 @@ public class ConfigurationServiceDataStoreProvider(
                 continue;
             }
 
-            string? plainText;
+            string plainText;
 
             try
             {
-                plainText = _connectionStringDecryptionService.DecryptFromBase64(derivative.ConnectionString);
+                // The decryption service returns null only for a null or empty input, which the check
+                // above has already excluded, so normalizing to an empty string here changes no
+                // outcome: the blank check below treats null, empty, and whitespace alike as not
+                // configured, and this keeps the local non-nullable.
+                plainText =
+                    _connectionStringDecryptionService.DecryptFromBase64(derivative.ConnectionString)
+                    ?? string.Empty;
             }
             catch (InvalidOperationException ex)
             {

@@ -32,6 +32,30 @@ public class ConfigurationServiceDataStoreProviderDerivativeTests
     private const string ReplicaConnectionString = "host=replica;port=5432;database=edfi;";
 
     /// <summary>
+    /// A stored-value stand-in for fixtures that substitute the decryption service. Using a sentinel
+    /// rather than real ciphertext keeps those cases deterministic and independent of cryptography.
+    /// </summary>
+    private const string PrimaryCipherText = "primary-cipher-text";
+
+    /// <summary>
+    /// Records every value handed to the decryption service, so a test can prove which stored values
+    /// were and were not offered for decryption rather than inferring it from the resulting state.
+    /// </summary>
+    private sealed class RecordingDecryptionService(Func<string?, string?> decrypt)
+        : IConnectionStringDecryptionService
+    {
+        private readonly List<string?> _inputs = [];
+
+        public IReadOnlyList<string?> Inputs => [.. _inputs];
+
+        public string? DecryptFromBase64(string? base64EncodedCipherText)
+        {
+            _inputs.Add(base64EncodedCipherText);
+            return decrypt(base64EncodedCipherText);
+        }
+    }
+
+    /// <summary>
     /// Mirrors the CMS ConnectionStringEncryptionService.Encrypt() method exactly.
     /// </summary>
     private static string EncryptToBase64(string plainText, string encryptionKey)
@@ -211,49 +235,160 @@ public class ConfigurationServiceDataStoreProviderDerivativeTests
     }
 
     /// <summary>
-    /// A missing row and a null, empty, or whitespace stored connection string all mean the derivative
-    /// is not configured. That is an ordinary state rather than a defect, so it must stay silent and
-    /// therefore distinguishable from the undecryptable case.
+    /// A null, empty, or whitespace *stored* connection string is recognized as not configured before
+    /// decryption is attempted, so the decryption service is never asked about it. Proving that needs a
+    /// recording seam: the real service returns null for a null or empty input and would only fault on
+    /// whitespace, so the resulting state alone cannot distinguish a pre-decrypt check from a
+    /// post-decrypt one. Each case is its own parent data store, because a data store carries at most
+    /// one derivative of a type.
     /// </summary>
     [TestFixture]
-    public class Given_A_Derivative_With_A_Blank_Connection_String
+    public class Given_A_Derivative_With_A_Blank_Stored_Connection_String
     {
         private RecordingLogger<ConfigurationServiceDataStoreProvider> _logger = null!;
+        private RecordingDecryptionService _decryptionService = null!;
         private IList<DataStore> _loaded = null!;
 
         [SetUp]
         public async Task Setup()
         {
             _logger = new RecordingLogger<ConfigurationServiceDataStoreProvider>();
+            _decryptionService = new RecordingDecryptionService(cipherText =>
+                cipherText == PrimaryCipherText
+                    ? PrimaryConnectionString
+                    : throw new AssertionException(
+                        $"Decryption was attempted for the blank stored value '{cipherText ?? "(null)"}'."
+                    )
+            );
 
             object response = new[]
             {
+                DataStore(1, "Null Stored Value", PrimaryCipherText, [Derivative("Snapshot", null)]),
+                DataStore(2, "Empty Stored Value", PrimaryCipherText, [Derivative("Snapshot", "")]),
                 DataStore(
-                    1,
-                    "Blank Derivatives",
-                    EncryptToBase64(PrimaryConnectionString, TestEncryptionKey),
-                    [Derivative("Snapshot", null), Derivative("ReadReplica", "   ")]
+                    3,
+                    "Whitespace Stored Value",
+                    PrimaryCipherText,
+                    [Derivative("ReadReplica", "   ")]
                 ),
             };
 
-            _loaded = await CreateProvider(response, _logger).LoadDataStores();
+            _loaded = await CreateProvider(response, _logger, _decryptionService).LoadDataStores();
         }
 
         [Test]
-        public void It_should_still_load_the_parent_data_store()
+        public void It_should_still_load_every_parent_data_store()
         {
-            _loaded.Should().ContainSingle();
-            _loaded[0].ConnectionString.Should().Be(PrimaryConnectionString);
+            _loaded.Should().HaveCount(3);
+            _loaded
+                .Should()
+                .AllSatisfy(dataStore => dataStore.ConnectionString.Should().Be(PrimaryConnectionString));
         }
 
         [Test]
-        public void It_should_treat_both_derivatives_as_not_configured()
+        public void It_should_configure_no_derivative_for_any_blank_stored_value()
         {
-            _loaded[0].Derivatives.Should().BeEmpty();
+            _loaded.Should().AllSatisfy(dataStore => dataStore.Derivatives.Should().BeEmpty());
+        }
+
+        [Test]
+        public void It_should_never_attempt_to_decrypt_a_blank_stored_value()
+        {
+            _decryptionService.Inputs.Should().OnlyContain(input => input == PrimaryCipherText);
+        }
+
+        [Test]
+        public void It_should_decrypt_only_the_three_primaries()
+        {
+            _decryptionService.Inputs.Should().HaveCount(3);
         }
 
         [Test]
         public void It_should_not_log_an_error_for_an_unconfigured_derivative()
+        {
+            ErrorMessages(_logger).Should().BeEmpty();
+        }
+    }
+
+    /// <summary>
+    /// The second blank boundary: a stored value that is present and non-blank but decrypts to null,
+    /// empty, or whitespace is also not configured, and is likewise an ordinary state rather than a
+    /// defect. Here the decryption service must be reached, which is the mirror image of the
+    /// pre-decrypt case above.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Derivative_That_Decrypts_To_A_Blank_Value
+    {
+        private const string DecryptsToNull = "cipher-decrypting-to-null";
+        private const string DecryptsToEmpty = "cipher-decrypting-to-empty";
+        private const string DecryptsToWhitespace = "cipher-decrypting-to-whitespace";
+
+        private RecordingLogger<ConfigurationServiceDataStoreProvider> _logger = null!;
+        private RecordingDecryptionService _decryptionService = null!;
+        private IList<DataStore> _loaded = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _logger = new RecordingLogger<ConfigurationServiceDataStoreProvider>();
+            _decryptionService = new RecordingDecryptionService(cipherText =>
+                cipherText switch
+                {
+                    PrimaryCipherText => PrimaryConnectionString,
+                    DecryptsToNull => null,
+                    DecryptsToEmpty => "",
+                    DecryptsToWhitespace => "   ",
+                    _ => throw new AssertionException(
+                        $"Unexpected decryption input '{cipherText ?? "(null)"}'."
+                    ),
+                }
+            );
+
+            object response = new[]
+            {
+                DataStore(1, "Decrypts To Null", PrimaryCipherText, [Derivative("Snapshot", DecryptsToNull)]),
+                DataStore(
+                    2,
+                    "Decrypts To Empty",
+                    PrimaryCipherText,
+                    [Derivative("Snapshot", DecryptsToEmpty)]
+                ),
+                DataStore(
+                    3,
+                    "Decrypts To Whitespace",
+                    PrimaryCipherText,
+                    [Derivative("ReadReplica", DecryptsToWhitespace)]
+                ),
+            };
+
+            _loaded = await CreateProvider(response, _logger, _decryptionService).LoadDataStores();
+        }
+
+        [Test]
+        public void It_should_still_load_every_parent_data_store()
+        {
+            _loaded.Should().HaveCount(3);
+            _loaded
+                .Should()
+                .AllSatisfy(dataStore => dataStore.ConnectionString.Should().Be(PrimaryConnectionString));
+        }
+
+        [Test]
+        public void It_should_configure_no_derivative_for_any_blank_plaintext()
+        {
+            _loaded.Should().AllSatisfy(dataStore => dataStore.Derivatives.Should().BeEmpty());
+        }
+
+        [Test]
+        public void It_should_have_attempted_to_decrypt_each_stored_value()
+        {
+            _decryptionService
+                .Inputs.Should()
+                .Contain([DecryptsToNull, DecryptsToEmpty, DecryptsToWhitespace]);
+        }
+
+        [Test]
+        public void It_should_not_log_an_error_for_a_blank_plaintext()
         {
             ErrorMessages(_logger).Should().BeEmpty();
         }
