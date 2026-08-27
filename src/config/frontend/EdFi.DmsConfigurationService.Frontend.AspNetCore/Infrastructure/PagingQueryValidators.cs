@@ -140,6 +140,20 @@ public class ApiClientPagingQueryValidator : PagingQueryValidator<FrontendApiCli
         : base(AllowedFields) { }
 }
 
+public class OwnershipTokenPagingQueryValidator : PagingQueryValidator<FrontendOwnershipTokenQuery>
+{
+    private static readonly IReadOnlySet<string> AllowedFields = new HashSet<string>(
+        StringComparer.OrdinalIgnoreCase
+    )
+    {
+        "id",
+        "description",
+    };
+
+    public OwnershipTokenPagingQueryValidator()
+        : base(AllowedFields) { }
+}
+
 public class DataStorePagingQueryValidator : PagingQueryValidator<FrontendDataStoreQuery>
 {
     private static readonly IReadOnlySet<string> AllowedFields = new HashSet<string>(

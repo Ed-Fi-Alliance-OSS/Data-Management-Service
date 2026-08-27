@@ -40,6 +40,8 @@ public class ApiClientQuery : PagingQuery
     public int? ApplicationId { get; set; }
 }
 
+public class OwnershipTokenQuery : PagingQuery;
+
 public class DataStoreQuery : PagingQuery
 {
     public int? Id { get; set; }

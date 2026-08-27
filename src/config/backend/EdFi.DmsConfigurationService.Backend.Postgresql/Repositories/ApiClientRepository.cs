@@ -238,6 +238,7 @@ public class ApiClientRepository(
                 })
                 .ToList();
 
+            await HydrateOwnershipAsync(connection, returnApiClients);
             return new ApiClientQueryResult.Success(returnApiClients);
         }
         catch (Exception ex)
@@ -284,6 +285,11 @@ public class ApiClientRepository(
                     return grouped;
                 })
                 .SingleOrDefault();
+
+            if (returnApiClient is not null)
+            {
+                await HydrateOwnershipAsync(connection, [returnApiClient]);
+            }
 
             return returnApiClient is not null
                 ? new ApiClientGetResult.Success(returnApiClient)
@@ -333,6 +339,11 @@ public class ApiClientRepository(
                     return grouped;
                 })
                 .SingleOrDefault();
+
+            if (returnApiClient is not null)
+            {
+                await HydrateOwnershipAsync(connection, [returnApiClient]);
+            }
 
             return returnApiClient is not null
                 ? new ApiClientGetResult.Success(returnApiClient)
@@ -669,6 +680,60 @@ public class ApiClientRepository(
         {
             logger.LogError(ex, "ApiClient uuid reference check failure");
             return new ApiClientUuidReferenceResult.FailureUnknown(ex.Message);
+        }
+    }
+
+    private static async Task HydrateOwnershipAsync(
+        NpgsqlConnection connection,
+        IReadOnlyCollection<ApiClientResponse> apiClients
+    )
+    {
+        if (apiClients.Count == 0)
+        {
+            return;
+        }
+
+        int[] apiClientIds = [.. apiClients.Select(apiClient => apiClient.Id).Distinct()];
+        var ownershipRows = await connection.QueryAsync<(
+            int ApiClientId,
+            int? CreatorOwnershipTokenId,
+            int? OwnershipTokenId
+        )>(
+            """
+            SELECT ac."Id" AS "ApiClientId",
+                   ac."CreatorOwnershipTokenId",
+                   acot."OwnershipTokenId"
+            FROM "dmscs"."ApiClient" ac
+            LEFT OUTER JOIN "dmscs"."ApiClientOwnershipToken" acot ON ac."Id" = acot."ApiClientId"
+            WHERE ac."Id" = ANY(@ApiClientIds)
+            ORDER BY ac."Id", acot."OwnershipTokenId";
+            """,
+            new { ApiClientIds = apiClientIds }
+        );
+
+        var ownershipByApiClientId = ownershipRows
+            .GroupBy(row => row.ApiClientId)
+            .ToDictionary(
+                group => group.Key,
+                group => new
+                {
+                    CreatorOwnershipTokenId = group.First().CreatorOwnershipTokenId,
+                    OwnershipTokenIds = group
+                        .Where(row => row.OwnershipTokenId is not null)
+                        .Select(row => row.OwnershipTokenId!.Value)
+                        .Distinct()
+                        .Order()
+                        .ToList(),
+                }
+            );
+
+        foreach (var apiClient in apiClients)
+        {
+            if (ownershipByApiClientId.TryGetValue(apiClient.Id, out var ownership))
+            {
+                apiClient.CreatorOwnershipTokenId = ownership.CreatorOwnershipTokenId;
+                apiClient.OwnershipTokenIds = ownership.OwnershipTokenIds;
+            }
         }
     }
 

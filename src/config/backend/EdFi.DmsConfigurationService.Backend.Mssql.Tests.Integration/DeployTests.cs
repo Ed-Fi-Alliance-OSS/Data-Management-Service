@@ -26,6 +26,7 @@ public class DeployTests : DatabaseTestBase
         ("ClaimSet", "TenantId"),
         ("ClaimsHierarchy", "Id"),
         ("DataStore", "TenantId"),
+        ("OwnershipToken", "TenantId"),
         ("ResourceClaim", "TenantId"),
         ("Tenant", "Id"),
         ("Vendor", "TenantId"),

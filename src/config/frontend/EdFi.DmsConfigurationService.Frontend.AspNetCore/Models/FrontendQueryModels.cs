@@ -125,6 +125,11 @@ public class FrontendApiClientQuery : FrontendPagingQuery
     public ApiClientQuery ToQuery() => ApplyPagingTo(new ApiClientQuery { ApplicationId = ApplicationId });
 }
 
+public class FrontendOwnershipTokenQuery : FrontendPagingQuery
+{
+    public OwnershipTokenQuery ToQuery() => ApplyPagingTo(new OwnershipTokenQuery());
+}
+
 public class FrontendDataStoreQuery : FrontendPagingQuery
 {
     [FromQuery(Name = "id")]

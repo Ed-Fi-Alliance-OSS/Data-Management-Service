@@ -6,23 +6,7 @@
 name: On DMS Pull Request
 
 on:
-  push:
-    # Running on push to main to support CodeQL on C#
-    branches:
-      - main
-    paths:
-      - ".github/workflows/**"
-      - "build-dms.ps1"
-      - "eng/**"
-      - "src/Directory.Packages.props"
-      - "src/nuget.config"
-      - "src/dms/**"
-      # The DMS E2E lanes (incl. the DS 6.1 version-coupled lane) bring up the Config Service built from
-      # src/config, so config-only changes (e.g. ds61 Claims.json, ClaimsProvider, ResourceClaim seeding)
-      # must still trigger this workflow's DMS + DS 6.1 validation.
-      - "src/config/**"
-
-  # No paths filter here (unlike push above): the merge queue requires an aggregate status
+  # No paths filter here: the merge queue requires an aggregate status
   # check (dms-ci-gate) that must report on every pull request, so this workflow runs for all
   # PRs regardless of which files changed. detect-fresh-build-changes computes dms_relevant and
   # the heavy jobs skip when no DMS-relevant file changed, so idle PRs stay cheap and the gate
@@ -71,8 +55,9 @@ jobs:
     outputs:
       fresh_build_required: ${{ steps.detect.outputs.fresh_build_required }}
       # True when the pull request changed a file relevant to DMS validation. The heavy jobs
-      # gate on this so that a PR touching only unrelated areas (e.g. config-only) skips the
-      # DMS suite while this workflow still runs and reports dms-ci-gate.
+      # gate on this so that a PR touching only unrelated areas (e.g. docs-only) skips the DMS
+      # suite while this workflow still runs and reports dms-ci-gate. src/config counts as
+      # DMS-relevant, so a config-only PR does not skip.
       dms_relevant: ${{ steps.detect.outputs.dms_relevant }}
     steps:
       - name: Checkout the Repo
@@ -90,7 +75,7 @@ jobs:
             echo "dms_relevant=$2" >> "$GITHUB_OUTPUT"
           }
 
-          # Non-pull_request events (push, merge_group, workflow_dispatch) always run the full
+          # Non-pull_request events (merge_group, workflow_dispatch) always run the full
           # suite, so dms_relevant is reported true and only fresh_build_required is meaningful.
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             emit true true
@@ -108,17 +93,15 @@ jobs:
               exit 0
             fi
           else
-            before="${{ github.event.before }}"
-
-            if [[ "$before" == "0000000000000000000000000000000000000000" ]]; then
-              changed_files="$(git diff-tree --no-commit-id --no-renames --name-only -r HEAD)"
-            else
-              changed_files="$(git diff --no-renames --name-only "$before" "${{ github.sha }}")"
-            fi
+            # Unreachable with the current triggers: workflow_dispatch returned above and the
+            # only other events are pull_request and merge_group. Run the full suite rather
+            # than infer a diff base for an event this script does not model.
+            emit true true
+            exit 0
           fi
 
           fresh_build_required=false
-          # For merge_group and push, force dms_relevant true so nothing is skipped when
+          # For merge_group, force dms_relevant true so nothing is skipped when
           # validating the merged result; only pull_request narrows to the changed area.
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             dms_relevant=false
@@ -132,6 +115,10 @@ jobs:
                 fresh_build_required=true
                 ;;
             esac
+            # src/config counts as DMS-relevant: the DMS E2E lanes (incl. the DS 6.1
+            # version-coupled lane) bring up the Config Service built from src/config, so
+            # config-only changes (e.g. ds61 Claims.json, ClaimsProvider, ResourceClaim
+            # seeding) must still trigger this workflow's DMS + DS 6.1 validation.
             case "$file" in
               .github/actions/*|.github/workflows/*|build-dms.ps1|eng/*|src/Directory.Packages.props|src/nuget.config|src/dms/*|src/config/*)
                 dms_relevant=true
@@ -635,6 +622,9 @@ jobs:
     env:
       # Set repository variable REBUILD_DOWNSTREAM_IMAGES=true to keep downstream
       # E2E/OpenAPI jobs rebuilding local images while rolling this change back or forward.
+      # Doing so also stops this job building at all, which stops the shared build cache tags
+      # from refreshing - for this workflow and for On Config Pull Request, which restores the
+      # Config tag. Both degrade to cold builds rather than failing.
       REBUILD_DOWNSTREAM_IMAGES: ${{ vars.REBUILD_DOWNSTREAM_IMAGES }}
       IS_FORK_PULL_REQUEST: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
       PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -661,6 +651,8 @@ jobs:
           image_sha="${PULL_REQUEST_HEAD_SHA:-$GITHUB_SHA}"
           dms_image="ghcr.io/${owner}/data-management-service-ed-fi-api-ci:${image_sha}"
           config_image="ghcr.io/${owner}/data-management-service-ed-fi-api-config-ci:${image_sha}"
+          dms_cache_ref="ghcr.io/${owner}/data-management-service-ed-fi-api-ci:buildcache"
+          config_cache_ref="ghcr.io/${owner}/data-management-service-ed-fi-api-config-ci:buildcache"
 
           dms_compose_image=""
           config_compose_image=""
@@ -673,6 +665,8 @@ jobs:
             echo "use_prebuilt_images=$use_prebuilt_images"
             echo "dms_image=$dms_image"
             echo "config_image=$config_image"
+            echo "dms_cache_ref=$dms_cache_ref"
+            echo "config_cache_ref=$config_cache_ref"
             echo "dms_compose_image=$dms_compose_image"
             echo "config_compose_image=$config_compose_image"
           } >> "$GITHUB_OUTPUT"
@@ -703,8 +697,26 @@ jobs:
             parentdir=./src
           push: true
           tags: ${{ steps.prepare-images.outputs.dms_image }}
-          cache-from: type=gha,scope=dms-pr-dms-image
-          cache-to: type=gha,mode=max,scope=dms-pr-dms-image
+          # A registry cache is not branch-scoped, so one shared ref serves every event and any
+          # run can restore it; the GitHub Actions backend scopes entries by ref, so only a run
+          # on the default branch could seed one that every pull request restores. Exporting is
+          # limited to non-pull_request runs: the merge queue builds the tree about to become
+          # main, and workflow_dispatch stays eligible as the manual lever for re-seeding the
+          # tag. Concurrent merge queue entries can still race on this tag; last writer wins
+          # and the blobs are content-addressed, so the loser costs only a cache refresh.
+          # ignore-error keeps a registry hiccup during export from failing a job that
+          # dms-ci-gate requires; buildx still prints an ERROR vertex for the failed export, so
+          # a green run can legitimately carry one. Since that leaves a broken export looking
+          # green here, Cleanup DMS CI GHCR Images owns the failing signal instead: it excludes
+          # the version this tag points at from its own prune, and fails when the tag stops
+          # resolving.
+          #
+          # This tag is an input to every other pull request's build, and the gate deciding who
+          # writes it is a line in this file. Fork pull requests cannot reach it - they clear
+          # use_prebuilt_images - so changing it takes write access to this repository and
+          # lands in a reviewable diff.
+          cache-from: type=registry,ref=${{ steps.prepare-images.outputs.dms_cache_ref }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,mode=max,ignore-error=true,ref={0}', steps.prepare-images.outputs.dms_cache_ref) || '' }}
 
       - name: Build and push Config CI Docker image
         if: steps.prepare-images.outputs.use_prebuilt_images == 'true'
@@ -716,8 +728,11 @@ jobs:
             parentdir=./src
           push: true
           tags: ${{ steps.prepare-images.outputs.config_image }}
-          cache-from: type=gha,scope=dms-pr-config-image
-          cache-to: type=gha,mode=max,scope=dms-pr-config-image
+          # Same export rules as the DMS image above. On Config Pull Request restores this same
+          # tag for its E2E jobs rather than writing its own, which is why that workflow needs
+          # no packages: write anywhere.
+          cache-from: type=registry,ref=${{ steps.prepare-images.outputs.config_cache_ref }}
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,mode=max,ignore-error=true,ref={0}', steps.prepare-images.outputs.config_cache_ref) || '' }}
 
   run-backend-mssql-integration-tests:
     name: Run Backend MSSQL Integration Tests (${{ matrix.shard-name }})

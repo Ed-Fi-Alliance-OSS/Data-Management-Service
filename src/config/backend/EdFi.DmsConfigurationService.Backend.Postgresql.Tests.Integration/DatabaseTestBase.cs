@@ -39,6 +39,8 @@ public abstract class DatabaseTestBase
                     new("dmscs", "VendorNamespacePrefix"),
                     new("dmscs", "Application"),
                     new("dmscs", "ApplicationEducationOrganization"),
+                    new("dmscs", "ApiClientOwnershipToken"),
+                    new("dmscs", "OwnershipToken"),
                     new("dmscs", "ApiClient"),
                     new("dmscs", "ApiClientDataStore"),
                     new("dmscs", "ClaimSet"),

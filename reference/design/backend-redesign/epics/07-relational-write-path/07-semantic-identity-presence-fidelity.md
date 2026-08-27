@@ -31,7 +31,7 @@ This follow-on owns making the distinction explicit, validated, and durable for 
 - Contract or plan changes required to preserve absent-vs-explicit-null information through executor-facing metadata
 - Deterministic validation and failure behavior when required presence fidelity is missing or inconsistent
 - Test coverage for null-identity and presence-sensitive matching cases on both PostgreSQL and SQL Server
-- CI E2E scope adjustment for this branch: normal DMS PR/push CI should run only relational-backend DMS E2E coverage from the main DMS E2E suite, while scheduled workflows retain the legacy-backend DMS E2E lane.
+- CI E2E scope adjustment for this branch: normal DMS PR CI should run only relational-backend DMS E2E coverage from the main DMS E2E suite, while scheduled workflows retain the legacy-backend DMS E2E lane.
 
 ## Out Of Scope
 
@@ -49,15 +49,15 @@ This follow-on owns making the distinction explicit, validated, and durable for 
 - Profile-aware and no-profile collection matching behave consistently for presence-sensitive identity cases.
 - Missing or inconsistent presence-fidelity metadata fails deterministically rather than silently matching the wrong row.
 - PostgreSQL and SQL Server coverage exists for representative presence-sensitive identity cases.
-- Normal DMS PR/push CI no longer runs the legacy-backend lane from `EdFi.DataManagementService.Tests.E2E` (`Category!=@relational-backend`).
-- Normal DMS PR/push CI still runs `EdFi.DataManagementService.Tests.E2E` scenarios tagged `@relational-backend` with the relational E2E environment.
-- Normal DMS PR/push CI still runs the DMS instance-management / multi-tenant E2E suite.
+- Normal DMS PR CI no longer runs the legacy-backend lane from `EdFi.DataManagementService.Tests.E2E` (`Category!=@relational-backend`).
+- Normal DMS PR CI still runs `EdFi.DataManagementService.Tests.E2E` scenarios tagged `@relational-backend` with the relational E2E environment.
+- Normal DMS PR CI still runs the DMS instance-management / multi-tenant E2E suite.
 - CMS PR CI still runs CMS E2E coverage unchanged.
 - Scheduled DMS workflows still run legacy-backend DMS E2E coverage.
 
 ## CI E2E Scope Requirement
 
-The DMS PR/push workflow currently runs both DMS E2E lanes:
+The DMS PR workflow currently runs both DMS E2E lanes:
 
 - legacy lane: `build-dms.ps1 E2ETest -EnvironmentFile './.env.e2e' -TestFilter 'Category!=@relational-backend'`
 - relational lane: `build-dms.ps1 E2ETest -EnvironmentFile './.env.e2e.relational' -TestFilter 'Category=@relational-backend'`
@@ -91,7 +91,7 @@ Do not weaken `build-dms.ps1` E2E lane guardrails. The script should continue re
 
 ### CI/workflow validation
 
-- The diff to `.github/workflows/on-dms-pullrequest.yml` is reviewed to confirm the normal DMS PR/push workflow no longer invokes `build-dms.ps1 E2ETest` with `Category!=@relational-backend`, still invokes `build-dms.ps1 E2ETest` with `Category=@relational-backend`, and still invokes `build-dms.ps1 InstanceE2ETest`.
+- The diff to `.github/workflows/on-dms-pullrequest.yml` is reviewed to confirm the normal DMS PR workflow no longer invokes `build-dms.ps1 E2ETest` with `Category!=@relational-backend`, still invokes `build-dms.ps1 E2ETest` with `Category=@relational-backend`, and still invokes `build-dms.ps1 InstanceE2ETest`.
 - Existing `build-dms.ps1` runtime lane guardrail tests (`Given_Build_Dms_E2E_Guardrails`) remain valid and are not relaxed.
 
 ## Tasks
@@ -100,4 +100,4 @@ Do not weaken `build-dms.ps1` E2E lane guardrails. The script should continue re
 2. Update matching logic to consume the preserved presence information without introducing backend-owned profile inference.
 3. Add deterministic validation/failure behavior when presence-sensitive identity metadata is missing or inconsistent.
 4. Add unit and integration coverage for representative absent-vs-explicit-null identity cases on both dialects.
-5. Update normal DMS PR/push CI to run only relational-tagged DMS E2E coverage from the main DMS E2E suite, while preserving CMS E2E, DMS instance-management E2E, and scheduled legacy DMS E2E coverage.
+5. Update normal DMS PR CI to run only relational-tagged DMS E2E coverage from the main DMS E2E suite, while preserving CMS E2E, DMS instance-management E2E, and scheduled legacy DMS E2E coverage.

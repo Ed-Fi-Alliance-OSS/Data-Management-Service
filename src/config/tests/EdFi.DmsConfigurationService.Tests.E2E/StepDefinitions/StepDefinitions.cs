@@ -402,6 +402,15 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         }
     }
 
+    [Then("the response location id is captured as {string}")]
+    [Given("the response location id is captured as {string}")]
+    public void TheResponseLocationIdIsCapturedAs(string identifier)
+    {
+        _location.Should().NotBeNullOrWhiteSpace("the previous response should include a Location header");
+        var segments = _location.Split('/');
+        _ids[identifier] = segments[^1];
+    }
+
     [Then("it should respond with {int}")]
     public async Task ThenItShouldRespondWith(int statusCode)
     {
