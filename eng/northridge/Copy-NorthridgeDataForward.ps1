@@ -29,6 +29,13 @@
     accommodate the load: a temporary nullability change that was not reverted perfectly would defeat
     the schema compare that follows.
 
+    dms.Document. The archive's COPY header carries the SOURCE column list, and pg_restore straight into
+    the target replays it, so a stamp column the target has since dropped fails the load under
+    --exit-on-error. Its rows go through the same staging schema: the staging copy accepts the archive's
+    columns as they are, and the insert into the real table names only the columns the target catalog
+    and the header share. A target column the archive lacks is allowed only when the target fills it
+    itself (nullable, defaulted, identity or generated); anything else stops the run by name.
+
     Provisioning-owned rows. dms.ResourceKey, dms.SchemaComponent, dms.EffectiveSchema,
     dms.DataStoreIdentity, dms.DocumentCacheState, dms.DocumentProjectionWork, and dms.DocumentCache
     are owned by provisioning. Copying any of them would produce a hand-edited fingerprint or a stale
@@ -237,32 +244,39 @@ $script:ProvisioningOwnedTable = @(
     "DocumentCache"
 )
 
-# dms tables that carry dataset rows. Descriptor is copied separately because of its derived column.
-$script:DmsDataTable = @("Document", "ReferentialIdentity")
+# dms tables that carry dataset rows. Document and Descriptor are loaded through the staging schema
+# rather than by pg_restore straight into the target: Descriptor because of its derived column, and
+# Document because the archive's COPY header names the source's columns, which a target that has since
+# dropped one of them cannot accept.
+$script:DmsDataTable = @("ReferentialIdentity")
+$script:DmsStagedTable = "Document"
 $script:DmsDerivedTable = "Descriptor"
 $script:BulkSchema = @("edfi", "tracked_changes_edfi", "auth")
 $script:StagingSchema = "northridge_staging"
 
 # Runs inside the database container, on the file pg_restore wrote there. Positional parameters: the
-# emitted SQL, the file to write, the staging schema. Exactly one line may be the COPY header naming
-# dms."Descriptor" -- the count is checked before and after -- and only that line is rewritten: the
-# pattern is anchored to the start of the line and to the COPY keyword, so a data row carrying the
-# table's name in a value is untouched. Any failure exits non-zero, and the load never runs on it.
-$script:DescriptorRedirectScript = @'
+# emitted SQL, the file to write, the staging schema, the dms table. Exactly one line may be the COPY
+# header naming that table -- the count is checked before and after -- and only that line is rewritten:
+# the pattern is anchored to the start of the line and to the COPY keyword, so a data row carrying the
+# table's name in a value is untouched. Any failure exits non-zero, and the load never runs on it. On
+# success the original header is printed, so the caller can read the archive's column list from the one
+# line that is not data.
+$script:CopyHeaderRedirectScript = @'
 set -eu
-in=$1; out=$2; staging=$3
-header='^COPY dms\."Descriptor" ('
+in=$1; out=$2; staging=$3; table=$4
+header="^COPY dms\\.\"$table\" ("
 count=$(grep -c -e "$header" "$in" || true)
 if [ "$count" != 1 ]; then
-    echo "expected exactly one COPY header naming dms.\"Descriptor\" in $in, found $count" >&2
+    echo "expected exactly one COPY header naming dms.\"$table\" in $in, found $count" >&2
     exit 2
 fi
-sed -e "s/$header/COPY \"$staging\".\"Descriptor\" (/" "$in" > "$out"
-redirected=$(grep -c -e "^COPY \"$staging\".\"Descriptor\" (" "$out" || true)
+sed -e "s/$header/COPY \"$staging\".\"$table\" (/" "$in" > "$out"
+redirected=$(grep -c -e "^COPY \"$staging\".\"$table\" (" "$out" || true)
 if [ "$redirected" != 1 ]; then
     echo "the COPY header was not re-pointed at $staging in $out, found $redirected" >&2
     exit 3
 fi
+grep -e "$header" "$in"
 '@
 
 # The DMS-owned schemas, matching the default set Compare-DmsSchemaSnapshot.ps1 diffs. Both the
@@ -397,6 +411,7 @@ function Get-DmsTableClassificationFailure {
     $classification = [ordered]@{
         "provisioning-owned" = @($script:ProvisioningOwnedTable | ForEach-Object { "dms.$_" })
         "copied data"        = @($script:DmsDataTable | ForEach-Object { "dms.$_" })
+        "staged"             = @("dms.$script:DmsStagedTable")
         "derived"            = @("dms.$script:DmsDerivedTable")
     }
 
@@ -433,7 +448,7 @@ function Get-DmsTableClassificationFailure {
     # lack a table provisioning creates today, and nothing is copied from them. The tables that carry
     # dataset rows are checked on both sides, because a copied table absent from either is a copy that
     # cannot happen or has nowhere to land.
-    foreach ($table in @($classification["copied data"]) + @($classification["derived"])) {
+    foreach ($table in @($classification["copied data"]) + @($classification["staged"]) + @($classification["derived"])) {
         if (-not $sourceSet.Contains($table)) { $failure.Add("$table is not a base table in the source, so there is nothing to copy") }
         if (-not $targetSet.Contains($table)) { $failure.Add("$table is not a base table in the target, so the copy has nowhere to land") }
     }
@@ -1096,6 +1111,151 @@ function Get-StampDistribution {
     return ConvertTo-StampDistributionMap -Row @($rows) -ExpectedTable (@("dms.Document") + $SampleTable)
 }
 
+# The archive's column list for one table, read from the COPY header pg_restore emitted for it -- the
+# one line of the emitted SQL that is not data, and the only one that crosses into PowerShell. The
+# header is held to the exact shape pg_dump writes, so a line that is anything else is refused rather
+# than parsed into a column set that is wrong.
+function Get-CopyHeaderColumn {
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param(
+        [Parameter(Mandatory)] [string] $HeaderLine,
+        [Parameter(Mandatory)] [string] $QualifiedTable
+    )
+
+    $schemaName, $tableName = $QualifiedTable.Split(".", 2)
+    $prefix = "COPY $schemaName.""$tableName"" ("
+    $suffix = ") FROM stdin;"
+    $text = $HeaderLine.Trim()
+    if (-not ($text.StartsWith($prefix, [System.StringComparison]::Ordinal) -and
+            $text.EndsWith($suffix, [System.StringComparison]::Ordinal) -and
+            $text.Length -gt $prefix.Length + $suffix.Length)) {
+        throw "'$text' is not the COPY header for $QualifiedTable; expected '$prefix...$suffix'."
+    }
+
+    $column = [System.Collections.Generic.List[string]]::new()
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($part in $text.Substring($prefix.Length, $text.Length - $prefix.Length - $suffix.Length).Split(",")) {
+        $item = $part.Trim()
+        # pg_dump quotes an identifier when it has to and leaves a plain lower-case one bare.
+        if ($item -match '^"(?<name>(?:[^"]|"")+)"$') { $name = $Matches["name"].Replace('""', '"') }
+        elseif ($item -match '^[a-z_][a-z0-9_]*$') { $name = $item }
+        else { throw "Column '$item' in the COPY header for $QualifiedTable is not an identifier; refusing to guess the archive's column list." }
+        if (-not $seen.Add($name)) { throw "The COPY header for $QualifiedTable names column '$name' twice." }
+        $column.Add($name)
+    }
+
+    return [string[]]$column
+}
+
+# One row per target column, '<name>|<is_nullable>|<has_default>|<is_identity>|<is_generated>' as the
+# catalog reports them. Parsed fail-closed, like the row counts: a row that does not parse or a column
+# reported twice is refused, and no rows at all means the table is not in the target.
+function ConvertTo-TargetColumnList {
+    [CmdletBinding()]
+    [OutputType([System.Object[]])]
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Row,
+        [Parameter(Mandatory)] [string] $QualifiedTable
+    )
+
+    $column = [System.Collections.Generic.List[object]]::new()
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    foreach ($item in $Row) {
+        $text = ([string]$item).Trim()
+        if ([string]::IsNullOrWhiteSpace($text)) { continue }
+        if ($text -notmatch '^(?<name>.+)\|(?<nullable>YES|NO)\|(?<default>YES|NO)\|(?<identity>YES|NO)\|(?<generated>ALWAYS|NEVER)$') {
+            throw "Target column row '$text' for $QualifiedTable is not '<name>|<is_nullable>|<has_default>|<is_identity>|<is_generated>'; refusing to drop it."
+        }
+        $name = $Matches["name"]
+        if (-not $seen.Add($name)) { throw "The target catalog reported column '$name' of $QualifiedTable twice." }
+        $column.Add([pscustomobject]@{
+                Name        = $name
+                IsNullable  = $Matches["nullable"] -eq "YES"
+                HasDefault  = $Matches["default"] -eq "YES"
+                IsIdentity  = $Matches["identity"] -eq "YES"
+                IsGenerated = $Matches["generated"] -eq "ALWAYS"
+            })
+    }
+
+    if ($column.Count -eq 0) {
+        throw "The target catalog reports no columns for $QualifiedTable, so there is nothing to insert into."
+    }
+
+    return ,$column.ToArray()
+}
+
+function Get-TargetColumnList {
+    [CmdletBinding()]
+    [OutputType([System.Object[]])]
+    param(
+        [Parameter(Mandatory)] [string] $DatabaseName,
+        [Parameter(Mandatory)] [string] $QualifiedTable
+    )
+
+    $schemaName, $tableName = $QualifiedTable.Split(".", 2)
+    $sql = @"
+SELECT column_name || '|' || is_nullable || '|' || CASE WHEN column_default IS NULL THEN 'NO' ELSE 'YES' END
+    || '|' || is_identity || '|' || is_generated
+FROM information_schema.columns
+WHERE table_schema = '$($schemaName.Replace("'", "''"))' AND table_name = '$($tableName.Replace("'", "''"))'
+ORDER BY ordinal_position;
+"@
+
+    $rows = Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser `
+        -DatabaseName $DatabaseName -Sql $sql
+
+    return ,(ConvertTo-TargetColumnList -Row @($rows) -QualifiedTable $QualifiedTable)
+}
+
+# The columns a staged table is inserted with: those the archive carries AND the target has, in the
+# target's order. A target column the archive lacks is allowed only when the target fills it itself --
+# nullable, defaulted, identity or generated; anything else would fail on the first row, and nothing
+# here may invent a value, so it is refused by name before the load. A generated column is never
+# inserted whatever the archive carries: PostgreSQL computes it and rejects a supplied value. An
+# identity column that is inserted needs OVERRIDING SYSTEM VALUE, which COPY never did.
+function Resolve-StagedInsertColumn {
+    [CmdletBinding()]
+    [OutputType([System.Collections.Specialized.OrderedDictionary])]
+    param(
+        [Parameter(Mandatory)] [string[]] $SourceColumn,
+        [Parameter(Mandatory)] [object[]] $TargetColumn,
+        [Parameter(Mandatory)] [string] $QualifiedTable
+    )
+
+    $sourceSet = [System.Collections.Generic.HashSet[string]]::new([string[]]$SourceColumn, [System.StringComparer]::Ordinal)
+    $targetSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+    $insert = [System.Collections.Generic.List[string]]::new()
+    $unfillable = [System.Collections.Generic.List[string]]::new()
+    $overriding = $false
+
+    foreach ($column in $TargetColumn) {
+        [void]$targetSet.Add($column.Name)
+        if ($column.IsGenerated) { continue }
+        if ($sourceSet.Contains($column.Name)) {
+            $insert.Add($column.Name)
+            if ($column.IsIdentity) { $overriding = $true }
+        }
+        elseif (-not ($column.IsNullable -or $column.HasDefault -or $column.IsIdentity)) {
+            $unfillable.Add($column.Name)
+        }
+    }
+
+    if ($unfillable.Count -gt 0) {
+        throw "$QualifiedTable in the target has $($unfillable.Count) NOT NULL column(s) with no default, identity or generation that the archive does not carry: $($unfillable -join ', '). The insert would fail on the first row and nothing here may invent a value; refusing before anything is loaded."
+    }
+
+    if ($insert.Count -eq 0) {
+        throw "$QualifiedTable shares no column between the archive ($($SourceColumn -join ', ')) and the target; the archive is not one this copy was written for."
+    }
+
+    return [ordered]@{
+        Insert                = [string[]]$insert
+        SourceOnly            = [string[]]@($SourceColumn | Where-Object { -not $targetSet.Contains($_) })
+        OverridingSystemValue = $overriding
+    }
+}
+
 # pg_restore's -n and -t filters are OR-ed within each kind and AND-ed across kinds, so together they
 # cannot express a schema-qualified allow-list: passing '-t Descriptor' for
 # tracked_changes_edfi.Descriptor while '-n dms' is also in effect selects dms.Descriptor as well --
@@ -1109,9 +1269,10 @@ function Select-ArchiveEntry {
         [Parameter(Mandatory)] [string] $ArchivePath,
         [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $QualifiedTable,
         [AllowEmptyCollection()] [string[]] $QualifiedSequence = @(),
-        # The bulk load must never see dms.Descriptor; the staging load exists precisely to fetch it.
-        # One helper serving both needs the distinction passed in, not assumed.
-        [switch] $AllowDerivedTable
+        # The bulk load must never see dms.Descriptor or dms.Document; the staging loads exist precisely
+        # to fetch them. One helper serving all three needs the distinction passed in, not assumed.
+        [switch] $AllowDerivedTable,
+        [switch] $AllowStagedTable
     )
 
     $requestedTable = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
@@ -1172,10 +1333,14 @@ function Select-ArchiveEntry {
     }
 
     # Belt and braces: nothing provisioning-owned may reach the list even if the caller asked for it.
-    # dms.Descriptor is forbidden unless the caller is the staging load that exists to fetch it.
+    # dms.Descriptor and dms.Document are forbidden unless the caller is the staging load that exists
+    # to fetch that one table.
     $forbiddenName = @($script:ProvisioningOwnedTable | ForEach-Object { "dms.$_" })
     if (-not $AllowDerivedTable) {
         $forbiddenName += "dms.$script:DmsDerivedTable"
+    }
+    if (-not $AllowStagedTable) {
+        $forbiddenName += "dms.$script:DmsStagedTable"
     }
 
     $forbidden = @($selectedTable | Where-Object { $forbiddenName -contains $_ })
@@ -1384,10 +1549,11 @@ Write-Output "  dump              : $DumpPath"
 Write-Output "  source database   : $SourceDatabase"
 Write-Output "  target database   : $TargetDatabase"
 Write-Output "  bulk schemas      : $($script:BulkSchema -join ', ')"
-Write-Output "  dms tables copied : $($script:DmsDataTable -join ', ') and $script:DmsDerivedTable (derived)"
+Write-Output "  dms tables copied : $($script:DmsDataTable -join ', '), $script:DmsStagedTable (staged) and $script:DmsDerivedTable (derived)"
 Write-Output "  never copied      : $($script:ProvisioningOwnedTable -join ', ')"
 Write-Output "  dms table check   : every dms base table in source and target on exactly one of the lists above, before the load"
-Write-Output "  trigger handling  : pg_restore --data-only --disable-triggers (requires superuser)"
+Write-Output "  trigger handling  : pg_restore --data-only --disable-triggers (requires superuser); session_replication_role = replica for the staged inserts"
+Write-Output "  staged columns    : dms.$script:DmsStagedTable inserted by the columns the archive header and the target catalog share, via $script:StagingSchema"
 Write-Output "  derived column    : dms.Descriptor.ResourceKeyId from dms.Document via $script:StagingSchema"
 Write-Output "  expected documents: $ExpectedDocumentCount"
 Write-Output "  post-copy checks  : row counts both directions, sequence positions, every foreign key in $($script:DmsOwnedSchema -join '/'), no trigger left disabled, stamp distributions, checkpoint C1"
@@ -1500,7 +1666,7 @@ try {
 
     Write-Output "Requested $($requestedTable.Count) table(s); selected $($selection.Table.Count) TABLE DATA entr(ies)."
     Write-Output "Requested $($script:DmsSequence.Count) sequence(s); selected $($selection.Sequence.Count) SEQUENCE SET entr(ies): $($selection.Sequence -join ', ')."
-    Write-Output "  dms.Descriptor excluded from the bulk list (derived column, loaded separately)."
+    Write-Output "  dms.$script:DmsStagedTable and dms.$script:DmsDerivedTable excluded from the bulk list (loaded through staging below)."
 
     if ($selection.Table.Count -ne $requestedTable.Count) {
         throw "Selected $($selection.Table.Count) archive entries for $($requestedTable.Count) requested tables."
@@ -1538,6 +1704,101 @@ finally {
     docker exec -u 0 $Container rm -f $containerDumpPath $containerListPath | Out-Null
 }
 
+Write-Output ""
+Write-Output "Loading dms.$script:DmsStagedTable through staging schema '$script:StagingSchema'..."
+
+# The archive's COPY header names the SOURCE columns, and a restore straight into the target replays
+# that list: a stamp column the target has since dropped fails the COPY under --exit-on-error. So the
+# entry is emitted as text inside the container, re-pointed at a staging copy that takes the archive's
+# columns exactly as they are, and inserted into the real table by the columns both sides have --
+# resolved from the header and the target catalog, never assumed. Same discipline as the Descriptor
+# load below: only the header line crosses into PowerShell; the data rows stay in the container.
+$stagedQualified = "dms.$script:DmsStagedTable"
+$stagedQuoted = """dms"".""$script:DmsStagedTable"""
+$stagingQuoted = """$script:StagingSchema"".""$script:DmsStagedTable"""
+$containerStagedSqlPath = "/tmp/northridge-document.sql"
+$containerStagedLoadPath = "/tmp/northridge-document.staging.sql"
+
+try {
+    docker cp $DumpPath "${Container}:${containerDumpPath}"
+    if ($LASTEXITCODE -ne 0) { throw "docker cp of the dump for the $stagedQualified load failed." }
+
+    $stagedSelection = Select-ArchiveEntry -ContainerName $Container `
+        -ArchivePath $containerDumpPath -QualifiedTable @($stagedQualified) -AllowStagedTable
+
+    $stagedListContent = (($stagedSelection.Line) -join "`n") + "`n"
+    Save-Record -Path (Join-Path $OutputDirectory "restore-list.document.txt") -Content $stagedListContent
+    $stagedListContent | docker exec -i $Container sh -c "cat > $containerListPath"
+    if ($LASTEXITCODE -ne 0) { throw "writing the $stagedQualified restore list into '$Container' failed." }
+
+    $stagedRestoreOutput = docker exec $Container pg_restore --data-only --no-owner --no-privileges `
+        --exit-on-error -L $containerListPath -f $containerStagedSqlPath $containerDumpPath 2>&1
+    Assert-RestoreOutputClean -Output $stagedRestoreOutput -ExitCode $LASTEXITCODE `
+        -Description "pg_restore of $stagedQualified to text"
+
+    $stagedRedirectOutput = $script:CopyHeaderRedirectScript | docker exec -i $Container sh -s `
+        $containerStagedSqlPath $containerStagedLoadPath $script:StagingSchema $script:DmsStagedTable 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "The $stagedQualified COPY header was not re-pointed at the staging table (exit $LASTEXITCODE): $(@($stagedRedirectOutput | ForEach-Object { [string]$_ }) -join ' | '). Refusing to run SQL that would target $stagedQualified directly."
+    }
+
+    # On success the rewrite prints the one header it re-pointed; that line is the archive's column list.
+    $stagedHeader = @($stagedRedirectOutput | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ -match '^COPY ' })
+    if ($stagedHeader.Count -ne 1) {
+        throw "Expected the rewrite to report exactly one COPY header for $stagedQualified, got $($stagedHeader.Count): $($stagedHeader -join ' | ')."
+    }
+    $stagedSourceColumn = Get-CopyHeaderColumn -HeaderLine $stagedHeader[0] -QualifiedTable $stagedQualified
+    $stagedTargetColumn = Get-TargetColumnList -DatabaseName $TargetDatabase -QualifiedTable $stagedQualified
+    $stagedPlan = Resolve-StagedInsertColumn -SourceColumn $stagedSourceColumn -TargetColumn $stagedTargetColumn `
+        -QualifiedTable $stagedQualified
+    Write-Output "  archive columns: $($stagedSourceColumn.Count); target columns: $($stagedTargetColumn.Count); inserted: $($stagedPlan.Insert.Count)"
+    Write-Output "  source-only columns left in staging: $(if ($stagedPlan.SourceOnly.Count -gt 0) { $stagedPlan.SourceOnly -join ', ' } else { 'none' })"
+
+    # CREATE TABLE AS ... WITH NO DATA carries the types and nothing else -- no NOT NULL, no default, no
+    # identity -- so a target-only column simply stays NULL in staging, and every source-only column is
+    # added as text, which COPY's text format accepts for any value.
+    $stagedSetup = [System.Text.StringBuilder]::new()
+    [void]$stagedSetup.AppendLine("DROP SCHEMA IF EXISTS ""$script:StagingSchema"" CASCADE;")
+    [void]$stagedSetup.AppendLine("CREATE SCHEMA ""$script:StagingSchema"";")
+    [void]$stagedSetup.AppendLine("CREATE TABLE $stagingQuoted AS SELECT * FROM $stagedQuoted WITH NO DATA;")
+    foreach ($name in $stagedPlan.SourceOnly) {
+        [void]$stagedSetup.AppendLine("ALTER TABLE $stagingQuoted ADD COLUMN ""$($name.Replace('"', '""'))"" text;")
+    }
+    [void]$stagedSetup.AppendLine("SELECT 'staging ready';")
+    Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser -DatabaseName $TargetDatabase -Sql $stagedSetup.ToString() | Out-Null
+
+    $stagedLoadOutput = docker exec $Container psql -U $PostgresUser -d $TargetDatabase `
+        -v ON_ERROR_STOP=1 --quiet -f $containerStagedLoadPath 2>&1
+    Assert-RestoreOutputClean -Output $stagedLoadOutput -ExitCode $LASTEXITCODE `
+        -Description "Loading $stagedQualified into staging"
+}
+finally {
+    docker exec -u 0 $Container rm -f $containerDumpPath $containerListPath `
+        $containerStagedSqlPath $containerStagedLoadPath | Out-Null
+}
+
+# replica mode keeps the stamping and enqueue triggers quiet, as --disable-triggers did for the bulk
+# load; OVERRIDING SYSTEM VALUE keeps the archive's identity values, which COPY kept on its own.
+$stagedColumnList = ($stagedPlan.Insert | ForEach-Object { '"' + $_.Replace('"', '""') + '"' }) -join ', '
+$stagedOverriding = if ($stagedPlan.OverridingSystemValue) { "OVERRIDING SYSTEM VALUE " } else { "" }
+$stagedInsertSql = @"
+SET session_replication_role = replica;
+INSERT INTO $stagedQuoted ($stagedColumnList)
+${stagedOverriding}SELECT $stagedColumnList
+FROM $stagingQuoted;
+SET session_replication_role = DEFAULT;
+SELECT 'staged rows inserted';
+"@
+Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser -DatabaseName $TargetDatabase -Sql $stagedInsertSql | Out-Null
+
+$stagedCount = [long](Get-ScalarValue -DatabaseName $TargetDatabase -Sql "SELECT COUNT(*) FROM $stagingQuoted;")
+$insertedCount = [long](Get-ScalarValue -DatabaseName $TargetDatabase -Sql "SELECT COUNT(*) FROM $stagedQuoted;")
+Write-Output "  staging rows $stagedCount -> $stagedQualified rows $insertedCount"
+if ($stagedCount -eq 0 -or $stagedCount -ne $insertedCount) {
+    throw "$stagedQualified load failed: staging=$stagedCount inserted=$insertedCount."
+}
+
+Write-Output ""
 Write-Output "Deriving dms.Descriptor.ResourceKeyId via staging schema '$script:StagingSchema'..."
 
 # Loading Descriptor into staging and inserting with the derived value keeps the target schema
@@ -1583,8 +1844,8 @@ try {
     Assert-RestoreOutputClean -Output $descriptorRestoreOutput -ExitCode $LASTEXITCODE `
         -Description "pg_restore of dms.Descriptor to text"
 
-    $redirectOutput = $script:DescriptorRedirectScript | docker exec -i $Container sh -s `
-        $containerDescriptorSqlPath $containerStagingSqlPath $script:StagingSchema 2>&1
+    $redirectOutput = $script:CopyHeaderRedirectScript | docker exec -i $Container sh -s `
+        $containerDescriptorSqlPath $containerStagingSqlPath $script:StagingSchema $script:DmsDerivedTable 2>&1
     if ($LASTEXITCODE -ne 0) {
         throw "The Descriptor COPY header was not re-pointed at the staging table (exit $LASTEXITCODE): $(@($redirectOutput | ForEach-Object { [string]$_ }) -join ' | '). Refusing to run SQL that would target dms.Descriptor directly."
     }
@@ -1636,7 +1897,7 @@ Write-Output "  staging schema dropped"
 Write-Output ""
 Write-Output "Reconciling row counts, both directions..."
 
-$allTable = @($script:DmsDataTable | ForEach-Object { "dms.$_" }) + @("dms.$script:DmsDerivedTable") + $bulkTable
+$allTable = @($script:DmsDataTable | ForEach-Object { "dms.$_" }) + @("dms.$script:DmsStagedTable", "dms.$script:DmsDerivedTable") + $bulkTable
 $sourceCount = Get-RowCountMap -DatabaseName $SourceDatabase -QualifiedTable $allTable
 $targetCount = Get-RowCountMap -DatabaseName $TargetDatabase -QualifiedTable $allTable
 

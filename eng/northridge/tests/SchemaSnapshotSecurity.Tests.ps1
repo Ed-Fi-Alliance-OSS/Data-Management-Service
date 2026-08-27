@@ -732,15 +732,21 @@ Describe "Restore recipe content gate checks every sequence the copied data draw
 
     It "measures each sequence against the data it numbers, with the collection tables read from the catalog" {
         $script:contentGateSql | Should -Match ([regex]::Escape('> COALESCE((SELECT MAX("DocumentId") FROM dms."Document"), 0)')) -Because "Document_DocumentId_seq numbers dms.Document"
-        # ChangeVersionSequence is measured, within its own check, from the write-path high-water marks
-        # the current schema carries: "ContentVersion" on dms."Document" and on dms."Descriptor". The
-        # spelling of the document maximum is not pinned, so a gate that stops reading a dropped stamp
-        # column still passes.
+        # ChangeVersionSequence is measured, within its own check, from the high-water marks the copy
+        # tool measures it against -- MAX("ContentVersion") on dms."Document" and on dms."Descriptor",
+        # read from Copy-NorthridgeDataForward.ps1 rather than restated -- and from no dropped stamp
+        # column. Each mark is held separately, not the whole expression.
         $changeVersionCheck = [regex]::Match($script:contentGateSql,
             '(?s)SELECT ''ChangeVersionSequence next value beyond the restored data''.*?''dms\."ChangeVersionSequence"''::regclass\)').Value
         $changeVersionCheck | Should -Not -BeNullOrEmpty -Because "the gate must measure ChangeVersionSequence against the restored data"
-        $changeVersionCheck | Should -Match '(?s)MAX\([^;]*"ContentVersion"[^;]*\)\s+FROM dms\."Document"\)' -Because "ChangeVersionSequence is measured from the document ContentVersion high-water mark"
-        $changeVersionCheck | Should -Match ([regex]::Escape('MAX("ContentVersion") FROM dms."Descriptor"')) -Because "the descriptor stamping trigger draws from ChangeVersionSequence too"
+        $copyToolMaximum = [regex]::Match((Get-Content -Raw -LiteralPath (Join-Path $script:northridgeRoot "Copy-NorthridgeDataForward.ps1")),
+            '(?s)Label\s*=\s*"ChangeVersionSequence".*?Maximum\s*=\s*''(?<sql>[^'']*)''').Groups["sql"].Value
+        $mark = @([regex]::Matches($copyToolMaximum, 'MAX\("ContentVersion"\) FROM dms\."(?:Document|Descriptor)"') | ForEach-Object { $_.Value })
+        $mark.Count | Should -Be 2 -Because "the copy tool measures the document and the descriptor ContentVersion, and the gate is held to both"
+        foreach ($item in $mark) {
+            $changeVersionCheck | Should -Match ([regex]::Escape($item)) -Because "the gate measures the same high-water mark as the copy tool"
+        }
+        $changeVersionCheck | Should -Not -Match 'IdentityVersion' -Because "the copy tool reads ContentVersion alone; a dropped stamp column must not be read here either"
         $script:contentGateSql | Should -Match '> collection_max\)' -Because "CollectionItemIdSequence is measured against the gathered collection maximum"
         # The same catalog predicate as the copy tool, so the two cannot disagree on which tables count.
         $script:copyToolCollectionPredicate | Should -Not -BeNullOrEmpty -Because "the copy tool's predicate must have been read"

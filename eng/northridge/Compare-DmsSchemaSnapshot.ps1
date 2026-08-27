@@ -540,6 +540,11 @@ foreach ($databaseName in $Database) {
     $path = $snapshotPath[$databaseName]
     $rowCount = Export-SchemaSnapshot -DatabaseName $databaseName -Path $path -QueryMap $queryMap `
         -ContainerName $Container -User $PostgresUser
+    # Two snapshots of nothing are byte-identical. The preflight proves the schemas exist; this proves
+    # they were read.
+    if ($rowCount -le 0) {
+        throw "Snapshot of '$databaseName' across $($Schema -join ', ') captured no rows, so a compare against it would prove nothing."
+    }
     Write-Output "Captured $rowCount rows for '$databaseName' -> $path"
 }
 

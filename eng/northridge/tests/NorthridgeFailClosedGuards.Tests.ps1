@@ -389,11 +389,11 @@ Describe "Add-NorthridgeGapDocument.ps1 compares a date-time field instead of th
 
 Describe "Copy-NorthridgeDataForward.ps1 classifies every dms base table exactly once" {
     BeforeAll {
-        foreach ($name in @("ProvisioningOwnedTable", "DmsDataTable", "DmsDerivedTable")) {
+        foreach ($name in @("ProvisioningOwnedTable", "DmsDataTable", "DmsStagedTable", "DmsDerivedTable")) {
             . ([scriptblock]::Create((Get-ScriptAssignmentText -ScriptPath $script:copyScript -VariablePath "script:$name")))
         }
         . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:copyScript -FunctionName "Get-DmsTableClassificationFailure")))
-        $script:knownDmsTable = @(@($script:ProvisioningOwnedTable) + @($script:DmsDataTable) + @($script:DmsDerivedTable) | ForEach-Object { "dms.$_" })
+        $script:knownDmsTable = @(@($script:ProvisioningOwnedTable) + @($script:DmsDataTable) + @($script:DmsStagedTable) + @($script:DmsDerivedTable) | ForEach-Object { "dms.$_" })
         $script:copyText = Get-Content -Raw -LiteralPath $script:copyScript
     }
 
@@ -784,7 +784,7 @@ Describe "Copy-NorthridgeDataForward.ps1 stamp distributions cover every sampled
 Describe "Copy-NorthridgeDataForward.ps1 re-points only the Descriptor COPY header, inside the container" {
     BeforeAll {
         $script:copyText = Get-Content -Raw -LiteralPath $script:copyScript
-        . ([scriptblock]::Create((Get-ScriptAssignmentText -ScriptPath $script:copyScript -VariablePath "script:DescriptorRedirectScript")))
+        . ([scriptblock]::Create((Get-ScriptAssignmentText -ScriptPath $script:copyScript -VariablePath "script:CopyHeaderRedirectScript")))
         # The rewrite is a POSIX shell script the copy tool feeds to `sh -s` inside the container. It is
         # run here with the host's sh when there is one (the pull-request lane runs on ubuntu; Git for
         # Windows supplies one too) and skipped otherwise; the structural case below runs everywhere.
@@ -795,7 +795,7 @@ Describe "Copy-NorthridgeDataForward.ps1 re-points only the Descriptor COPY head
             $in = Join-Path $TestDrive ("descriptor-" + [guid]::NewGuid().ToString("N") + ".sql")
             $out = "$in.staging"
             [System.IO.File]::WriteAllText($in, $Content, [System.Text.UTF8Encoding]::new($false))
-            $output = $script:DescriptorRedirectScript | & $script:posixShell.Source -s ($in -replace '\\', '/') ($out -replace '\\', '/') "northridge_staging" 2>&1
+            $output = $script:CopyHeaderRedirectScript | & $script:posixShell.Source -s ($in -replace '\\', '/') ($out -replace '\\', '/') "northridge_staging" "Descriptor" 2>&1
             return [pscustomobject]@{
                 ExitCode = $LASTEXITCODE
                 Output   = (@($output | ForEach-Object { [string]$_ }) -join "`n")
@@ -825,13 +825,13 @@ Describe "Copy-NorthridgeDataForward.ps1 re-points only the Descriptor COPY head
         $script:copyText | Should -Not -Match '\.Replace\(''dms\."Descriptor"''' -Because "a global replace rewrites data rows"
         $script:copyText | Should -Not -Match '\$redirected = |\$redirected \|' -Because "no PowerShell string may carry the descriptor SQL or be piped into psql"
         $script:copyText | Should -Match '--exit-on-error -L \$containerListPath -f \$containerDescriptorSqlPath \$containerDumpPath 2>&1'
-        $script:copyText | Should -Match '\$script:DescriptorRedirectScript \| docker exec -i \$Container sh -s `\r?\n\s+\$containerDescriptorSqlPath \$containerStagingSqlPath \$script:StagingSchema 2>&1'
+        $script:copyText | Should -Match '\$script:CopyHeaderRedirectScript \| docker exec -i \$Container sh -s `\r?\n\s+\$containerDescriptorSqlPath \$containerStagingSqlPath \$script:StagingSchema \$script:DmsDerivedTable 2>&1'
         $script:copyText | Should -Match 'psql -U \$PostgresUser -d \$TargetDatabase `\r?\n\s+-v ON_ERROR_STOP=1 --quiet -f \$containerStagingSqlPath 2>&1' -Because "psql reads the rewritten file in the container"
         $script:copyText | Should -Match 'rm -f \$containerDumpPath \$containerListPath `\r?\n\s+\$containerDescriptorSqlPath \$containerStagingSqlPath' -Because "both emitted files are removed with the dump"
-        $script:copyText.IndexOf('$redirectOutput = $script:DescriptorRedirectScript') | Should -BeGreaterThan $script:copyText.IndexOf('-Description "pg_restore of dms.Descriptor to text"') -Because "the diagnostics scan runs before the rewrite"
-        $script:DescriptorRedirectScript | Should -Match '(?m)^set -eu$'
-        $script:DescriptorRedirectScript | Should -Match 'header=''\^COPY dms\\\."Descriptor" \(''' -Because "the rewrite is anchored to the start of the COPY header line"
-        $script:DescriptorRedirectScript | Should -Match 'if \[ "\$count" != 1 \]' -Because "exactly one header may be rewritten"
+        $script:copyText.IndexOf('$redirectOutput = $script:CopyHeaderRedirectScript') | Should -BeGreaterThan $script:copyText.IndexOf('-Description "pg_restore of dms.Descriptor to text"') -Because "the diagnostics scan runs before the rewrite"
+        $script:CopyHeaderRedirectScript | Should -Match '(?m)^set -eu$'
+        $script:CopyHeaderRedirectScript | Should -Match ([regex]::Escape('header="^COPY dms\\.\"$table\" ("')) -Because "the rewrite is anchored to the start of the COPY header line, for the table it is given"
+        $script:CopyHeaderRedirectScript | Should -Match 'if \[ "\$count" != 1 \]' -Because "exactly one header may be rewritten"
     }
 
     It "rewrites the header and leaves data rows carrying the table name untouched" {
@@ -843,6 +843,7 @@ Describe "Copy-NorthridgeDataForward.ps1 re-points only the Descriptor COPY head
         $run.Result | Should -Match ([regex]::Escape("1`turi://ed-fi.org/x`tCOPY dms.""Descriptor"" (in a value")) -Because "a data row that carries the table name is data"
         $run.Result | Should -Match ([regex]::Escape("2`tsee dms.""Descriptor"" for details`tplain"))
         ($run.Result -split "`n").Count | Should -Be ($script:emitted -split "`n").Count -Because "only the header line changed"
+        $run.Output.Trim() | Should -Be $script:copyHeader -Because "the archive's column list is reported from the one line that is not data, and nothing else is"
     }
 
     It "refuses SQL with no header or with two, writing nothing to load" {
@@ -855,6 +856,159 @@ Describe "Copy-NorthridgeDataForward.ps1 re-points only the Descriptor COPY head
         $two.ExitCode | Should -Be 2
         $two.Output | Should -Match 'found 2'
         $two.Result | Should -BeNullOrEmpty
+    }
+}
+
+Describe "Copy-NorthridgeDataForward.ps1 inserts dms.Document by the columns the archive and the target share" {
+    BeforeAll {
+        foreach ($name in @("Get-CopyHeaderColumn", "ConvertTo-TargetColumnList", "Resolve-StagedInsertColumn")) {
+            . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:copyScript -FunctionName $name)))
+        }
+        foreach ($name in @("DmsDataTable", "DmsStagedTable")) {
+            . ([scriptblock]::Create((Get-ScriptAssignmentText -ScriptPath $script:copyScript -VariablePath "script:$name")))
+        }
+        $script:copyText = Get-Content -Raw -LiteralPath $script:copyScript
+        $script:selectEntryText = Get-ScriptFunctionText -ScriptPath $script:copyScript -FunctionName "Select-ArchiveEntry"
+
+        # The header a source dump emits for dms."Document" while the schema carries the identity stamp
+        # columns, and a target catalog that has dropped them, as the catalog query reports it.
+        $script:sourceHeader = 'COPY dms."Document" ("DocumentId", "DocumentUuid", "ResourceKeyId", "CreatedByOwnershipTokenId", "ContentVersion", "IdentityVersion", "ContentLastModifiedAt", "IdentityLastModifiedAt", "CreatedAt") FROM stdin;'
+        $script:sourceColumn = @("DocumentId", "DocumentUuid", "ResourceKeyId", "CreatedByOwnershipTokenId", "ContentVersion", "IdentityVersion", "ContentLastModifiedAt", "IdentityLastModifiedAt", "CreatedAt")
+        $script:targetRow = @(
+            'DocumentId|NO|NO|YES|NEVER',
+            'DocumentUuid|NO|NO|NO|NEVER',
+            'ResourceKeyId|NO|NO|NO|NEVER',
+            'CreatedByOwnershipTokenId|YES|NO|NO|NEVER',
+            'ContentVersion|NO|YES|NO|NEVER',
+            'ContentLastModifiedAt|NO|YES|NO|NEVER',
+            'CreatedAt|NO|YES|NO|NEVER'
+        )
+    }
+
+    It "reads the archive's column list from the COPY header and refuses any other line" {
+        Get-CopyHeaderColumn -HeaderLine $script:sourceHeader -QualifiedTable "dms.Document" | Should -Be $script:sourceColumn
+        Get-CopyHeaderColumn -HeaderLine 'COPY dms."Document" ("Quo""ted", plain) FROM stdin;' -QualifiedTable "dms.Document" | Should -Be @('Quo"ted', 'plain')
+        { Get-CopyHeaderColumn -HeaderLine 'COPY dms."Descriptor" ("DocumentId") FROM stdin;' -QualifiedTable "dms.Document" } | Should -Throw "*not the COPY header for dms.Document*"
+        { Get-CopyHeaderColumn -HeaderLine "1`tsee COPY dms.""Document"" (`tplain" -QualifiedTable "dms.Document" } | Should -Throw "*not the COPY header*"
+        { Get-CopyHeaderColumn -HeaderLine 'COPY dms."Document" ("A", "A") FROM stdin;' -QualifiedTable "dms.Document" } | Should -Throw "*twice*"
+        { Get-CopyHeaderColumn -HeaderLine 'COPY dms."Document" ("A", B C) FROM stdin;' -QualifiedTable "dms.Document" } | Should -Throw "*not an identifier*"
+    }
+
+    It "does not send IdentityVersion or IdentityLastModifiedAt to a target that no longer has them" {
+        # The false pass: pg_restore --data-only replayed the archive's own COPY column list into the
+        # target, which succeeded only because the published source predates those columns being
+        # dropped; the next refresh from a newer dump fails the COPY under --exit-on-error.
+        $plan = Resolve-StagedInsertColumn -SourceColumn (Get-CopyHeaderColumn -HeaderLine $script:sourceHeader -QualifiedTable "dms.Document") `
+            -TargetColumn (ConvertTo-TargetColumnList -Row $script:targetRow -QualifiedTable "dms.Document") -QualifiedTable "dms.Document"
+        $plan.Insert | Should -Be @("DocumentId", "DocumentUuid", "ResourceKeyId", "CreatedByOwnershipTokenId", "ContentVersion", "ContentLastModifiedAt", "CreatedAt")
+        $plan.Insert | Should -Not -Contain "IdentityVersion"
+        $plan.Insert | Should -Not -Contain "IdentityLastModifiedAt"
+        $plan.SourceOnly | Should -Be @("IdentityVersion", "IdentityLastModifiedAt") -Because "they are staged as text and go no further"
+        $plan.OverridingSystemValue | Should -BeTrue -Because "DocumentId is GENERATED ALWAYS AS IDENTITY and the archive's values must survive the insert"
+    }
+
+    It "refuses a target NOT NULL column with no default, identity or generation that the archive does not carry" {
+        $target = ConvertTo-TargetColumnList -Row ($script:targetRow + 'TenantId|NO|NO|NO|NEVER') -QualifiedTable "dms.Document"
+        { Resolve-StagedInsertColumn -SourceColumn $script:sourceColumn -TargetColumn $target -QualifiedTable "dms.Document" } |
+            Should -Throw "*dms.Document in the target has 1 NOT NULL column(s)*TenantId*"
+    }
+
+    It "lets the target fill a column the archive lacks when it is nullable, defaulted, identity or generated, and never inserts a generated one" {
+        $target = ConvertTo-TargetColumnList -Row ($script:targetRow + @('Note|YES|NO|NO|NEVER', 'Stamp|NO|YES|NO|NEVER', 'Seq|NO|NO|YES|NEVER', 'Derived|NO|NO|NO|ALWAYS')) -QualifiedTable "dms.Document"
+        $plan = Resolve-StagedInsertColumn -SourceColumn @("DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion", "Derived") -TargetColumn $target -QualifiedTable "dms.Document"
+        $plan.Insert | Should -Be @("DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion")
+        $plan.Insert | Should -Not -Contain "Derived" -Because "PostgreSQL computes a generated column and rejects a supplied value"
+        $plan.SourceOnly.Count | Should -Be 0
+    }
+
+    It "parses the target catalog fail-closed and refuses an archive that shares no column with the target" {
+        { ConvertTo-TargetColumnList -Row @('DocumentId|NO|NO') -QualifiedTable "dms.Document" } | Should -Throw "*is not '<name>|<is_nullable>|<has_default>|<is_identity>|<is_generated>'*"
+        { ConvertTo-TargetColumnList -Row @('DocumentId|NO|NO|YES|NEVER', 'DocumentId|NO|NO|YES|NEVER') -QualifiedTable "dms.Document" } | Should -Throw "*twice*"
+        { ConvertTo-TargetColumnList -Row @('', ' ') -QualifiedTable "dms.Document" } | Should -Throw "*no columns*"
+        { Resolve-StagedInsertColumn -SourceColumn @("Other") -TargetColumn (ConvertTo-TargetColumnList -Row @('Note|YES|NO|NO|NEVER') -QualifiedTable "dms.Document") -QualifiedTable "dms.Document" } |
+            Should -Throw "*shares no column*"
+    }
+
+    It "keeps dms.Document out of the bulk pg_restore and inserts it from staging by the resolved columns, before the Descriptor derivation" {
+        $script:DmsDataTable | Should -Not -Contain "Document" -Because "the bulk restore replays the archive's column list"
+        $script:DmsStagedTable | Should -Be "Document"
+        $script:selectEntryText | Should -Match '(?s)if \(-not \$AllowStagedTable\) \{\s+\$forbiddenName \+= "dms\.\$script:DmsStagedTable"' -Because "no restore list may carry dms.Document unless it is the staging load"
+        $script:copyText | Should -Match '-QualifiedTable @\(\$stagedQualified\) -AllowStagedTable'
+        $script:copyText | Should -Match '--exit-on-error -L \$containerListPath -f \$containerStagedSqlPath \$containerDumpPath 2>&1'
+        $script:copyText | Should -Match '\$script:CopyHeaderRedirectScript \| docker exec -i \$Container sh -s `\r?\n\s+\$containerStagedSqlPath \$containerStagedLoadPath \$script:StagingSchema \$script:DmsStagedTable 2>&1'
+        $script:copyText | Should -Match 'Get-CopyHeaderColumn -HeaderLine \$stagedHeader\[0\] -QualifiedTable \$stagedQualified'
+        $script:copyText | Should -Match 'Get-TargetColumnList -DatabaseName \$TargetDatabase -QualifiedTable \$stagedQualified' -Because "the insert columns come from the target catalog, not from the archive"
+        $script:copyText | Should -Match ([regex]::Escape('ADD COLUMN ""$($name.Replace(''"'', ''""''))"" text;')) -Because "a source-only column is staged as text and goes no further"
+        $script:copyText | Should -Match '(?m)^INSERT INTO \$stagedQuoted \(\$stagedColumnList\)\r?\n\$\{stagedOverriding\}SELECT \$stagedColumnList\r?\nFROM \$stagingQuoted;'
+        $script:copyText | Should -Match 'if \(\$stagedPlan\.OverridingSystemValue\) \{ "OVERRIDING SYSTEM VALUE " \}'
+        $stagedAt = $script:copyText.IndexOf('Loading dms.$script:DmsStagedTable through staging schema')
+        $stagedAt | Should -BeGreaterThan $script:copyText.IndexOf('-Description "Bulk pg_restore"')
+        $stagedAt | Should -BeLessThan $script:copyText.IndexOf('Deriving dms.Descriptor.ResourceKeyId') -Because "the Descriptor derivation joins dms.Document"
+        $script:copyText | Should -Match '"dms\.\$script:DmsStagedTable", "dms\.\$script:DmsDerivedTable"\) \+ \$bulkTable' -Because "the row-count reconciliation covers the staged table"
+    }
+}
+
+Describe "Restore recipe stops on a checkout that is not the artifact's DMS revision and on a failed bootstrap" {
+    BeforeAll {
+        $script:readme = Get-Content -Raw -LiteralPath $script:readmePath
+        $script:step3 = [regex]::Match($script:recipe, '(?ms)^# 3\. REQUIRED.*?(?=^# 4\. )').Value
+        $script:activeStep3 = (($script:step3 -split "\r?\n") | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
+        $script:step4 = [regex]::Match($script:recipe, '(?ms)^# 4\. Bootstrap.*?(?=^# 5\. )').Value
+        $script:activeStep4 = (($script:step4 -split "\r?\n") | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
+        $script:recordedRevision = [regex]::Match($script:readme, '(?m)^\| DMS revision built \| `(?<sha>[0-9a-f]{40})`').Groups["sha"].Value
+    }
+
+    It "states the revision prerequisite and the copy-forward alternative before the first recipe command" {
+        $script:recordedRevision | Should -Match '^[0-9a-f]{40}$' -Because "the Record must name the DMS revision built"
+        $sectionAt = $script:readme.IndexOf('## Restore recipe -- PostgreSQL')
+        $preamble = $script:readme.Substring($sectionAt, $script:readme.IndexOf('```shell') - $sectionAt)
+        $preamble | Should -Match $script:recordedRevision -Because "the reader must be told which revision the recipe is for before running it"
+        $preamble | Should -Match 'Copy-NorthridgeDataForward\.ps1' -Because "a newer checkout is served by the copy-forward, not by this recipe"
+    }
+
+    It "compares the checkout's src/ against the recorded revision in step 3, before anything is materialized or staged, and stops with the way out" {
+        # The false pass: step 3 expects one effective schema hash and step 5c compares against the
+        # checkout's own DDL, but nothing checked that the checkout was the revision the artifact
+        # records, so on a later main the recipe ran until the hash differed -- or until 5c failed,
+        # after the restore.
+        $assign = [regex]::Match($script:activeStep3, '(?m)^ARTIFACT_DMS_REV=(?<sha>[0-9a-f]{40})\b')
+        $assign.Success | Should -BeTrue -Because "the recorded revision must be a value the guard reads, not prose"
+        $assign.Groups["sha"].Value | Should -Be $script:recordedRevision -Because "the guard and the Record must name the same revision"
+        $present = [regex]::Match($script:activeStep3, '(?m)^git cat-file -e "\$\{ARTIFACT_DMS_REV\}\^\{commit\}"[^\n]*\|\| \\\n\s+\{ echo "[^"]*"; exit 1; \}$')
+        $present.Success | Should -BeTrue -Because "a clone without the commit must stop rather than be compared against nothing"
+        $guard = [regex]::Match($script:activeStep3, '(?m)^test -d \.\./\.\./src && git diff --quiet "\$ARTIFACT_DMS_REV" HEAD -- \.\./\.\./src \|\| \\\n\s+\{ echo "(?<message>[^"]*)"; exit 1; \}$')
+        $guard.Success | Should -BeTrue -Because "the comparison is by content of src/, commit to commit, so an equivalent commit passes and a missing path cannot pass as unchanged"
+        $guard.Index | Should -BeGreaterThan $present.Index
+        $guard.Index | Should -BeGreaterThan $script:activeStep3.IndexOf('cd "$DC"') -Because "git runs inside the checkout"
+        $guard.Index | Should -BeLessThan $script:activeStep3.IndexOf('dotnet restore') -Because "nothing is materialized or staged from the wrong revision"
+        $guard.Groups["message"].Value | Should -Match '\$ARTIFACT_DMS_REV' -Because "the operator is told which revision to check out"
+        $guard.Groups["message"].Value | Should -Match 'Copy-NorthridgeDataForward\.ps1' -Because "the operator on a newer checkout is sent to the copy-forward"
+        $guard.Groups["message"].Value | Should -Not -Match 'RECOVER_FROM_REF' -Because "nothing has been set aside yet"
+    }
+
+    It "guards the step 4 bootstrap so a failed deployment stops the recipe before step 5 sets it aside as the reference" {
+        # The false pass: the recipe carries no set -e, so a bootstrap that failed part-way was followed
+        # by step 5 renaming the incomplete deployment to the reference and comparing the restore to it.
+        $guard = [regex]::Match($script:activeStep4, '(?m)^pwsh -NoProfile -File \./bootstrap-local-dms\.ps1 -DatabaseEngine postgresql -IdentityProvider self-contained \|\| \\\n\s+\{ echo "(?<message>[^"]*)"; exit 1; \}$')
+        $guard.Success | Should -BeTrue -Because "the bootstrap must stop the recipe when it fails"
+        $guard.Groups["message"].Value | Should -Match 'step 5' -Because "the operator is told not to run step 5 over an incomplete deployment"
+        $guard.Groups["message"].Value | Should -Not -Match 'RECOVER_FROM_REF' -Because "no reference exists yet, so there is nothing to recover"
+        @([regex]::Matches($script:activeStep4, 'bootstrap-local-dms\.ps1')).Count | Should -Be 1 -Because "step 4 runs the bootstrap once, guarded"
+    }
+}
+
+Describe "Compare-DmsSchemaSnapshot.ps1 refuses a snapshot that captured nothing" {
+    It "throws after each export when the captured row count is zero, naming the database and the schemas" {
+        # The false pass: two snapshots of nothing are byte-identical, and the row count was only printed.
+        $text = Get-Content -Raw -LiteralPath $script:compareScript
+        $export = [regex]::Match($text, '(?m)^\s*\$rowCount = Export-SchemaSnapshot -DatabaseName \$databaseName [^\n]*`\r?\n[^\n]*$')
+        $export.Success | Should -BeTrue -Because "the export must still be what produces the count"
+        $after = $text.Substring($export.Index + $export.Length)
+        $guard = [regex]::Match($after, '(?s)\A\s*(?:#[^\n]*\n\s*)*if \(\$rowCount -le 0\) \{\s*throw "(?<message>[^"]*)"\s*\}')
+        $guard.Success | Should -BeTrue -Because "the zero-row check must be the next statement after the export"
+        $guard.Groups["message"].Value | Should -Match '\$databaseName'
+        $guard.Groups["message"].Value | Should -Match '\$\(\$Schema -join'
+        ($guard.Index + $guard.Length) | Should -BeLessThan $after.IndexOf('Write-Output "Captured') -Because "nothing is reported as captured until the count is known to be non-zero"
     }
 }
 

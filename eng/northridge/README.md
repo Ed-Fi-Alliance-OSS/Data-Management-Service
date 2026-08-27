@@ -134,6 +134,12 @@ step 5b, which is mandatory for every consumer: the restore flags that let the a
 stack also drop the ownership and privilege metadata the DMS DDL sets on purpose, and step 5c is the
 proof that it was put back.
 
+> **Run this recipe from the DMS revision the artifact records** -- *DMS revision built*,
+> `087eaa013df22a88d0046ac6f0e211bf47ec79e4` in the Record at the end of this document -- or from a
+> checkout whose `src/` matches it. The hash step 3 expects and the DDL step 5c compares against both
+> come from `src/` at that revision; step 3 checks this and stops otherwise. To bring the dataset onto a
+> newer checkout, use `Copy-NorthridgeDataForward.ps1` instead of this recipe.
+
 ```shell
 DC=~/src/Data-Management-Service/eng/docker-compose   # your checkout
 ART=~/northridge-artifact                             # scratch dir, needs ~12 GB
@@ -165,6 +171,15 @@ DUMP="$ART/${ARTIFACT}.dump"
 #    DMS answer 503 for every request.
 #
 cd "$DC"
+#    The recipe is for the DMS revision the artifact records: the hash below and the DDL step 5c
+#    compares against both come from src/ at that revision. Compared by content, commit to commit, so
+#    an equivalent commit passes; uncommitted src/ edits are not seen, and the commit has to be in the
+#    clone. A path that git cannot find compares as unchanged, hence the directory test in front.
+ARTIFACT_DMS_REV=087eaa013df22a88d0046ac6f0e211bf47ec79e4   # DMS revision built, from the Record
+git cat-file -e "${ARTIFACT_DMS_REV}^{commit}" 2>/dev/null || \
+  { echo "commit ${ARTIFACT_DMS_REV} is not in this clone -- fetch the full history (git fetch --unshallow) and retry; do NOT continue"; exit 1; }
+test -d ../../src && git diff --quiet "$ARTIFACT_DMS_REV" HEAD -- ../../src || \
+  { echo "this checkout's src/ differs from the DMS revision the artifact records -- for this recipe check out $ARTIFACT_DMS_REV, or a checkout whose src/ matches it; to bring the dataset onto a newer checkout run Copy-NorthridgeDataForward.ps1 instead of this recipe; do NOT continue"; exit 1; }
 APISCHEMA_VER=1.0.333       # the version THIS artifact was provisioned from
 
 #    Materialize the core package. The repo pins it centrally and references it with
@@ -207,7 +222,10 @@ pwsh -NoProfile -File ./prepare-dms-schema.ps1 -ApiSchemaPath "$ART/apischema-co
 #    before, clear it first:  pwsh -NoProfile -File ./bootstrap-local-dms.ps1 -d -v
 
 # 4. Bootstrap a normal PostgreSQL stack. The staged core-only workspace is reused as-is.
-pwsh -NoProfile -File ./bootstrap-local-dms.ps1 -DatabaseEngine postgresql -IdentityProvider self-contained
+#    Guarded like everything else here: with no `set -e`, a bootstrap that failed part-way would be
+#    followed by step 5 setting the incomplete deployment aside as the reference step 5c compares to.
+pwsh -NoProfile -File ./bootstrap-local-dms.ps1 -DatabaseEngine postgresql -IdentityProvider self-contained || \
+  { echo "bootstrap failed -- the reference deployment may be incomplete; fix the cause and re-run step 4; do NOT run step 5"; exit 1; }
 
 # 5. Stop the applications, set the deployment aside, then restore. Nothing may hold a connection
 #    during the rename or the restore.
@@ -539,8 +557,7 @@ BEGIN
         UNION ALL SELECT 'ChangeVersionSequence next value beyond the restored data', 'true',
                (SELECT ((s.last_value + CASE WHEN s.is_called THEN q.seqincrement ELSE 0 END)
                         > GREATEST(
-                              COALESCE((SELECT MAX(GREATEST("ContentVersion", "IdentityVersion"))
-                                          FROM dms."Document"), 0),
+                              COALESCE((SELECT MAX("ContentVersion") FROM dms."Document"), 0),
                               COALESCE((SELECT MAX("ContentVersion") FROM dms."Descriptor"), 0)
                           ))::text
                   FROM dms."ChangeVersionSequence" s, pg_sequence q
