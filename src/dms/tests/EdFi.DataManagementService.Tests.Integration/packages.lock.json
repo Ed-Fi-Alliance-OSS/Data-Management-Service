@@ -623,7 +623,6 @@
         "type": "Project",
         "dependencies": {
           "EdFi.DataManagementService.Backend": "[1.0.0, )",
-          "EdFi.DataManagementService.Backend.Ddl": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.Plans": "[1.0.0, )",
           "EdFi.DataManagementService.Core": "[1.0.0, )",
           "Microsoft.CodeAnalysis": "[4.12.0, )",
@@ -729,8 +728,8 @@
           "EdFi.DataManagementService.Backend.Postgresql": "[1.0.0, )",
           "EdFi.DataManagementService.Core": "[1.0.0, )",
           "EdFi.DataManagementService.Core.External": "[1.0.0, )",
-          "EdFi.DataStandard52.ApiSchema": "[1.0.333, )",
-          "EdFi.DataStandard52.TPDM.ApiSchema": "[1.0.333, )",
+          "EdFi.DataStandard52.ApiSchema": "[1.0.334, )",
+          "EdFi.DataStandard52.TPDM.ApiSchema": "[1.0.334, )",
           "Microsoft.CodeAnalysis": "[4.12.0, )",
           "Polly.Core": "[8.5.2, )",
           "Polly.Extensions": "[8.5.2, )",
@@ -760,15 +759,15 @@
       },
       "EdFi.DataStandard52.ApiSchema": {
         "type": "CentralTransitive",
-        "requested": "[1.0.333, )",
-        "resolved": "1.0.333",
-        "contentHash": "eSjrOzKptV1YYqoda/E7iUqzuEwbP2UsdUHNKpfJclY+e+Q2/SvGCJVBYhirSVxQA06Y03T3ssNr9PYeAWWqEA=="
+        "requested": "[1.0.334, )",
+        "resolved": "1.0.334",
+        "contentHash": "qhB5foAX8n2d4nOv43614CADil6xOp+ajNc3JuoQKU0j61cf3pAiHUqh1UFMvgHpqqWQ6W3GpLYnPPpAvdPzaw=="
       },
       "EdFi.DataStandard52.TPDM.ApiSchema": {
         "type": "CentralTransitive",
-        "requested": "[1.0.333, )",
-        "resolved": "1.0.333",
-        "contentHash": "XzHgxRKPtynsubpNW3qyiMK9M1E1FqTJXRhNVLqRzfgLvjm//TB+x3rCoyVn61qRNSm1u7ydVYWQ8iPtaGxHUg=="
+        "requested": "[1.0.334, )",
+        "resolved": "1.0.334",
+        "contentHash": "EWs76sri+u3zGPxsocOh9MtuPw1yj/oaTDr13joGX9lMAQQYEZj11pHjggw9swIbIa8pEzC8tq+T4dYUmsGNVQ=="
       },
       "FastGuid": {
         "type": "CentralTransitive",

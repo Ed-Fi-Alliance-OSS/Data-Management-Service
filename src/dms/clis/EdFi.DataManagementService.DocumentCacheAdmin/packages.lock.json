@@ -4,15 +4,15 @@
     "net10.0": {
       "EdFi.DataStandard52.ApiSchema": {
         "type": "Direct",
-        "requested": "[1.0.333, )",
-        "resolved": "1.0.333",
-        "contentHash": "eSjrOzKptV1YYqoda/E7iUqzuEwbP2UsdUHNKpfJclY+e+Q2/SvGCJVBYhirSVxQA06Y03T3ssNr9PYeAWWqEA=="
+        "requested": "[1.0.334, )",
+        "resolved": "1.0.334",
+        "contentHash": "qhB5foAX8n2d4nOv43614CADil6xOp+ajNc3JuoQKU0j61cf3pAiHUqh1UFMvgHpqqWQ6W3GpLYnPPpAvdPzaw=="
       },
       "EdFi.DataStandard52.TPDM.ApiSchema": {
         "type": "Direct",
-        "requested": "[1.0.333, )",
-        "resolved": "1.0.333",
-        "contentHash": "XzHgxRKPtynsubpNW3qyiMK9M1E1FqTJXRhNVLqRzfgLvjm//TB+x3rCoyVn61qRNSm1u7ydVYWQ8iPtaGxHUg=="
+        "requested": "[1.0.334, )",
+        "resolved": "1.0.334",
+        "contentHash": "EWs76sri+u3zGPxsocOh9MtuPw1yj/oaTDr13joGX9lMAQQYEZj11pHjggw9swIbIa8pEzC8tq+T4dYUmsGNVQ=="
       },
       "Microsoft.CodeAnalysis.CSharp.CodeStyle": {
         "type": "Direct",

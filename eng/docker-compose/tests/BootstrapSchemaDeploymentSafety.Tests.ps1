@@ -3189,7 +3189,7 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
                 script:New-StandardModeManifestFile `
                     -DockerComposeRoot $fixture.DockerComposeRoot `
                     -SelectedExtensions @() `
-                    -SelectedPackages @("EdFi.DataStandard61.ApiSchema@1.0.333") | Out-Null
+                    -SelectedPackages @("EdFi.DataStandard61.ApiSchema@1.0.334") | Out-Null
 
                 { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
                     Should -Throw "*does not match*DMS-1271*"
@@ -3250,7 +3250,7 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
 
                 script:New-StandardModeManifestFile `
                     -DockerComposeRoot $fixture.DockerComposeRoot `
-                    -SelectedPackages @("EdFi.DataStandard52.ApiSchema@1.0.333") | Out-Null
+                    -SelectedPackages @("EdFi.DataStandard52.ApiSchema@1.0.334") | Out-Null
 
                 { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
                     Should -Throw "*Unable to find quoted JSON env value for 'SCHEMA_PACKAGES'*"
