@@ -344,6 +344,37 @@ ORDER BY table_schema, table_name;
     return [string[]]@($rows | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
 }
 
+# Discovery is by schema, so a bulk schema that is absent from a database -- or present with no base
+# table -- contributes nothing to that database's list, and the two lists can agree while both lack
+# it: the copy would then restore edfi and never ask about auth, and the row-count reconciliation
+# walks the same list. Every bulk schema has to contribute at least one base table on both sides
+# before either list is trusted.
+function Get-BulkSchemaCoverageFailure {
+    [CmdletBinding()]
+    [OutputType([System.Object[]])]
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $SourceTable,
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [string[]] $TargetTable,
+        [Parameter(Mandatory)] [string[]] $Schema
+    )
+
+    $failure = [System.Collections.Generic.List[string]]::new()
+    foreach ($side in @("source", "target")) {
+        $table = if ($side -eq "source") { $SourceTable } else { $TargetTable }
+        foreach ($schemaName in $Schema) {
+            # Ordinal: schema names are quoted identifiers like the table names they prefix.
+            $prefix = "$schemaName."
+            $contributed = @($table | Where-Object { $_.StartsWith($prefix, [System.StringComparison]::Ordinal) }).Count
+            if ($contributed -eq 0) {
+                $failure.Add("schema '$schemaName' contributes no base table in the $side, so nothing from it would be copied or reconciled")
+            }
+        }
+    }
+
+    # Comma operator, as in Get-DmsTableClassificationFailure: an empty result must stay a collection.
+    return ,$failure
+}
+
 # The dms schema is not discovered the way the bulk schemas are: its tables are named in the lists at
 # the top, because each is handled differently -- never copied, copied, or derived. A list is an
 # allow-list only while it is complete. A dms base table that exists in the catalog and is on none of
@@ -412,6 +443,49 @@ function Get-DmsTableClassificationFailure {
     return ,$failure
 }
 
+# Every non-blank row is '<schema>.<table>|<count>', one per requested table. A row that does not parse
+# is refused rather than skipped, because a skipped row is a table that dropped out of both maps at
+# once and compared equal by absence; a repeated table is refused because the comparison cannot
+# attribute it; and the parsed set is held to the requested set, as the stamp distribution is, so a
+# table that produced no count -- or a count for a table nobody asked about -- stops the run by name.
+function ConvertTo-RowCountMap {
+    [CmdletBinding()]
+    [OutputType([System.Collections.Generic.Dictionary[string, long]])]
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Row,
+        [Parameter(Mandatory)] [string[]] $ExpectedTable
+    )
+
+    # Ordinal, like every other map keyed by a table name here.
+    $map = [System.Collections.Generic.Dictionary[string, long]]::new([System.StringComparer]::Ordinal)
+    foreach ($item in $Row) {
+        $text = ([string]$item).Trim()
+        # psql --tuples-only can end its output with an empty element; that is not a row.
+        if ([string]::IsNullOrWhiteSpace($text)) { continue }
+
+        if ($text -notmatch '^(?<name>.+)\|(?<count>\d+)$') {
+            throw "Row count row '$text' is not '<schema>.<table>|<count>'; refusing to drop it, because a dropped row compares equal by absence."
+        }
+
+        $name = $Matches["name"]
+        if ($map.ContainsKey($name)) {
+            throw "Row count reported '$name' twice; the union produced a row the comparison cannot attribute."
+        }
+        $map[$name] = [long]$Matches["count"]
+    }
+
+    $expected = [System.Collections.Generic.HashSet[string]]::new([string[]]$ExpectedTable, [System.StringComparer]::Ordinal)
+    $missing = @($ExpectedTable | Where-Object { -not $map.ContainsKey($_) } | Sort-Object)
+    $unexpected = @($map.Keys | Where-Object { -not $expected.Contains($_) } | Sort-Object)
+    if ($missing.Count -gt 0 -or $unexpected.Count -gt 0) {
+        $missingText = if ($missing.Count -gt 0) { $missing -join ', ' } else { 'none' }
+        $unexpectedText = if ($unexpected.Count -gt 0) { $unexpected -join ', ' } else { 'none' }
+        throw "Row counts cover $($map.Count) table(s) for $($ExpectedTable.Count) requested. Missing: $missingText. Unexpected: $unexpectedText."
+    }
+
+    return $map
+}
+
 function Get-RowCountMap {
     [CmdletBinding()]
     [OutputType([System.Collections.Generic.Dictionary[string, long]])]
@@ -432,15 +506,7 @@ function Get-RowCountMap {
     $rows = Invoke-PsqlQuery -ContainerName $Container -User $PostgresUser `
         -DatabaseName $DatabaseName -Sql $sql
 
-    $map = [System.Collections.Generic.Dictionary[string, long]]::new([System.StringComparer]::Ordinal)
-    foreach ($row in $rows) {
-        $text = ([string]$row).Trim()
-        if ($text -match '^(?<name>\S+)\|(?<count>\d+)$') {
-            $map[$Matches["name"]] = [long]$Matches["count"]
-        }
-    }
-
-    return $map
+    return ConvertTo-RowCountMap -Row @($rows) -ExpectedTable $QualifiedTable
 }
 
 function Measure-Invariant {
@@ -536,13 +602,13 @@ function Test-Invariant {
 
     # Every value Measure-Invariant records is checked here. A recorded-but-unchecked value would let
     # a checkpoint pass while part of the evidence table it produces is wrong.
-    if ($Measurement.EffectiveSchemaHash -ne $Expected.EffectiveSchemaHash) {
+    if ($Measurement.EffectiveSchemaHash -cne $Expected.EffectiveSchemaHash) {
         $failure.Add("dms.EffectiveSchema.EffectiveSchemaHash is '$($Measurement.EffectiveSchemaHash)', expected '$($Expected.EffectiveSchemaHash)'")
     }
     if ($Measurement.ResourceKeyCount -ne $Expected.ResourceKeyCount) {
         $failure.Add("dms.EffectiveSchema.ResourceKeyCount is $($Measurement.ResourceKeyCount), expected $($Expected.ResourceKeyCount)")
     }
-    if ($Measurement.ResourceKeySeedHash -ne $Expected.ResourceKeySeedHash) {
+    if ($Measurement.ResourceKeySeedHash -cne $Expected.ResourceKeySeedHash) {
         $failure.Add("dms.EffectiveSchema.ResourceKeySeedHash is '$($Measurement.ResourceKeySeedHash)', expected '$($Expected.ResourceKeySeedHash)'")
     }
     if ($Measurement.CacheAheadRecovery -ne $Expected.CacheAheadRecovery) {
@@ -623,13 +689,13 @@ function Test-SequencePosition {
     $target = [System.Collections.Generic.List[hashtable]]::new()
 
     # dms.Document is the high-water mark for ChangeVersionSequence: it is the only table whose
-    # ContentVersion/IdentityVersion default from that sequence, and the projection copies of
-    # ContentVersion are stamped from the document row, so they cannot exceed it. dms.Descriptor is
-    # included anyway because its stamping trigger draws from the same sequence.
+    # ContentVersion defaults from that sequence, and the projection copies of ContentVersion are
+    # stamped from the document row, so they cannot exceed it. dms.Descriptor is included anyway
+    # because its stamping trigger draws from the same sequence.
     $target.Add(@{
             Label    = "ChangeVersionSequence"
             Sequence = 'dms."ChangeVersionSequence"'
-            Maximum  = 'GREATEST(COALESCE((SELECT MAX(GREATEST("ContentVersion", "IdentityVersion")) FROM dms."Document"), 0), COALESCE((SELECT MAX("ContentVersion") FROM dms."Descriptor"), 0))'
+            Maximum  = 'GREATEST(COALESCE((SELECT MAX("ContentVersion") FROM dms."Document"), 0), COALESCE((SELECT MAX("ContentVersion") FROM dms."Descriptor"), 0))'
         })
 
     # Resolved from the column rather than assumed. The name is needed as an identifier and not only as
@@ -1009,9 +1075,7 @@ function Get-StampDistribution {
     $part = [System.Collections.Generic.List[string]]::new()
     $part.Add('SELECT ''dms.Document'' AS t, COUNT(*)::text || ''|'' ||
         COALESCE(MIN("ContentVersion")::text, ''-'') || ''|'' || COALESCE(MAX("ContentVersion")::text, ''-'') || ''|'' ||
-        COALESCE(MIN("IdentityVersion")::text, ''-'') || ''|'' || COALESCE(MAX("IdentityVersion")::text, ''-'') || ''|'' ||
         COALESCE(MIN("ContentLastModifiedAt")::text, ''-'') || ''|'' || COALESCE(MAX("ContentLastModifiedAt")::text, ''-'') || ''|'' ||
-        COALESCE(MIN("IdentityLastModifiedAt")::text, ''-'') || ''|'' || COALESCE(MAX("IdentityLastModifiedAt")::text, ''-'') || ''|'' ||
         COALESCE(MIN("CreatedAt")::text, ''-'') || ''|'' || COALESCE(MAX("CreatedAt")::text, ''-'') AS v
     FROM dms."Document"')
 
@@ -1384,6 +1448,14 @@ $sourceBulkTable = Get-DataTableList -DatabaseName $SourceDatabase
 $targetBulkTable = Get-DataTableList -DatabaseName $TargetDatabase
 Write-Output "Bulk data tables discovered in source: $($sourceBulkTable.Count), in target: $($targetBulkTable.Count)"
 
+# Every bulk schema has to be in both lists before the lists are compared to each other: two lists that
+# both lack a schema agree, and the copy would restore the rest and report PASS around the hole.
+$coverageFailure = Get-BulkSchemaCoverageFailure -SourceTable $sourceBulkTable -TargetTable $targetBulkTable -Schema $script:BulkSchema
+if ($coverageFailure.Count -gt 0) {
+    throw "Bulk schema coverage is incomplete between source '$SourceDatabase' and target '$TargetDatabase': $($coverageFailure -join '; '). Every schema in $($script:BulkSchema -join '/') must hold base tables on both sides before the copy can be trusted."
+}
+Write-Output "  every bulk schema contributes base tables on both sides"
+
 # Ordinal comparison: a quoted PostgreSQL identifier is case-sensitive, so two names differing only in
 # case are two different tables and have to be reported rather than matched to each other.
 $sourceTableSet = [System.Collections.Generic.HashSet[string]]::new([string[]]$sourceBulkTable, [System.StringComparer]::Ordinal)
@@ -1568,8 +1640,11 @@ $allTable = @($script:DmsDataTable | ForEach-Object { "dms.$_" }) + @("dms.$scri
 $sourceCount = Get-RowCountMap -DatabaseName $SourceDatabase -QualifiedTable $allTable
 $targetCount = Get-RowCountMap -DatabaseName $TargetDatabase -QualifiedTable $allTable
 
+# Walked over the table list, not over the union of what parsed: the parser holds each map to that
+# list, and this loop proves it again, so a table with no count on either side is a failure named here
+# rather than an absence that compares equal to an absence.
 $countFailure = [System.Collections.Generic.List[string]]::new()
-foreach ($table in (Get-OrdinalSortedUnique -Value (@($sourceCount.Keys) + @($targetCount.Keys)))) {
+foreach ($table in (Get-OrdinalSortedUnique -Value $allTable)) {
     $inSource = $sourceCount.ContainsKey($table)
     $inTarget = $targetCount.ContainsKey($table)
 

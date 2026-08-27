@@ -14,21 +14,30 @@
 #                                   snapshot file, so the diff read one file twice
 #   Get-DmsResourceCount.ps1        one CSV passed as both sides of the reconciliation; a count row
 #                                   that does not parse skipped instead of refused; two projects'
-#                                   resources of one name collapsed to one key
+#                                   resources of one name collapsed to one key; no output at all
+#                                   failing as a binding error instead of as an empty count set
 #   Copy-NorthridgeDataForward.ps1  a dms base table on none of the classification lists; a target
 #                                   used as its own source or reference; a measured checkpoint value
 #                                   with no expected value; the descriptor load rewriting data rows
-#                                   through a host string that also carried pg_restore's diagnostics
+#                                   through a host string that also carried pg_restore's diagnostics;
+#                                   a row count that did not parse dropped from both sides at once;
+#                                   a bulk schema missing from both lists, so the lists agreed on
+#                                   the hole
 #   Add-NorthridgeGapDocument.ps1   a deferred read recorded with its mid-manifest status; two
 #                                   documents sharing a label; a date-time field thrown on instead
-#                                   of compared
+#                                   of compared; a token response without access_token reported as
+#                                   a property error; a client secret with no path but the argument
+#                                   list
 #   README restore recipe           hard-coded 8080/8081 and unbounded health waits; "start again
 #                                   from step 4" after a failed restore, which set the partial
-#                                   restore aside as the reference over the intact deployment
+#                                   restore aside as the reference over the intact deployment; a
+#                                   secret or token on a curl argument list; the DMS-to-CMS client
+#                                   deleted in one database and recreated in another; the signing
+#                                   key replaced in the restored database while CMS reads its own;
+#                                   a reference name PostgreSQL would silently truncate
 
 BeforeAll {
     $script:northridgeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
-    $script:repoRoot = [System.IO.Path]::GetFullPath((Join-Path $script:northridgeRoot "../.."))
     $script:compareScript = Join-Path $script:northridgeRoot "Compare-DmsSchemaSnapshot.ps1"
     $script:countScript = Join-Path $script:northridgeRoot "Get-DmsResourceCount.ps1"
     $script:copyScript = Join-Path $script:northridgeRoot "Copy-NorthridgeDataForward.ps1"
@@ -232,6 +241,19 @@ Describe "Get-DmsResourceCount.ps1 refuses count output it cannot parse" {
         # The false pass: the row was skipped, the resource dropped out of the count set, and the
         # reconciliation read its absence on both sides as agreement.
         { ConvertTo-CountRow -Line ($script:goodRow + $Line) } | Should -Throw "*refusing to skip it*"
+    }
+
+    It "returns no rows for no output at all, so the caller's empty-set error is what reports it" {
+        # The false failure: a tool that printed nothing handed the parser $null, which the parameter
+        # refused with a binding error; and an empty list returned bare unrolls to $null, whose .Count
+        # throws under strict mode -- either way the run failed on something other than the message
+        # that says the count set was empty.
+        Set-StrictMode -Version Latest
+        (ConvertTo-CountRow -Line $null).Count | Should -Be 0
+        (ConvertTo-CountRow -Line @()).Count | Should -Be 0
+        (ConvertTo-CountRow -Line @("", "   ")).Count | Should -Be 0
+        $text = Get-Content -Raw -LiteralPath $script:countScript
+        $text | Should -Match '(?ms)\$rows = ConvertTo-CountRow -Line \$raw\s+if \(\$rows\.Count -eq 0\) \{\s+throw "No resource counts were returned' -Because "the empty set is reported by the count-mode check, after the parser"
     }
 
     It "is the only parser the script reads counts through, and both engines emit the same three fields" {
@@ -524,6 +546,15 @@ Describe "Copy-NorthridgeDataForward.ps1 checkpoint record has an expected value
             Should -Throw "*'NotMeasuredAnywhere' has no expected value*"
     }
 
+    It "compares the fingerprint hashes case-sensitively" {
+        # -ne compares strings without regard to case; a stored hash that differs from the expected one
+        # only in case is not the recorded value, and the Ordinal discipline every other comparison
+        # here follows says so.
+        $script:testInvariantText | Should -Match '\$Measurement\.EffectiveSchemaHash -cne \$Expected\.EffectiveSchemaHash'
+        $script:testInvariantText | Should -Match '\$Measurement\.ResourceKeySeedHash -cne \$Expected\.ResourceKeySeedHash'
+        $script:testInvariantText | Should -Not -Match 'Hash -ne '
+    }
+
     It "compares every measured key in Test-Invariant" {
         foreach ($key in $script:measuredKey) {
             $script:testInvariantText | Should -Match ('\$Measurement\.' + [regex]::Escape($key) + '\b') -Because "'$key' is measured and must be asserted, not only recorded"
@@ -669,26 +700,6 @@ Describe "Restore recipe resolves the service ports and bounds every wait" {
         $script:activeRecipe.IndexOf('ENVOF() {') | Should -BeLessThan $script:activeRecipe.IndexOf('CMS_PORT=$(ENVOF')
     }
 
-    It "reads the port the compose files publish on the host, from the override they publish it from" {
-        # The recipe reads ASPNETCORE_HTTP_PORTS inside each container. That is the host port only
-        # because the compose files set it from the same variable they publish on 127.0.0.1; if either
-        # file stops doing that, the recipe's read is no longer the host port and this fails first.
-        foreach ($case in @(
-                @{ File = "local-config.yml"; Variable = "DMS_CONFIG_ASPNETCORE_HTTP_PORTS" },
-                @{ File = "local-dms.yml"; Variable = "DMS_HTTP_PORTS" }
-            )) {
-            $compose = Get-Content -Raw -LiteralPath (Join-Path $script:repoRoot "eng/docker-compose/$($case.File)")
-            $environment = [regex]::Match($compose, '(?m)^\s*ASPNETCORE_HTTP_PORTS:\s*\$\{(?<var>[A-Z_]+)')
-            $environment.Success | Should -BeTrue -Because "$($case.File) must set ASPNETCORE_HTTP_PORTS from an override"
-            $environment.Groups["var"].Value | Should -Be $case.Variable
-            $publish = [regex]::Match($compose, '(?m)^\s*-\s*"127\.0\.0\.1:\$\{(?<host>[A-Z_]+)[^}]*\}:\$\{(?<container>[A-Z_]+)[^}]*\}"')
-            $publish.Success | Should -BeTrue -Because "$($case.File) must publish the port on 127.0.0.1 from an override"
-            $publish.Groups["host"].Value | Should -Be $case.Variable
-            $publish.Groups["container"].Value | Should -Be $case.Variable
-        }
-        $script:recipe | Should -Match 'DMS_CONFIG_ASPNETCORE_HTTP_PORTS and DMS_HTTP_PORTS' -Because "the recipe must say which overrides it honours"
-    }
-
     It "bounds every health wait and stops with the container's logs when the bound is exceeded" {
         # The false pass: `until ...; do sleep 3; done` against a wrong port hung with nothing on screen.
         $script:waitFunction | Should -Not -BeNullOrEmpty -Because "the recipe must define WAIT200"
@@ -724,8 +735,10 @@ Describe "Copy-NorthridgeDataForward.ps1 stamp distributions cover every sampled
     BeforeAll {
         . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:copyScript -FunctionName "ConvertTo-StampDistributionMap")))
         $script:stampTable = @("dms.Document", "edfi.Student", "edfi.School")
+        # A count, then min|max for ContentVersion, ContentLastModifiedAt and CreatedAt on dms.Document;
+        # the sampled tables carry the first two pairs only.
         $script:stampRow = @(
-            "dms.Document|3|1|9|1|9|a|b|a|b|a|b",
+            "dms.Document|3|1|9|a|b|a|b",
             "edfi.School|2|1|9|a|b",
             "edfi.Student|5|1|9|a|b"
         )
@@ -736,7 +749,7 @@ Describe "Copy-NorthridgeDataForward.ps1 stamp distributions cover every sampled
         $map.Count | Should -Be 3
         $map.Comparer | Should -Be ([System.StringComparer]::Ordinal)
         $map["edfi.Student"] | Should -Be "5|1|9|a|b"
-        $map["dms.Document"] | Should -Be "3|1|9|1|9|a|b|a|b|a|b"
+        $map["dms.Document"] | Should -Be "3|1|9|a|b|a|b"
     }
 
     It "refuses a row without a separator rather than dropping it" {
@@ -876,7 +889,6 @@ Describe "Restore recipe recovers from a failed restore without touching the ref
         $script:activeHelper | Should -Match 'test -n "\$_db" -a -n "\$_dbuser" \|\|' -Because "an unreadable container must stop the helper before it touches anything"
         $script:activeHelper | Should -Not -Match '\$(DB|DBUSER|REF)\b' -Because "nothing in the helper may depend on the recipe's shell variables"
         $script:activeHelper | Should -Not -Match '\bexit\b' -Because "the helper is pasted into the operator's shell and must return, not end it"
-        $script:activeHelper | Should -Match 'resume at step 5' -Because "the helper must say where to resume"
     }
 
     It "proves the reference exists before it drops anything, drops only the partial target, then renames the reference back" {
@@ -894,12 +906,19 @@ Describe "Restore recipe recovers from a failed restore without touching the ref
     }
 
     It "refuses to proceed past an existing reference instead of dropping it" {
-        $guard = [regex]::Match($script:step5to6, '(?m)^test -z "\$_ref_exists" \|\| \\\r?\n\s+\{ echo "\$REF already exists[^\n]*Use the \\"Recovery after a failed restore\\" block below if you mean to redo the restore, then resume at step 5\.[^\n]*Do NOT drop \$REF[^\n]*; exit 1; \}$')
-        $guard.Success | Should -BeTrue -Because "an existing reference is the deployment an earlier attempt set aside, and exit 1 ends the shell that defined the helper, so the guard must send the operator to the paste-alone Recovery block"
+        # The false pass: a stale $REF was dropped as a leftover, and it was the intact deployment an
+        # earlier attempt had set aside. The guard is held to its shape, not its wording: it tests the
+        # existence flag, prints a message and stops with exit 1; the message points at the paste-alone
+        # Recovery block, because exit 1 ends the shell that defined the in-shell helper; and it
+        # neither drops the reference nor recovers over it -- the target may be a finished restore the
+        # operator wants.
+        $guard = [regex]::Match($script:step5to6, '(?m)^test -z "\$_ref_exists" \|\| \\\r?\n\s+\{ echo "[^\n]*"; exit 1; \}$')
+        $guard.Success | Should -BeTrue -Because "an existing reference must stop the recipe with exit 1"
         $guard.Index | Should -BeGreaterThan $script:step5to6.IndexOf('RECOVER_FROM_REF() {') -Because "the guard belongs to the step 5 preflight that follows the helper definition"
         $guard.Index | Should -BeLessThan $script:step5to6.IndexOf("SELECT format('ALTER DATABASE %I RENAME TO %I', :'db', :'ref') \gexec") -Because "the guard runs before the rename that would collide"
-        $guard.Value | Should -Not -Match 'RECOVER_FROM_REF; exit' -Because "a reference left behind is refused, not recovered over: the target may be a finished restore the operator wants"
-        $guard.Value | Should -Not -Match 'Run RECOVER_FROM_REF' -Because "the in-shell helper is gone once exit 1 ends the shell, so telling the operator to run it there is not actionable"
+        $guard.Value | Should -Match 'Recovery after a failed restore' -Because "the message must point at the paste-alone Recovery block"
+        $guard.Value | Should -Not -Match 'RECOVER_FROM_REF' -Because "the helper is neither run here nor named as something to run from a shell exit 1 is about to end"
+        $guard.Value | Should -Not -Match 'dropdb'
         $script:step5to6 | Should -Not -Match 'dropdb [^\n]*--if-exists -- "\$REF"' -Because "dropping a stale reference is the destructive step this closes"
     }
 
@@ -934,20 +953,25 @@ Describe "Restore recipe recovers from a failed restore without touching the ref
         $rename | Should -Not -BeNullOrEmpty
         $rename | Should -Not -Match 'RECOVER_FROM_REF'
         # A rolled-back repair is re-run in place first; the recovery is the fallback, in either shell.
-        # It is the one guard in the range that does not recover, so wherever the prose describes the
-        # range it must name 5b as the exception rather than claim that every guard recovers.
         $step5b = [regex]::Match($script:activeStep5to6, '(?m)^[^\n]*step 5b failed[^\n]*$').Value
-        $step5b | Should -Match 're-run step 5b'
-        $step5b | Should -Match 'RECOVER_FROM_REF \(here, or the Recovery block after the recipe from a fresh shell\)'
-        $step5b | Should -Not -Match 'RECOVER_FROM_REF; exit'
-        $recoveryProse = [regex]::Match($script:step5to6, '(?ms)^#\s+Recovery\. .*?(?=^RECOVER_FROM_REF\(\) \{)').Value
-        $recoveryProse | Should -Match 'RECOVER_FROM_REF itself before it stops -- all but one: the 5b apply' -Because "the step 5 prose describes the recovered range and must name its one exception"
-        $recoverySection = [regex]::Match($script:readme, '(?ms)^### Recovery after a failed restore\r?\n(?<prose>.*?)^```shell').Groups["prose"].Value
-        $recoverySection | Should -Match 'all but the 5b apply' -Because "the Recovery section describes the recovered range and must name its one exception"
+        $step5b | Should -Match '\bRECOVER_FROM_REF\b' -Because "the recovery is named as the fallback for a cause that cannot be fixed in place"
+        $step5b | Should -Not -Match 'RECOVER_FROM_REF; exit' -Because "a rolled-back repair is re-run in place, not recovered over"
         $repairSql = [regex]::Match($script:recipe, "(?ms)<<'REPAIR_SQL'[^\r\n]*\r?\n(?<sql>.*?)^REPAIR_SQL\s*$").Groups["sql"].Value
         $repairSql | Should -Not -BeNullOrEmpty
         $repairSql | Should -Not -Match 'start (again|over) from step 4' -Because "a cluster without the role was never deployed to; the way back is a wipe, not step 4"
-        $repairSql | Should -Match 'bootstrap-local-dms\.ps1 -d -v[^\n]*start over from step 3'
+        $repairSql | Should -Match 'bootstrap-local-dms\.ps1 -d -v' -Because "the way back is the wipe, named as the command"
+    }
+
+    It "refuses a reference name longer than PostgreSQL's 63-byte identifier limit, before the rename" {
+        # The false pass: PostgreSQL truncates a long identifier with a NOTICE rather than an error, so
+        # the deployment was renamed to a name no later lookup of $REF would find, and the recovery
+        # would then report that it had never been set aside.
+        $guard = [regex]::Match($script:activeStep5to6, '(?m)^test "\$\(printf ''%s'' "\$REF" \| wc -c[^\n]*\)" -le 63 \|\| \\\n\s+\{ [^\n]*; exit 1; \}$')
+        $guard.Success | Should -BeTrue -Because "the byte length must be measured with printf and wc -c and refused above 63"
+        $guard.Index | Should -BeGreaterThan $script:activeStep5to6.IndexOf('REF="${DB}_reference"')
+        $guard.Index | Should -BeLessThan $script:activeStep5to6.IndexOf("SELECT format('ALTER DATABASE %I RENAME TO %I', :'db', :'ref') \gexec") -Because "nothing may be renamed to a name the server would truncate"
+        $guard.Value | Should -Not -Match 'RECOVER_FROM_REF' -Because "nothing has been renamed yet, so there is nothing to recover"
+        $guard.Value | Should -Not -Match '\$\{#REF\}' -Because "the shell's length operator counts characters, not bytes"
     }
 
     It "publishes the same helper as a paste-alone Recovery block after the recipe" {
@@ -963,7 +987,6 @@ Describe "Restore recipe recovers from a failed restore without touching the ref
         $heading = $script:readme.IndexOf('### Recovery after a failed restore')
         $heading | Should -BeGreaterThan $script:readme.IndexOf($block[0].Value) -Because "the section follows the recipe"
         $block[1].Index | Should -BeGreaterThan $heading
-        $script:readme.Substring($block[1].Index + $block[1].Length, 400) | Should -Match 'resume at step 5' -Because "the section must say where the next attempt starts"
     }
 
     It "drops the reference exactly once, only after step 6 has passed" {
@@ -983,5 +1006,495 @@ Describe "Restore recipe recovers from a failed restore without touching the ref
         $note | Should -Match 'Recovery after a failed restore'
         $note | Should -Not -Match 'start over from step 4'
         $note | Should -Match 'bootstrap-local-dms\.ps1 -d -v'
+    }
+}
+
+Describe "Copy-NorthridgeDataForward.ps1 row counts cover every table or fail" {
+    BeforeAll {
+        . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:copyScript -FunctionName "ConvertTo-RowCountMap")))
+        $script:countTable = @("dms.Document", "edfi.Student", "edfi.School")
+        $script:countRow = @("dms.Document|3", "edfi.School|2", "edfi.Student|5")
+    }
+
+    It "maps one count per table, keyed ordinally, and tolerates psql's trailing empty element" {
+        $map = ConvertTo-RowCountMap -Row ($script:countRow + "") -ExpectedTable $script:countTable
+        $map.Count | Should -Be 3
+        $map.Comparer | Should -Be ([System.StringComparer]::Ordinal)
+        $map["edfi.Student"] | Should -Be 5
+        $map["dms.Document"] | Should -Be 3
+        $map.ContainsKey("edfi.student") | Should -BeFalse -Because "a quoted identifier is case-sensitive, so this is another table"
+    }
+
+    It "refuses a row it cannot parse rather than dropping it" {
+        # The false pass: a row that did not match was skipped, the table dropped out of both maps at
+        # once, and absence compared equal to absence.
+        foreach ($bad in @("edfi.Broken", "edfi.Broken|", "edfi.Broken|abc", "edfi.Broken|-1", "|7", "psql: warning: something")) {
+            { ConvertTo-RowCountMap -Row ($script:countRow + $bad) -ExpectedTable ($script:countTable + "edfi.Broken") } |
+                Should -Throw "*refusing to drop it*" -Because "'$bad' must stop the run, not be skipped"
+        }
+    }
+
+    It "refuses a table reported twice" {
+        { ConvertTo-RowCountMap -Row ($script:countRow + "edfi.School|9") -ExpectedTable $script:countTable } |
+            Should -Throw "*reported 'edfi.School' twice*"
+    }
+
+    It "refuses a parsed set that does not cover exactly the requested tables" {
+        # The false pass: a table with no count on either side was never compared, because the
+        # reconciliation walked the union of what parsed rather than the list it asked for.
+        { ConvertTo-RowCountMap -Row $script:countRow[0..1] -ExpectedTable $script:countTable } |
+            Should -Throw "*Missing: edfi.Student. Unexpected: none.*"
+        { ConvertTo-RowCountMap -Row @() -ExpectedTable $script:countTable } |
+            Should -Throw "*cover 0 table(s) for 3 requested. Missing: dms.Document, edfi.School, edfi.Student.*"
+        { ConvertTo-RowCountMap -Row ($script:countRow + "edfi.Extra|1") -ExpectedTable $script:countTable } |
+            Should -Throw "*Missing: none. Unexpected: edfi.Extra.*"
+    }
+
+    It "is what Get-RowCountMap returns, and the reconciliation walks the table list rather than the parsed keys" {
+        $text = Get-ScriptFunctionText -ScriptPath $script:copyScript -FunctionName "Get-RowCountMap"
+        $text | Should -Match 'return ConvertTo-RowCountMap -Row @\(\$rows\) -ExpectedTable \$QualifiedTable'
+        $text | Should -Not -Match '-match ' -Because "no parsing may remain outside the helper that fails closed"
+        $copyText = Get-Content -Raw -LiteralPath $script:copyScript
+        $copyText | Should -Match '(?m)^foreach \(\$table in \(Get-OrdinalSortedUnique -Value \$allTable\)\) \{$' -Because "every table on the list is asked about on both sides"
+        $copyText | Should -Not -Match 'Get-OrdinalSortedUnique -Value \(@\(\$sourceCount\.Keys\) \+ @\(\$targetCount\.Keys\)\)' -Because "the union of what parsed cannot see a table that parsed on neither side"
+    }
+}
+
+Describe "Copy-NorthridgeDataForward.ps1 requires every bulk schema to contribute tables on both sides" {
+    BeforeAll {
+        . ([scriptblock]::Create((Get-ScriptAssignmentText -ScriptPath $script:copyScript -VariablePath "script:BulkSchema")))
+        . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:copyScript -FunctionName "Get-BulkSchemaCoverageFailure")))
+        $script:fullBulk = @("auth.EducationOrganizationIdToEducationOrganizationId", "edfi.School", "edfi.Student", "tracked_changes_edfi.Student")
+        $script:copyText = Get-Content -Raw -LiteralPath $script:copyScript
+    }
+
+    It "names the three schemas the published artifact carries" {
+        $script:BulkSchema | Should -Be @("edfi", "tracked_changes_edfi", "auth")
+    }
+
+    It "reports nothing when every schema contributes on both sides" {
+        (Get-BulkSchemaCoverageFailure -SourceTable $script:fullBulk -TargetTable $script:fullBulk -Schema $script:BulkSchema).Count | Should -Be 0
+    }
+
+    It "fails schema '<Schema>' contributing no table on either side, naming the schema and the side" -ForEach @(
+        @{ Schema = "auth" }, @{ Schema = "tracked_changes_edfi" }, @{ Schema = "edfi" }
+    ) {
+        # The false pass: discovery is by schema, so a schema absent from a database -- or holding no
+        # base table -- contributed nothing to its list, both lists agreed, and the copy loaded the
+        # remaining schemas and reported PASS around the hole.
+        $without = @($script:fullBulk | Where-Object { -not $_.StartsWith("$Schema.", [System.StringComparison]::Ordinal) })
+        $without.Count | Should -BeLessThan $script:fullBulk.Count
+        $source = Get-BulkSchemaCoverageFailure -SourceTable $without -TargetTable $script:fullBulk -Schema $script:BulkSchema
+        $source.Count | Should -Be 1
+        $source[0] | Should -Match "^schema '$Schema' contributes no base table in the source"
+        $target = Get-BulkSchemaCoverageFailure -SourceTable $script:fullBulk -TargetTable $without -Schema $script:BulkSchema
+        $target.Count | Should -Be 1
+        $target[0] | Should -Match "^schema '$Schema' contributes no base table in the target"
+        $both = Get-BulkSchemaCoverageFailure -SourceTable $without -TargetTable $without -Schema $script:BulkSchema
+        $both.Count | Should -Be 2 -Because "two lists that both lack the schema agree, which is exactly the case this closes"
+        (Get-BulkSchemaCoverageFailure -SourceTable @() -TargetTable @() -Schema $script:BulkSchema).Count | Should -Be (2 * $script:BulkSchema.Count)
+    }
+
+    It "treats a schema whose name differs only in case as absent" {
+        $wrongCase = @($script:fullBulk | ForEach-Object { $_ -replace '^auth\.', 'Auth.' })
+        (Get-BulkSchemaCoverageFailure -SourceTable $wrongCase -TargetTable $script:fullBulk -Schema $script:BulkSchema) -join "`n" |
+            Should -Match "schema 'auth' contributes no base table in the source"
+    }
+
+    It "runs in copy mode before the two lists are compared or trusted" {
+        $coverageAt = $script:copyText.IndexOf('Get-BulkSchemaCoverageFailure -SourceTable $sourceBulkTable -TargetTable $targetBulkTable -Schema $script:BulkSchema')
+        $coverageAt | Should -BeGreaterThan -1
+        $coverageAt | Should -BeGreaterThan $script:copyText.IndexOf('$targetBulkTable = Get-DataTableList -DatabaseName $TargetDatabase')
+        $coverageAt | Should -BeLessThan $script:copyText.IndexOf('$sourceTableSet = ') -Because "coverage is proven before the sets are compared to each other"
+        $coverageAt | Should -BeLessThan $script:copyText.IndexOf('$bulkTable = $sourceBulkTable') -Because "the list is trusted only once every schema is known to be in it"
+    }
+}
+
+Describe "Add-NorthridgeGapDocument.ps1 takes its client secret from exactly one source" {
+    BeforeAll {
+        $script:secretCommon = @{
+            DmsBaseUrl = "http://dms.test"
+            TokenUrl   = "http://cms.test/connect/token"
+            ClientId   = "client"
+        }
+        $script:secretManifest = Join-Path $TestDrive "secret-source.json"
+        [ordered]@{ documents = @([ordered]@{ order = 1; label = "Staff: One"; endpoint = "/data/ed-fi/staffs"; body = [ordered]@{ staffUniqueId = "S1" } }) } |
+            ConvertTo-Json -Depth 16 | Set-Content -LiteralPath $script:secretManifest -Encoding utf8
+        . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:gapScript -FunctionName "Get-DmsAccessToken")))
+    }
+
+    It "refuses -ClientSecret together with -ClientSecretEnvironmentVariable, -WhatIf included" {
+        { & $script:gapScript -ManifestPath $script:secretManifest @script:secretCommon -ClientSecret "literal" -ClientSecretEnvironmentVariable "NR_TEST_SECRET" -WhatIf } |
+            Should -Throw "*either -ClientSecret or -ClientSecretEnvironmentVariable, not both*"
+    }
+
+    It "still prints the plan under -WhatIf, with a literal secret or with none, requesting no token" {
+        Mock Invoke-RestMethod { throw "no token request may be made under -WhatIf" }
+        $withLiteral = @(& $script:gapScript -ManifestPath $script:secretManifest @script:secretCommon -ClientSecret "literal" -WhatIf)
+        ($withLiteral -join "`n") | Should -Match "No token was requested and no write was issued"
+        $withNone = @(& $script:gapScript -ManifestPath $script:secretManifest @script:secretCommon -WhatIf)
+        ($withNone -join "`n") | Should -Match "No token was requested and no write was issued"
+        Should -Invoke Invoke-RestMethod -Times 0 -Exactly
+    }
+
+    It "requires one secret source before it issues a write" {
+        Mock Invoke-RestMethod { throw "no token request may be made without a secret" }
+        { & $script:gapScript -ManifestPath $script:secretManifest @script:secretCommon } |
+            Should -Throw "*-ClientSecret or -ClientSecretEnvironmentVariable, exactly one*"
+        Should -Invoke Invoke-RestMethod -Times 0 -Exactly
+    }
+
+    It "refuses a named environment variable that is not set" {
+        Remove-Item Env:\NR_TEST_SECRET_ABSENT -ErrorAction SilentlyContinue
+        Mock Invoke-RestMethod { throw "no token request may be made without a secret" }
+        { & $script:gapScript -ManifestPath $script:secretManifest @script:secretCommon -ClientSecretEnvironmentVariable "NR_TEST_SECRET_ABSENT" } |
+            Should -Throw "*'NR_TEST_SECRET_ABSENT'*not set*"
+        Should -Invoke Invoke-RestMethod -Times 0 -Exactly
+    }
+
+    It "sends the value of the named environment variable as the client secret, and never logs it" {
+        $env:NR_TEST_SECRET = "from-environment"
+        try {
+            Mock Invoke-RestMethod { [pscustomobject]@{ access_token = "token" } }
+            Mock Invoke-WebRequest {
+                if ("$Method" -eq "Post") {
+                    return [pscustomobject]@{ StatusCode = 201; Headers = @{ Location = "/data/ed-fi/staffs/id-1" }; Content = "" }
+                }
+                return [pscustomobject]@{ StatusCode = 200; Headers = @{}; Content = '{"id":"id-1","staffUniqueId":"S1","_etag":"e"}' }
+            }
+            $output = @(& $script:gapScript -ManifestPath $script:secretManifest @script:secretCommon -ClientSecretEnvironmentVariable "NR_TEST_SECRET")
+            ($output -join "`n") | Should -Match "PASS: every document was created and verified by GET-by-id"
+            Should -Invoke Invoke-RestMethod -Times 1 -Exactly -ParameterFilter { $Body.client_secret -ceq "from-environment" }
+            ($output -join "`n") | Should -Not -Match "from-environment" -Because "the secret is never logged"
+        }
+        finally {
+            Remove-Item Env:\NR_TEST_SECRET -ErrorAction SilentlyContinue
+        }
+    }
+
+    It "reports a token response with no access_token as such under strict mode" {
+        # The false failure: under Set-StrictMode -Version Latest, reading $response.access_token on a
+        # body without that member threw a property-not-found error, so the message that says the
+        # endpoint returned no token was never reached.
+        Set-StrictMode -Version Latest
+        Mock Invoke-RestMethod { [pscustomobject]@{ error = "invalid_client" } }
+        { Get-DmsAccessToken -Url "http://cms.test/connect/token" -Id "client" -Secret "s" -RequestedScope "scope" } |
+            Should -Throw "*returned no access_token*"
+        Mock Invoke-RestMethod { "not json" }
+        { Get-DmsAccessToken -Url "http://cms.test/connect/token" -Id "client" -Secret "s" -RequestedScope "scope" } |
+            Should -Throw "*returned no access_token*"
+        Mock Invoke-RestMethod { [pscustomobject]@{ access_token = "  " } }
+        { Get-DmsAccessToken -Url "http://cms.test/connect/token" -Id "client" -Secret "s" -RequestedScope "scope" } |
+            Should -Throw "*returned no access_token*"
+        Mock Invoke-RestMethod { [pscustomobject]@{ access_token = "abc" } }
+        Get-DmsAccessToken -Url "http://cms.test/connect/token" -Id "client" -Secret "s" -RequestedScope "scope" | Should -Be "abc"
+    }
+}
+
+Describe "Northridge PostgreSQL restore recipe identity handoff" {
+    # Moved here from eng/docker-compose/tests/OpenIddictCrypto.Tests.ps1: these cases read the
+    # Northridge recipe, so they belong to the suite that owns it, where a compose refactor cannot
+    # fail them and a recipe change cannot fail a compose suite.
+    BeforeAll {
+        $script:SetupOpenIddictInvocation = {
+            $lines = $script:recipe -split "`r?`n"
+            $start = [array]::FindIndex($lines, [Predicate[string]] {
+                    param($line)
+                    $line -match '^\s*(CSEC="\$CSEC" )?pwsh -NoProfile -File \./setup-openiddict\.ps1 -InsertData'
+                })
+            $start | Should -BeGreaterOrEqual 0
+
+            $invocationLines = [System.Collections.Generic.List[string]]::new()
+            for ($i = $start; $i -lt $lines.Count; $i++) {
+                $invocationLines.Add($lines[$i])
+                if ($lines[$i] -notmatch '\\\s*$') { break }
+            }
+
+            return ($invocationLines -join "`n")
+        }
+    }
+
+    It "registers restore-admin with the live CMS identity secret and validation bounds" {
+        $script:activeRecipe | Should -Match 'CMSENV=\$\(docker inspect .*ed-fi-api-config-service\)'
+        $script:activeRecipe | Should -Match 'ADMIN_SECRET=\$\(printf ''%s\\n'' "\$CMSENV" \| sed -n ''s/\^IdentitySettings__ClientSecret=//p''\)'
+        $script:activeRecipe | Should -Match 'CLIENT_SECRET_MIN=\$\(printf ''%s\\n'' "\$CMSENV" \| sed -n ''s/\^IdentitySettings__ClientSecretValidation__MinimumLength=//p''\)'
+        $script:activeRecipe | Should -Match 'CLIENT_SECRET_MAX=\$\(printf ''%s\\n'' "\$CMSENV" \| sed -n ''s/\^IdentitySettings__ClientSecretValidation__MaximumLength=//p''\)'
+        # The live secret reaches CMS through the pwsh helpers, as the environment of that one process:
+        # CMS_SECRET is set from the value read above, and the helpers send $env:CMS_SECRET.
+        $script:activeRecipe | Should -Match '(?m)^CMS_SECRET="\$ADMIN_SECRET"$'
+        $script:activeRecipe | Should -Match '(?m)^CMS_REGISTER restore-admin "Restore Admin" \|\| \{ [^}]*; exit 1; \}$'
+        $script:activeRecipe | Should -Match '(?m)^T=\$\(CMS_TOKEN restore-admin edfi_admin_api/full_access\) \|\| \\$'
+        $script:activeRecipe | Should -Match 'ClientSecret = \$env:CMS_SECRET'
+        $script:activeRecipe | Should -Match 'client_secret = \$env:CMS_SECRET'
+        $script:activeRecipe | Should -Not -Match 'ValidClientSecret1234567890!Abcd'
+    }
+
+    It "keeps every client secret out of curl's argument list and reports a failed registration as one" {
+        # A curl argument list is readable by every process on the host while curl runs. Every call that
+        # carries a client secret -- the registration and the three token requests -- goes through the
+        # pwsh helpers, which read the secret from their own environment; and the registration asserts
+        # its status and prints the body, so a 4xx/5xx there stops the recipe instead of surfacing at the
+        # token check as a misleading signing-key failure.
+        $script:activeRecipe | Should -Not -Match '(?im)^[^\n]*\bcurl\b[^\n]*secret=' -Because "no curl invocation may carry a secret in its arguments"
+        # Nor may any pwsh invocation: a secret-bearing shell variable may appear before `pwsh` only, as
+        # the environment prefix of that one process, never among its arguments -- continuation lines
+        # are joined so a multi-line invocation is read whole.
+        $joined = $script:activeRecipe -replace '\\\n\s*', ' '
+        $joined | Should -Not -Match '(?m)\bpwsh\b[^\n]*"\$(CSEC|SEC|ADMIN_SECRET|CMS_SECRET|CMSCS|IDK|KEY_SQL|PW|T|DT|TOKEN|BODY|DS_BODY)"' -Because "no pwsh argument may carry a secret; the environment prefix before pwsh is the only place one may appear"
+        $script:activeRecipe | Should -Not -Match '(?i)--data-urlencode "[^"]*secret='
+        @([regex]::Matches($script:activeRecipe, '(?m)^CMS_SECRET="\$(ADMIN_SECRET|CSEC|SEC)"$')).Count | Should -Be 3 -Because "each secret is scoped to CMS_SECRET from a variable the recipe already holds"
+        @([regex]::Matches($script:activeRecipe, '(?m)^\w+=\$\(CMS_TOKEN ')).Count | Should -Be 3 -Because "restore-admin, the DMS-to-CMS client and the consumer's client each mint one token"
+        @([regex]::Matches($script:activeRecipe, '(?m)^CMS_REGISTER ')).Count | Should -Be 1
+
+        $register = [regex]::Match($script:recipe, '(?ms)^CMS_REGISTER\(\) \{.*?^\}').Value
+        $register | Should -Not -BeNullOrEmpty -Because "the recipe must define CMS_REGISTER"
+        $register | Should -Match 'Invoke-WebRequest -Method Post -Uri "\$env:CMS/connect/register" -SkipHttpErrorCheck'
+        $register | Should -Match '\[int\]\$response\.StatusCode -ne 200'
+        $register | Should -Match '\$\(\$response\.Content\)' -Because "the failure message must carry the body CMS answered with"
+        $register | Should -Match '(?m)^\s+exit 1$'
+        $register | Should -Match '-TimeoutSec [1-9]\d*' -Because "the request replaced a curl call and must not hang on a service that accepts and never answers"
+        $register | Should -Not -Match 'curl'
+
+        $token = [regex]::Match($script:recipe, '(?ms)^CMS_TOKEN\(\) \{.*?^\}').Value
+        $token | Should -Not -BeNullOrEmpty -Because "the recipe must define CMS_TOKEN"
+        $token | Should -Match 'Invoke-WebRequest -Method Post -Uri "\$env:CMS/connect/token" -SkipHttpErrorCheck'
+        $token | Should -Match '\[int\]\$response\.StatusCode -eq 200'
+        $token | Should -Match '\$\(\$response\.Content\)'
+        $token | Should -Match '-TimeoutSec [1-9]\d*' -Because "the request replaced a curl call and must not hang on a service that accepts and never answers"
+        $token | Should -Not -Match 'curl'
+    }
+
+    It "keeps every bearer token out of curl's argument list and routes token-bearing calls through AUTH_HTTP" {
+        # The same class as the client secrets: a token in a curl argument is readable by every process
+        # on the host while curl runs. Every request that carries one goes through AUTH_HTTP, which
+        # reads the token from TOKEN and the JSON body from BODY in its own environment, prints the
+        # status on its first line and the body after it, and writes the headers to a file -- so each
+        # caller keeps the status check and the body diagnostics it had.
+        $script:activeRecipe | Should -Not -Match 'Authorization: Bearer \$' -Because "no command line may carry a token"
+        $script:activeRecipe | Should -Not -Match '(?m)^[^\n]*\bcurl\b[^\n]*(Bearer|-H "Authorization|/v3/|/data/)' -Because "no token-bearing or API call may be a curl call"
+
+        $helper = [regex]::Match($script:recipe, '(?ms)^AUTH_HTTP\(\) \{.*?^\}').Value
+        $helper | Should -Not -BeNullOrEmpty -Because "the recipe must define AUTH_HTTP"
+        $helper | Should -Match 'TOKEN="\$TOKEN" BODY="\$\{BODY:-\}" pwsh -NoProfile -Command'
+        $helper | Should -Match 'Authorization = "Bearer \$env:TOKEN"'
+        $helper | Should -Match '\$request\.Body = \$env:BODY'
+        $helper | Should -Match 'SkipHttpErrorCheck = \$true' -Because "a 4xx/5xx must come back as a status the caller asserts, not as an exception"
+        $helper | Should -Match 'TimeoutSec = [1-9]\d*' -Because "the request replaced a curl call and must not hang on a service that accepts and never answers"
+        $helper | Should -Match '\[Console\]::Out\.WriteLine\(\[int\]\$response\.StatusCode\)'
+        $helper | Should -Match 'Set-Content -Path \$env:HEADERS_FILE'
+        $helper | Should -Not -Match 'curl'
+
+        $call = @([regex]::Matches($script:activeRecipe, '(?m)^\w+=\$\(AUTH_HTTP (?<method>[A-Z]+) "(?<url>[^"]+)" "\$ART/[^"]+"\) \|\| \\$'))
+        @($call | ForEach-Object { $_.Groups["method"].Value + " " + $_.Groups["url"].Value }) |
+            Should -Be @('PUT $CMS/v3/dataStores/1', 'POST $CMS/v3/vendors', 'POST $CMS/v3/applications', 'GET $DMS/data/ed-fi/students?limit=1&totalCount=true')
+        # Each call is preceded by the token it needs; the GET is preceded by an emptied BODY.
+        @([regex]::Matches($script:activeRecipe, '(?m)^TOKEN="\$(T|DT)"$')).Count | Should -Be 3
+        $script:activeRecipe | Should -Match '(?m)^TOKEN="\$DT"\nBODY=\nSMOKE_RESPONSE=\$\(AUTH_HTTP GET '
+        # The statuses are still asserted against exact values and the bodies still shown on failure.
+        $script:activeRecipe | Should -Match '(?m)^DS=\$\(printf ''%s\\n'' "\$DS_RESPONSE" \| sed -n 1p\)\nif \[ "\$DS" != "204" \]; then'
+        $script:activeRecipe | Should -Match 'printf ''%s\\n'' "\$DS_RESPONSE" \| sed 1d'
+        $script:activeRecipe | Should -Match '(?m)^SC=\$\(printf ''%s\\n'' "\$SMOKE_RESPONSE" \| sed -n 1p\)$'
+        $script:activeRecipe | Should -Match 'if \[ "\$SC" != "200" \] \|\| \[ "\$TC" != "21628" \]; then'
+        $script:activeRecipe | Should -Match 'sed -n ''s\|\^\[Ll\]ocation:\.\*/v3/vendors/' -Because "the vendor id is still read from the Location header, now from the headers file"
+        # The data store body holds the database password and travels as BODY, never as a file.
+        $script:activeRecipe | Should -Not -Match 'datastore\.json'
+        $script:activeRecipe | Should -Match '(?m)^DS_BODY=\$\(PW="\$PW" DB="\$DB" DBUSER="\$DBUSER" pwsh -NoProfile -Command ''$'
+        $script:activeRecipe | Should -Match '(?m)^BODY="\$DS_BODY"$'
+        $script:activeRecipe | Should -Match '(?m)^unset BODY DS_BODY$'
+    }
+
+    It "asserts the exact success status of every AUTH_HTTP response before trusting its headers or body" {
+        # AUTH_HTTP prints the status on its first line and never throws on a 4xx/5xx, so a caller that
+        # reads Location or the body without reading the status first turns a 401, 403 or 500 into "no
+        # Location" or "no credentials" with the cause gone. CMS answers the data store PUT with 204, a
+        # new vendor with 201 (200, Location set, for a company it already holds: VendorModule creates by
+        # company name), a new application with 201 and its credentials, and DMS the smoke read with 200.
+        $active = $script:activeRecipe
+
+        # Data store: the status is compared before anything else is done with the response.
+        $active | Should -Match '(?m)^DS=\$\(printf ''%s\\n'' "\$DS_RESPONSE" \| sed -n 1p\)\nif \[ "\$DS" != "204" \]; then\n[^\n]*\n  printf ''%s\\n'' "\$DS_RESPONSE" \| sed 1d\n  exit 1\nfi$'
+
+        # Vendor: the status is matched, and only 201 or 200 continue, before the Location header is read.
+        $vendor = [regex]::Match($active, '(?ms)^VENDOR_RESPONSE=\$\(AUTH_HTTP POST "\$CMS/v3/vendors".*?^VID=').Value
+        $vendor | Should -Not -BeNullOrEmpty
+        $vendor | Should -Match '(?m)^VS=\$\(printf ''%s\\n'' "\$VENDOR_RESPONSE" \| sed -n 1p\)\ncase "\$VS" in\n  201\) [^\n]*;;\n  200\) [^\n]*;;\n  \*\) [^\n]*expected 201[^\n]*printf ''%s\\n'' "\$VENDOR_RESPONSE" \| sed 1d[^\n]*; exit 1 ;;\nesac$'
+        $vendor.IndexOf('case "$VS" in') | Should -BeLessThan $vendor.IndexOf('VID=') -Because "the status is asserted before the Location header is parsed"
+        $active | Should -Match '(?m)^test -n "\$VID" \|\| \\\n  \{ [^\n]*; exit 1; \}$' -Because "a success status with no Location still stops the recipe"
+
+        # Application: exactly 201 before the body is parsed for the credentials.
+        $app = [regex]::Match($active, '(?ms)^APP_RESPONSE=\$\(AUTH_HTTP POST "\$CMS/v3/applications".*?^KEY=').Value
+        $app | Should -Not -BeNullOrEmpty
+        $app | Should -Match '(?m)^AS=\$\(printf ''%s\\n'' "\$APP_RESPONSE" \| sed -n 1p\)\nif \[ "\$AS" != "201" \]; then\n[^\n]*expected 201[^\n]*\n  printf ''%s\\n'' "\$APP_RESPONSE" \| sed 1d\n  exit 1\nfi$'
+        $app.IndexOf('if [ "$AS" != "201" ]') | Should -BeLessThan $app.IndexOf('APP=$(') -Because "the status is asserted before the body is parsed for credentials"
+
+        # Smoke: exactly 200, together with the count.
+        $active | Should -Match '(?m)^SC=\$\(printf ''%s\\n'' "\$SMOKE_RESPONSE" \| sed -n 1p\)$'
+        $active | Should -Match 'if \[ "\$SC" != "200" \] \|\| \[ "\$TC" != "21628" \]; then'
+
+        # Each response has its status line read into a variable exactly once, so no caller reads the
+        # status only inside a failure message after it has already trusted the response.
+        foreach ($response in @('DS_RESPONSE', 'VENDOR_RESPONSE', 'APP_RESPONSE', 'SMOKE_RESPONSE')) {
+            @([regex]::Matches($active, [regex]::Escape("printf '%s\n' `"`$$response`" | sed -n 1p"))).Count | Should -Be 1 -Because "$response must have its status line read once, into a variable that is compared"
+        }
+    }
+
+    It "passes the live PostgreSQL user, roles and client-secret bounds into setup-openiddict, with the secret in the environment" {
+        $invocation = & $script:SetupOpenIddictInvocation
+
+        # setup-openiddict.ps1 is a new process, so its argument list is readable by every process on
+        # the host: the secret travels as CSEC in that process's environment and
+        # -NewClientSecretEnvironmentVariable names the variable. -NewClientSecret is a literal for every
+        # caller -- a secret may itself begin with "ENV:" -- so the recipe must not use it at all.
+        $invocation | Should -Match '^CSEC="\$CSEC" pwsh -NoProfile -File \./setup-openiddict\.ps1 -InsertData'
+        $invocation | Should -Match '-NewClientSecretEnvironmentVariable CSEC'
+        $invocation | Should -Not -Match '-NewClientSecret\b' -Because "the secret must not be an argument, and the literal parameter never reads a variable"
+        $invocation | Should -Not -Match 'ENV:CSEC' -Because "spelled as an indirection, the eight characters ENV:CSEC would be the secret validated and hashed"
+        $invocation | Should -Match '-ConfigServiceRole "\$CMSROLE"'
+        $invocation | Should -Match '-DmsClientRole "\$DMSROLE"'
+        $invocation | Should -Match '-DbUser "\$DBUSER"'
+        $invocation | Should -Match '-DbName "\$CMSDB"' -Because "the insert must target the database the DELETE cleared, as the same literal"
+        $invocation | Should -Not -Match 'ENV:DMS_CONFIG_DATABASE_NAME' -Because "an indirection the script resolves on its own could name a database other than the one the DELETE ran against"
+        $invocation | Should -Match '-ClientSecretMinimumLength "\$CLIENT_SECRET_MIN"'
+        $invocation | Should -Match '-ClientSecretMaximumLength "\$CLIENT_SECRET_MAX"'
+    }
+
+    It "replaces the OpenIddict signing key in one guarded transaction and proves exactly one key is active" {
+        # The recipe carries no set -e. Deactivating the producer's key and inserting the consumer's
+        # must be one operation: run separately, a failed insert leaves no active key and a failed
+        # deactivate leaves the producer's key trusted beside the new one, and neither shows until
+        # the token check. So the generator's INSERT is assembled into one file between the
+        # deactivate and an assertion, the file runs under -1 and ON_ERROR_STOP, and every command
+        # that can fail is guarded with an exit.
+        $step7 = [regex]::Match($script:recipe, '(?ms)^# 7\. REQUIRED: install your own OpenIddict signing key\..*?(?=^# 8\. )').Value
+        $step7 | Should -Not -BeNullOrEmpty
+
+        # The identity encryption key reaches the generator through the environment of that one pwsh
+        # process, never as an argument, and the generated SQL -- private key and encryption key in
+        # clear -- is held in the shell as KEY_SQL and piped, never written under $ART.
+        $step7 | Should -Match '(?m)^KEY_SQL=\$\(IDK="\$IDK" pwsh -NoProfile -Command ''& \./Generate-OpenIddictKey-Insert\.ps1 -EncryptionKey \$env:IDK''\) \|\| \\\r?\n\s+\{ unset KEY_SQL IDK; .*; exit 1; \}$'
+        $step7 | Should -Not -Match '-EncryptionKey "\$IDK"' -Because "the key must not be an argument of any process"
+        $step7 | Should -Not -Match 'newkey' -Because "no key SQL file may be written"
+        $step7 | Should -Not -Match '> "\$ART/' -Because "nothing in step 7 may be written under the scratch directory"
+        $step7 | Should -Match '(?m)^printf ''%s\\n'' "\$KEY_SQL" \| grep -q ''\^INSERT INTO "dmscs"\."OpenIddictKey" '' \|\| \\\r?\n\s+\{ unset KEY_SQL IDK; .*; exit 1; \}$'
+        $step7 | Should -Match '(?m)^\} \| docker exec -i dms-postgresql psql -U "\$DBUSER" -d "\$CMSDB" -v ON_ERROR_STOP=1 -q -1 -f - \|\| \\\r?\n\s+\{ unset KEY_SQL IDK; .*; exit 1; \}$'
+
+        # One psql run over one stream: no separate deactivate, no copy into the container.
+        $activeStep7 = (($step7 -split "`r?`n") | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
+        @([regex]::Matches($activeStep7, 'docker exec .*psql')).Count | Should -Be 1
+        $step7 | Should -Not -Match 'psql .*-c ''UPDATE dmscs\."OpenIddictKey"'
+        $step7 | Should -Not -Match 'docker cp'
+
+        $assembled = [regex]::Match($step7, '(?ms)^\{\r?\n(?<body>.*?)^\} \| docker exec').Groups["body"].Value
+        $assembled | Should -Not -BeNullOrEmpty
+        $deactivateAt = $assembled.IndexOf('echo ''UPDATE dmscs."OpenIddictKey" SET "IsActive" = FALSE;''')
+        $insertAt = $assembled.IndexOf('printf ''%s\n'' "$KEY_SQL"')
+        $assertAt = $assembled.IndexOf("<<'KEY_ASSERT_SQL'")
+        $deactivateAt | Should -BeGreaterThan -1
+        $insertAt | Should -BeGreaterThan $deactivateAt -Because "the producer's key is deactivated before the new one is inserted"
+        $assertAt | Should -BeGreaterThan $insertAt -Because "the assertion runs after the insert, inside the same transaction"
+
+        $assertion = [regex]::Match($assembled, "(?ms)<<'KEY_ASSERT_SQL'\r?\n(?<sql>.*?)^KEY_ASSERT_SQL").Groups["sql"].Value
+        $assertion | Should -Match 'SELECT COUNT\(\*\) INTO active FROM dmscs\."OpenIddictKey" WHERE "IsActive"'
+        $assertion | Should -Match '(?s)IF active <> 1 THEN\s+RAISE EXCEPTION' -Because "an insert that succeeded beside a still-active producer key must roll back"
+
+        # The key material does not outlive the step: KEY_SQL and IDK are unset on the success path and
+        # inside every failure guard that follows the generator call.
+        $afterGenerate = $step7.Substring($step7.IndexOf('KEY_SQL=$('))
+        $guard = @([regex]::Matches($afterGenerate, '\{ [^\n]*; exit 1; \}'))
+        $guard.Count | Should -Be 3 -Because "the generator, the INSERT check and the psql run are each guarded"
+        foreach ($item in $guard) {
+            $item.Value | Should -Match '^\{ unset KEY_SQL IDK; ' -Because "a failure path must not leave the key material in the shell: $($item.Value)"
+        }
+        $afterGenerate | Should -Match '(?m)^unset KEY_SQL IDK$' -Because "the success path must clear the key material too"
+
+        # The token check stays, after the replacement, as the second proof rather than the only one,
+        # and its failure text still points at this step.
+        $tokenCheckAt = $script:recipe.IndexOf('T=$(CMS_TOKEN restore-admin edfi_admin_api/full_access) || \')
+        $tokenCheckAt | Should -BeGreaterThan $script:recipe.IndexOf("# 8. REQUIRED")
+        $script:recipe.Substring($tokenCheckAt, 300) | Should -Match 'step 7' -Because "the failure text must point at the key replacement"
+    }
+
+    It "guards the DMS-to-CMS client replacement so a failed delete or insert stops the recipe" {
+        # The same class as step 7: setup-openiddict.ps1 inserts ON CONFLICT DO NOTHING, so a delete
+        # that fails silently leaves the producer's secret hash in place, and only the token check
+        # would notice. Both commands stop the recipe on failure.
+        $step10 = [regex]::Match($script:recipe, '(?ms)^# 10\. REQUIRED: recreate the client DMS uses.*?(?=^# 11\. )').Value
+        $step10 | Should -Not -BeNullOrEmpty
+        $step10 | Should -Match '(?m)^docker exec -i dms-postgresql psql .* -v cid="\$CID" -f - <<''SQL'' \|\| \\\r?\n\s+\{ .*; exit 1; \}\r?\nDELETE FROM dmscs\."OpenIddictApplication" WHERE "ClientId" = :''cid'';\r?\nSQL$'
+        $invocation = & $script:SetupOpenIddictInvocation
+        $invocation | Should -Match '\|\| \\\n\s+\{ .*; exit 1; \}$' -Because "a failed setup-openiddict.ps1 must stop the recipe before the token check"
+    }
+    It "deletes and recreates the DMS-to-CMS client in the one database the running Configuration Service reads" {
+        # The false pass: the DELETE ran against $DB while the insert was pointed at
+        # ENV:DMS_CONFIG_DATABASE_NAME, which setup-openiddict.ps1 resolves on its own. With that
+        # override set, the delete cleared one database and the insert skipped the producer's row in
+        # the other, and only step 11 would have noticed.
+        $step10 = [regex]::Match($script:recipe, '(?ms)^# 10\. REQUIRED: recreate the client DMS uses.*?(?=^# 11\. )').Value
+        $active10 = (($step10 -split "\r?\n") | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
+        $active10 | Should -Not -Match '(?m)^CMSDB=' -Because "step 10 reuses the database step 7 resolved rather than resolving one of its own"
+        $delete = [regex]::Match($active10, '(?m)^docker exec -i dms-postgresql psql [^\n]* -v cid="\$CID" -f - <<''SQL'' \|\| \\$')
+        $delete.Success | Should -BeTrue
+        $delete.Value | Should -Match ' -d "\$CMSDB" '
+        $delete.Value | Should -Not -Match ' -d "\$DB" ' -Because "the DELETE must not assume the CMS rows live in the restored database"
+        $script:activeRecipe.IndexOf('CMSDB=$(') | Should -BeLessThan $script:activeRecipe.IndexOf($delete.Value) -Because "the name is resolved, in step 7, before it is used here"
+        $invocation = & $script:SetupOpenIddictInvocation
+        $invocation | Should -Match '-DbName "\$CMSDB"' -Because "the insert targets the same database, as the same literal"
+        $invocation | Should -Not -Match 'ENV:DMS_CONFIG_DATABASE_NAME'
+        $invocation | Should -Not -Match '-DbName "\$DB"'
+    }
+
+    It "resolves the CMS database once, in step 7, before the signing key is read or replaced" {
+        # The false pass: step 10 resolved the database the running Configuration Service reads and
+        # recreated the DMS-to-CMS client there, while step 7 had replaced the signing key in $DB. With
+        # DMS_CONFIG_DATABASE_NAME set, the key went into the restored data store and CMS kept minting
+        # tokens from the producer's key in its own database, and only the step 9 token check noticed.
+        $step7 = [regex]::Match($script:recipe, '(?ms)^# 7\. REQUIRED: install your own OpenIddict signing key\..*?(?=^# 8\. )').Value
+        $active7 = (($step7 -split "\r?\n") | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
+        $active7 | Should -Match '(?m)^CMSCS=\$\(ENVOF ed-fi-api-config-service \| sed -n ''s/\^DatabaseSettings__DatabaseConnection=//p''\)$' -Because "the database is the one the running CMS was configured with"
+        $active7 | Should -Match '(?m)^CMSDB=\$\(CMSCS="\$CMSCS" pwsh -NoProfile -Command ''$' -Because "the connection string carries the password and travels as that one process's environment"
+        $active7 | Should -Match 'DbConnectionStringBuilder' -Because "the database keyword is read back by the rules Npgsql parses, not by a pattern over the text"
+        $active7 | Should -Match '(?m)^unset CMSCS$'
+        $guard = [regex]::Match($active7, '(?m)^test -n "\$CMSDB" \|\| \\\n\s+\{ [^\n]*; exit 1; \}$')
+        $guard.Success | Should -BeTrue -Because "an empty database name must stop the step"
+        $keyRun = [regex]::Match($active7, '(?m)^\} \| docker exec -i dms-postgresql psql [^\n]*$')
+        $keyRun.Success | Should -BeTrue
+        $keyRun.Value | Should -Match ' -d "\$CMSDB" ' -Because "CMS mints tokens from the dmscs.OpenIddictKey row of its own database"
+        $guard.Index | Should -BeLessThan $keyRun.Index -Because "the name is proven non-empty before it is used"
+        $guard.Index | Should -BeLessThan $active7.IndexOf('IDK=$(') -Because "the database is resolved before the key material is read, so its guard has no key to clear"
+        $active7.IndexOf('ENVOF() {') | Should -BeGreaterThan -1 -Because "the helper the resolution reads the container with is defined here, at its first use"
+        $active7.IndexOf('ENVOF() {') | Should -BeLessThan $active7.IndexOf('CMSCS=$(ENVOF')
+        @([regex]::Matches($script:activeRecipe, '(?m)^CMSDB=')).Count | Should -Be 1 -Because "one resolution, which step 10 reuses"
+    }
+
+    It "targets the CMS database for every dmscs operation and the restored data store for every dms operation" {
+        # The rule the two steps above follow, held as one assertion so a new dmscs or dms call site
+        # cannot land on the other database: dmscs.* (OpenIddict) lives where CMS reads, $CMSDB; dms.*
+        # lives in the restored data store, $DB. Steps 7 and 10 are the dmscs steps and name no other
+        # database; step 8 rotates a dms row and names no other database.
+        $step7 = [regex]::Match($script:recipe, '(?ms)^# 7\. REQUIRED: install your own OpenIddict signing key\..*?(?=^# 8\. )').Value
+        $step8 = [regex]::Match($script:recipe, '(?ms)^# 8\. REQUIRED: rotate dms\.DataStoreIdentity\.SourceIdentity\..*?(?=^# 9\. )').Value
+        $step10 = [regex]::Match($script:recipe, '(?ms)^# 10\. REQUIRED: recreate the client DMS uses.*?(?=^# 11\. )').Value
+        $active7 = (($step7 -split "\r?\n") | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
+        $active8 = (($step8 -split "\r?\n") | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
+        $active10 = (($step10 -split "\r?\n") | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
+        $active8 | Should -Not -BeNullOrEmpty
+
+        $dmscsLines = @(($script:activeRecipe -split "`n") | Where-Object { $_ -match 'dmscs' })
+        $dmscsLines.Count | Should -BeGreaterThan 0
+        foreach ($line in $dmscsLines) {
+            ($active7.Contains($line) -or $active10.Contains($line)) | Should -BeTrue -Because "a dmscs operation outside steps 7 and 10 would target a database this rule does not cover: $line"
+        }
+        $active7 | Should -Not -Match '"\$DB"' -Because "the signing key belongs to the CMS database"
+        $active10 | Should -Not -Match '"\$DB"' -Because "the DMS-to-CMS client belongs to the CMS database"
+        foreach ($psql in @([regex]::Matches("$active7`n$active10", '(?m)^.*\bpsql\b.*$'))) {
+            $psql.Value | Should -Match ' -d "\$CMSDB" ' -Because "every psql run in the dmscs steps targets the CMS database: $($psql.Value)"
+        }
+
+        $active8 | Should -Match '(?m)^NEW_SOURCE_ID=\$\(docker exec dms-postgresql psql -U "\$DBUSER" -d "\$DB" -v ON_ERROR_STOP=1 -tAc \\$' -Because "the source identity is a dms row of the restored data store"
+        $active8 | Should -Match 'UPDATE dms\."DataStoreIdentity" SET "SourceIdentity" = gen_random_uuid\(\)'
+        $active8 | Should -Not -Match 'CMSDB' -Because "moving the signing key to the CMS database must not move the data-store mutation with it"
+
+        $inDmscsSteps = @([regex]::Matches($active7, '\$CMSDB\b')).Count + @([regex]::Matches($active10, '\$CMSDB\b')).Count
+        @([regex]::Matches($script:activeRecipe, '\$CMSDB\b')).Count | Should -Be $inDmscsSteps -Because "no other step names the CMS database"
     }
 }

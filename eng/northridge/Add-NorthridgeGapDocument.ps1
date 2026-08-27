@@ -46,7 +46,15 @@
     API client id.
 
 .PARAMETER ClientSecret
-    API client secret. Never logged, and never written to the result file.
+    API client secret, as a literal. Never logged, and never written to the result file. An argument
+    is readable by every process on the host while this one runs, so a caller that has to keep the
+    secret out of the argument list names the environment variable holding it with
+    -ClientSecretEnvironmentVariable instead. The two are alternatives, and a run that issues writes
+    needs exactly one of them; -WhatIf needs neither.
+
+.PARAMETER ClientSecretEnvironmentVariable
+    Name of the environment variable that holds the API client secret. The value is read from this
+    process's environment when the token is requested and is never an argument.
 
 .PARAMETER Scope
     OAuth scope requested.
@@ -59,6 +67,12 @@
         -TokenUrl http://localhost:8081/connect/token -ClientId id -ClientSecret secret -WhatIf
 
     Validates and orders the manifest and prints the plan without issuing any write.
+
+.EXAMPLE
+    ./Add-NorthridgeGapDocument.ps1 -ManifestPath /tmp/nr/gap.json -DmsBaseUrl http://localhost:8080 `
+        -TokenUrl http://localhost:8081/connect/token -ClientId id -ClientSecretEnvironmentVariable NR_CLIENT_SECRET
+
+    Reads the secret from the NR_CLIENT_SECRET environment variable rather than from the argument list.
 #>
 
 [CmdletBinding(SupportsShouldProcess)]
@@ -79,9 +93,11 @@ param(
     [string]
     $ClientId,
 
-    [Parameter(Mandatory)]
     [string]
     $ClientSecret,
+
+    [string]
+    $ClientSecretEnvironmentVariable,
 
     [string]
     $Scope = "edfi_admin_api/full_access",
@@ -92,6 +108,16 @@ param(
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+
+# The two secret parameters are alternatives, and naming both is a usage error rather than a plan, so
+# it is refused before the manifest is read, -WhatIf included. Which one is in effect, and whether it
+# holds a value, is decided only once the run is past -WhatIf: a plan needs no secret.
+if ($PSBoundParameters.ContainsKey("ClientSecret") -and $PSBoundParameters.ContainsKey("ClientSecretEnvironmentVariable")) {
+    throw "Specify either -ClientSecret or -ClientSecretEnvironmentVariable, not both."
+}
+if ($PSBoundParameters.ContainsKey("ClientSecretEnvironmentVariable") -and [string]::IsNullOrWhiteSpace($ClientSecretEnvironmentVariable)) {
+    throw "-ClientSecretEnvironmentVariable must name the environment variable that holds the client secret."
+}
 
 function Get-GapDocumentManifest {
     [CmdletBinding()]
@@ -154,11 +180,21 @@ function Get-DmsAccessToken {
     $response = Invoke-RestMethod -Method Post -Uri $Url -Body $body `
         -ContentType "application/x-www-form-urlencoded"
 
-    if ([string]::IsNullOrWhiteSpace($response.access_token)) {
+    # Under strict mode a member that is absent throws on read, so the shape is checked before the
+    # value: a body with no access_token -- an error object, a bare string, nothing at all -- is
+    # reported as the missing token it is rather than as a property-not-found error.
+    $token = if ($null -ne $response -and $response.PSObject.Properties.Name -ccontains "access_token") {
+        [string]$response.access_token
+    }
+    else {
+        ""
+    }
+
+    if ([string]::IsNullOrWhiteSpace($token)) {
         throw "Token endpoint '$Url' returned no access_token."
     }
 
-    return $response.access_token
+    return $token
 }
 
 # Compares only the fields that were sent. The server legitimately adds id, _etag, and
@@ -267,7 +303,25 @@ if (-not $PSCmdlet.ShouldProcess($DmsBaseUrl, "POST $($document.Count) document(
     return
 }
 
-$token = Get-DmsAccessToken -Url $TokenUrl -Id $ClientId -Secret $ClientSecret -RequestedScope $Scope
+# Exactly one effective secret, and a value in it, before the first request is made.
+$secret = if ($PSBoundParameters.ContainsKey("ClientSecretEnvironmentVariable")) {
+    $value = [System.Environment]::GetEnvironmentVariable($ClientSecretEnvironmentVariable)
+    if ([string]::IsNullOrEmpty($value)) {
+        throw "Environment variable '$ClientSecretEnvironmentVariable' named by -ClientSecretEnvironmentVariable is not set or is empty."
+    }
+    $value
+}
+elseif ($PSBoundParameters.ContainsKey("ClientSecret")) {
+    if ([string]::IsNullOrEmpty($ClientSecret)) {
+        throw "-ClientSecret must not be empty."
+    }
+    $ClientSecret
+}
+else {
+    throw "A run that issues writes needs a client secret: pass -ClientSecret or -ClientSecretEnvironmentVariable, exactly one."
+}
+
+$token = Get-DmsAccessToken -Url $TokenUrl -Id $ClientId -Secret $secret -RequestedScope $Scope
 $header = @{ Authorization = "Bearer $token" }
 
 $result = [System.Collections.Generic.List[object]]::new()

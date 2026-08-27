@@ -185,7 +185,7 @@ function Get-MssqlResourceCount {
     $password = Get-ContainerEnvironmentValue -ContainerName $ContainerName -VariableName "MSSQL_SA_PASSWORD"
 
     # SQLCMDPASSWORD rather than -P, matching the repository convention: it keeps the password out of
-    # the container argument list.
+    # the container process argument list. The docker command still carries the value host-side.
     $output = docker exec -e SQLCMDPASSWORD=$password $ContainerName /opt/mssql-tools18/bin/sqlcmd `
         -S localhost -U $User -C -N -b -d $DatabaseName -h -1 -W -Q $sql 2>&1
 
@@ -200,11 +200,15 @@ function Get-MssqlResourceCount {
 # sqlcmd print their diagnostics on the same stream the rows arrive on, so a warning, a banner or a
 # truncated row would otherwise be skipped -- and a skipped row is a resource missing from the count
 # set with nothing to say so, which the reconciliation reads as agreement when the other side is
-# missing it too. Blank lines are the tools' trailing empty element and carry no row.
+# missing it too. Blank lines are the tools' trailing empty element and carry no row. No output at all
+# -- a null or empty argument -- is no rows: the caller's empty-set check is what reports that, not a
+# parameter binding error here.
 function ConvertTo-CountRow {
     [CmdletBinding()]
-    [OutputType([System.Collections.Generic.List[object]])]
-    param([Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Line)
+    # Object[] rather than List[object]: the comma operator that keeps an empty result a collection
+    # wraps the return, and the declared type has to match what callers actually receive.
+    [OutputType([System.Object[]])]
+    param([Parameter(Mandatory)] [AllowEmptyCollection()] [AllowNull()] [object[]] $Line)
 
     $rows = [System.Collections.Generic.List[object]]::new()
 
@@ -234,7 +238,9 @@ function ConvertTo-CountRow {
         $rows.Add([pscustomobject]@{ ProjectName = $projectName; ResourceName = $resourceName; DocumentCount = $parsedCount })
     }
 
-    return $rows
+    # Comma operator: an empty list returned bare unrolls to $null, and under strict mode the caller's
+    # .Count on it throws instead of reaching the "no resource counts" error that names the cause.
+    return ,$rows
 }
 
 # The reconciliation key is the pair dms.ResourceKey is unique on. Keyed by ResourceName alone, two

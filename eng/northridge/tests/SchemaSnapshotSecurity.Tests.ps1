@@ -518,7 +518,8 @@ Describe "Restore recipe repairs the security metadata the compare checks" {
         $referenceAt = $script:recipe.IndexOf('REF="${DB}_reference"')
         # An existing reference is refused, never dropped: it is the deployment an earlier attempt set
         # aside, and dropping it here is exactly how a partial restore used to become the reference.
-        $staleGuard = [regex]::Match($script:recipe, '(?m)^test -z "\$_ref_exists" \|\| \\\r?\n\s+\{ echo "\$REF already exists[^\n]*Use the \\"Recovery after a failed restore\\" block below[^\n]*; exit 1; \}$')
+        # Held to its shape, not its wording: a test on the existence flag, a message, exit 1.
+        $staleGuard = [regex]::Match($script:recipe, '(?m)^test -z "\$_ref_exists" \|\| \\\r?\n\s+\{ echo "[^\n]*"; exit 1; \}$')
         $rename = [regex]::Match($script:recipe, '(?m)^docker exec -i dms-postgresql psql -U "\$DBUSER" -d postgres -v ON_ERROR_STOP=1 -q \\\r?\n\s+-v db="\$DB" -v ref="\$REF" -f - <<''SQL'' \|\| \\\r?\n\s+\{ echo [^\n]*; exit 1; \}\r?\nSELECT format\(''ALTER DATABASE %I RENAME TO %I'', :''db'', :''ref''\) \\gexec\r?\nSQL$')
         $createAt = $script:recipe.IndexOf('createdb -U "$DBUSER" --maintenance-db=postgres -- "$DB"')
         $restoreAt = $script:recipe.IndexOf('pg_restore -U "$DBUSER" -d "$DB"')
@@ -530,6 +531,8 @@ Describe "Restore recipe repairs the security metadata the compare checks" {
         $stopAt | Should -BeGreaterThan -1
         $referenceAt | Should -BeGreaterThan $stopAt -Because "nothing may hold a connection while the deployment is renamed"
         $staleGuard.Success | Should -BeTrue -Because "a reference left by an earlier attempt must stop the recipe and name the recovery, not be dropped"
+        $staleGuard.Value | Should -Match 'Recovery after a failed restore' -Because "exit 1 ends the shell that defined the helper, so the message must point at the paste-alone Recovery block"
+        $staleGuard.Value | Should -Not -Match 'RECOVER_FROM_REF' -Because "an existing reference is refused, not recovered over, and the in-shell helper is not something to run from a shell exit 1 is about to end"
         $staleGuard.Index | Should -BeGreaterThan $referenceAt
         $script:recipe | Should -Not -Match 'dropdb [^\n]*--if-exists -- "\$REF"' -Because "no path may drop an existing reference; it is the deployment"
         $rename.Success | Should -BeTrue -Because "the deployment must be renamed through psql variables and format('%I'), fail-closed"
@@ -729,8 +732,15 @@ Describe "Restore recipe content gate checks every sequence the copied data draw
 
     It "measures each sequence against the data it numbers, with the collection tables read from the catalog" {
         $script:contentGateSql | Should -Match ([regex]::Escape('> COALESCE((SELECT MAX("DocumentId") FROM dms."Document"), 0)')) -Because "Document_DocumentId_seq numbers dms.Document"
-        $script:contentGateSql | Should -Match 'MAX\(GREATEST\("ContentVersion", "IdentityVersion"\)\)' -Because "ChangeVersionSequence spans both document versions"
-        $script:contentGateSql | Should -Match ([regex]::Escape('MAX("ContentVersion") FROM dms."Descriptor"')) -Because "the descriptor stamping trigger draws from ChangeVersionSequence too"
+        # ChangeVersionSequence is measured, within its own check, from the write-path high-water marks
+        # the current schema carries: "ContentVersion" on dms."Document" and on dms."Descriptor". The
+        # spelling of the document maximum is not pinned, so a gate that stops reading a dropped stamp
+        # column still passes.
+        $changeVersionCheck = [regex]::Match($script:contentGateSql,
+            '(?s)SELECT ''ChangeVersionSequence next value beyond the restored data''.*?''dms\."ChangeVersionSequence"''::regclass\)').Value
+        $changeVersionCheck | Should -Not -BeNullOrEmpty -Because "the gate must measure ChangeVersionSequence against the restored data"
+        $changeVersionCheck | Should -Match '(?s)MAX\([^;]*"ContentVersion"[^;]*\)\s+FROM dms\."Document"\)' -Because "ChangeVersionSequence is measured from the document ContentVersion high-water mark"
+        $changeVersionCheck | Should -Match ([regex]::Escape('MAX("ContentVersion") FROM dms."Descriptor"')) -Because "the descriptor stamping trigger draws from ChangeVersionSequence too"
         $script:contentGateSql | Should -Match '> collection_max\)' -Because "CollectionItemIdSequence is measured against the gathered collection maximum"
         # The same catalog predicate as the copy tool, so the two cannot disagree on which tables count.
         $script:copyToolCollectionPredicate | Should -Not -BeNullOrEmpty -Because "the copy tool's predicate must have been read"

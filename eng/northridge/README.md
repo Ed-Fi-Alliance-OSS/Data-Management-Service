@@ -75,8 +75,10 @@ expectation, a deferred read is recorded with its final status, a date-time fiel
 than thrown on, a count row that does not parse stops the count instead of being skipped, two
 projects' resources of one name stay two resources, the descriptor load re-points only the COPY header
 and only inside the container, the recipe reads the service ports from the containers and bounds
-every wait, and a failed restore is recovered from without touching the reference deployment. It
-needs no database and runs in the same pull-request lane.
+every wait, a failed restore is recovered from without touching the reference deployment, every
+secret and token the recipe sends travels as one process's environment rather than as an argument,
+and the DMS-to-CMS client is deleted and recreated in the one database the Configuration Service
+reads. It needs no database and runs in the same pull-request lane.
 
 ## Why the client tools run in containers
 
@@ -243,6 +245,13 @@ docker stop ed-fi-api ed-fi-api-config-service
 #    dropped: if $REF exists, that attempt set the deployment aside and did not finish, and $REF IS
 #    the intact deployment -- see the recovery helper below.
 REF="${DB}_reference"
+#    PostgreSQL truncates an identifier longer than 63 bytes with a NOTICE, not an error, so a long
+#    POSTGRES_DB_NAME would have the deployment renamed to a name that no later lookup of $REF finds --
+#    the recovery would then report that the deployment was never set aside. Refused here, before the
+#    rename, by byte length: ${#REF} counts characters, and printf rather than echo so a name is never
+#    interpreted as options or escapes.
+test "$(printf '%s' "$REF" | wc -c | tr -d ' ')" -le 63 || \
+  { echo "$REF is longer than PostgreSQL's 63-byte identifier limit, so the deployment cannot be set aside under that name; nothing was changed"; exit 1; }
 
 #    Recovery. A failure anywhere from createdb below through step 6 leaves $DB holding an empty,
 #    partial or unproven restore and the deployment intact as $REF. Do NOT go back to step 4: the
@@ -584,6 +593,27 @@ echo "reference database $REF dropped"
 #    and POST /connect/token answers 500 with "No active private key or key id found". Without a
 #    token no CMS API call succeeds, so step 9 becomes impossible -- this step must precede it.
 #
+#    The key is replaced in the CMS database: CMS mints tokens from the dmscs."OpenIddictKey" row of
+#    the database it reads its dmscs rows from, taken from the running Configuration Service rather
+#    than assumed to be $DB -- DMS_CONFIG_DATABASE_NAME is a supported override, and local-config.yml
+#    builds the CMS connection string from it -- so a key replaced anywhere else leaves CMS reading
+#    the producer's. The rule for the rest of the recipe: dmscs operations target $CMSDB (step 10
+#    reuses this value), dms data-store operations target $DB. The connection string carries the
+#    database password, so it travels to pwsh as CMSCS in that one process's environment, the channel
+#    step 9 uses, and DbConnectionStringBuilder reads the database keyword back by the rules Npgsql
+#    parses rather than by a pattern over the text. ENVOF is `docker inspect`, which reads the
+#    stopped container.
+ENVOF() { docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$1"; }
+CMSCS=$(ENVOF ed-fi-api-config-service | sed -n 's/^DatabaseSettings__DatabaseConnection=//p')
+CMSDB=$(CMSCS="$CMSCS" pwsh -NoProfile -Command '
+  $csb = [System.Data.Common.DbConnectionStringBuilder]::new()
+  $csb.PSBase.ConnectionString = $env:CMSCS
+  [Console]::Out.Write([string]$csb["database"])
+')
+unset CMSCS
+test -n "$CMSDB" || \
+  { echo "could not read the database name from the Configuration Service connection string; nothing was changed"; exit 1; }
+
 #    Note this is a DIFFERENT key from DMS_CONFIG_DATABASE_ENCRYPTION_KEY, which protects the data
 #    store connection string in step 9. The two are configured separately and both matter here.
 #    Read the key with `docker inspect`, not `docker exec`: the CMS container is stopped at this
@@ -625,7 +655,7 @@ BEGIN
     END IF;
 END $$;
 KEY_ASSERT_SQL
-} | docker exec -i dms-postgresql psql -U "$DBUSER" -d "$DB" -v ON_ERROR_STOP=1 -q -1 -f - || \
+} | docker exec -i dms-postgresql psql -U "$DBUSER" -d "$CMSDB" -v ON_ERROR_STOP=1 -q -1 -f - || \
   { unset KEY_SQL IDK; echo "step 7 failed: the key replacement was rolled back, so the producer's key is still the active one -- fix the cause and re-run step 7"; exit 1; }
 unset KEY_SQL IDK
 echo "OpenIddict signing key replaced: exactly one active key, and it is yours"
@@ -665,9 +695,8 @@ echo "SourceIdentity rotated to $NEW_SOURCE_ID"
 #    respectively and publish that same number on 127.0.0.1, so the value inside the container is the
 #    host port -- the same two overrides eng/docker-compose/env-utility.psm1 resolves in
 #    Resolve-CmsBaseUrl and Resolve-DockerLocalDmsBaseUrl. A stack on other ports would otherwise meet
-#    a hard-coded 8081 here and wait on it forever. `docker inspect` reads a stopped container, which
-#    both still are.
-ENVOF() { docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$1"; }
+#    a hard-coded 8081 here and wait on it forever. `docker inspect` (ENVOF, from step 7) reads a
+#    stopped container, which both still are.
 CMS_PORT=$(ENVOF ed-fi-api-config-service | sed -n 's/^ASPNETCORE_HTTP_PORTS=//p')
 DMS_PORT=$(ENVOF ed-fi-api | sed -n 's/^ASPNETCORE_HTTP_PORTS=//p')
 case "$CMS_PORT" in ''|*[!0-9]*) echo "could not read one numeric ASPNETCORE_HTTP_PORTS from ed-fi-api-config-service (got '$CMS_PORT')"; exit 1;; esac
@@ -702,9 +731,9 @@ echo "CMS healthy at $CMS"
 #    are read here as well; step 10 hands them to setup-openiddict.ps1, which otherwise falls back to
 #    its own 32/128 defaults and would reject a secret a differently configured stack accepts.
 CMSENV=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' ed-fi-api-config-service)
-ADMIN_SECRET=$(echo "$CMSENV" | sed -n 's/^IdentitySettings__ClientSecret=//p')
-CLIENT_SECRET_MIN=$(echo "$CMSENV" | sed -n 's/^IdentitySettings__ClientSecretValidation__MinimumLength=//p')
-CLIENT_SECRET_MAX=$(echo "$CMSENV" | sed -n 's/^IdentitySettings__ClientSecretValidation__MaximumLength=//p')
+ADMIN_SECRET=$(printf '%s\n' "$CMSENV" | sed -n 's/^IdentitySettings__ClientSecret=//p')
+CLIENT_SECRET_MIN=$(printf '%s\n' "$CMSENV" | sed -n 's/^IdentitySettings__ClientSecretValidation__MinimumLength=//p')
+CLIENT_SECRET_MAX=$(printf '%s\n' "$CMSENV" | sed -n 's/^IdentitySettings__ClientSecretValidation__MaximumLength=//p')
 test -n "$ADMIN_SECRET" -a -n "$CLIENT_SECRET_MIN" -a -n "$CLIENT_SECRET_MAX" || \
   { echo "could not read the CMS client secret and its validation bounds from ed-fi-api-config-service"; exit 1; }
 
@@ -833,7 +862,7 @@ echo "data store re-saved -> HTTP 204"
 #     lucky, so this step is unconditional.
 #
 #     Read the credentials from the DMS container rather than from your env file: what has to exist in
-#     CMS is what DMS will actually send. `docker inspect` (ENVOF, from step 9) rather than
+#     CMS is what DMS will actually send. `docker inspect` (ENVOF, from step 7) rather than
 #     `docker exec`, for the same reason as step 7 -- ed-fi-api is stopped until step 11.
 CID=$(ENVOF ed-fi-api | sed -n 's/^ConfigurationServiceSettings__ClientId=//p')
 CSEC=$(ENVOF ed-fi-api | sed -n 's/^ConfigurationServiceSettings__ClientSecret=//p')
@@ -853,13 +882,18 @@ DMSROLE=$(ENVOF ed-fi-api-config-service | sed -n 's/^IdentitySettings__ClientRo
 test -n "$CMSROLE" -a -n "$DMSROLE" || \
   { echo "could not read the identity role names from ed-fi-api-config-service"; exit 1; }
 
+#     Both commands below run against $CMSDB, the database the running Configuration Service reads its
+#     dmscs rows from, resolved once in step 7 and reused here rather than resolved again (a fresh
+#     shell re-runs that resolution first): the DELETE and the insert after it must target the same
+#     database, or the delete clears one while the insert skips the producer's row in the other.
+
 #     Delete before recreating. setup-openiddict.ps1 inserts ON CONFLICT DO NOTHING, so on its own it
 #     leaves the producer's secret hash exactly where it is and reports success. The two dependent
 #     tables, OpenIddictApplicationScope and OpenIddictClientRole, are ON DELETE CASCADE.
 #     The client id is a configured value as well, so it reaches psql as a variable and the
 #     statement quotes it with :'cid' rather than having it pasted into the SQL text. Guarded, like
 #     step 7: a delete that fails leaves the producer's row for the insert below to skip.
-docker exec -i dms-postgresql psql -U "$DBUSER" -d "$DB" -v ON_ERROR_STOP=1 -v cid="$CID" -f - <<'SQL' || \
+docker exec -i dms-postgresql psql -U "$DBUSER" -d "$CMSDB" -v ON_ERROR_STOP=1 -v cid="$CID" -f - <<'SQL' || \
   { echo "could not remove the producer's client row for $CID; the DMS-to-CMS client was not recreated"; exit 1; }
 DELETE FROM dmscs."OpenIddictApplication" WHERE "ClientId" = :'cid';
 SQL
@@ -873,10 +907,12 @@ SQL
 #     names the variable; the script reads it with the same Compose-precedence resolver its ENV:
 #     parameters use, the ambient environment first. -NewClientSecret is always a literal -- a secret
 #     may itself begin with "ENV:" -- which is why the variable has a parameter of its own.
+#     -DbName is the same $CMSDB the DELETE above targeted, passed as a literal rather than as an ENV:
+#     indirection the script would resolve on its own, so the two cannot name different databases.
 CSEC="$CSEC" pwsh -NoProfile -File ./setup-openiddict.ps1 -InsertData \
   -NewClientId "$CID" -NewClientName "CMS ReadOnly Access" -ClientScopeName "$CSCOPE" \
   -NewClientSecretEnvironmentVariable CSEC -ConfigServiceRole "$CMSROLE" -DmsClientRole "$DMSROLE" \
-  -EnvironmentFile ./.env -DbName ENV:DMS_CONFIG_DATABASE_NAME -DbUser "$DBUSER" \
+  -EnvironmentFile ./.env -DbName "$CMSDB" -DbUser "$DBUSER" \
   -ClientSecretMinimumLength "$CLIENT_SECRET_MIN" -ClientSecretMaximumLength "$CLIENT_SECRET_MAX" || \
   { echo "setup-openiddict.ps1 failed; the DMS-to-CMS client was not recreated"; exit 1; }
 #     Those are the arguments the bootstrap uses for this client, with the role names taken from the
@@ -935,8 +971,8 @@ if [ "$AS" != "201" ]; then
   exit 1
 fi
 APP=$(printf '%s\n' "$APP_RESPONSE" | sed 1d)
-KEY=$(echo "$APP" | sed -n 's/.*"key"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-SEC=$(echo "$APP" | sed -n 's/.*"secret"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+KEY=$(printf '%s\n' "$APP" | sed -n 's/.*"key"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+SEC=$(printf '%s\n' "$APP" | sed -n 's/.*"secret"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
 test -n "$KEY" -a -n "$SEC" || { echo "HTTP 201, but no key and secret in the body: $APP"; exit 1; }
 
 CMS_SECRET="$SEC"
@@ -1118,9 +1154,7 @@ been executed end to end against the published artifact. Its added gates are cov
 instead -- the repair block statement by statement against the emitter's fixture, dump → bare restore
 → 5b → compare as a live scenario, and the fail-closed guards database-free -- by the two suites named
 at the top of this document. A future end-to-end run of the current text belongs here, with its date
-and the commit whose text was run; nothing above may claim it before then. The DMS-1406 summary
-comment predates this distinction and carries the earlier unqualified wording; amending it is a
-separate action and is not recorded here.
+and the commit whose text was run; nothing above may claim it before then.
 
 ## Never commit
 

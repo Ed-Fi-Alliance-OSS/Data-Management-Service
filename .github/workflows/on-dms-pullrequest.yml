@@ -236,8 +236,10 @@ jobs:
             "eng/DatabaseTemplates/tests/Smoke-LegSelection.Tests.ps1"
           )
           $result = Invoke-Pester -Path $paths -Output Detailed -PassThru
-          if ($result.FailedCount -gt 0) {
-              throw "$($result.FailedCount) bootstrap Pester test(s) failed."
+          # A syntax error or a discovery-time failure is recorded in FailedContainersCount or
+          # FailedBlocksCount with FailedCount still 0, so all three have to fail the lane.
+          if ($result.FailedCount -gt 0 -or $result.FailedContainersCount -gt 0 -or $result.FailedBlocksCount -gt 0) {
+              throw "Bootstrap Pester lane failed: $($result.FailedCount) test(s), $($result.FailedContainersCount) container(s), $($result.FailedBlocksCount) block(s)."
           }
 
   verify-lock-files:
