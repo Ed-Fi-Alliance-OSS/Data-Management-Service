@@ -199,7 +199,7 @@ public class Given_A_Mssql_Relational_Write_Update_Baseline_With_A_Focused_Stabl
         ServiceCollection services = new();
 
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
+        services.AddScoped<IDataStoreSelection, PrimarySelectingTestDataStoreSelection>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();

@@ -11,9 +11,9 @@ namespace EdFi.DataManagementService.Backend.Postgresql;
 
 /// <summary>
 /// Scoped service that provides the appropriate NpgsqlDataSource for the current request
-/// by retrieving the selected DMS instance and using the singleton cache.
+/// by reading the effective target the request selected and using the singleton cache.
 /// Uses a Dictionary cache to handle potential scope issues where the provider may be
-/// used across different instance contexts.
+/// used across different target contexts.
 /// </summary>
 public sealed class NpgsqlDataSourceProvider(
     IDataStoreSelection dataStoreSelection,
@@ -21,36 +21,38 @@ public sealed class NpgsqlDataSourceProvider(
     ILogger<NpgsqlDataSourceProvider> logger
 )
 {
-    private readonly Dictionary<long, NpgsqlDataSource> _cachedDataSources = new();
+    private readonly Dictionary<string, NpgsqlDataSource> _cachedDataSources = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// Gets the NpgsqlDataSource for the current request's DMS instance.
-    /// Validates the current instance on each access to handle cases where instance
-    /// selection may occur in a different scope context.
+    /// Gets the NpgsqlDataSource for the target the current request selected.
+    /// Reads the target on each access to handle cases where selection may occur in a
+    /// different scope context.
     /// </summary>
+    /// <remarks>
+    /// Keyed by the target's connection string rather than the parent's id, because a parent and its
+    /// derivatives share an id but are different databases. Reading the target throws when none was
+    /// selected; there is deliberately no fallback to the parent.
+    /// </remarks>
     public NpgsqlDataSource DataSource
     {
         get
         {
-            // Always check current instance to handle potential scope issues
-            var selectedInstance = dataStoreSelection.GetSelectedDataStore();
+            // Always read the current target to handle potential scope issues
+            var target = dataStoreSelection.GetEffectiveTarget();
 
-            // Check if we've already cached this instance's data source
-            if (_cachedDataSources.TryGetValue(selectedInstance.Id, out var cachedDataSource))
+            // Check if we've already cached this target's data source
+            if (_cachedDataSources.TryGetValue(target.ConnectionString, out var cachedDataSource))
             {
                 return cachedDataSource;
             }
 
-            // Cache miss - create and cache the data source
-            string connectionString = selectedInstance.ConnectionString!;
-
             logger.LogDebug(
-                "NpgsqlDataSourceProvider caching data source for data store {DataStoreId}",
-                selectedInstance.Id
+                "NpgsqlDataSourceProvider caching data source for a {TargetKind} target",
+                target.Kind
             );
 
-            var dataSource = dataSourceCache.GetOrCreate(connectionString);
-            _cachedDataSources[selectedInstance.Id] = dataSource;
+            var dataSource = dataSourceCache.GetOrCreate(target.ConnectionString);
+            _cachedDataSources[target.ConnectionString] = dataSource;
 
             return dataSource;
         }

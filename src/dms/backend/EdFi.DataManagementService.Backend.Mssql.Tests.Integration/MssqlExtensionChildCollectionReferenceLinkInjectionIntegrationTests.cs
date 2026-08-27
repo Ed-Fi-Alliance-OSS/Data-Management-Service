@@ -160,7 +160,7 @@ public class Given_A_Mssql_School_With_Extension_Child_Collection_Bus_Reference
         ServiceCollection services = [];
 
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
+        services.AddScoped<IDataStoreSelection, PrimarySelectingTestDataStoreSelection>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();

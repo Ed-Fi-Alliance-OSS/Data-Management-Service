@@ -112,6 +112,8 @@ public class ValidateResourceKeySeedMiddlewareTests
                     RouteContext: []
                 )
             );
+        A.CallTo(() => dataStoreSelection.GetEffectiveTarget())
+            .Returns(EffectiveDataStoreTarget.Primary("Server=test;Database=testdb"));
     }
 
     [TestFixture]
@@ -479,6 +481,117 @@ public class ValidateResourceKeySeedMiddlewareTests
                     )
                 )
                 .MustHaveHappenedOnceExactly();
+        }
+    }
+
+    /// <summary>
+    /// Resource keys are a property of the database being read, so a request routed to a derivative is
+    /// validated against that database. The parent carries a different connection string here, so a
+    /// middleware that still read the parent would fail this rather than pass by coincidence.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Request_Was_Routed_To_A_Derivative : ValidateResourceKeySeedMiddlewareTests
+    {
+        private const string ParentConnectionString = "Server=parent;Database=edfi";
+        private const string SnapshotConnectionString = "Server=snapshot;Database=edfi";
+
+        private IResourceKeyValidator _validator = null!;
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (middleware, validator, _, schemaSetProvider, dataStoreSelection, serviceProvider) =
+                CreateMiddleware();
+            _validator = validator;
+
+            A.CallTo(() => dataStoreSelection.IsSet).Returns(true);
+            A.CallTo(() => dataStoreSelection.GetSelectedDataStore())
+                .Returns(
+                    new DataStore(
+                        Id: 1,
+                        DataStoreType: "Test",
+                        Name: "Test Instance",
+                        ConnectionString: ParentConnectionString,
+                        RouteContext: []
+                    )
+                );
+            A.CallTo(() => dataStoreSelection.GetEffectiveTarget())
+                .Returns(
+                    new EffectiveDataStoreTarget(EffectiveTargetKind.Snapshot, SnapshotConnectionString)
+                );
+
+            A.CallTo(() => schemaSetProvider.EffectiveSchemaSet).Returns(CreateMinimalEffectiveSchemaSet());
+
+            A.CallTo(() =>
+                    validator.ValidateAsync(
+                        A<DatabaseFingerprint>._,
+                        A<short>._,
+                        A<ImmutableArray<byte>>._,
+                        A<IReadOnlyList<ResourceKeyRow>>._,
+                        A<EffectiveDataStoreTarget>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .Returns(new ResourceKeyValidationResult.ValidationSuccess());
+
+            var requestInfo = CreateRequestInfoWithFingerprint(
+                serviceProvider,
+                new DatabaseFingerprint("1.0", "abc123", 42, new byte[32].ToImmutableArray())
+            );
+
+            await middleware.Execute(
+                requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_validates_the_effective_target()
+        {
+            A.CallTo(() =>
+                    _validator.ValidateAsync(
+                        A<DatabaseFingerprint>._,
+                        A<short>._,
+                        A<ImmutableArray<byte>>._,
+                        A<IReadOnlyList<ResourceKeyRow>>._,
+                        A<EffectiveDataStoreTarget>.That.Matches(target =>
+                            target.Kind == EffectiveTargetKind.Snapshot
+                            && target.ConnectionString == SnapshotConnectionString
+                        ),
+                        A<CancellationToken>._
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public void It_never_validates_the_parent_database()
+        {
+            A.CallTo(() =>
+                    _validator.ValidateAsync(
+                        A<DatabaseFingerprint>._,
+                        A<short>._,
+                        A<ImmutableArray<byte>>._,
+                        A<IReadOnlyList<ResourceKeyRow>>._,
+                        A<EffectiveDataStoreTarget>.That.Matches(target =>
+                            target.ConnectionString == ParentConnectionString
+                        ),
+                        A<CancellationToken>._
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+
+        [Test]
+        public void It_calls_next()
+        {
+            _nextCalled.Should().BeTrue();
         }
     }
 

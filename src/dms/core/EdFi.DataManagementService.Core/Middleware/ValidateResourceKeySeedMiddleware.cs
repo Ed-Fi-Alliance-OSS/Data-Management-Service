@@ -49,12 +49,12 @@ internal class ValidateResourceKeySeedMiddleware(
             return;
         }
 
-        var selectedInstance = requestInfo
-            .ScopedServiceProvider.GetRequiredService<IDataStoreSelection>()
-            .GetSelectedDataStore();
-        // ConnectionString is guaranteed non-null by ValidateDatabaseFingerprintMiddleware,
-        // which runs before this step and short-circuits with 503 if the connection string is missing.
-        var connectionString = selectedInstance.ConnectionString!;
+        // Validated against the database this request is served from, not the parent, so a request
+        // routed to a derivative is checked against that database's own resource keys. The parent is
+        // still read, for the identity that names the instance in logs.
+        var dataStoreSelection = requestInfo.ScopedServiceProvider.GetRequiredService<IDataStoreSelection>();
+        var selectedInstance = dataStoreSelection.GetSelectedDataStore();
+        var target = dataStoreSelection.GetEffectiveTarget();
 
         var effectiveSchema = effectiveSchemaSetProvider.EffectiveSchemaSet.EffectiveSchema;
 
@@ -63,7 +63,7 @@ internal class ValidateResourceKeySeedMiddleware(
         try
         {
             result = await cacheProvider.GetOrValidateAsync(
-                connectionString,
+                target.ConnectionString,
                 () =>
                 {
                     // The validation task is shared through ResourceKeyValidationCacheProvider.
@@ -73,7 +73,7 @@ internal class ValidateResourceKeySeedMiddleware(
                         effectiveSchema.ResourceKeyCount,
                         [.. effectiveSchema.ResourceKeySeedHash],
                         effectiveSchema.ResourceKeysInIdOrder.ToResourceKeyRows(),
-                        EffectiveDataStoreTarget.Primary(connectionString)
+                        target
                     );
                 }
             );

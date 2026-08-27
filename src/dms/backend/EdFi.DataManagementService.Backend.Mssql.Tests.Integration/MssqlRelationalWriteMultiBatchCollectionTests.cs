@@ -186,7 +186,7 @@ file static class MultiBatchCollectionsIntegrationTestSupport
 
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<MultiBatchCommandRecorder>();
-        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
+        services.AddScoped<IDataStoreSelection, PrimarySelectingTestDataStoreSelection>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();
         services.AddScoped<RelationalDocumentStoreRepository>();

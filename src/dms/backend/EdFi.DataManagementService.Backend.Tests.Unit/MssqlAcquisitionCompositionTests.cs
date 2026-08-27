@@ -70,6 +70,8 @@ public class MssqlAcquisitionCompositionTests
                     RouteContext: []
                 )
             );
+        A.CallTo(() => selection.GetEffectiveTarget())
+            .Returns(EffectiveDataStoreTarget.Primary(ConnectionString));
         services.AddScoped(_ => selection);
 
         services.AddMssqlReferenceResolver();

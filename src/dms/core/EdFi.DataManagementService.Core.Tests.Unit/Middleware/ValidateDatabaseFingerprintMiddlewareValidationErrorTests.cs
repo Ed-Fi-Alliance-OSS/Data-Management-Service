@@ -175,6 +175,8 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
                         RouteContext: []
                     )
                 );
+            A.CallTo(() => dataStoreSelection.GetEffectiveTarget())
+                .Returns(EffectiveDataStoreTarget.Primary("Server=test;Database=corrupt"));
 
             A.CallTo(() =>
                     fingerprintReader.ReadFingerprintAsync(
@@ -331,6 +333,8 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
                         RouteContext: []
                     )
                 );
+            A.CallTo(() => dataStoreSelection.GetEffectiveTarget())
+                .Returns(EffectiveDataStoreTarget.Primary("Server=test;Database=invalid-seed"));
 
             A.CallTo(() =>
                     fingerprintReader.ReadFingerprintAsync(
@@ -436,6 +440,8 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
                         RouteContext: []
                     )
                 );
+            A.CallTo(() => dataStoreSelection.GetEffectiveTarget())
+                .Returns(EffectiveDataStoreTarget.Primary("Server=test;Database=multi-issue"));
 
             A.CallTo(() =>
                     fingerprintReader.ReadFingerprintAsync(
@@ -551,6 +557,8 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
                         RouteContext: []
                     )
                 );
+            A.CallTo(() => dataStoreSelection.GetEffectiveTarget())
+                .Returns(EffectiveDataStoreTarget.Primary("Server=test;Database=projection-failure"));
 
             A.CallTo(() =>
                     fingerprintReader.ReadFingerprintAsync(
@@ -642,6 +650,8 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
                         RouteContext: new Dictionary<RouteQualifierName, RouteQualifierValue>()
                     )
                 );
+            A.CallTo(() => dataStoreSelection.GetEffectiveTarget())
+                .Returns(EffectiveDataStoreTarget.Primary("Host=localhost;Database=transient"));
 
             A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<EffectiveDataStoreTarget>._))
                 .ThrowsAsync(new TimeoutException("connection timed out"));

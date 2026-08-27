@@ -173,6 +173,71 @@ public class Given_AspNetCoreFrontend_Request_Header_Extraction
         headers.Should().NotContainKey("X-Custom");
     }
 
+    /// <summary>
+    /// Use-Snapshot is deliberately not one of the headers preserved when explicitly sent, so a blank
+    /// value never reaches core at all. Core therefore never has to distinguish a blank value from an
+    /// absent header, and both mean "current data".
+    /// </summary>
+    [Test]
+    public void It_drops_a_blank_use_snapshot_header()
+    {
+        var headers = ExtractHeaders(request => request.Headers["Use-Snapshot"] = "");
+
+        headers.Should().NotContainKey("Use-Snapshot");
+    }
+
+    [Test]
+    public void It_drops_a_whitespace_use_snapshot_header()
+    {
+        var headers = ExtractHeaders(request => request.Headers["Use-Snapshot"] = "   ");
+
+        headers.Should().NotContainKey("Use-Snapshot");
+    }
+
+    [Test]
+    public void It_keeps_a_use_snapshot_value_verbatim()
+    {
+        // Case and surrounding whitespace survive extraction; core is what interprets them.
+        var headers = ExtractHeaders(request => request.Headers["Use-Snapshot"] = " TRUE ");
+
+        headers["Use-Snapshot"].Should().Be(" TRUE ");
+    }
+
+    /// <summary>
+    /// A repeated Use-Snapshot is reduced to its first non-blank value rather than comma-joined, so
+    /// which value wins depends on the order the client sent them and never on a joined string that
+    /// would parse as neither.
+    /// </summary>
+    [Test]
+    public void It_reduces_a_repeated_use_snapshot_header_to_its_first_value()
+    {
+        var headers = ExtractHeaders(request =>
+            request.Headers["Use-Snapshot"] = new StringValues(["false", "true"])
+        );
+
+        headers["Use-Snapshot"].Should().Be("false");
+    }
+
+    [Test]
+    public void It_reduces_a_repeated_use_snapshot_header_with_true_first_to_true()
+    {
+        var headers = ExtractHeaders(request =>
+            request.Headers["Use-Snapshot"] = new StringValues(["true", "false"])
+        );
+
+        headers["Use-Snapshot"].Should().Be("true");
+    }
+
+    [Test]
+    public void It_skips_a_leading_blank_use_snapshot_value()
+    {
+        var headers = ExtractHeaders(request =>
+            request.Headers["Use-Snapshot"] = new StringValues(["", "true"])
+        );
+
+        headers["Use-Snapshot"].Should().Be("true");
+    }
+
     [TestCase("gzip", ResponseContentCoding.Gzip)]
     [TestCase("br", ResponseContentCoding.Brotli)]
     [TestCase("identity", ResponseContentCoding.Identity)]

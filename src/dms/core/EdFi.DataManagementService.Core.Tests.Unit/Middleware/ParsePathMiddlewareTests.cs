@@ -143,6 +143,10 @@ public class ParsePathMiddlewareTests
         services.AddSingleton(appSettingsOptions);
         services.AddSingleton(fingerprintReader);
         services.AddSingleton<DatabaseFingerprintProvider>();
+        services.AddTransient<
+            IEffectiveTargetSelectionResponseFactory,
+            DefaultEffectiveTargetSelectionResponseFactory
+        >();
         services.AddTransient<ValidateDatabaseFingerprintMiddleware>();
         services.AddTransient<ILogger<ValidateDatabaseFingerprintMiddleware>>(_ =>
             NullLogger<ValidateDatabaseFingerprintMiddleware>.Instance

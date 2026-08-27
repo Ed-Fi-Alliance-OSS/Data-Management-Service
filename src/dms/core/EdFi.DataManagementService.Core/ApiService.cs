@@ -42,6 +42,7 @@ internal class ApiService : IApiService
     private readonly ILogger<ApiService> _logger;
     private readonly ILogger<RequestResponseLoggingMiddleware> _requestResponseLogger;
     private readonly ILogger<ApplicationContextRequirementMiddleware> _applicationContextRequirementLogger;
+    private readonly ILogger<SelectEffectiveDataStoreTargetMiddleware> _selectEffectiveTargetLogger;
     private readonly IOptions<AppSettings> _appSettings;
     private readonly ResiliencePipeline _resiliencePipeline;
     private readonly CircuitBreakerSettings _circuitBreakerSettings;
@@ -160,6 +161,7 @@ internal class ApiService : IApiService
         _requestResponseLogger = loggerFactory.CreateLogger<RequestResponseLoggingMiddleware>();
         _applicationContextRequirementLogger =
             loggerFactory.CreateLogger<ApplicationContextRequirementMiddleware>();
+        _selectEffectiveTargetLogger = loggerFactory.CreateLogger<SelectEffectiveDataStoreTargetMiddleware>();
         _appSettings = appSettings;
         _resiliencePipeline = resiliencePipeline;
         _resourceLoadCalculator = resourceLoadCalculator;
@@ -228,6 +230,24 @@ internal class ApiService : IApiService
         ];
 
     /// <summary>
+    /// The step that chooses this pipeline's physical database. Every pipeline that runs the
+    /// database-validation phase runs this immediately before it, so fingerprint, resource-key, and
+    /// mapping-set validation all describe the database the request is served from. The policy is
+    /// supplied per pipeline because a separate pipeline exists per operation, and the HTTP method
+    /// alone cannot tell them apart.
+    /// </summary>
+    private SelectEffectiveDataStoreTargetMiddleware GetSelectEffectiveTargetStep(
+        DatabaseAccessIntent accessIntent,
+        SnapshotEligibility snapshot,
+        ReplicaEligibility replica
+    ) =>
+        new(
+            new DerivativeRoutingPolicy(accessIntent, snapshot, replica),
+            _serviceProvider.GetRequiredService<IEffectiveTargetSelectionResponseFactory>(),
+            _selectEffectiveTargetLogger
+        );
+
+    /// <summary>
     /// The database-validation phase, in dependency order. Resource-key validation reads the fingerprint
     /// that fingerprint validation resolves, and mapping-set resolution depends on the validated
     /// fingerprint in turn, so neither can precede it. A pipeline that needs no resource-key or
@@ -260,6 +280,13 @@ internal class ApiService : IApiService
     {
         var steps = GetRoutedResourceInitialSteps();
         steps.AddRange(GetEndpointValidationSteps());
+        steps.Add(
+            GetSelectEffectiveTargetStep(
+                DatabaseAccessIntent.ReadWrite,
+                SnapshotEligibility.RejectedAsMutation,
+                ReplicaEligibility.NotApplicable
+            )
+        );
         steps.Add(new ValidateRouteSemanticsMiddleware(_logger));
         steps.AddRange(GetDatabaseValidationSteps());
         steps.AddRange([
@@ -310,6 +337,13 @@ internal class ApiService : IApiService
     {
         var steps = GetRoutedResourceInitialSteps();
         steps.AddRange(GetEndpointValidationSteps());
+        steps.Add(
+            GetSelectEffectiveTargetStep(
+                DatabaseAccessIntent.ReadOnly,
+                SnapshotEligibility.Allowed,
+                ReplicaEligibility.Allowed
+            )
+        );
         steps.AddRange(GetDatabaseValidationSteps());
         steps.AddRange([
             _serviceProvider.GetRequiredService<ProfileResolutionMiddleware>(),
@@ -330,6 +364,13 @@ internal class ApiService : IApiService
     {
         var steps = GetRoutedResourceInitialSteps();
         steps.AddRange(GetEndpointValidationSteps());
+        steps.Add(
+            GetSelectEffectiveTargetStep(
+                DatabaseAccessIntent.ReadOnly,
+                SnapshotEligibility.Allowed,
+                ReplicaEligibility.Allowed
+            )
+        );
         steps.AddRange(GetDatabaseValidationSteps());
         steps.AddRange([
             _serviceProvider.GetRequiredService<ProfileResolutionMiddleware>(),
@@ -372,6 +413,13 @@ internal class ApiService : IApiService
     {
         var steps = GetRoutedResourceInitialSteps();
         steps.AddRange(GetEndpointValidationSteps());
+        steps.Add(
+            GetSelectEffectiveTargetStep(
+                DatabaseAccessIntent.ReadOnly,
+                SnapshotEligibility.Allowed,
+                ReplicaEligibility.Allowed
+            )
+        );
         steps.AddRange(GetDatabaseValidationSteps());
         steps.AddRange([
             _serviceProvider.GetRequiredService<ProfileResolutionMiddleware>(),
@@ -403,6 +451,13 @@ internal class ApiService : IApiService
     {
         var steps = GetRoutedResourceInitialSteps();
         steps.AddRange(GetEndpointValidationSteps());
+        steps.Add(
+            GetSelectEffectiveTargetStep(
+                DatabaseAccessIntent.ReadWrite,
+                SnapshotEligibility.RejectedAsMutation,
+                ReplicaEligibility.NotApplicable
+            )
+        );
         steps.Add(new ValidateRouteSemanticsMiddleware(_logger));
         steps.AddRange(GetDatabaseValidationSteps());
         steps.AddRange([
@@ -451,6 +506,13 @@ internal class ApiService : IApiService
     {
         var steps = GetRoutedResourceInitialSteps();
         steps.AddRange(GetEndpointValidationSteps());
+        steps.Add(
+            GetSelectEffectiveTargetStep(
+                DatabaseAccessIntent.ReadWrite,
+                SnapshotEligibility.RejectedAsMutation,
+                ReplicaEligibility.NotApplicable
+            )
+        );
         steps.Add(new ValidateRouteSemanticsMiddleware(_logger));
         steps.AddRange(GetDatabaseValidationSteps());
         steps.AddRange([
@@ -472,6 +534,13 @@ internal class ApiService : IApiService
         // Token introspection keeps its existing order: it resolves no endpoint, so its ApiSchema steps
         // stay after database validation rather than joining the endpoint phase.
         var steps = GetCommonInitialSteps();
+        steps.Add(
+            GetSelectEffectiveTargetStep(
+                DatabaseAccessIntent.ReadOnly,
+                SnapshotEligibility.NotApplicable,
+                ReplicaEligibility.NotApplicable
+            )
+        );
         steps.AddRange(GetDatabaseValidationSteps(includeMappingSet: false));
         steps.AddRange([
             new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
@@ -489,6 +558,13 @@ internal class ApiService : IApiService
         // database. No ApiSchema or resource-key-seed steps, so availability does not depend on
         // ApiSchema.json or OpenAPI path presence.
         var steps = GetCommonInitialSteps();
+        steps.Add(
+            GetSelectEffectiveTargetStep(
+                DatabaseAccessIntent.ReadOnly,
+                SnapshotEligibility.Allowed,
+                ReplicaEligibility.Allowed
+            )
+        );
         steps.AddRange(GetDatabaseValidationSteps(includeResourceKeySeed: false, includeMappingSet: false));
         steps.Add(_serviceProvider.GetRequiredService<AvailableChangeVersionsHandler>());
 
@@ -500,6 +576,13 @@ internal class ApiService : IApiService
         var steps = GetCommonInitialSteps();
         steps.Add(new ParseTrackedChangePathMiddleware(_logger));
         steps.AddRange(GetEndpointValidationSteps());
+        steps.Add(
+            GetSelectEffectiveTargetStep(
+                DatabaseAccessIntent.ReadOnly,
+                SnapshotEligibility.Allowed,
+                ReplicaEligibility.Allowed
+            )
+        );
         steps.AddRange(GetDatabaseValidationSteps());
         steps.AddRange([
             new BuildResourceInfoMiddleware(

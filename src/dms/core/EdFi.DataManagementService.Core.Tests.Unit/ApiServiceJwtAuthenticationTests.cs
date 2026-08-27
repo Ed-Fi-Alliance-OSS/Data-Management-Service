@@ -124,6 +124,10 @@ public class ApiServiceJwtAuthenticationTests
         services.AddSingleton<IDatabaseFingerprintReader, NullDatabaseFingerprintReader>();
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<DatabaseFingerprintProvider>();
+        services.AddTransient<
+            IEffectiveTargetSelectionResponseFactory,
+            DefaultEffectiveTargetSelectionResponseFactory
+        >();
         services.AddTransient<ValidateDatabaseFingerprintMiddleware>();
         services.AddTransient<ILogger<ValidateDatabaseFingerprintMiddleware>>(_ =>
             NullLogger<ValidateDatabaseFingerprintMiddleware>.Instance

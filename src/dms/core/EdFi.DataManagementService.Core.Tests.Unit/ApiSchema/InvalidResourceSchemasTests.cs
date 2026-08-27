@@ -173,6 +173,10 @@ public class InvalidResourceSchemasTests
             services.AddSingleton(appSettingsOptions);
             services.AddSingleton<IDatabaseFingerprintReader, NullDatabaseFingerprintReader>();
             services.AddSingleton<DatabaseFingerprintProvider>();
+            services.AddTransient<
+                IEffectiveTargetSelectionResponseFactory,
+                DefaultEffectiveTargetSelectionResponseFactory
+            >();
             services.AddTransient<ValidateDatabaseFingerprintMiddleware>();
             services.AddTransient<ILogger<ValidateDatabaseFingerprintMiddleware>>(_ =>
                 NullLogger<ValidateDatabaseFingerprintMiddleware>.Instance

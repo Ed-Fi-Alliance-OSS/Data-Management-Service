@@ -17,7 +17,7 @@ public static class RelationalBackendIntegrationTestDataStoreExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.TryAddScoped<IDataStoreSelection, DataStoreSelection>();
+        services.TryAddScoped<IDataStoreSelection, PrimarySelectingTestDataStoreSelection>();
         services.TryAddScoped<IDataStoreProvider, SelectedDataStoreProvider>();
         services.TryAddScoped<IConnectionStringProvider, DmsConnectionStringProvider>();
 

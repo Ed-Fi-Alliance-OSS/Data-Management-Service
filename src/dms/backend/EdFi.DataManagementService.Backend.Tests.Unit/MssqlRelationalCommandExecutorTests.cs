@@ -7,6 +7,7 @@ using System.Data;
 using System.Data.Common;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FakeItEasy;
 using FluentAssertions;
@@ -52,7 +53,8 @@ public class Given_MssqlRelationalCommandExecutor
             )
         );
 
-        A.CallTo(() => dataStoreSelection.GetSelectedDataStore()).Returns(dataStore);
+        A.CallTo(() => dataStoreSelection.GetEffectiveTarget())
+            .Returns(EffectiveDataStoreTarget.Primary(dataStore.ConnectionString!));
 
         var sut = new MssqlRelationalCommandExecutor(
             dataStoreSelection,
@@ -77,7 +79,7 @@ public class Given_MssqlRelationalCommandExecutor
             ReferenceLookupResultReader.ReadAsync
         );
 
-        A.CallTo(() => dataStoreSelection.GetSelectedDataStore()).MustHaveHappenedOnceExactly();
+        A.CallTo(() => dataStoreSelection.GetEffectiveTarget()).MustHaveHappenedOnceExactly();
         connection.OpenAsyncCallCount.Should().Be(1);
         connection.LastOpenAsyncCancellationToken.Should().Be(CancellationToken.None);
         connection.CreateCommandCallCount.Should().Be(1);

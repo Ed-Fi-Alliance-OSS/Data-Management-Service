@@ -45,6 +45,8 @@ public class MssqlSeamAcquisitionIdentityTests
     {
         var selection = A.Fake<IDataStoreSelection>();
         A.CallTo(() => selection.GetSelectedDataStore()).Returns(dataStore);
+        A.CallTo(() => selection.GetEffectiveTarget())
+            .Returns(EffectiveDataStoreTarget.Primary(dataStore.ConnectionString!));
         return selection;
     }
 
@@ -180,6 +182,53 @@ public class MssqlSeamAcquisitionIdentityTests
         targets.Should().AllSatisfy(target => target.Should().Be(targets[0]));
         targets[0].Kind.Should().Be(EffectiveTargetKind.Primary);
         targets[0].ConnectionString.Should().Be(ConnectionString);
+    }
+
+    /// <summary>
+    /// The seams that read the request-scoped selection open the database it selected, not the one its
+    /// parent names. The parent here carries a different connection string from the target, so a seam
+    /// that still read the parent would be visible rather than accidentally right. The two reader
+    /// seams are absent because they are handed their target as an argument, which the fingerprint and
+    /// resource-key middleware tests already pin.
+    /// </summary>
+    [Test]
+    public async Task It_acquires_the_selected_derivative_rather_than_the_parent_database()
+    {
+        const string ParentConnectionString = "Server=parent,1433;Database=edfi;TrustServerCertificate=true;";
+        const string ReplicaConnectionString =
+            "Server=replica,1433;Database=edfi;TrustServerCertificate=true;";
+
+        var selection = A.Fake<IDataStoreSelection>();
+        A.CallTo(() => selection.GetSelectedDataStore())
+            .Returns(TestDataStore() with { ConnectionString = ParentConnectionString });
+        A.CallTo(() => selection.GetEffectiveTarget())
+            .Returns(new EffectiveDataStoreTarget(EffectiveTargetKind.ReadReplica, ReplicaConnectionString));
+
+        Func<IDataStoreSelection, IMssqlConnectionAcquisition, Task>[] selectionReadingSeams =
+        [
+            ExerciseCommandExecutor,
+            ExerciseWriteSessionFactory,
+            ExerciseDocumentHydrator,
+        ];
+
+        foreach (var seam in selectionReadingSeams)
+        {
+            RecordingAcquisition acquisition = new();
+
+            try
+            {
+                await seam(selection, acquisition);
+            }
+            catch (NotSupportedException exception)
+                when (exception.Message == RecordingAcquisition.RefusedMessage)
+            {
+                // The boundary refuses to produce a connection; the recorded target is the point.
+            }
+
+            acquisition.Targets.Should().ContainSingle();
+            acquisition.Targets[0].Kind.Should().Be(EffectiveTargetKind.ReadReplica);
+            acquisition.Targets[0].ConnectionString.Should().Be(ReplicaConnectionString);
+        }
     }
 
     /// <summary>
@@ -329,14 +378,16 @@ public class MssqlSeamAcquisitionIdentityTests
     }
 
     /// <summary>
-    /// The seams that read the resolved data store must not silently substitute anything when it has no
-    /// connection string. Acquisition is not reached at all in that case.
+    /// A seam reached without a selected target must not substitute the parent's own database. The
+    /// real production selection is used here rather than a fake, so what fails is the contract the
+    /// pipeline relies on and not an arrangement.
     /// </summary>
     [Test]
-    public async Task It_does_not_acquire_when_the_resolved_data_store_has_no_connection_string()
+    public async Task It_does_not_acquire_when_no_effective_target_was_selected()
     {
         RecordingAcquisition acquisition = new();
-        IDataStoreSelection selection = SelectionOf(TestDataStore() with { ConnectionString = null });
+        DataStoreSelection selection = new();
+        selection.SetSelectedDataStore(TestDataStore());
 
         Func<Task> execute = () => ExerciseCommandExecutor(selection, acquisition);
 

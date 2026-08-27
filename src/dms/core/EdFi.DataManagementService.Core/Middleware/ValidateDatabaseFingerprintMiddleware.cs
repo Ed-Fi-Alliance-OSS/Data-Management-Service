@@ -38,42 +38,19 @@ internal class ValidateDatabaseFingerprintMiddleware(
 
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
-        // ResolveDataStoreMiddleware should already enforce this invariant, but
-        // guard here so fingerprint validation returns a clear configuration
-        // error even if upstream selection behavior changes.
-        var selectedInstance = requestInfo
-            .ScopedServiceProvider.GetRequiredService<IDataStoreSelection>()
-            .GetSelectedDataStore();
-        var connectionString = selectedInstance.ConnectionString;
-
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            logger.LogError(
-                "Selected data store {DataStoreId} ({Name}) has no connection string configured during database fingerprint validation. TraceId: {TraceId}",
-                selectedInstance.Id,
-                LoggingSanitizer.SanitizeForLogging(selectedInstance.Name),
-                requestInfo.FrontendRequest.TraceId.Value
-            );
-
-            requestInfo.FrontendResponse = new FrontendResponse(
-                StatusCode: 503,
-                Body: FailureResponse.ForServiceConfigurationError(
-                    "Database connection not configured for the matched instance",
-                    requestInfo.FrontendRequest.TraceId
-                ),
-                Headers: []
-            );
-
-            return;
-        }
+        // The fingerprint describes the database this request is served from, which is the effective
+        // target rather than the parent: a request routed to a snapshot or a read replica must be
+        // validated against that database's own provisioning metadata. The parent is still read, for
+        // the identity that names the instance in logs.
+        var dataStoreSelection = requestInfo.ScopedServiceProvider.GetRequiredService<IDataStoreSelection>();
+        var selectedInstance = dataStoreSelection.GetSelectedDataStore();
+        var target = dataStoreSelection.GetEffectiveTarget();
 
         DatabaseFingerprint? fingerprint;
 
         try
         {
-            fingerprint = await fingerprintProvider.GetFingerprintAsync(
-                EffectiveDataStoreTarget.Primary(connectionString)
-            );
+            fingerprint = await fingerprintProvider.GetFingerprintAsync(target);
         }
         catch (DatabaseFingerprintValidationException ex)
         {

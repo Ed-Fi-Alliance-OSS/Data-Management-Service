@@ -113,6 +113,8 @@ public class ValidateDatabaseFingerprintMiddlewareTests
                         RouteContext: []
                     )
                 );
+            A.CallTo(() => dataStoreSelection.GetEffectiveTarget())
+                .Returns(EffectiveDataStoreTarget.Primary("Server=test;Database=testdb"));
 
             A.CallTo(() =>
                     fingerprintReader.ReadFingerprintAsync(
@@ -175,6 +177,8 @@ public class ValidateDatabaseFingerprintMiddlewareTests
                         RouteContext: []
                     )
                 );
+            A.CallTo(() => dataStoreSelection.GetEffectiveTarget())
+                .Returns(EffectiveDataStoreTarget.Primary("Server=test;Database=unprovisioned"));
 
             A.CallTo(() =>
                     fingerprintReader.ReadFingerprintAsync(
@@ -226,12 +230,18 @@ public class ValidateDatabaseFingerprintMiddlewareTests
         }
     }
 
+    /// <summary>
+    /// A request routed to a derivative must be validated against the database it will read, not the
+    /// parent it resolved from. The parent carries a different connection string here, so a middleware
+    /// that still read the parent would be visible rather than accidentally correct.
+    /// </summary>
     [TestFixture]
     [Parallelizable]
-    public class Given_Selected_Instance_Has_No_Connection_String : ValidateDatabaseFingerprintMiddlewareTests
+    public class Given_The_Request_Was_Routed_To_A_Derivative : ValidateDatabaseFingerprintMiddlewareTests
     {
-        private RequestInfo _requestInfo = No.RequestInfo();
-        private bool _nextCalled;
+        private const string ParentConnectionString = "Server=parent;Database=edfi";
+        private const string ReplicaConnectionString = "Server=replica;Database=edfi";
+
         private IDatabaseFingerprintReader _fingerprintReader = null!;
 
         [SetUp]
@@ -239,7 +249,12 @@ public class ValidateDatabaseFingerprintMiddlewareTests
         {
             var (middleware, fingerprintReader, dataStoreSelection, serviceProvider) = CreateMiddleware();
             _fingerprintReader = fingerprintReader;
-            _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
+            var requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
+
+            EffectiveDataStoreTarget replicaTarget = new(
+                EffectiveTargetKind.ReadReplica,
+                ReplicaConnectionString
+            );
 
             A.CallTo(() => dataStoreSelection.IsSet).Returns(true);
             A.CallTo(() => dataStoreSelection.GetSelectedDataStore())
@@ -248,54 +263,40 @@ public class ValidateDatabaseFingerprintMiddlewareTests
                         Id: 1,
                         DataStoreType: "Test",
                         Name: "Test Instance",
-                        ConnectionString: null,
+                        ConnectionString: ParentConnectionString,
                         RouteContext: []
                     )
                 );
+            A.CallTo(() => dataStoreSelection.GetEffectiveTarget()).Returns(replicaTarget);
 
-            await middleware.Execute(
-                _requestInfo,
-                () =>
-                {
-                    _nextCalled = true;
-                    return Task.CompletedTask;
-                }
-            );
+            A.CallTo(() => fingerprintReader.ReadFingerprintAsync(replicaTarget))
+                .Returns(new DatabaseFingerprint("1.0", "abc123", 42, new byte[32].ToImmutableArray()));
+
+            await middleware.Execute(requestInfo, () => Task.CompletedTask);
         }
 
         [Test]
-        public void It_does_not_call_next()
+        public void It_reads_the_fingerprint_of_the_effective_target()
         {
-            _nextCalled.Should().BeFalse();
+            A.CallTo(() =>
+                    _fingerprintReader.ReadFingerprintAsync(
+                        new EffectiveDataStoreTarget(EffectiveTargetKind.ReadReplica, ReplicaConnectionString)
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
         }
 
         [Test]
-        public void It_does_not_interact_with_the_fingerprint_reader()
+        public void It_never_reads_the_parent_database()
         {
-            A.CallTo(() => _fingerprintReader.ReadFingerprintAsync(A<EffectiveDataStoreTarget>.Ignored))
+            A.CallTo(() =>
+                    _fingerprintReader.ReadFingerprintAsync(
+                        A<EffectiveDataStoreTarget>.That.Matches(target =>
+                            target.ConnectionString == ParentConnectionString
+                        )
+                    )
+                )
                 .MustNotHaveHappened();
-        }
-
-        [Test]
-        public void It_returns_503_service_unavailable()
-        {
-            _requestInfo.FrontendResponse.StatusCode.Should().Be(503);
-        }
-
-        [Test]
-        public void It_returns_a_service_configuration_error()
-        {
-            _requestInfo.FrontendResponse.Body!.ToString().Should().Contain("Service Configuration Error");
-            _requestInfo
-                .FrontendResponse.Body!.ToString()
-                .Should()
-                .Contain("Database connection not configured");
-        }
-
-        [Test]
-        public void It_does_not_set_database_fingerprint()
-        {
-            _requestInfo.DatabaseFingerprint.Should().BeNull();
         }
     }
 
@@ -321,6 +322,8 @@ public class ValidateDatabaseFingerprintMiddlewareTests
                         RouteContext: []
                     )
                 );
+            A.CallTo(() => dataStoreSelection.GetEffectiveTarget())
+                .Returns(EffectiveDataStoreTarget.Primary("Server=test;Database=testdb"));
 
             var serviceProvider = A.Fake<IServiceProvider>();
             A.CallTo(() => serviceProvider.GetService(typeof(IDataStoreSelection)))

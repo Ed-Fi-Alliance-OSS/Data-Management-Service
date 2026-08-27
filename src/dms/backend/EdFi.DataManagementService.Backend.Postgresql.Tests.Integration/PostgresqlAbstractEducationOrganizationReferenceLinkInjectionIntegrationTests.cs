@@ -149,7 +149,7 @@ public class Given_A_Postgresql_Course_With_Abstract_EducationOrganization_Refer
 
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
-        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
+        services.AddScoped<IDataStoreSelection, PrimarySelectingTestDataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddTestReadableProfileProjector();

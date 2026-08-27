@@ -613,7 +613,7 @@ public class Given_MssqlDescriptorWriteHandler
 
         services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
+        services.AddScoped<IDataStoreSelection, PrimarySelectingTestDataStoreSelection>();
         services.AddTestReadableProfileProjector();
         services.AddMssqlBackendIntegrationTestServices();
 

@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.Configuration;
-using EdFi.DataManagementService.Core.External.Backend;
 
 namespace EdFi.DataManagementService.Backend.Mssql;
 
@@ -16,34 +15,23 @@ namespace EdFi.DataManagementService.Backend.Mssql;
 internal static class MssqlSeamConnection
 {
     /// <summary>
-    /// Builds the target for the resolved data store and opens a leased connection against it.
+    /// Opens a leased connection against the target this request selected.
     /// </summary>
     /// <remarks>
-    /// The target is constructed here, at the acquisition call boundary, rather than read from
-    /// request-scoped state, because nothing yet records a per-request effective target. It is
-    /// deliberately explicit: it names the parent's own database and is not a fallback for a target
-    /// that failed to resolve.
+    /// The target is read from request-scoped state rather than rebuilt from the parent, so a request
+    /// routed to a snapshot or a read replica reaches that database through every seam. Reading it
+    /// throws when no target was selected; there is deliberately no fallback to the parent, because
+    /// serving the primary to a request that asked for a derivative is the failure this design exists
+    /// to prevent.
     /// </remarks>
     public static Task<MssqlLeasedConnection> OpenAsync(
         IDataStoreSelection dataStoreSelection,
         IMssqlConnectionAcquisition acquisition,
         CancellationToken cancellationToken
-    )
-    {
-        DataStore selectedDataStore = dataStoreSelection.GetSelectedDataStore();
-        string? connectionString = selectedDataStore.ConnectionString;
-
-        if (string.IsNullOrWhiteSpace(connectionString))
-        {
-            throw new InvalidOperationException(
-                $"Selected data store '{selectedDataStore.Id}' does not have a valid connection string."
-            );
-        }
-
-        return MssqlLeasedConnection.OpenAsync(
+    ) =>
+        MssqlLeasedConnection.OpenAsync(
             acquisition,
-            EffectiveDataStoreTarget.Primary(connectionString),
+            dataStoreSelection.GetEffectiveTarget(),
             cancellationToken
         );
-    }
 }

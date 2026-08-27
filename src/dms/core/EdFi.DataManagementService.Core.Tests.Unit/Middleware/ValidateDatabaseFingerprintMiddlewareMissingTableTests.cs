@@ -77,6 +77,8 @@ public class ValidateDatabaseFingerprintMiddlewareMissingTableTests
                         RouteContext: []
                     )
                 );
+            A.CallTo(() => dataStoreSelection.GetEffectiveTarget())
+                .Returns(EffectiveDataStoreTarget.Primary("Server=test;Database=testdb"));
 
             A.CallTo(() =>
                     fingerprintReader.ReadFingerprintAsync(
@@ -140,6 +142,8 @@ public class ValidateDatabaseFingerprintMiddlewareMissingTableTests
                         RouteContext: []
                     )
                 );
+            A.CallTo(() => dataStoreSelection.GetEffectiveTarget())
+                .Returns(EffectiveDataStoreTarget.Primary("Server=test;Database=unprovisioned"));
 
             A.CallTo(() =>
                     fingerprintReader.ReadFingerprintAsync(
