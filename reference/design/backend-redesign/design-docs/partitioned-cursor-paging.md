@@ -70,8 +70,12 @@ rule it governs.
 
 1. **Depth insensitivity.** Cursor page latency MUST NOT grow with position in the collection.
    Cursor SQL MUST contain no `OFFSET`, no row-number skip, and no count query.
-2. **No regression to traditional paging.** Existing `limit`/`offset` page-selection SQL MUST
-   remain behaviorally and textually unchanged, and its latency MUST NOT regress.
+2. **No regression to traditional paging.** `DocumentId`-anchored `limit`/`offset` page-selection
+   SQL — every unfiltered and min-only request — MUST remain behaviorally and textually unchanged,
+   and its latency MUST NOT regress. A max-bearing change-version window is the stated exception:
+   its traditional page is ordered by `ContentVersion` and projects that column beside `DocumentId`
+   so the page can hand out a continuation, which is the whole of DMS-1394. Traditional response
+   behavior is unchanged under either anchor.
 3. **No extra roundtrip.** A cursor page MUST use the existing single-command page-keyset
    hydration architecture and add no database command, transaction, or roundtrip.
 4. **One command for `/partitions`.** The partition endpoint MUST perform exactly one database
@@ -632,9 +636,12 @@ Cursor mode never compiles or runs total-count SQL. The filter and authorization
 byte-identical to the `DocumentId` case, which is what makes cursor pages and partition boundaries
 provably the same candidate set.
 
-Existing traditional page-selection SQL MUST remain behaviorally and textually unchanged. That
-textual gate does not cover the collection hydration-batch change described next, which is required
-to expose selected keys; traditional response behavior is nonetheless unchanged.
+`DocumentId`-anchored traditional page-selection SQL MUST remain behaviorally and textually
+unchanged. Two things fall outside that textual gate. The collection hydration-batch change described
+next is required to expose selected keys at all. And a max-bearing window's traditional page takes
+the `ContentVersion` anchor like any other page of that window, so it carries the two-column
+projection above — the gate is keyed on the anchor, not on the paging mode. Traditional response
+behavior is unchanged in both cases.
 
 ### Carrying the selected-keyset boundary
 
@@ -647,10 +654,11 @@ already does (see [flattening-reconstitution.md](flattening-reconstitution.md) �
 
 When the keyset is `ContentVersion`-anchored, and only then, the keyset temp table gains a nullable
 `ContentVersion` column, the `page_ids` selection and the insert column list carry it, and the
-returning clause names it as a second column. The conditional is what keeps every existing
-emitted-SQL golden byte-identical and leaves the "traditional page-selection SQL is textually
-unchanged" gate intact; a zero-size page and the candidate-metadata batch take the same treatment,
-so an empty page keeps the same result-set shape as any other.
+returning clause names it as a second column. The conditional is keyed on the anchor, so it leaves
+every `DocumentId`-anchored batch — unfiltered and min-only, whichever paging shape — byte-identical
+to its pre-cursor form, and widens the batch of a max-bearing window whether that window is paged
+traditionally or by cursor. A zero-size page and the candidate-metadata batch take the same
+treatment, so an empty page keeps the same result-set shape as any other.
 
 `HydrationExecutor` calculates the anchor maximum from that result set without depending on row
 order, reading the anchor ordinal when the keyset carries one and the `DocumentId` ordinal when it
@@ -948,10 +956,13 @@ violates one of these has not implemented this design.
   anchor column as a range predicate: the root `DocumentId` key, or `ContentVersion` under a
   max-bearing window.
 - Cursor implementation does not otherwise change traditional `limit`/`offset` page-selection
-  SQL. The conditional ordering rule and the selected-key result set added to collection
-  hydration batches are the explicit exceptions, and the latter widens only when the keyset is
-  `ContentVersion`-anchored — `DocumentId`-anchored batch text is byte-identical to its pre-cursor
-  form.
+  SQL. Three explicit exceptions, all three keyed on the resolved anchor rather than on the paging
+  mode: the conditional ordering rule; the anchor projected beside `DocumentId` in the candidate
+  select list; and the selected-key result set added to collection hydration batches. Each applies
+  exactly when the request resolves the `ContentVersion` anchor, which a max-bearing window does
+  whether it is paged traditionally or by cursor. `DocumentId`-anchored text — every unfiltered and
+  min-only request, and every request under the legacy ordering switch — is byte-identical to its
+  pre-cursor form in all three respects.
 - Cursor hydration performs one database command and adds no roundtrip over the existing
   single-command page-keyset architecture.
 - `/partitions` performs one database command for its boundary selection and returns identifiers

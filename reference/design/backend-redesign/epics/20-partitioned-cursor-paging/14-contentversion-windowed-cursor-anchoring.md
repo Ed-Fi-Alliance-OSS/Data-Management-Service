@@ -67,6 +67,19 @@ acceptance gates instead of incorporating it into those gates retroactively.
 - Calculate max-bearing partition boundaries over `ContentVersion`.
 - Emit `Next-Page-Token` for `ContentVersion`-ordered pages. Use the page's highest selected
   `ContentVersion` as the next anchor.
+- Project the anchor beside `DocumentId` on a `ContentVersion`-anchored page, and widen the keyset
+  temp table, insert column list, and returning clause to carry it. Hydration can only read columns
+  the embedded page-selection SQL projects, and the anchor has to leave selection with the ids: a
+  page whose rows are all deleted before hydration completes must still report where it ended, and by
+  then there is nothing left to look the anchor up from. This is the one respect in which a windowed
+  **traditional** page's emitted SQL is no longer textually identical to its pre-cursor form —
+  ordering is per-anchor, not per-paging-mode, so a max-bearing `limit`/`offset` page takes this
+  projection too, which is what lets it hand out a continuation at all. The DMS-1348 gate on
+  traditional page-selection SQL was written before that case existed and is not amended here; the
+  current statement of the invariant lives in
+  [partitioned-cursor-paging.md](../../design-docs/partitioned-cursor-paging.md) under "Structural
+  invariants". `DocumentId`-anchored pages — every unfiltered and min-only request, and every request
+  under the legacy ordering switch — are unchanged.
 - Do not change hydration, within-page `DocumentId` ordering, or Total-Count behavior.
 
 ## Acceptance Evidence and Test Expectations
