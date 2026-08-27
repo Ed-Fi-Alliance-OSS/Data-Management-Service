@@ -113297,15 +113297,6 @@
     },
     {
       "schema_name": "edfi",
-      "table_name": "AssessmentAdministrationAssessmentBatteryPart",
-      "index_name": "IX_AssessmentAdministrationAssessmentBatteryPart_AssessmentBatteryPart_Namespace_Auth",
-      "is_unique": false,
-      "columns": [
-        "AssessmentBatteryPart_Namespace"
-      ]
-    },
-    {
-      "schema_name": "edfi",
       "table_name": "AssessmentAdministrationParticipation",
       "index_name": "IX_AssessmentAdministrationParticipation_AssessmentAdministration_AdministrationIdentifier_AssessmentAdministration_A_1a1a632f27",
       "is_unique": false,
@@ -113403,15 +113394,6 @@
         "ObjectiveAssessment_Namespace",
         "ObjectiveAssessment_IdentificationCode",
         "ObjectiveAssessment_DocumentId"
-      ]
-    },
-    {
-      "schema_name": "edfi",
-      "table_name": "AssessmentBatteryPartObjectiveAssessment",
-      "index_name": "IX_AssessmentBatteryPartObjectiveAssessment_ObjectiveAssessment_Namespace_Auth",
-      "is_unique": false,
-      "columns": [
-        "ObjectiveAssessment_Namespace"
       ]
     },
     {
@@ -116306,15 +116288,6 @@
     },
     {
       "schema_name": "edfi",
-      "table_name": "GraduationPlanRequiredAssessment",
-      "index_name": "IX_GraduationPlanRequiredAssessment_RequiredAssessmentAssessment_Namespace_Auth",
-      "is_unique": false,
-      "columns": [
-        "RequiredAssessmentAssessment_Namespace"
-      ]
-    },
-    {
-      "schema_name": "edfi",
       "table_name": "GraduationPlanRequiredAssessmentScore",
       "index_name": "IX_GraduationPlanRequiredAssessmentScore_AssessmentReportingMethodDescriptor_DescriptorId",
       "is_unique": false,
@@ -117380,15 +117353,6 @@
         "AssessmentItemAssessmentItem_Namespace",
         "AssessmentItemAssessmentItem_IdentificationCode",
         "AssessmentItemAssessmentItem_DocumentId"
-      ]
-    },
-    {
-      "schema_name": "edfi",
-      "table_name": "ObjectiveAssessmentAssessmentItem",
-      "index_name": "IX_ObjectiveAssessmentAssessmentItem_AssessmentItemAssessmentItem_Namespace_Auth",
-      "is_unique": false,
-      "columns": [
-        "AssessmentItemAssessmentItem_Namespace"
       ]
     },
     {
@@ -120596,15 +120560,6 @@
     },
     {
       "schema_name": "edfi",
-      "table_name": "StudentAssessmentItem",
-      "index_name": "IX_StudentAssessmentItem_StudentAssessmentItemAssessmentItem_Namespace_Auth",
-      "is_unique": false,
-      "columns": [
-        "StudentAssessmentItemAssessmentItem_Namespace"
-      ]
-    },
-    {
-      "schema_name": "edfi",
       "table_name": "StudentAssessmentPerformanceLevel",
       "index_name": "IX_StudentAssessmentPerformanceLevel_AssessmentReportingMethodDescriptor_DescriptorId",
       "is_unique": false,
@@ -120851,15 +120806,6 @@
         "StudentObjectiveAssessmentObjectiveAssessment_Namespace",
         "StudentObjectiveAssessmentObjectiveAssessment_IdentificationCode",
         "StudentObjectiveAssessmentObjectiveAssessment_DocumentId"
-      ]
-    },
-    {
-      "schema_name": "edfi",
-      "table_name": "StudentAssessmentStudentObjectiveAssessment",
-      "index_name": "IX_StudentAssessmentStudentObjectiveAssessment_StudentObjectiveAssessmentObjectiveAssessment_Namespace_Auth",
-      "is_unique": false,
-      "columns": [
-        "StudentObjectiveAssessmentObjectiveAssessment_Namespace"
       ]
     },
     {
@@ -131899,20 +131845,20 @@
     "effective_schema": {
       "effective_schema_singleton_id": 1,
       "api_schema_format_version": "1.0.0",
-      "effective_schema_hash": "04dd77b4c26450e194c30432111caba331d038e258e278bff827cb2327858eae",
+      "effective_schema_hash": "7aad4f19daf83c0847728c1fc0208c667fafeb7b1fa44dafd8c6de133619f44a",
       "resource_key_count": 358,
       "resource_key_seed_hash": "b2bc1f88c9075a93585e3abfdc25c5c6018c09f18fae7221816b1826eb4190c4"
     },
     "schema_components": [
       {
-        "effective_schema_hash": "04dd77b4c26450e194c30432111caba331d038e258e278bff827cb2327858eae",
+        "effective_schema_hash": "7aad4f19daf83c0847728c1fc0208c667fafeb7b1fa44dafd8c6de133619f44a",
         "project_endpoint_name": "ed-fi",
         "project_name": "Ed-Fi",
         "project_version": "5.2.0",
         "is_extension_project": false
       },
       {
-        "effective_schema_hash": "04dd77b4c26450e194c30432111caba331d038e258e278bff827cb2327858eae",
+        "effective_schema_hash": "7aad4f19daf83c0847728c1fc0208c667fafeb7b1fa44dafd8c6de133619f44a",
         "project_endpoint_name": "sample",
         "project_name": "Sample",
         "project_version": "1.0.0",
