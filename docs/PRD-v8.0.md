@@ -76,20 +76,24 @@ carried forward into v8.0 will be covered separately in a v8.1 companion PRD.
 - When a downstream system needs to stay in sync without re-pulling the full
   dataset nightly, the Vendor wants to query only records that changed since a
   point they specify **so that** sync jobs are fast and reliable (see
-  [[FR-CQ]]).
+  FR-CQ).
 - When a specialty vendor (e.g., a nutrition or special-education app) should
   only see or write a narrow slice of a resource, the Security Architect wants
   to define a Profile restricting which properties and collections it can access
   **so that** the vendor cannot see or persist data outside its intended scope
-  (see [[FR-PROF]]).
+  (see FR-PROF).
 - When a platform host must serve multiple independent customer populations from
   one deployment, the Ops Engineer wants multi-tenant and/or multi-environment
   routing **so that** each tenant's, district's, or year's data stays properly
-  isolated (see [[FR-INST]], [[FR-TENANT]]).
+  isolated (see FR-INST, FR-TENANT).
 - When a support engineer is troubleshooting a client-reported failure, the
   engineer wants a Correlation ID tying the client's error response to the
   corresponding log entry **so that** root cause can be found quickly (see
-  [[FR-LOG]]).
+  FR-LOG).
+- When a source system needs to correct a previously reported identifying
+  value, the Vendor wants to update the existing record **so that** it and its
+  related data don't need to be deleted and recreated from scratch (see
+  FR-KEY).
 
 ## 2. Enterprise / System Context
 
@@ -188,7 +192,7 @@ graph TB
   overrides SHALL be independently configurable per tenant.
 - **FR-TENANT-4.** The system SHALL cache tenant information for performance,
   using the same host-configurable cache-expiration setting that governs
-  environment-routing information ([[FR-INST-5]]).
+  environment-routing information (FR-INST-5).
 - **FR-TENANT-5.** The platform's documentation/metadata tooling SHALL require a
   valid tenant identifier before it can display API metadata when operating in
   multi-tenant mode.
@@ -475,6 +479,33 @@ graph TB
   platform's supported extension mechanism, not just the core Ed-Fi resources,
   so hosts get consistent tooling support for both core and extended data.
 
+### 3.12 Identifier Changes Without Delete-and-Recreate (FR-KEY)
+
+The prior-generation platform identified most resources using real-world
+business identifiers rather than internally generated ones, since the platform
+is typically not the authoritative source system for the data it holds. This
+meant correcting an identifying value could otherwise require deleting and
+recreating a record and everything that depends on it. The requirements below
+describe where the prior-generation platform avoided that burden, and where
+v8.0 carries the same capability forward.
+
+- **FR-KEY-1.** For a defined set of resources, the system SHALL allow a client
+  to correct an identifying value on an existing record via an update, without
+  requiring the record and its related data to be deleted and recreated;
+  related data SHALL remain correctly linked after such a change.
+- **FR-KEY-2.** For resources not covered by this capability by default, a
+  client attempting to change an identifying value SHALL be clearly informed
+  that the change is not supported, so the client can instead delete and
+  recreate the record.
+- **FR-KEY-3.** Hosts extending the data model SHALL be able to declare
+  identifier-change support for their own added resource types at
+  model-definition time (e.g., a MetaEd allow primary key updates construct on
+  the extension entity), consistent with how core resources are similarly
+  designated. Independent of that schema-level default, hosts SHALL also be
+  able to force identifier-change support on for specific resources at
+  deployment time via configuration (a host-maintained list of resource
+  names), without requiring a new schema or a code change.
+
 ## 4. Non-Functional Requirements
 
 ### 4.1 Compatibility (NFR-COMPAT)
@@ -518,7 +549,7 @@ graph TB
     displayed or processed. _Host mitigation:_ downstream sanitization.
   - **NFR-SEC-3d.** The platform does not, on its own, lock out a client after
     repeated failed authentication attempts. _Host mitigation:_ external
-    brute-force protection. Note that rate limiting ([[FR-CONFIG-5]]) does not
+    brute-force protection. Note that rate limiting (FR-CONFIG-5) does not
     satisfy this; it caps request volume for authenticated clients and is not a
     defense against credential guessing.
 
@@ -532,7 +563,7 @@ graph TB
   verbosity once the issue is resolved.
 - **NFR-OBS-3.** Because the most detailed logging level captures request and
   response bodies — which for this product means student data — elevated
-  verbosity is masked by default ([[FR-LOG-5]]).
+  verbosity is masked by default (FR-LOG-5).
 
 > [!WARNING]
 > Because there is no mechanism that automatically reverts elevated
@@ -609,16 +640,19 @@ graph TB
 - **Capabilities not yet implemented in v8.0**: (read replicas, snapshot
   isolation, high-performance cursor-based paging, ownership-based
   authorization, custom access rules, unique-ID integration, the Identities
-  capability, cross-instance cache-refresh signaling, rostering integration,
-  identifier-change support without delete-and-recreate, and several
-  configuration/extensibility and token-management sub-capabilities) are out of
-  scope for this PRD.
+  capability, cross-instance cache-refresh signaling, rostering integration, and
+  several configuration/extensibility and token-management sub-capabilities) are
+  out of scope for this PRD.
+- **The underlying data-modeling rationale** for why business identifiers were
+  used instead of internally generated ones in the prior-generation platform is
+  background context only (FR-KEY); only the client- and host-observable
+  behaviors in FR-KEY are treated as testable requirements.
 - **Access governance data management** including creation of API clients and
   assignment of permissions via claim sets, Education Organizations, namespaces,
   and profiles, will be handled by a separate application: the Ed-Fi
   Configuration Management Service (CMS).
 - **Duplicate-checking of client-supplied Correlation IDs is out of scope.** Per
-  [[FR-LOG-3]], uniqueness of a client-supplied Correlation ID is the client's
+  FR-LOG-3, uniqueness of a client-supplied Correlation ID is the client's
   responsibility, not something the system validates or enforces. The system
   does not use Correlation ID for access control, caching, or idempotency, so a
   collision cannot grant access to or affect another client's data. The residual
@@ -627,7 +661,7 @@ graph TB
   client's log trail, degrading the fidelity of an investigation that searches
   logs by Correlation ID (an anti-forensics concern, not a
   confidentiality/integrity control). Hosts who need to rule this out can
-  disable client-supplied Correlation IDs entirely (see [[FR-LOG-3]]).
+  disable client-supplied Correlation IDs entirely (see FR-LOG-3).
 - **Deployment automation** is not prescribed in this requirements document; any
   automation tooling / scripts provided by the Ed-Fi Alliance will be documented
   elsewhere.
@@ -657,3 +691,7 @@ None
   within a configured time window, and rejecting requests beyond that cap with a
   retryable response, so that a runaway or misconfigured client cannot degrade
   service for others. A self-protection mechanism, not a security control.
+- **Natural Key:** An identifying value drawn from real-world business
+  identifiers, rather than an internally generated one, used because the
+  platform is typically not the authoritative system of record for the data it
+  holds.
