@@ -138,21 +138,20 @@ graph TB
   optionally colocate the DMS and CMS tables within a single physical database
   instance, though they remain logically distinct.
 
-### Architectural Requirements
-
-- **FR-ARCH-1**: Configuration management SHALL be implemented in a separate
-  application ("Configuration Management Service").
-- **FR-ARCH-2**: The Ed-Fi API service SHALL retrieve configuration information
-  from the Configuration Management Service using the Ed-Fi Management API
-  specification.
-- **FR-ARCH-3**: The Ed-Fi API service SHALL support both current versions of
-  PostgreSQL and Microsoft SQL Server interchangeably.
-- **FR-ARCH-4**: The Ed-Fi API service SHALL NOT utilize an external cache
-  provider (e.g. Redis, Memcached).
-- **FR-ARCH-5**: The Ed-Fi API service SHALL be capable of operating on either
-  Windows or Linux machines.
+This system-context split — a separate configuration/administrative service, no
+external cache dependency, and cross-platform database/OS support — is a matter
+of deployment architecture rather than client-observable behavior; the testable
+requirements for it are in NFR-ARCH (§4.1).
 
 ## 3. Functional Requirements
+
+This section covers requirements observable by an API client: what a request
+can do, what a response contains, and what access or error a client receives.
+Requirements about how these capabilities are administered, deployed, cached,
+or executed internally — including overall system architecture, credential and
+configuration storage, caching/refresh internals, and rate-limit/capability-
+toggle administration — are in Section 4 (Non-Functional Requirements), and each
+subsection below notes where its operational counterpart lives.
 
 ### 3.1 Environment Segmentation & Routing (FR-INST)
 
@@ -168,16 +167,14 @@ graph TB
   SHALL be required to include the configured contextual value(s); a request
   that omits them, or supplies values the host doesn't recognize, SHALL receive
   a "not found" response.
-- **FR-INST-4.** Credentials and connection details for each backing data
-  environment SHALL be stored encrypted at rest and SHALL be managed through the
-  platform's own administrative service.
-- **FR-INST-5.** The system SHALL cache environment-routing information for
-  performance, with administrators able to control how quickly changes to that
-  information take effect.
 
 > Sourcing connection details from an external secret-management system, as an
 > alternative to the platform's own administrative service, is not yet available
 > — see the v8.1 companion PRD.
+
+_Note:_ see NFR-SEC-4 for how environment credentials/connection details are
+stored and managed, and NFR-OPS-1 for how quickly cached environment-routing
+changes take effect.
 
 ### 3.2 Multi-Tenant Configuration (FR-TENANT)
 
@@ -188,14 +185,12 @@ graph TB
   single deployment; every client request SHALL identify its tenant, and each
   tenant's administrative data and access rules SHALL be fully isolated from
   every other tenant's.
-- **FR-TENANT-3.** In multi-tenant mode, connection details and environment
-  overrides SHALL be independently configurable per tenant.
-- **FR-TENANT-4.** The system SHALL cache tenant information for performance,
-  using the same host-configurable cache-expiration setting that governs
-  environment-routing information (FR-INST-5).
-- **FR-TENANT-5.** The platform's documentation/metadata tooling SHALL require a
+- **FR-TENANT-3.** The platform's documentation/metadata tooling SHALL require a
   valid tenant identifier before it can display API metadata when operating in
   multi-tenant mode.
+
+_Note:_ see NFR-OPS-1 for tenant-information cache tuning and NFR-OPS-3 for
+per-tenant connection/environment-override configurability.
 
 ### 3.3 Change Queries (FR-CQ)
 
@@ -210,19 +205,18 @@ graph TB
   identifying values, so a downstream consumer can re-key its own copy of the
   record rather than treating the correction as a delete followed by an
   unrelated create.
-- **FR-CQ-4.** This capability SHALL be provisioned as a standard part of
-  environment setup and SHALL extend automatically to any resources added
-  through the platform's supported extension mechanism, so hosts get consistent
-  change-detection behavior across both core and extended resources with no
-  extra work.
+- **FR-CQ-4.** Change Queries SHALL extend automatically to any resources added
+  through the platform's supported extension mechanism, so clients get the same
+  change-detection behavior for extended resources as for core resources.
 - **FR-CQ-5.** A record of deleted items SHALL be retained so clients can detect
-  deletions after the fact; if that history grows very large over time,
-  truncating older deletion history SHALL be an operational decision made by the
-  host, not something the system does automatically.
+  deletions after the fact.
 
 > Change Queries is always enabled and is not independently togglable in v8.0;
 > in the prior-generation platform it was an optional capability that hosts
 > enabled per environment.
+
+_Note:_ see NFR-OPS-9 for how this capability is provisioned during environment
+setup and NFR-OPS-10 for the host's role in managing deletion-history growth.
 
 ### 3.4 API Profiles (FR-PROF)
 
@@ -242,17 +236,14 @@ graph TB
   Profile excludes other information that would otherwise be required to create
   a new resource, that Profile SHALL still support updating existing resources,
   just not creating new ones.
-- **FR-PROF-5.** Hosts SHALL be able to define and update Profiles without
-  requiring a new deployment of the software, so that data-policy changes can
-  take effect on their own schedule.
-- **FR-PROF-6.** Hosts SHALL be able to assign one or more Profiles to a given
-  client application.
-- **FR-PROF-7.** When a client has exactly one Profile assigned for a resource,
+- **FR-PROF-5.** When a client has exactly one Profile assigned for a resource,
   the system SHALL apply it automatically. When a client has more than one
   Profile assigned, the client SHALL indicate which Profile to use for that
   particular request.
-- **FR-PROF-8.** Profile-specific access details SHALL be discoverable through
+- **FR-PROF-6.** Profile-specific access details SHALL be discoverable through
   the platform's standard API documentation.
+
+_Note:_ see NFR-OPS-4 for how hosts author, update, and assign Profiles.
 
 ### 3.5 Authentication (FR-AUTHN)
 
@@ -271,40 +262,29 @@ graph TB
 - **FR-AUTHN-4.** Every API request for a protected resource SHALL require the
   access token to be presented as an HTTP `Authorization: Bearer` header;
   requests without a valid, unexpired token SHALL be rejected.
-- **FR-AUTHN-5.** In every environment, including local development, the system
-  SHALL store client secrets using an industry-standard one-way hashing approach
-  (with a per-secret random salt and a host-configurable iteration count), such
-  that the original secret cannot be retrieved from storage — even by someone
-  with direct access to the underlying data.
-- **FR-AUTHN-6.** The system SHALL support issuing token-based (JWT) access
-  tokens, so hosts can adopt a token format their broader security
-  infrastructure can validate independently.
-- **FR-AUTHN-7.** The system SHALL support a token introspection endpoint that
+- **FR-AUTHN-5.** The system SHALL support a token introspection endpoint that
   lets a client presenting its own bearer token retrieve "the current validity
   and full authorization context of that token," including its active/expired
   status, the namespace prefixes, education organization hierarchy, assigned
   profiles, and claim set the token is scoped to, and the per-resource
   operations it is authorized to perform.
-- **FR-AUTHN-8.** The system SHALL support Keycloak as an alternative,
-  externally-hosted identity provider for organizations that require enterprise
-  identity management or single sign-on, in addition to a built-in,
-  self-contained default.
+
+_Note:_ see NFR-SEC-1 for client-secret storage, NFR-COMPAT-7 for the JWT
+access-token format, and NFR-ARCH-5 for the alternative Keycloak identity
+provider.
 
 ### 3.6 Authorization (FR-AUTHZ)
 
-- **FR-AUTHZ-1.** The system SHALL read authorization information - including
-  claim set name, assigned education organization(s), and assigned namespace(s)
-  - from the bearer token, as a JSON Web token (JWT).
-- **FR-AUTHZ-2.** The system SHALL authorize every API request in two sequential
+- **FR-AUTHZ-1.** The system SHALL authorize every API request in two sequential
   phases: (1) a check that the caller's claim set grants the requested resource
   claim and action, and (2) if granted, evaluation of the authorization strategy
   associated with that resource claim and action against the specific data being
   accessed. A request SHALL be denied unless both phases pass.
-- **FR-AUTHZ-3.** When a request is denied because no relationship path could be
+- **FR-AUTHZ-2.** When a request is denied because no relationship path could be
   established between the caller and the requested data, the system SHALL return
   a response identifying which relationship is missing, to support self-service
   troubleshooting.
-- **FR-AUTHZ-4.** The system SHALL support at least the following authorization
+- **FR-AUTHZ-3.** The system SHALL support at least the following authorization
   strategies, selectable per resource claim and action:
   - **No further authorization required** — the resource/action check alone is
     sufficient (used where no relationship can or should be checked, such as
@@ -315,22 +295,25 @@ graph TB
     granted based on a path between the caller's associated education
     organization(s) and the education organization and/or person referenced by
     the target data.
-- **FR-AUTHZ-5.** When more than one relationship-based strategy variant is
+- **FR-AUTHZ-4.** When more than one relationship-based strategy variant is
   configured for the same resource claim and action, the system SHALL grant
   access if any one of them succeeds (OR logic). Non-relationship strategies
   (e.g., namespace-based) configured alongside relationship-based strategies
   SHALL be combined with AND logic and evaluated first.
-- **FR-AUTHZ-6.** The system SHALL support overriding the default authorization
+- **FR-AUTHZ-5.** The system SHALL support overriding the default authorization
   strategy for a specific resource claim and action on a per-claim-set basis, so
   that a given claim set can be granted a different authorization posture (e.g.,
   a trusted administrative claim set bypassing a relationship check that
   otherwise applies) without affecting other claim sets.
-- **FR-AUTHZ-7.** When a resource claim has no directly configured authorization
+- **FR-AUTHZ-6.** When a resource claim has no directly configured authorization
   strategy for a given action, the system SHALL resolve one by walking up the
   claims taxonomy to the nearest ancestor domain claim that defines one, so that
   new or extension resource claims inherit correct authorization behavior by
   virtue of their placement in the taxonomy, without requiring explicit
   per-resource configuration.
+
+_Note:_ see NFR-ARCH-4 for how the system derives a caller's authorization
+context from the bearer token.
 
 ### 3.7 Relationship-Based Authorization (FR-RELATIONSHIP)
 
@@ -380,82 +363,66 @@ graph TB
 > behaves today, for Descriptors specifically, when a host nonetheless
 > configures a claim set to require it.
 
-- **FR-OWNAUTH-1**: Hosts can configure the Ownership-based authorization
-  strategy — or any other recognized-but-unimplemented strategy — for any
-  resource claim and action, since the system doesn't restrict which strategy
-  names may be assigned in claim-set configuration.
-- **FR-OWNAUTH-2**. Because Ownership-based authorization isn't yet implemented,
+- **FR-OWNAUTH-1**. Because Ownership-based authorization isn't yet implemented,
   the system SHALL fail closed with an HTTP 501 response rather than silently
   granting or denying the request, preventing false enforcement assumptions.
-- **FR-OWNAUTH-3**. This fail-closed 501 behavior SHALL apply uniformly across
+- **FR-OWNAUTH-2**. This fail-closed 501 behavior SHALL apply uniformly across
   all resource types — including Descriptors and standard Ed-Fi resources — and
   across all operations (GET-by-id, GET-many, POST, PUT, DELETE).
-- **FR-OWNAUTH-4**. The 501 response must identify which authorization
+- **FR-OWNAUTH-3**. The 501 response must identify which authorization
   strategies are currently supported for the resource in question, helping hosts
   diagnose and correct claim-set configuration.
-- **FR-OWNAUTH-5**. When Ownership-based authorization is configured alongside
+- **FR-OWNAUTH-4**. When Ownership-based authorization is configured alongside
   supported strategies (e.g., Namespace-based, Relationship-based), the system
   evaluates and reports all supported strategies before surfacing the 501,
   preventing masking of other failure reasons.
 
+_Note:_ see NFR-OPS-7 for the (lack of) restriction on which authorization
+strategy names a host may assign in claim-set configuration.
+
 ### 3.9 Configuration & Extensibility (FR-CONFIG)
 
-- **FR-CONFIG-1.** The system's configuration SHALL follow standard,
-  well-documented conventions for its runtime environment, so hosts can apply
-  their organization's usual deployment and secrets practices rather than
-  learning a proprietary mechanism.
-- **FR-CONFIG-2.** Hosts SHALL be able to turn optional platform capabilities on
-  or off independently of one another.
-- **FR-CONFIG-3.** Hosts SHALL be able to control which parts of the resource
+- **FR-CONFIG-1.** Hosts SHALL be able to control which parts of the resource
   catalog are advertised in the platform's public API documentation.
-- **FR-CONFIG-4.** Hosts SHALL be able to extend the platform's data model with
+- **FR-CONFIG-2.** Hosts SHALL be able to extend the platform's data model with
   additional resources, properties, or associations, with supporting API
   documentation and database structures generated automatically to stay
-  consistent with the extended model. Applying such an extension SHALL require
-  both re-provisioning the database against the extension's effective schema and
-  a restart of the affected service; the platform's database provisioning is
-  create-only, with no in-place migration path from one effective schema to
-  another.
-- **FR-CONFIG-5.** The system SHALL implement rate limiting: it SHALL cap the
+  consistent with the extended model.
+- **FR-CONFIG-3.** The system SHALL implement rate limiting: it SHALL cap the
   number of requests it will accept for a given request Host within a
-  host-configured time window (a shared cap across all callers of that host)
+  host-configured time window (a shared cap across all callers of that host),
   reject requests beyond that cap once any configured queue capacity is also
   exhausted, and tell the rejected caller using the standard HTTP response for
-  the condition that it has been rate limited. Hosts SHALL be able to configure
-  the cap, the window, and an optional queue depth for excess requests, and
-  SHALL be able to disable rate limiting entirely by omitting its configuration.
+  the condition that it has been rate limited.
 
 > [!NOTE]
 > This capability has no counterpart in the prior-generation platform,
 > which provided no request-volume protection of any kind.
 
+_Note:_ see NFR-COMPAT-2 for the system's general configuration/secrets
+conventions, NFR-OPS-2 for what applying a data-model extension requires,
+NFR-OPS-5 for independently toggling optional capabilities, and NFR-OPS-6 for
+how rate limiting's cap/window/queue depth are configured (or disabled).
+
 ### 3.10 Logging & Correlation ID (FR-LOG)
 
-- **FR-LOG-1.** The system SHALL produce structured, machine-readable
-  operational logs, independently configurable in verbosity for each major
-  service of the platform, with sensible defaults appropriate for production
-  versus local-development use.
-- **FR-LOG-2.** Every request SHALL be assigned a Correlation ID, included in
-  both the response returned to the client (when the request fails) and the
-  corresponding log entries, so a specific failed request can be traced
-  end-to-end.
-- **FR-LOG-3.** For the Ed-Fi API service, clients SHALL be able to supply their
+- **FR-LOG-1.** Every request SHALL be assigned a Correlation ID, included in
+  the response returned to the client when the request fails, so a specific
+  failed request can be traced end-to-end.
+- **FR-LOG-2.** For the Ed-Fi API service, clients SHALL be able to supply their
   own Correlation ID for a request rather than relying on one generated by the
-  system; hosts SHALL be able to configure how a client supplies it (including
-  disabling the option), and clients supplying their own ID are responsible for
-  making sure it is unique per request.
+  system; clients supplying their own ID are responsible for making sure it is
+  unique per request.
 
 > [!WARNING]
 > The separate Configuration/administrative service does not
 > currently support a client-supplied Correlation ID.
 
-- **FR-LOG-4.** Hosts SHOULD be able to optionally enable more detailed
-  request/response logging for troubleshooting, and SHOULD be able to turn
-  detailed logging off just as easily.
-- **FR-LOG-5.** When detailed request/response logging is enabled, dictionary
-  key values SHALL be masked before being written to the log.
-- **FR-LOG-6.** Every failed request SHALL produce a corresponding log entry
-  carrying the same Correlation ID as the error response.
+_Note:_ see NFR-OBS-1 for how a Correlation ID also ties into log entries,
+NFR-OBS-4 for structured/configurable logging, NFR-OBS-2 for enabling detailed
+request/response logging, NFR-OBS-3 for masking of logged values, and
+NFR-OPS-8 for host configuration of client-supplied Correlation IDs (including
+disabling the option).
 
 ### 3.11 Schema & Dependency Publishing (FR-SCHEMA)
 
@@ -497,26 +464,42 @@ v8.0 carries the same capability forward.
   client attempting to change an identifying value SHALL be clearly informed
   that the change is not supported, so the client can instead delete and
   recreate the record.
-- **FR-KEY-3.** Hosts extending the data model SHALL be able to declare
-  identifier-change support for their own added resource types at
-  model-definition time (e.g., a MetaEd allow primary key updates construct on
-  the extension entity), consistent with how core resources are similarly
-  designated. Independent of that schema-level default, hosts SHALL also be
-  able to force identifier-change support on for specific resources at
-  deployment time via configuration (a host-maintained list of resource
-  names), without requiring a new schema or a code change.
+
+_Note:_ see NFR-OPS-11 for how hosts declare or override which resources have
+identifier-change support.
 
 ## 4. Non-Functional Requirements
 
-### 4.1 Compatibility (NFR-COMPAT)
+### 4.1 Architecture (NFR-ARCH)
+
+- **NFR-ARCH-1.** Configuration management SHALL be implemented in a separate
+  application ("Configuration Management Service").
+- **NFR-ARCH-2.** The Ed-Fi API service SHALL retrieve configuration
+  information from the Configuration Management Service using the Ed-Fi
+  Management API specification.
+- **NFR-ARCH-3.** The Ed-Fi API service SHALL NOT utilize an external cache
+  provider (e.g. Redis, Memcached).
+- **NFR-ARCH-4.** The system SHALL derive a caller's authorization context
+  (claim set name, assigned education organization(s), assigned namespace(s))
+  directly from the bearer token (JWT), rather than through a separate lookup
+  at request time.
+- **NFR-ARCH-5.** The system SHALL support Keycloak as an alternative,
+  externally-hosted identity provider for organizations that require
+  enterprise identity management or single sign-on, in addition to a
+  built-in, self-contained default.
+
+### 4.2 Compatibility (NFR-COMPAT)
 
 - **NFR-COMPAT-1.** The system's supporting data stores SHALL run on
-  currently-supported versions of the host's chosen database platform; hosts on
+  currently-supported versions of the host's chosen database platform, with
+  PostgreSQL and Microsoft SQL Server both supported interchangeably; hosts on
   an older, unsupported version SHALL upgrade before adopting a new platform
   release.
-- **NFR-COMPAT-2.** The system's configuration approach SHALL remain compatible
-  with standard, widely-used configuration and secrets-management practices for
-  its runtime environment.
+- **NFR-COMPAT-2.** The system's configuration SHALL follow standard,
+  well-documented conventions for its runtime environment and remain
+  compatible with standard, widely-used configuration and secrets-management
+  practices, so hosts can apply their organization's usual deployment and
+  secrets practices rather than learning a proprietary mechanism.
 - **NFR-COMPAT-3.** The system SHALL be deployable via standard container
   tooling, with reference deployment configurations provided.
 - **NFR-COMPAT-4.** The system SHALL support operating a given deployment
@@ -526,12 +509,20 @@ v8.0 carries the same capability forward.
   Standard version SHALL be achievable through the platform's configuration and
   schema-loading mechanism, without requiring the host to build custom software
   artifacts.
+- **NFR-COMPAT-6.** The system SHALL be capable of operating on either
+  Windows or Linux machines.
+- **NFR-COMPAT-7.** The system SHALL support issuing token-based (JWT) access
+  tokens, so hosts can adopt a token format their broader security
+  infrastructure can validate independently.
 
-### 4.2 Security (NFR-SEC)
+### 4.3 Security (NFR-SEC)
 
 - **NFR-SEC-1.** Client secrets SHALL be hashed at rest, unconditionally, in
-  every environment including local development; there is no plain-text storage
-  opt-out.
+  every environment including local development, using an industry-standard
+  one-way hashing approach with a per-secret random salt and a
+  host-configurable iteration count; there is no plain-text storage opt-out,
+  and the original secret SHALL NOT be retrievable from storage, even by
+  someone with direct access to the underlying data.
 - **NFR-SEC-2.** Access-governance changes (claim set permissions, education
   organization / namespace / profile assignments) SHALL be configurable by hosts
   without requiring a new software release, via an external service.
@@ -549,39 +540,83 @@ v8.0 carries the same capability forward.
     displayed or processed. _Host mitigation:_ downstream sanitization.
   - **NFR-SEC-3d.** The platform does not, on its own, lock out a client after
     repeated failed authentication attempts. _Host mitigation:_ external
-    brute-force protection. Note that rate limiting (FR-CONFIG-5) does not
+    brute-force protection. Note that rate limiting (FR-CONFIG-3) does not
     satisfy this; it caps request volume for authenticated clients and is not a
     defense against credential guessing.
+- **NFR-SEC-4.** Credentials and connection details for each backing data
+  environment SHALL be stored encrypted at rest and SHALL be managed through
+  the platform's own administrative service.
 
-### 4.3 Observability (NFR-OBS)
+### 4.4 Observability (NFR-OBS)
 
 - **NFR-OBS-1.** Every request SHALL be traceable end-to-end via a Correlation
   ID present in both the client-facing error response and the corresponding log
-  entry.
-- **NFR-OBS-2.** Hosts SHOULD be able to temporarily increase log detail for
-  production troubleshooting without a code change, and SHOULD return to normal
-  verbosity once the issue is resolved.
+  entry; every failed request SHALL produce a log entry carrying that same
+  Correlation ID.
+- **NFR-OBS-2.** Hosts SHOULD be able to temporarily increase log detail —
+  including detailed request/response logging — for production
+  troubleshooting without a code change, and SHOULD be able to turn it back
+  off just as easily once the issue is resolved.
 - **NFR-OBS-3.** Because the most detailed logging level captures request and
   response bodies — which for this product means student data — elevated
-  verbosity is masked by default (FR-LOG-5).
+  verbosity is masked by default: when detailed request/response logging is
+  enabled, dictionary key values SHALL be masked before being written to the
+  log.
 
 > [!WARNING]
 > Because there is no mechanism that automatically reverts elevated
 > verbosity on its own, hosts SHOULD treat it as a temporary, supervised state
 > and rely on operational process to turn it back off.
 
-### 4.4 Operations (NFR-OPS)
+- **NFR-OBS-4.** The system SHALL produce structured, machine-readable
+  operational logs, independently configurable in verbosity for each major
+  service of the platform, with sensible defaults appropriate for production
+  versus local-development use.
 
-- **NFR-OPS-1.** Hosts operating multiple backing environments SHALL be able to
-  tune how quickly changes to cached environment-routing information take
-  effect.
+### 4.5 Operations (NFR-OPS)
+
+- **NFR-OPS-1.** Hosts operating multiple backing environments and/or tenants
+  SHALL be able to tune how quickly changes to cached environment-routing and
+  tenant information take effect, via a single host-configurable
+  cache-expiration setting shared by both.
 - **NFR-OPS-2.** Data-model extensions SHALL require both database
   re-provisioning (to match the extension's effective schema hash) and a service
   restart to take effect; the platform does not hot-reload extended schemas, nor
   does it support in-place migration of an already-provisioned database to a new
   effective schema — provisioning is create-only.
+- **NFR-OPS-3.** In multi-tenant mode, connection details and environment
+  overrides SHALL be independently configurable per tenant.
+- **NFR-OPS-4.** Hosts SHALL be able to define, update, and assign Profiles to
+  client applications without requiring a new deployment of the software, so
+  that data-policy changes can take effect on their own schedule.
+- **NFR-OPS-5.** Hosts SHALL be able to turn optional platform capabilities on
+  or off independently of one another.
+- **NFR-OPS-6.** Hosts SHALL be able to configure rate limiting's request cap,
+  time window, and an optional queue depth for excess requests, and SHALL be
+  able to disable rate limiting entirely by omitting its configuration.
+- **NFR-OPS-7.** Hosts SHALL be able to configure the Ownership-based
+  authorization strategy — or any other recognized-but-unimplemented strategy
+  — for any resource claim and action, since the system doesn't restrict
+  which strategy names may be assigned in claim-set configuration.
+- **NFR-OPS-8.** Hosts SHALL be able to configure how a client supplies its
+  own Correlation ID for the Ed-Fi API service, including disabling the
+  option entirely.
+- **NFR-OPS-9.** Change Queries SHALL be provisioned as a standard part of
+  environment setup, requiring no additional host configuration to enable for
+  core or extended resources.
+- **NFR-OPS-10.** Truncating older deletion history, when the retained record
+  of deleted items grows very large over time, SHALL be an operational
+  decision made by the host, not something the system does automatically.
+- **NFR-OPS-11.** Hosts extending the data model SHALL be able to declare
+  identifier-change support for their own added resource types at
+  model-definition time (e.g., a MetaEd allow primary key updates construct on
+  the extension entity), consistent with how core resources are similarly
+  designated. Independent of that schema-level default, hosts SHALL also be
+  able to force identifier-change support on for specific resources at
+  deployment time via configuration (a host-maintained list of resource
+  names), without requiring a new schema or a code change.
 
-### 4.5 Reverse Proxy / Load Balancer Deployment (NFR-PROXY)
+### 4.6 Reverse Proxy / Load Balancer Deployment (NFR-PROXY)
 
 - **NFR-PROXY-1.** The system SHALL support running behind a reverse proxy or
   load balancer, honoring standard forwarded-request headers (protocol and host,
@@ -613,11 +648,11 @@ v8.0 carries the same capability forward.
 
 | Component | Responsibility | Notes |
 | --- | --- | --- |
-| Ed-Fi API service | Serves the core Data Management API surface (resources, descriptors, discovery) plus the platform capabilities described in this PRD | Subject to the optional-capability toggles described in Section 3 |
+| Ed-Fi API service | Serves the core Data Management API surface (resources, descriptors, discovery) plus the platform capabilities described in this PRD | Subject to the optional-capability toggles described in NFR-OPS-5 |
 | Documentation / metadata service | Serves interactive, browsable API documentation | Requires a valid tenant identifier when operating in multi-tenant mode |
-| Administrative / configuration service | Manages client credentials, access rules, Profile definitions, and environment/tenant routing; hosts the platform's identity provider | System of record for the settings referenced throughout Section 3 |
+| Administrative / configuration service | Manages client credentials, access rules, Profile definitions, and environment/tenant routing; hosts the platform's identity provider | System of record for the settings referenced throughout this PRD |
 | Operational data store(s) | Holds the actual resource data; may be segmented across multiple environments by year, district, or another strategy | Read replica and snapshot copies are not yet supported — see the v8.1 companion PRD |
-| Data model extensions (optional) | Host-supplied additions to the resource/data model | Loaded from a configured location at startup; requires a service restart to take effect |
+| Data model extensions (optional) | Host-supplied additions to the resource/data model | Loaded from a configured location at startup; requires a service restart to take effect (NFR-OPS-2) |
 
 ## 6. Out of Scope and Known Limitations
 
@@ -652,7 +687,7 @@ v8.0 carries the same capability forward.
   and profiles, will be handled by a separate application: the Ed-Fi
   Configuration Management Service (CMS).
 - **Duplicate-checking of client-supplied Correlation IDs is out of scope.** Per
-  FR-LOG-3, uniqueness of a client-supplied Correlation ID is the client's
+  FR-LOG-2, uniqueness of a client-supplied Correlation ID is the client's
   responsibility, not something the system validates or enforces. The system
   does not use Correlation ID for access control, caching, or idempotency, so a
   collision cannot grant access to or affect another client's data. The residual
@@ -661,7 +696,7 @@ v8.0 carries the same capability forward.
   client's log trail, degrading the fidelity of an investigation that searches
   logs by Correlation ID (an anti-forensics concern, not a
   confidentiality/integrity control). Hosts who need to rule this out can
-  disable client-supplied Correlation IDs entirely (see FR-LOG-3).
+  disable client-supplied Correlation IDs entirely (see NFR-OPS-8).
 - **Deployment automation** is not prescribed in this requirements document; any
   automation tooling / scripts provided by the Ed-Fi Alliance will be documented
   elsewhere.
