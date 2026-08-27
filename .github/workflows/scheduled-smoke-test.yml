@@ -256,9 +256,11 @@ jobs:
 
       - name: Pull CI Docker images
         if: needs.build-ci-docker-images.outputs.use_prebuilt_images == 'true'
-        run: |
-          docker pull "${{ needs.build-ci-docker-images.outputs.dms_image }}"
-          docker pull "${{ needs.build-ci-docker-images.outputs.config_image }}"
+        uses: ./.github/actions/pull-ci-images
+        with:
+          images: |
+            ${{ needs.build-ci-docker-images.outputs.dms_image }}
+            ${{ needs.build-ci-docker-images.outputs.config_image }}
 
       - name: Setup .NET
         uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1

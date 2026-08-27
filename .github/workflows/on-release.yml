@@ -119,6 +119,10 @@ jobs:
     name: Release Tag DMS Image
     runs-on: ubuntu-latest
     steps:
+      # Required so the local pull action below resolves from the workspace.
+      - name: Checkout the repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
       - name: Prepare Release Tags
         id: prepare-tags
         run: |
@@ -135,7 +139,9 @@ jobs:
           echo "RELEASE_MINOR=$RELEASE_MINOR" >> $GITHUB_OUTPUT
 
       - name: Pull DMS Prerelease Image
-        run: docker pull "${{ steps.prepare-tags.outputs.PRE_IMAGE }}"
+        uses: ./.github/actions/pull-ci-images
+        with:
+          images: ${{ steps.prepare-tags.outputs.PRE_IMAGE }}
 
       - name: Tag DMS image
         run: |
@@ -157,6 +163,10 @@ jobs:
     name: Release Tag Configuration Image
     runs-on: ubuntu-latest
     steps:
+      # Required so the local pull action below resolves from the workspace.
+      - name: Checkout the repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
       - name: Prepare Release Tags
         id: prepare-tags
         run: |
@@ -173,7 +183,9 @@ jobs:
           echo "RELEASE_MINOR=$RELEASE_MINOR" >> $GITHUB_OUTPUT
 
       - name: Pull Configuration Prerelease Image
-        run: docker pull "${{ steps.prepare-tags.outputs.PRE_IMAGE }}"
+        uses: ./.github/actions/pull-ci-images
+        with:
+          images: ${{ steps.prepare-tags.outputs.PRE_IMAGE }}
 
       - name: Tag Configuration image
         run: |

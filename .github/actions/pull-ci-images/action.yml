@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+name: Pull CI Docker images
+description: Pulls container images, retrying transient registry failures with jittered exponential backoff.
+
+inputs:
+  images:
+    description: Newline-separated image references to pull. Blank lines are ignored.
+    required: true
+  max-attempts:
+    description: Maximum pull attempts per image.
+    required: false
+    default: "5"
+  initial-delay-seconds:
+    description: Backoff base for the first retry, in seconds.
+    required: false
+    default: "3"
+  max-delay-seconds:
+    description: Upper bound on the backoff base, in seconds.
+    required: false
+    default: "60"
+
+runs:
+  using: composite
+  steps:
+    # Inputs travel by environment variable so no expression is ever interpolated into the script
+    # body. The calling job's defaults.run.shell does not reach a composite step, so pwsh is explicit.
+    - name: Pull CI Docker images
+      shell: pwsh
+      env:
+        IMAGES: ${{ inputs.images }}
+        MAX_ATTEMPTS: ${{ inputs.max-attempts }}
+        INITIAL_DELAY_SECONDS: ${{ inputs.initial-delay-seconds }}
+        MAX_DELAY_SECONDS: ${{ inputs.max-delay-seconds }}
+      run: |
+        & "$env:GITHUB_ACTION_PATH/Invoke-CiImagePull.ps1" `
+          -Images $env:IMAGES `
+          -MaxAttempts ([int] $env:MAX_ATTEMPTS) `
+          -InitialDelaySeconds ([int] $env:INITIAL_DELAY_SECONDS) `
+          -MaxDelaySeconds ([int] $env:MAX_DELAY_SECONDS)

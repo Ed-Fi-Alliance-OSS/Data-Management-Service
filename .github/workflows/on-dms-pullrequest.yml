@@ -214,6 +214,7 @@ jobs:
             "eng/ci/tests/BuildScriptTestGuards.Tests.ps1",
             "eng/ci/tests/Sanitize-E2EArtifacts.Tests.ps1",
             "eng/ci/tests/DmsPullRequestMssqlWorkflow.Tests.ps1",
+            "eng/ci/tests/PullCiImages.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-Management.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-WorkflowInputs.Tests.ps1",
             "eng/smoke_test/tests/SmokeTest.Tests.ps1",
@@ -1505,9 +1506,11 @@ jobs:
 
       - name: Pull CI Docker images
         if: needs.build-ci-docker-images.outputs.use_prebuilt_images == 'true'
-        run: |
-          docker pull "${{ needs.build-ci-docker-images.outputs.dms_image }}"
-          docker pull "${{ needs.build-ci-docker-images.outputs.config_image }}"
+        uses: ./.github/actions/pull-ci-images
+        with:
+          images: |
+            ${{ needs.build-ci-docker-images.outputs.dms_image }}
+            ${{ needs.build-ci-docker-images.outputs.config_image }}
 
       - name: Set up Docker Buildx
         if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
@@ -1673,9 +1676,11 @@ jobs:
 
       - name: Pull CI Docker images
         if: needs.build-ci-docker-images.outputs.use_prebuilt_images == 'true'
-        run: |
-          docker pull "${{ needs.build-ci-docker-images.outputs.dms_image }}"
-          docker pull "${{ needs.build-ci-docker-images.outputs.config_image }}"
+        uses: ./.github/actions/pull-ci-images
+        with:
+          images: |
+            ${{ needs.build-ci-docker-images.outputs.dms_image }}
+            ${{ needs.build-ci-docker-images.outputs.config_image }}
 
       - name: Set up Docker Buildx
         if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
@@ -1847,9 +1852,11 @@ jobs:
 
       - name: Pull CI Docker images
         if: needs.build-ci-docker-images.outputs.use_prebuilt_images == 'true'
-        run: |
-          docker pull "${{ needs.build-ci-docker-images.outputs.dms_image }}"
-          docker pull "${{ needs.build-ci-docker-images.outputs.config_image }}"
+        uses: ./.github/actions/pull-ci-images
+        with:
+          images: |
+            ${{ needs.build-ci-docker-images.outputs.dms_image }}
+            ${{ needs.build-ci-docker-images.outputs.config_image }}
 
       - name: Set up Docker Buildx
         if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
@@ -2021,9 +2028,11 @@ jobs:
 
       - name: Pull CI Docker images
         if: needs.build-ci-docker-images.outputs.use_prebuilt_images == 'true'
-        run: |
-          docker pull "${{ needs.build-ci-docker-images.outputs.dms_image }}"
-          docker pull "${{ needs.build-ci-docker-images.outputs.config_image }}"
+        uses: ./.github/actions/pull-ci-images
+        with:
+          images: |
+            ${{ needs.build-ci-docker-images.outputs.dms_image }}
+            ${{ needs.build-ci-docker-images.outputs.config_image }}
 
       - name: Set up Docker Buildx
         if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
@@ -2231,9 +2240,11 @@ jobs:
 
       - name: Pull CI Docker images
         if: needs.build-ci-docker-images.outputs.use_prebuilt_images == 'true'
-        run: |
-          docker pull "${{ needs.build-ci-docker-images.outputs.dms_image }}"
-          docker pull "${{ needs.build-ci-docker-images.outputs.config_image }}"
+        uses: ./.github/actions/pull-ci-images
+        with:
+          images: |
+            ${{ needs.build-ci-docker-images.outputs.dms_image }}
+            ${{ needs.build-ci-docker-images.outputs.config_image }}
 
       - name: Set up Docker Buildx
         if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
@@ -2468,9 +2479,11 @@ jobs:
 
       - name: Pull CI Docker images
         if: needs.build-ci-docker-images.outputs.use_prebuilt_images == 'true'
-        run: |
-          docker pull "${{ needs.build-ci-docker-images.outputs.dms_image }}"
-          docker pull "${{ needs.build-ci-docker-images.outputs.config_image }}"
+        uses: ./.github/actions/pull-ci-images
+        with:
+          images: |
+            ${{ needs.build-ci-docker-images.outputs.dms_image }}
+            ${{ needs.build-ci-docker-images.outputs.config_image }}
 
       - name: Set up Docker Buildx
         if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
@@ -2649,9 +2662,11 @@ jobs:
 
       - name: Pull CI Docker images
         if: needs.build-ci-docker-images.outputs.use_prebuilt_images == 'true'
-        run: |
-          docker pull "${{ needs.build-ci-docker-images.outputs.dms_image }}"
-          docker pull "${{ needs.build-ci-docker-images.outputs.config_image }}"
+        uses: ./.github/actions/pull-ci-images
+        with:
+          images: |
+            ${{ needs.build-ci-docker-images.outputs.dms_image }}
+            ${{ needs.build-ci-docker-images.outputs.config_image }}
 
       - name: Set up Docker Buildx
         if: needs.build-ci-docker-images.outputs.use_prebuilt_images != 'true'
@@ -2851,9 +2866,11 @@ jobs:
 
       - name: Pull CI Docker images
         if: needs.build-ci-docker-images.outputs.use_prebuilt_images == 'true'
-        run: |
-          docker pull "${{ needs.build-ci-docker-images.outputs.dms_image }}"
-          docker pull "${{ needs.build-ci-docker-images.outputs.config_image }}"
+        uses: ./.github/actions/pull-ci-images
+        with:
+          images: |
+            ${{ needs.build-ci-docker-images.outputs.dms_image }}
+            ${{ needs.build-ci-docker-images.outputs.config_image }}
 
       - name: Cache Nuget packages
         uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
