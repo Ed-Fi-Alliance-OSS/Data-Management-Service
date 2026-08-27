@@ -359,28 +359,122 @@ public class ConfigurationServiceDataStoreProvider(
             return [];
         }
 
-        return dataStoreResponses
-            .Select(response =>
-            {
-                (
-                    RelationalProviderToken? relationalProviderToken,
-                    RelationalProviderMetadataStatus relationalProviderMetadataStatus
-                ) = NormalizeRelationalProviderMetadata(response);
+        return dataStoreResponses.Select(response => BuildDataStore(response, tenant)).ToList();
+    }
 
-                return new DataStore(
-                    response.Id,
-                    response.DataStoreType,
-                    response.Name,
-                    _connectionStringDecryptionService.DecryptFromBase64(response.ConnectionString),
-                    response.DataStoreContexts.ToDictionary(
-                        rc => new RouteQualifierName(rc.ContextKey),
-                        rc => new RouteQualifierValue(rc.ContextValue)
-                    ),
-                    relationalProviderToken,
-                    relationalProviderMetadataStatus
+    /// <summary>
+    /// Builds one data store from its Configuration Service response.
+    /// </summary>
+    private DataStore BuildDataStore(DataStoreResponse response, string? tenant)
+    {
+        (
+            RelationalProviderToken? relationalProviderToken,
+            RelationalProviderMetadataStatus relationalProviderMetadataStatus
+        ) = NormalizeRelationalProviderMetadata(response);
+
+        return new DataStore(
+            response.Id,
+            response.DataStoreType,
+            response.Name,
+            // The primary connection string is decrypted here, inside the enclosing projection, so an
+            // undecryptable primary fails the whole tenant data-store load. Derivatives are decrypted
+            // one at a time in their own fault boundary below, so an unusable optional derivative
+            // cannot take its parent, its siblings, or another data store down with it.
+            _connectionStringDecryptionService.DecryptFromBase64(response.ConnectionString),
+            response.DataStoreContexts.ToDictionary(
+                rc => new RouteQualifierName(rc.ContextKey),
+                rc => new RouteQualifierValue(rc.ContextValue)
+            ),
+            relationalProviderToken,
+            relationalProviderMetadataStatus,
+            BuildDerivatives(response, tenant)
+        );
+    }
+
+    /// <summary>
+    /// Builds the usable derivatives of one data store. A derivative is usable only when its type is
+    /// recognized, its stored connection string is present and non-blank, and that string decrypts to a
+    /// non-blank value. Every other state means the derivative is not configured.
+    /// </summary>
+    private List<KeyValuePair<DataStoreDerivativeType, string>> BuildDerivatives(
+        DataStoreResponse response,
+        string? tenant
+    )
+    {
+        List<KeyValuePair<DataStoreDerivativeType, string>> derivatives = [];
+        string sanitizedTenant = LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)");
+
+#pragma warning disable S3267 // Loops should be simplified with "LINQ" expressions - False positive: this loop has several early exits, per-item logging, and duplicate detection against what it has already accepted
+        foreach (DataStoreDerivativeItem derivative in response.DataStoreDerivatives)
+#pragma warning restore S3267
+        {
+            if (
+                !DataStoreDerivativeTypeNames.TryParseExact(
+                    derivative.DerivativeType,
+                    out DataStoreDerivativeType derivativeType
+                )
+            )
+            {
+                logger.LogError(
+                    "Ignoring a data store derivative with unrecognized type '{DerivativeType}' for tenant {Tenant}, parent data store {DataStoreId}",
+                    LoggingSanitizer.SanitizeForLogging(derivative.DerivativeType ?? "(none)"),
+                    sanitizedTenant,
+                    response.Id
                 );
-            })
-            .ToList();
+                continue;
+            }
+
+            // Checked before decryption. A missing row and a null, empty, or whitespace stored value are
+            // ordinary not-configured states rather than configuration defects, so they are not errors
+            // and are deliberately distinguishable from the undecryptable case by producing no log.
+            if (string.IsNullOrWhiteSpace(derivative.ConnectionString))
+            {
+                continue;
+            }
+
+            string? plainText;
+
+            try
+            {
+                plainText = _connectionStringDecryptionService.DecryptFromBase64(derivative.ConnectionString);
+            }
+            catch (InvalidOperationException ex)
+            {
+                // The decryption service wraps invalid Base64, a payload no longer than the IV, and a
+                // wrong-key failure in this one exception type. Catching only it keeps an unrelated
+                // runtime or programming defect from being reinterpreted as absent configuration.
+                // Nothing about the ciphertext, the plaintext, the key, or any connection string is
+                // logged; the tenant, parent data store, and derivative type identify the bad row.
+                logger.LogError(
+                    ex,
+                    "Unable to decrypt the connection string for the {DerivativeType} derivative of tenant {Tenant}, parent data store {DataStoreId}. That derivative is treated as not configured; the parent data store and its remaining derivatives are unaffected",
+                    derivativeType,
+                    sanitizedTenant,
+                    response.Id
+                );
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(plainText))
+            {
+                continue;
+            }
+
+            if (derivatives.Exists(accepted => accepted.Key == derivativeType))
+            {
+                logger.LogError(
+                    "Ignoring a duplicate {DerivativeType} derivative for tenant {Tenant}, parent data store {DataStoreId}, and retaining the first. At most one derivative of each type may exist per data store, so a duplicate is a violated configuration invariant rather than a supported way to replace a derivative",
+                    derivativeType,
+                    sanitizedTenant,
+                    response.Id
+                );
+                continue;
+            }
+
+            derivatives.Add(new KeyValuePair<DataStoreDerivativeType, string>(derivativeType, plainText));
+        }
+
+        return derivatives;
     }
 
     private static (
@@ -430,6 +524,7 @@ public class ConfigurationServiceDataStoreProvider(
         public string? RelationalProviderToken { get; init; } = null;
         public string? Provider { get; init; } = null;
         public IList<DataStoreContextItem> DataStoreContexts { get; init; } = [];
+        public IList<DataStoreDerivativeItem> DataStoreDerivatives { get; init; } = [];
     }
 
     /// <summary>
@@ -441,6 +536,21 @@ public class ConfigurationServiceDataStoreProvider(
         public long DataStoreId { get; init; } = 0;
         public string ContextKey { get; init; } = string.Empty;
         public string ContextValue { get; init; } = string.Empty;
+    }
+
+    /// <summary>
+    /// Response model for derivative items within a data store response. Both string members are
+    /// nullable because the Configuration Service may omit either, and because both absence and a null
+    /// value carry meaning: an unrecognized or missing type is ignored, and a missing connection string
+    /// means that derivative is not configured. The connection string arrives Base64-encoded and
+    /// encrypted, exactly like the parent's.
+    /// </summary>
+    private sealed class DataStoreDerivativeItem
+    {
+        public long Id { get; init; } = 0;
+        public long DataStoreId { get; init; } = 0;
+        public string? DerivativeType { get; init; } = null;
+        public string? ConnectionString { get; init; } = null;
     }
 
     /// <summary>
