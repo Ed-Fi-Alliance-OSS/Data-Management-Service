@@ -73,7 +73,7 @@ internal class ValidateResourceKeySeedMiddleware(
                         effectiveSchema.ResourceKeyCount,
                         [.. effectiveSchema.ResourceKeySeedHash],
                         effectiveSchema.ResourceKeysInIdOrder.ToResourceKeyRows(),
-                        connectionString
+                        EffectiveDataStoreTarget.Primary(connectionString)
                     );
                 }
             );

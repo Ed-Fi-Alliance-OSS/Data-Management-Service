@@ -42,16 +42,18 @@ public class DatabaseFingerprintProviderTests
         public async Task Setup()
         {
             _reader = A.Fake<IDatabaseFingerprintReader>();
-            A.CallTo(() => _reader.ReadFingerprintAsync("conn1")).Returns(CreateFingerprint());
+            A.CallTo(() => _reader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
+                .Returns(CreateFingerprint());
 
             var provider = new DatabaseFingerprintProvider(_reader);
-            _result = await provider.GetFingerprintAsync("conn1");
+            _result = await provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"));
         }
 
         [Test]
         public void It_invokes_reader_exactly_once()
         {
-            A.CallTo(() => _reader.ReadFingerprintAsync("conn1")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _reader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
+                .MustHaveHappenedOnceExactly();
         }
 
         [Test]
@@ -74,17 +76,19 @@ public class DatabaseFingerprintProviderTests
         public async Task Setup()
         {
             _reader = A.Fake<IDatabaseFingerprintReader>();
-            A.CallTo(() => _reader.ReadFingerprintAsync("conn1")).Returns(CreateFingerprint());
+            A.CallTo(() => _reader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
+                .Returns(CreateFingerprint());
 
             var provider = new DatabaseFingerprintProvider(_reader);
-            _result1 = await provider.GetFingerprintAsync("conn1");
-            _result2 = await provider.GetFingerprintAsync("conn1");
+            _result1 = await provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"));
+            _result2 = await provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"));
         }
 
         [Test]
         public void It_invokes_reader_exactly_once()
         {
-            A.CallTo(() => _reader.ReadFingerprintAsync("conn1")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _reader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
+                .MustHaveHappenedOnceExactly();
         }
 
         [Test]
@@ -106,19 +110,23 @@ public class DatabaseFingerprintProviderTests
         public async Task Setup()
         {
             _reader = A.Fake<IDatabaseFingerprintReader>();
-            A.CallTo(() => _reader.ReadFingerprintAsync("conn1")).Returns(CreateFingerprint("hash1"));
-            A.CallTo(() => _reader.ReadFingerprintAsync("conn2")).Returns(CreateFingerprint("hash2"));
+            A.CallTo(() => _reader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
+                .Returns(CreateFingerprint("hash1"));
+            A.CallTo(() => _reader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("conn2")))
+                .Returns(CreateFingerprint("hash2"));
 
             var provider = new DatabaseFingerprintProvider(_reader);
-            _result1 = await provider.GetFingerprintAsync("conn1");
-            _result2 = await provider.GetFingerprintAsync("conn2");
+            _result1 = await provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"));
+            _result2 = await provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn2"));
         }
 
         [Test]
         public void It_invokes_reader_for_each_connection_string()
         {
-            A.CallTo(() => _reader.ReadFingerprintAsync("conn1")).MustHaveHappenedOnceExactly();
-            A.CallTo(() => _reader.ReadFingerprintAsync("conn2")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _reader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => _reader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("conn2")))
+                .MustHaveHappenedOnceExactly();
         }
 
         [Test]
@@ -142,11 +150,15 @@ public class DatabaseFingerprintProviderTests
             _reader = A.Fake<IDatabaseFingerprintReader>();
             var tcs = new TaskCompletionSource<DatabaseFingerprint?>();
 
-            A.CallTo(() => _reader.ReadFingerprintAsync("conn1")).ReturnsLazily(() => tcs.Task);
+            A.CallTo(() => _reader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
+                .ReturnsLazily(() => tcs.Task);
 
             var provider = new DatabaseFingerprintProvider(_reader);
 
-            var tasks = Enumerable.Range(0, 10).Select(_ => provider.GetFingerprintAsync("conn1")).ToArray();
+            var tasks = Enumerable
+                .Range(0, 10)
+                .Select(_ => provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
+                .ToArray();
 
             tcs.SetResult(CreateFingerprint());
             _results = await Task.WhenAll(tasks);
@@ -155,7 +167,8 @@ public class DatabaseFingerprintProviderTests
         [Test]
         public void It_invokes_reader_exactly_once()
         {
-            A.CallTo(() => _reader.ReadFingerprintAsync("conn1")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _reader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
+                .MustHaveHappenedOnceExactly();
         }
 
         [Test]
@@ -180,7 +193,7 @@ public class DatabaseFingerprintProviderTests
         {
             int callCount = 0;
             _reader = A.Fake<IDatabaseFingerprintReader>();
-            A.CallTo(() => _reader.ReadFingerprintAsync("conn1"))
+            A.CallTo(() => _reader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
                 .ReturnsLazily(() =>
                 {
                     callCount++;
@@ -191,8 +204,8 @@ public class DatabaseFingerprintProviderTests
 
             var provider = new DatabaseFingerprintProvider(_reader);
 
-            _result1 = await provider.GetFingerprintAsync("conn1");
-            _result2 = await provider.GetFingerprintAsync("conn1");
+            _result1 = await provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"));
+            _result2 = await provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"));
         }
 
         [Test]
@@ -210,7 +223,8 @@ public class DatabaseFingerprintProviderTests
         [Test]
         public void It_invokes_reader_once()
         {
-            A.CallTo(() => _reader.ReadFingerprintAsync("conn1")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _reader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
+                .MustHaveHappenedOnceExactly();
         }
     }
 
@@ -228,7 +242,7 @@ public class DatabaseFingerprintProviderTests
         {
             int callCount = 0;
             _reader = A.Fake<IDatabaseFingerprintReader>();
-            A.CallTo(() => _reader.ReadFingerprintAsync("conn1"))
+            A.CallTo(() => _reader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
                 .ReturnsLazily(() =>
                 {
                     callCount++;
@@ -240,9 +254,11 @@ public class DatabaseFingerprintProviderTests
                 });
 
             var provider = new DatabaseFingerprintProvider(_reader);
-            _firstException = await CatchExceptionAsync(provider.GetFingerprintAsync("conn1"));
+            _firstException = await CatchExceptionAsync(
+                provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"))
+            );
 
-            _secondResult = await provider.GetFingerprintAsync("conn1");
+            _secondResult = await provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"));
         }
 
         [Test]
@@ -263,7 +279,8 @@ public class DatabaseFingerprintProviderTests
         [Test]
         public void It_invokes_reader_twice()
         {
-            A.CallTo(() => _reader.ReadFingerprintAsync("conn1")).MustHaveHappenedTwiceExactly();
+            A.CallTo(() => _reader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
+                .MustHaveHappenedTwiceExactly();
         }
     }
 
@@ -281,7 +298,7 @@ public class DatabaseFingerprintProviderTests
         {
             int callCount = 0;
             _reader = A.Fake<IDatabaseFingerprintReader>();
-            A.CallTo(() => _reader.ReadFingerprintAsync("conn1"))
+            A.CallTo(() => _reader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
                 .ReturnsLazily(() =>
                 {
                     callCount++;
@@ -294,8 +311,12 @@ public class DatabaseFingerprintProviderTests
 
             var provider = new DatabaseFingerprintProvider(_reader);
 
-            _firstException = await CatchExceptionAsync(provider.GetFingerprintAsync("conn1"));
-            _secondException = await CatchExceptionAsync(provider.GetFingerprintAsync("conn1"));
+            _firstException = await CatchExceptionAsync(
+                provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"))
+            );
+            _secondException = await CatchExceptionAsync(
+                provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"))
+            );
         }
 
         [Test]
@@ -316,7 +337,8 @@ public class DatabaseFingerprintProviderTests
         [Test]
         public void It_does_not_retry_after_the_permanent_validation_failure()
         {
-            A.CallTo(() => _reader.ReadFingerprintAsync("conn1")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _reader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
+                .MustHaveHappenedOnceExactly();
         }
 
         [Test]
@@ -340,7 +362,7 @@ public class DatabaseFingerprintProviderTests
         {
             int callCount = 0;
             _reader = A.Fake<IDatabaseFingerprintReader>();
-            A.CallTo(() => _reader.ReadFingerprintAsync("conn1"))
+            A.CallTo(() => _reader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
                 .ReturnsLazily(() =>
                 {
                     callCount++;
@@ -351,8 +373,8 @@ public class DatabaseFingerprintProviderTests
 
             var provider = new DatabaseFingerprintProvider(_reader);
 
-            _result1 = await provider.GetFingerprintAsync("conn1");
-            _result2 = await provider.GetFingerprintAsync("conn1");
+            _result1 = await provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"));
+            _result2 = await provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"));
         }
 
         [Test]
@@ -370,7 +392,8 @@ public class DatabaseFingerprintProviderTests
         [Test]
         public void It_invokes_reader_exactly_once()
         {
-            A.CallTo(() => _reader.ReadFingerprintAsync("conn1")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _reader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
+                .MustHaveHappenedOnceExactly();
         }
     }
 
@@ -385,14 +408,17 @@ public class DatabaseFingerprintProviderTests
         public async Task Setup()
         {
             _reader = A.Fake<IDatabaseFingerprintReader>();
-            A.CallTo(() => _reader.ReadFingerprintAsync("conn1"))
+            A.CallTo(() => _reader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
                 .Returns(Task.FromResult<DatabaseFingerprint?>(null));
 
             var provider = new DatabaseFingerprintProvider(_reader);
 
-            await provider.GetFingerprintAsync("conn1");
+            await provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"));
 
-            var tasks = Enumerable.Range(0, 10).Select(_ => provider.GetFingerprintAsync("conn1")).ToArray();
+            var tasks = Enumerable
+                .Range(0, 10)
+                .Select(_ => provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
+                .ToArray();
 
             _results = await Task.WhenAll(tasks);
         }
@@ -400,7 +426,8 @@ public class DatabaseFingerprintProviderTests
         [Test]
         public void It_invokes_reader_exactly_once()
         {
-            A.CallTo(() => _reader.ReadFingerprintAsync("conn1")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _reader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
+                .MustHaveHappenedOnceExactly();
         }
 
         [Test]
@@ -430,7 +457,7 @@ public class DatabaseFingerprintProviderTests
             var recoveredFingerprint = CreateFingerprint("recovered");
             int callCount = 0;
 
-            A.CallTo(() => _reader.ReadFingerprintAsync("conn1"))
+            A.CallTo(() => _reader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
                 .ReturnsLazily(() =>
                 {
                     callCount++;
@@ -447,22 +474,22 @@ public class DatabaseFingerprintProviderTests
 
             var provider = new DatabaseFingerprintProvider(_reader);
 
-            var firstCallerTask = provider.GetFingerprintAsync("conn1");
+            var firstCallerTask = provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"));
             var delayedContext = new DeferredSynchronizationContext();
             var delayedCallerTask = RunOnSynchronizationContext(
                 delayedContext,
-                () => provider.GetFingerprintAsync("conn1")
+                () => provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"))
             );
 
             firstRead.SetException(new TimeoutException("connection refused"));
 
             _firstException = await CatchExceptionAsync(firstCallerTask);
-            _retryResult = await provider.GetFingerprintAsync("conn1");
+            _retryResult = await provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"));
 
             delayedContext.ExecutePostedCallbacks();
             _delayedException = await CatchExceptionAsync(delayedCallerTask);
 
-            _cachedResult = await provider.GetFingerprintAsync("conn1");
+            _cachedResult = await provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"));
         }
 
         [Test]
@@ -496,7 +523,8 @@ public class DatabaseFingerprintProviderTests
         [Test]
         public void It_invokes_reader_only_for_the_fault_and_the_successful_retry()
         {
-            A.CallTo(() => _reader.ReadFingerprintAsync("conn1")).MustHaveHappenedTwiceExactly();
+            A.CallTo(() => _reader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
+                .MustHaveHappenedTwiceExactly();
         }
 
         private static Task<T> RunOnSynchronizationContext<T>(

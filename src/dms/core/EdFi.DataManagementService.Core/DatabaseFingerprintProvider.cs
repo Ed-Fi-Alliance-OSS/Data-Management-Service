@@ -30,18 +30,20 @@ internal sealed class DatabaseFingerprintProvider(IDatabaseFingerprintReader fin
     private readonly ConcurrentDictionary<string, Lazy<Task<DatabaseFingerprint?>>> _cache = new();
 
     /// <summary>
-    /// Returns the cached fingerprint for the given connection string, or reads it
-    /// from the database on first access. Concurrent first calls for the same
-    /// connection string result in exactly one database read, even when that read
-    /// returns <c>null</c>.
+    /// Returns the cached fingerprint for the given target, or reads it from the
+    /// database on first access. Concurrent first calls for the same connection
+    /// string result in exactly one database read, even when that read returns
+    /// <c>null</c>.
     /// </summary>
-    public async Task<DatabaseFingerprint?> GetFingerprintAsync(string connectionString)
+    public async Task<DatabaseFingerprint?> GetFingerprintAsync(EffectiveDataStoreTarget target)
     {
+        string connectionString = target.ConnectionString;
+
         var lazy = _cache.GetOrAdd(
             connectionString,
-            static (key, state) =>
-                new Lazy<Task<DatabaseFingerprint?>>(() => state.ReadFingerprintAsync(key)),
-            fingerprintReader
+            static (_, state) =>
+                new Lazy<Task<DatabaseFingerprint?>>(() => state.Reader.ReadFingerprintAsync(state.Target)),
+            (Reader: fingerprintReader, Target: target)
         );
 
         try

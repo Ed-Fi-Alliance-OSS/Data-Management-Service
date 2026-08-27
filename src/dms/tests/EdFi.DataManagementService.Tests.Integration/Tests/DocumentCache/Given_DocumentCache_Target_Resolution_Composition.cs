@@ -658,20 +658,22 @@ public class Given_DocumentCache_Target_Resolution_Composition
             return Task.FromResult(GetObservation(connectionString).FingerprintResult);
         }
 
-        public Task<DatabaseFingerprint?> ReadFingerprintAsync(string connectionString) =>
-            Task.FromResult<DatabaseFingerprint?>(GetObservation(connectionString).DatabaseFingerprint);
+        public Task<DatabaseFingerprint?> ReadFingerprintAsync(EffectiveDataStoreTarget target) =>
+            Task.FromResult<DatabaseFingerprint?>(
+                GetObservation(target.ConnectionString).DatabaseFingerprint
+            );
 
         public Task<ResourceKeyValidationResult> ValidateAsync(
             DatabaseFingerprint dbFingerprint,
             short expectedResourceKeyCount,
             ImmutableArray<byte> expectedResourceKeySeedHash,
             IReadOnlyList<ResourceKeyRow> expectedResourceKeysInIdOrder,
-            string connectionString,
+            EffectiveDataStoreTarget target,
             CancellationToken cancellationToken = default
         )
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(GetObservation(connectionString).ResourceKeyValidation);
+            return Task.FromResult(GetObservation(target.ConnectionString).ResourceKeyValidation);
         }
 
         public Task<DocumentCacheLifecycleReadResult> ReadLifecycleAsync(

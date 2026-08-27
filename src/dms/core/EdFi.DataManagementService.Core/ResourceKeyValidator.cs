@@ -28,7 +28,7 @@ internal sealed class ResourceKeyValidator(
         short expectedResourceKeyCount,
         ImmutableArray<byte> expectedResourceKeySeedHash,
         IReadOnlyList<ResourceKeyRow> expectedResourceKeysInIdOrder,
-        string connectionString,
+        EffectiveDataStoreTarget target,
         CancellationToken cancellationToken = default
     )
     {
@@ -49,10 +49,7 @@ internal sealed class ResourceKeyValidator(
         IReadOnlyList<ResourceKeyRow> actualRows;
         try
         {
-            actualRows = await resourceKeyRowReader.ReadResourceKeyRowsAsync(
-                connectionString,
-                cancellationToken
-            );
+            actualRows = await resourceKeyRowReader.ReadResourceKeyRowsAsync(target, cancellationToken);
         }
         catch (OperationCanceledException)
         {

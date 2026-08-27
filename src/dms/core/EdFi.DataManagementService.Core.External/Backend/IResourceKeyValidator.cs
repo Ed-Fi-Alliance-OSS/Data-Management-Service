@@ -22,14 +22,14 @@ public interface IResourceKeyValidator
     /// <param name="expectedResourceKeyCount">The expected number of resource keys.</param>
     /// <param name="expectedResourceKeySeedHash">The expected SHA-256 hash of the resource key seed list.</param>
     /// <param name="expectedResourceKeysInIdOrder">The expected resource key rows ordered by ResourceKeyId.</param>
-    /// <param name="connectionString">The database connection string for slow-path row reads.</param>
+    /// <param name="target">The kind and configured connection string used for slow-path row reads.</param>
     /// <returns>Success if keys match; Failure with a diff report otherwise.</returns>
     Task<ResourceKeyValidationResult> ValidateAsync(
         DatabaseFingerprint dbFingerprint,
         short expectedResourceKeyCount,
         ImmutableArray<byte> expectedResourceKeySeedHash,
         IReadOnlyList<ResourceKeyRow> expectedResourceKeysInIdOrder,
-        string connectionString,
+        EffectiveDataStoreTarget target,
         CancellationToken cancellationToken = default
     );
 }

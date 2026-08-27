@@ -124,7 +124,8 @@ public class ValidateStartupInstancesTaskTests
             Func<Task> act = async () => await task.ExecuteAsync(CancellationToken.None);
 
             await act.Should().NotThrowAsync();
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<EffectiveDataStoreTarget>._))
+                .MustNotHaveHappened();
         }
     }
 
@@ -148,7 +149,8 @@ public class ValidateStartupInstancesTaskTests
             A.CallTo(() => instanceProvider.GetAll(null))
                 .Returns([new DataStore(1, "Type", "TestInstance", "Server=test", [])]);
             A.CallTo(() => connectionStringProvider.GetConnectionString(1, null)).Returns("Server=test");
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<string>._)).Returns(fingerprint);
+            A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<EffectiveDataStoreTarget>._))
+                .Returns(fingerprint);
             A.CallTo(() => schemaSetProvider.EffectiveSchemaSet).Returns(schemaSet);
             A.CallTo(() =>
                     resourceKeyValidator.ValidateAsync(
@@ -156,7 +158,7 @@ public class ValidateStartupInstancesTaskTests
                         A<short>._,
                         A<ImmutableArray<byte>>._,
                         A<IReadOnlyList<ResourceKeyRow>>._,
-                        A<string>._,
+                        A<EffectiveDataStoreTarget>._,
                         A<CancellationToken>._
                     )
                 )
@@ -194,7 +196,7 @@ public class ValidateStartupInstancesTaskTests
             A.CallTo(() => instanceProvider.GetAll(null))
                 .Returns([new DataStore(1, "Type", "TestInstance", "Server=test", [])]);
             A.CallTo(() => connectionStringProvider.GetConnectionString(1, null)).Returns("Server=test");
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<string>._))
+            A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<EffectiveDataStoreTarget>._))
                 .Returns((DatabaseFingerprint?)null);
 
             var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
@@ -225,7 +227,7 @@ public class ValidateStartupInstancesTaskTests
             A.CallTo(() => instanceProvider.GetAll(null))
                 .Returns([new DataStore(1, "Type", "TestInstance", "Server=test", [])]);
             A.CallTo(() => connectionStringProvider.GetConnectionString(1, null)).Returns("Server=test");
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<string>._))
+            A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<EffectiveDataStoreTarget>._))
                 .ThrowsAsync(new DatabaseFingerprintValidationException("bad data"));
 
             var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
@@ -266,7 +268,8 @@ public class ValidateStartupInstancesTaskTests
             A.CallTo(() => instanceProvider.GetAll(null))
                 .Returns([new DataStore(1, "Type", "TestInstance", "Server=test", [])]);
             A.CallTo(() => connectionStringProvider.GetConnectionString(1, null)).Returns("Server=test");
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<string>._)).Returns(fingerprint);
+            A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<EffectiveDataStoreTarget>._))
+                .Returns(fingerprint);
             A.CallTo(() => schemaSetProvider.EffectiveSchemaSet).Returns(schemaSet);
 
             var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
@@ -298,7 +301,7 @@ public class ValidateStartupInstancesTaskTests
             A.CallTo(() => instanceProvider.GetAll(null))
                 .Returns([new DataStore(1, "Type", "TestInstance", "Server=test", [])]);
             A.CallTo(() => connectionStringProvider.GetConnectionString(1, null)).Returns("Server=test");
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<string>._))
+            A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<EffectiveDataStoreTarget>._))
                 .ThrowsAsync(new TimeoutException("connection timed out"));
 
             var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
@@ -334,7 +337,8 @@ public class ValidateStartupInstancesTaskTests
             A.CallTo(() => instanceProvider.GetAll(null))
                 .Returns([new DataStore(1, "Type", "TestInstance", "Server=test", [])]);
             A.CallTo(() => connectionStringProvider.GetConnectionString(1, null)).Returns("Server=test");
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<string>._)).Returns(fingerprint);
+            A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<EffectiveDataStoreTarget>._))
+                .Returns(fingerprint);
             A.CallTo(() => schemaSetProvider.EffectiveSchemaSet).Returns(schemaSet);
             A.CallTo(() =>
                     resourceKeyValidator.ValidateAsync(
@@ -342,7 +346,7 @@ public class ValidateStartupInstancesTaskTests
                         A<short>._,
                         A<ImmutableArray<byte>>._,
                         A<IReadOnlyList<ResourceKeyRow>>._,
-                        A<string>._,
+                        A<EffectiveDataStoreTarget>._,
                         A<CancellationToken>._
                     )
                 )
@@ -391,11 +395,16 @@ public class ValidateStartupInstancesTaskTests
             A.CallTo(() => connectionStringProvider.GetConnectionString(2, null)).Returns("Server=good");
 
             // Bad instance: unprovisioned database
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=bad"))
+            A.CallTo(() =>
+                    fingerprintReader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("Server=bad"))
+                )
                 .Returns((DatabaseFingerprint?)null);
 
             // Good instance: valid fingerprint
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=good")).Returns(goodFingerprint);
+            A.CallTo(() =>
+                    fingerprintReader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("Server=good"))
+                )
+                .Returns(goodFingerprint);
 
             A.CallTo(() => schemaSetProvider.EffectiveSchemaSet).Returns(schemaSet);
             A.CallTo(() =>
@@ -404,7 +413,7 @@ public class ValidateStartupInstancesTaskTests
                         A<short>._,
                         A<ImmutableArray<byte>>._,
                         A<IReadOnlyList<ResourceKeyRow>>._,
-                        A<string>._,
+                        A<EffectiveDataStoreTarget>._,
                         A<CancellationToken>._
                     )
                 )
@@ -425,9 +434,13 @@ public class ValidateStartupInstancesTaskTests
 
             // The bad instance does not prevent the good instance from being validated
             await act.Should().NotThrowAsync();
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=bad"))
+            A.CallTo(() =>
+                    fingerprintReader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("Server=bad"))
+                )
                 .MustHaveHappenedOnceExactly();
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=good"))
+            A.CallTo(() =>
+                    fingerprintReader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("Server=good"))
+                )
                 .MustHaveHappenedOnceExactly();
         }
     }
@@ -455,7 +468,8 @@ public class ValidateStartupInstancesTaskTests
                 .Returns([new DataStore(2, "Type", "Instance2", "Server=b", [])]);
             A.CallTo(() => connectionStringProvider.GetConnectionString(1, "tenantA")).Returns("Server=a");
             A.CallTo(() => connectionStringProvider.GetConnectionString(2, "tenantB")).Returns("Server=b");
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<string>._)).Returns(fingerprint);
+            A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<EffectiveDataStoreTarget>._))
+                .Returns(fingerprint);
             A.CallTo(() => schemaSetProvider.EffectiveSchemaSet).Returns(schemaSet);
             A.CallTo(() =>
                     resourceKeyValidator.ValidateAsync(
@@ -463,7 +477,7 @@ public class ValidateStartupInstancesTaskTests
                         A<short>._,
                         A<ImmutableArray<byte>>._,
                         A<IReadOnlyList<ResourceKeyRow>>._,
-                        A<string>._,
+                        A<EffectiveDataStoreTarget>._,
                         A<CancellationToken>._
                     )
                 )
@@ -485,8 +499,14 @@ public class ValidateStartupInstancesTaskTests
             await act.Should().NotThrowAsync();
 
             // Verify both connection strings were read
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=a")).MustHaveHappenedOnceExactly();
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=b")).MustHaveHappenedOnceExactly();
+            A.CallTo(() =>
+                    fingerprintReader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("Server=a"))
+                )
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() =>
+                    fingerprintReader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("Server=b"))
+                )
+                .MustHaveHappenedOnceExactly();
         }
     }
 }

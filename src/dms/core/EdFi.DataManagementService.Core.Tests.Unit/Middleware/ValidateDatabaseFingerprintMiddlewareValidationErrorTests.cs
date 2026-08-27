@@ -176,7 +176,11 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
                     )
                 );
 
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=test;Database=corrupt"))
+            A.CallTo(() =>
+                    fingerprintReader.ReadFingerprintAsync(
+                        EffectiveDataStoreTarget.Primary("Server=test;Database=corrupt")
+                    )
+                )
                 .Returns(
                     Task.FromException<DatabaseFingerprint?>(
                         new DatabaseFingerprintValidationException(DuplicateRowsMessage)
@@ -282,7 +286,11 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         [Test]
         public void It_still_reads_the_database_fingerprint_when_startup_validation_bypass_is_enabled()
         {
-            A.CallTo(() => _fingerprintReader.ReadFingerprintAsync("Server=test;Database=corrupt"))
+            A.CallTo(() =>
+                    _fingerprintReader.ReadFingerprintAsync(
+                        EffectiveDataStoreTarget.Primary("Server=test;Database=corrupt")
+                    )
+                )
                 .MustHaveHappenedOnceExactly();
         }
 
@@ -324,7 +332,11 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
                     )
                 );
 
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=test;Database=invalid-seed"))
+            A.CallTo(() =>
+                    fingerprintReader.ReadFingerprintAsync(
+                        EffectiveDataStoreTarget.Primary("Server=test;Database=invalid-seed")
+                    )
+                )
                 .Returns(
                     Task.FromException<DatabaseFingerprint?>(
                         new DatabaseFingerprintValidationException(InvalidSeedHashMessage)
@@ -425,7 +437,11 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
                     )
                 );
 
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=test;Database=multi-issue"))
+            A.CallTo(() =>
+                    fingerprintReader.ReadFingerprintAsync(
+                        EffectiveDataStoreTarget.Primary("Server=test;Database=multi-issue")
+                    )
+                )
                 .Returns(
                     Task.FromException<DatabaseFingerprint?>(
                         new DatabaseFingerprintValidationException(ValidationIssues)
@@ -494,7 +510,11 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         [Test]
         public void It_uses_the_cached_validation_failure_without_retrying_the_reader()
         {
-            A.CallTo(() => _fingerprintReader.ReadFingerprintAsync("Server=test;Database=multi-issue"))
+            A.CallTo(() =>
+                    _fingerprintReader.ReadFingerprintAsync(
+                        EffectiveDataStoreTarget.Primary("Server=test;Database=multi-issue")
+                    )
+                )
                 .MustHaveHappenedOnceExactly();
         }
     }
@@ -532,7 +552,11 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
                     )
                 );
 
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=test;Database=projection-failure"))
+            A.CallTo(() =>
+                    fingerprintReader.ReadFingerprintAsync(
+                        EffectiveDataStoreTarget.Primary("Server=test;Database=projection-failure")
+                    )
+                )
                 .Returns(
                     Task.FromException<DatabaseFingerprint?>(
                         new DatabaseFingerprintValidationException(ProjectionFailureMessage)
@@ -619,7 +643,7 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
                     )
                 );
 
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<string>._))
+            A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<EffectiveDataStoreTarget>._))
                 .ThrowsAsync(new TimeoutException("connection timed out"));
 
             _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);

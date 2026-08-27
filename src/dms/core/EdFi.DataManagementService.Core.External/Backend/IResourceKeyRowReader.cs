@@ -14,10 +14,10 @@ public interface IResourceKeyRowReader
     /// Reads all resource key rows from the dms.ResourceKey table,
     /// ordered by ResourceKeyId ascending.
     /// </summary>
-    /// <param name="connectionString">The database connection string.</param>
+    /// <param name="target">The kind and configured connection string of the database to read from.</param>
     /// <returns>All resource key rows ordered by ResourceKeyId.</returns>
     Task<IReadOnlyList<ResourceKeyRow>> ReadResourceKeyRowsAsync(
-        string connectionString,
+        EffectiveDataStoreTarget target,
         CancellationToken cancellationToken = default
     );
 }

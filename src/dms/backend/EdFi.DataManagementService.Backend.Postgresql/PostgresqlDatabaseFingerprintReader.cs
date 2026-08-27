@@ -17,9 +17,9 @@ public class PostgresqlDatabaseFingerprintReader(ILogger<PostgresqlDatabaseFinge
     private static readonly DatabaseFingerprintReaderQuery _query =
         DatabaseFingerprintReaderSupport.GetEffectiveSchemaQuery(SqlDialect.Pgsql);
 
-    public Task<DatabaseFingerprint?> ReadFingerprintAsync(string connectionString) =>
+    public Task<DatabaseFingerprint?> ReadFingerprintAsync(EffectiveDataStoreTarget target) =>
         DatabaseFingerprintReaderSupport.ReadFingerprintAsync(
-            () => new NpgsqlConnection(connectionString),
+            () => new NpgsqlConnection(target.ConnectionString),
             _query,
             logger,
             static exception =>

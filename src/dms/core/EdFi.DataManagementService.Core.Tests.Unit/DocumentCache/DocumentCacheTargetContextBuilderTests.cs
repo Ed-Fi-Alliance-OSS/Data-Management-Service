@@ -175,7 +175,11 @@ public class DocumentCacheTargetContextBuilderTests
                     fixture.InventoryValidator.ValidateInventoryAsync(TargetInput, A<CancellationToken>._)
                 )
                 .MustHaveHappenedOnceExactly();
-            A.CallTo(() => fixture.DatabaseFingerprintReader.ReadFingerprintAsync(TargetInput))
+            A.CallTo(() =>
+                    fixture.DatabaseFingerprintReader.ReadFingerprintAsync(
+                        EffectiveDataStoreTarget.Primary(TargetInput)
+                    )
+                )
                 .MustHaveHappenedOnceExactly();
             A.CallTo(() =>
                     fixture.ResourceKeyValidator.ValidateAsync(
@@ -183,7 +187,7 @@ public class DocumentCacheTargetContextBuilderTests
                         1,
                         A<System.Collections.Immutable.ImmutableArray<byte>>._,
                         A<IReadOnlyList<ResourceKeyRow>>._,
-                        TargetInput,
+                        EffectiveDataStoreTarget.Primary(TargetInput),
                         A<CancellationToken>._
                     )
                 )
@@ -507,7 +511,7 @@ public class DocumentCacheTargetContextBuilderTests
                         A<short>._,
                         A<System.Collections.Immutable.ImmutableArray<byte>>._,
                         A<IReadOnlyList<ResourceKeyRow>>._,
-                        A<string>._,
+                        A<EffectiveDataStoreTarget>._,
                         A<CancellationToken>._
                     )
                 )
@@ -543,7 +547,7 @@ public class DocumentCacheTargetContextBuilderTests
                         A<short>._,
                         A<System.Collections.Immutable.ImmutableArray<byte>>._,
                         A<IReadOnlyList<ResourceKeyRow>>._,
-                        A<string>._,
+                        A<EffectiveDataStoreTarget>._,
                         A<CancellationToken>._
                     )
                 )
@@ -741,7 +745,7 @@ public class DocumentCacheTargetContextBuilderTests
             .MustNotHaveHappened();
         A.CallTo(() => fixture.InventoryValidator.ValidateInventoryAsync(A<string>._, A<CancellationToken>._))
             .MustNotHaveHappened();
-        A.CallTo(() => fixture.DatabaseFingerprintReader.ReadFingerprintAsync(A<string>._))
+        A.CallTo(() => fixture.DatabaseFingerprintReader.ReadFingerprintAsync(A<EffectiveDataStoreTarget>._))
             .MustNotHaveHappened();
         A.CallTo(() =>
                 fixture.ResourceKeyValidator.ValidateAsync(
@@ -749,7 +753,7 @@ public class DocumentCacheTargetContextBuilderTests
                     A<short>._,
                     A<System.Collections.Immutable.ImmutableArray<byte>>._,
                     A<IReadOnlyList<ResourceKeyRow>>._,
-                    A<string>._,
+                    A<EffectiveDataStoreTarget>._,
                     A<CancellationToken>._
                 )
             )
@@ -851,7 +855,7 @@ public class DocumentCacheTargetContextBuilderTests
                 .Returns(Task.FromResult(InventoryResult ?? _satisfiedInventory));
             A.CallTo(() => EffectiveSchemaSetProvider.EffectiveSchemaSet)
                 .Returns(EffectiveSchemaSet ?? _effectiveSchemaSet);
-            A.CallTo(() => DatabaseFingerprintReader.ReadFingerprintAsync(A<string>._))
+            A.CallTo(() => DatabaseFingerprintReader.ReadFingerprintAsync(A<EffectiveDataStoreTarget>._))
                 .Returns(
                     Task.FromResult<DatabaseFingerprint?>(DatabaseFingerprintResult ?? _databaseFingerprint)
                 );
@@ -861,7 +865,7 @@ public class DocumentCacheTargetContextBuilderTests
                         A<short>._,
                         A<System.Collections.Immutable.ImmutableArray<byte>>._,
                         A<IReadOnlyList<ResourceKeyRow>>._,
-                        A<string>._,
+                        A<EffectiveDataStoreTarget>._,
                         A<CancellationToken>._
                     )
                 )

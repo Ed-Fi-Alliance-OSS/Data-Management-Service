@@ -13,6 +13,6 @@ namespace EdFi.DataManagementService.Core;
 /// </summary>
 internal sealed class NullDatabaseFingerprintReader : IDatabaseFingerprintReader
 {
-    public Task<DatabaseFingerprint?> ReadFingerprintAsync(string connectionString) =>
+    public Task<DatabaseFingerprint?> ReadFingerprintAsync(EffectiveDataStoreTarget target) =>
         Task.FromResult<DatabaseFingerprint?>(null);
 }

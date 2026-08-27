@@ -100,7 +100,9 @@ public class Given_A_Provisioned_EffectiveSchema_Table
             NullLogger<PostgresqlDatabaseFingerprintReader>.Instance
         );
 
-        _result = await reader.ReadFingerprintAsync(_database.ConnectionString);
+        _result = await reader.ReadFingerprintAsync(
+            EffectiveDataStoreTarget.Primary(_database.ConnectionString)
+        );
     }
 
     [Test]

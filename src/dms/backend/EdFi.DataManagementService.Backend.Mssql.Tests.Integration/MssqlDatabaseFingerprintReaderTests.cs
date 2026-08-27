@@ -127,7 +127,9 @@ public class Given_MssqlDatabaseFingerprintReaderTests_A_Provisioned_Core_Dms_Sc
 
         var reader = new MssqlDatabaseFingerprintReader(NullLogger<MssqlDatabaseFingerprintReader>.Instance);
 
-        var result = await reader.ReadFingerprintAsync(_database.ConnectionString);
+        var result = await reader.ReadFingerprintAsync(
+            EffectiveDataStoreTarget.Primary(_database.ConnectionString)
+        );
 
         result.Should().NotBeNull();
         result!.ApiSchemaFormatVersion.Should().Be("1.0");

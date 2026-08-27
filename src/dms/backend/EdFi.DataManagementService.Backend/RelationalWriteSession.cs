@@ -86,7 +86,11 @@ internal sealed class NeverCompletedTransactionStateProbe : IRelationalTransacti
 internal sealed class RelationalWriteSession(
     DbConnection connection,
     DbTransaction transaction,
-    IRelationalTransactionStateProbe? transactionStateProbe = null
+    IRelationalTransactionStateProbe? transactionStateProbe = null,
+    // A backend whose connection is drawn from a pooled or leased identity hands that claim in here, so
+    // the claim ends with the session rather than with the factory call that created it. Disposed after
+    // the connection, so nothing can retire the identity while a connection from it is still open.
+    IAsyncDisposable? ownedLease = null
 ) : IRelationalWriteSession
 {
     private readonly IRelationalTransactionStateProbe _transactionStateProbe =
@@ -181,6 +185,11 @@ internal sealed class RelationalWriteSession(
 
         await Transaction.DisposeAsync().ConfigureAwait(false);
         await Connection.DisposeAsync().ConfigureAwait(false);
+
+        if (ownedLease is not null)
+        {
+            await ownedLease.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
     private enum RelationalWriteSessionState

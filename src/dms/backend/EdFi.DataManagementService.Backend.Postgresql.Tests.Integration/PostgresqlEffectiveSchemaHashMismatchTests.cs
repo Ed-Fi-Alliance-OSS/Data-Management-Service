@@ -55,7 +55,9 @@ public class Given_A_Postgresql_Database_Provisioned_With_Generated_DDL_For_Effe
             NullLogger<PostgresqlDatabaseFingerprintReader>.Instance
         );
 
-        _fingerprint = await reader.ReadFingerprintAsync(_database.ConnectionString);
+        _fingerprint = await reader.ReadFingerprintAsync(
+            EffectiveDataStoreTarget.Primary(_database.ConnectionString)
+        );
     }
 
     [OneTimeTearDown]

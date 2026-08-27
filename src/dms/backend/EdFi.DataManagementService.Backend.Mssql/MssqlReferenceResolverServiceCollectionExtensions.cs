@@ -10,7 +10,6 @@ using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
-using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -157,36 +156,21 @@ internal sealed class MssqlReferenceResolverAdapterFactory(IRelationalCommandExe
 
 internal sealed class MssqlDocumentHydrator : IDocumentHydrator
 {
-    private readonly Func<CancellationToken, Task<DbConnection>> _openConnectionAsync;
+    private readonly Func<CancellationToken, Task<MssqlLeasedConnection>> _openConnectionAsync;
 
     public MssqlDocumentHydrator(IDataStoreSelection dataStoreSelection)
-        : this(dataStoreSelection, connectionString => new SqlConnection(connectionString)) { }
+        : this(dataStoreSelection, new MssqlConnectionAcquisition()) { }
 
     internal MssqlDocumentHydrator(
         IDataStoreSelection dataStoreSelection,
-        Func<string, DbConnection> createConnection
+        IMssqlConnectionAcquisition acquisition
     )
     {
         ArgumentNullException.ThrowIfNull(dataStoreSelection);
-        ArgumentNullException.ThrowIfNull(createConnection);
+        ArgumentNullException.ThrowIfNull(acquisition);
 
-        _openConnectionAsync = async cancellationToken =>
-        {
-            var selectedInstance = dataStoreSelection.GetSelectedDataStore();
-            var connectionString = selectedInstance.ConnectionString;
-
-            if (string.IsNullOrWhiteSpace(connectionString))
-            {
-                throw new InvalidOperationException(
-                    $"Selected data store '{selectedInstance.Id}' does not have a valid connection string."
-                );
-            }
-
-            var connection = createConnection(connectionString);
-            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-
-            return connection;
-        };
+        _openConnectionAsync = cancellationToken =>
+            MssqlSeamConnection.OpenAsync(dataStoreSelection, acquisition, cancellationToken);
     }
 
     public async Task<HydratedPage> HydrateAsync(
@@ -196,7 +180,8 @@ internal sealed class MssqlDocumentHydrator : IDocumentHydrator
         CancellationToken ct
     )
     {
-        await using var connection = await _openConnectionAsync(ct).ConfigureAwait(false);
+        await using var leased = await _openConnectionAsync(ct).ConfigureAwait(false);
+        DbConnection connection = leased.Connection;
 
         return await HydrationExecutor.ExecuteAsync(
             connection,

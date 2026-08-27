@@ -12,13 +12,13 @@ public interface IDatabaseFingerprintReader
 {
     /// <summary>
     /// Reads the four fingerprint fields from the dms.EffectiveSchema singleton row
-    /// for the database at the given connection string.
+    /// for the database the given target names.
     /// </summary>
-    /// <param name="connectionString">The database connection string to read from.</param>
+    /// <param name="target">The kind and configured connection string of the database to read from.</param>
     /// <returns>The fingerprint if the table and singleton row exist;
     /// <c>null</c> if the table is missing or has no data.</returns>
     /// <exception cref="DatabaseFingerprintValidationException">
     /// Thrown when the dms.EffectiveSchema table exists but contains malformed singleton content.
     /// </exception>
-    Task<DatabaseFingerprint?> ReadFingerprintAsync(string connectionString);
+    Task<DatabaseFingerprint?> ReadFingerprintAsync(EffectiveDataStoreTarget target);
 }

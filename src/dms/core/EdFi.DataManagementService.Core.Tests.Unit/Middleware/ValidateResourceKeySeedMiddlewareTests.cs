@@ -180,7 +180,7 @@ public class ValidateResourceKeySeedMiddlewareTests
                         A<short>._,
                         A<ImmutableArray<byte>>._,
                         A<IReadOnlyList<ResourceKeyRow>>._,
-                        A<string>._,
+                        A<EffectiveDataStoreTarget>._,
                         A<CancellationToken>._
                     )
                 )
@@ -236,7 +236,7 @@ public class ValidateResourceKeySeedMiddlewareTests
                         A<short>._,
                         A<ImmutableArray<byte>>._,
                         A<IReadOnlyList<ResourceKeyRow>>._,
-                        A<string>._,
+                        A<EffectiveDataStoreTarget>._,
                         A<CancellationToken>._
                     )
                 )
@@ -334,7 +334,7 @@ public class ValidateResourceKeySeedMiddlewareTests
                         A<short>._,
                         A<ImmutableArray<byte>>._,
                         A<IReadOnlyList<ResourceKeyRow>>._,
-                        A<string>._,
+                        A<EffectiveDataStoreTarget>._,
                         A<CancellationToken>._
                     )
                 )
@@ -380,7 +380,7 @@ public class ValidateResourceKeySeedMiddlewareTests
                         A<short>._,
                         A<ImmutableArray<byte>>._,
                         A<IReadOnlyList<ResourceKeyRow>>._,
-                        A<string>._,
+                        A<EffectiveDataStoreTarget>._,
                         A<CancellationToken>._
                     )
                 )
@@ -421,7 +421,7 @@ public class ValidateResourceKeySeedMiddlewareTests
                         A<short>._,
                         A<ImmutableArray<byte>>._,
                         A<IReadOnlyList<ResourceKeyRow>>._,
-                        A<string>._,
+                        A<EffectiveDataStoreTarget>._,
                         A<CancellationToken>._
                     )
                 )
@@ -474,7 +474,7 @@ public class ValidateResourceKeySeedMiddlewareTests
                         A<short>._,
                         A<ImmutableArray<byte>>._,
                         A<IReadOnlyList<ResourceKeyRow>>._,
-                        A<string>._,
+                        A<EffectiveDataStoreTarget>._,
                         A<CancellationToken>._
                     )
                 )
@@ -504,7 +504,7 @@ public class ValidateResourceKeySeedMiddlewareTests
                         A<short>._,
                         A<ImmutableArray<byte>>._,
                         A<IReadOnlyList<ResourceKeyRow>>._,
-                        A<string>._,
+                        A<EffectiveDataStoreTarget>._,
                         A<CancellationToken>._
                     )
                 )

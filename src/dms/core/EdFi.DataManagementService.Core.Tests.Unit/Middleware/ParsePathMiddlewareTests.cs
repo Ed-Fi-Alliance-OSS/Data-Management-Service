@@ -585,7 +585,8 @@ public class ParsePathMiddlewareTests
         [Test]
         public void It_does_not_read_the_database_fingerprint()
         {
-            A.CallTo(() => _fingerprintReader.ReadFingerprintAsync(A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => _fingerprintReader.ReadFingerprintAsync(A<EffectiveDataStoreTarget>._))
+                .MustNotHaveHappened();
         }
     }
 
@@ -616,7 +617,8 @@ public class ParsePathMiddlewareTests
         [Test]
         public void It_does_not_read_the_database_fingerprint()
         {
-            A.CallTo(() => _fingerprintReader.ReadFingerprintAsync(A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => _fingerprintReader.ReadFingerprintAsync(A<EffectiveDataStoreTarget>._))
+                .MustNotHaveHappened();
         }
     }
 }

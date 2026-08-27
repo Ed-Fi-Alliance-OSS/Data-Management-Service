@@ -54,7 +54,7 @@ public class ResourceKeyValidatorTests
                 2,
                 HashA().ToImmutableArray(),
                 expectedKeys,
-                "conn1"
+                EffectiveDataStoreTarget.Primary("conn1")
             );
         }
 
@@ -67,7 +67,9 @@ public class ResourceKeyValidatorTests
         [Test]
         public void It_does_not_call_the_row_reader()
         {
-            A.CallTo(() => _reader.ReadResourceKeyRowsAsync(A<string>._, A<CancellationToken>._))
+            A.CallTo(() =>
+                    _reader.ReadResourceKeyRowsAsync(A<EffectiveDataStoreTarget>._, A<CancellationToken>._)
+                )
                 .MustNotHaveHappened();
         }
     }
@@ -83,7 +85,12 @@ public class ResourceKeyValidatorTests
         public async Task Setup()
         {
             _reader = A.Fake<IResourceKeyRowReader>();
-            A.CallTo(() => _reader.ReadResourceKeyRowsAsync("conn1", A<CancellationToken>._))
+            A.CallTo(() =>
+                    _reader.ReadResourceKeyRowsAsync(
+                        EffectiveDataStoreTarget.Primary("conn1"),
+                        A<CancellationToken>._
+                    )
+                )
                 .Returns(
                     Task.FromResult<IReadOnlyList<ResourceKeyRow>>(
                         new List<ResourceKeyRow>
@@ -108,7 +115,7 @@ public class ResourceKeyValidatorTests
                 2,
                 HashA().ToImmutableArray(),
                 expectedKeys,
-                "conn1"
+                EffectiveDataStoreTarget.Primary("conn1")
             );
         }
 
@@ -121,7 +128,12 @@ public class ResourceKeyValidatorTests
         [Test]
         public void It_calls_the_row_reader()
         {
-            A.CallTo(() => _reader.ReadResourceKeyRowsAsync("conn1", A<CancellationToken>._))
+            A.CallTo(() =>
+                    _reader.ReadResourceKeyRowsAsync(
+                        EffectiveDataStoreTarget.Primary("conn1"),
+                        A<CancellationToken>._
+                    )
+                )
                 .MustHaveHappenedOnceExactly();
         }
 
@@ -144,7 +156,12 @@ public class ResourceKeyValidatorTests
         public async Task Setup()
         {
             _reader = A.Fake<IResourceKeyRowReader>();
-            A.CallTo(() => _reader.ReadResourceKeyRowsAsync("conn1", A<CancellationToken>._))
+            A.CallTo(() =>
+                    _reader.ReadResourceKeyRowsAsync(
+                        EffectiveDataStoreTarget.Primary("conn1"),
+                        A<CancellationToken>._
+                    )
+                )
                 .Returns(
                     Task.FromResult<IReadOnlyList<ResourceKeyRow>>(
                         new List<ResourceKeyRow>
@@ -168,7 +185,7 @@ public class ResourceKeyValidatorTests
                 2,
                 HashA().ToImmutableArray(),
                 expectedKeys,
-                "conn1"
+                EffectiveDataStoreTarget.Primary("conn1")
             );
         }
 
@@ -181,7 +198,12 @@ public class ResourceKeyValidatorTests
         [Test]
         public void It_calls_the_row_reader()
         {
-            A.CallTo(() => _reader.ReadResourceKeyRowsAsync("conn1", A<CancellationToken>._))
+            A.CallTo(() =>
+                    _reader.ReadResourceKeyRowsAsync(
+                        EffectiveDataStoreTarget.Primary("conn1"),
+                        A<CancellationToken>._
+                    )
+                )
                 .MustHaveHappenedOnceExactly();
         }
 
@@ -205,7 +227,12 @@ public class ResourceKeyValidatorTests
         public async Task Setup()
         {
             var reader = A.Fake<IResourceKeyRowReader>();
-            A.CallTo(() => reader.ReadResourceKeyRowsAsync("conn1", A<CancellationToken>._))
+            A.CallTo(() =>
+                    reader.ReadResourceKeyRowsAsync(
+                        EffectiveDataStoreTarget.Primary("conn1"),
+                        A<CancellationToken>._
+                    )
+                )
                 .Returns(
                     Task.FromResult<IReadOnlyList<ResourceKeyRow>>(
                         new List<ResourceKeyRow> { Row(1, "Ed-Fi", "Student", "5.0.0") }
@@ -226,7 +253,7 @@ public class ResourceKeyValidatorTests
                 3,
                 HashA().ToImmutableArray(),
                 expectedKeys,
-                "conn1"
+                EffectiveDataStoreTarget.Primary("conn1")
             );
         }
 
@@ -256,7 +283,12 @@ public class ResourceKeyValidatorTests
         public async Task Setup()
         {
             var reader = A.Fake<IResourceKeyRowReader>();
-            A.CallTo(() => reader.ReadResourceKeyRowsAsync("conn1", A<CancellationToken>._))
+            A.CallTo(() =>
+                    reader.ReadResourceKeyRowsAsync(
+                        EffectiveDataStoreTarget.Primary("conn1"),
+                        A<CancellationToken>._
+                    )
+                )
                 .Returns(
                     Task.FromResult<IReadOnlyList<ResourceKeyRow>>(
                         new List<ResourceKeyRow>
@@ -277,7 +309,7 @@ public class ResourceKeyValidatorTests
                 1,
                 HashA().ToImmutableArray(),
                 expectedKeys,
-                "conn1"
+                EffectiveDataStoreTarget.Primary("conn1")
             );
         }
 
@@ -307,7 +339,12 @@ public class ResourceKeyValidatorTests
         public async Task Setup()
         {
             var reader = A.Fake<IResourceKeyRowReader>();
-            A.CallTo(() => reader.ReadResourceKeyRowsAsync("conn1", A<CancellationToken>._))
+            A.CallTo(() =>
+                    reader.ReadResourceKeyRowsAsync(
+                        EffectiveDataStoreTarget.Primary("conn1"),
+                        A<CancellationToken>._
+                    )
+                )
                 .Returns(
                     Task.FromResult<IReadOnlyList<ResourceKeyRow>>(
                         new List<ResourceKeyRow> { Row(1, "Ed-Fi", "School", "4.0.0") }
@@ -323,7 +360,7 @@ public class ResourceKeyValidatorTests
                 1,
                 HashA().ToImmutableArray(),
                 expectedKeys,
-                "conn1"
+                EffectiveDataStoreTarget.Primary("conn1")
             );
         }
 
@@ -362,7 +399,12 @@ public class ResourceKeyValidatorTests
         public async Task Setup()
         {
             var reader = A.Fake<IResourceKeyRowReader>();
-            A.CallTo(() => reader.ReadResourceKeyRowsAsync("conn1", A<CancellationToken>._))
+            A.CallTo(() =>
+                    reader.ReadResourceKeyRowsAsync(
+                        EffectiveDataStoreTarget.Primary("conn1"),
+                        A<CancellationToken>._
+                    )
+                )
                 .Returns(
                     Task.FromResult<IReadOnlyList<ResourceKeyRow>>(
                         new List<ResourceKeyRow>
@@ -387,7 +429,7 @@ public class ResourceKeyValidatorTests
                 3,
                 HashA().ToImmutableArray(),
                 expectedKeys,
-                "conn1"
+                EffectiveDataStoreTarget.Primary("conn1")
             );
         }
 
@@ -434,7 +476,12 @@ public class ResourceKeyValidatorTests
         {
             var reader = A.Fake<IResourceKeyRowReader>();
             // Actual rows match expected rows exactly
-            A.CallTo(() => reader.ReadResourceKeyRowsAsync("conn1", A<CancellationToken>._))
+            A.CallTo(() =>
+                    reader.ReadResourceKeyRowsAsync(
+                        EffectiveDataStoreTarget.Primary("conn1"),
+                        A<CancellationToken>._
+                    )
+                )
                 .Returns(
                     Task.FromResult<IReadOnlyList<ResourceKeyRow>>(
                         new List<ResourceKeyRow>
@@ -459,7 +506,7 @@ public class ResourceKeyValidatorTests
                 2,
                 HashA().ToImmutableArray(),
                 expectedKeys,
-                "conn1"
+                EffectiveDataStoreTarget.Primary("conn1")
             );
         }
 
@@ -488,7 +535,12 @@ public class ResourceKeyValidatorTests
         public async Task Setup()
         {
             var reader = A.Fake<IResourceKeyRowReader>();
-            A.CallTo(() => reader.ReadResourceKeyRowsAsync("conn1", A<CancellationToken>._))
+            A.CallTo(() =>
+                    reader.ReadResourceKeyRowsAsync(
+                        EffectiveDataStoreTarget.Primary("conn1"),
+                        A<CancellationToken>._
+                    )
+                )
                 .Returns(Task.FromResult<IReadOnlyList<ResourceKeyRow>>(new List<ResourceKeyRow>()));
 
             var validator = new ResourceKeyValidator(reader, NullLogger<ResourceKeyValidator>.Instance);
@@ -503,7 +555,7 @@ public class ResourceKeyValidatorTests
                 25,
                 HashA().ToImmutableArray(),
                 expectedKeys,
-                "conn1"
+                EffectiveDataStoreTarget.Primary("conn1")
             );
         }
 
@@ -540,7 +592,12 @@ public class ResourceKeyValidatorTests
         {
             var reader = A.Fake<IResourceKeyRowReader>();
             // Database returns duplicate ResourceKeyId 1
-            A.CallTo(() => reader.ReadResourceKeyRowsAsync("conn1", A<CancellationToken>._))
+            A.CallTo(() =>
+                    reader.ReadResourceKeyRowsAsync(
+                        EffectiveDataStoreTarget.Primary("conn1"),
+                        A<CancellationToken>._
+                    )
+                )
                 .Returns(
                     Task.FromResult<IReadOnlyList<ResourceKeyRow>>(
                         new List<ResourceKeyRow>
@@ -565,7 +622,7 @@ public class ResourceKeyValidatorTests
                 2,
                 HashA().ToImmutableArray(),
                 expectedKeys,
-                "conn1"
+                EffectiveDataStoreTarget.Primary("conn1")
             );
         }
 
@@ -601,7 +658,12 @@ public class ResourceKeyValidatorTests
         public async Task Setup()
         {
             var reader = A.Fake<IResourceKeyRowReader>();
-            A.CallTo(() => reader.ReadResourceKeyRowsAsync("conn1", A<CancellationToken>._))
+            A.CallTo(() =>
+                    reader.ReadResourceKeyRowsAsync(
+                        EffectiveDataStoreTarget.Primary("conn1"),
+                        A<CancellationToken>._
+                    )
+                )
                 .ThrowsAsync(new InvalidOperationException("relation \"dms.ResourceKey\" does not exist"));
 
             var validator = new ResourceKeyValidator(reader, NullLogger<ResourceKeyValidator>.Instance);
@@ -618,7 +680,7 @@ public class ResourceKeyValidatorTests
                 2,
                 HashA().ToImmutableArray(),
                 expectedKeys,
-                "conn1"
+                EffectiveDataStoreTarget.Primary("conn1")
             );
         }
 

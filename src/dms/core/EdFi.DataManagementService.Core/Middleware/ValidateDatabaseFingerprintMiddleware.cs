@@ -71,7 +71,9 @@ internal class ValidateDatabaseFingerprintMiddleware(
 
         try
         {
-            fingerprint = await fingerprintProvider.GetFingerprintAsync(connectionString);
+            fingerprint = await fingerprintProvider.GetFingerprintAsync(
+                EffectiveDataStoreTarget.Primary(connectionString)
+            );
         }
         catch (DatabaseFingerprintValidationException ex)
         {

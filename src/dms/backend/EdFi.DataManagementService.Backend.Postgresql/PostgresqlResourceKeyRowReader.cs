@@ -19,13 +19,13 @@ public class PostgresqlResourceKeyRowReader(ILogger<PostgresqlResourceKeyRowRead
         """;
 
     public async Task<IReadOnlyList<ResourceKeyRow>> ReadResourceKeyRowsAsync(
-        string connectionString,
+        EffectiveDataStoreTarget target,
         CancellationToken cancellationToken = default
     )
     {
         logger.LogDebug("Reading resource key rows from dms.ResourceKey");
 
-        await using var connection = new NpgsqlConnection(connectionString);
+        await using var connection = new NpgsqlConnection(target.ConnectionString);
         await connection.OpenAsync(cancellationToken);
 
         await using var command = connection.CreateCommand();

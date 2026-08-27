@@ -114,7 +114,11 @@ public class ValidateDatabaseFingerprintMiddlewareTests
                     )
                 );
 
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=test;Database=testdb"))
+            A.CallTo(() =>
+                    fingerprintReader.ReadFingerprintAsync(
+                        EffectiveDataStoreTarget.Primary("Server=test;Database=testdb")
+                    )
+                )
                 .Returns(new DatabaseFingerprint("1.0", "abc123", 42, new byte[32].ToImmutableArray()));
 
             await middleware.Execute(
@@ -172,7 +176,11 @@ public class ValidateDatabaseFingerprintMiddlewareTests
                     )
                 );
 
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=test;Database=unprovisioned"))
+            A.CallTo(() =>
+                    fingerprintReader.ReadFingerprintAsync(
+                        EffectiveDataStoreTarget.Primary("Server=test;Database=unprovisioned")
+                    )
+                )
                 .Returns((DatabaseFingerprint?)null);
 
             await middleware.Execute(
@@ -264,7 +272,8 @@ public class ValidateDatabaseFingerprintMiddlewareTests
         [Test]
         public void It_does_not_interact_with_the_fingerprint_reader()
         {
-            A.CallTo(() => _fingerprintReader.ReadFingerprintAsync(A<string>.Ignored)).MustNotHaveHappened();
+            A.CallTo(() => _fingerprintReader.ReadFingerprintAsync(A<EffectiveDataStoreTarget>.Ignored))
+                .MustNotHaveHappened();
         }
 
         [Test]
@@ -327,7 +336,11 @@ public class ValidateDatabaseFingerprintMiddlewareTests
                 );
 
             var fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=test;Database=testdb"))
+            A.CallTo(() =>
+                    fingerprintReader.ReadFingerprintAsync(
+                        EffectiveDataStoreTarget.Primary("Server=test;Database=testdb")
+                    )
+                )
                 .Throws(
                     new InvalidOperationException("No dialect-specific fingerprint reader is registered.")
                 );

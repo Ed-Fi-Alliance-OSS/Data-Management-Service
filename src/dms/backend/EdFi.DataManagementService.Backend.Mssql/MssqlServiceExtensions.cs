@@ -27,6 +27,15 @@ public static class MssqlServiceExtensions
 
         services.AddRelationalMappingSetServices(configuration, SqlDialect.Mssql, new MssqlDialectRules());
 
+        // The single SQL Server acquisition boundary, shared by every seam that opens a connection for
+        // a request, so all of them realize the same effective connection string for a given target.
+        services.TryAddSingleton<IMssqlConnectionAcquisition>(new MssqlConnectionAcquisition());
+
+        // Clearing one exact SqlClient pool is a lifecycle action no caller performs yet; the seam is
+        // registered here so the eventual retirement path has one adapter to use and so that
+        // SqlConnection.ClearAllPools stays absent from the codebase.
+        services.TryAddSingleton<ISqlServerPoolClearing, SqlClientPoolClearing>();
+
         return services;
     }
 

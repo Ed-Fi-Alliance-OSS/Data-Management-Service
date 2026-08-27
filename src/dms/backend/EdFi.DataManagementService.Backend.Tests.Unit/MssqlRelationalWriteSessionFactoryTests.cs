@@ -40,11 +40,13 @@ public class Given_MssqlRelationalWriteSessionFactory
 
         var sut = new MssqlRelationalWriteSessionFactory(
             dataStoreSelection,
-            selectedConnectionString =>
+            new MssqlConnectionAcquisition(effectiveConnectionString =>
             {
-                selectedConnectionString.Should().Be(connectionString);
+                // A Primary target realizes byte-for-byte, so the effective string the acquisition
+                // boundary opens is the configured one.
+                effectiveConnectionString.Should().Be(connectionString);
                 return connection;
-            },
+            }),
             Options.Create(new DatabaseOptions { IsolationLevel = IsolationLevel.Snapshot })
         );
 

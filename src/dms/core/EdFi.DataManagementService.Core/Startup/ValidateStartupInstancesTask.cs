@@ -127,10 +127,15 @@ internal sealed class ValidateStartupInstancesTask(
         string sanitizedName = LoggingSanitizer.SanitizeForLogging(instance.Name);
         string sanitizedTenant = LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)");
 
+        // Startup validates the parent data store's own database and nothing else. Derivatives are
+        // optional and may be intentionally offline between extraction windows, so none is enumerated,
+        // validated, or pooled here; a derivative is first reached only when a request selects it.
+        EffectiveDataStoreTarget primaryTarget = EffectiveDataStoreTarget.Primary(connectionString);
+
         try
         {
             // Phase 1: Fingerprint validation — populates the fingerprint cache
-            var fingerprint = await fingerprintProvider.GetFingerprintAsync(connectionString);
+            var fingerprint = await fingerprintProvider.GetFingerprintAsync(primaryTarget);
 
             if (fingerprint == null)
             {
@@ -184,7 +189,7 @@ internal sealed class ValidateStartupInstancesTask(
                         effectiveSchema.ResourceKeyCount,
                         [.. effectiveSchema.ResourceKeySeedHash],
                         effectiveSchema.ResourceKeysInIdOrder.ToResourceKeyRows(),
-                        connectionString,
+                        primaryTarget,
                         cancellationToken
                     )
             );

@@ -56,11 +56,13 @@ public class Given_MssqlRelationalCommandExecutor
 
         var sut = new MssqlRelationalCommandExecutor(
             dataStoreSelection,
-            selectedConnectionString =>
+            new MssqlConnectionAcquisition(effectiveConnectionString =>
             {
-                selectedConnectionString.Should().Be(connectionString);
+                // A Primary target realizes byte-for-byte, so the effective string the acquisition
+                // boundary opens is the configured one.
+                effectiveConnectionString.Should().Be(connectionString);
                 return connection;
-            },
+            }),
             NullLogger<MssqlRelationalCommandExecutor>.Instance
         );
 
