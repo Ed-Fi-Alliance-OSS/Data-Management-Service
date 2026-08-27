@@ -890,10 +890,20 @@ public static class CdcProviderSetupResultMapper
             return CoreCdc.CdcSqlServerCdcJobState.Unknown;
         }
 
-        return ObservedValue(databaseHistory, $"{jobType}_job_last_run_status") == "0"
-            ? CoreCdc.CdcSqlServerCdcJobState.Failed
-            : CoreCdc.CdcSqlServerCdcJobState.Healthy;
+        return SqlServerLastRunJobState(databaseHistory, jobType);
     }
+
+    private static CoreCdc.CdcSqlServerCdcJobState SqlServerLastRunJobState(
+        CdcProviderHistoryObservation? databaseHistory,
+        string jobType
+    ) =>
+        ObservedValue(databaseHistory, $"{jobType}_job_last_run_status") switch
+        {
+            "1" or "" => CoreCdc.CdcSqlServerCdcJobState.Healthy,
+            "0" or "2" or "3" or "4" => CoreCdc.CdcSqlServerCdcJobState.Failed,
+            null => CoreCdc.CdcSqlServerCdcJobState.Unknown,
+            _ => CoreCdc.CdcSqlServerCdcJobState.Unknown,
+        };
 
     private static IReadOnlyList<CoreCdc.CdcIncidentUnavailableFact> UnavailableFacts(
         CoreCdc.CdcProviderArtifactContinuityState artifactState,

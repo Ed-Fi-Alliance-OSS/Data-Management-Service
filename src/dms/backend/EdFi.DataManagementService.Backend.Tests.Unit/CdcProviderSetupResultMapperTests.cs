@@ -624,9 +624,48 @@ public class Given_CdcProviderSetupResultMapper
         result.IncidentCandidate.Should().BeNull();
     }
 
+    [TestCase("1", CoreCdc.CdcSqlServerCdcJobState.Healthy, CoreCdc.CdcSourceHistoryContinuity.Healthy)]
+    [TestCase("", CoreCdc.CdcSqlServerCdcJobState.Healthy, CoreCdc.CdcSourceHistoryContinuity.Healthy)]
+    [TestCase("0", CoreCdc.CdcSqlServerCdcJobState.Failed, CoreCdc.CdcSourceHistoryContinuity.Unknown)]
+    [TestCase("2", CoreCdc.CdcSqlServerCdcJobState.Failed, CoreCdc.CdcSourceHistoryContinuity.Unknown)]
+    [TestCase("3", CoreCdc.CdcSqlServerCdcJobState.Failed, CoreCdc.CdcSourceHistoryContinuity.Unknown)]
+    [TestCase("4", CoreCdc.CdcSqlServerCdcJobState.Failed, CoreCdc.CdcSourceHistoryContinuity.Unknown)]
+    [TestCase(
+        "not-readable",
+        CoreCdc.CdcSqlServerCdcJobState.Unknown,
+        CoreCdc.CdcSourceHistoryContinuity.Unknown
+    )]
+    public void It_maps_sql_server_capture_job_last_run_status_to_closed_job_health(
+        string lastRunStatus,
+        CoreCdc.CdcSqlServerCdcJobState expectedJobState,
+        CoreCdc.CdcSourceHistoryContinuity expectedContinuity
+    )
+    {
+        CoreCdc.CdcBinding binding = BuildBinding(CoreCdc.CdcProvider.SqlServer);
+        CoreCdc.CdcArtifactInventory inventory = RecoverInventory(binding);
+        Dictionary<string, string> observedValues = SqlServerDatabaseHistory(
+            captureJobRunning: true,
+            cleanupJobRunning: true
+        )
+            .SafeObservedValues.ToDictionary(pair => pair.Key, pair => pair.Value);
+        observedValues["capture_job_last_run_status"] = lastRunStatus;
+        CdcProviderSetupObservationMapping mapping = MapSqlServerProviderSetup(
+            binding,
+            History(CdcProviderArtifactKind.ProviderHistory, "sqlserver_database_cdc", observedValues)
+        );
+
+        CoreCdc.CdcSourceHistoryClassificationResult result = ClassifySqlServer(binding, inventory, mapping);
+
+        mapping.ProviderHistory.SqlServerJobs!.CaptureJobState.Should().Be(expectedJobState);
+        result.Observation.Continuity.Should().Be(expectedContinuity);
+        result.IncidentCandidate.Should().BeNull();
+    }
+
     [TestCase("capture_job_enabled", null, true)]
     [TestCase("capture_job_running", "not-readable", true)]
+    [TestCase("capture_job_last_run_status", null, true)]
     [TestCase("cleanup_job_enabled", "", false)]
+    [TestCase("cleanup_job_last_run_status", "not-readable", false)]
     public void It_maps_sql_server_present_job_with_incomplete_runtime_evidence_to_unknown(
         string runtimeKey,
         string? runtimeValue,
