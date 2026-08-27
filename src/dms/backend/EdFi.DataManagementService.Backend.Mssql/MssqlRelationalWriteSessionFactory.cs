@@ -18,12 +18,6 @@ internal sealed class MssqlRelationalWriteSessionFactory : IRelationalWriteSessi
 
     public MssqlRelationalWriteSessionFactory(
         IDataStoreSelection dataStoreSelection,
-        IOptions<DatabaseOptions> databaseOptions
-    )
-        : this(dataStoreSelection, new MssqlConnectionAcquisition(), databaseOptions) { }
-
-    internal MssqlRelationalWriteSessionFactory(
-        IDataStoreSelection dataStoreSelection,
         IMssqlConnectionAcquisition acquisition,
         IOptions<DatabaseOptions> databaseOptions
     )
@@ -72,7 +66,8 @@ internal sealed class MssqlRelationalWriteSessionFactory : IRelationalWriteSessi
         }
         catch
         {
-            await leased.DisposeAsync().ConfigureAwait(false);
+            // Cleanup must not replace the transaction failure the caller needs to see.
+            await MssqlLeasedConnection.DisposeWithoutMaskingAsync(leased).ConfigureAwait(false);
             throw;
         }
     }

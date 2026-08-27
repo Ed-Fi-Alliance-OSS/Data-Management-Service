@@ -64,11 +64,11 @@ public class MssqlConnectionAcquisitionTests
         }
 
         [Test]
-        public void It_leases_against_the_configured_string()
+        public async Task It_leases_against_the_configured_string()
         {
             MssqlConnectionAcquisition acquisition = new(_ => new SqlConnection());
 
-            using MssqlConnectionLease lease = acquisition.AcquireLease(
+            using MssqlConnectionLease lease = await acquisition.AcquireLeaseAsync(
                 EffectiveDataStoreTarget.Primary(PrimaryConnectionString)
             );
 
@@ -148,19 +148,19 @@ public class MssqlConnectionAcquisitionTests
         /// it fails here, at acquisition, and nowhere earlier.
         /// </summary>
         [Test]
-        public void It_rejects_a_provider_invalid_string_at_acquisition()
+        public async Task It_rejects_a_provider_invalid_string_at_acquisition()
         {
             MssqlConnectionAcquisition acquisition = new(_ => new SqlConnection());
 
-            Action acquire = () =>
-                acquisition.AcquireLease(
+            Func<Task> acquire = () =>
+                acquisition.AcquireLeaseAsync(
                     new EffectiveDataStoreTarget(
                         EffectiveTargetKind.Snapshot,
                         "this is not a connection string at all"
                     )
                 );
 
-            acquire.Should().Throw<ArgumentException>();
+            await acquire.Should().ThrowAsync<ArgumentException>();
         }
     }
 
@@ -175,8 +175,8 @@ public class MssqlConnectionAcquisitionTests
         public async Task It_releases_exactly_once_when_disposed_twice()
         {
             using RecordingConnection connection = new();
-            MssqlConnectionLease lease = AcquisitionReturning(connection)
-                .AcquireLease(EffectiveDataStoreTarget.Primary(PrimaryConnectionString));
+            MssqlConnectionLease lease = await AcquisitionReturning(connection)
+                .AcquireLeaseAsync(EffectiveDataStoreTarget.Primary(PrimaryConnectionString));
 
             await lease.DisposeAsync();
             lease.IsReleased.Should().BeTrue();
@@ -192,13 +192,13 @@ public class MssqlConnectionAcquisitionTests
         }
 
         [Test]
-        public void It_refuses_to_create_a_connection_after_release()
+        public async Task It_refuses_to_create_a_connection_after_release()
         {
             using RecordingConnection connection = new();
-            MssqlConnectionLease lease = AcquisitionReturning(connection)
-                .AcquireLease(EffectiveDataStoreTarget.Primary(PrimaryConnectionString));
+            MssqlConnectionLease lease = await AcquisitionReturning(connection)
+                .AcquireLeaseAsync(EffectiveDataStoreTarget.Primary(PrimaryConnectionString));
 
-            lease.Dispose();
+            await lease.DisposeAsync();
 
             Action create = () => lease.CreateConnection();
 
@@ -210,8 +210,8 @@ public class MssqlConnectionAcquisitionTests
         {
             InvalidOperationException failure = new("open failed");
             using RecordingConnection connection = new() { OpenFailure = failure };
-            MssqlConnectionLease lease = AcquisitionReturning(connection)
-                .AcquireLease(EffectiveDataStoreTarget.Primary(PrimaryConnectionString));
+            MssqlConnectionLease lease = await AcquisitionReturning(connection)
+                .AcquireLeaseAsync(EffectiveDataStoreTarget.Primary(PrimaryConnectionString));
 
             Func<Task> open = () => lease.OpenAsync(CancellationToken.None);
 
@@ -226,13 +226,104 @@ public class MssqlConnectionAcquisitionTests
             await cancellation.CancelAsync();
 
             using RecordingConnection connection = new() { OpenFailure = new OperationCanceledException() };
-            MssqlConnectionLease lease = AcquisitionReturning(connection)
-                .AcquireLease(EffectiveDataStoreTarget.Primary(PrimaryConnectionString));
+            MssqlConnectionLease lease = await AcquisitionReturning(connection)
+                .AcquireLeaseAsync(EffectiveDataStoreTarget.Primary(PrimaryConnectionString));
 
             Func<Task> open = () => lease.OpenAsync(cancellation.Token);
 
             await open.Should().ThrowAsync<OperationCanceledException>();
             connection.DisposeCount.Should().Be(1);
+        }
+    }
+
+    /// <summary>
+    /// Cleanup runs while an exception is already in flight. It must not replace that exception with its
+    /// own, and it must still release the claim, because a failure to clean up is not a reason to strand
+    /// a pool identity.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Cleanup_Itself_Fails
+    {
+        [Test]
+        public async Task It_preserves_the_open_failure_when_disposing_the_connection_also_fails()
+        {
+            InvalidOperationException openFailure = new("open failed");
+            RecordingConnection connection = new()
+            {
+                OpenFailure = openFailure,
+                DisposeFailure = new IOException("dispose failed"),
+            };
+
+            MssqlConnectionLease lease = await new MssqlConnectionAcquisition(_ =>
+                connection
+            ).AcquireLeaseAsync(EffectiveDataStoreTarget.Primary(PrimaryConnectionString));
+
+            Func<Task> open = () => lease.OpenAsync(CancellationToken.None);
+
+            (await open.Should().ThrowAsync<InvalidOperationException>())
+                .Which.Should()
+                .BeSameAs(openFailure);
+        }
+
+        [Test]
+        public async Task It_preserves_the_cancellation_when_disposing_the_connection_also_fails()
+        {
+            RecordingConnection connection = new()
+            {
+                OpenFailure = new OperationCanceledException(),
+                DisposeFailure = new IOException("dispose failed"),
+            };
+
+            MssqlConnectionLease lease = await new MssqlConnectionAcquisition(_ =>
+                connection
+            ).AcquireLeaseAsync(EffectiveDataStoreTarget.Primary(PrimaryConnectionString));
+
+            Func<Task> open = () => lease.OpenAsync(CancellationToken.None);
+
+            await open.Should().ThrowAsync<OperationCanceledException>();
+        }
+
+        [Test]
+        public async Task It_releases_the_claim_when_disposing_the_leased_connection_fails()
+        {
+            IOException disposeFailure = new("dispose failed");
+            RecordingConnection connection = new() { DisposeFailure = disposeFailure };
+
+            MssqlLeasedConnection leased = await MssqlLeasedConnection.OpenAsync(
+                new MssqlConnectionAcquisition(_ => connection),
+                EffectiveDataStoreTarget.Primary(PrimaryConnectionString),
+                CancellationToken.None
+            );
+
+            Func<Task> dispose = async () => await leased.DisposeAsync();
+
+            (await dispose.Should().ThrowAsync<IOException>()).Which.Should().BeSameAs(disposeFailure);
+            ((MssqlConnectionLease)leased.Lease!)
+                .IsReleased.Should()
+                .BeTrue("a disposal fault must not strand the pool identity");
+        }
+
+        [Test]
+        public async Task It_preserves_the_open_failure_when_the_leased_open_cleanup_also_fails()
+        {
+            InvalidOperationException openFailure = new("open failed");
+            RecordingConnection connection = new()
+            {
+                OpenFailure = openFailure,
+                DisposeFailure = new IOException("dispose failed"),
+            };
+
+            Func<Task> open = () =>
+                MssqlLeasedConnection.OpenAsync(
+                    new MssqlConnectionAcquisition(_ => connection),
+                    EffectiveDataStoreTarget.Primary(PrimaryConnectionString),
+                    CancellationToken.None
+                );
+
+            (await open.Should().ThrowAsync<InvalidOperationException>())
+                .Which.Should()
+                .BeSameAs(openFailure);
         }
     }
 
@@ -311,6 +402,8 @@ public class MssqlConnectionAcquisitionTests
 
         public Exception? OpenFailure { get; init; }
 
+        public Exception? DisposeFailure { get; init; }
+
         [AllowNull]
         public override string ConnectionString { get; set; } = string.Empty;
 
@@ -347,6 +440,11 @@ public class MssqlConnectionAcquisitionTests
             if (disposing)
             {
                 DisposeCount++;
+
+                if (DisposeFailure is not null)
+                {
+                    throw DisposeFailure;
+                }
             }
 
             base.Dispose(disposing);

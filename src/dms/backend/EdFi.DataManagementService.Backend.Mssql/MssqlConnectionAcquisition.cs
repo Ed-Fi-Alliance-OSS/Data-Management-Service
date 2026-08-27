@@ -23,11 +23,20 @@ public interface IMssqlConnectionAcquisition
     /// Takes a lease on the pool identity for <paramref name="target" />, realizing the effective
     /// connection string in the process.
     /// </summary>
+    /// <remarks>
+    /// Asynchronous because a later retirement path must be able to wait, outside any lock, for an
+    /// outstanding clear of the same pool identity to finish before granting a new lease. Nothing waits
+    /// today, so this completes synchronously; the shape is what keeps that from becoming a second
+    /// migration across every acquisition seam.
+    /// </remarks>
     /// <exception cref="ArgumentException">
     /// Thrown by the provider when a derivative connection string cannot be parsed. This is the
     /// acquisition boundary, and the exception is deliberately not translated here.
     /// </exception>
-    MssqlConnectionLease AcquireLease(EffectiveDataStoreTarget target);
+    Task<MssqlConnectionLease> AcquireLeaseAsync(
+        EffectiveDataStoreTarget target,
+        CancellationToken cancellationToken = default
+    );
 }
 
 /// <inheritdoc />
@@ -37,11 +46,17 @@ public sealed class MssqlConnectionAcquisition(Func<string, DbConnection>? creat
     private readonly Func<string, DbConnection> _createConnection =
         createConnection ?? (effectiveConnectionString => new SqlConnection(effectiveConnectionString));
 
-    public MssqlConnectionLease AcquireLease(EffectiveDataStoreTarget target)
+    public Task<MssqlConnectionLease> AcquireLeaseAsync(
+        EffectiveDataStoreTarget target,
+        CancellationToken cancellationToken = default
+    )
     {
         ArgumentNullException.ThrowIfNull(target);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        return new MssqlConnectionLease(RealizeEffectiveConnectionString(target), _createConnection);
+        return Task.FromResult(
+            new MssqlConnectionLease(RealizeEffectiveConnectionString(target), _createConnection)
+        );
     }
 
     /// <summary>
@@ -110,7 +125,9 @@ public sealed class MssqlLeasedConnection : IAsyncDisposable
         CancellationToken cancellationToken
     )
     {
-        MssqlConnectionLease lease = acquisition.AcquireLease(target);
+        MssqlConnectionLease lease = await acquisition
+            .AcquireLeaseAsync(target, cancellationToken)
+            .ConfigureAwait(false);
 
         try
         {
@@ -119,7 +136,8 @@ public sealed class MssqlLeasedConnection : IAsyncDisposable
         }
         catch
         {
-            await lease.DisposeAsync().ConfigureAwait(false);
+            // Releasing the claim must not replace the open failure the caller needs to see.
+            await DisposeWithoutMaskingAsync(lease).ConfigureAwait(false);
             throw;
         }
     }
@@ -131,11 +149,35 @@ public sealed class MssqlLeasedConnection : IAsyncDisposable
             return;
         }
 
-        await Connection.DisposeAsync().ConfigureAwait(false);
-
-        if (_lease is not null)
+        try
         {
-            await _lease.DisposeAsync().ConfigureAwait(false);
+            await Connection.DisposeAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            // The claim is released even when disposing the connection throws, so a failure there
+            // cannot strand the pool identity. Ordering still holds: the connection goes first.
+            if (_lease is not null)
+            {
+                await _lease.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Disposes during failure handling. A fault raised while cleaning up is swallowed on purpose: the
+    /// exception the caller must see is the one that started the cleanup, and .NET has no way to attach
+    /// a secondary exception to it without changing the type the caller catches.
+    /// </summary>
+    internal static async ValueTask DisposeWithoutMaskingAsync(IAsyncDisposable disposable)
+    {
+        try
+        {
+            await disposable.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Intentionally ignored; see the summary above.
         }
     }
 }
@@ -195,7 +237,8 @@ public sealed class MssqlConnectionLease : IAsyncDisposable, IDisposable
         }
         catch
         {
-            await connection.DisposeAsync().ConfigureAwait(false);
+            // A disposal fault must not replace the open failure or the cancellation.
+            await MssqlLeasedConnection.DisposeWithoutMaskingAsync(connection).ConfigureAwait(false);
             throw;
         }
     }

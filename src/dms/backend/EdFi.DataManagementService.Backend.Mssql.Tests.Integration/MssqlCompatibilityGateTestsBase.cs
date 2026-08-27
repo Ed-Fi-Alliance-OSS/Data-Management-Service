@@ -55,10 +55,16 @@ public abstract class MssqlCompatibilityGateTestsBase : CompatibilityGateTestsBa
     // -------------------------------------------------------------------------
 
     protected override IResourceKeyRowReader CreateResourceKeyRowReader() =>
-        new MssqlResourceKeyRowReader(NullLogger<MssqlResourceKeyRowReader>.Instance);
+        new MssqlResourceKeyRowReader(
+            new MssqlConnectionAcquisition(),
+            NullLogger<MssqlResourceKeyRowReader>.Instance
+        );
 
     protected override IDatabaseFingerprintReader CreateDatabaseFingerprintReader() =>
-        new MssqlDatabaseFingerprintReader(NullLogger<MssqlDatabaseFingerprintReader>.Instance);
+        new MssqlDatabaseFingerprintReader(
+            new MssqlConnectionAcquisition(),
+            NullLogger<MssqlDatabaseFingerprintReader>.Instance
+        );
 
     // -------------------------------------------------------------------------
     // Database lifecycle

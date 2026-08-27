@@ -19,9 +19,6 @@ public class MssqlDatabaseFingerprintReader : IDatabaseFingerprintReader
     private readonly IMssqlConnectionAcquisition _acquisition;
     private readonly ILogger<MssqlDatabaseFingerprintReader> _logger;
 
-    public MssqlDatabaseFingerprintReader(ILogger<MssqlDatabaseFingerprintReader> logger)
-        : this(new MssqlConnectionAcquisition(), logger) { }
-
     public MssqlDatabaseFingerprintReader(
         IMssqlConnectionAcquisition acquisition,
         ILogger<MssqlDatabaseFingerprintReader> logger
@@ -35,7 +32,7 @@ public class MssqlDatabaseFingerprintReader : IDatabaseFingerprintReader
     {
         // The lease is held across the whole support call because the support owns the open, so the
         // pool identity stays claimed for as long as a connection from it can be in use.
-        await using MssqlConnectionLease lease = _acquisition.AcquireLease(target);
+        await using MssqlConnectionLease lease = await _acquisition.AcquireLeaseAsync(target);
 
         return await DatabaseFingerprintReaderSupport.ReadFingerprintAsync(
             lease.CreateConnection,

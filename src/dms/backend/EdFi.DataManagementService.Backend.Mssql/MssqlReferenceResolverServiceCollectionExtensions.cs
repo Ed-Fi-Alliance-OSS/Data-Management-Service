@@ -21,6 +21,12 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
+        // Registered here as well as in AddMssqlDatastore because this method is also used on its own.
+        // The seams below take the boundary by constructor injection, so it has to be present wherever
+        // they are registered, or they would resolve nothing and the single acquisition identity would
+        // not be single at all.
+        services.TryAddSingleton<IMssqlConnectionAcquisition>(new MssqlConnectionAcquisition());
+
         services.TryAdd(
             ServiceDescriptor.Singleton<
                 IRelationalWriteExceptionClassifier,
@@ -158,10 +164,7 @@ internal sealed class MssqlDocumentHydrator : IDocumentHydrator
 {
     private readonly Func<CancellationToken, Task<MssqlLeasedConnection>> _openConnectionAsync;
 
-    public MssqlDocumentHydrator(IDataStoreSelection dataStoreSelection)
-        : this(dataStoreSelection, new MssqlConnectionAcquisition()) { }
-
-    internal MssqlDocumentHydrator(
+    public MssqlDocumentHydrator(
         IDataStoreSelection dataStoreSelection,
         IMssqlConnectionAcquisition acquisition
     )

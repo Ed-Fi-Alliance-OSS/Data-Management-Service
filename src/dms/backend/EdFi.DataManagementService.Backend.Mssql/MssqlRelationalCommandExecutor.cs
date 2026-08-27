@@ -20,12 +20,6 @@ internal sealed class MssqlRelationalCommandExecutor : IRelationalCommandExecuto
 
     public MssqlRelationalCommandExecutor(
         IDataStoreSelection dataStoreSelection,
-        ILogger<MssqlRelationalCommandExecutor> logger
-    )
-        : this(dataStoreSelection, new MssqlConnectionAcquisition(), logger) { }
-
-    internal MssqlRelationalCommandExecutor(
-        IDataStoreSelection dataStoreSelection,
         IMssqlConnectionAcquisition acquisition,
         ILogger<MssqlRelationalCommandExecutor> logger
     )

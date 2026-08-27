@@ -58,7 +58,10 @@ public class MssqlSeamAcquisitionIdentityTests
 
         public List<EffectiveDataStoreTarget> Targets { get; } = [];
 
-        public MssqlConnectionLease AcquireLease(EffectiveDataStoreTarget target)
+        public Task<MssqlConnectionLease> AcquireLeaseAsync(
+            EffectiveDataStoreTarget target,
+            CancellationToken cancellationToken = default
+        )
         {
             Targets.Add(target);
             throw new NotSupportedException(RefusedMessage);
@@ -223,6 +226,59 @@ public class MssqlSeamAcquisitionIdentityTests
             (await create.Should().ThrowAsync<InvalidOperationException>()).Which.Should().BeSameAs(failure);
             connection.DisposeCount.Should().Be(1);
         }
+
+        /// <summary>
+        /// Cleanup runs while the transaction failure is already in flight, so a fault raised by the
+        /// cleanup must not replace the exception the caller needs to see.
+        /// </summary>
+        [Test]
+        public async Task It_preserves_the_transaction_failure_when_cleanup_also_fails()
+        {
+            InvalidOperationException failure = new("cannot begin");
+            TransactionCapableConnection connection = new()
+            {
+                BeginTransactionFailure = failure,
+                DisposeFailure = new IOException("dispose failed"),
+            };
+
+            Func<Task> create = () => FactoryReturning(connection).CreateAsync();
+
+            (await create.Should().ThrowAsync<InvalidOperationException>()).Which.Should().BeSameAs(failure);
+        }
+
+        /// <summary>
+        /// A disposal fault inside the session must not strand the claim on the pool identity.
+        /// </summary>
+        [Test]
+        public async Task It_releases_the_claim_when_disposing_the_connection_fails()
+        {
+            IOException disposeFailure = new("dispose failed");
+            TransactionCapableConnection connection = new() { DisposeFailure = disposeFailure };
+            RecordingLease lease = new();
+
+            IRelationalWriteSession session = new RelationalWriteSession(
+                connection,
+                await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted),
+                null,
+                ownedLease: lease
+            );
+
+            Func<Task> dispose = async () => await session.DisposeAsync();
+
+            (await dispose.Should().ThrowAsync<IOException>()).Which.Should().BeSameAs(disposeFailure);
+            lease.ReleaseCount.Should().Be(1);
+        }
+
+        private sealed class RecordingLease : IAsyncDisposable
+        {
+            public int ReleaseCount { get; private set; }
+
+            public ValueTask DisposeAsync()
+            {
+                ReleaseCount++;
+                return ValueTask.CompletedTask;
+            }
+        }
     }
 
     /// <summary>
@@ -261,6 +317,8 @@ internal sealed class TransactionCapableConnection : DbConnection
 
     public Exception? BeginTransactionFailure { get; init; }
 
+    public Exception? DisposeFailure { get; init; }
+
     [AllowNull]
     public override string ConnectionString { get; set; } = string.Empty;
 
@@ -291,6 +349,11 @@ internal sealed class TransactionCapableConnection : DbConnection
         {
             DisposeCount++;
             DisposedAfterTransaction = _transaction.IsDisposed;
+
+            if (DisposeFailure is not null)
+            {
+                throw DisposeFailure;
+            }
         }
 
         base.Dispose(disposing);

@@ -13,9 +13,6 @@ public class MssqlResourceKeyRowReader : IResourceKeyRowReader
     private readonly IMssqlConnectionAcquisition _acquisition;
     private readonly ILogger<MssqlResourceKeyRowReader> _logger;
 
-    public MssqlResourceKeyRowReader(ILogger<MssqlResourceKeyRowReader> logger)
-        : this(new MssqlConnectionAcquisition(), logger) { }
-
     public MssqlResourceKeyRowReader(
         IMssqlConnectionAcquisition acquisition,
         ILogger<MssqlResourceKeyRowReader> logger
@@ -38,7 +35,10 @@ public class MssqlResourceKeyRowReader : IResourceKeyRowReader
     {
         _logger.LogDebug("Reading resource key rows from dms.ResourceKey");
 
-        await using MssqlConnectionLease lease = _acquisition.AcquireLease(target);
+        await using MssqlConnectionLease lease = await _acquisition.AcquireLeaseAsync(
+            target,
+            cancellationToken
+        );
         await using var connection = await lease.OpenAsync(cancellationToken);
 
         await using var command = connection.CreateCommand();

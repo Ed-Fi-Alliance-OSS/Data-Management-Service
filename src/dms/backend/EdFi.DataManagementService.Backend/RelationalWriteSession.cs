@@ -183,12 +183,25 @@ internal sealed class RelationalWriteSession(
 
         _disposed = true;
 
-        await Transaction.DisposeAsync().ConfigureAwait(false);
-        await Connection.DisposeAsync().ConfigureAwait(false);
-
-        if (ownedLease is not null)
+        try
         {
-            await ownedLease.DisposeAsync().ConfigureAwait(false);
+            try
+            {
+                await Transaction.DisposeAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                await Connection.DisposeAsync().ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            // Released even when disposing the transaction or the connection throws, so a failure
+            // there cannot strand the claim. Ordering still holds: the connection goes first.
+            if (ownedLease is not null)
+            {
+                await ownedLease.DisposeAsync().ConfigureAwait(false);
+            }
         }
     }
 
