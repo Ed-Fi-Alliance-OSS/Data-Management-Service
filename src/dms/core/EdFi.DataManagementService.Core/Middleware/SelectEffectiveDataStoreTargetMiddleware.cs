@@ -4,9 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.Configuration;
-using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
-using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -36,31 +34,10 @@ internal class SelectEffectiveDataStoreTargetMiddleware(
             requestInfo.ScopedServiceProvider.GetRequiredService<IDataStoreSelection>();
         DataStore parent = dataStoreSelection.GetSelectedDataStore();
 
-        // ResolveDataStoreMiddleware answers 503 for a parent with no connection string before it
-        // records the selection, and DataStoreSelection refuses to record one. Guarded here as well
-        // so target selection returns that same configuration error rather than an argument
-        // exception if upstream selection behavior ever changes.
-        if (string.IsNullOrWhiteSpace(parent.ConnectionString))
-        {
-            logger.LogError(
-                "Selected data store {DataStoreId} ({Name}) has no connection string configured during effective target selection. TraceId: {TraceId}",
-                parent.Id,
-                LoggingSanitizer.SanitizeForLogging(parent.Name),
-                requestInfo.FrontendRequest.TraceId.Value
-            );
-
-            requestInfo.FrontendResponse = new FrontendResponse(
-                StatusCode: 503,
-                Body: FailureResponse.ForServiceConfigurationError(
-                    "Database connection not configured for the matched instance",
-                    requestInfo.FrontendRequest.TraceId
-                ),
-                Headers: []
-            );
-
-            return;
-        }
-
+        // A parent with no connection string never reaches here: ResolveDataStoreMiddleware answers
+        // 503 before recording the selection, and the selection itself refuses to record one. There is
+        // deliberately no guard, because a fourth way to leave this step would mean returning without
+        // a recorded outcome.
         EffectiveTargetSelectionResult result = EffectiveTargetSelector.Select(
             policy,
             parent,

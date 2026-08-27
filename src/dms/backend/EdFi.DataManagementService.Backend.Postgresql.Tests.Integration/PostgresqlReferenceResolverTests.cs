@@ -535,7 +535,7 @@ public class Given_PostgresqlReferenceResolver
 
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
         services.AddSingleton<NpgsqlDataSourceCache>();
-        services.AddScoped<IDataStoreSelection, PrimarySelectingTestDataStoreSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddScoped<NpgsqlDataSourceProvider>();
         services.AddTestReadableProfileProjector();
         services.AddPostgresqlBackendIntegrationTestServices();

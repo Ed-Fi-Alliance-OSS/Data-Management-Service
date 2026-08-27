@@ -24,19 +24,22 @@ public class DataStoreSelection : IDataStoreSelection
     /// <inheritdoc />
     public void SetSelectedDataStore(DataStore dataStore)
     {
-        ArgumentNullException.ThrowIfNull(dataStore);
-
-        if (string.IsNullOrWhiteSpace(dataStore.ConnectionString))
-        {
-            throw new ArgumentException("data store must have a valid connection string", nameof(dataStore));
-        }
-
+        // The write-once check comes before the argument checks, so a second assignment reports the
+        // duplicated phase whatever it was handed. Validating first would let a second call with a
+        // blank or absent data store report a bad argument instead, hiding the real defect.
         if (_selectedDataStore is not null)
         {
             throw new InvalidOperationException(
                 "The parent data store has already been selected for this request. "
                     + "Only ResolveDataStoreMiddleware assigns it, and it assigns it once."
             );
+        }
+
+        ArgumentNullException.ThrowIfNull(dataStore);
+
+        if (string.IsNullOrWhiteSpace(dataStore.ConnectionString))
+        {
+            throw new ArgumentException("data store must have a valid connection string", nameof(dataStore));
         }
 
         _selectedDataStore = dataStore;
@@ -55,8 +58,7 @@ public class DataStoreSelection : IDataStoreSelection
     /// <inheritdoc />
     public void SetEffectiveTarget(EffectiveDataStoreTarget target)
     {
-        ArgumentNullException.ThrowIfNull(target);
-
+        // Phase before argument, for the same reason as above.
         if (_effectiveTarget is not null)
         {
             throw new InvalidOperationException(
@@ -65,6 +67,8 @@ public class DataStoreSelection : IDataStoreSelection
                     + "database operation in the request uses the same physical database."
             );
         }
+
+        ArgumentNullException.ThrowIfNull(target);
 
         _effectiveTarget = target;
     }

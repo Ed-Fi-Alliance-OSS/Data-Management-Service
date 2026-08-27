@@ -353,75 +353,25 @@ public class SelectEffectiveDataStoreTargetMiddlewareTests
         {
             _requestInfo.FrontendResponse.Body!.ToString().Should().Contain("method-not-allowed");
         }
-    }
 
-    /// <summary>
-    /// The resolver answers 503 for an instance with no connection string before it records a
-    /// selection, and the selection itself refuses to record one, so this guard is defensive. It is
-    /// here rather than further down the pipeline because this step is now the first reader of the
-    /// parent's connection string.
-    /// </summary>
-    [TestFixture]
-    [Parallelizable]
-    public class Given_A_Parent_Without_A_Connection_String : SelectEffectiveDataStoreTargetMiddlewareTests
-    {
-        private RequestInfo _requestInfo = null!;
-        private IDataStoreSelection _selection = null!;
-        private bool _nextCalled;
-
-        [SetUp]
-        public async Task Setup()
+        /// <summary>
+        /// The allowed-method set for a snapshot request is defined by separate work, so the interim
+        /// response states no Allow rather than stating one that will change.
+        /// </summary>
+        [Test]
+        public void It_sends_no_allow_header()
         {
-            _selection = A.Fake<IDataStoreSelection>();
-            A.CallTo(() => _selection.GetSelectedDataStore())
-                .Returns(DataStoreWith() with { ConnectionString = null });
-
-            _requestInfo = RequestInfoFor(_selection, useSnapshotHeader: false);
-
-            await CreateMiddleware(_readPolicy)
-                .Execute(
-                    _requestInfo,
-                    () =>
-                    {
-                        _nextCalled = true;
-                        return Task.CompletedTask;
-                    }
-                );
+            _requestInfo.FrontendResponse.Headers.Should().NotContainKey("Allow");
         }
 
+        /// <summary>
+        /// The exact content type for a snapshot request is likewise defined elsewhere, so this
+        /// response carries the default rather than the one the terminal 405 sends.
+        /// </summary>
         [Test]
-        public void It_does_not_call_next()
+        public void It_uses_the_default_content_type()
         {
-            _nextCalled.Should().BeFalse();
-        }
-
-        [Test]
-        public void It_assigns_no_target()
-        {
-            A.CallTo(() => _selection.SetEffectiveTarget(A<EffectiveDataStoreTarget>.Ignored))
-                .MustNotHaveHappened();
-        }
-
-        [Test]
-        public void It_records_no_outcome()
-        {
-            _requestInfo.EffectiveTargetSelection.Should().BeNull();
-        }
-
-        [Test]
-        public void It_returns_503_service_unavailable()
-        {
-            _requestInfo.FrontendResponse.StatusCode.Should().Be(503);
-        }
-
-        [Test]
-        public void It_returns_a_service_configuration_error()
-        {
-            _requestInfo.FrontendResponse.Body!.ToString().Should().Contain("Service Configuration Error");
-            _requestInfo
-                .FrontendResponse.Body!.ToString()
-                .Should()
-                .Contain("Database connection not configured");
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/json");
         }
     }
 

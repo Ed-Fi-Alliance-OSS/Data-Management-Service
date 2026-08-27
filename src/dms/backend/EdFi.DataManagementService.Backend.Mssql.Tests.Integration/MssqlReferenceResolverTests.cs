@@ -542,7 +542,7 @@ public class Given_MssqlReferenceResolver
         var services = new ServiceCollection();
 
         services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
-        services.AddScoped<IDataStoreSelection, PrimarySelectingTestDataStoreSelection>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
         services.AddTestReadableProfileProjector();
         services.AddMssqlBackendIntegrationTestServices();
 

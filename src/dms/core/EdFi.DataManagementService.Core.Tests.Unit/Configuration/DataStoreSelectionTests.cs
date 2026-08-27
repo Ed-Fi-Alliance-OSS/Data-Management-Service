@@ -125,6 +125,50 @@ public class DataStoreSelectionTests
                 .WithMessage("*parent data store has already been selected*");
         }
 
+        /// <summary>
+        /// A second assignment reports the duplicated phase whatever it is handed. Checking the
+        /// argument first would answer a blank data store with a bad-argument complaint, which names
+        /// the wrong problem: the caller's mistake is assigning twice.
+        /// </summary>
+        [Test]
+        public void It_reports_the_duplicated_phase_for_a_second_blank_parent()
+        {
+            Action reassign = () =>
+                _selection.SetSelectedDataStore(TestDataStore(id: 2) with { ConnectionString = "  " });
+
+            reassign
+                .Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage("*parent data store has already been selected*");
+        }
+
+        [Test]
+        public void It_reports_the_duplicated_phase_for_a_second_null_parent()
+        {
+            Action reassign = () => _selection.SetSelectedDataStore(null!);
+
+            reassign
+                .Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage("*parent data store has already been selected*");
+        }
+
+        [Test]
+        public void It_still_returns_the_first_parent_after_a_refused_blank_reassignment()
+        {
+            try
+            {
+                _selection.SetSelectedDataStore(TestDataStore(id: 2) with { ConnectionString = "  " });
+            }
+            catch (InvalidOperationException)
+            {
+                // The refusal is asserted separately; this is about what survives it.
+            }
+
+            _selection.GetSelectedDataStore().Id.Should().Be(1);
+            _selection.GetSelectedDataStore().ConnectionString.Should().Be(PrimaryConnectionString);
+        }
+
         [Test]
         public void It_still_returns_the_first_parent_after_a_refused_reassignment()
         {
@@ -201,6 +245,36 @@ public class DataStoreSelectionTests
                 .Should()
                 .Throw<InvalidOperationException>()
                 .WithMessage("*effective target has already been selected*");
+        }
+
+        /// <summary>
+        /// As with the parent phase, a second assignment names the duplicated phase whatever it is
+        /// handed, so a null target reports the real mistake rather than a bad argument.
+        /// </summary>
+        [Test]
+        public void It_reports_the_duplicated_phase_for_a_second_null_target()
+        {
+            Action reassign = () => _selection.SetEffectiveTarget(null!);
+
+            reassign
+                .Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage("*effective target has already been selected*");
+        }
+
+        [Test]
+        public void It_still_returns_the_first_target_after_a_refused_null_reassignment()
+        {
+            try
+            {
+                _selection.SetEffectiveTarget(null!);
+            }
+            catch (InvalidOperationException)
+            {
+                // The refusal is asserted separately; this is about what survives it.
+            }
+
+            _selection.GetEffectiveTarget().ConnectionString.Should().Be(SnapshotConnectionString);
         }
 
         [Test]

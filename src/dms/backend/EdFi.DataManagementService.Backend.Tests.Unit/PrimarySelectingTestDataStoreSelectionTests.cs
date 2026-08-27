@@ -88,7 +88,7 @@ public class PrimarySelectingTestDataStoreSelectionTests
     }
 
     /// <summary>
-    /// It reaches production composition through exactly one seam - the relational backend
+    /// It reaches a test service collection through exactly one seam - the relational backend
     /// integration-test registration - and nothing else registers it.
     /// </summary>
     [Test]
@@ -102,5 +102,41 @@ public class PrimarySelectingTestDataStoreSelectionTests
             .Single(descriptor => descriptor.ServiceType == typeof(IDataStoreSelection))
             .ImplementationType.Should()
             .Be<PrimarySelectingTestDataStoreSelection>();
+    }
+
+    /// <summary>
+    /// Backend integration fixtures build their own service collection and register the production
+    /// selection before calling the seam. The seam has to win that, and has to win it by leaving one
+    /// descriptor rather than by out-ordering the fixture, so no fixture needs to know the helper
+    /// exists.
+    /// </summary>
+    [Test]
+    public void It_replaces_a_production_selection_a_fixture_registered_first()
+    {
+        ServiceCollection services = new();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
+
+        services.AddSelectedDataStoreIntegrationTestProvider();
+
+        services
+            .Single(descriptor => descriptor.ServiceType == typeof(IDataStoreSelection))
+            .ImplementationType.Should()
+            .Be<PrimarySelectingTestDataStoreSelection>();
+    }
+
+    [Test]
+    public void It_is_what_a_fixture_service_provider_resolves()
+    {
+        ServiceCollection services = new();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
+        services.AddSelectedDataStoreIntegrationTestProvider();
+
+        using var serviceProvider = services.BuildServiceProvider();
+        using var scope = serviceProvider.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .Should()
+            .BeOfType<PrimarySelectingTestDataStoreSelection>();
     }
 }

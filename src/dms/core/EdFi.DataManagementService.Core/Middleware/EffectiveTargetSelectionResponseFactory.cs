@@ -29,8 +29,9 @@ internal interface IEffectiveTargetSelectionResponseFactory
 /// The interim responses: the existing generic not-found and method-not-allowed bodies.
 /// </summary>
 /// <remarks>
-/// Neither response is snapshot-specific yet, and the method-not-allowed one carries no Allow header,
-/// because the allowed-method set and the problem-detail bodies for snapshot requests are defined
+/// The method-not-allowed response is deliberately generic - the same wording the terminal
+/// method-not-allowed step uses, no Allow header, and the default content type - because the allowed
+/// method set, the exact problem detail, and the content type for a snapshot request are defined
 /// elsewhere. What is settled here, and what this story's tests pin, is the status code, the point in
 /// the pipeline the decision is made, and that no target is assigned and no database is opened.
 /// </remarks>
@@ -59,11 +60,10 @@ internal sealed class DefaultEffectiveTargetSelectionResponseFactory
         return new FrontendResponse(
             StatusCode: 405,
             Body: FailureResponse.ForMethodNotAllowed(
-                ["A snapshot cannot be modified. Remove the Use-Snapshot header to modify current data."],
+                [$"The endpoint of the request does not support the '{requestInfo.MethodName}' method."],
                 requestInfo.FrontendRequest.TraceId
             ),
-            Headers: [],
-            ContentType: "application/json; charset=utf-8"
+            Headers: []
         );
     }
 }
