@@ -13,13 +13,29 @@ using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 
-public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSettings)
+public class LoggingMiddleware
 {
-    private readonly RequestDelegate _next = next ?? throw new ArgumentNullException(nameof(next));
-    private readonly IOptions<AppSettings> _appSettings =
-        appSettings ?? throw new ArgumentNullException(nameof(appSettings));
+    private readonly RequestDelegate _next;
+    private readonly IOptions<AppSettings> _appSettings;
+    private readonly int _correlationIdMaxLength;
     private const string ApplicationName = "EdFi.DataManagementService";
     private const string RequestLayer = "Frontend";
+
+    public LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSettings)
+    {
+        _next = next ?? throw new ArgumentNullException(nameof(next));
+        _appSettings = appSettings ?? throw new ArgumentNullException(nameof(appSettings));
+        try
+        {
+            var configuredMaxLength = appSettings.Value.CorrelationIdMaxLength;
+            _correlationIdMaxLength =
+                configuredMaxLength > 0 ? configuredMaxLength : AppSettings.DefaultCorrelationIdMaxLength;
+        }
+        catch (OptionsValidationException)
+        {
+            _correlationIdMaxLength = AppSettings.DefaultCorrelationIdMaxLength;
+        }
+    }
 
     public async Task Invoke(HttpContext context, ILogger<LoggingMiddleware> logger)
     {
@@ -28,7 +44,9 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
         var sanitizedPath = LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value);
         var pathBase = LoggingSanitizer.SanitizeForLogging(context.Request.PathBase.Value);
         var rawTraceId = ExtractTraceId(context) ?? string.Empty;
-        var traceId = LoggingSanitizer.SanitizeForLogging(rawTraceId);
+        var truncatedTraceId =
+            rawTraceId.Length > _correlationIdMaxLength ? rawTraceId[.._correlationIdMaxLength] : rawTraceId;
+        var traceId = LoggingSanitizer.SanitizeForLogging(truncatedTraceId);
 
         var scopeValues = new Dictionary<string, object>
         {
@@ -159,11 +177,11 @@ public class LoggingMiddleware(RequestDelegate next, IOptions<AppSettings> appSe
                                 new
                                 {
                                     message = "The server encountered an unexpected condition that prevented it from fulfilling the request.",
-                                    // The error response body echoes the raw correlation value, matching
-                                    // every other DMS error response body (see FailureResponse). Only log
-                                    // properties are sanitized; applying the logging whitelist to a
-                                    // client-reported trace id yields the TraceId to search for in the logs.
-                                    traceId = rawTraceId,
+                                    // The error response body echoes the sanitized and truncated
+                                    // correlation value so it always matches the TraceId searchable
+                                    // in the logs. Applying the same logging whitelist and length cap
+                                    // to the response ensures log/response parity.
+                                    traceId = traceId,
                                 }
                             )
                         );

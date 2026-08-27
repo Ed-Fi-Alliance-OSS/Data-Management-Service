@@ -23,6 +23,13 @@ public class AppSettings
     public int CorrelationIdMaxLength { get; set; } = DefaultCorrelationIdMaxLength;
 
     /// <summary>
+    /// Maximum allowed length of a client-supplied Correlation ID header value.
+    /// Values longer than this limit are truncated before sanitization and logging.
+    /// Defaults to 255 characters.
+    /// </summary>
+    public int CorrelationIdMaxLength { get; set; } = DefaultCorrelationIdMaxLength;
+
+    /// <summary>
     /// When true, enables multi-tenancy mode where the tenant identifier is extracted from the URL route.
     /// </summary>
     public bool MultiTenancy { get; set; } = false;
