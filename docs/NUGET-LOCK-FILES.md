@@ -62,8 +62,9 @@ Each PR workflow has a dedicated `verify-lock-files` gate job that runs
 [Config](../.github/workflows/on-config-pullrequest.yml)). `--locked-mode` fails
 fast if a committed lock file is out of sync with the `.csproj` /
 `Directory.Packages.props` state — for example, if a package reference is added
-without regenerating. No `paths:` change is needed: lock files live under
-`src/dms/**` / `src/config/**`, which the existing filters already match.
+without regenerating. No `paths:` change is needed: neither PR workflow
+filters `pull_request` by path, and lock files live under `src/dms/**` /
+`src/config/**`, which the relevance detection already matches.
 
 ### 3. Locked mode in the source Docker image builds
 
