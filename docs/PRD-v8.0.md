@@ -12,11 +12,12 @@
 The Ed-Fi API is a platform product — a configurable, extensible REST API server
 and its supporting datastore — that sits between K-12 source systems (SIS,
 assessment systems, gradebooks, etc.) and downstream consumers (state/local
-analytics, specialty applications, reporting tools). It is licensed and
-self-hosted by "platform hosts" (state education agencies, districts, or their
-vendors/integrators), who deploy, configure, and operate their own instances.
-The Ed-Fi API (version 8) is a ground-up rewrite of functionality previously
-delivered via the Ed-Fi ODS/API Platform.
+analytics, specialty applications, reporting tools). "Platform hosts" (state
+education agencies, districts, or their vendors/integrators) deploy, configure,
+and operate their own environments; the Ed-Fi Alliance does not host production
+systems on behalf of education organizations. The Ed-Fi API (version 8) is a
+ground-up rewrite of functionality previously delivered via the Ed-Fi ODS/API
+Platform.
 
 This PRD covers the **platform capabilities that are implemented and available
 today in Ed-Fi API v8.0** — the configuration surface, cross-cutting features,
