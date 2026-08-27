@@ -269,15 +269,62 @@ public class MssqlSeamAcquisitionIdentityTests
             lease.ReleaseCount.Should().Be(1);
         }
 
-        private sealed class RecordingLease : IAsyncDisposable
+        private sealed class RecordingLease(TransactionCapableConnection? connection = null)
+            : IAsyncDisposable
         {
             public int ReleaseCount { get; private set; }
+
+            /// <summary>Whether the connection had already been disposed by the time this was released.</summary>
+            public bool ConnectionDisposedFirst { get; private set; }
 
             public ValueTask DisposeAsync()
             {
                 ReleaseCount++;
+                ConnectionDisposedFirst = connection is null || connection.DisposeCount > 0;
                 return ValueTask.CompletedTask;
             }
+        }
+
+        /// <summary>
+        /// The transaction half of the same guarantee. A transaction whose disposal throws must still
+        /// leave the connection disposed and the claim released once, and must surface its own exception
+        /// rather than being swallowed by the cleanup that follows it.
+        /// </summary>
+        [Test]
+        public async Task It_releases_the_claim_when_disposing_the_transaction_fails()
+        {
+            IOException transactionDisposeFailure = new("transaction dispose failed");
+            TransactionCapableConnection connection = new()
+            {
+                TransactionDisposeFailure = transactionDisposeFailure,
+            };
+            RecordingLease lease = new(connection);
+
+            IRelationalWriteSession session = new RelationalWriteSession(
+                connection,
+                await connection.BeginTransactionAsync(IsolationLevel.ReadCommitted),
+                null,
+                ownedLease: lease
+            );
+
+            Func<Task> dispose = async () => await session.DisposeAsync();
+
+            (await dispose.Should().ThrowAsync<IOException>())
+                .Which.Should()
+                .BeSameAs(transactionDisposeFailure);
+
+            connection
+                .DisposeCount.Should()
+                .Be(1, "the connection is disposed even when the transaction throws");
+            lease.ReleaseCount.Should().Be(1);
+            lease.ConnectionDisposedFirst.Should().BeTrue();
+
+            // The session's disposed guard means a second disposal is a no-op, so the claim is not
+            // released again.
+            await session.DisposeAsync();
+
+            lease.ReleaseCount.Should().Be(1);
+            connection.DisposeCount.Should().Be(1);
         }
     }
 
@@ -308,7 +355,7 @@ internal sealed class TransactionCapableConnection : DbConnection
 
     public TransactionCapableConnection()
     {
-        _transaction = new RecordingTransaction(this);
+        _transaction = new RecordingTransaction(this, () => TransactionDisposeFailure);
     }
 
     public int DisposeCount { get; private set; }
@@ -318,6 +365,8 @@ internal sealed class TransactionCapableConnection : DbConnection
     public Exception? BeginTransactionFailure { get; init; }
 
     public Exception? DisposeFailure { get; init; }
+
+    public Exception? TransactionDisposeFailure { get; init; }
 
     [AllowNull]
     public override string ConnectionString { get; set; } = string.Empty;
@@ -359,7 +408,8 @@ internal sealed class TransactionCapableConnection : DbConnection
         base.Dispose(disposing);
     }
 
-    private sealed class RecordingTransaction(DbConnection connection) : DbTransaction
+    private sealed class RecordingTransaction(DbConnection connection, Func<Exception?> disposeFailure)
+        : DbTransaction
     {
         public bool IsDisposed { get; private set; }
 
@@ -376,6 +426,11 @@ internal sealed class TransactionCapableConnection : DbConnection
             if (disposing)
             {
                 IsDisposed = true;
+
+                if (disposeFailure() is { } failure)
+                {
+                    throw failure;
+                }
             }
 
             base.Dispose(disposing);
