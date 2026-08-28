@@ -455,9 +455,10 @@ Maintainability & Supply Chain).
   source backing data environment connection details from an external
   secret-management system, as an alternative to the platform's own
   administrative service, by implementing the platform's custom-startup
-  extension point (see NFR-OPS-14). This MAY require a developer to author
-  and deploy a plugin assembly, rather than applying a configuration-only
-  change at runtime.
+  extension point (see NFR-OPS-14). This MAY require a developer to author and
+  deploy a plugin assembly, rather than applying a configuration-only change at
+  runtime. These environment connection details SHALL be segregated by tenant
+  and data store instance, to match the routing described in FR-INST.
 - **NFR-SEC-4.** Custom validators SHALL execute in-process with the same
   runtime security context and permissions as the rest of the API service; the
   platform SHALL NOT provide sandboxing or privilege separation for validator
