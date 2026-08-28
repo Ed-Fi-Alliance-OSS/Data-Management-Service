@@ -86,7 +86,11 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         var serviceProvider = A.Fake<IServiceProvider>();
         A.CallTo(() => serviceProvider.GetService(typeof(IDataStoreSelection))).Returns(dataStoreSelection);
 
-        var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
+        var fingerprintProvider = new DatabaseFingerprintProvider(
+            fingerprintReader,
+            TimeProvider.System,
+            new CacheSettings()
+        );
         var middleware = new ValidateDatabaseFingerprintMiddleware(
             fingerprintProvider,
             effectiveSchemaSetProvider,

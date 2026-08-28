@@ -476,6 +476,44 @@ result is bounded in every case, because the resolved value already is.
 
 ---
 
+### 8. Validation caches
+
+Two in-process caches hold what DMS has concluded about a database: `DatabaseFingerprintProvider`
+caches the `dms.EffectiveSchema` fingerprint, and `ResourceKeyValidationCacheProvider` caches the
+resource-key seed verdict. Both are `ConcurrentDictionary` singletons in the DMS process, not
+distributed, so each instance in a multi-instance deployment validates independently.
+
+Both are keyed by `(policy class, configured connection string)`. The connection string is the one
+configured in the Configuration Service, never a provider-realized form, so cache identity needs no
+connection-string parsing and a value no provider could open still has a stable identity.
+
+The policy class is `Primary` for a parent's own database and `Derivative` for a read replica or
+snapshot. Including it in the key is what keeps a primary and a derivative apart when their configured
+text happens to be identical — otherwise one of them would inherit the other's lifetime.
+
+| Policy class | Successful verdict | Negative verdict (unprovisioned, wrong hash, key mismatch) | Fault |
+| --- | --- | --- | --- |
+| `Primary` | cached for the process lifetime | cached for the process lifetime | evicted, except a malformed-fingerprint failure, which is retained |
+| `Derivative` | cached until `CacheSettings.DerivativeValidationCacheExpirationSeconds` elapses, bounded by the data store cache TTL | dropped by the request that read it | evicted |
+
+The asymmetry is deliberate. Repairing a primary requires an operator and a service restart either
+way, so re-probing per request buys nothing. A derivative can be rebuilt, reseeded, or repointed
+underneath a running service with nothing telling DMS, so a verdict about one must not outlive the
+request that found it unusable.
+
+Two mechanisms enforce that. Faults are evicted by the cache entry itself, naming exactly the entry
+whose production failed. Negative verdicts are dropped by the middleware that interpreted them —
+a missing `dms.EffectiveSchema` row, a schema-hash mismatch, and a resource-key mismatch are all
+successful reads of a bad answer rather than exceptions, so only the reader can classify them — using
+a token that names exactly the entry it observed. Every removal, expiry included, is version-exact:
+a late verdict from a superseded entry can never delete the replacement.
+
+Startup validation (`ValidateStartupInstancesTask`) uses `Primary` keys only. It does not enumerate,
+probe, or prime any derivative, because a derivative may be intentionally offline between extraction
+windows; the first request routed to one is what reaches it.
+
+---
+
 ## Summary Table
 
 | Cache        | Mechanism    | Scope | TTL    | Tenant | Stampede | Invalidation |
@@ -487,6 +525,8 @@ result is bounded in every case, because the resolved value already is.
 | NpgsqlDS     | ConcurDict   | Sing. | None   | N/A    | No       | Shutdown     |
 | data store | ConcurDict   | Sing. | Configurable (CacheSettings.DataStoreCacheExpirationSeconds) | Yes    | No       | TTL + Restart      |
 | OIDC Meta    | ConfigMgr    | Sing. | 60 min | No     | Yes      | Auto-refresh |
+| Fingerprint  | ConcurDict   | Sing. | Primary: none. Derivative: CacheSettings.DerivativeValidationCacheExpirationSeconds, bounded by the data store TTL | Per data store | Yes | TTL + reader token + fault eviction |
+| Resource key | ConcurDict   | Sing. | Primary: none. Derivative: same as above | Per data store | Yes | TTL + reader token + fault eviction |
 
 ## Cache Invalidation Patterns
 

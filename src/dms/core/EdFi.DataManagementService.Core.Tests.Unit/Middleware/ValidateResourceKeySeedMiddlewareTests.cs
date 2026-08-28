@@ -34,7 +34,7 @@ public class ValidateResourceKeySeedMiddlewareTests
     ) CreateMiddleware()
     {
         var validator = A.Fake<IResourceKeyValidator>();
-        var cacheProvider = new ResourceKeyValidationCacheProvider();
+        var cacheProvider = new ResourceKeyValidationCacheProvider(TimeProvider.System, new CacheSettings());
         var schemaSetProvider = A.Fake<IEffectiveSchemaSetProvider>();
         var dataStoreSelection = A.Fake<IDataStoreSelection>();
         var logger = A.Fake<ILogger<ValidateResourceKeySeedMiddleware>>();

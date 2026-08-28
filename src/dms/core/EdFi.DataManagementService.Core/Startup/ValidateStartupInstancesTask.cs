@@ -132,10 +132,16 @@ internal sealed class ValidateStartupInstancesTask(
         // validated, or pooled here; a derivative is first reached only when a request selects it.
         EffectiveDataStoreTarget primaryTarget = EffectiveDataStoreTarget.Primary(connectionString);
 
+        // Startup keys everything it caches as Primary, so its verdicts are the permanent ones the
+        // request path then reuses. Its tokens are no-ops for the same reason, and are deliberately
+        // ignored below rather than held: a startup verdict is not dropped by the request that reads
+        // it next.
+        ValidationCacheKey primaryKey = ValidationCacheKey.For(primaryTarget);
+
         try
         {
             // Phase 1: Fingerprint validation — populates the fingerprint cache
-            var fingerprint = await fingerprintProvider.GetFingerprintAsync(primaryTarget);
+            var fingerprint = await fingerprintProvider.ReadFingerprint(primaryKey, primaryTarget).Value;
 
             if (fingerprint == null)
             {
@@ -181,18 +187,20 @@ internal sealed class ValidateStartupInstancesTask(
 
             // Phase 2: Resource key seed validation — populates the validation cache
 
-            var result = await resourceKeyValidationCacheProvider.GetOrValidateAsync(
-                connectionString,
-                () =>
-                    resourceKeyValidator.ValidateAsync(
-                        fingerprint,
-                        effectiveSchema.ResourceKeyCount,
-                        [.. effectiveSchema.ResourceKeySeedHash],
-                        effectiveSchema.ResourceKeysInIdOrder.ToResourceKeyRows(),
-                        primaryTarget,
-                        cancellationToken
-                    )
-            );
+            var result = await resourceKeyValidationCacheProvider
+                .Read(
+                    primaryKey,
+                    () =>
+                        resourceKeyValidator.ValidateAsync(
+                            fingerprint,
+                            effectiveSchema.ResourceKeyCount,
+                            [.. effectiveSchema.ResourceKeySeedHash],
+                            effectiveSchema.ResourceKeysInIdOrder.ToResourceKeyRows(),
+                            primaryTarget,
+                            cancellationToken
+                        )
+                )
+                .Value;
 
             if (result is ResourceKeyValidationResult.ValidationFailure failure)
             {

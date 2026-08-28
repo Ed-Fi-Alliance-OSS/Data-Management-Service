@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using FakeItEasy;
 using FluentAssertions;
@@ -17,6 +18,20 @@ public class DatabaseFingerprintProviderTests
 {
     private static DatabaseFingerprint CreateFingerprint(string hash = "abc123") =>
         new("1.0", hash, 42, new byte[32].ToImmutableArray());
+
+    /// <summary>
+    /// The provider under its production defaults. These fixtures all exercise Primary keys, whose
+    /// verdicts never expire, so the real clock and the default settings are the honest arrangement;
+    /// the derivative fixtures that need a controlled clock supply one.
+    /// </summary>
+    private static DatabaseFingerprintProvider CreateProvider(IDatabaseFingerprintReader reader) =>
+        new(reader, TimeProvider.System, new CacheSettings());
+
+    /// <summary>Reads through the synchronous handle and awaits only the value.</summary>
+    private static Task<DatabaseFingerprint?> ReadAsync(
+        DatabaseFingerprintProvider provider,
+        EffectiveDataStoreTarget target
+    ) => provider.ReadFingerprint(ValidationCacheKey.For(target), target).Value;
 
     private static async Task<Exception?> CatchExceptionAsync(Task task)
     {
@@ -45,8 +60,8 @@ public class DatabaseFingerprintProviderTests
             A.CallTo(() => _reader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
                 .Returns(CreateFingerprint());
 
-            var provider = new DatabaseFingerprintProvider(_reader);
-            _result = await provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"));
+            var provider = CreateProvider(_reader);
+            _result = await ReadAsync(provider, EffectiveDataStoreTarget.Primary("conn1"));
         }
 
         [Test]
@@ -79,9 +94,9 @@ public class DatabaseFingerprintProviderTests
             A.CallTo(() => _reader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
                 .Returns(CreateFingerprint());
 
-            var provider = new DatabaseFingerprintProvider(_reader);
-            _result1 = await provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"));
-            _result2 = await provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"));
+            var provider = CreateProvider(_reader);
+            _result1 = await ReadAsync(provider, EffectiveDataStoreTarget.Primary("conn1"));
+            _result2 = await ReadAsync(provider, EffectiveDataStoreTarget.Primary("conn1"));
         }
 
         [Test]
@@ -115,9 +130,9 @@ public class DatabaseFingerprintProviderTests
             A.CallTo(() => _reader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("conn2")))
                 .Returns(CreateFingerprint("hash2"));
 
-            var provider = new DatabaseFingerprintProvider(_reader);
-            _result1 = await provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"));
-            _result2 = await provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn2"));
+            var provider = CreateProvider(_reader);
+            _result1 = await ReadAsync(provider, EffectiveDataStoreTarget.Primary("conn1"));
+            _result2 = await ReadAsync(provider, EffectiveDataStoreTarget.Primary("conn2"));
         }
 
         [Test]
@@ -153,11 +168,11 @@ public class DatabaseFingerprintProviderTests
             A.CallTo(() => _reader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
                 .ReturnsLazily(() => tcs.Task);
 
-            var provider = new DatabaseFingerprintProvider(_reader);
+            var provider = CreateProvider(_reader);
 
             var tasks = Enumerable
                 .Range(0, 10)
-                .Select(_ => provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
+                .Select(_ => ReadAsync(provider, EffectiveDataStoreTarget.Primary("conn1")))
                 .ToArray();
 
             tcs.SetResult(CreateFingerprint());
@@ -202,10 +217,10 @@ public class DatabaseFingerprintProviderTests
                         : Task.FromResult<DatabaseFingerprint?>(CreateFingerprint("provisioned"));
                 });
 
-            var provider = new DatabaseFingerprintProvider(_reader);
+            var provider = CreateProvider(_reader);
 
-            _result1 = await provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"));
-            _result2 = await provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"));
+            _result1 = await ReadAsync(provider, EffectiveDataStoreTarget.Primary("conn1"));
+            _result2 = await ReadAsync(provider, EffectiveDataStoreTarget.Primary("conn1"));
         }
 
         [Test]
@@ -253,12 +268,12 @@ public class DatabaseFingerprintProviderTests
                     return Task.FromResult<DatabaseFingerprint?>(CreateFingerprint("recovered"));
                 });
 
-            var provider = new DatabaseFingerprintProvider(_reader);
+            var provider = CreateProvider(_reader);
             _firstException = await CatchExceptionAsync(
-                provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"))
+                ReadAsync(provider, EffectiveDataStoreTarget.Primary("conn1"))
             );
 
-            _secondResult = await provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"));
+            _secondResult = await ReadAsync(provider, EffectiveDataStoreTarget.Primary("conn1"));
         }
 
         [Test]
@@ -309,13 +324,13 @@ public class DatabaseFingerprintProviderTests
                         : Task.FromResult<DatabaseFingerprint?>(CreateFingerprint("recovered"));
                 });
 
-            var provider = new DatabaseFingerprintProvider(_reader);
+            var provider = CreateProvider(_reader);
 
             _firstException = await CatchExceptionAsync(
-                provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"))
+                ReadAsync(provider, EffectiveDataStoreTarget.Primary("conn1"))
             );
             _secondException = await CatchExceptionAsync(
-                provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"))
+                ReadAsync(provider, EffectiveDataStoreTarget.Primary("conn1"))
             );
         }
 
@@ -371,10 +386,10 @@ public class DatabaseFingerprintProviderTests
                         : Task.FromResult<DatabaseFingerprint?>(CreateFingerprint("provisioned"));
                 });
 
-            var provider = new DatabaseFingerprintProvider(_reader);
+            var provider = CreateProvider(_reader);
 
-            _result1 = await provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"));
-            _result2 = await provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"));
+            _result1 = await ReadAsync(provider, EffectiveDataStoreTarget.Primary("conn1"));
+            _result2 = await ReadAsync(provider, EffectiveDataStoreTarget.Primary("conn1"));
         }
 
         [Test]
@@ -411,13 +426,13 @@ public class DatabaseFingerprintProviderTests
             A.CallTo(() => _reader.ReadFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
                 .Returns(Task.FromResult<DatabaseFingerprint?>(null));
 
-            var provider = new DatabaseFingerprintProvider(_reader);
+            var provider = CreateProvider(_reader);
 
-            await provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"));
+            await ReadAsync(provider, EffectiveDataStoreTarget.Primary("conn1"));
 
             var tasks = Enumerable
                 .Range(0, 10)
-                .Select(_ => provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1")))
+                .Select(_ => ReadAsync(provider, EffectiveDataStoreTarget.Primary("conn1")))
                 .ToArray();
 
             _results = await Task.WhenAll(tasks);
@@ -472,24 +487,24 @@ public class DatabaseFingerprintProviderTests
                     };
                 });
 
-            var provider = new DatabaseFingerprintProvider(_reader);
+            var provider = CreateProvider(_reader);
 
-            var firstCallerTask = provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"));
+            var firstCallerTask = ReadAsync(provider, EffectiveDataStoreTarget.Primary("conn1"));
             var delayedContext = new DeferredSynchronizationContext();
             var delayedCallerTask = RunOnSynchronizationContext(
                 delayedContext,
-                () => provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"))
+                () => ReadAsync(provider, EffectiveDataStoreTarget.Primary("conn1"))
             );
 
             firstRead.SetException(new TimeoutException("connection refused"));
 
             _firstException = await CatchExceptionAsync(firstCallerTask);
-            _retryResult = await provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"));
+            _retryResult = await ReadAsync(provider, EffectiveDataStoreTarget.Primary("conn1"));
 
             delayedContext.ExecutePostedCallbacks();
             _delayedException = await CatchExceptionAsync(delayedCallerTask);
 
-            _cachedResult = await provider.GetFingerprintAsync(EffectiveDataStoreTarget.Primary("conn1"));
+            _cachedResult = await ReadAsync(provider, EffectiveDataStoreTarget.Primary("conn1"));
         }
 
         [Test]

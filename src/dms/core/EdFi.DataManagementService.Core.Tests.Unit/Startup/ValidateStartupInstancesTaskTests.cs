@@ -64,9 +64,13 @@ public class ValidateStartupInstancesTaskTests
     {
         instanceProvider ??= A.Fake<IDataStoreProvider>();
         connectionStringProvider ??= A.Fake<IConnectionStringProvider>();
-        fingerprintProvider ??= new DatabaseFingerprintProvider(A.Fake<IDatabaseFingerprintReader>());
+        fingerprintProvider ??= new DatabaseFingerprintProvider(
+            A.Fake<IDatabaseFingerprintReader>(),
+            TimeProvider.System,
+            new CacheSettings()
+        );
         resourceKeyValidator ??= A.Fake<IResourceKeyValidator>();
-        cacheProvider ??= new ResourceKeyValidationCacheProvider();
+        cacheProvider ??= new ResourceKeyValidationCacheProvider(TimeProvider.System, new CacheSettings());
         schemaSetProvider ??= A.Fake<IEffectiveSchemaSetProvider>();
 
         return new ValidateStartupInstancesTask(
@@ -114,7 +118,11 @@ public class ValidateStartupInstancesTaskTests
                 .Returns([new DataStore(1, "Type", "TestInstance", null, [])]);
             A.CallTo(() => connectionStringProvider.GetConnectionString(1, null)).Returns(null);
 
-            var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
+            var fingerprintProvider = new DatabaseFingerprintProvider(
+                fingerprintReader,
+                TimeProvider.System,
+                new CacheSettings()
+            );
             var task = CreateTask(
                 instanceProvider: instanceProvider,
                 connectionStringProvider: connectionStringProvider,
@@ -164,8 +172,15 @@ public class ValidateStartupInstancesTaskTests
                 )
                 .Returns(new ResourceKeyValidationResult.ValidationSuccess());
 
-            var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
-            var cacheProvider = new ResourceKeyValidationCacheProvider();
+            var fingerprintProvider = new DatabaseFingerprintProvider(
+                fingerprintReader,
+                TimeProvider.System,
+                new CacheSettings()
+            );
+            var cacheProvider = new ResourceKeyValidationCacheProvider(
+                TimeProvider.System,
+                new CacheSettings()
+            );
             var task = CreateTask(
                 instanceProvider: instanceProvider,
                 connectionStringProvider: connectionStringProvider,
@@ -178,6 +193,121 @@ public class ValidateStartupInstancesTaskTests
             Func<Task> act = async () => await task.ExecuteAsync(CancellationToken.None);
 
             await act.Should().NotThrowAsync();
+        }
+    }
+
+    /// <summary>
+    /// Startup is primary-only by construction, and unit 6 must not have changed that. A derivative is
+    /// optional and may be intentionally offline between extraction windows, so probing one at startup
+    /// would turn an expected absence into a startup failure - and priming one would cache a verdict
+    /// nobody asked for, under a lifetime startup has no way to renew.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Instance_With_Configured_Derivatives : ValidateStartupInstancesTaskTests
+    {
+        private readonly List<EffectiveDataStoreTarget> _fingerprintTargets = [];
+        private readonly List<EffectiveDataStoreTarget> _validatedTargets = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _fingerprintTargets.Clear();
+            _validatedTargets.Clear();
+
+            var instanceProvider = A.Fake<IDataStoreProvider>();
+            var connectionStringProvider = A.Fake<IConnectionStringProvider>();
+            var fingerprintReader = A.Fake<IDatabaseFingerprintReader>();
+            var resourceKeyValidator = A.Fake<IResourceKeyValidator>();
+            var schemaSetProvider = A.Fake<IEffectiveSchemaSetProvider>();
+
+            DataStore instance = new(
+                Id: 1,
+                DataStoreType: "Type",
+                Name: "TestInstance",
+                ConnectionString: "Server=primary",
+                RouteContext: [],
+                DerivativeConnectionStrings:
+                [
+                    KeyValuePair.Create(DataStoreDerivativeType.ReadReplica, "Server=replica"),
+                    KeyValuePair.Create(DataStoreDerivativeType.Snapshot, "Server=snapshot"),
+                ]
+            );
+
+            A.CallTo(() => instanceProvider.GetLoadedTenantKeys()).Returns(new[] { "" });
+            A.CallTo(() => instanceProvider.GetAll(null)).Returns([instance]);
+            A.CallTo(() => connectionStringProvider.GetConnectionString(1, null)).Returns("Server=primary");
+            A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<EffectiveDataStoreTarget>._))
+                .Invokes((EffectiveDataStoreTarget target) => _fingerprintTargets.Add(target))
+                .Returns(CreateFingerprint());
+            A.CallTo(() => schemaSetProvider.EffectiveSchemaSet).Returns(CreateEffectiveSchemaSet());
+            A.CallTo(() =>
+                    resourceKeyValidator.ValidateAsync(
+                        A<DatabaseFingerprint>._,
+                        A<short>._,
+                        A<ImmutableArray<byte>>._,
+                        A<IReadOnlyList<ResourceKeyRow>>._,
+                        A<EffectiveDataStoreTarget>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .Invokes(
+                    (
+                        DatabaseFingerprint _,
+                        short _,
+                        ImmutableArray<byte> _,
+                        IReadOnlyList<ResourceKeyRow> _,
+                        EffectiveDataStoreTarget target,
+                        CancellationToken _
+                    ) => _validatedTargets.Add(target)
+                )
+                .Returns(new ResourceKeyValidationResult.ValidationSuccess());
+
+            var task = CreateTask(
+                instanceProvider: instanceProvider,
+                connectionStringProvider: connectionStringProvider,
+                fingerprintProvider: new DatabaseFingerprintProvider(
+                    fingerprintReader,
+                    TimeProvider.System,
+                    new CacheSettings()
+                ),
+                resourceKeyValidator: resourceKeyValidator,
+                cacheProvider: new ResourceKeyValidationCacheProvider(
+                    TimeProvider.System,
+                    new CacheSettings()
+                ),
+                schemaSetProvider: schemaSetProvider
+            );
+
+            await task.ExecuteAsync(CancellationToken.None);
+        }
+
+        [Test]
+        public void It_reads_only_the_primary_fingerprint()
+        {
+            _fingerprintTargets.Should().ContainSingle();
+            _fingerprintTargets[0].Kind.Should().Be(EffectiveTargetKind.Primary);
+            _fingerprintTargets[0].ConnectionString.Should().Be("Server=primary");
+        }
+
+        [Test]
+        public void It_validates_only_the_primary_resource_keys()
+        {
+            _validatedTargets.Should().ContainSingle();
+            _validatedTargets[0].Kind.Should().Be(EffectiveTargetKind.Primary);
+            _validatedTargets[0].ConnectionString.Should().Be("Server=primary");
+        }
+
+        [Test]
+        public void It_never_touches_a_configured_derivative()
+        {
+            _fingerprintTargets
+                .Concat(_validatedTargets)
+                .Should()
+                .NotContain(target =>
+                    target.ConnectionString == "Server=replica"
+                    || target.ConnectionString == "Server=snapshot"
+                );
         }
     }
 
@@ -199,7 +329,11 @@ public class ValidateStartupInstancesTaskTests
             A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<EffectiveDataStoreTarget>._))
                 .Returns((DatabaseFingerprint?)null);
 
-            var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
+            var fingerprintProvider = new DatabaseFingerprintProvider(
+                fingerprintReader,
+                TimeProvider.System,
+                new CacheSettings()
+            );
             var task = CreateTask(
                 instanceProvider: instanceProvider,
                 connectionStringProvider: connectionStringProvider,
@@ -230,7 +364,11 @@ public class ValidateStartupInstancesTaskTests
             A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<EffectiveDataStoreTarget>._))
                 .ThrowsAsync(new DatabaseFingerprintValidationException("bad data"));
 
-            var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
+            var fingerprintProvider = new DatabaseFingerprintProvider(
+                fingerprintReader,
+                TimeProvider.System,
+                new CacheSettings()
+            );
             var task = CreateTask(
                 instanceProvider: instanceProvider,
                 connectionStringProvider: connectionStringProvider,
@@ -272,7 +410,11 @@ public class ValidateStartupInstancesTaskTests
                 .Returns(fingerprint);
             A.CallTo(() => schemaSetProvider.EffectiveSchemaSet).Returns(schemaSet);
 
-            var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
+            var fingerprintProvider = new DatabaseFingerprintProvider(
+                fingerprintReader,
+                TimeProvider.System,
+                new CacheSettings()
+            );
             var task = CreateTask(
                 instanceProvider: instanceProvider,
                 connectionStringProvider: connectionStringProvider,
@@ -304,7 +446,11 @@ public class ValidateStartupInstancesTaskTests
             A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<EffectiveDataStoreTarget>._))
                 .ThrowsAsync(new TimeoutException("connection timed out"));
 
-            var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
+            var fingerprintProvider = new DatabaseFingerprintProvider(
+                fingerprintReader,
+                TimeProvider.System,
+                new CacheSettings()
+            );
             var task = CreateTask(
                 instanceProvider: instanceProvider,
                 connectionStringProvider: connectionStringProvider,
@@ -352,8 +498,15 @@ public class ValidateStartupInstancesTaskTests
                 )
                 .Returns(new ResourceKeyValidationResult.ValidationFailure("missing: Ed-Fi.Student"));
 
-            var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
-            var cacheProvider = new ResourceKeyValidationCacheProvider();
+            var fingerprintProvider = new DatabaseFingerprintProvider(
+                fingerprintReader,
+                TimeProvider.System,
+                new CacheSettings()
+            );
+            var cacheProvider = new ResourceKeyValidationCacheProvider(
+                TimeProvider.System,
+                new CacheSettings()
+            );
             var task = CreateTask(
                 instanceProvider: instanceProvider,
                 connectionStringProvider: connectionStringProvider,
@@ -419,8 +572,15 @@ public class ValidateStartupInstancesTaskTests
                 )
                 .Returns(new ResourceKeyValidationResult.ValidationSuccess());
 
-            var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
-            var cacheProvider = new ResourceKeyValidationCacheProvider();
+            var fingerprintProvider = new DatabaseFingerprintProvider(
+                fingerprintReader,
+                TimeProvider.System,
+                new CacheSettings()
+            );
+            var cacheProvider = new ResourceKeyValidationCacheProvider(
+                TimeProvider.System,
+                new CacheSettings()
+            );
             var task = CreateTask(
                 instanceProvider: instanceProvider,
                 connectionStringProvider: connectionStringProvider,
@@ -483,8 +643,15 @@ public class ValidateStartupInstancesTaskTests
                 )
                 .Returns(new ResourceKeyValidationResult.ValidationSuccess());
 
-            var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
-            var cacheProvider = new ResourceKeyValidationCacheProvider();
+            var fingerprintProvider = new DatabaseFingerprintProvider(
+                fingerprintReader,
+                TimeProvider.System,
+                new CacheSettings()
+            );
+            var cacheProvider = new ResourceKeyValidationCacheProvider(
+                TimeProvider.System,
+                new CacheSettings()
+            );
             var task = CreateTask(
                 instanceProvider: instanceProvider,
                 connectionStringProvider: connectionStringProvider,

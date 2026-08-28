@@ -58,25 +58,29 @@ internal class ValidateResourceKeySeedMiddleware(
 
         var effectiveSchema = effectiveSchemaSetProvider.EffectiveSchemaSet.EffectiveSchema;
 
+        // Read synchronously so the token exists before the value is awaited, on the fault path as
+        // well as the success path.
+        ValidationCacheRead<ResourceKeyValidationResult> read = cacheProvider.Read(
+            ValidationCacheKey.For(target),
+            () =>
+            {
+                // The validation task is shared through ResourceKeyValidationCacheProvider.
+                // Do not tie first validation for a connection string to one client abort.
+                return resourceKeyValidator.ValidateAsync(
+                    fingerprint,
+                    effectiveSchema.ResourceKeyCount,
+                    [.. effectiveSchema.ResourceKeySeedHash],
+                    effectiveSchema.ResourceKeysInIdOrder.ToResourceKeyRows(),
+                    target
+                );
+            }
+        );
+
         ResourceKeyValidationResult result;
 
         try
         {
-            result = await cacheProvider.GetOrValidateAsync(
-                target.ConnectionString,
-                () =>
-                {
-                    // The validation task is shared through ResourceKeyValidationCacheProvider.
-                    // Do not tie first validation for a connection string to one client abort.
-                    return resourceKeyValidator.ValidateAsync(
-                        fingerprint,
-                        effectiveSchema.ResourceKeyCount,
-                        [.. effectiveSchema.ResourceKeySeedHash],
-                        effectiveSchema.ResourceKeysInIdOrder.ToResourceKeyRows(),
-                        target
-                    );
-                }
-            );
+            result = await read.Value;
         }
         catch (Exception ex)
         {
@@ -109,6 +113,11 @@ internal class ValidateResourceKeySeedMiddleware(
                 return;
 
             case ResourceKeyValidationResult.ValidationFailure failure:
+                // A mismatch is returned rather than thrown, so the provider never sees it. Dropping
+                // the entry here is what lets a derivative reseeded after this request be served
+                // without a restart; for a primary the token is a no-op and the verdict stands.
+                read.Token.Invalidate();
+
                 // Use SanitizeForConsole for the diff report to preserve tuple
                 // punctuation (parentheses, commas, brackets) needed for readability.
                 logger.LogError(

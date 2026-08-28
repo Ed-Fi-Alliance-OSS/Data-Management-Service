@@ -30,6 +30,14 @@ internal class ValidateDatabaseFingerprintMiddleware(
     private const string MalformedFingerprintDetail =
         "The target database contains malformed dms.EffectiveSchema provisioning metadata. Repair the database by re-running 'ddl provision' against an empty database. If provisioning was partial or the database was modified after provisioning, drop and recreate the database before reprovisioning. Restart the Ed-Fi API service after the database has been repaired to clear the cached fingerprint validation failure.";
 
+    private const string MalformedPrimaryRemediation =
+        "Restart the Ed-Fi API service after repairing the database, because a malformed fingerprint "
+        + "for a primary database is cached for the life of the process.";
+
+    private const string MalformedDerivativeRemediation =
+        "The cached verdict for this derivative database has already been dropped, so repairing the "
+        + "database is enough and no restart is required.";
+
     private const string SchemaHashMismatchTitle = "Effective Schema Hash Mismatch";
     private const string SchemaHashMismatchDetail =
         "The database was provisioned for a different effective schema than the Ed-Fi API service expects. "
@@ -46,19 +54,35 @@ internal class ValidateDatabaseFingerprintMiddleware(
         var selectedInstance = dataStoreSelection.GetSelectedDataStore();
         var target = dataStoreSelection.GetEffectiveTarget();
 
+        // Read synchronously so the token exists on every path, the fault paths included: a request
+        // that cannot even read the fingerprint of a derivative is exactly one whose cached verdict
+        // must not survive it.
+        ValidationCacheRead<DatabaseFingerprint?> read = fingerprintProvider.ReadFingerprint(
+            ValidationCacheKey.For(target),
+            target
+        );
+
         DatabaseFingerprint? fingerprint;
 
         try
         {
-            fingerprint = await fingerprintProvider.GetFingerprintAsync(target);
+            fingerprint = await read.Value;
         }
         catch (DatabaseFingerprintValidationException ex)
         {
+            // The remediation differs by policy class and the message must not overstate it: a
+            // malformed primary verdict is retained for the process lifetime, so repairing the
+            // database is not enough on its own, while a malformed derivative verdict was already
+            // evicted and the next request re-reads.
             logger.LogError(
                 ex,
-                "Malformed dms.EffectiveSchema fingerprint for data store {DataStoreId} ({Name}). Restart the Ed-Fi API service after repairing the database because malformed fingerprint failures are cached per database. TraceId: {TraceId}",
+                "Malformed dms.EffectiveSchema fingerprint for {TargetKind} target of data store {DataStoreId} ({Name}). {Remediation} TraceId: {TraceId}",
+                target.Kind,
                 selectedInstance.Id,
                 LoggingSanitizer.SanitizeForLogging(selectedInstance.Name),
+                target.Kind == EffectiveTargetKind.Primary
+                    ? MalformedPrimaryRemediation
+                    : MalformedDerivativeRemediation,
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
@@ -100,6 +124,11 @@ internal class ValidateDatabaseFingerprintMiddleware(
 
         if (fingerprint == null)
         {
+            // The provider cannot see this: a missing dms.EffectiveSchema row is a successful read of
+            // nothing, not a fault. Dropping the entry here is what lets a derivative provisioned
+            // after this request be served without a restart.
+            read.Token.Invalidate();
+
             logger.LogWarning(
                 "Database not provisioned (no dms.EffectiveSchema row) for data store {Name} - TraceId: {TraceId}",
                 LoggingSanitizer.SanitizeForLogging(selectedInstance.Name),
@@ -119,6 +148,10 @@ internal class ValidateDatabaseFingerprintMiddleware(
         var expectedHash = effectiveSchemaSetProvider.EffectiveSchemaSet.EffectiveSchema.EffectiveSchemaHash;
         if (!string.Equals(fingerprint.EffectiveSchemaHash, expectedHash, StringComparison.Ordinal))
         {
+            // Also invisible to the provider, which reads the fingerprint but never compares it to
+            // what this process expects.
+            read.Token.Invalidate();
+
             logger.LogError(
                 "EffectiveSchemaHash mismatch for data store {DataStoreId} ({Name}): "
                     + "database has {DbHash}, process expects {ExpectedHash}. TraceId: {TraceId}",

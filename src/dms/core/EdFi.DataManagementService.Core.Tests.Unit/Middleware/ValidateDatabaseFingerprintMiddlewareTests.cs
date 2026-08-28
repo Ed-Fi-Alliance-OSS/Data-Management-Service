@@ -48,7 +48,11 @@ public class ValidateDatabaseFingerprintMiddlewareTests
         var serviceProvider = A.Fake<IServiceProvider>();
         A.CallTo(() => serviceProvider.GetService(typeof(IDataStoreSelection))).Returns(dataStoreSelection);
 
-        var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
+        var fingerprintProvider = new DatabaseFingerprintProvider(
+            fingerprintReader,
+            TimeProvider.System,
+            new CacheSettings()
+        );
         var middleware = new ValidateDatabaseFingerprintMiddleware(
             fingerprintProvider,
             effectiveSchemaSetProvider,
@@ -349,7 +353,7 @@ public class ValidateDatabaseFingerprintMiddlewareTests
                 );
 
             var middleware = new ValidateDatabaseFingerprintMiddleware(
-                new DatabaseFingerprintProvider(fingerprintReader),
+                new DatabaseFingerprintProvider(fingerprintReader, TimeProvider.System, new CacheSettings()),
                 schemaSetProvider,
                 A.Fake<ILogger<ValidateDatabaseFingerprintMiddleware>>()
             );

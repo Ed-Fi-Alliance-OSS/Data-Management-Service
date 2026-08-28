@@ -65,6 +65,10 @@ public static class DmsCoreServiceExtensions
 
         services.AddSingleton(breakerSettings);
 
+        // The two validation caches read the clock to expire derivative verdicts. TryAdd so a test or
+        // a caller that has already supplied a controlled clock keeps theirs.
+        services.TryAddSingleton(TimeProvider.System);
+
         services
             // API Schema services
             .AddSingleton<IApiSchemaValidator, ApiSchemaValidator>()
@@ -116,6 +120,10 @@ public static class DmsCoreServiceExtensions
             .AddScoped<IApplicationContextProvider, CachedApplicationContextProvider>()
             .AddSingleton<IConfigurationServiceApplicationProvider, ConfigurationServiceApplicationProvider>()
             .AddSingleton<IDatabaseFingerprintReader, MissingDatabaseFingerprintReader>()
+            // Both validation caches read the clock for derivative expiry and read CacheSettings for
+            // the bounded TTL. CacheSettings is registered by AddDmsConfigurationServiceDataStoreProvider,
+            // which every composition path calls; because these are resolved lazily rather than at
+            // registration, the order of the two calls does not matter.
             .AddSingleton<DatabaseFingerprintProvider>()
             .AddSingleton<ResolveDataStoreMiddleware>()
             // The pipeline steps construct SelectEffectiveDataStoreTargetMiddleware themselves,

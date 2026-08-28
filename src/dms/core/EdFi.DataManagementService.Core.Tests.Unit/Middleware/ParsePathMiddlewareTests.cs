@@ -20,6 +20,7 @@ using EdFi.DataManagementService.Core.Validation;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -142,6 +143,8 @@ public class ParsePathMiddlewareTests
 
         services.AddSingleton(appSettingsOptions);
         services.AddSingleton(fingerprintReader);
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton(new CacheSettings());
         services.AddSingleton<DatabaseFingerprintProvider>();
         services.AddTransient<
             IEffectiveTargetSelectionResponseFactory,
