@@ -494,40 +494,37 @@ Maintainability & Supply Chain).
 - **NFR-PERF-3.** The system SHALL be optimized to minimize the backend work
   required to serve both read and write requests, particularly for resources
   with many nested child records (pending the open question in Section 7).
-- **NFR-PERF-4.** Identity/unique-ID lookups SHALL be cached for performance,
-  with hosts able to tune how aggressively, and able to disable caching
-  selectively where strictly up-to-date results matter more than speed.
-- **NFR-PERF-5.** Any capability that lets a host trigger an immediate,
+- **NFR-PERF-4.** Any capability that lets a host trigger an immediate,
   system-wide cache refresh SHALL include safeguards preventing that capability
   from being used — intentionally or accidentally — to degrade system
   performance (see NFR-OPS-11 for the cache-refresh-signaling capability
   itself).
-- **NFR-PERF-6**. The CDC/streaming pipeline SHALL impose minimal overhead on
+- **NFR-PERF-5**. The CDC/streaming pipeline SHALL impose minimal overhead on
   the primary database's read/write path under normal operation. A slow,
   disconnected, or stalled downstream consumer SHALL NOT cause unbounded
   resource growth on the primary database.
-- **NFR-PERF-7.** The system SHALL always source data used to populate its
+- **NFR-PERF-6.** The system SHALL always source data used to populate its
   internal caches from the primary (read/write) environment, never from a read
   replica, so cached information is never built from data that could be
   lagging behind the primary.
-- **NFR-PERF-8.** The system SHALL be capable of serving read requests for a
+- **NFR-PERF-7.** The system SHALL be capable of serving read requests for a
   resource using a serialized representation of a document, with a fallback to
   standard relational retrieval when a serialized representation is
   unavailable or stale — the serialized representation is a performance
   optimization, not a hard dependency for read availability.
-- **NFR-PERF-9.** A custom validator's constructor and its resource-targeting
+- **NFR-PERF-8.** A custom validator's constructor and its resource-targeting
   logic run on every write request, before the system even determines whether
   that validator applies — this code path SHALL be synchronous and free of I/O
   or heavy computation, so a validator that doesn't apply to a given request
   cannot meaningfully slow it down.
-- **NFR-PERF-10.** Any outbound I/O a validator performs (e.g., an external
+- **NFR-PERF-9.** Any outbound I/O a validator performs (e.g., an external
   HTTP call or datastore lookup) SHALL respect the cancellation signal
   provided for the active request and a configured timeout, so a slow, hung,
   or abandoned validator cannot starve the request pipeline.
-- **NFR-PERF-11.** Where more than one custom validator applies to a request,
+- **NFR-PERF-10.** Where more than one custom validator applies to a request,
   they SHALL be invoked one at a time, in registration order, rather than
   concurrently.
-- **NFR-PERF-12.** Each invoked validator SHALL operate on its own isolated
+- **NFR-PERF-11.** Each invoked validator SHALL operate on its own isolated
   copy of the resource body, so one validator cannot observe or corrupt
   mutations made by another.
 
