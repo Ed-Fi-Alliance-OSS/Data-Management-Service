@@ -182,12 +182,6 @@ internal class RequestInfo(
     public ApplicationContext? ApplicationContext { get; set; }
 
     /// <summary>
-    /// The application-context failure response to return after resource-action strategy selection when
-    /// an explicit profile could not be validated because application context did not resolve.
-    /// </summary>
-    public IFrontendResponse? DeferredProfileContextFailureResponse { get; set; }
-
-    /// <summary>
     /// ApiDetails retrieved from the token, used for resource authorization.
     /// This will be null when the frontend passes the request, and will be populated
     /// by the JWT authentication middleware in Core.

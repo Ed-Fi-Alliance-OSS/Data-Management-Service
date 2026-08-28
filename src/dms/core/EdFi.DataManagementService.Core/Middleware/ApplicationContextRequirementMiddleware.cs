@@ -37,12 +37,6 @@ internal sealed class ApplicationContextRequirementMiddleware(
 
         if (!contextRequired)
         {
-            if (requestInfo.DeferredProfileContextFailureResponse is not null)
-            {
-                requestInfo.FrontendResponse = requestInfo.DeferredProfileContextFailureResponse;
-                return;
-            }
-
             await next();
             return;
         }

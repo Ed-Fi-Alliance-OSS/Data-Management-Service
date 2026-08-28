@@ -268,16 +268,20 @@ public class ProfileResolutionMiddlewareTests
         }
 
         [Test]
-        public void It_calls_next_to_allow_strategy_selection()
+        public void It_returns_the_fail_closed_response_without_continuing_the_pipeline()
         {
-            _nextCalled.Should().BeTrue();
+            _nextCalled.Should().BeFalse();
+            TestHelper.AssertUnauthorizedProblemDetails(
+                _requestInfo.FrontendResponse!,
+                "Unable to resolve application context for the authenticated client."
+            );
         }
 
         [Test]
-        public void It_defers_generic_401_for_GET()
+        public void It_returns_generic_401_for_GET()
         {
             TestHelper.AssertUnauthorizedProblemDetails(
-                _requestInfo.DeferredProfileContextFailureResponse!,
+                _requestInfo.FrontendResponse,
                 "Unable to resolve application context for the authenticated client."
             );
         }
@@ -286,7 +290,7 @@ public class ProfileResolutionMiddlewareTests
         public void It_returns_the_expected_application_context_failure_payload()
         {
             TestHelper.AssertUnauthorizedProblemDetails(
-                _requestInfo.DeferredProfileContextFailureResponse!,
+                _requestInfo.FrontendResponse,
                 "Unable to resolve application context for the authenticated client."
             );
         }
@@ -321,10 +325,10 @@ public class ProfileResolutionMiddlewareTests
         }
 
         [Test]
-        public void It_defers_generic_401_for_POST()
+        public void It_returns_generic_401_for_POST()
         {
             TestHelper.AssertUnauthorizedProblemDetails(
-                _requestInfo.DeferredProfileContextFailureResponse!,
+                _requestInfo.FrontendResponse,
                 "Unable to resolve application context for the authenticated client."
             );
         }
@@ -333,7 +337,7 @@ public class ProfileResolutionMiddlewareTests
         public void It_returns_the_expected_application_context_failure_payload()
         {
             TestHelper.AssertUnauthorizedProblemDetails(
-                _requestInfo.DeferredProfileContextFailureResponse!,
+                _requestInfo.FrontendResponse,
                 "Unable to resolve application context for the authenticated client."
             );
         }
@@ -368,10 +372,10 @@ public class ProfileResolutionMiddlewareTests
         }
 
         [Test]
-        public void It_defers_generic_401_for_PUT()
+        public void It_returns_generic_401_for_PUT()
         {
             TestHelper.AssertUnauthorizedProblemDetails(
-                _requestInfo.DeferredProfileContextFailureResponse!,
+                _requestInfo.FrontendResponse,
                 "Unable to resolve application context for the authenticated client."
             );
         }

@@ -130,26 +130,6 @@ public class ApplicationContextRequirementMiddlewareTests
             .MustNotHaveHappened();
     }
 
-    [Test]
-    public async Task It_returns_the_deferred_profile_failure_when_context_is_not_required()
-    {
-        var provider = CreateProvider(new ApplicationContextResult.Success(_applicationContext));
-        RequestInfo requestInfo = CreateRequestInfo(RequestMethod.GET, provider);
-        var deferredResponse = new FrontendResponse(
-            StatusCode: 406,
-            Body: new JsonObject { ["status"] = 406 },
-            Headers: [],
-            ContentType: "application/problem+json"
-        );
-        requestInfo.DeferredProfileContextFailureResponse = deferredResponse;
-
-        await CreateMiddleware().Execute(requestInfo, TestHelper.NullNext);
-
-        requestInfo.FrontendResponse.Should().BeSameAs(deferredResponse);
-        A.CallTo(() => provider.GetApplicationByClientIdAsync(A<string>._, A<string?>._))
-            .MustNotHaveHappened();
-    }
-
     [TestCase("GET")]
     [TestCase("PUT")]
     public async Task It_maps_a_profile_required_NotFound_to_generic_401_when_context_is_not_otherwise_required(
@@ -197,16 +177,11 @@ public class ApplicationContextRequirementMiddlewareTests
     }
 
     [Test]
-    public async Task It_maps_required_NotFound_to_generic_401_before_a_profile_fallback()
+    public async Task It_maps_required_NotFound_to_generic_401()
     {
         var provider = CreateProvider(new ApplicationContextResult.NotFound());
         RequestInfo requestInfo = CreateRequestInfo(RequestMethod.GET, provider);
         requestInfo.ResourceActionAuthStrategies = ["OwnershipBased"];
-        requestInfo.DeferredProfileContextFailureResponse = new FrontendResponse(
-            StatusCode: 406,
-            Body: new JsonObject { ["ownershipTokenId"] = 31415 },
-            Headers: []
-        );
 
         await CreateMiddleware().Execute(requestInfo, TestHelper.NullNext);
 
@@ -239,7 +214,7 @@ public class ApplicationContextRequirementMiddlewareTests
     }
 
     [Test]
-    public async Task It_reuses_the_scoped_profile_lookup_and_returns_generic_401()
+    public async Task It_resolves_not_found_for_a_profile_with_one_configuration_lookup()
     {
         var configurationProvider = A.Fake<IConfigurationServiceApplicationProvider>();
         A.CallTo(() => configurationProvider.GetApplicationByClientIdAsync(ClientId, Tenant))
@@ -282,10 +257,6 @@ public class ApplicationContextRequirementMiddlewareTests
         );
 
         handlerCalled.Should().BeFalse();
-        TestHelper.AssertUnauthorizedProblemDetails(
-            requestInfo.DeferredProfileContextFailureResponse!,
-            "Unable to resolve application context for the authenticated client."
-        );
         TestHelper.AssertUnauthorizedProblemDetails(
             requestInfo.FrontendResponse,
             "Unable to resolve application context for the authenticated client."

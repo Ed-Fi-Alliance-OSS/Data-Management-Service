@@ -27,6 +27,8 @@ public sealed class Given_Postgresql_ApplicationContextIntegration : PostgresqlA
     private const string NotFoundTenant = "app-context-not-found-tenant";
     private const string OwnershipNotFoundTenant = "app-context-ownership-not-found-tenant";
     private const string UnavailableTenant = "app-context-unavailable-tenant";
+    private const string ProfileNotFoundTenant = "app-context-profile-not-found-tenant";
+    private const string ProfileUnavailableTenant = "app-context-profile-unavailable-tenant";
 
     private readonly RecordingConfigurationServiceApplicationProvider _applicationContextProvider = new(
         Resolve
@@ -82,6 +84,14 @@ public sealed class Given_Postgresql_ApplicationContextIntegration : PostgresqlA
         );
 
     [Test]
+    public Task It_fails_closed_for_profiled_invalid_puts_before_document_validation() =>
+        ApplicationContextIntegrationScenario.It_fails_closed_for_profiled_invalid_puts_before_document_validation(
+            Harness,
+            ProfileNotFoundTenant,
+            ProfileUnavailableTenant
+        );
+
+    [Test]
     public Task It_requires_application_context_for_ownership_authorized_get_put_and_delete() =>
         ApplicationContextIntegrationScenario.It_requires_application_context_for_ownership_authorized_get_put_and_delete(
             Harness,
@@ -95,6 +105,8 @@ public sealed class Given_Postgresql_ApplicationContextIntegration : PostgresqlA
             NotFoundTenant => new ApplicationContextResult.NotFound(),
             OwnershipNotFoundTenant => new ApplicationContextResult.NotFound(),
             UnavailableTenant => new ApplicationContextResult.Unavailable(),
+            ProfileNotFoundTenant => new ApplicationContextResult.NotFound(),
+            ProfileUnavailableTenant => new ApplicationContextResult.Unavailable(),
             FirstIsolationTenant => Success(applicationId: 201),
             SecondIsolationTenant => Success(applicationId: 202),
             _ => Success(applicationId: 200),

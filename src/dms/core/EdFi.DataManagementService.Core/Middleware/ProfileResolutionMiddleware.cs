@@ -79,14 +79,10 @@ internal class ProfileResolutionMiddleware(
                 return;
             }
 
-            // Strategy selection must run before this response is returned so a mandatory application
-            // context demand can take precedence without performing another CMS lookup.
-            requestInfo.DeferredProfileContextFailureResponse =
-                ApplicationContextFailureResponseFactory.Create(
-                    applicationContextResult,
-                    requestInfo.FrontendRequest.TraceId
-                );
-            await next();
+            requestInfo.FrontendResponse = ApplicationContextFailureResponseFactory.Create(
+                applicationContextResult,
+                requestInfo.FrontendRequest.TraceId
+            );
             return;
         }
 

@@ -20,6 +20,8 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 internal static class ApplicationContextIntegrationScenario
 {
     private const string StudentsEndpointFormat = "/{0}/data/ed-fi/students";
+    private const string ProfiledStudentWritableContentType =
+        "application/vnd.ed-fi.student.testprofile.writable+json";
 
     public static async Task It_resolves_application_context_at_most_once_per_request(
         ApiIntegrationHarness harness,
@@ -104,6 +106,20 @@ internal static class ApplicationContextIntegrationScenario
         AssertNoApplicationContextDetailLeaked(body);
     }
 
+    public static async Task It_fails_closed_for_profiled_invalid_puts_before_document_validation(
+        ApiIntegrationHarness harness,
+        string notFoundTenant,
+        string unavailableTenant
+    )
+    {
+        await AssertProfiledInvalidPutFailsClosedAsync(harness, notFoundTenant, HttpStatusCode.Unauthorized);
+        await AssertProfiledInvalidPutFailsClosedAsync(
+            harness,
+            unavailableTenant,
+            HttpStatusCode.ServiceUnavailable
+        );
+    }
+
     public static async Task It_requires_application_context_for_ownership_authorized_get_put_and_delete(
         ApiIntegrationHarness harness,
         RecordingConfigurationServiceApplicationProvider provider,
@@ -162,6 +178,29 @@ internal static class ApplicationContextIntegrationScenario
         };
 
         return await harness.HttpClient.SendAsync(request);
+    }
+
+    private static async Task AssertProfiledInvalidPutFailsClosedAsync(
+        ApiIntegrationHarness harness,
+        string tenant,
+        HttpStatusCode expectedStatusCode
+    )
+    {
+        string resourcePath = $"{string.Format(StudentsEndpointFormat, tenant)}/{Guid.NewGuid()}";
+        using var request = new HttpRequestMessage(HttpMethod.Put, resourcePath)
+        {
+            Content = new StringContent("{}", Encoding.UTF8, ProfiledStudentWritableContentType),
+        };
+        using HttpResponseMessage response = await harness.HttpClient.SendAsync(request);
+        string body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(expectedStatusCode, body);
+        if (expectedStatusCode == HttpStatusCode.Unauthorized)
+        {
+            response.Headers.WwwAuthenticate.ToString().Should().Contain("invalid_token");
+        }
+
+        AssertNoApplicationContextDetailLeaked(body);
     }
 
     private static void AssertRequiredContextNotFound(HttpResponseMessage response, string body)
