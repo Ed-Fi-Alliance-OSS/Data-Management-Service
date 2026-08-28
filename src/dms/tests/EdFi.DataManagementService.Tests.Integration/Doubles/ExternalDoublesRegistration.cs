@@ -63,7 +63,8 @@ internal static class ExternalDoublesRegistration
         DocumentCacheReadTelemetryRecorder? documentCacheReadTelemetryRecorder = null,
         IReadOnlyList<string>? assignedProfileNames = null,
         IConfigurationServiceApplicationProvider? applicationContextConfigurationProvider = null,
-        IDataStoreProvider? dataStoreProviderOverride = null
+        IDataStoreProvider? dataStoreProviderOverride = null,
+        IJwtValidationService? jwtValidationServiceOverride = null
     )
     {
         if (
@@ -94,13 +95,14 @@ internal static class ExternalDoublesRegistration
         services.RemoveAll<IProfileCmsProvider>();
         services.RemoveAll<IStartupProcessExit>();
 
-        services.AddSingleton<IJwtValidationService>(
-            FakeJwtValidationService.Allowing(
-                ExternalDoublesConstants.SmokeToken,
-                ExternalDoublesConstants.SmokeClientId,
-                clientEducationOrganizationIds,
-                clientNamespacePrefixes
-            )
+        services.AddSingleton(
+            jwtValidationServiceOverride
+                ?? FakeJwtValidationService.Allowing(
+                    ExternalDoublesConstants.SmokeToken,
+                    ExternalDoublesConstants.SmokeClientId,
+                    clientEducationOrganizationIds,
+                    clientNamespacePrefixes
+                )
         );
 
         if (providerFailureTransform is not null && providerFailureRecorder is not null)

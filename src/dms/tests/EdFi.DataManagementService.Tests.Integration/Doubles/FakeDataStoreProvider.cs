@@ -12,11 +12,17 @@ namespace EdFi.DataManagementService.Tests.Integration.Doubles;
 /// The derivative connection strings this data store publishes, exactly as the Configuration Service
 /// would state them. Empty for a data store with no snapshot and no read replica.
 /// </param>
+/// <param name="RouteContext">
+/// The route qualifiers this data store answers for, exactly as the Configuration Service would state
+/// them. Empty for a data store reached without any qualifier, which is what every existing fixture
+/// uses.
+/// </param>
 internal sealed record FakeDataStoreDefinition(
     long Id,
     string ConnectionString,
     RelationalProviderToken? RelationalProviderToken = null,
-    IReadOnlyDictionary<DataStoreDerivativeType, string>? Derivatives = null
+    IReadOnlyDictionary<DataStoreDerivativeType, string>? Derivatives = null,
+    IReadOnlyDictionary<RouteQualifierName, RouteQualifierValue>? RouteContext = null
 );
 
 /// <summary>
@@ -52,7 +58,9 @@ internal static class FakeDataStoreProvider
             DataStoreType: "default",
             Name: $"integration-test-{instance.Id}",
             ConnectionString: instance.ConnectionString,
-            RouteContext: new Dictionary<RouteQualifierName, RouteQualifierValue>(),
+            RouteContext: instance.RouteContext is null
+                ? new Dictionary<RouteQualifierName, RouteQualifierValue>()
+                : new Dictionary<RouteQualifierName, RouteQualifierValue>(instance.RouteContext),
             RelationalProviderToken: instance.RelationalProviderToken,
             RelationalProviderMetadataStatus: instance.RelationalProviderToken is null
                 ? RelationalProviderMetadataStatus.Missing

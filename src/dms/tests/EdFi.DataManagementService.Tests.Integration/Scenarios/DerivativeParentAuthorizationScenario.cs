@@ -7,6 +7,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Tests.Integration.Doubles;
 using FluentAssertions;
 
@@ -25,10 +26,25 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 /// </remarks>
 internal static class DerivativeParentAuthorizationScenario
 {
-    private const string DescriptorsEndpoint = "/data/ed-fi/academicSubjectDescriptors";
+    /// <summary>
+    /// The qualifier segment every request in this fixture carries. The parent's route context names
+    /// it, so a request without it resolves to no data store and is refused before anything else -
+    /// which is what makes the qualifier load-bearing rather than decorative.
+    /// </summary>
+    public const string DistrictQualifierSegment = "255901";
 
-    /// <summary>The code value of the descriptor held only by the snapshot.</summary>
+    private const string DescriptorsEndpoint =
+        $"/{DistrictQualifierSegment}/data/ed-fi/academicSubjectDescriptors";
+
+    /// <summary>The code value of the descriptor the caller may read, held only by the snapshot.</summary>
     private const string SnapshotAuthorizedCode = "snapshot-authorized";
+
+    /// <summary>
+    /// A descriptor that exists on the snapshot in a namespace the caller does not hold. It has to
+    /// exist for the denial to mean anything: without it, a filtered read returning nothing would
+    /// return nothing whether or not authorization ran at all.
+    /// </summary>
+    private const string SnapshotUnauthorizedCode = "snapshot-unauthorized";
 
     /// <summary>The code value held only by the parent, so a leak from it is unmistakable.</summary>
     private const string PrimaryAuthorizedCode = "primary-authorized";
@@ -36,33 +52,114 @@ internal static class DerivativeParentAuthorizationScenario
     public static async Task SeedAsync(
         ApiIntegrationHarness harness,
         MutableInstanceProvider provider,
+        MutableNamespacePrefixJwtValidationService clientIdentity,
         long dataStoreId,
         RelationalProviderToken providerToken,
+        IReadOnlyDictionary<RouteQualifierName, RouteQualifierValue> routeContext,
         string primaryConnectionString,
         string snapshotConnectionString
     )
     {
+        // Widened only for the seed. A namespace-authorized write is refused for a namespace the
+        // caller does not hold, so the unauthorized row could not otherwise be created; the caller is
+        // narrowed back before any assertion runs.
+        clientIdentity.SetNamespacePrefixes([
+            CursorPartitionAuthorizationMatrixSupport.AuthorizedNamespacePrefix,
+            CursorPartitionAuthorizationMatrixSupport.UnauthorizedNamespacePrefix,
+        ]);
+
+        // Every publication carries the same route context, because the host only resolves a data
+        // store whose qualifiers match the ones the request path carries.
         provider.Publish([
-            DerivativeRoutingSupport.ParentOnly(dataStoreId, snapshotConnectionString, providerToken),
+            new FakeDataStoreDefinition(
+                dataStoreId,
+                snapshotConnectionString,
+                providerToken,
+                RouteContext: routeContext
+            ),
         ]);
         await CreateDescriptorAsync(harness, SnapshotAuthorizedCode, authorized: true);
+        await CreateDescriptorAsync(harness, SnapshotUnauthorizedCode, authorized: false);
 
         provider.Publish([
-            DerivativeRoutingSupport.ParentOnly(dataStoreId, primaryConnectionString, providerToken),
+            new FakeDataStoreDefinition(
+                dataStoreId,
+                primaryConnectionString,
+                providerToken,
+                RouteContext: routeContext
+            ),
         ]);
         await CreateDescriptorAsync(harness, PrimaryAuthorizedCode, authorized: true);
 
         provider.Publish([
-            DerivativeRoutingSupport.ParentWith(
+            new FakeDataStoreDefinition(
                 dataStoreId,
                 primaryConnectionString,
                 providerToken,
                 new Dictionary<DataStoreDerivativeType, string>
                 {
                     [DataStoreDerivativeType.Snapshot] = snapshotConnectionString,
-                }
+                },
+                routeContext
             ),
         ]);
+
+        // Narrowed back, so every assertion below runs as a caller that holds one prefix.
+        clientIdentity.SetNamespacePrefixes([
+            CursorPartitionAuthorizationMatrixSupport.AuthorizedNamespacePrefix,
+        ]);
+    }
+
+    /// <summary>
+    /// The route qualifiers a routed request resolves through are the parent's. The derivative hangs
+    /// off that same parent and carries no context of its own, so routing cannot move a request into a
+    /// different tenant or district.
+    /// </summary>
+    public static async Task AssertRouteContextResolvedFromTheParent(
+        ApiIntegrationHarness harness,
+        MutableInstanceProvider provider,
+        long dataStoreId,
+        IReadOnlyDictionary<RouteQualifierName, RouteQualifierValue> expectedRouteContext
+    )
+    {
+        DataStore parent =
+            provider.GetById(dataStoreId)
+            ?? throw new InvalidOperationException("The parent data store is not published.");
+
+        parent.RouteContext.Should().BeEquivalentTo(expectedRouteContext);
+        parent.Derivatives.Should().ContainKey(DataStoreDerivativeType.Snapshot);
+
+        // And the qualifier is load-bearing: the same routed read without it is not found. With a
+        // qualifier segment configured, that path shape matches no route at all, so the refusal comes
+        // from routing rather than from data-store resolution - either way the request never reaches a
+        // database, which is the property being asserted.
+        using HttpResponseMessage withoutQualifier = await DerivativeRoutingSupport.SendAsync(
+            harness,
+            HttpMethod.Get,
+            "/data/ed-fi/academicSubjectDescriptors",
+            useSnapshotHeaderValue: "true"
+        );
+
+        string body = await withoutQualifier.Content.ReadAsStringAsync();
+
+        withoutQualifier
+            .StatusCode.Should()
+            .Be(
+                HttpStatusCode.NotFound,
+                $"a request that carries no district qualifier resolves to nothing: {body}"
+            );
+
+        // The qualified path, by contrast, resolves and is served.
+        using HttpResponseMessage withQualifier = await DerivativeRoutingSupport.SendAsync(
+            harness,
+            HttpMethod.Get,
+            DescriptorsEndpoint,
+            useSnapshotHeaderValue: "true"
+        );
+
+        withQualifier
+            .StatusCode.Should()
+            .Be(HttpStatusCode.OK, await withQualifier.Content.ReadAsStringAsync());
     }
 
     /// <summary>
@@ -104,6 +201,12 @@ internal static class DerivativeParentAuthorizationScenario
                 .Contain(
                     SnapshotAuthorizedCode,
                     "the client's namespace prefix authorizes this one, and it lives on the snapshot"
+                );
+            codeValues
+                .Should()
+                .NotContain(
+                    SnapshotUnauthorizedCode,
+                    "it exists on the serving database, and only authorization keeps it out"
                 );
             codeValues.Should().NotContain(PrimaryAuthorizedCode, "the parent was never read");
         }
@@ -152,8 +255,8 @@ internal static class DerivativeParentAuthorizationScenario
                 .AsArray()
                 .Should()
                 .BeEmpty(
-                    "the parent's namespace claim governs the routed read, and it holds no prefix "
-                        + "matching this namespace"
+                    "a row in this namespace exists on the snapshot, so an empty result can only be "
+                        + "the parent's namespace claim excluding it"
                 );
         }
         finally

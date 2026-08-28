@@ -25,6 +25,14 @@ internal static class DerivativeTrackedChangeScenario
     private const int PrimaryDeleteCount = 1;
     private const int SnapshotDeleteCount = 3;
 
+    /// <summary>And a different number of tracked key changes, for the same reason.</summary>
+    private const int PrimaryKeyChangeCount = 1;
+    private const int SnapshotKeyChangeCount = 2;
+
+    /// <summary>Prefixes the two databases' rows, so a body names the database that produced it.</summary>
+    private const string PrimaryPrefix = "prim";
+    private const string SnapshotPrefix = "snap";
+
     public static async Task SeedAsync(
         ApiIntegrationHarness harness,
         MutableInstanceProvider provider,
@@ -37,12 +45,14 @@ internal static class DerivativeTrackedChangeScenario
         provider.Publish([
             DerivativeRoutingSupport.ParentOnly(dataStoreId, snapshotConnectionString, providerToken),
         ]);
-        await SeedTrackedDeletesAsync(harness, SnapshotDeleteCount, "snap");
+        await SeedTrackedDeletesAsync(harness, SnapshotDeleteCount, SnapshotPrefix);
+        await SeedTrackedKeyChangesAsync(harness, SnapshotKeyChangeCount, SnapshotPrefix);
 
         provider.Publish([
             DerivativeRoutingSupport.ParentOnly(dataStoreId, primaryConnectionString, providerToken),
         ]);
-        await SeedTrackedDeletesAsync(harness, PrimaryDeleteCount, "prim");
+        await SeedTrackedDeletesAsync(harness, PrimaryDeleteCount, PrimaryPrefix);
+        await SeedTrackedKeyChangesAsync(harness, PrimaryKeyChangeCount, PrimaryPrefix);
 
         provider.Publish([
             DerivativeRoutingSupport.ParentWith(
@@ -87,9 +97,48 @@ internal static class DerivativeTrackedChangeScenario
     }
 
     /// <summary>
+    /// Creates Students and then updates their identity, which is what puts rows on the tracked
+    /// key-change surface. The new unique id carries the database's prefix and the word "renamed", so
+    /// the response body names both the database and the fact that this was a key change.
+    /// </summary>
+    private static async Task SeedTrackedKeyChangesAsync(
+        ApiIntegrationHarness harness,
+        int count,
+        string prefix
+    )
+    {
+        for (int index = 0; index < count; index++)
+        {
+            string originalUniqueId = $"{prefix}-key-{index}";
+            string renamedUniqueId = $"{prefix}-renamed-{index}";
+
+            using HttpContent createContent = Ds52StudentContent(originalUniqueId);
+            using HttpResponseMessage created = await harness.HttpClient.PostAsync(
+                DerivativeRoutingSupport.StudentsEndpoint,
+                createContent
+            );
+
+            created.StatusCode.Should().Be(HttpStatusCode.Created, await created.Content.ReadAsStringAsync());
+
+            string location = created.Headers.Location!.IsAbsoluteUri
+                ? created.Headers.Location!.AbsolutePath
+                : created.Headers.Location!.OriginalString;
+
+            string documentId = location[(location.LastIndexOf('/') + 1)..];
+
+            using HttpContent updateContent = Ds52StudentContent(renamedUniqueId, documentId);
+            using HttpResponseMessage updated = await harness.HttpClient.PutAsync(location, updateContent);
+
+            updated
+                .StatusCode.Should()
+                .Be(HttpStatusCode.NoContent, await updated.Content.ReadAsStringAsync());
+        }
+    }
+
+    /// <summary>
     /// The Student shape the DS 5.2 schema requires, which is richer than the focused fixtures'.
     /// </summary>
-    private static HttpContent Ds52StudentContent(string studentUniqueId)
+    private static HttpContent Ds52StudentContent(string studentUniqueId, string? documentId = null)
     {
         JsonObject payload = new()
         {
@@ -98,6 +147,12 @@ internal static class DerivativeTrackedChangeScenario
             ["lastSurname"] = "Lovelace",
             ["birthDate"] = "2010-01-01",
         };
+
+        if (documentId is not null)
+        {
+            // A PUT carries the document id it is replacing.
+            payload["id"] = documentId;
+        }
 
         return new System.Net.Http.StringContent(
             payload.ToJsonString(),
@@ -120,9 +175,9 @@ internal static class DerivativeTrackedChangeScenario
         );
 
     /// <summary>
-    /// The key-change surface routes the same way. Neither database has any key change, so the shared
-    /// assertion is that the snapshot answers it with the whole primary unreachable, which no request
-    /// touching the primary could do.
+    /// The key-change surface reports the selected target's own identity updates. The two databases
+    /// received different numbers of them under different prefixes, so the body names which one
+    /// answered rather than merely proving something answered.
     /// </summary>
     public static async Task It_serves_key_changes_from_the_selected_target(
         ApiIntegrationHarness harness,
@@ -143,7 +198,23 @@ internal static class DerivativeTrackedChangeScenario
 
             string body = await response.Content.ReadAsStringAsync();
             response.StatusCode.Should().Be(HttpStatusCode.OK, body);
-            JsonNode.Parse(body)!.AsArray().Should().BeEmpty("no identity was updated in either database");
+
+            JsonArray keyChanges = JsonNode.Parse(body)!.AsArray();
+
+            keyChanges
+                .Count.Should()
+                .Be(
+                    SnapshotKeyChangeCount,
+                    $"the snapshot received {SnapshotKeyChangeCount} identity updates and the parent "
+                        + $"{PrimaryKeyChangeCount}: {body}"
+                );
+
+            body.Should().Contain(SnapshotPrefix, "every key change the snapshot holds carries its prefix");
+            body.Should()
+                .NotContain(
+                    PrimaryPrefix,
+                    "the parent's key changes must not appear in the snapshot's answer"
+                );
         }
         finally
         {

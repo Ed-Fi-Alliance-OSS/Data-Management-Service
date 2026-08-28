@@ -48,6 +48,24 @@ public abstract class ApiIntegrationTestBase
     protected abstract FixtureKey Fixture { get; }
 
     /// <summary>
+    /// Resources whose identity this fixture may update, as the deployed comma-separated setting takes
+    /// them. Empty by default, so no existing fixture's write behavior changes.
+    /// </summary>
+    /// <remarks>
+    /// A tracked key change only exists if an identity was updated, and DMS refuses that unless the
+    /// resource is named here. A fixture that must observe the key-change surface therefore has to opt
+    /// its resource in.
+    /// </remarks>
+    protected virtual string AllowIdentityUpdateOverrides => string.Empty;
+
+    /// <summary>
+    /// Route qualifier segments this fixture's host recognizes, as the deployed comma-separated setting
+    /// takes them. Empty by default. Each becomes a path segment ahead of the rest of the route, and a
+    /// request that omits it resolves to no data store at all.
+    /// </summary>
+    protected virtual string RouteQualifierSegments => string.Empty;
+
+    /// <summary>
     /// Derivative kinds this fixture wants provisioned as their own leased databases, each seeded
     /// distinguishably so a response proves which one served it. Empty by default, so no existing
     /// fixture leases anything extra.
@@ -186,6 +204,12 @@ public abstract class ApiIntegrationTestBase
     ) => null;
 
     /// <summary>
+    /// Replaces the JWT validation double, for a fixture that must change what the caller is
+    /// authorized for between requests. Null keeps the fixed stub.
+    /// </summary>
+    protected virtual MutableNamespacePrefixJwtValidationService? CreateJwtValidationService() => null;
+
+    /// <summary>
     /// Builds the claim set provider used by the in-process host.
     /// </summary>
     protected virtual IClaimSetProvider CreateClaimSetProvider(FixtureContext fixture) =>
@@ -270,6 +294,8 @@ public abstract class ApiIntegrationTestBase
         var suppressHydratedRowsOnce = SuppressHydratedRowsOnce;
         var multiTenancy = MultiTenancy;
         var applicationContextConfigurationProviderOverride = ApplicationContextConfigurationProviderOverride;
+        MutableNamespacePrefixJwtValidationService? jwtValidationServiceOverride =
+            CreateJwtValidationService();
         IDataStoreProvider? dataStoreProviderOverride = CreateDataStoreProvider(
             _fixtureContext,
             _leasedConnectionString
@@ -286,6 +312,8 @@ public abstract class ApiIntegrationTestBase
             builder.UseSetting("AppSettings:ApiSchemaPath", fixtureContext.ApiSchemaDirectory);
             builder.UseSetting("AppSettings:StartupStatusFilePath", startupStatusFilePath);
             builder.UseSetting("AppSettings:Datastore", Datastore);
+            builder.UseSetting("AppSettings:AllowIdentityUpdateOverrides", AllowIdentityUpdateOverrides);
+            builder.UseSetting("AppSettings:RouteQualifierSegments", RouteQualifierSegments);
             builder.UseSetting("AppSettings:BypassAuthorization", BypassAuthorization ? "true" : "false");
             builder.UseSetting("AppSettings:MultiTenancy", multiTenancy ? "true" : "false");
             builder.UseSetting(
@@ -342,7 +370,8 @@ public abstract class ApiIntegrationTestBase
                     documentCacheReadTelemetryRecorder,
                     assignedProfileNames,
                     applicationContextConfigurationProviderOverride,
-                    dataStoreProviderOverride
+                    dataStoreProviderOverride,
+                    jwtValidationServiceOverride
                 );
 
                 if (queryRecorder is not null)

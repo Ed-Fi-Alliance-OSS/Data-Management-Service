@@ -25,6 +25,10 @@ public sealed class Given_Postgresql_DerivativeTrackedChanges : PostgresqlApiInt
     protected override IReadOnlyList<DataStoreDerivativeType> LeasedDerivatives =>
         [DataStoreDerivativeType.Snapshot];
 
+    // A tracked key change only exists if an identity was updated, which DMS refuses unless the
+    // resource is named here.
+    protected override string AllowIdentityUpdateOverrides => "Student";
+
     protected override IClaimSetProvider CreateClaimSetProvider(FixtureContext fixture) =>
         new AllowAllClaimSetProvider(fixture, grantReadChanges: true);
 

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Tests.Integration.Doubles;
@@ -18,14 +19,32 @@ namespace EdFi.DataManagementService.Tests.Integration.Tests.Mssql;
 /// </summary>
 public sealed class Given_Mssql_DerivativeParentAuthorization : MssqlApiIntegrationTestBase
 {
+    private static readonly Dictionary<RouteQualifierName, RouteQualifierValue> _routeContext = new()
+    {
+        [new RouteQualifierName("district")] = new RouteQualifierValue(
+            DerivativeParentAuthorizationScenario.DistrictQualifierSegment
+        ),
+    };
+
+    private readonly MutableNamespacePrefixJwtValidationService _clientIdentity = new(
+        ExternalDoublesConstants.SmokeToken,
+        ExternalDoublesConstants.SmokeClientId,
+        [],
+        [CursorPartitionAuthorizationMatrixSupport.AuthorizedNamespacePrefix]
+    );
+
+    protected override string RouteQualifierSegments => "district";
+
     private MutableInstanceProvider _provider = null!;
 
     protected override FixtureKey Fixture => FixtureKey.AuthorizationQuery;
 
     protected override bool BypassAuthorization => false;
 
-    protected override IReadOnlyList<string> ClientNamespacePrefixes =>
-        [CursorPartitionAuthorizationMatrixSupport.AuthorizedNamespacePrefix];
+    // Supplied through the mutable identity below rather than this fixed list, because the seed has to
+    // widen the caller and the assertions have to narrow it again.
+    protected override MutableNamespacePrefixJwtValidationService? CreateJwtValidationService() =>
+        _clientIdentity;
 
     /// <summary>
     /// Namespace-based authorization on every resource this fixture exposes, so the descriptor endpoint
@@ -61,10 +80,21 @@ public sealed class Given_Mssql_DerivativeParentAuthorization : MssqlApiIntegrat
         DerivativeParentAuthorizationScenario.SeedAsync(
             Harness,
             _provider,
+            _clientIdentity,
             ExternalDoublesConstants.StableDataStoreId,
             RelationalProviderToken.SqlServer,
+            _routeContext,
             PrimaryConnectionString,
             DerivativeConnectionString(DataStoreDerivativeType.Snapshot)
+        );
+
+    [Test]
+    public Task It_resolves_route_context_from_the_parent() =>
+        DerivativeParentAuthorizationScenario.AssertRouteContextResolvedFromTheParent(
+            Harness,
+            _provider,
+            ExternalDoublesConstants.StableDataStoreId,
+            _routeContext
         );
 
     [Test]

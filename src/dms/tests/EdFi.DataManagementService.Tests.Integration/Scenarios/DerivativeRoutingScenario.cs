@@ -85,9 +85,9 @@ internal static class DerivativeRoutingScenario
     }
 
     /// <summary>
-    /// The paging surface reports the shape of the database that served it. Each database holds a
-    /// different number of Students, so the page-token list a partitioned walk produces is the
-    /// snapshot's rather than the parent's - a body-level assertion, not a status code.
+    /// The paging surface partitions the database that served it, and walking those partitions returns
+    /// that database's Students and no other's. Each database holds a different number of them, so the
+    /// walked set is an exact identity rather than a shape that all three share.
     /// </summary>
     public static async Task It_partitions_the_selected_target(
         ApiIntegrationHarness harness,
@@ -101,36 +101,99 @@ internal static class DerivativeRoutingScenario
 
         try
         {
-            using HttpResponseMessage response = await DerivativeRoutingSupport.SendAsync(
+            using HttpResponseMessage partitionsResponse = await DerivativeRoutingSupport.SendAsync(
                 harness,
                 HttpMethod.Get,
                 PartitionsEndpoint,
                 useSnapshotHeaderValue: "true"
             );
 
-            string body = await response.Content.ReadAsStringAsync();
-            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            string partitionsBody = await partitionsResponse.Content.ReadAsStringAsync();
+            partitionsResponse.StatusCode.Should().Be(HttpStatusCode.OK, partitionsBody);
 
-            JsonNode parsed = JsonNode.Parse(body)!;
-            parsed["pageTokens"]!.AsArray().Should().NotBeEmpty("the snapshot holds Students to partition");
+            string[] pageTokens =
+            [
+                .. JsonNode.Parse(partitionsBody)!["pageTokens"]!
+                    .AsArray()
+                    .Select(token => token!.GetValue<string>()),
+            ];
 
-            // Walking the tokens must reach the snapshot's Students and only those.
-            using HttpResponseMessage walked = await DerivativeRoutingSupport.SendAsync(
-                harness,
-                HttpMethod.Get,
-                DerivativeRoutingSupport.StudentsEndpoint,
-                useSnapshotHeaderValue: "true"
-            );
+            pageTokens.Should().NotBeEmpty("the snapshot holds Students to partition");
 
-            (await DerivativeRoutingSupport.ReadServingDatabaseAsync(walked))
+            HashSet<string> walked = await WalkPartitionsAsync(harness, pageTokens);
+
+            walked
                 .Should()
-                .Be(DerivativeRoutingSupport.SnapshotStudentUniqueId);
+                .HaveCount(
+                    DerivativeRoutingSupport.SnapshotStudentCount,
+                    "the walk must cover the snapshot's Students, whose count differs from the "
+                        + "parent's and the replica's"
+                );
+            walked
+                .Should()
+                .Contain(
+                    DerivativeRoutingSupport.SnapshotStudentUniqueId,
+                    "the snapshot's marker row must be among them"
+                );
+            walked
+                .Should()
+                .NotContain(DerivativeRoutingSupport.PrimaryStudentUniqueId)
+                .And.NotContain(DerivativeRoutingSupport.ReplicaStudentUniqueId);
         }
         finally
         {
             await reachability.MakeReachableAsync(primaryConnectionString);
             await reachability.MakeReachableAsync(replicaConnectionString);
         }
+    }
+
+    /// <summary>
+    /// Consumes every page token through the collection paging contract, following each partition's
+    /// continuation to its end, and returns the studentUniqueId values the walk produced. Every request
+    /// carries the snapshot header, because a walk that dropped it would page a different database.
+    /// </summary>
+    private static async Task<HashSet<string>> WalkPartitionsAsync(
+        ApiIntegrationHarness harness,
+        IReadOnlyList<string> pageTokens
+    )
+    {
+        HashSet<string> walked = new(StringComparer.Ordinal);
+
+        foreach (string partitionToken in pageTokens)
+        {
+            string? pageToken = partitionToken;
+
+            // Bounded so a continuation that never terminates fails the test rather than hanging it.
+            for (int page = 0; page < 10 && pageToken is not null; page++)
+            {
+                using HttpResponseMessage response = await DerivativeRoutingSupport.SendAsync(
+                    harness,
+                    HttpMethod.Get,
+                    $"{DerivativeRoutingSupport.StudentsEndpoint}"
+                        + $"?pageToken={Uri.EscapeDataString(pageToken)}&pageSize=1",
+                    useSnapshotHeaderValue: "true"
+                );
+
+                string body = await response.Content.ReadAsStringAsync();
+                response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+
+                foreach (JsonNode? document in JsonNode.Parse(body)!.AsArray())
+                {
+                    walked
+                        .Add(document!["studentUniqueId"]!.GetValue<string>())
+                        .Should()
+                        .BeTrue("partitions are disjoint, so no document may be returned twice");
+                }
+
+                pageToken = response.Headers.TryGetValues("Next-Page-Token", out var next)
+                    ? next.Single()
+                    : null;
+            }
+
+            pageToken.Should().BeNull("every partition must be walked to its end");
+        }
+
+        return walked;
     }
 
     /// <summary>
@@ -472,14 +535,21 @@ internal static class DerivativeRoutingScenario
             DerivativeRoutingSupport.StudentsEndpoint
         );
 
-        // Deterministic: the request is inside hydration, past selection and past its query.
-        await gate.Arrived.WaitAsync(TimeSpan.FromSeconds(30));
+        try
+        {
+            // Deterministic: the request is inside hydration, past selection and past its query.
+            await gate.Arrived.WaitAsync(TimeSpan.FromSeconds(30));
 
-        provider.Publish([
-            DerivativeRoutingSupport.ParentOnly(dataStoreId, primaryConnectionString, providerToken),
-        ]);
-
-        gate.Release();
+            provider.Publish([
+                DerivativeRoutingSupport.ParentOnly(dataStoreId, primaryConnectionString, providerToken),
+            ]);
+        }
+        finally
+        {
+            // Released even when the wait or the publish fails, so a failure here cannot strand the
+            // held request and every later test in the fixture.
+            gate.Release();
+        }
 
         using HttpResponseMessage held = await inFlight;
 
