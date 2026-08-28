@@ -50,6 +50,42 @@ Describe "DMS pull request change classifier" {
         }
     }
 
+    Context "Draft reporting" {
+        It "reports draft for a draft pull request" {
+            (Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @("src/dms/x.cs") -IsDraft).draft |
+                Should -BeTrue
+        }
+
+        It "does not report draft for a ready pull request" {
+            (Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @("src/dms/x.cs")).draft |
+                Should -BeFalse
+        }
+
+        It "never reports draft for <EventName>, whatever the payload carried" -ForEach @(
+            @{ EventName = "merge_group" }
+            @{ EventName = "workflow_dispatch" }
+        ) {
+            # A draft is a statement about a pull request. If a stale payload value ever reached
+            # another event, gating the merge queue on it would skip the full suite it exists to run.
+            (Get-DmsChangeCategory -EventName $EventName -ChangedFile @("src/dms/x.cs") -IsDraft).draft |
+                Should -BeFalse
+        }
+
+        It "still reports draft when the diff could not be produced" {
+            # Draft state does not depend on the file list, so the fail-open path must not lose it.
+            (Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @() -DiffUnavailable -IsDraft).draft |
+                Should -BeTrue
+        }
+
+        It "reports draft alongside, not instead of, the file classification" {
+            $result = Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @("src/dms/Dockerfile") -IsDraft
+
+            $result.draft | Should -BeTrue
+            $result.dms_relevant | Should -BeTrue
+            $result.fresh_build_required | Should -BeTrue
+        }
+    }
+
     Context "merge_group never narrows" {
         It "reports DMS-relevant even for a docs-only merge group" {
             $result = Get-DmsChangeCategory -EventName "merge_group" -ChangedFile @("docs/README.md")
@@ -222,6 +258,31 @@ Describe "Write-DmsChangeCategories output contract" {
 
         $written | Should -Contain "fresh_build_required=true"
         $written | Should -Contain "dms_relevant=true"
+    }
+
+    It "emits the draft flag the workflow gates on" {
+        Set-Content -LiteralPath $script:changedFilePath -Value "src/dms/x.cs"
+
+        & $script:writeScript `
+            -EventName "pull_request" `
+            -ChangedFilePath $script:changedFilePath `
+            -IsDraft `
+            -OutputPath $script:outputPath | Out-Null
+
+        @(Get-Content -LiteralPath $script:outputPath) | Should -Contain "draft=true"
+    }
+
+    It "emits draft=false rather than omitting it on a ready pull request" {
+        # An omitted output evaluates to the empty string, which would silently satisfy
+        # `draft != 'true'` today and hide a wiring mistake later.
+        Set-Content -LiteralPath $script:changedFilePath -Value "src/dms/x.cs"
+
+        & $script:writeScript `
+            -EventName "pull_request" `
+            -ChangedFilePath $script:changedFilePath `
+            -OutputPath $script:outputPath | Out-Null
+
+        @(Get-Content -LiteralPath $script:outputPath) | Should -Contain "draft=false"
     }
 
     It "appends rather than replacing, so it cannot clobber another step's outputs" {

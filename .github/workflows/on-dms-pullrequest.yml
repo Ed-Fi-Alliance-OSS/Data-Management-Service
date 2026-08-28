@@ -11,7 +11,16 @@ on:
   # PRs regardless of which files changed. detect-fresh-build-changes computes dms_relevant and
   # the heavy jobs skip when no DMS-relevant file changed, so idle PRs stay cheap and the gate
   # still reports (a skipped dependency counts as a pass).
+  # The default type set is opened, synchronize and reopened. Declaring types replaces that set
+  # outright, so all three are listed alongside ready_for_review. ready_for_review is what makes
+  # draft gating safe: the expensive jobs below skip while a pull request is a draft, and marking it
+  # ready fires this trigger so the full suite validates it before review.
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
     branches:
       - main
 
@@ -59,6 +68,10 @@ jobs:
       # suite while this workflow still runs and reports dms-ci-gate. src/config counts as
       # DMS-relevant, so a config-only PR does not skip.
       dms_relevant: ${{ steps.detect.outputs.dms_relevant }}
+      # True while a pull request is a draft. Only the expensive roots and leaves gate on it, so a
+      # draft still gets the cheap lanes and still gets a reporting dms-ci-gate; ready_for_review is
+      # in the trigger types above, so marking the PR ready re-runs the full suite.
+      draft: ${{ steps.detect.outputs.draft }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -75,6 +88,8 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
           HEAD_SHA: ${{ github.sha }}
+          # Empty on merge_group and workflow_dispatch, which have no pull request.
+          PULL_REQUEST_IS_DRAFT: ${{ github.event.pull_request.draft }}
         run: |
           # PowerShell 7.4 makes a non-zero native exit code terminating under
           # ErrorActionPreference Stop, which this step must not be: a git failure is handled
@@ -122,7 +137,8 @@ jobs:
           ./eng/ci/Write-DmsChangeCategories.ps1 `
             -EventName $env:EVENT_NAME `
             -ChangedFilePath $changedFilePath `
-            -DiffUnavailable:$diffUnavailable
+            -DiffUnavailable:$diffUnavailable `
+            -IsDraft:($env:PULL_REQUEST_IS_DRAFT -eq 'true')
 
           # The step's own success is decided by the classifier having run, not by the exit code
           # of the last git command, which is deliberately tolerated above.
@@ -218,6 +234,7 @@ jobs:
             "eng/ci/tests/Sanitize-E2EArtifacts.Tests.ps1",
             "eng/ci/tests/DmsPullRequestMssqlWorkflow.Tests.ps1",
             "eng/ci/tests/DmsChangeCategories.Tests.ps1",
+            "eng/ci/tests/DmsPullRequestCiBudget.Tests.ps1",
             "eng/ci/tests/PullCiImages.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-Management.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-WorkflowInputs.Tests.ps1",
@@ -268,9 +285,12 @@ jobs:
   verify-dms-packages:
     name: Verify DMS Packages
     needs: detect-fresh-build-changes
+    # Draft-gated: BuildAndPublish plus four package builds and two scratch-consumer compiles is one
+    # of the most expensive jobs here, and nothing about packaging is feedback a draft needs.
     if: >-
       github.event_name != 'pull_request' ||
-      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true'
+      (needs.detect-fresh-build-changes.outputs.dms_relevant == 'true' &&
+      needs.detect-fresh-build-changes.outputs.draft != 'true')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -459,9 +479,12 @@ jobs:
   build-integration-test-assemblies:
     name: Build Integration Test Assemblies
     needs: detect-fresh-build-changes
+    # Draft-gated. This is the root of every integration lane, so gating it here skips all eight
+    # through their needs rather than repeating the condition on each.
     if: >-
       github.event_name != 'pull_request' ||
-      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true'
+      (needs.detect-fresh-build-changes.outputs.dms_relevant == 'true' &&
+      needs.detect-fresh-build-changes.outputs.draft != 'true')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -615,9 +638,12 @@ jobs:
   build-ci-docker-images:
     name: Build CI Docker Images
     needs: detect-fresh-build-changes
+    # Draft-gated. This is the root of every E2E, instance-E2E and OpenAPI lane, so gating it here
+    # skips that whole family through their needs.
     if: >-
       github.event_name != 'pull_request' ||
-      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true'
+      (needs.detect-fresh-build-changes.outputs.dms_relevant == 'true' &&
+      needs.detect-fresh-build-changes.outputs.draft != 'true')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1200,9 +1226,11 @@ jobs:
   run-cli-integration-tests:
     name: Run CLI Integration Tests (${{ matrix.cli }})
     needs: detect-fresh-build-changes
+    # Draft-gated: two matrix legs, each a separate restore, build and test.
     if: >-
       github.event_name != 'pull_request' ||
-      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true'
+      (needs.detect-fresh-build-changes.outputs.dms_relevant == 'true' &&
+      needs.detect-fresh-build-changes.outputs.draft != 'true')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -3189,10 +3217,14 @@ jobs:
         run-backend-mssql-integration-tests,
         run-dms-api-mssql-integration-tests,
       ]
+    # Draft-gated as well as DMS-gated. Unlike the lanes above this one skips through its own
+    # condition rather than a needs chain, so without the draft clause it would run on a draft and
+    # summarize an empty download directory.
     if: >-
       always() &&
       (github.event_name != 'pull_request' ||
-      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true')
+      (needs.detect-fresh-build-changes.outputs.dms_relevant == 'true' &&
+      needs.detect-fresh-build-changes.outputs.draft != 'true'))
     permissions:
       contents: read
     defaults:

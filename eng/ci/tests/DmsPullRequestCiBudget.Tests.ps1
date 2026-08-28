@@ -1,0 +1,277 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+#Requires -Version 7
+
+# Guardrails for the CI-budget wiring in .github/workflows/on-dms-pullrequest.yml.
+#
+# The classification behind these decisions is exercised directly by DmsChangeCategories.Tests.ps1.
+# What is left here is the wiring itself - which trigger types fire, which jobs consume which
+# output, and whether the aggregate gate still reports - and that wiring has no runtime seam: it is
+# declarative YAML evaluated by GitHub, so a mistake shows up as a lane that silently never runs
+# behind a green required check. Scope is deliberately narrow: only the decisions DMS-1474 makes.
+#
+# No YAML parser is available in this lane, so (following DmsPullRequestMssqlWorkflow.Tests.ps1)
+# named blocks are extracted by their two-space job key and invariants are asserted inside them.
+
+Describe "on-dms-pullrequest.yml CI budget wiring" {
+    BeforeAll {
+        $script:workflowPath = [System.IO.Path]::GetFullPath(
+            (Join-Path $PSScriptRoot "../../../.github/workflows/on-dms-pullrequest.yml")
+        )
+        $script:lines = (Get-Content -LiteralPath $script:workflowPath -Raw) -split "\r?\n"
+
+        function Get-JobBlock {
+            # Text of a top-level job (two-space key) up to the next top-level job key or EOF.
+            param([Parameter(Mandatory)] [string] $JobName)
+
+            $startIndex = -1
+            for ($i = 0; $i -lt $script:lines.Count; $i++) {
+                if ($script:lines[$i] -match "^  $([regex]::Escape($JobName)):\s*$") {
+                    $startIndex = $i
+                    break
+                }
+            }
+            if ($startIndex -lt 0) {
+                return $null
+            }
+
+            $endIndex = $script:lines.Count
+            for ($j = $startIndex + 1; $j -lt $script:lines.Count; $j++) {
+                if ($script:lines[$j] -match '^  [A-Za-z0-9_-]+:\s*$') {
+                    $endIndex = $j
+                    break
+                }
+            }
+
+            return ($script:lines[$startIndex..($endIndex - 1)] -join "`n")
+        }
+
+        function Get-JobIfCondition {
+            # The job-level `if:` flattened to one line, so a folded scalar and an inline condition
+            # are compared the same way. Job keys sit at two spaces, so the job's own `if:` is the
+            # first four-space one in the block; a step's `if:` is indented further and never wins.
+            param([Parameter(Mandatory)] [string] $JobName)
+
+            $block = Get-JobBlock -JobName $JobName
+            if ($null -eq $block) {
+                throw "Job '$JobName' was not found in $script:workflowPath."
+            }
+
+            $blockLines = $block -split "`n"
+            for ($i = 0; $i -lt $blockLines.Count; $i++) {
+                if ($blockLines[$i] -notmatch '^    if:\s*(.*)$') {
+                    continue
+                }
+
+                $inline = $Matches[1].Trim()
+                if ($inline -notin @('>-', '>', '|', '|-')) {
+                    return $inline
+                }
+
+                $continuation = @()
+                for ($j = $i + 1; $j -lt $blockLines.Count; $j++) {
+                    if ([string]::IsNullOrWhiteSpace($blockLines[$j])) {
+                        continue
+                    }
+                    if ($blockLines[$j] -notmatch '^      \S') {
+                        break
+                    }
+                    $continuation += $blockLines[$j].Trim()
+                }
+
+                return ($continuation -join ' ')
+            }
+
+            # A job with no condition at all. Distinct from a job whose condition is empty text,
+            # and the correct answer for "is this job draft-gated?" either way.
+            return ''
+        }
+
+        function Get-TriggerBlock {
+            # Everything from the `on:` key to the `jobs:` key.
+            $startIndex = [array]::FindIndex($script:lines, [Predicate[string]] { $args[0] -match '^on:\s*$' })
+            $endIndex = [array]::FindIndex($script:lines, [Predicate[string]] { $args[0] -match '^jobs:\s*$' })
+
+            if ($startIndex -lt 0 -or $endIndex -lt 0) {
+                throw "Could not locate the on:/jobs: boundary in $script:workflowPath."
+            }
+
+            return ($script:lines[$startIndex..($endIndex - 1)] -join "`n")
+        }
+
+        function Get-PullRequestTriggerType {
+            # The list items under `pull_request:` -> `types:`.
+            $triggerLines = (Get-TriggerBlock) -split "`n"
+            $types = @()
+            $inTypes = $false
+
+            for ($i = 0; $i -lt $triggerLines.Count; $i++) {
+                if ($triggerLines[$i] -match '^    types:\s*$') {
+                    $inTypes = $true
+                    continue
+                }
+
+                if (-not $inTypes) {
+                    continue
+                }
+
+                if ($triggerLines[$i] -match '^      - (\S+)\s*$') {
+                    $types += $Matches[1]
+                    continue
+                }
+
+                break
+            }
+
+            return $types
+        }
+
+        $script:draftGatedJob = @(
+            'build-ci-docker-images'
+            'build-integration-test-assemblies'
+            'verify-dms-packages'
+            'run-cli-integration-tests'
+            'test-timing-summary'
+        )
+
+        $script:notDraftGatedJob = @(
+            'detect-fresh-build-changes'
+            'scan-actions-bidi'
+            'run-bootstrap-pester-tests'
+            'verify-lock-files'
+            'run-unit-tests'
+            'dms-ci-gate'
+        )
+    }
+
+    Context "Pull request trigger types" {
+        It "declares exactly the three default types plus ready_for_review" {
+            # Declaring types replaces the default set outright. Dropping synchronize would stop CI
+            # running on new pushes; omitting ready_for_review would leave a draft-gated pull request
+            # permanently unvalidated once marked ready.
+            @(Get-PullRequestTriggerType) | Sort-Object |
+                Should -Be @('opened', 'ready_for_review', 'reopened', 'synchronize')
+        }
+
+        It "still restricts the trigger to pull requests targeting main" {
+            (Get-TriggerBlock) | Should -Match '(?m)^      - main\s*$'
+        }
+    }
+
+    Context "The detector publishes the draft flag" {
+        It "declares draft as a job output" {
+            Get-JobBlock 'detect-fresh-build-changes' |
+                Should -Match '(?m)^      draft:\s*\$\{\{\s*steps\.detect\.outputs\.draft\s*\}\}\s*$'
+        }
+
+        It "still declares the two pre-existing outputs" {
+            $block = Get-JobBlock 'detect-fresh-build-changes'
+
+            $block | Should -Match '(?m)^      fresh_build_required:\s*\$\{\{\s*steps\.detect\.outputs\.fresh_build_required\s*\}\}\s*$'
+            $block | Should -Match '(?m)^      dms_relevant:\s*\$\{\{\s*steps\.detect\.outputs\.dms_relevant\s*\}\}\s*$'
+        }
+    }
+
+    Context "Draft pull requests skip the expensive jobs" {
+        It "<JobName> is draft-gated" -ForEach @(
+            @{ JobName = 'build-ci-docker-images' }
+            @{ JobName = 'build-integration-test-assemblies' }
+            @{ JobName = 'verify-dms-packages' }
+            @{ JobName = 'run-cli-integration-tests' }
+            @{ JobName = 'test-timing-summary' }
+        ) {
+            Get-JobIfCondition -JobName $JobName |
+                Should -Match "needs\.detect-fresh-build-changes\.outputs\.draft != 'true'"
+        }
+
+        It "<JobName> keeps its DMS-relevance gate as well" -ForEach @(
+            @{ JobName = 'build-ci-docker-images' }
+            @{ JobName = 'build-integration-test-assemblies' }
+            @{ JobName = 'verify-dms-packages' }
+            @{ JobName = 'run-cli-integration-tests' }
+            @{ JobName = 'test-timing-summary' }
+        ) {
+            # Draft gating narrows; it must not replace the docs-only skip that already existed.
+            Get-JobIfCondition -JobName $JobName |
+                Should -Match "needs\.detect-fresh-build-changes\.outputs\.dms_relevant == 'true'"
+        }
+
+        It "<JobName> still runs the full suite for non-pull_request events" -ForEach @(
+            @{ JobName = 'build-ci-docker-images' }
+            @{ JobName = 'build-integration-test-assemblies' }
+            @{ JobName = 'verify-dms-packages' }
+            @{ JobName = 'run-cli-integration-tests' }
+            @{ JobName = 'test-timing-summary' }
+        ) {
+            # The merge queue is the recovery path for everything this ticket skips at PR time, so
+            # no gate may ever apply to merge_group or workflow_dispatch.
+            Get-JobIfCondition -JobName $JobName |
+                Should -Match "github\.event_name != 'pull_request'"
+        }
+    }
+
+    Context "Draft pull requests keep fast feedback and a reporting gate" {
+        It "<JobName> is not draft-gated" -ForEach @(
+            @{ JobName = 'detect-fresh-build-changes' }
+            @{ JobName = 'scan-actions-bidi' }
+            @{ JobName = 'run-bootstrap-pester-tests' }
+            @{ JobName = 'verify-lock-files' }
+            @{ JobName = 'run-unit-tests' }
+            @{ JobName = 'dms-ci-gate' }
+        ) {
+            Get-JobIfCondition -JobName $JobName | Should -Not -Match 'outputs\.draft'
+        }
+    }
+
+    Context "The aggregate gate reports on every pull request" {
+        It "runs unconditionally" {
+            # dms-ci-gate is the merge queue's required check. It has to run and report even when
+            # every dependency skipped, which is exactly the draft case.
+            Get-JobIfCondition -JobName 'dms-ci-gate' | Should -Be 'always()'
+        }
+
+        It "still counts an intentional skip as a pass" {
+            # This is what makes draft gating safe: skipped dependencies must not fail the gate.
+            Get-JobBlock 'dms-ci-gate' | Should -Match "\`$result -ne 'success' -and \`$result -ne 'skipped'"
+        }
+
+        It "depends only on jobs that exist" {
+            # A dependency naming a job that is not defined makes the whole workflow invalid, and a
+            # renamed job silently dropping out of the gate would make the gate green while its
+            # lane never ran.
+            $gateLines = (Get-JobBlock 'dms-ci-gate') -split "`n"
+            $needs = @()
+            $inNeeds = $false
+
+            foreach ($line in $gateLines) {
+                if ($line -match '^    needs:\s*$') {
+                    $inNeeds = $true
+                    continue
+                }
+                if (-not $inNeeds) {
+                    continue
+                }
+                if ($line -match '^      - (\S+)\s*$') {
+                    $needs += $Matches[1]
+                    continue
+                }
+                break
+            }
+
+            $needs.Count | Should -BeGreaterThan 0
+
+            $definedJob = @(
+                $script:lines |
+                    Where-Object { $_ -match '^  ([A-Za-z0-9_-]+):\s*$' } |
+                    ForEach-Object { ($_ -replace '^\s+', '') -replace ':\s*$', '' }
+            )
+
+            foreach ($dependency in $needs) {
+                $definedJob | Should -Contain $dependency
+            }
+        }
+    }
+}

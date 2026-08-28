@@ -96,6 +96,10 @@ function Get-DmsChangeCategory {
     .PARAMETER DiffUnavailable
         Set when no trustworthy file list could be produced - a missing merge-group base SHA, or a
         failed git diff. Narrowing requires a trustworthy list, so this forces the full suite.
+    .PARAMETER IsDraft
+        Set when the event is a pull request still in draft. Reported as the draft flag, which the
+        expensive jobs gate on. It is independent of the file classification: a draft is a statement
+        about the pull request, not about what it changed, so it survives the full-suite paths below.
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
@@ -108,13 +112,21 @@ function Get-DmsChangeCategory {
         $ChangedFile = @(),
 
         [switch]
-        $DiffUnavailable
+        $DiffUnavailable,
+
+        [switch]
+        $IsDraft
     )
+
+    # Only a pull request can be a draft. Guarded here as well as in the workflow so a payload that
+    # carries a stale value on another event cannot silently gate the merge queue.
+    $draft = $IsDraft.IsPresent -and $EventName -eq 'pull_request'
 
     if ($DiffUnavailable -or ($EventName -ne 'pull_request' -and $EventName -ne 'merge_group')) {
         return [pscustomobject]@{
             fresh_build_required = $true
             dms_relevant         = $true
+            draft                = $draft
         }
     }
 
@@ -148,6 +160,7 @@ function Get-DmsChangeCategory {
     return [pscustomobject]@{
         fresh_build_required = $freshBuildRequired
         dms_relevant         = $dmsRelevant
+        draft                = $draft
     }
 }
 
