@@ -1,6 +1,6 @@
 # Product Requirements Document (PRD): Ed-Fi API v8.0 Platform Capabilities
 
-> **Status:** Draft — describes platform capabilities as implemented in Ed-Fi
+> **Status:** Published - describes platform capabilities as implemented in Ed-Fi
 > API v8.0 \
 > **Owner:** Vinaya Mayya \
 > **Product**: Ed-Fi API ("DMS") \
