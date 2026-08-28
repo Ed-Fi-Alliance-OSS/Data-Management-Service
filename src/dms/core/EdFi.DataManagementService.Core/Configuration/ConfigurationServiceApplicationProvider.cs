@@ -67,6 +67,7 @@ public class ConfigurationServiceApplicationProvider(
                 request.Headers.Add("Tenant", tenant);
             }
 
+            request.Options.Set(ConfigurationServiceResponseHandler.AllowNotFoundResponse, true);
             using HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(
                 request
             );
@@ -174,6 +175,7 @@ public class ConfigurationServiceApplicationProvider(
             && HasProperty(applicationContext, "clientId")
             && HasProperty(applicationContext, "clientUuid")
             && HasProperty(applicationContext, "dataStoreIds")
+            && HasProperty(applicationContext, "creatorOwnershipTokenId")
             && HasProperty(applicationContext, "ownershipTokenIds");
     }
 

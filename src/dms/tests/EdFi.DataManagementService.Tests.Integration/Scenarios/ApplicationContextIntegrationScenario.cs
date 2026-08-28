@@ -104,6 +104,47 @@ internal static class ApplicationContextIntegrationScenario
         AssertNoApplicationContextDetailLeaked(body);
     }
 
+    public static async Task It_requires_application_context_for_ownership_authorized_get_put_and_delete(
+        ApiIntegrationHarness harness,
+        RecordingConfigurationServiceApplicationProvider provider,
+        string tenant
+    )
+    {
+        string resourceId = Guid.NewGuid().ToString();
+        string resourcePath = $"{string.Format(StudentsEndpointFormat, tenant)}/{resourceId}";
+
+        using HttpResponseMessage getResponse = await harness.HttpClient.GetAsync(resourcePath);
+        string getBody = await getResponse.Content.ReadAsStringAsync();
+        AssertRequiredContextNotFound(getResponse, getBody);
+
+        JsonObject payload = new()
+        {
+            ["id"] = resourceId,
+            ["studentUniqueId"] = "app-context-ownership-update-001",
+            ["firstName"] = "Ada",
+        };
+        using var putRequest = new HttpRequestMessage(HttpMethod.Put, resourcePath)
+        {
+            Content = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json"),
+        };
+        using HttpResponseMessage putResponse = await harness.HttpClient.SendAsync(putRequest);
+        string putBody = await putResponse.Content.ReadAsStringAsync();
+        AssertRequiredContextNotFound(putResponse, putBody);
+
+        using HttpResponseMessage deleteResponse = await harness.HttpClient.DeleteAsync(resourcePath);
+        string deleteBody = await deleteResponse.Content.ReadAsStringAsync();
+        AssertRequiredContextNotFound(deleteResponse, deleteBody);
+
+        (string ClientId, string? Tenant)[] ownershipInvocations =
+        [
+            .. provider.Invocations.Where(invocation => invocation.Tenant == tenant),
+        ];
+        ownershipInvocations.Should().HaveCount(3);
+        ownershipInvocations
+            .Should()
+            .OnlyContain(invocation => invocation.ClientId == ExternalDoublesConstants.SmokeClientId);
+    }
+
     private static async Task<HttpResponseMessage> PostStudentAsync(
         ApiIntegrationHarness harness,
         string tenant,
@@ -121,6 +162,13 @@ internal static class ApplicationContextIntegrationScenario
         };
 
         return await harness.HttpClient.SendAsync(request);
+    }
+
+    private static void AssertRequiredContextNotFound(HttpResponseMessage response, string body)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized, body);
+        response.Headers.WwwAuthenticate.ToString().Should().Contain("invalid_token");
+        AssertNoApplicationContextDetailLeaked(body);
     }
 
     /// <summary>

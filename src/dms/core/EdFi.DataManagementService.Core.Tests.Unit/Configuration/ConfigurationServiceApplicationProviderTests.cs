@@ -55,6 +55,19 @@ public class Given_ConfigurationServiceApplicationProvider
         result.Should().BeOfType<ApplicationContextResult.NotFound>();
     }
 
+    [Test]
+    public async Task It_Should_Return_NotFound_For_A_404_Response_Through_The_Production_Response_Handler()
+    {
+        using var fixture = new ProviderFixture(HttpStatusCode.NotFound, "", useResponseHandler: true);
+
+        ApplicationContextResult result = await fixture.Provider.GetApplicationByClientIdAsync(
+            "client-id",
+            tenant: null
+        );
+
+        result.Should().BeOfType<ApplicationContextResult.NotFound>();
+    }
+
     [TestCase(HttpStatusCode.InternalServerError)]
     [TestCase(HttpStatusCode.Unauthorized)]
     public async Task It_Should_Return_Unavailable_For_A_NonSuccess_Response(HttpStatusCode statusCode)
@@ -205,7 +218,7 @@ public class Given_ConfigurationServiceApplicationProvider
     }
 
     [Test]
-    public async Task It_Should_Accept_A_Response_That_Omits_The_Null_Creator_Token()
+    public async Task It_Should_Return_Unavailable_When_Response_Omits_The_Nullable_Creator_Token()
     {
         using var fixture = new ProviderFixture(
             HttpStatusCode.OK,
@@ -226,7 +239,7 @@ public class Given_ConfigurationServiceApplicationProvider
             tenant: null
         );
 
-        result.Should().BeOfType<ApplicationContextResult.Success>();
+        result.Should().BeOfType<ApplicationContextResult.Unavailable>();
     }
 
     [Test]
@@ -305,14 +318,18 @@ public class Given_ConfigurationServiceApplicationProvider
 
     private sealed class ProviderFixture : IDisposable
     {
-        public ProviderFixture(HttpStatusCode statusCode, string responseBody)
+        public ProviderFixture(
+            HttpStatusCode statusCode,
+            string responseBody,
+            bool useResponseHandler = false
+        )
             : this(
                 new HttpResponseMessage(statusCode)
                 {
                     Content = new StringContent(responseBody, Encoding.UTF8, "application/json"),
-                }
-            )
-        { }
+                },
+                useResponseHandler
+            ) { }
 
         public ProviderFixture(Exception exception)
         {
@@ -321,10 +338,18 @@ public class Given_ConfigurationServiceApplicationProvider
             Provider = CreateProvider(Client);
         }
 
-        private ProviderFixture(HttpResponseMessage response)
+        private ProviderFixture(HttpResponseMessage response, bool useResponseHandler = false)
         {
             Handler = new CapturingHttpMessageHandler(response);
-            Client = new HttpClient(Handler) { BaseAddress = new Uri("https://cms.example/") };
+            HttpMessageHandler messageHandler = useResponseHandler
+                ? new ConfigurationServiceResponseHandler(
+                    NullLogger<ConfigurationServiceResponseHandler>.Instance
+                )
+                {
+                    InnerHandler = Handler,
+                }
+                : Handler;
+            Client = new HttpClient(messageHandler) { BaseAddress = new Uri("https://cms.example/") };
             Provider = CreateProvider(Client);
         }
 

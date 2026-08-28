@@ -10,6 +10,8 @@ namespace EdFi.DataManagementService.Core.Security;
 public class ConfigurationServiceResponseHandler(ILogger<ConfigurationServiceResponseHandler> logger)
     : DelegatingHandler
 {
+    internal static readonly HttpRequestOptionsKey<bool> AllowNotFoundResponse = new("AllowNotFoundResponse");
+
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken
@@ -17,7 +19,14 @@ public class ConfigurationServiceResponseHandler(ILogger<ConfigurationServiceRes
     {
         var response = await base.SendAsync(request, cancellationToken);
 
-        if (!response.IsSuccessStatusCode)
+        bool allowsNotFoundResponse =
+            request.Options.TryGetValue(AllowNotFoundResponse, out bool allowNotFoundResponse)
+            && allowNotFoundResponse;
+
+        if (
+            !response.IsSuccessStatusCode
+            && !(response.StatusCode is System.Net.HttpStatusCode.NotFound && allowsNotFoundResponse)
+        )
         {
             var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
             var statusCode = response.StatusCode;

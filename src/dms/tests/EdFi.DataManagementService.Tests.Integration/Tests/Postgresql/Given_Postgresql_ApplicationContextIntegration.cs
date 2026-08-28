@@ -4,6 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Security;
+using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Tests.Integration.Doubles;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using EdFi.DataManagementService.Tests.Integration.Postgresql;
@@ -23,6 +25,7 @@ public sealed class Given_Postgresql_ApplicationContextIntegration : PostgresqlA
     private const string FirstIsolationTenant = "app-context-tenant-a";
     private const string SecondIsolationTenant = "app-context-tenant-b";
     private const string NotFoundTenant = "app-context-not-found-tenant";
+    private const string OwnershipNotFoundTenant = "app-context-ownership-not-found-tenant";
     private const string UnavailableTenant = "app-context-unavailable-tenant";
 
     private readonly RecordingConfigurationServiceApplicationProvider _applicationContextProvider = new(
@@ -32,6 +35,17 @@ public sealed class Given_Postgresql_ApplicationContextIntegration : PostgresqlA
     protected override FixtureKey Fixture => FixtureKey.ProfileRootOnlyMerge;
 
     protected override bool MultiTenancy => true;
+
+    protected override bool BypassAuthorization => false;
+
+    protected override IClaimSetProvider CreateClaimSetProvider(FixtureContext fixture) =>
+        new ConfigurableClaimSetProvider(
+            fixture,
+            static (_, action) =>
+                action is "Read" or "Update" or "Delete"
+                    ? [AuthorizationStrategyNameConstants.OwnershipBased]
+                    : [AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired]
+        );
 
     protected override IConfigurationServiceApplicationProvider? ApplicationContextConfigurationProviderOverride =>
         _applicationContextProvider;
@@ -67,10 +81,19 @@ public sealed class Given_Postgresql_ApplicationContextIntegration : PostgresqlA
             UnavailableTenant
         );
 
+    [Test]
+    public Task It_requires_application_context_for_ownership_authorized_get_put_and_delete() =>
+        ApplicationContextIntegrationScenario.It_requires_application_context_for_ownership_authorized_get_put_and_delete(
+            Harness,
+            _applicationContextProvider,
+            OwnershipNotFoundTenant
+        );
+
     private static ApplicationContextResult Resolve(string clientId, string? tenant) =>
         tenant switch
         {
             NotFoundTenant => new ApplicationContextResult.NotFound(),
+            OwnershipNotFoundTenant => new ApplicationContextResult.NotFound(),
             UnavailableTenant => new ApplicationContextResult.Unavailable(),
             FirstIsolationTenant => Success(applicationId: 201),
             SecondIsolationTenant => Success(applicationId: 202),
