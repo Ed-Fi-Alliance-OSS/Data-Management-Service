@@ -248,8 +248,7 @@ for how a custom access rule is authored and validated.
   unique-ID system, in which case the platform SHALL treat supplied unique IDs
   as ordinary data, enforcing only that they are unique.
 
-_Note:_ see NFR-OPS-8/NFR-OPS-9 for host responsibilities and platform scope
-around unique-ID integration.
+_Note:_ see NFR-OPS-8/NFR-OPS-9 for host responsibilities and platform scope around unique-ID integration; the enforcement behavior in FR-UID-3/FR-UID-4 is implemented through the custom-validation extension point (see FR-CUSTVAL)
 
 ### 3.6 Identities API (FR-IDN)
 
