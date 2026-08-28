@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SPDX-License-Identifier: Apache-2.0
+    Licensed to the Ed-Fi Alliance under one or more agreements.
+    The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+    See the LICENSE and NOTICES files in the project root for more information.
+
+    Coverage configuration for the DMS unit-test lane. The module exclusions are carried over
+    verbatim from the coverlet.console arguments this replaced; nothing was added, so the measured
+    set changes only as much as switching from on-disk instrumentation to the in-process collector
+    forces it to.
+-->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <Exclude>[EdFi.DataManagementService.Tests.E2E]*,[EdFi.DataManagementService.Tests.Integration]*,[EdFi.DataManagementService.Backend.Tests.Integration.Common]*,[EdFi.DataManagementService.Performance.Harness]*</Exclude>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

@@ -171,4 +171,135 @@ function Write-MessageColorOutput
     $host.UI.RawUI.ForegroundColor = $fc
 }
 
+<#
+    .DESCRIPTION
+    Resolve the test projects a unit-test run must cover, failing rather than reporting an empty
+    glob as success - the same rule Get-RequiredTestAssembly applies to assemblies.
+#>
+function Get-RequiredUnitTestProject {
+    param (
+        # Root of the solution whose test projects are being searched
+        [string]
+        $SolutionRoot,
+
+        # Project directory filter, e.g. "*.Tests.Unit"
+        [string]
+        $Filter
+    )
+
+    # The wildcard carries the file pattern rather than a -Filter argument: a -Filter combined with
+    # a wildcard directory path silently matches nothing here, which would read as "no unit tests".
+    $projectPath = "$SolutionRoot/*/$Filter/$Filter.csproj"
+
+    $projects = @(Get-ChildItem -Path $projectPath)
+
+    if ($projects.Count -eq 0) {
+        throw "no test projects found in $projectPath. Nothing matching '$Filter' exists, so this target would run zero tests."
+    }
+
+    return $projects
+}
+
+<#
+    .DESCRIPTION
+    Build the contents of a solution filter (.slnf). SolutionPath is relative to the filter file;
+    each ProjectPath is relative to the solution file, matching how the solution itself records them.
+#>
+function ConvertTo-SolutionFilterContent {
+    param (
+        [string]
+        $SolutionPath,
+
+        [string[]]
+        $ProjectPath
+    )
+
+    return [pscustomobject]@{
+        solution = [pscustomobject]@{
+            path     = $SolutionPath
+            projects = @($ProjectPath)
+        }
+    } | ConvertTo-Json -Depth 4
+}
+
+<#
+    .DESCRIPTION
+    Enforce a total line and branch coverage threshold against a Cobertura report, reproducing
+    coverlet's --threshold-type line --threshold-type branch --threshold-stat total. The rates are
+    read as XML attributes rather than matched out of the file's text, and parsed with the invariant
+    culture: on a comma-decimal machine, culture-sensitive parsing turns 0.61 into 61 and the gate
+    passes no matter what was measured. Returns the measured percentages so a caller can report them.
+#>
+function Assert-CoverageThreshold {
+    param (
+        # Path to a Cobertura coverage report
+        [string]
+        $Path,
+
+        # Minimum acceptable percentage, applied to line and branch totals independently
+        [int]
+        $Threshold
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "Coverage report '$Path' was not produced, so the $Threshold% threshold cannot be enforced. Treating a missing report as a pass would silently disable the coverage gate."
+    }
+
+    try {
+        [xml] $report = Get-Content -LiteralPath $Path -Raw
+    }
+    catch {
+        throw "Coverage report '$Path' is not valid XML, so the $Threshold% threshold cannot be enforced: $($_.Exception.Message)"
+    }
+
+    # Deliberately not $report.coverage: ReportGenerator writes a
+    # <!DOCTYPE coverage SYSTEM ...> declaration ahead of the root element, and the dotted XML
+    # adapter then matches the DocumentType node as well and hands back both. DocumentElement names
+    # the root and only the root.
+    $coverage = $report.DocumentElement
+
+    if ($null -eq $coverage -or $coverage.Name -ne 'coverage') {
+        throw "Coverage report '$Path' has no <coverage> root element, so the $Threshold% threshold cannot be enforced."
+    }
+
+    $measured = [ordered]@{}
+
+    foreach ($rateName in @('line-rate', 'branch-rate')) {
+        $rawRate = $coverage.GetAttribute($rateName)
+
+        if ([string]::IsNullOrWhiteSpace($rawRate)) {
+            throw "Coverage report '$Path' does not declare $rateName, so the $Threshold% threshold cannot be enforced."
+        }
+
+        $parsedRate = 0.0
+        $parsed = [double]::TryParse(
+            $rawRate,
+            [System.Globalization.NumberStyles]::Float,
+            [System.Globalization.CultureInfo]::InvariantCulture,
+            [ref] $parsedRate
+        )
+
+        if (-not $parsed) {
+            throw "Coverage report '$Path' declares $rateName as '$rawRate', which is not a number, so the $Threshold% threshold cannot be enforced."
+        }
+
+        $measured[$rateName] = [math]::Round($parsedRate * 100, 2)
+    }
+
+    $below = @(
+        $measured.Keys | Where-Object { $measured[$_] -lt $Threshold }
+    )
+
+    if ($below.Count -gt 0) {
+        $detail = ($measured.Keys | ForEach-Object { "$_ $($measured[$_])%" }) -join ', '
+        throw "Coverage is below the $Threshold% threshold for $($below -join ' and '). Measured: $detail."
+    }
+
+    return [pscustomobject]@{
+        LinePercentage   = $measured['line-rate']
+        BranchPercentage = $measured['branch-rate']
+        Threshold        = $Threshold
+    }
+}
+
 Export-ModuleMember -Function *

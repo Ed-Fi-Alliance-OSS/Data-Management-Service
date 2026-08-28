@@ -244,6 +244,7 @@ jobs:
             "eng/ci/tests/DmsPullRequestMssqlWorkflow.Tests.ps1",
             "eng/ci/tests/DmsChangeCategories.Tests.ps1",
             "eng/ci/tests/DmsPullRequestCiBudget.Tests.ps1",
+            "eng/ci/tests/UnitTestCoverage.Tests.ps1",
             "eng/ci/tests/PullCiImages.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-Management.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-WorkflowInputs.Tests.ps1",
