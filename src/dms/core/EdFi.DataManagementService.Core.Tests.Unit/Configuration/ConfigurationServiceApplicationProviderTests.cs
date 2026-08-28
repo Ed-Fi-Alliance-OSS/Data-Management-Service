@@ -178,6 +178,9 @@ public class Given_ConfigurationServiceApplicationProvider
     [TestCase(
         "{\"id\":1,\"applicationId\":2,\"clientId\":\"client-id\",\"clientUuid\":\"8c58fef1-7d9b-4423-bb3c-f1581e77e922\",\"dataStoreIds\":[3],\"creatorOwnershipTokenId\":null,\"ownershipTokenIds\":[7,7]}"
     )]
+    [TestCase(
+        "{\"id\":1,\"applicationId\":2,\"clientId\":\"client-id\",\"clientUuid\":\"8c58fef1-7d9b-4423-bb3c-f1581e77e922\",\"dataStoreIds\":[3],\"creatorOwnershipTokenId\":null,\"ownershipTokenIds\":[7,6]}"
+    )]
     public async Task It_Should_Return_Unavailable_For_OutOfRange_Ownership_Token_Ids(string responseBody)
     {
         using var fixture = new ProviderFixture(HttpStatusCode.OK, responseBody);
@@ -329,8 +332,7 @@ public class Given_ConfigurationServiceApplicationProvider
                     Content = new StringContent(responseBody, Encoding.UTF8, "application/json"),
                 },
                 useResponseHandler
-            )
-        { }
+            ) { }
 
         public ProviderFixture(Exception exception)
         {

@@ -189,7 +189,21 @@ public class ConfigurationServiceApplicationProvider(
             && applicationContext.OwnershipTokenIds.Count <= MaximumOwnershipTokenCount
             && applicationContext.OwnershipTokenIds.Distinct().Count()
                 == applicationContext.OwnershipTokenIds.Count
-            && applicationContext.OwnershipTokenIds.All(IsValidOwnershipTokenId);
+            && applicationContext.OwnershipTokenIds.All(IsValidOwnershipTokenId)
+            && IsAscending(applicationContext.OwnershipTokenIds);
+    }
+
+    private static bool IsAscending(IReadOnlyList<short> ownershipTokenIds)
+    {
+        for (int i = 1; i < ownershipTokenIds.Count; i++)
+        {
+            if (ownershipTokenIds[i] <= ownershipTokenIds[i - 1])
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static bool IsValidOwnershipTokenId(short tokenId) =>
