@@ -245,7 +245,11 @@ public class MssqlSeamAcquisitionIdentityTests
         ) =>
             new(
                 SelectionOf(TestDataStore()),
-                new MssqlConnectionAcquisition(_ => connection),
+                new MssqlConnectionAcquisition(
+                    new SqlClientPoolClearing(),
+                    NullLogger<MssqlConnectionAcquisition>.Instance,
+                    _ => connection
+                ),
                 Options.Create(new DatabaseOptions { IsolationLevel = IsolationLevel.ReadCommitted })
             );
 

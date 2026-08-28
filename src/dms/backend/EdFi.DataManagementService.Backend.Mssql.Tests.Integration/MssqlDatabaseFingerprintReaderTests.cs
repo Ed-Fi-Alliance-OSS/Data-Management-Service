@@ -126,7 +126,10 @@ public class Given_MssqlDatabaseFingerprintReaderTests_A_Provisioned_Core_Dms_Sc
         await InsertFingerprintAsync(_database.ConnectionString);
 
         var reader = new MssqlDatabaseFingerprintReader(
-            new MssqlConnectionAcquisition(),
+            new MssqlConnectionAcquisition(
+                new SqlClientPoolClearing(),
+                NullLogger<MssqlConnectionAcquisition>.Instance
+            ),
             NullLogger<MssqlDatabaseFingerprintReader>.Instance
         );
 

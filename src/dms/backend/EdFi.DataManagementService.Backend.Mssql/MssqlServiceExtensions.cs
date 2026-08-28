@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Configuration;
@@ -29,12 +30,24 @@ public static class MssqlServiceExtensions
 
         // The single SQL Server acquisition boundary, shared by every seam that opens a connection for
         // a request, so all of them realize the same effective connection string for a given target.
-        services.TryAddSingleton<IMssqlConnectionAcquisition>(new MssqlConnectionAcquisition());
-
-        // Clearing one exact SqlClient pool is a lifecycle action no caller performs yet; the seam is
-        // registered here so the eventual retirement path has one adapter to use and so that
-        // SqlConnection.ClearAllPools stays absent from the codebase.
         services.TryAddSingleton<ISqlServerPoolClearing, SqlClientPoolClearing>();
+
+        // Registered as the concrete type so both the acquisition boundary and the ownership
+        // reconciler resolve the very same singleton. A second instance would hold its own realization
+        // memo and pool state, and only one of the two would ever be reconciled.
+        services.TryAddSingleton<MssqlConnectionAcquisition>();
+        services.TryAddSingleton<IMssqlConnectionAcquisition>(provider =>
+            provider.GetRequiredService<MssqlConnectionAcquisition>()
+        );
+
+        // Both type arguments are supplied deliberately: TryAddEnumerable identifies a factory
+        // registration by the factory's own return type, so a factory typed to the interface is
+        // indistinguishable from every other reconciler and is rejected outright.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IDataStoreOwnershipReconciler, MssqlConnectionAcquisition>(provider =>
+                provider.GetRequiredService<MssqlConnectionAcquisition>()
+            )
+        );
 
         return services;
     }

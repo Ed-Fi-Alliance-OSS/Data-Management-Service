@@ -11,9 +11,11 @@ namespace EdFi.DataManagementService.Backend.Mssql;
 /// Clears one exact SqlClient connection pool, named by the provider-effective connection string that
 /// identifies it.
 ///
-/// This is an interface so the exact-pool contract is assertable without a server, and so that
-/// <c>SqlConnection.ClearAllPools</c> is absent from the codebase rather than merely avoided by
-/// convention: clearing unrelated pools would disrupt targets that are still configured and in use.
+/// This is an interface so the exact-pool contract is assertable without a server, and so that the
+/// backend has no reachable way to clear anything but one exact pool: clearing unrelated pools would
+/// disrupt targets that are still configured and in use. Integration fixtures do call
+/// <c>SqlConnection.ClearAllPools</c> when tearing a leased database down, which is safe there and is
+/// why the guarantee is stated as reachability from the backend rather than as absence everywhere.
 /// </summary>
 public interface ISqlServerPoolClearing
 {

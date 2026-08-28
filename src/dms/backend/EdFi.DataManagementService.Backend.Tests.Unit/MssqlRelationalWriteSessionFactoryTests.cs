@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
@@ -42,13 +43,17 @@ public class Given_MssqlRelationalWriteSessionFactory
 
         var sut = new MssqlRelationalWriteSessionFactory(
             dataStoreSelection,
-            new MssqlConnectionAcquisition(effectiveConnectionString =>
-            {
-                // A Primary target realizes byte-for-byte, so the effective string the acquisition
-                // boundary opens is the configured one.
-                effectiveConnectionString.Should().Be(connectionString);
-                return connection;
-            }),
+            new MssqlConnectionAcquisition(
+                new SqlClientPoolClearing(),
+                NullLogger<MssqlConnectionAcquisition>.Instance,
+                effectiveConnectionString =>
+                {
+                    // A Primary target realizes byte-for-byte, so the effective string the acquisition
+                    // boundary opens is the configured one.
+                    effectiveConnectionString.Should().Be(connectionString);
+                    return connection;
+                }
+            ),
             Options.Create(new DatabaseOptions { IsolationLevel = IsolationLevel.Snapshot })
         );
 

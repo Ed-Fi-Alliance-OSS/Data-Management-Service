@@ -60,7 +60,10 @@ public class Given_A_Mssql_Database_Provisioned_With_Generated_DDL_For_Effective
         _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(combinedSql);
 
         var reader = new MssqlDatabaseFingerprintReader(
-            new MssqlConnectionAcquisition(),
+            new MssqlConnectionAcquisition(
+                new SqlClientPoolClearing(),
+                NullLogger<MssqlConnectionAcquisition>.Instance
+            ),
             NullLogger<MssqlDatabaseFingerprintReader>.Instance
         );
 

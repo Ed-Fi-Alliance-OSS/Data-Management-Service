@@ -25,7 +25,24 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
         // The seams below take the boundary by constructor injection, so it has to be present wherever
         // they are registered, or they would resolve nothing and the single acquisition identity would
         // not be single at all.
-        services.TryAddSingleton<IMssqlConnectionAcquisition>(new MssqlConnectionAcquisition());
+        services.TryAddSingleton<ISqlServerPoolClearing, SqlClientPoolClearing>();
+
+        // Registered as the concrete type so both the acquisition boundary and the ownership
+        // reconciler resolve the very same singleton. A second instance would hold its own realization
+        // memo and pool state, and only one of the two would ever be reconciled.
+        services.TryAddSingleton<MssqlConnectionAcquisition>();
+        services.TryAddSingleton<IMssqlConnectionAcquisition>(provider =>
+            provider.GetRequiredService<MssqlConnectionAcquisition>()
+        );
+
+        // Both type arguments are supplied deliberately: TryAddEnumerable identifies a factory
+        // registration by the factory's own return type, so a factory typed to the interface is
+        // indistinguishable from every other reconciler and is rejected outright.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IDataStoreOwnershipReconciler, MssqlConnectionAcquisition>(provider =>
+                provider.GetRequiredService<MssqlConnectionAcquisition>()
+            )
+        );
 
         services.TryAdd(
             ServiceDescriptor.Singleton<

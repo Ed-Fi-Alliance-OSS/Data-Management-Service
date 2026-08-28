@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Core.External.Backend;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
@@ -66,7 +67,11 @@ public class MssqlConnectionAcquisitionTests
         [Test]
         public async Task It_leases_against_the_configured_string()
         {
-            MssqlConnectionAcquisition acquisition = new(_ => new SqlConnection());
+            MssqlConnectionAcquisition acquisition = new(
+                new SqlClientPoolClearing(),
+                NullLogger<MssqlConnectionAcquisition>.Instance,
+                _ => new SqlConnection()
+            );
 
             using MssqlConnectionLease lease = await acquisition.AcquireLeaseAsync(
                 EffectiveDataStoreTarget.Primary(PrimaryConnectionString)
@@ -150,7 +155,11 @@ public class MssqlConnectionAcquisitionTests
         [Test]
         public async Task It_rejects_a_provider_invalid_string_at_acquisition()
         {
-            MssqlConnectionAcquisition acquisition = new(_ => new SqlConnection());
+            MssqlConnectionAcquisition acquisition = new(
+                new SqlClientPoolClearing(),
+                NullLogger<MssqlConnectionAcquisition>.Instance,
+                _ => new SqlConnection()
+            );
 
             Func<Task> acquire = () =>
                 acquisition.AcquireLeaseAsync(
@@ -169,7 +178,11 @@ public class MssqlConnectionAcquisitionTests
     public class Given_A_Lease
     {
         private static MssqlConnectionAcquisition AcquisitionReturning(DbConnection connection) =>
-            new(_ => connection);
+            new(
+                new SqlClientPoolClearing(),
+                NullLogger<MssqlConnectionAcquisition>.Instance,
+                _ => connection
+            );
 
         [Test]
         public async Task It_releases_exactly_once_when_disposed_twice()
@@ -255,8 +268,10 @@ public class MssqlConnectionAcquisitionTests
                 DisposeFailure = new IOException("dispose failed"),
             };
 
-            MssqlConnectionLease lease = await new MssqlConnectionAcquisition(_ =>
-                connection
+            MssqlConnectionLease lease = await new MssqlConnectionAcquisition(
+                new SqlClientPoolClearing(),
+                NullLogger<MssqlConnectionAcquisition>.Instance,
+                _ => connection
             ).AcquireLeaseAsync(EffectiveDataStoreTarget.Primary(PrimaryConnectionString));
 
             Func<Task> open = () => lease.OpenAsync(CancellationToken.None);
@@ -275,8 +290,10 @@ public class MssqlConnectionAcquisitionTests
                 DisposeFailure = new IOException("dispose failed"),
             };
 
-            MssqlConnectionLease lease = await new MssqlConnectionAcquisition(_ =>
-                connection
+            MssqlConnectionLease lease = await new MssqlConnectionAcquisition(
+                new SqlClientPoolClearing(),
+                NullLogger<MssqlConnectionAcquisition>.Instance,
+                _ => connection
             ).AcquireLeaseAsync(EffectiveDataStoreTarget.Primary(PrimaryConnectionString));
 
             Func<Task> open = () => lease.OpenAsync(CancellationToken.None);
@@ -291,7 +308,11 @@ public class MssqlConnectionAcquisitionTests
             RecordingConnection connection = new() { DisposeFailure = disposeFailure };
 
             MssqlLeasedConnection leased = await MssqlLeasedConnection.OpenAsync(
-                new MssqlConnectionAcquisition(_ => connection),
+                new MssqlConnectionAcquisition(
+                    new SqlClientPoolClearing(),
+                    NullLogger<MssqlConnectionAcquisition>.Instance,
+                    _ => connection
+                ),
                 EffectiveDataStoreTarget.Primary(PrimaryConnectionString),
                 CancellationToken.None
             );
@@ -316,7 +337,11 @@ public class MssqlConnectionAcquisitionTests
 
             Func<Task> open = () =>
                 MssqlLeasedConnection.OpenAsync(
-                    new MssqlConnectionAcquisition(_ => connection),
+                    new MssqlConnectionAcquisition(
+                        new SqlClientPoolClearing(),
+                        NullLogger<MssqlConnectionAcquisition>.Instance,
+                        _ => connection
+                    ),
                     EffectiveDataStoreTarget.Primary(PrimaryConnectionString),
                     CancellationToken.None
                 );
@@ -335,7 +360,11 @@ public class MssqlConnectionAcquisitionTests
         public async Task It_disposes_the_connection_before_releasing_the_lease()
         {
             using RecordingConnection connection = new();
-            MssqlConnectionAcquisition acquisition = new(_ => connection);
+            MssqlConnectionAcquisition acquisition = new(
+                new SqlClientPoolClearing(),
+                NullLogger<MssqlConnectionAcquisition>.Instance,
+                _ => connection
+            );
 
             MssqlLeasedConnection leased = await MssqlLeasedConnection.OpenAsync(
                 acquisition,
@@ -355,7 +384,11 @@ public class MssqlConnectionAcquisitionTests
         public async Task It_disposes_exactly_once_when_disposed_twice()
         {
             using RecordingConnection connection = new();
-            MssqlConnectionAcquisition acquisition = new(_ => connection);
+            MssqlConnectionAcquisition acquisition = new(
+                new SqlClientPoolClearing(),
+                NullLogger<MssqlConnectionAcquisition>.Instance,
+                _ => connection
+            );
 
             MssqlLeasedConnection leased = await MssqlLeasedConnection.OpenAsync(
                 acquisition,
@@ -378,7 +411,11 @@ public class MssqlConnectionAcquisitionTests
         {
             InvalidOperationException failure = new("open failed");
             using RecordingConnection connection = new() { OpenFailure = failure };
-            MssqlConnectionAcquisition acquisition = new(_ => connection);
+            MssqlConnectionAcquisition acquisition = new(
+                new SqlClientPoolClearing(),
+                NullLogger<MssqlConnectionAcquisition>.Instance,
+                _ => connection
+            );
 
             Func<Task> open = () =>
                 MssqlLeasedConnection.OpenAsync(
