@@ -42,6 +42,168 @@ $script:DmsRelevantPathPrefix = @(
     'src/config/'
 )
 
+# Promoted-suite categories. Each names one or two integration lanes that a pull request runs only
+# when its changed files reach them; the merge queue always runs all of them. The two DMS-API lanes
+# share one category because they share one test project and one in-process pipeline, and the two
+# SchemaTools lanes share one because they share one CLI - splitting either by dialect would let a
+# provider-only change skip the lane that exercises that provider.
+$script:CategoryName = @(
+    'backend_mssql_relevant'
+    'dms_api_relevant'
+    'schematools_relevant'
+    'cdc_relevant'
+)
+
+# Paths that reach every promoted lane: shared source, build and CI infrastructure, and the
+# generators and models every suite compiles against. Only DMS-relevant paths reach this table, so
+# the broad '.github/' prefix here cannot promote a file the relevance rules already rejected.
+$script:AllCategoryExactPath = @(
+    'build-dms.ps1'
+    'src/Directory.Packages.props'
+    'src/nuget.config'
+    'src/dms/Directory.Build.props'
+    'src/dms/Directory.Build.targets'
+    'src/dms/EdFi.DataManagementService.sln'
+    'src/dms/EdFi.DataManagementService-Docker.sln'
+)
+
+$script:AllCategoryPathPrefix = @(
+    '.github/'
+    'eng/'
+    'src/dms/core/'
+    'src/dms/backend/EdFi.DataManagementService.Backend/'
+    'src/dms/backend/EdFi.DataManagementService.Backend.External/'
+    'src/dms/backend/EdFi.DataManagementService.Backend.Tests.Common/'
+    'src/dms/backend/EdFi.DataManagementService.Backend.Tests.Integration.Common/'
+    'src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/'
+    'src/dms/backend/Fixtures/'
+    'src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/'
+    'src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/'
+    'src/dms/backend/EdFi.DataManagementService.Backend.Plans/'
+    'src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/'
+    'src/dms/backend/EdFi.DataManagementService.Backend.Ddl/'
+    'src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/'
+    'src/dms/backend/EdFi.DataManagementService.Backend.Ddl.PublicContract.CompileCheck/'
+    # The SQL Server provider backs every MSSQL lane, and the CDC suite is SQL-Server-only.
+    'src/dms/backend/EdFi.DataManagementService.Backend.Mssql/'
+)
+
+# Paths that reach only some promoted lanes, or none. First match wins, so the specific entries
+# precede the directory catch-alls below them. An empty category list means "known, and no promoted
+# lane exercises it" - which is what keeps such a path out of the fail-open rule.
+$script:NarrowPathCategory = @(
+    @{ Prefix = 'src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/'; Category = @('backend_mssql_relevant') }
+    @{ Prefix = 'src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/'; Category = @() }
+    @{ Prefix = 'src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/'; Category = @('dms_api_relevant', 'schematools_relevant') }
+    @{ Prefix = 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc/'; Category = @('cdc_relevant') }
+    @{ Prefix = 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/'; Category = @('cdc_relevant') }
+    @{ Prefix = 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/'; Category = @('cdc_relevant') }
+    @{ Prefix = 'src/dms/frontend/'; Category = @('dms_api_relevant') }
+    @{ Prefix = 'src/dms/tests/EdFi.DataManagementService.Tests.Integration/'; Category = @('dms_api_relevant') }
+    @{ Prefix = 'src/dms/clis/EdFi.DataManagementService.SchemaTools/'; Category = @('schematools_relevant') }
+    @{ Prefix = 'src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/'; Category = @('schematools_relevant') }
+    @{ Prefix = 'src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/'; Category = @('schematools_relevant') }
+    @{ Prefix = 'src/dms/clis/EdFi.DataManagementService.SchemaGenerator.Pgsql.Tests.Integration/'; Category = @('schematools_relevant') }
+    # No promoted lane builds the other CLIs, the E2E and unit test projects, or the Configuration
+    # Service. They are still DMS-relevant, so their own lanes still run.
+    @{ Prefix = 'src/dms/clis/'; Category = @() }
+    @{ Prefix = 'src/dms/tests/'; Category = @() }
+    @{ Prefix = 'src/config/'; Category = @() }
+)
+
+function Get-DmsCategoryDefault {
+    <#
+    .SYNOPSIS
+        A fresh category set with every promoted category at one starting value.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [bool]
+        $InitialValue
+    )
+
+    $set = [ordered]@{}
+    foreach ($name in $script:CategoryName) {
+        $set[$name] = $InitialValue
+    }
+
+    return $set
+}
+
+function Get-DmsCategoryForPath {
+    <#
+    .SYNOPSIS
+        The promoted categories one DMS-relevant path reaches.
+    .DESCRIPTION
+        Only call this for a path that already classified as DMS-relevant. An unrecognised path
+        returns every category, so a new project directory is validated by everything until someone
+        classifies it. That is the failure mode this design can afford; the opposite - a new
+        directory silently skipping every promoted lane - is the one it cannot. A path that matches
+        a known narrow rule with no categories returns nothing, which is how a known-but-unpromoted
+        area stays out of the fail-open rule.
+    #>
+    [OutputType([string[]])]
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $Path
+    )
+
+    if (
+        Test-DmsChangedFileMatch `
+            -Path $Path `
+            -ExactPath $script:AllCategoryExactPath `
+            -PathPrefix $script:AllCategoryPathPrefix
+    ) {
+        return $script:CategoryName
+    }
+
+    foreach ($rule in $script:NarrowPathCategory) {
+        if ($Path.StartsWith($rule.Prefix, [System.StringComparison]::Ordinal)) {
+            return $rule.Category
+        }
+    }
+
+    return $script:CategoryName
+}
+
+function ConvertTo-DmsChangeCategoryResult {
+    <#
+    .SYNOPSIS
+        Flattens the flags into the object the workflow wrapper turns into step outputs.
+    #>
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)]
+        [bool]
+        $FreshBuildRequired,
+
+        [Parameter(Mandatory)]
+        [bool]
+        $DmsRelevant,
+
+        [Parameter(Mandatory)]
+        [bool]
+        $Draft,
+
+        [Parameter(Mandatory)]
+        [System.Collections.Specialized.OrderedDictionary]
+        $Category
+    )
+
+    $result = [ordered]@{
+        fresh_build_required = $FreshBuildRequired
+        dms_relevant         = $DmsRelevant
+        draft                = $Draft
+    }
+
+    foreach ($name in $Category.Keys) {
+        $result[$name] = [bool] $Category[$name]
+    }
+
+    return [pscustomobject] $result
+}
+
 function Test-DmsChangedFileMatch {
     <#
     .SYNOPSIS
@@ -84,9 +246,9 @@ function Get-DmsChangeCategory {
     .SYNOPSIS
         Classifies an event's changed files into the flags the DMS pull request workflow gates on.
     .DESCRIPTION
-        Returns fresh_build_required and dms_relevant. Only pull_request narrows: merge_group
-        validates the merged result, so nothing may be skipped there, and every other event runs the
-        full suite.
+        Returns fresh_build_required, dms_relevant, draft, and one flag per promoted-suite category.
+        Only pull_request narrows: merge_group validates the merged result, so nothing may be
+        skipped there, and every other event runs the full suite.
     .PARAMETER EventName
         The GitHub event name - pull_request, merge_group, or anything else (today only
         workflow_dispatch).
@@ -123,15 +285,19 @@ function Get-DmsChangeCategory {
     $draft = $IsDraft.IsPresent -and $EventName -eq 'pull_request'
 
     if ($DiffUnavailable -or ($EventName -ne 'pull_request' -and $EventName -ne 'merge_group')) {
-        return [pscustomobject]@{
-            fresh_build_required = $true
-            dms_relevant         = $true
-            draft                = $draft
-        }
+        return ConvertTo-DmsChangeCategoryResult `
+            -FreshBuildRequired $true `
+            -DmsRelevant $true `
+            -Draft $draft `
+            -Category (Get-DmsCategoryDefault -InitialValue $true)
     }
 
+    # merge_group validates the merged result, so every promoted lane runs there too; only
+    # pull_request narrows to the changed area.
+    $narrows = $EventName -eq 'pull_request'
     $freshBuildRequired = $false
-    $dmsRelevant = $EventName -ne 'pull_request'
+    $dmsRelevant = -not $narrows
+    $category = Get-DmsCategoryDefault -InitialValue (-not $narrows)
 
     foreach ($path in $ChangedFile) {
         if ([string]::IsNullOrWhiteSpace($path)) {
@@ -148,20 +314,30 @@ function Get-DmsChangeCategory {
         }
 
         if (
-            Test-DmsChangedFileMatch `
-                -Path $path `
-                -ExactPath $script:DmsRelevantExactPath `
-                -PathPrefix $script:DmsRelevantPathPrefix
+            -not (
+                Test-DmsChangedFileMatch `
+                    -Path $path `
+                    -ExactPath $script:DmsRelevantExactPath `
+                    -PathPrefix $script:DmsRelevantPathPrefix
+            )
         ) {
-            $dmsRelevant = $true
+            # Not DMS-relevant at all - documentation, editor configuration and the like. It cannot
+            # make a promoted suite relevant either, so it must not reach the fail-open rule.
+            continue
+        }
+
+        $dmsRelevant = $true
+
+        foreach ($name in (Get-DmsCategoryForPath -Path $path)) {
+            $category[$name] = $true
         }
     }
 
-    return [pscustomobject]@{
-        fresh_build_required = $freshBuildRequired
-        dms_relevant         = $dmsRelevant
-        draft                = $draft
-    }
+    return ConvertTo-DmsChangeCategoryResult `
+        -FreshBuildRequired $freshBuildRequired `
+        -DmsRelevant $dmsRelevant `
+        -Draft $draft `
+        -Category $category
 }
 
 Export-ModuleMember -Function Get-DmsChangeCategory

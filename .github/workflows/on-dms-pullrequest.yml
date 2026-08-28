@@ -72,6 +72,15 @@ jobs:
       # draft still gets the cheap lanes and still gets a reporting dms-ci-gate; ready_for_review is
       # in the trigger types above, so marking the PR ready re-runs the full suite.
       draft: ${{ steps.detect.outputs.draft }}
+      # Promoted-suite categories. Six integration lanes that have caught nothing at pull request
+      # time run only when a changed file reaches them; merge_group and workflow_dispatch always
+      # report every category true, so the merge queue still runs the full suite. Anything
+      # DMS-relevant that the classifier does not recognise sets all four, so a new project
+      # directory is validated by everything until it is classified.
+      backend_mssql_relevant: ${{ steps.detect.outputs.backend_mssql_relevant }}
+      dms_api_relevant: ${{ steps.detect.outputs.dms_api_relevant }}
+      schematools_relevant: ${{ steps.detect.outputs.schematools_relevant }}
+      cdc_relevant: ${{ steps.detect.outputs.cdc_relevant }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -771,7 +780,13 @@ jobs:
 
   run-backend-mssql-integration-tests:
     name: Run Backend MSSQL Integration Tests (${{ matrix.shard-name }})
-    needs: build-integration-test-assemblies
+    needs: [detect-fresh-build-changes, build-integration-test-assemblies]
+    # Path-promoted. This suite has caught nothing at pull request time, so it runs on a pull
+    # request only when a changed file reaches it; merge_group and workflow_dispatch always run
+    # it, which is the recovery path for anything a pull request skipped.
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.backend_mssql_relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -877,7 +892,13 @@ jobs:
 
   run-dms-api-mssql-integration-tests:
     name: Run DMS API MSSQL Integration Tests
-    needs: build-integration-test-assemblies
+    needs: [detect-fresh-build-changes, build-integration-test-assemblies]
+    # Path-promoted. This suite has caught nothing at pull request time, so it runs on a pull
+    # request only when a changed file reaches it; merge_group and workflow_dispatch always run
+    # it, which is the recovery path for anything a pull request skipped.
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.dms_api_relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1033,7 +1054,13 @@ jobs:
 
   run-dms-api-postgresql-integration-tests:
     name: Run DMS API PostgreSQL Integration Tests
-    needs: build-integration-test-assemblies
+    needs: [detect-fresh-build-changes, build-integration-test-assemblies]
+    # Path-promoted. This suite has caught nothing at pull request time, so it runs on a pull
+    # request only when a changed file reaches it; merge_group and workflow_dispatch always run
+    # it, which is the recovery path for anything a pull request skipped.
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.dms_api_relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1101,7 +1128,13 @@ jobs:
 
   run-backend-cdc-integration-tests:
     name: Run Backend CDC Integration Tests
-    needs: build-integration-test-assemblies
+    needs: [detect-fresh-build-changes, build-integration-test-assemblies]
+    # Path-promoted. This suite has caught nothing at pull request time, so it runs on a pull
+    # request only when a changed file reaches it; merge_group and workflow_dispatch always run
+    # it, which is the recovery path for anything a pull request skipped.
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.cdc_relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1363,7 +1396,13 @@ jobs:
 
   run-schematools-postgresql-integration-tests:
     name: Run SchemaTools PostgreSQL Integration Tests
-    needs: build-integration-test-assemblies
+    needs: [detect-fresh-build-changes, build-integration-test-assemblies]
+    # Path-promoted. This suite has caught nothing at pull request time, so it runs on a pull
+    # request only when a changed file reaches it; merge_group and workflow_dispatch always run
+    # it, which is the recovery path for anything a pull request skipped.
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.schematools_relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1437,7 +1476,13 @@ jobs:
 
   run-schematools-mssql-integration-tests:
     name: Run SchemaTools MSSQL Integration Tests
-    needs: build-integration-test-assemblies
+    needs: [detect-fresh-build-changes, build-integration-test-assemblies]
+    # Path-promoted. This suite has caught nothing at pull request time, so it runs on a pull
+    # request only when a changed file reaches it; merge_group and workflow_dispatch always run
+    # it, which is the recovery path for anything a pull request skipped.
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.schematools_relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read

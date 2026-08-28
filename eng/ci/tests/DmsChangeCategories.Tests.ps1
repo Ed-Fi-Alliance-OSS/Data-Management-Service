@@ -50,6 +50,216 @@ Describe "DMS pull request change classifier" {
         }
     }
 
+    Context "Promoted-suite categories" {
+        BeforeAll {
+            $script:allCategory = @(
+                'backend_mssql_relevant'
+                'dms_api_relevant'
+                'schematools_relevant'
+                'cdc_relevant'
+            )
+
+            function Get-SetCategory {
+                # The promoted categories a single changed path turns on, for a ready pull request.
+                param([Parameter(Mandatory)] [string] $Path)
+
+                $result = Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @($Path)
+
+                return @(
+                    $script:allCategory | Where-Object { $result.$_ }
+                ) | Sort-Object
+            }
+        }
+
+        Context "Events that never narrow" {
+            It "reports every category for <EventName>" -ForEach @(
+                @{ EventName = "merge_group" }
+                @{ EventName = "workflow_dispatch" }
+            ) {
+                # The merge queue is the recovery path for everything a pull request skipped, so it
+                # must never inherit a category decision.
+                $result = Get-DmsChangeCategory -EventName $EventName -ChangedFile @("docs/README.md")
+
+                foreach ($name in $script:allCategory) {
+                    $result.$name | Should -BeTrue -Because "$name must be true for $EventName"
+                }
+            }
+
+            It "reports every category when the diff could not be produced" {
+                $result = Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @() -DiffUnavailable
+
+                foreach ($name in $script:allCategory) {
+                    $result.$name | Should -BeTrue -Because "$name must be true when nothing can be classified"
+                }
+            }
+        }
+
+        Context "Shared paths reach every promoted lane" {
+            It "<Path> sets every category" -ForEach @(
+                @{ Path = "src/dms/core/EdFi.DataManagementService.Core/Something.cs" }
+                @{ Path = "src/dms/backend/EdFi.DataManagementService.Backend/Something.cs" }
+                @{ Path = "src/dms/backend/EdFi.DataManagementService.Backend.External/Something.cs" }
+                @{ Path = "src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Something.cs" }
+                @{ Path = "src/dms/backend/EdFi.DataManagementService.Backend.Plans/Something.cs" }
+                @{ Path = "src/dms/backend/EdFi.DataManagementService.Backend.Ddl/Something.cs" }
+                @{ Path = "src/dms/backend/Fixtures/authoritative/ds-5.2/inputs/x.json" }
+                @{ Path = "src/dms/backend/EdFi.DataManagementService.Backend.Tests.Integration.Common/Something.cs" }
+                # The SQL Server provider backs every MSSQL lane, and CDC is SQL-Server-only.
+                @{ Path = "src/dms/backend/EdFi.DataManagementService.Backend.Mssql/Something.cs" }
+                @{ Path = "build-dms.ps1" }
+                @{ Path = "eng/build-helpers.psm1" }
+                @{ Path = ".github/workflows/on-dms-pullrequest.yml" }
+                @{ Path = "src/Directory.Packages.props" }
+                @{ Path = "src/dms/Directory.Build.props" }
+                @{ Path = "src/dms/EdFi.DataManagementService.sln" }
+            ) {
+                Get-SetCategory -Path $Path |
+                    Should -Be @('backend_mssql_relevant', 'cdc_relevant', 'dms_api_relevant', 'schematools_relevant')
+            }
+        }
+
+        Context "Narrow paths reach only their own lanes" {
+            It "<Path> sets exactly <Expected>" -ForEach @(
+                @{
+                    Path     = "src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/Something.cs"
+                    Expected = @('backend_mssql_relevant')
+                }
+                @{
+                    Path     = "src/dms/backend/EdFi.DataManagementService.Backend.Cdc/Something.cs"
+                    Expected = @('cdc_relevant')
+                }
+                @{
+                    Path     = "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/Something.cs"
+                    Expected = @('cdc_relevant')
+                }
+                @{
+                    Path     = "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/Something.cs"
+                    Expected = @('cdc_relevant')
+                }
+                @{
+                    Path     = "src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Something.cs"
+                    Expected = @('dms_api_relevant')
+                }
+                @{
+                    Path     = "src/dms/tests/EdFi.DataManagementService.Tests.Integration/Something.cs"
+                    Expected = @('dms_api_relevant')
+                }
+                @{
+                    Path     = "src/dms/clis/EdFi.DataManagementService.SchemaTools/Something.cs"
+                    Expected = @('schematools_relevant')
+                }
+                @{
+                    Path     = "src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/Something.cs"
+                    Expected = @('schematools_relevant')
+                }
+                @{
+                    Path     = "src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/Something.cs"
+                    Expected = @('dms_api_relevant', 'schematools_relevant')
+                }
+            ) {
+                Get-SetCategory -Path $Path | Should -Be (@($Expected) | Sort-Object)
+            }
+        }
+
+        Context "Known paths that no promoted lane exercises" {
+            It "<Path> sets no category" -ForEach @(
+                # Backend PostgreSQL Integration is deliberately not promoted, so its own test
+                # project must not promote anything either - but it is a known path, so it must not
+                # fail open.
+                @{ Path = "src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/Something.cs" }
+                @{ Path = "src/dms/clis/EdFi.DataManagementService.OpenApiGenerator/Something.cs" }
+                @{ Path = "src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/Something.cs" }
+                @{ Path = "src/dms/tests/EdFi.DataManagementService.Tests.E2E/Something.cs" }
+                @{ Path = "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/Something.cs" }
+                @{ Path = "src/dms/tests/EdFi.DataManagementService.Tests.Unit/Something.cs" }
+                @{ Path = "src/config/backend/Something.cs" }
+                @{ Path = "docs/README.md" }
+            ) {
+                Get-SetCategory -Path $Path | Should -BeNullOrEmpty
+            }
+
+            It "still reports those DMS paths as DMS-relevant" {
+                # Not promoting a lane must not stop the file's own lanes from running.
+                (Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @("src/config/backend/Something.cs")).dms_relevant |
+                    Should -BeTrue
+            }
+        }
+
+        Context "Unclassified DMS paths fail open" {
+            It "<Path> sets every category" -ForEach @(
+                @{ Path = "src/dms/backend/EdFi.DataManagementService.Backend.SomethingNew/File.cs" }
+                @{ Path = "src/dms/somethingnew/File.cs" }
+                @{ Path = "src/dms/Dockerfile" }
+                @{ Path = "src/dms/run.sh" }
+            ) {
+                # A directory nobody has classified yet is validated by everything. The opposite
+                # failure - a new directory silently skipping every promoted lane - is the one this
+                # design cannot afford.
+                Get-SetCategory -Path $Path |
+                    Should -Be @('backend_mssql_relevant', 'cdc_relevant', 'dms_api_relevant', 'schematools_relevant')
+            }
+
+            It "does not fail open for a path that is not DMS-relevant at all" {
+                Get-SetCategory -Path "docs/architecture/notes.md" | Should -BeNullOrEmpty
+            }
+        }
+
+        Context "Category matching respects directory boundaries" {
+            It "treats Backend and Backend.Mssql.Tests.Integration as different projects" {
+                # A prefix that ignored the boundary would fold the narrow lane into the shared one
+                # and silently promote everything.
+                Get-SetCategory -Path "src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/x.cs" |
+                    Should -Be @('backend_mssql_relevant')
+            }
+
+            It "treats Postgresql and Postgresql.Tests.Integration as different projects" {
+                Get-SetCategory -Path "src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/x.cs" |
+                    Should -Be @('dms_api_relevant', 'schematools_relevant')
+
+                Get-SetCategory -Path "src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/x.cs" |
+                    Should -BeNullOrEmpty
+            }
+
+            It "matches category paths case-sensitively, as Git does" {
+                Get-SetCategory -Path "SRC/DMS/backend/EdFi.DataManagementService.Backend.Cdc/x.cs" |
+                    Should -BeNullOrEmpty
+            }
+        }
+
+        Context "Categories combine across a file list" {
+            It "unions the categories of every changed file" {
+                $result = Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @(
+                    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc/x.cs",
+                    "src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/y.cs"
+                )
+
+                $result.cdc_relevant | Should -BeTrue
+                $result.dms_api_relevant | Should -BeTrue
+                $result.backend_mssql_relevant | Should -BeFalse
+                $result.schematools_relevant | Should -BeFalse
+            }
+
+            It "lets one shared file promote everything regardless of its neighbours" {
+                $result = Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @(
+                    "src/dms/tests/EdFi.DataManagementService.Tests.E2E/x.cs",
+                    "src/dms/core/EdFi.DataManagementService.Core/y.cs"
+                )
+
+                foreach ($name in $script:allCategory) {
+                    $result.$name | Should -BeTrue -Because "$name must follow a core change"
+                }
+            }
+
+            It "reports no category for an empty file list on a pull request" {
+                $result = Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @()
+
+                foreach ($name in $script:allCategory) {
+                    $result.$name | Should -BeFalse
+                }
+            }
+        }
+    }
+
     Context "Draft reporting" {
         It "reports draft for a draft pull request" {
             (Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @("src/dms/x.cs") -IsDraft).draft |
@@ -283,6 +493,24 @@ Describe "Write-DmsChangeCategories output contract" {
             -OutputPath $script:outputPath | Out-Null
 
         @(Get-Content -LiteralPath $script:outputPath) | Should -Contain "draft=false"
+    }
+
+    It "emits every promoted category flag the workflow gates on" {
+        Set-Content -LiteralPath $script:changedFilePath -Value "src/dms/backend/EdFi.DataManagementService.Backend.Cdc/x.cs"
+
+        & $script:writeScript `
+            -EventName "pull_request" `
+            -ChangedFilePath $script:changedFilePath `
+            -OutputPath $script:outputPath | Out-Null
+
+        $written = @(Get-Content -LiteralPath $script:outputPath)
+
+        # Written whether true or false: an omitted output evaluates to the empty string, which
+        # never equals 'true', so a missing flag would look exactly like a deliberate skip.
+        $written | Should -Contain "cdc_relevant=true"
+        $written | Should -Contain "backend_mssql_relevant=false"
+        $written | Should -Contain "dms_api_relevant=false"
+        $written | Should -Contain "schematools_relevant=false"
     }
 
     It "appends rather than replacing, so it cannot clobber another step's outputs" {

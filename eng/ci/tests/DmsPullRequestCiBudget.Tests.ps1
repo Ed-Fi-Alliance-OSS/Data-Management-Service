@@ -137,6 +137,61 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
             'test-timing-summary'
         )
 
+        function Get-JobNeed {
+            # The job-level `needs:`, whether written inline (`needs: a`, `needs: [a, b]`) or as a
+            # block sequence.
+            param([Parameter(Mandatory)] [string] $JobName)
+
+            $block = Get-JobBlock -JobName $JobName
+            if ($null -eq $block) {
+                throw "Job '$JobName' was not found in $script:workflowPath."
+            }
+
+            $blockLines = $block -split "`n"
+            for ($i = 0; $i -lt $blockLines.Count; $i++) {
+                if ($blockLines[$i] -notmatch '^    needs:\s*(.*)$') {
+                    continue
+                }
+
+                $inline = $Matches[1].Trim()
+                if (-not [string]::IsNullOrWhiteSpace($inline)) {
+                    return @(
+                        ($inline.Trim('[', ']') -split ',') |
+                            ForEach-Object { $_.Trim() } |
+                            Where-Object { $_ }
+                    )
+                }
+
+                $names = @()
+                for ($j = $i + 1; $j -lt $blockLines.Count; $j++) {
+                    if ([string]::IsNullOrWhiteSpace($blockLines[$j])) {
+                        continue
+                    }
+                    if ($blockLines[$j] -match '^      \[?\s*$') {
+                        continue
+                    }
+                    if ($blockLines[$j] -match '^      -?\s*([A-Za-z0-9_-]+),?\s*$') {
+                        $names += $Matches[1]
+                        continue
+                    }
+                    break
+                }
+
+                return $names
+            }
+
+            return @()
+        }
+
+        $script:promotedLane = @(
+            @{ JobName = 'run-backend-mssql-integration-tests'; Category = 'backend_mssql_relevant' }
+            @{ JobName = 'run-dms-api-mssql-integration-tests'; Category = 'dms_api_relevant' }
+            @{ JobName = 'run-dms-api-postgresql-integration-tests'; Category = 'dms_api_relevant' }
+            @{ JobName = 'run-backend-cdc-integration-tests'; Category = 'cdc_relevant' }
+            @{ JobName = 'run-schematools-postgresql-integration-tests'; Category = 'schematools_relevant' }
+            @{ JobName = 'run-schematools-mssql-integration-tests'; Category = 'schematools_relevant' }
+        )
+
         $script:notDraftGatedJob = @(
             'detect-fresh-build-changes'
             'scan-actions-bidi'
@@ -172,6 +227,87 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
 
             $block | Should -Match '(?m)^      fresh_build_required:\s*\$\{\{\s*steps\.detect\.outputs\.fresh_build_required\s*\}\}\s*$'
             $block | Should -Match '(?m)^      dms_relevant:\s*\$\{\{\s*steps\.detect\.outputs\.dms_relevant\s*\}\}\s*$'
+        }
+    }
+
+    Context "Path-promoted integration lanes" {
+        It "<JobName> gates on <Category>" -ForEach @(
+            @{ JobName = 'run-backend-mssql-integration-tests'; Category = 'backend_mssql_relevant' }
+            @{ JobName = 'run-dms-api-mssql-integration-tests'; Category = 'dms_api_relevant' }
+            @{ JobName = 'run-dms-api-postgresql-integration-tests'; Category = 'dms_api_relevant' }
+            @{ JobName = 'run-backend-cdc-integration-tests'; Category = 'cdc_relevant' }
+            @{ JobName = 'run-schematools-postgresql-integration-tests'; Category = 'schematools_relevant' }
+            @{ JobName = 'run-schematools-mssql-integration-tests'; Category = 'schematools_relevant' }
+        ) {
+            Get-JobIfCondition -JobName $JobName |
+                Should -Match "needs\.detect-fresh-build-changes\.outputs\.$Category == 'true'"
+        }
+
+        It "<JobName> still runs the full suite for non-pull_request events" -ForEach @(
+            @{ JobName = 'run-backend-mssql-integration-tests' }
+            @{ JobName = 'run-dms-api-mssql-integration-tests' }
+            @{ JobName = 'run-dms-api-postgresql-integration-tests' }
+            @{ JobName = 'run-backend-cdc-integration-tests' }
+            @{ JobName = 'run-schematools-postgresql-integration-tests' }
+            @{ JobName = 'run-schematools-mssql-integration-tests' }
+        ) {
+            Get-JobIfCondition -JobName $JobName | Should -Match "github\.event_name != 'pull_request'"
+        }
+
+        It "<JobName> needs both the detector and the assembly build" -ForEach @(
+            @{ JobName = 'run-backend-mssql-integration-tests' }
+            @{ JobName = 'run-dms-api-mssql-integration-tests' }
+            @{ JobName = 'run-dms-api-postgresql-integration-tests' }
+            @{ JobName = 'run-backend-cdc-integration-tests' }
+            @{ JobName = 'run-schematools-postgresql-integration-tests' }
+            @{ JobName = 'run-schematools-mssql-integration-tests' }
+        ) {
+            # The detector supplies the category output; without it in needs the expression reads
+            # empty and the lane never runs. build-integration-test-assemblies supplies the test
+            # assemblies and the inherited draft skip.
+            $needs = Get-JobNeed -JobName $JobName
+
+            $needs | Should -Contain 'detect-fresh-build-changes'
+            $needs | Should -Contain 'build-integration-test-assemblies'
+        }
+
+        It "leaves Backend PostgreSQL Integration unpromoted" {
+            # Deliberately out of scope: PostgreSQL is the default engine, so this is the lane most
+            # likely to catch a shared-backend regression at pull request time.
+            Get-JobIfCondition -JobName 'run-backend-postgresql-integration-tests' |
+                Should -Not -Match 'outputs\.(backend_mssql|dms_api|schematools|cdc)_relevant'
+        }
+
+        It "leaves the other integration lanes unpromoted" -ForEach @(
+            @{ JobName = 'run-schematools-cli-integration-tests' }
+            @{ JobName = 'run-cli-integration-tests' }
+        ) {
+            Get-JobIfCondition -JobName $JobName |
+                Should -Not -Match 'outputs\.(backend_mssql|dms_api|schematools|cdc)_relevant'
+        }
+
+        It "declares every category output the workflow consumes" {
+            # An output referenced but not declared evaluates to the empty string, never equals
+            # 'true', and silently skips its lane on every pull request forever. This is the one
+            # mistake in this design that no test of the classifier could catch.
+            $consumed = @(
+                [regex]::Matches(
+                    ($script:lines -join "`n"),
+                    'needs\.detect-fresh-build-changes\.outputs\.([A-Za-z0-9_]+)'
+                ) | ForEach-Object { $_.Groups[1].Value }
+            ) | Sort-Object -Unique
+
+            $declared = @(
+                ((Get-JobBlock 'detect-fresh-build-changes') -split "`n") |
+                    Where-Object { $_ -match '^      ([A-Za-z0-9_]+):\s*\$\{\{' } |
+                    ForEach-Object { [regex]::Match($_, '^      ([A-Za-z0-9_]+):').Groups[1].Value }
+            ) | Sort-Object -Unique
+
+            $consumed.Count | Should -BeGreaterThan 0
+
+            foreach ($name in $consumed) {
+                $declared | Should -Contain $name
+            }
         }
     }
 
