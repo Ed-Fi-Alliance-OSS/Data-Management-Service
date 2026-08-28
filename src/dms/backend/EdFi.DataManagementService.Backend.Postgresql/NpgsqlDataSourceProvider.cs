@@ -11,17 +11,24 @@ namespace EdFi.DataManagementService.Backend.Postgresql;
 
 /// <summary>
 /// Scoped service that provides the appropriate NpgsqlDataSource for the current request
-/// by reading the effective target the request selected and using the singleton cache.
+/// by reading the effective target the request selected and leasing it from the singleton cache.
 /// Uses a Dictionary cache to handle potential scope issues where the provider may be
 /// used across different target contexts.
 /// </summary>
+/// <remarks>
+/// The lease is held for the life of the request scope rather than for the life of one connection,
+/// because several seams open connections from the same data source during one request and the data
+/// source must not be disposed between them. The DI scope disposes this provider, which releases
+/// every lease it took.
+/// </remarks>
 public sealed class NpgsqlDataSourceProvider(
     IDataStoreSelection dataStoreSelection,
     NpgsqlDataSourceCache dataSourceCache,
     ILogger<NpgsqlDataSourceProvider> logger
-)
+) : IAsyncDisposable
 {
-    private readonly Dictionary<string, NpgsqlDataSource> _cachedDataSources = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, NpgsqlDataSourceLease> _leases = new(StringComparer.Ordinal);
+    private bool _disposed;
 
     /// <summary>
     /// Gets the NpgsqlDataSource for the target the current request selected.
@@ -37,24 +44,46 @@ public sealed class NpgsqlDataSourceProvider(
     {
         get
         {
+            ObjectDisposedException.ThrowIf(_disposed, typeof(NpgsqlDataSourceProvider));
+
             // Always read the current target to handle potential scope issues
             var target = dataStoreSelection.GetEffectiveTarget();
 
-            // Check if we've already cached this target's data source
-            if (_cachedDataSources.TryGetValue(target.ConnectionString, out var cachedDataSource))
+            // Check if we have already leased this target's data source for this request
+            if (_leases.TryGetValue(target.ConnectionString, out NpgsqlDataSourceLease? held))
             {
-                return cachedDataSource;
+                return held.DataSource;
             }
 
             logger.LogDebug(
-                "NpgsqlDataSourceProvider caching data source for a {TargetKind} target",
+                "NpgsqlDataSourceProvider leasing a data source for a {TargetKind} target",
                 target.Kind
             );
 
-            var dataSource = dataSourceCache.GetOrCreate(target.ConnectionString);
-            _cachedDataSources[target.ConnectionString] = dataSource;
+            NpgsqlDataSourceLease lease = dataSourceCache.AcquireLease(target.ConnectionString);
+            _leases[target.ConnectionString] = lease;
 
-            return dataSource;
+            return lease.DataSource;
         }
+    }
+
+    /// <summary>
+    /// Releases every lease this request took. Called by the DI scope at the end of the request.
+    /// </summary>
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+
+        foreach (NpgsqlDataSourceLease lease in _leases.Values)
+        {
+            await lease.DisposeAsync();
+        }
+
+        _leases.Clear();
     }
 }

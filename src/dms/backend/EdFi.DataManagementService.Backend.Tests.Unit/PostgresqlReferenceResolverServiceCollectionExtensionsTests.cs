@@ -28,7 +28,7 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
     private static readonly DocumentCacheTargetKey TargetKey = DocumentCacheTargetKey.Create("TenantA", 7);
 
     [Test]
-    public void It_registers_the_postgresql_reference_resolution_composition_surface()
+    public async Task It_registers_the_postgresql_reference_resolution_composition_surface()
     {
         var services = new ServiceCollection();
 
@@ -42,7 +42,10 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         services.AddPostgresqlReferenceResolver();
 
         using var serviceProvider = BuildServiceProvider(services);
-        using var scope = serviceProvider.CreateScope();
+
+        // Asynchronous, because this scope resolves NpgsqlDataSourceProvider: it holds data-source
+        // leases and is asynchronously disposable, which a synchronous scope disposal refuses.
+        await using var scope = serviceProvider.CreateAsyncScope();
 
         var resolver = scope.ServiceProvider.GetRequiredService<IReferenceResolver>();
         var writeFlattener = scope.ServiceProvider.GetRequiredService<IRelationalWriteFlattener>();

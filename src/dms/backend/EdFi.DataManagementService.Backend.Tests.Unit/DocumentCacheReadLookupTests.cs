@@ -909,7 +909,7 @@ public class Given_DocumentCacheReadLookup
     public async Task It_returns_cache_unavailable_for_postgresql_connection_construction_failures()
     {
         var adapter = new PostgresqlDocumentCacheReadLookupAdapter(
-            (_, _) => Task.FromException<NpgsqlConnection>(new ArgumentException("bad target")),
+            (_, _) => Task.FromException<LeasedNpgsqlConnection>(new ArgumentException("bad target")),
             new PostgresqlRelationalWriteExceptionClassifier(),
             new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<PostgresqlDocumentCacheReadLookupAdapter>.Instance,
@@ -931,7 +931,7 @@ public class Given_DocumentCacheReadLookup
     public async Task It_returns_cache_unavailable_for_postgresql_connection_open_failures()
     {
         var adapter = new PostgresqlDocumentCacheReadLookupAdapter(
-            (_, _) => Task.FromException<NpgsqlConnection>(new NpgsqlException("open failed")),
+            (_, _) => Task.FromException<LeasedNpgsqlConnection>(new NpgsqlException("open failed")),
             new PostgresqlRelationalWriteExceptionClassifier(),
             new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<PostgresqlDocumentCacheReadLookupAdapter>.Instance,
@@ -953,7 +953,8 @@ public class Given_DocumentCacheReadLookup
     public async Task It_propagates_postgresql_connection_acquisition_programming_exceptions()
     {
         var adapter = new PostgresqlDocumentCacheReadLookupAdapter(
-            (_, _) => Task.FromException<NpgsqlConnection>(new InvalidOperationException("programming")),
+            (_, _) =>
+                Task.FromException<LeasedNpgsqlConnection>(new InvalidOperationException("programming")),
             new PostgresqlRelationalWriteExceptionClassifier(),
             new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<PostgresqlDocumentCacheReadLookupAdapter>.Instance,

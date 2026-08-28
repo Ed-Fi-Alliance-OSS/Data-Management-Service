@@ -1039,22 +1039,23 @@ internal sealed class PostgresqlDocumentCacheWriter(
         CancellationToken cancellationToken
     )
     {
-        NpgsqlDataSource dataSource = _dataSourceCache.GetOrCreate(connectionString);
-        NpgsqlConnection connection = await dataSource
-            .OpenConnectionAsync(cancellationToken)
+        // The transaction outlives this method, so the lease that keeps its data source alive travels
+        // with the connection rather than being released here.
+        LeasedNpgsqlConnection leased = await _dataSourceCache
+            .OpenLeasedConnectionAsync(connectionString, cancellationToken)
             .ConfigureAwait(false);
 
         try
         {
-            NpgsqlTransaction transaction = await connection
-                .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
+            NpgsqlTransaction transaction = await leased
+                .Connection.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
                 .ConfigureAwait(false);
 
-            return PostgresqlDocumentCacheWriterTransaction.Ordinary(connection, transaction);
+            return PostgresqlDocumentCacheWriterTransaction.Ordinary(leased, transaction);
         }
         catch
         {
-            await connection.DisposeAsync().ConfigureAwait(false);
+            await leased.DisposeAsync().ConfigureAwait(false);
             throw;
         }
     }
@@ -1149,19 +1150,24 @@ internal sealed class PostgresqlDocumentCacheWriter(
     private sealed class PostgresqlDocumentCacheWriterTransaction : IAsyncDisposable
     {
         private readonly IRelationalWriteSession? _session;
-        private readonly bool _ownsConnection;
+
+        /// <summary>
+        /// The connection and its data-source lease, when this transaction owns them. Null for a
+        /// session-bound transaction, whose session owns the connection instead.
+        /// </summary>
+        private readonly LeasedNpgsqlConnection? _ownedConnection;
 
         private PostgresqlDocumentCacheWriterTransaction(
             NpgsqlConnection connection,
             NpgsqlTransaction transaction,
             IRelationalWriteSession? session,
-            bool ownsConnection
+            LeasedNpgsqlConnection? ownedConnection
         )
         {
             Connection = connection ?? throw new ArgumentNullException(nameof(connection));
             Transaction = transaction ?? throw new ArgumentNullException(nameof(transaction));
             _session = session;
-            _ownsConnection = ownsConnection;
+            _ownedConnection = ownedConnection;
         }
 
         public NpgsqlConnection Connection { get; }
@@ -1169,15 +1175,15 @@ internal sealed class PostgresqlDocumentCacheWriter(
         public NpgsqlTransaction Transaction { get; }
 
         public static PostgresqlDocumentCacheWriterTransaction Ordinary(
-            NpgsqlConnection connection,
+            LeasedNpgsqlConnection leased,
             NpgsqlTransaction transaction
-        ) => new(connection, transaction, session: null, ownsConnection: true);
+        ) => new(leased.Connection, transaction, session: null, ownedConnection: leased);
 
         public static PostgresqlDocumentCacheWriterTransaction SessionBound(
             NpgsqlConnection connection,
             NpgsqlTransaction transaction,
             IRelationalWriteSession session
-        ) => new(connection, transaction, session, ownsConnection: false);
+        ) => new(connection, transaction, session, ownedConnection: null);
 
         public async Task CommitAsync(CancellationToken cancellationToken)
         {
@@ -1210,9 +1216,11 @@ internal sealed class PostgresqlDocumentCacheWriter(
             }
 
             await Transaction.DisposeAsync().ConfigureAwait(false);
-            if (_ownsConnection)
+
+            if (_ownedConnection is not null)
             {
-                await Connection.DisposeAsync().ConfigureAwait(false);
+                // Disposes the connection and then releases its lease, in that order.
+                await _ownedConnection.DisposeAsync().ConfigureAwait(false);
             }
         }
     }
