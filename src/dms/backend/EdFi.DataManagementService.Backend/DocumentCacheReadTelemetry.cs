@@ -43,6 +43,7 @@ internal static class DocumentCacheReadTelemetryLabel
     public const string SkippedTargetMismatch = "SkippedTargetMismatch";
     public const string SkippedRequestCanceled = "SkippedRequestCanceled";
     public const string SkippedTargetIneligible = "SkippedTargetIneligible";
+    public const string SkippedDerivativeTarget = "SkippedDerivativeTarget";
     public const string Succeeded = "Succeeded";
     public const string Failed = "Failed";
     public const string TimedOut = "TimedOut";
