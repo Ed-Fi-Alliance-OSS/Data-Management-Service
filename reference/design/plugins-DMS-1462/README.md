@@ -24,8 +24,8 @@ Each traces to an epic that already presumes a plugin mechanism that does not ex
 
 | Document | Status | Covers |
 | --- | --- | --- |
-| [design.md](./design.md) | **Approved 2026-08-27**, four review revisions folded in (see its Status) | The shared mechanism: delivery, the two acquisition recipes, discovery, load isolation, the plugin contract, the two composition phases, cardinality, trust model, failure semantics, configuration, and what the stock image must ship. Carries the divergence ledger against the custom validation epic |
-| [ods-precedent.md](./ods-precedent.md) | Approved with design.md | The Ed-Fi ODS/API survey design.md draws on and departs from, pinned to a commit |
+| [design.md](./design.md) | **Approved 2026-08-27** by the spike's ticket owner; four approval revisions plus a fifth from panel review folded in (see its Status) | The shared mechanism: delivery, the two acquisition recipes, discovery, load isolation, the plugin contract, the two composition phases, cardinality, trust model, failure semantics, configuration, and what the stock image must ship. Carries the divergence ledger against the custom validation epic |
+| [ods-precedent.md](./ods-precedent.md) | Approved with design.md | The Ed-Fi ODS/API survey design.md draws on and departs from, pinned to a commit in each of the two repositories it cites |
 | Secrets Manager **spike** | Not started; **starts when this spike merges**, runs in parallel with the foundation stories, and its own tickets depend on the foundations being complete. Its first foundation story builds Phase A, which design.md decides but this spike's stories do not implement | The whole type: contracts, runtime resolution, multi-tenancy, `IClientSecretHasher` relocation, CMS. A separate spike, not a companion to this one. design.md's "The Secrets Spike" carries its inherited findings |
 | Identity companion | Not started | The Identity API contract behind DMS's own endpoints, and its relationship to UniqueId validation. DMS-1412, DMS-1414 |
 | Custom Validation delta | **Done 2026-08-27**, applied in place | The three open CV stories that asserted compiled-in delivery were edited rather than given a companion document: DMS-1434 narrowed to the guard, DMS-1435 and DMS-1436 re-pointed at the plugin path, and a delta note added to `reference/design/custom-validation-DMS-1345/design.md`. DMS-1433 needed no change |
@@ -43,7 +43,12 @@ Drafts 01 through 06 are the foundation stories this spike files; 07 is post-rel
 | [04](./04-integrate-plugin-loading-into-dms-startup.md) | Integrate Plugin Loading into DMS Startup | 03 | Draft |
 | [05](./05-document-plugins-and-publish-host-manifest.md) | Document Plugins for Operators and Implementers and Publish the Host Assembly Manifest | 04 | Draft |
 | [06](./06-publish-plugin-contract-packages.md) | Publish `EdFi.Api.Plugins` and `EdFi.Api.CustomValidation` | 01-05, DMS-1433, DMS-1435, DMS-1436 | Draft, release-gated |
-| [07](./07-prove-plugin-loading-against-pulled-stock-image.md) | Prove Plugin Loading Against a Pulled Stock Image | first release carrying 04 | Draft, post-release |
+| [07](./07-prove-plugin-loading-against-pulled-stock-image.md) | Prove Plugin Loading Against a Pulled Stock Image | DMS-1436, and the first release carrying 04 | Draft, post-release |
+
+**Draft 04 builds its own fixture plugin, and that is what keeps the graph acyclic.**
+An earlier revision had draft 04 assert the custom-validation 400 using DMS-1436's fixture validator, while DMS-1436 depended on draft 04 for the loader that would load it.
+Draft 04 now ships a minimal fixture plugin that registers a fan-in contract implementation and asserts on the load inventory, so it depends on nothing in the custom validation epic.
+DMS-1436 depends on draft 04, builds the validator plugin, and owns the custom-validation 400 over HTTP; draft 07 reuses DMS-1436's fixture and therefore depends on it.
 
 Not drafted, by decision recorded in design.md: Phase A (`ContributeConfiguration`) belongs to the secrets spike's first foundation story; CMS host integration has no consuming epic; the DMS-1433 through DMS-1436 amendments are edits to filed tickets, not new ones.
 
@@ -60,8 +65,12 @@ Publishing is what an external implementer needs, it is blocked by every other t
 ## Filing Gate
 
 **Open for drafts 01 through 06** as of 2026-08-27: design.md is approved and the Custom Validation delta is applied.
-Draft 07 stays behind the first release that carries the loader.
+Draft 07 stays behind DMS-1436 and behind the first release that carries the loader.
 Identity companion stories stay behind their own companion document.
+
+Filing these drafts includes one step that is not a new ticket: **DMS-1434, DMS-1435, and DMS-1436's Jira descriptions are updated to mirror their edited drafts**, in the same pass that files 01 through 06.
+Their local drafts already carry the scope-change notes; the filed tickets do not, and a reader of Jira would otherwise still see compiled-in delivery.
+It is named here so it has an owner rather than sitting as an untracked intention.
 
 The gate existed because the spine reverses a prior decision, the custom validation delivery model, and amends open stories that depend on it.
 Both halves are now settled: the reversal is approved and the dependent stories are edited.

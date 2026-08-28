@@ -22,7 +22,7 @@ Seven things are deliberately out of scope for this epic, each recorded in desig
 
 | Out of scope | Where design.md records it | Consequence |
 | --- | --- | --- |
-| Runtime loading of an assembly that was not part of the build | "## Rejected Alternatives" | Deferred to its own design stream, unfiled, which would inherit this contract, the fan-in step, the failure surfacing, and the startup guard unchanged |
+| Runtime loading of an assembly that was not part of the build | "## Rejected Alternatives" | **No longer out of scope.** Spike DMS-1462 designed that stream on 2026-08-27 and made it the delivery path, and the prediction recorded in "## Rejected Alternatives" held: it inherited this contract, the fan-in step, the failure surfacing, and the startup guard unchanged. See `reference/design/plugins-DMS-1462/` |
 | Out-of-process validation over a webhook or sidecar | "## Rejected Alternatives" | Rejected as scoped rather than deferred; a future requirement would be a new decision against its own evidence |
 | Any store-read capability for validators | "## Out of Scope" | Limits Scenario 3 to rules expressed against descriptor URIs, and makes the ODS UniqueId not-changed rule inexpressible, which DMS-1414 inherits. Store reads are one of two things that rule needs; it also needs the persisted document's identity, so granting store access alone would not deliver it |
 | Validation on GET or DELETE | "## Verb Coverage" | Custom validation runs on POST and PUT only, matching the ODS precedent, which has no delete-time resource validation either |
@@ -46,4 +46,6 @@ This spike produced five ticket drafts, listed below in dependency order.
 
 **Closed.** All five drafts were filed as DMS-1432 through DMS-1436 on 2026-08-17, after the design was reviewed and approved. Each is a child of epic DMS-1345, carries a `relates to` link back to DMS-1346, and sits in API Platform Sprint 66. The `Depends on` column above is mirrored in Jira as `blocks` / `is blocked by` links, and each draft's frontmatter carries its filed id and URL.
 
-Runtime plugin-folder delivery was not pre-filed by this spike; it was later designed by spike DMS-1462 and became the delivery path. Its stories live in `reference/design/plugins-DMS-1462/`. DMS-1434, DMS-1435, and DMS-1436 were edited in place to match, and the Jira descriptions must be updated to mirror the drafts.
+Runtime plugin-folder delivery was not pre-filed by this spike; it was later designed by spike DMS-1462 and became the delivery path. Its stories live in `reference/design/plugins-DMS-1462/`. DMS-1434, DMS-1435, and DMS-1436 were edited in place to match.
+
+Updating those three tickets' Jira descriptions to mirror the edited drafts is a named step in the plugin spike's own filing gate (`reference/design/plugins-DMS-1462/README.md`, "## Filing Gate"), done in the same pass that files that spike's drafts, so it has an owner rather than sitting here as an intention.

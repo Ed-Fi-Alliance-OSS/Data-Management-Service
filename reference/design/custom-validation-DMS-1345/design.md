@@ -339,9 +339,10 @@ public static IServiceCollection AddDistrictValidators(
 }
 ```
 
-The sample takes an `Action<TOptions>` rather than an `IConfiguration` section deliberately.
-`Microsoft.Extensions.Options` and `Microsoft.Extensions.DependencyInjection.Abstractions` are declared dependencies of the abstractions package, so `Configure` and `TryAddEnumerable` compile against the package alone; `Microsoft.Extensions.Configuration.Abstractions` and `Microsoft.Extensions.Options.ConfigurationExtensions` are not, so `IConfiguration` and `GetSection` would not.
-An implementer who prefers section binding references those two packages from their own assembly, which is theirs to decide; the contract does not oblige them either way, and does not carry the dependency on their behalf.
+The sample takes an `Action<TOptions>` rather than an `IConfiguration` section deliberately, and the reason is the package's dependency set, which is empty.
+`EdFi.Api.CustomValidation` declares no `PackageReference` at all, on purpose (`src/dms/core/EdFi.DataManagementService.CustomValidation/EdFi.DataManagementService.CustomValidation.csproj:21-35`), so **neither** form compiles against the package alone: `TryAddEnumerable` needs `Microsoft.Extensions.DependencyInjection.Abstractions`, the `Action<TOptions>` overload of `Configure` needs `Microsoft.Extensions.Options`, and the `GetSection` form additionally needs `Microsoft.Extensions.Options.ConfigurationExtensions`.
+An implementer declares whichever of those they use from their own assembly, which is theirs to decide and which is exactly what `eng/verification/CustomValidationConsumer/CustomValidationConsumer.csproj:57-58` does; the contract does not oblige them to any of it and does not carry the dependency on their behalf.
+The `Action<TOptions>` form is preferred in the sample because it needs one fewer package, not because the other is unreachable.
 
 The deployment references that assembly and adds one call at DMS's composition root, `WebApplicationBuilderExtensions.AddServices` (`Infrastructure/WebApplicationBuilderExtensions.cs:32`), alongside the calls already there:
 
@@ -667,7 +668,7 @@ Whether to close that gap by adding a store-read capability is recorded under [D
 
 ## Out of Scope
 
-- Runtime loading of a validator assembly that was not part of the build; a future plugin-delivery spike owns it, unfiled until a deployment needs it.
+- ~~Runtime loading of a validator assembly that was not part of the build.~~ **No longer out of scope.** Spike DMS-1462 designed it and made it the delivery path; see the Status delta at the top of this document and `reference/design/plugins-DMS-1462/`.
 - Validation on GET or DELETE.
 - Store reads from a validator. An earlier revision carried a `ICustomValidationStoreReader` facade exposing `Task<JsonNode?> GetDescriptorByUri(...)`; it is cut. The backend's own contracts cannot serve it directly, since `IQueryRequest`/`IGetRequest` demand a mapping set, query elements, authorization evaluators, and paging inputs that a validator does not hold, their concrete implementations are internal to Core, and neither is keyed by descriptor URI. A facade would also have to collapse `QueryResult`'s seven cases (`Core.External/Backend/QueryResult.cs:25-65`) into `JsonNode?`, giving an infrastructure failure and a genuine not-found the same representation, so a database outage would surface as a validator-authored 400 saying the descriptor does not exist. Designing that error contract deserves its own evidence.
 - Implementing any driving scenario.

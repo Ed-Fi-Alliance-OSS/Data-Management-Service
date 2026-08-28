@@ -18,11 +18,13 @@ A neutral, no-I/O sample validator, shaped like Scenario 2 in the design's drivi
 **Scope change 2026-08-27: the validator reaches the host as a plugin.**
 Spike DMS-1462 reversed compiled-in delivery (`reference/design/plugins-DMS-1462/design.md`, "## Divergence from the Custom Validation Epic"), so proving the compiled-in path would prove a path no implementer will take.
 The validator reaches the host the way a real one does: a fixture assembly referencing `EdFi.Api.CustomValidation` and `EdFi.Api.Plugins`, exposing an `EdFiApiPlugin` subclass whose `ContributeServices` registers the validator, published `--no-self-contained` into a plugin directory, and allowlisted in `Plugins:Allowed`. The proof asserts on HTTP status codes and JSON body shape, not on internal pipeline state.
-This fixture is also the payload for the plugin spine's local-image and pulled-image end-to-end proofs, so it is built once here and reused there.
+
+**This story owns the validator plugin fixture, and the plugin spine's host-integration story does not use it.**
+That story ships a neutral fixture plugin of its own and asserts on the load inventory, so it can be built and merged without anything from this epic; otherwise the two would block each other. This story depends on it and builds the validator plugin here. The plugin spine's post-release pulled-stock-image proof reuses this fixture as its payload and therefore depends on this story.
 
 This story also carries the field-level scenario grounding behind the design's driving-scenarios table, in "## Scenario Grounding" below. That grounding is fixture-specific, which is why it lives here rather than in the design document.
 
-This story depends on the abstractions-contract, fan-in-step, and startup-guard stories, and on the plugin spine's host-integration story, which is what loads the fixture.
+This story depends on the abstractions-contract, fan-in-step, and startup-guard stories, and on the plugin spine's host-integration story, which is what loads the fixture. Nothing in the plugin spine depends on this story except its post-release pulled-image proof.
 
 ## Acceptance Criteria
 
@@ -32,7 +34,7 @@ This story depends on the abstractions-contract, fan-in-step, and startup-guard 
 - A POST to a resource the fixture validator's `AppliesTo` does not match is unaffected by the validator being registered.
 - The 400 body from the fixture validator is byte-identical in its `detail`, `type`, `title`, and `status` members to the corresponding core schema-validation 400, asserted over real HTTP rather than in a unit test, so a divergence introduced anywhere in the composed stack is caught. The member set matches the fan-in story's unit-level parity criterion, so the two do not drift apart. The fixture returns an `OnPath` failure for this assertion, since that is the arm core schema validation actually produces; `DocumentValidator` never emits an `errors`-arm 400 to compare an `OnResource` failure against.
 - With the fixture's name removed from `Plugins:Allowed` and nothing else changed, the same failing POST returns the normal success response. This proves the validator was actually reached through the plugin the story added, the way a real deployment enables one, rather than through some other path.
-- The fixture validator lives in its own assembly whose only references are `EdFi.Api.CustomValidation` and `EdFi.Api.Plugins`, consumed as packed nupkgs from the local folder feed rather than as project references, so the test proves what an external implementer can actually build rather than what a project with access to Core internals can build.
+- The fixture validator lives in its own assembly whose only Ed-Fi references are `EdFi.Api.CustomValidation` and `EdFi.Api.Plugins`, consumed as packed nupkgs from the local folder feed rather than as project references, so the test proves what an external implementer can actually build rather than what a project with access to Core internals can build. Any `Microsoft.Extensions.Options*` package the fixture's registration code needs is declared by the fixture itself, since neither contract package carries one.
 - `dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration` passes.
 
 ## Tasks
