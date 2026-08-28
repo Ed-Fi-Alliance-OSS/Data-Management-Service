@@ -24,7 +24,7 @@ Each traces to an epic that already presumes a plugin mechanism that does not ex
 
 | Document | Status | Covers |
 | --- | --- | --- |
-| [design.md](./design.md) | **Approved 2026-08-27** by the spike's ticket owner; four approval revisions plus three rounds of panel review folded in (see its Status) | The shared mechanism: delivery, the two acquisition recipes, discovery, load isolation, the plugin contract, the two composition phases, cardinality, trust model, failure semantics, configuration, and what the stock image must ship. Carries the divergence ledger against the custom validation epic |
+| [design.md](./design.md) | **Approved 2026-08-27** by the spike's ticket owner; four approval revisions plus four rounds of panel review folded in (see its Status) | The shared mechanism: delivery, the two acquisition recipes, discovery, load isolation, the plugin contract, the two composition phases, cardinality, trust model, failure semantics, configuration, and what the stock image must ship. Carries the divergence ledger against the custom validation epic |
 | [ods-precedent.md](./ods-precedent.md) | Approved with design.md | The Ed-Fi ODS/API survey design.md draws on and departs from, pinned to a commit in each of the two repositories it cites |
 | Secrets Manager **spike** | Not started; **starts when this spike merges**, runs in parallel with the foundation stories, and its own tickets depend on the foundations being complete. Its first foundation story builds Phase A, which design.md decides but this spike's stories do not implement | The whole type: contracts, runtime resolution, multi-tenancy, `IClientSecretHasher` relocation, CMS. A separate spike, not a companion to this one. design.md's "The Secrets Spike" carries its inherited findings |
 | Identity companion | Not started | The Identity API contract behind DMS's own endpoints, and its relationship to UniqueId validation. DMS-1412, DMS-1414 |
@@ -43,17 +43,22 @@ Drafts 01 through 06 are the foundation stories this spike files; 07 is post-rel
 | [04](./04-integrate-plugin-loading-into-dms-startup.md) | Integrate Plugin Loading into DMS Startup | 03, and the merged DMS-1432 contract package | Draft |
 | [05](./05-document-plugins-and-publish-host-manifest.md) | Document Plugins for Operators and Implementers and Publish the Host Assembly Manifest | 04 | Draft |
 | [06](./06-publish-plugin-contract-packages.md) | Publish `EdFi.Api.Plugins` and `EdFi.Api.CustomValidation` | 01-05, DMS-1433, DMS-1435, DMS-1436 | Draft, release-gated |
-| [07](./07-prove-plugin-loading-against-pulled-stock-image.md) | Prove Plugin Loading Against a Pulled Stock Image | DMS-1436, and the first release carrying **both** 04 and DMS-1433 | Draft, post-release |
+| [07](./07-prove-plugin-loading-against-pulled-stock-image.md) | Prove Plugin Loading Against a Pulled Stock Image | 05, DMS-1436, and the first release carrying **both** 04 and DMS-1433 | Draft, post-release |
 
 **Where the two `src/dms/` build-lane changes sit, and why they are split.**
 The frontend does not reference `EdFi.Api.Plugins.Hosting` today, and `src/dms/Dockerfile`'s build stage cannot reach `src/plugins/`.
 Draft 03 adds the `ProjectReference`, because its plugin guard is a frontend-owned startup task and it is the first story the frontend has to see.
 Draft 01 makes the build-stage change that lets an image build with that reference in it, because it is the story that creates the tree and because `.github/workflows/on-dms-pullrequest.yml` builds `src/dms/Dockerfile` in nine places on a relevant pull request, so any later assignment leaves a merge order that breaks CI.
-Draft 04 keeps the other build-lane change, dropping `/p:AssemblyVersion` from the publish command line, because it is the story that also changes `build-dms.ps1`'s `DockerBuild`.
+Draft 04 keeps the other build-lane change, dropping `/p:AssemblyVersion` and `/p:FileVersion` from the publish command line and the `ASSEMBLY_VERSION` build-arg pair from `build-dms.ps1`'s `DockerBuild`, because it is the story whose skew preflight one contract assembly carrying two `AssemblyVersion`s would break.
+Nothing replaces that stamping: `DockerBuild` is deliberately **not** taught to run `SetDMSAssemblyInfo`, which regenerates a tracked props file on every local end-to-end run and drops the build height besides, so a locally built image's DMS assemblies carry the committed `src/dms/Directory.Build.props` version and the release lane is untouched.
 
-**Which story asserts which contract's version inside the image.**
-Draft 04's Docker-lane test asserts `EdFi.Api.Plugins.dll` only.
-`EdFi.DataManagementService.CustomValidation`'s csproj declares no version of its own until draft 06, so draft 04 has nothing to assert against for it, and draft 06 extends the same assertion in the pass that adds the declaration.
+**Which story asserts which contract's version, and where.**
+Draft 04's Docker-lane test asserts `EdFi.Api.Plugins.dll` only, and draft 05's host-assembly-manifest assertion covers `EdFi.Api.Plugins` only.
+`EdFi.DataManagementService.CustomValidation`'s csproj declares no version of its own until draft 06, so neither earlier story has anything to assert against for it, and draft 06 extends **both** assertions in the pass that adds the declaration.
+
+**Which story owns the acquisition recipes, and in which direction.**
+Draft 04 creates the two overlay compose files and its end-to-end tiers run them as committed; draft 05 writes the `docs/OPERATIONS.md` chapter and asserts that the chapter's Compose blocks equal those files.
+The files are the artifact and the document is pinned to them, which is why no tier drives a recipe parsed out of Markdown and why draft 07, which makes the published claim, depends on draft 05.
 
 **Draft 07 waits for DMS-1433 as well as for a release carrying draft 04.**
 Its assertion is a custom-validation 400 over HTTP, which needs the fan-in pipeline step to be in the released image and not only the loader.

@@ -29,7 +29,7 @@ Settings bind from `Plugin:Folder` and `Plugin:Scripts`.
 | Element | Location |
 | --- | --- |
 | The bound settings object | `EdFi.Ods.Common/Configuration/Plugin.cs` |
-| Where it binds | `EdFi.Ods.Api/Startup/OdsStartupBase.cs:137` |
+| Where it binds | `EdFi.Ods.Api/Startup/OdsStartupBase.cs:138`; `:137` instantiates the settings object and `:138` is the `Configuration.Bind("Plugin", pluginSettings)` call |
 | Folder resolution, four fallbacks | `EdFi.Ods.Api/Helpers/AssemblyLoaderHelper.cs:90-131` - rooted at `:97`, project-relative at `:104`, executable-relative at `:115`, working-directory-relative at `:123`, then the raw setting returned unresolved at `:130` |
 | Recursive assembly glob | `AssemblyLoaderHelper.cs:274`, `Directory.GetFiles(pluginFolder, "*.dll", SearchOption.AllDirectories)` |
 | Discovery by marker interface | `AssemblyLoaderHelper.cs:353`, comparing `AssemblyQualifiedName` against `IPluginMarker` |
