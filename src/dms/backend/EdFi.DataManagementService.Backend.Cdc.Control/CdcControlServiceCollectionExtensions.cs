@@ -10,7 +10,9 @@ using EdFi.DataManagementService.Backend.Postgresql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Control;
 
@@ -60,6 +62,12 @@ public static class CdcControlServiceCollectionExtensions
         services.AddHttpClient(CdcConnectorJolokiaLagReader.HttpClientName);
         services.TryAddSingleton<ICdcConnectorLagReader, CdcConnectorJolokiaLagReader>();
 
+        // The projection correlation evidence is read from the running DMS over HTTP. Nothing here
+        // resolves IDocumentCacheStatusService: no projector runs in this process, so an in-process
+        // status service could only ever report that its runtime was not observed.
+        services.AddHttpClient(CdcProjectionCorrelationCollector.HttpClientName);
+        services.TryAddSingleton<ICdcProjectionCorrelationCollector, CdcProjectionCorrelationCollector>();
+
         // Scoped because it composes the connector-template service, which the template library
         // registers as a scoped service.
         services.TryAddScoped<ICdcConnectorObservationMapper, CdcConnectorObservationMapper>();
@@ -69,12 +77,18 @@ public static class CdcControlServiceCollectionExtensions
         if (string.Equals(datastore, PostgresqlDatastore, StringComparison.OrdinalIgnoreCase))
         {
             services.AddPostgresqlDmsCdcControlPlane();
+            services.TryAddSingleton<ICdcEligibilityProbe>(serviceProvider =>
+                EligibilityProbe(serviceProvider, CoreCdc.CdcProvider.Postgresql)
+            );
             return services;
         }
 
         if (string.Equals(datastore, MssqlDatastore, StringComparison.OrdinalIgnoreCase))
         {
             services.AddMssqlDmsCdcControlPlane();
+            services.TryAddSingleton<ICdcEligibilityProbe>(serviceProvider =>
+                EligibilityProbe(serviceProvider, CoreCdc.CdcProvider.SqlServer)
+            );
             return services;
         }
 
@@ -82,6 +96,21 @@ public static class CdcControlServiceCollectionExtensions
             $"{DatastoreSectionName} must be one of: {PostgresqlDatastore}, {MssqlDatastore}"
         );
     }
+
+    /// <summary>
+    /// Builds the eligibility probe for the datastore the deployment selected. The probe reads the
+    /// instance database directly, so it is provider-specific rather than resolved through the
+    /// provider extensions.
+    /// </summary>
+    private static CdcEligibilityProbe EligibilityProbe(
+        IServiceProvider serviceProvider,
+        CoreCdc.CdcProvider provider
+    ) =>
+        new(
+            provider,
+            serviceProvider.GetRequiredService<TimeProvider>(),
+            serviceProvider.GetRequiredService<ILogger<CdcEligibilityProbe>>()
+        );
 
     /// <summary>
     /// Builds the admin client from the deployment's bootstrap servers and Kafka client security

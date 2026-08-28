@@ -22,5 +22,7 @@
     <ItemGroup>
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Cdc.Control.Tests.Unit" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Cdc.Control.Tests.Integration" />
+        <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Postgresql.Tests.Integration" />
+        <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Mssql.Tests.Integration" />
     </ItemGroup>
 </Project>
