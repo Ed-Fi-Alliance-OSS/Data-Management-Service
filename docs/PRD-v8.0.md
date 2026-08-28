@@ -355,7 +355,7 @@ context from the bearer token.
   (non-inverted) direction for the same resource so a caller can both manage its
   own data and access parent-owned reference data.
 
-### 3.8 Ownership-Based Auhorization (FR-OWNAUTH)
+### 3.8 Ownership-Based Authorization (FR-OWNAUTH)
 
 > [!TIP]
 > Ownership-based authorization (assigning a record to the client that created
@@ -723,10 +723,10 @@ None
 - **Correlation ID:** A per-request identifier, client-supplied or
   system-generated, linking a client-facing error response to its corresponding
   operational log entries.
-- **Rate Limiting:** Capping how many requests an individual API client may make
-  within a configured time window, and rejecting requests beyond that cap with a
-  retryable response, so that a runaway or misconfigured client cannot degrade
-  service for others. A self-protection mechanism, not a security control.
+- **Rate Limiting:** Capping how many requests the system can support within a
+  configured time window, and rejecting requests beyond that cap with a
+  retryable response, so that clients can throttle their own usage to reduce
+  service degradation. A self-protection mechanism, not a security control.
 - **Natural Key:** An identifying value drawn from real-world business
   identifiers, rather than an internally generated one, used because the
   platform is typically not the authoritative system of record for the data it
