@@ -138,13 +138,8 @@ internal sealed class DocumentCacheReadResponseShaper(
                             "cache query response shaping"
                         )
                         : null,
-                    authorizedCandidatePage.ContinuationBoundary.SelectedMaximum
+                    authorizedCandidatePage.HighestSelectedAnchor
                 )
-                {
-                    AllowsDocumentIdContinuation = authorizedCandidatePage
-                        .ContinuationBoundary
-                        .AllowsDocumentIdContinuation,
-                }
             );
         });
     }

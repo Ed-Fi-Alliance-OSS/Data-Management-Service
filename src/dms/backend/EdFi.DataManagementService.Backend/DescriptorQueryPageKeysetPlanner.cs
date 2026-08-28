@@ -42,7 +42,11 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
             changeVersionRange
         );
 
-        return new PageKeysetSpec.Query(plannedCandidates.Plan, plannedCandidates.ParameterValues);
+        return new PageKeysetSpec.Query(
+            plannedCandidates.Plan,
+            plannedCandidates.ParameterValues,
+            plannedCandidates.OrderingMode
+        );
     }
 
     /// <summary>
@@ -58,6 +62,11 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
     /// request matches nothing. A descriptor <c>TryPlanCandidates</c> could therefore never return
     /// <see langword="false" />. <c>DescriptorReadHandler</c> is the model for the required caller shape.
     /// </remarks>
+    /// <param name="orderingMode">
+    /// The anchor Core resolved for this request, forwarded so descriptor partition boundaries are cut
+    /// on the same key a descriptor page of the same request seeks. Boundaries cut on a different key
+    /// than the page a client replays them as would overlap and leave rows in no partition.
+    /// </param>
     /// <exception cref="ArgumentException">
     /// Thrown when <paramref name="preprocessingResult" /> is not in the continue state.
     /// </exception>
@@ -66,14 +75,15 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
         QualifiedResourceName requestResource,
         DescriptorQueryPreprocessingResult preprocessingResult,
         PageDocumentIdAuthorizationSpec? authorization = null,
-        ChangeVersionRange? changeVersionRange = null
+        ChangeVersionRange? changeVersionRange = null,
+        PageOrderingMode orderingMode = PageOrderingMode.DocumentId
     )
     {
         return PlanCandidates(
             mappingSet,
             requestResource,
             preprocessingResult,
-            PageCandidateModePlanning.ForUnpagedCandidates(),
+            PageCandidateModePlanning.ForUnpagedCandidates(orderingMode),
             authorization,
             changeVersionRange
         );
@@ -99,10 +109,16 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
             );
         }
 
+        var (foldedMode, windowPredicateRange) =
+            PageCandidateModePlanning.FoldChangeVersionWindowIntoCursorBounds(
+                plannedMode,
+                changeVersionRange
+            );
+
         var parameterNamesByIndex = DeriveParameterNames(
             preprocessingResult.QueryElementsInOrder,
             authorization,
-            plannedMode.OwnedParameterNames
+            foldedMode.OwnedParameterNames
         );
         var queryPredicates = PlanPredicates(preprocessingResult.QueryElementsInOrder, parameterNamesByIndex);
         var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, requestResource);
@@ -119,13 +135,13 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
             ),
             .. queryPredicates,
         ];
-        AppendChangeVersionPredicates(changeVersionRange, predicates);
+        AppendChangeVersionPredicates(windowPredicateRange, predicates);
 
         var pageQuerySpec = new PageDocumentIdQuerySpec(
             RootTable: _descriptorTable,
             Predicates: predicates,
             UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
-            Mode: plannedMode.Mode,
+            Mode: foldedMode.Mode,
             Authorization: authorization
         );
         var sqlPlan = _sqlCompiler.Compile(pageQuerySpec);
@@ -133,12 +149,12 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
             resourceKeyId,
             preprocessingResult.QueryElementsInOrder,
             parameterNamesByIndex,
-            plannedMode,
+            foldedMode,
             authorization,
-            changeVersionRange
+            windowPredicateRange
         );
 
-        return new CandidateQueryPlan(sqlPlan, parameterValues);
+        return new CandidateQueryPlan(sqlPlan, parameterValues, foldedMode.OrderingMode);
     }
 
     /// <summary>

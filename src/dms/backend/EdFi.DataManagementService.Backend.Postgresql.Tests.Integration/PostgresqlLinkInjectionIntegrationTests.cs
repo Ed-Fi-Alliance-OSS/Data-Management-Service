@@ -345,7 +345,8 @@ public class Given_A_Postgresql_AcademicWeek_To_School_Reference_With_Link_Injec
                     MaximumPageSize: MaximumPageSize
                 )
             ),
-            TraceId: new TraceId("pg-link-injection-query-academicweek")
+            TraceId: new TraceId("pg-link-injection-query-academicweek"),
+            PageOrderingMode: PageOrderingMode.DocumentId
         );
 
         return await scope

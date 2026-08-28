@@ -309,7 +309,8 @@ public class Given_A_Postgresql_ParentResource_With_Collection_Aligned_Extension
                     MaximumPageSize: MaximumPageSize
                 )
             ),
-            TraceId: new TraceId("pg-29d-query-parentresource")
+            TraceId: new TraceId("pg-29d-query-parentresource"),
+            PageOrderingMode: PageOrderingMode.DocumentId
         );
 
         return await scope

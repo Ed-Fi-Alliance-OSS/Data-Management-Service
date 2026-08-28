@@ -1816,6 +1816,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
                 )
             ),
             TraceId: new TraceId($"{resourceName}-authorization-query"),
+            PageOrderingMode: PageOrderingMode.DocumentId,
             ChangeVersionRange: changeVersionRange
         );
 

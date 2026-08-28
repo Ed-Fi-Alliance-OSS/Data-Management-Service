@@ -116,7 +116,7 @@ internal static class DocumentCacheReadAccelerationScenario
         // still names the page after it: what a client is handed cannot depend on cache state.
         string nextPageToken = queryResponse.Headers.GetValues(NextPageTokenHeaderName).Single();
         PageTokenCodec
-            .TryDecode(nextPageToken, out var continuation)
+            .TryDecode(nextPageToken, out var continuation, out _)
             .Should()
             .BeTrue("an emitted continuation must decode through the codec that produced it");
         continuation!

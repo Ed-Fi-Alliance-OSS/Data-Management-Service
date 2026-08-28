@@ -112,8 +112,8 @@ Investigate it as a deployment problem; it is not a routine bucket to chart.
 
 | Value | Meaning |
 |---|---|
-| `success` | A page or a boundary set was produced. Also covers a page served with documents that *cannot* anchor a cursor continuation, and therefore carries no continuation token — see the first note below — and a `partitions` request whose boundary command ran and found no ranges. |
-| `terminal_page` | A collection `GET` **after which nothing follows**: a continuation was possible for this page and none could be produced. On `paging_mode=cursor` that is the request ending a walk. On `paging_mode=traditional` it is the ordinary end of a `limit`/`offset` walk — most often a selection that chose no rows, which is how such a client learns it has reached the end — so it is expected traffic there rather than a cursor-specific signal. Never reported for `partitions`, which has no successor to offer. |
+| `success` | A page was produced and a continuation token was offered with it. Also covers every executed `partitions` request, including one whose boundary command found no ranges: a boundary set is not a page and has no successor, so that operation never reports `terminal_page`. |
+| `terminal_page` | A collection `GET` **after which nothing follows**: no continuation token could be produced for this page. On `paging_mode=cursor` that is the request ending a walk. On `paging_mode=traditional` it is the ordinary end of a `limit`/`offset` walk — most often a selection that chose no rows, which is how such a client learns it has reached the end — so it is expected traffic there rather than a cursor-specific signal. Never reported for `partitions`, which has no successor to offer. |
 | `early_empty` | An empty result the API answered without issuing any selection command. Selection is the work this skips, and only that: a request that first had to resolve a descriptor filter value, or validate a custom view, still issued that command. |
 | `validation_rejected` | Parameter validation answered the request: a paging, partition-count, change-version, or resource-filter parameter was refused. |
 | `not_authorized` | Namespace authorization denied the request. A client whose claim set does not authorize reading the resource at all is refused before backend execution begins and is not counted at all; see the `requests` note under [Aggregation Intent](#aggregation-intent). |
@@ -121,15 +121,9 @@ Investigate it as a deployment problem; it is not a routine bucket to chart.
 | `security_configuration` | The security configuration metadata for the request is invalid. |
 | `retry_exhausted` | A retryable condition survived the retry pipeline. |
 | `unknown_failure` | A backend failure with no outcome value of its own. Includes a backend-reported query-term error, which is answered with a 400, so a rising rate here can mean client misuse rather than an unhealthy backend. |
-| `execution_exception` | An exception escaped execution. The exception itself still propagates and is reported unchanged. Also covers a request the circuit breaker refused, which never reached the database and is answered `503` — while the breaker is open that is expected to be the whole of this outcome, so see the third note below before reading a rise here as a code fault. |
+| `execution_exception` | An exception escaped execution. The exception itself still propagates and is reported unchanged. Also covers a request the circuit breaker refused, which never reached the database and is answered `503` — while the breaker is open that is expected to be the whole of this outcome, so see the second note below before reading a rise here as a code fault. |
 
-Three distinctions are worth knowing when reading these values.
-
-**`success` is not the same as "a continuation was offered."** A traditional
-page inside a bounded change-version window is ordered so that it cannot anchor
-a cursor continuation. It is served with documents, and a client keeps paging it
-with `limit` and `offset`. Such a page is `success`, never `terminal_page`:
-reporting it as terminal would say a healthy paging walk had ended.
+Two distinctions are worth knowing when reading these values.
 
 **Client disconnects are not an outcome and are not recorded.** When a client
 cancels a request in flight, nothing is emitted on any instrument. A disconnect
@@ -198,18 +192,10 @@ confirm it.
   `terminal_page` selected and found nothing, which on
   `paging_mode=traditional` is the empty page a client walks into at the end of
   a `limit`/`offset` traversal — roughly one per walk, so ordinary traffic
-  rather than an edge case.
-
-  One residual survives both exclusions and cannot be filtered out. An empty
-  page inside a bounded change-version window is reported `success`, not
-  `terminal_page`, because it could never have anchored a continuation at all —
-  see the first note under [`outcome`](#outcome) — so it still contributes an
-  asked-against-zero sample. Its volume is bounded by how many windowed walks
-  run rather than by the size of the data. Separating it would take knowing
-  whether selection chose any rows, and the fact that answers that is a
-  document identifier, which is deliberately never a dimension. Read a small
-  residual gap on a deployment whose clients walk change-version windows as
-  expected, and look for trimming in a gap that grows beyond it.
+  rather than an edge case. Between them the two exclusions remove every page
+  that reports its requested size against a returned zero for a reason other
+  than trimming, including the empty page a bounded change-version walk ends on,
+  so a gap that survives both is trimming.
 - **`partition_count.requested` vs `partition_count.returned`** — compare the
   two distributions, excluding `command_category=none` to remove the
   short-circuits, for the same reason as above. That is the only exclusion

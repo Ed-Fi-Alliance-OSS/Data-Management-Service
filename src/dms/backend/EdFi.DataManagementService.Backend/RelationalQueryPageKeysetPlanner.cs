@@ -96,6 +96,11 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
     /// and authorization the paged modes use. Partition boundary planning consumes this relation and
     /// applies its own row numbering, so the result is not a hydration keyset.
     /// </summary>
+    /// <param name="orderingMode">
+    /// The anchor Core resolved for this request, forwarded so partition boundaries are cut on the same
+    /// key a page of the same request seeks. Boundaries cut on a different key than the page a client
+    /// replays them as would overlap and leave rows in no partition.
+    /// </param>
     public bool TryPlanCandidates(
         DbTableModel rootTable,
         RelationalQueryPreprocessingResult preprocessingResult,
@@ -103,13 +108,14 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         out string? emptyPageReason,
         Func<PreprocessedRelationalQueryElement, QueryComparisonOperator>? comparisonOperatorResolver = null,
         PageDocumentIdAuthorizationSpec? authorization = null,
-        ChangeVersionRange? changeVersionRange = null
+        ChangeVersionRange? changeVersionRange = null,
+        PageOrderingMode orderingMode = PageOrderingMode.DocumentId
     )
     {
         plannedCandidates = PlanOrEmptyPage(
             rootTable,
             preprocessingResult,
-            PageCandidateModePlanning.ForUnpagedCandidates(),
+            PageCandidateModePlanning.ForUnpagedCandidates(orderingMode),
             authorization,
             out emptyPageReason,
             comparisonOperatorResolver,
@@ -121,7 +127,11 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
 
     private static PageKeysetSpec.Query ToPageKeysetSpec(CandidateQueryPlan plannedCandidates)
     {
-        return new PageKeysetSpec.Query(plannedCandidates.Plan, plannedCandidates.ParameterValues);
+        return new PageKeysetSpec.Query(
+            plannedCandidates.Plan,
+            plannedCandidates.ParameterValues,
+            plannedCandidates.OrderingMode
+        );
     }
 
     private CandidateQueryPlan? PlanOrEmptyPage(
@@ -148,6 +158,12 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
 
         comparisonOperatorResolver ??= static _ => QueryComparisonOperator.Equal;
 
+        var (foldedMode, windowPredicateRange) =
+            PageCandidateModePlanning.FoldChangeVersionWindowIntoCursorBounds(
+                plannedMode,
+                changeVersionRange
+            );
+
         var rootColumnsByName = rootTable.Columns.ToDictionary(
             static column => column.ColumnName,
             static column => column
@@ -156,12 +172,12 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         var parameterNamesByIndex = DeriveParameterNames(
             preprocessingResult.QueryElementsInOrder,
             authorization,
-            plannedMode.OwnedParameterNames
+            foldedMode.OwnedParameterNames
         );
         var predicates = new List<QueryValuePredicate>(preprocessingResult.QueryElementsInOrder.Count + 2);
         Dictionary<string, object?> parameterValues = new(StringComparer.Ordinal);
 
-        foreach (var (parameterName, parameterValue) in plannedMode.ParameterValues)
+        foreach (var (parameterName, parameterValue) in foldedMode.ParameterValues)
         {
             parameterValues[parameterName] = parameterValue;
         }
@@ -200,7 +216,8 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         AppendChangeVersionPredicates(
             rootTable,
             rootColumnsByName,
-            changeVersionRange,
+            windowPredicateRange,
+            foldedMode.OrderingMode,
             predicates,
             parameterValues
         );
@@ -221,12 +238,12 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             RootTable: rootTable.Table,
             Predicates: predicates,
             UnifiedAliasMappingsByColumn: BuildUnifiedAliasMappingsByColumn(rootTable),
-            Mode: plannedMode.Mode,
+            Mode: foldedMode.Mode,
             Authorization: authorization
         );
         var sqlPlan = _sqlCompiler.Compile(querySpec);
 
-        return new CandidateQueryPlan(sqlPlan, parameterValues);
+        return new CandidateQueryPlan(sqlPlan, parameterValues, foldedMode.OrderingMode);
     }
 
     private static PlannedPredicate? PlanPredicate(
@@ -386,22 +403,31 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Appends mirrored <c>ContentVersion</c> range predicates for the validated change-version window.
-    /// Filtering targets only the root-table mirror column maintained by the stamping triggers; there is
-    /// no non-mirror fallback, so a missing or mis-typed mirror fails planning instead of emitting bad SQL.
+    /// Verifies the root-table <c>ContentVersion</c> mirror this plan depends on, then appends mirrored
+    /// range predicates for the validated change-version window. Filtering targets only the mirror
+    /// column maintained by the stamping triggers; there is no non-mirror fallback, so a missing or
+    /// mis-typed mirror fails planning instead of emitting bad SQL.
     /// </summary>
+    /// <param name="orderingMode">
+    /// The anchor the plan is compiled against. Two independent things need the mirror column, and
+    /// either alone is enough to require it: a change-version bound filters on it, and a
+    /// <c>ContentVersion</c> anchor orders, bounds, and projects it. Checking only when a bound is
+    /// present would leave an anchored plan naming a column no one had verified, because the anchor
+    /// reaches the planner as its own request value rather than being derived from the window here.
+    /// </param>
     private static void AppendChangeVersionPredicates(
         DbTableModel rootTable,
         IReadOnlyDictionary<DbColumnName, DbColumnModel> rootColumnsByName,
         ChangeVersionRange? changeVersionRange,
+        PageOrderingMode orderingMode,
         List<QueryValuePredicate> predicates,
         Dictionary<string, object?> parameterValues
     )
     {
-        if (
-            changeVersionRange is not { } range
-            || (range.MinChangeVersion is null && range.MaxChangeVersion is null)
-        )
+        var isChangeVersionBounded =
+            changeVersionRange is { MinChangeVersion: not null } or { MaxChangeVersion: not null };
+
+        if (!isChangeVersionBounded && orderingMode is not PageOrderingMode.ContentVersion)
         {
             return;
         }
@@ -417,11 +443,12 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             throw new InvalidOperationException(
                 $"Relational query planning requires a mirrored Int64 '{ContentVersionColumnName}' column "
                     + $"(ColumnKind.{nameof(ColumnKind.MirroredContentVersion)}) on root table '{rootTable.Table}' "
-                    + "to apply change-version filters. Change-version filtering has no non-mirror fallback."
+                    + "to apply change-version filters or to anchor page selection on the change version. "
+                    + "Neither has a non-mirror fallback."
             );
         }
 
-        if (range.MinChangeVersion is { } minChangeVersion)
+        if (changeVersionRange?.MinChangeVersion is { } minChangeVersion)
         {
             predicates.Add(
                 new QueryValuePredicate(
@@ -434,7 +461,7 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
             parameterValues[MinChangeVersionParameterName] = minChangeVersion;
         }
 
-        if (range.MaxChangeVersion is { } maxChangeVersion)
+        if (changeVersionRange?.MaxChangeVersion is { } maxChangeVersion)
         {
             predicates.Add(
                 new QueryValuePredicate(

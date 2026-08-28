@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
@@ -90,10 +91,25 @@ internal static class CandidateSqlRegions
         SqlDialect dialect
     )
     {
-        var quotedDocumentId = dialect switch
+        // The bound column follows the mode's anchor, so a ContentVersion-anchored cursor's bounds are
+        // subtracted as reliably as a DocumentId-anchored one's. Resolving it from the mode is what lets
+        // the shared-region comparison hold under either anchor instead of silently leaving the bound
+        // lines in the region and reporting them as a difference in shared SQL.
+        var anchorColumn = cursor.OrderingMode switch
         {
-            SqlDialect.Pgsql => "\"DocumentId\"",
-            SqlDialect.Mssql => "[DocumentId]",
+            PageOrderingMode.DocumentId => "DocumentId",
+            PageOrderingMode.ContentVersion => "ContentVersion",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(cursor),
+                cursor.OrderingMode,
+                "Unsupported page ordering mode."
+            ),
+        };
+
+        var quotedAnchor = dialect switch
+        {
+            SqlDialect.Pgsql => $"\"{anchorColumn}\"",
+            SqlDialect.Mssql => $"[{anchorColumn}]",
             _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported dialect."),
         };
 
@@ -101,10 +117,10 @@ internal static class CandidateSqlRegions
         // is what a cursor bound looks like when no filter or authorization predicate precedes it.
         return
         [
-            $"    (r.{quotedDocumentId} >= @{cursor.InclusiveMinimumParameterName})",
-            $"    AND (r.{quotedDocumentId} >= @{cursor.InclusiveMinimumParameterName})",
-            $"    (r.{quotedDocumentId} <= @{cursor.InclusiveMaximumParameterName})",
-            $"    AND (r.{quotedDocumentId} <= @{cursor.InclusiveMaximumParameterName})",
+            $"    (r.{quotedAnchor} >= @{cursor.InclusiveMinimumParameterName})",
+            $"    AND (r.{quotedAnchor} >= @{cursor.InclusiveMinimumParameterName})",
+            $"    (r.{quotedAnchor} <= @{cursor.InclusiveMaximumParameterName})",
+            $"    AND (r.{quotedAnchor} <= @{cursor.InclusiveMaximumParameterName})",
         ];
     }
 }

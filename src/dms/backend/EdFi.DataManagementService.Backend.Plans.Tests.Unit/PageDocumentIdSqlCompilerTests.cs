@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
 using FluentAssertions;
 using NUnit.Framework;
@@ -3102,6 +3103,56 @@ public class Given_PageDocumentIdSqlCompiler
 
         plan.PageDocumentIdSql.Should().Contain("ORDER BY r.[ContentVersion] ASC");
         plan.PageDocumentIdSql.Should().Contain("OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY");
+    }
+
+    /// <summary>
+    /// A ContentVersion-anchored traditional page projects both columns. DocumentId feeds the keyset
+    /// insert and every downstream hydration join; ContentVersion is the continuation anchor, and
+    /// hydration can only read columns this embedded selection SQL projects.
+    /// </summary>
+    [Test]
+    public void It_should_project_the_document_id_and_the_anchor_when_ordering_by_content_version()
+    {
+        var plan = _compiler.Compile(CreateSpec([], [], orderingMode: PageOrderingMode.ContentVersion));
+
+        plan.PageDocumentIdSql.Should().StartWith("SELECT r.\"DocumentId\", r.\"ContentVersion\"\n");
+    }
+
+    [Test]
+    public void It_should_project_the_document_id_and_the_anchor_for_mssql_when_ordering_by_content_version()
+    {
+        var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Mssql);
+        var plan = compiler.Compile(CreateSpec([], [], orderingMode: PageOrderingMode.ContentVersion));
+
+        plan.PageDocumentIdSql.Should().StartWith("SELECT r.[DocumentId], r.[ContentVersion]\n");
+    }
+
+    /// <summary>
+    /// The total-count statement counts rows and projects none, so the anchor cannot reach its select
+    /// list. Pinned because the count and the page share every predicate and it would be easy to widen
+    /// both from one place.
+    /// </summary>
+    [Test]
+    public void It_should_not_project_the_anchor_in_total_count_sql()
+    {
+        var plan = _compiler.Compile(
+            CreateSpec([], [], includeTotalCountSql: true, orderingMode: PageOrderingMode.ContentVersion)
+        );
+
+        plan.TotalCountSql.Should().StartWith("SELECT COUNT(1)\n").And.NotContain("ContentVersion");
+    }
+
+    /// <summary>
+    /// The DocumentId-anchored projection is unchanged, which is what keeps every existing emitted-SQL
+    /// golden byte-identical.
+    /// </summary>
+    [Test]
+    public void It_should_project_the_document_id_alone_when_ordering_by_document_id()
+    {
+        _compiler
+            .Compile(CreateSpec([], []))
+            .PageDocumentIdSql.Should()
+            .StartWith("SELECT r.\"DocumentId\"\n");
     }
 
     private static PageDocumentIdQuerySpec CreateSpec(

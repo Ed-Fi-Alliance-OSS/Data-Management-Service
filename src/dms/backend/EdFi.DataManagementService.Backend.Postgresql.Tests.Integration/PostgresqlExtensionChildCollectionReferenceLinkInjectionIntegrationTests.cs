@@ -365,7 +365,8 @@ public class Given_A_Postgresql_School_With_Extension_Child_Collection_Bus_Refer
                     MaximumPageSize: MaximumPageSize
                 )
             ),
-            TraceId: new TraceId("pg-29e-query-school")
+            TraceId: new TraceId("pg-29e-query-school"),
+            PageOrderingMode: PageOrderingMode.DocumentId
         );
 
         return await scope

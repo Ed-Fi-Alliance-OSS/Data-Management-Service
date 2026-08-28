@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using NUnit.Framework;
@@ -504,6 +505,7 @@ internal static class MssqlDocumentReferenceLookupPageKeyset
                 ],
                 TotalCountParametersInOrder: null
             ),
-            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = limit }
+            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = limit },
+            PageOrderingMode.DocumentId
         );
 }

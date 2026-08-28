@@ -411,7 +411,8 @@ public class Given_A_Mssql_Page_Of_AcademicWeeks_With_Link_Injection
                     MaximumPageSize: MaximumPageSize
                 )
             ),
-            TraceId: new TraceId("mssql-page-link-injection-query-academicweek")
+            TraceId: new TraceId("mssql-page-link-injection-query-academicweek"),
+            PageOrderingMode: PageOrderingMode.DocumentId
         );
 
         return await scope

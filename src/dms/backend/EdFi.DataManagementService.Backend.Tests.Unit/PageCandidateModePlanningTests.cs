@@ -53,15 +53,105 @@ public class Given_PageCandidateModePlanning
     [Test]
     public void It_should_bind_nothing_for_the_unpaged_candidate_relation()
     {
-        var planned = PageCandidateModePlanning.ForUnpagedCandidates();
+        var planned = PageCandidateModePlanning.ForUnpagedCandidates(PageOrderingMode.DocumentId);
 
         planned.ParameterValues.Should().BeEmpty();
         planned.OwnedParameterNames.Should().Equal("number", "minimumPartitionSize");
     }
 
-    [TestCase(SqlDialect.Pgsql)]
-    [TestCase(SqlDialect.Mssql)]
-    public void It_should_plan_exactly_the_mode_parameters_the_compiled_plan_binds(SqlDialect dialect)
+    /// <summary>
+    /// The resolved anchor reaches the cursor mode instead of being discarded. Asserted with
+    /// ContentVersion because DocumentId is the enum's zero value: a discarded anchor would still leave
+    /// a DocumentId mode behind and read as though it had been applied.
+    /// </summary>
+    [Test]
+    public void It_should_carry_the_resolved_anchor_onto_a_cursor_mode()
+    {
+        var planned = PageCandidateModePlanning.ForPaging(
+            new CollectionPaging.Cursor(new CursorRange(1L, 100L), new PageSize(25)),
+            PageOrderingMode.ContentVersion
+        );
+
+        planned
+            .Mode.Should()
+            .BeOfType<PageCandidateMode.Cursor>()
+            .Which.OrderingMode.Should()
+            .Be(PageOrderingMode.ContentVersion);
+    }
+
+    [Test]
+    public void It_should_carry_the_resolved_anchor_onto_a_traditional_mode()
+    {
+        var planned = PageCandidateModePlanning.ForPaging(
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 75, TotalCount: false, MaximumPageSize: 500)
+            ),
+            PageOrderingMode.ContentVersion
+        );
+
+        planned
+            .Mode.Should()
+            .BeOfType<PageCandidateMode.Traditional>()
+            .Which.OrderingMode.Should()
+            .Be(PageOrderingMode.ContentVersion);
+    }
+
+    [Test]
+    public void It_should_carry_the_resolved_anchor_onto_the_unpaged_candidate_relation()
+    {
+        var planned = PageCandidateModePlanning.ForUnpagedCandidates(PageOrderingMode.ContentVersion);
+
+        planned
+            .Mode.Should()
+            .BeOfType<PageCandidateMode.UnpagedCandidates>()
+            .Which.OrderingMode.Should()
+            .Be(PageOrderingMode.ContentVersion);
+    }
+
+    /// <summary>
+    /// The anchor changes which column a mode is ordered and bounded on, never which parameters it
+    /// owns. Filter-name allocation reserves the owned names, so an anchor that moved them would suffix
+    /// a filter parameter over a collision the query does not have and shift SQL that has no stake in
+    /// the anchor at all.
+    /// </summary>
+    [TestCase(PageOrderingMode.DocumentId)]
+    [TestCase(PageOrderingMode.ContentVersion)]
+    public void It_should_own_the_same_parameter_names_under_either_anchor(PageOrderingMode orderingMode)
+    {
+        PageCandidateModePlanning
+            .ForPaging(
+                new CollectionPaging.Traditional(
+                    new PaginationParameters(Limit: 25, Offset: 75, TotalCount: false, MaximumPageSize: 500)
+                ),
+                orderingMode
+            )
+            .OwnedParameterNames.Should()
+            .Equal("offset", "limit");
+
+        PageCandidateModePlanning
+            .ForPaging(new CollectionPaging.Cursor(new CursorRange(1L, 100L), new PageSize(25)), orderingMode)
+            .OwnedParameterNames.Should()
+            .Equal("cursorMin", "cursorMax", "pageSize");
+
+        PageCandidateModePlanning
+            .ForUnpagedCandidates(orderingMode)
+            .OwnedParameterNames.Should()
+            .Equal("number", "minimumPartitionSize");
+    }
+
+    /// <summary>
+    /// Run under both anchors, because the parameter budget is spent from the planned values before any
+    /// SQL exists: if an anchor changed what the compiled plan binds, a windowed query would pass the
+    /// budget check and then fail at execution rather than failing closed.
+    /// </summary>
+    [TestCase(SqlDialect.Pgsql, PageOrderingMode.DocumentId)]
+    [TestCase(SqlDialect.Pgsql, PageOrderingMode.ContentVersion)]
+    [TestCase(SqlDialect.Mssql, PageOrderingMode.DocumentId)]
+    [TestCase(SqlDialect.Mssql, PageOrderingMode.ContentVersion)]
+    public void It_should_plan_exactly_the_mode_parameters_the_compiled_plan_binds(
+        SqlDialect dialect,
+        PageOrderingMode orderingMode
+    )
     {
         PlannedCandidateMode[] plannedModes =
         [
@@ -69,13 +159,13 @@ public class Given_PageCandidateModePlanning
                 new CollectionPaging.Traditional(
                     new PaginationParameters(Limit: 25, Offset: 75, TotalCount: false, MaximumPageSize: 500)
                 ),
-                PageOrderingMode.DocumentId
+                orderingMode
             ),
             PageCandidateModePlanning.ForPaging(
                 new CollectionPaging.Cursor(new CursorRange(1L, 100L), new PageSize(25)),
-                PageOrderingMode.DocumentId
+                orderingMode
             ),
-            PageCandidateModePlanning.ForUnpagedCandidates(),
+            PageCandidateModePlanning.ForUnpagedCandidates(orderingMode),
         ];
         var compiler = new PageDocumentIdSqlCompiler(dialect);
 

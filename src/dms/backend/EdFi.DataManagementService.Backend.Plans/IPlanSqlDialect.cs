@@ -101,26 +101,50 @@ internal interface IPlanSqlDialect
     /// </summary>
     /// <param name="writer">The SQL writer to append to.</param>
     /// <param name="keyset">The keyset table contract specifying table and column names.</param>
-    void AppendCreateKeysetTempTable(SqlWriter writer, KeysetTableContract keyset);
+    /// <param name="includeAnchorColumn">
+    /// Adds the nullable continuation-anchor column to the table. Set only for a
+    /// <c>ContentVersion</c>-anchored query keyset, so every other batch emits the DDL it always has.
+    /// </param>
+    void AppendCreateKeysetTempTable(
+        SqlWriter writer,
+        KeysetTableContract keyset,
+        bool includeAnchorColumn = false
+    );
 
     /// <summary>
-    /// Appends a dialect-specific clause that returns the <c>DocumentId</c> values a query keyset
-    /// materialization inserted, positioned between the insert column list and the row source. SQL
-    /// Server emits <c>OUTPUT INSERTED.[DocumentId]</c> here; PostgreSQL returns them from a trailing
-    /// clause and emits nothing.
+    /// Appends a dialect-specific clause that returns the values a query keyset materialization
+    /// inserted, positioned between the insert column list and the row source. SQL Server emits
+    /// <c>OUTPUT INSERTED.[DocumentId]</c> here; PostgreSQL returns them from a trailing clause and
+    /// emits nothing.
     /// </summary>
     /// <param name="writer">The SQL writer to append to.</param>
     /// <param name="keyset">The keyset table contract specifying table and column names.</param>
-    void AppendKeysetSelectedIdOutputClause(SqlWriter writer, KeysetTableContract keyset);
+    /// <param name="includeAnchorColumn">
+    /// Also returns the continuation-anchor column. Must match what the insert column list and the
+    /// table DDL carry, or the statement names a column the keyset table does not have.
+    /// </param>
+    void AppendKeysetSelectedIdOutputClause(
+        SqlWriter writer,
+        KeysetTableContract keyset,
+        bool includeAnchorColumn = false
+    );
 
     /// <summary>
-    /// Appends a dialect-specific trailing clause that returns the <c>DocumentId</c> values a query
-    /// keyset materialization inserted. PostgreSQL emits <c>RETURNING "DocumentId"</c>; SQL Server has
+    /// Appends a dialect-specific trailing clause that returns the values a query keyset
+    /// materialization inserted. PostgreSQL emits <c>RETURNING "DocumentId"</c>; SQL Server has
     /// already returned them from the insert's <c>OUTPUT</c> clause and emits nothing.
     /// </summary>
     /// <param name="writer">The SQL writer to append to.</param>
     /// <param name="keyset">The keyset table contract specifying table and column names.</param>
-    void AppendKeysetSelectedIdReturningClause(SqlWriter writer, KeysetTableContract keyset);
+    /// <param name="includeAnchorColumn">
+    /// Also returns the continuation-anchor column. Must match what the insert column list and the
+    /// table DDL carry, or the statement names a column the keyset table does not have.
+    /// </param>
+    void AppendKeysetSelectedIdReturningClause(
+        SqlWriter writer,
+        KeysetTableContract keyset,
+        bool includeAnchorColumn = false
+    );
 
     /// <summary>
     /// Appends a <c>SELECT</c> statement that joins <c>dms.Document</c> metadata to the

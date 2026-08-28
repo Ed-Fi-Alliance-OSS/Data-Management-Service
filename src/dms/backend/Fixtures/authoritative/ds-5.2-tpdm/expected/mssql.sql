@@ -9,9 +9,9 @@ IF OBJECT_ID(N'dms.EffectiveSchema', N'U') IS NOT NULL
 BEGIN
     SELECT @preflight_stored_hash = [EffectiveSchemaHash] FROM [dms].[EffectiveSchema]
     WHERE [EffectiveSchemaSingletonId] = 1;
-    IF @preflight_stored_hash IS NOT NULL AND @preflight_stored_hash <> N'632f421a00bf86d5e99e9d2c8489f5d022240eecf4b2a293d5c706188eaade20'
+    IF @preflight_stored_hash IS NOT NULL AND @preflight_stored_hash <> N'7015c5ec99731a4a1f5b09a5fa7a9bef4c4e80e967776b0f8b437610ca492ed9'
     BEGIN
-        DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database has ''', @preflight_stored_hash, N''' but expected ''', N'632f421a00bf86d5e99e9d2c8489f5d022240eecf4b2a293d5c706188eaade20', N'''');
+        DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database has ''', @preflight_stored_hash, N''' but expected ''', N'7015c5ec99731a4a1f5b09a5fa7a9bef4c4e80e967776b0f8b437610ca492ed9', N'''');
         THROW 50000, @preflight_msg, 1;
     END
 END
@@ -23,7 +23,7 @@ IF OBJECT_ID(N'dms.EffectiveSchema', N'U') IS NOT NULL
 BEGIN
     SELECT @preflight_completed_hash = [EffectiveSchemaHash] FROM [dms].[EffectiveSchema]
     WHERE [EffectiveSchemaSingletonId] = 1;
-    IF @preflight_completed_hash = N'632f421a00bf86d5e99e9d2c8489f5d022240eecf4b2a293d5c706188eaade20'
+    IF @preflight_completed_hash = N'7015c5ec99731a4a1f5b09a5fa7a9bef4c4e80e967776b0f8b437610ca492ed9'
     BEGIN
         IF OBJECT_ID(N'dms.DataStoreIdentity', N'U') IS NULL
         BEGIN
@@ -29933,14 +29933,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'AssessmentAdministrationAssessmentBatteryPart' AND i.name = N'IX_AssessmentAdministrationAssessmentBatteryPart_AssessmentBatteryPart_Namespace_Auth'
-)
-CREATE INDEX [IX_AssessmentAdministrationAssessmentBatteryPart_AssessmentBatteryPart_Namespace_Auth] ON [edfi].[AssessmentAdministrationAssessmentBatteryPart] ([AssessmentBatteryPart_Namespace]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'AssessmentAdministrationParticipation' AND i.name = N'IX_AssessmentAdministrationParticipation_AssessmentAdministration_AdministrationIdentifier_AssessmentAdministration_A_1a1a632f27'
 )
 CREATE INDEX [IX_AssessmentAdministrationParticipation_AssessmentAdministration_AdministrationIdentifier_AssessmentAdministration_A_1a1a632f27] ON [edfi].[AssessmentAdministrationParticipation] ([AssessmentAdministration_AdministrationIdentifier], [AssessmentAdministration_AssessmentIdentifier], [AssessmentAdministration_Namespace], [AssessmentAdministration_AssigningEducationOrganizationId], [AssessmentAdministration_DocumentId]);
@@ -30016,14 +30008,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'AssessmentBatteryPartObjectiveAssessment' AND i.name = N'IX_AssessmentBatteryPartObjectiveAssessment_ObjectiveAssessment_AssessmentIdentifier_ObjectiveAssessment_Namespace_Ob_5d59d3ea25'
 )
 CREATE INDEX [IX_AssessmentBatteryPartObjectiveAssessment_ObjectiveAssessment_AssessmentIdentifier_ObjectiveAssessment_Namespace_Ob_5d59d3ea25] ON [edfi].[AssessmentBatteryPartObjectiveAssessment] ([ObjectiveAssessment_AssessmentIdentifier], [ObjectiveAssessment_Namespace], [ObjectiveAssessment_IdentificationCode], [ObjectiveAssessment_DocumentId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'AssessmentBatteryPartObjectiveAssessment' AND i.name = N'IX_AssessmentBatteryPartObjectiveAssessment_ObjectiveAssessment_Namespace_Auth'
-)
-CREATE INDEX [IX_AssessmentBatteryPartObjectiveAssessment_ObjectiveAssessment_Namespace_Auth] ON [edfi].[AssessmentBatteryPartObjectiveAssessment] ([ObjectiveAssessment_Namespace]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -32469,14 +32453,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'GraduationPlanRequiredAssessment' AND i.name = N'IX_GraduationPlanRequiredAssessment_RequiredAssessmentAssessment_Namespace_Auth'
-)
-CREATE INDEX [IX_GraduationPlanRequiredAssessment_RequiredAssessmentAssessment_Namespace_Auth] ON [edfi].[GraduationPlanRequiredAssessment] ([RequiredAssessmentAssessment_Namespace]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'GraduationPlanRequiredAssessmentScore' AND i.name = N'IX_GraduationPlanRequiredAssessmentScore_AssessmentReportingMethodDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_GraduationPlanRequiredAssessmentScore_AssessmentReportingMethodDescriptor_DescriptorId] ON [edfi].[GraduationPlanRequiredAssessmentScore] ([AssessmentReportingMethodDescriptor_DescriptorId]);
@@ -33384,14 +33360,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'ObjectiveAssessmentAssessmentItem' AND i.name = N'IX_ObjectiveAssessmentAssessmentItem_AssessmentItemAssessmentItem_AssessmentIdentifier_AssessmentItemAssessmentItem_N_44c119b160'
 )
 CREATE INDEX [IX_ObjectiveAssessmentAssessmentItem_AssessmentItemAssessmentItem_AssessmentIdentifier_AssessmentItemAssessmentItem_N_44c119b160] ON [edfi].[ObjectiveAssessmentAssessmentItem] ([AssessmentItemAssessmentItem_AssessmentIdentifier], [AssessmentItemAssessmentItem_Namespace], [AssessmentItemAssessmentItem_IdentificationCode], [AssessmentItemAssessmentItem_DocumentId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'ObjectiveAssessmentAssessmentItem' AND i.name = N'IX_ObjectiveAssessmentAssessmentItem_AssessmentItemAssessmentItem_Namespace_Auth'
-)
-CREATE INDEX [IX_ObjectiveAssessmentAssessmentItem_AssessmentItemAssessmentItem_Namespace_Auth] ON [edfi].[ObjectiveAssessmentAssessmentItem] ([AssessmentItemAssessmentItem_Namespace]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -36093,14 +36061,6 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentItem' AND i.name = N'IX_StudentAssessmentItem_StudentAssessmentItemAssessmentItem_Namespace_Auth'
-)
-CREATE INDEX [IX_StudentAssessmentItem_StudentAssessmentItemAssessmentItem_Namespace_Auth] ON [edfi].[StudentAssessmentItem] ([StudentAssessmentItemAssessmentItem_Namespace]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
     WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentPerformanceLevel' AND i.name = N'IX_StudentAssessmentPerformanceLevel_AssessmentReportingMethodDescriptor_DescriptorId'
 )
 CREATE INDEX [IX_StudentAssessmentPerformanceLevel_AssessmentReportingMethodDescriptor_DescriptorId] ON [edfi].[StudentAssessmentPerformanceLevel] ([AssessmentReportingMethodDescriptor_DescriptorId]);
@@ -36296,14 +36256,6 @@ IF NOT EXISTS (
     WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentStudentObjectiveAssessment' AND i.name = N'IX_StudentAssessmentStudentObjectiveAssessment_StudentObjectiveAssessmentObjectiveAssessment_AssessmentIdentifier_Stu_81f75a4e4d'
 )
 CREATE INDEX [IX_StudentAssessmentStudentObjectiveAssessment_StudentObjectiveAssessmentObjectiveAssessment_AssessmentIdentifier_Stu_81f75a4e4d] ON [edfi].[StudentAssessmentStudentObjectiveAssessment] ([StudentObjectiveAssessmentObjectiveAssessment_AssessmentIdentifier], [StudentObjectiveAssessmentObjectiveAssessment_Namespace], [StudentObjectiveAssessmentObjectiveAssessment_IdentificationCode], [StudentObjectiveAssessmentObjectiveAssessment_DocumentId]);
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.indexes i
-    JOIN sys.tables t ON i.object_id = t.object_id
-    JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'edfi' AND t.name = N'StudentAssessmentStudentObjectiveAssessment' AND i.name = N'IX_StudentAssessmentStudentObjectiveAssessment_StudentObjectiveAssessmentObjectiveAssessment_Namespace_Auth'
-)
-CREATE INDEX [IX_StudentAssessmentStudentObjectiveAssessment_StudentObjectiveAssessmentObjectiveAssessment_Namespace_Auth] ON [edfi].[StudentAssessmentStudentObjectiveAssessment] ([StudentObjectiveAssessmentObjectiveAssessment_Namespace]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -79584,7 +79536,7 @@ END
 -- EffectiveSchema singleton insert-if-missing
 IF NOT EXISTS (SELECT 1 FROM [dms].[EffectiveSchema] WHERE [EffectiveSchemaSingletonId] = 1)
     INSERT INTO [dms].[EffectiveSchema] ([EffectiveSchemaSingletonId], [ApiSchemaFormatVersion], [EffectiveSchemaHash], [ResourceKeyCount], [ResourceKeySeedHash])
-    VALUES (1, N'1.0.0', N'632f421a00bf86d5e99e9d2c8489f5d022240eecf4b2a293d5c706188eaade20', 384, 0xF7816F4770F793D5E211735A3159B82645766F95178DC8CB784DC6B5CF0BCFB6);
+    VALUES (1, N'1.0.0', N'7015c5ec99731a4a1f5b09a5fa7a9bef4c4e80e967776b0f8b437610ca492ed9', 384, 0xF7816F4770F793D5E211735A3159B82645766F95178DC8CB784DC6B5CF0BCFB6);
 
 -- EffectiveSchema validation (ApiSchemaFormatVersion + ResourceKeyCount + ResourceKeySeedHash)
 DECLARE @es_stored_api_schema_format_version nvarchar(255);
@@ -79613,19 +79565,19 @@ BEGIN
 END
 
 -- SchemaComponent seed inserts (insert-if-missing)
-IF NOT EXISTS (SELECT 1 FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'632f421a00bf86d5e99e9d2c8489f5d022240eecf4b2a293d5c706188eaade20' AND [ProjectEndpointName] = N'ed-fi')
+IF NOT EXISTS (SELECT 1 FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'7015c5ec99731a4a1f5b09a5fa7a9bef4c4e80e967776b0f8b437610ca492ed9' AND [ProjectEndpointName] = N'ed-fi')
     INSERT INTO [dms].[SchemaComponent] ([EffectiveSchemaHash], [ProjectEndpointName], [ProjectName], [ProjectVersion], [IsExtensionProject])
-    VALUES (N'632f421a00bf86d5e99e9d2c8489f5d022240eecf4b2a293d5c706188eaade20', N'ed-fi', N'Ed-Fi', N'5.2.0', 0);
-IF NOT EXISTS (SELECT 1 FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'632f421a00bf86d5e99e9d2c8489f5d022240eecf4b2a293d5c706188eaade20' AND [ProjectEndpointName] = N'tpdm')
+    VALUES (N'7015c5ec99731a4a1f5b09a5fa7a9bef4c4e80e967776b0f8b437610ca492ed9', N'ed-fi', N'Ed-Fi', N'5.2.0', 0);
+IF NOT EXISTS (SELECT 1 FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'7015c5ec99731a4a1f5b09a5fa7a9bef4c4e80e967776b0f8b437610ca492ed9' AND [ProjectEndpointName] = N'tpdm')
     INSERT INTO [dms].[SchemaComponent] ([EffectiveSchemaHash], [ProjectEndpointName], [ProjectName], [ProjectVersion], [IsExtensionProject])
-    VALUES (N'632f421a00bf86d5e99e9d2c8489f5d022240eecf4b2a293d5c706188eaade20', N'tpdm', N'TPDM', N'1.1.0', 1);
+    VALUES (N'7015c5ec99731a4a1f5b09a5fa7a9bef4c4e80e967776b0f8b437610ca492ed9', N'tpdm', N'TPDM', N'1.1.0', 1);
 
 -- SchemaComponent exact-match validation (count + content)
 DECLARE @sc_actual_count integer;
 DECLARE @sc_mismatched_count integer;
 DECLARE @sc_mismatched_names nvarchar(max);
 
-SELECT @sc_actual_count = COUNT(*) FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'632f421a00bf86d5e99e9d2c8489f5d022240eecf4b2a293d5c706188eaade20';
+SELECT @sc_actual_count = COUNT(*) FROM [dms].[SchemaComponent] WHERE [EffectiveSchemaHash] = N'7015c5ec99731a4a1f5b09a5fa7a9bef4c4e80e967776b0f8b437610ca492ed9';
 IF @sc_actual_count <> 2
 BEGIN
     DECLARE @sc_count_msg nvarchar(200) = CONCAT(N'dms.SchemaComponent count mismatch: expected 2, found ', CAST(@sc_actual_count AS nvarchar(10)));
@@ -79634,7 +79586,7 @@ END
 
 SELECT @sc_mismatched_count = COUNT(*)
 FROM [dms].[SchemaComponent] sc
-WHERE sc.[EffectiveSchemaHash] = N'632f421a00bf86d5e99e9d2c8489f5d022240eecf4b2a293d5c706188eaade20'
+WHERE sc.[EffectiveSchemaHash] = N'7015c5ec99731a4a1f5b09a5fa7a9bef4c4e80e967776b0f8b437610ca492ed9'
 AND NOT EXISTS (
     SELECT 1 FROM (VALUES
         (N'ed-fi', N'Ed-Fi', N'5.2.0', 0),
@@ -79651,7 +79603,7 @@ BEGIN
     FROM (
         SELECT TOP 10 sc.[ProjectEndpointName]
         FROM [dms].[SchemaComponent] sc
-        WHERE sc.[EffectiveSchemaHash] = N'632f421a00bf86d5e99e9d2c8489f5d022240eecf4b2a293d5c706188eaade20'
+        WHERE sc.[EffectiveSchemaHash] = N'7015c5ec99731a4a1f5b09a5fa7a9bef4c4e80e967776b0f8b437610ca492ed9'
         AND NOT EXISTS (
             SELECT 1 FROM (VALUES
                 (N'ed-fi', N'Ed-Fi', N'5.2.0', 0),

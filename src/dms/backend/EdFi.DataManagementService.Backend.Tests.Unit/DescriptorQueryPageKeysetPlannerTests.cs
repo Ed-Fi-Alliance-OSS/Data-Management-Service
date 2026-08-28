@@ -842,6 +842,58 @@ public class Given_DescriptorQueryPageKeysetPlanner
     }
 
     [Test]
+    public void It_should_fold_the_change_version_window_into_a_content_version_cursor_pages_bounds()
+    {
+        // The descriptor page's composite index leads with ResourceKeyId and continues into the anchor,
+        // so a second range on the anchor is left residual on the seek the same way it is for a regular
+        // resource: the page reads from the window floor and discards everything below its own.
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var keyset = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            new CollectionPaging.Cursor(new CursorRange(150L, long.MaxValue), new PageSize(25)),
+            changeVersionRange: new ChangeVersionRange(100L, 200L),
+            orderingMode: PageOrderingMode.ContentVersion
+        );
+
+        keyset.ParameterValues["cursorMin"].Should().Be(150L);
+        keyset.ParameterValues["cursorMax"].Should().Be(200L);
+        keyset
+            .ParameterValues.Keys.Should()
+            .NotContain("minChangeVersion")
+            .And.NotContain("maxChangeVersion");
+
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @cursorMin");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" <= @cursorMax");
+        keyset.Plan.PageDocumentIdSql.Should().NotContain("@minChangeVersion");
+        keyset.Plan.PageDocumentIdSql.Should().NotContain("@maxChangeVersion");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("ResourceKeyId");
+    }
+
+    [Test]
+    public void It_should_keep_both_ranges_for_a_document_id_anchored_descriptor_cursor_page()
+    {
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var keyset = planner.Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            new DescriptorQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            new CollectionPaging.Cursor(new CursorRange(150L, 250L), new PageSize(25)),
+            changeVersionRange: new ChangeVersionRange(100L, 200L),
+            orderingMode: PageOrderingMode.DocumentId
+        );
+
+        keyset.ParameterValues["cursorMin"].Should().Be(150L);
+        keyset.ParameterValues["cursorMax"].Should().Be(250L);
+        keyset.ParameterValues["minChangeVersion"].Should().Be(100L);
+        keyset.ParameterValues["maxChangeVersion"].Should().Be(200L);
+        keyset.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
+    }
+
+    [Test]
     public void It_should_compose_the_change_version_window_with_namespace_authorization_for_descriptor_queries()
     {
         var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);
@@ -988,6 +1040,30 @@ public class Given_DescriptorQueryPageKeysetPlanner
         unpaged.Plan.PageDocumentIdSql.Should().NotContain("ORDER BY");
         unpaged.Plan.PageDocumentIdSql.Should().NotContain("OFFSET");
         unpaged.Plan.PageDocumentIdSql.Should().NotContain("TOP (");
+    }
+
+    [TestCase(PageOrderingMode.DocumentId, "r.[DocumentId]")]
+    [TestCase(PageOrderingMode.ContentVersion, "r.[ContentVersion]")]
+    public void It_should_compile_the_unpaged_descriptor_candidate_relation_against_the_requested_anchor(
+        PageOrderingMode orderingMode,
+        string expectedProjection
+    )
+    {
+        // Descriptor partition boundaries are cut on whatever this relation projects, so the anchor the
+        // request resolved has to survive the trip through the planner. Discarding it here still
+        // compiles and still selects the right rows; it just cuts boundaries on a key no descriptor page
+        // of the same request seeks on, which a client cannot replay.
+        var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Mssql);
+
+        var unpaged = planner.PlanCandidates(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            CreateParityPreprocessingResult(),
+            changeVersionRange: new ChangeVersionRange(100L, 200L),
+            orderingMode: orderingMode
+        );
+
+        unpaged.Plan.PageDocumentIdSql.Should().StartWith($"SELECT {expectedProjection}");
     }
 
     [TestCase("pageSize")]

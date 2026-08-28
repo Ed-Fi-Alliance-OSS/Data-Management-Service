@@ -7,6 +7,7 @@ using System.Data;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Npgsql;
@@ -52,7 +53,8 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
                 ["schoolYear"] = null,
                 ["offset"] = 0L,
                 ["limit"] = 25L,
-            }
+            },
+            PageOrderingMode.DocumentId
         );
 
         HydrationBatchBuilder.AddParameters(command, keyset);
@@ -64,6 +66,53 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
         command.Parameters["@schoolYear"].Value.Should().Be(DBNull.Value);
         command.Parameters["@offset"].Value.Should().Be(0L);
         command.Parameters["@limit"].Value.Should().Be(25L);
+    }
+
+    [Test]
+    public void It_should_bind_the_same_parameters_under_either_anchor()
+    {
+        // The continuation anchor is a projected column, not a bound value, so an anchored keyset binds
+        // exactly what its unanchored twin binds. Asserted rather than assumed: an anchor that leaked
+        // into the parameter set would bind a name the compiled SQL never emits, and the shared binder
+        // fails the command at execution rather than at planning.
+        var plan = CreateQueryPlan(
+            pageParametersInOrder:
+            [
+                new QuerySqlParameter(QuerySqlParameterRole.CursorInclusiveMinimum, "cursorMin"),
+                new QuerySqlParameter(QuerySqlParameterRole.CursorInclusiveMaximum, "cursorMax"),
+                new QuerySqlParameter(QuerySqlParameterRole.PageSize, "pageSize"),
+            ],
+            totalCountParametersInOrder: null
+        );
+        var parameterValues = new Dictionary<string, object?>
+        {
+            ["cursorMin"] = 1L,
+            ["cursorMax"] = long.MaxValue,
+            ["pageSize"] = 25L,
+        };
+
+        var anchoredCommand = new RecordingDbCommand(new DataTable().CreateDataReader());
+        var unanchoredCommand = new RecordingDbCommand(new DataTable().CreateDataReader());
+
+        HydrationBatchBuilder.AddParameters(
+            anchoredCommand,
+            new PageKeysetSpec.Query(plan, parameterValues, PageOrderingMode.ContentVersion)
+        );
+        HydrationBatchBuilder.AddParameters(
+            unanchoredCommand,
+            new PageKeysetSpec.Query(plan, parameterValues, PageOrderingMode.DocumentId)
+        );
+
+        anchoredCommand
+            .Parameters.Cast<IDataParameter>()
+            .Select(parameter => (parameter.ParameterName, parameter.Value))
+            .Should()
+            .Equal(
+                unanchoredCommand
+                    .Parameters.Cast<IDataParameter>()
+                    .Select(parameter => (parameter.ParameterName, parameter.Value))
+            );
+        anchoredCommand.Parameters.Contains("@ContentVersion").Should().BeFalse();
     }
 
     [Test]
@@ -96,7 +145,8 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
                 ["ClaimEducationOrganizationIds"] = new long[] { 10L, 20L, 30L },
                 ["offset"] = 0L,
                 ["limit"] = 25L,
-            }
+            },
+            PageOrderingMode.DocumentId
         );
 
         HydrationBatchBuilder.AddParameters(command, keyset);
@@ -132,7 +182,8 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
                 ["namespacePrefixes"] = new[] { "uri://ed-fi.org/%", "uri://gbisd.edu/%" },
                 ["offset"] = 0L,
                 ["limit"] = 25L,
-            }
+            },
+            PageOrderingMode.DocumentId
         );
 
         HydrationBatchBuilder.AddParameters(command, keyset);
@@ -175,7 +226,8 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
                 ["ClaimEducationOrganizationIds"] = new long[] { 10L, 20L, 30L },
                 ["offset"] = 0L,
                 ["limit"] = 25L,
-            }
+            },
+            PageOrderingMode.DocumentId
         );
 
         HydrationBatchBuilder.AddParameters(command, keyset);
@@ -220,7 +272,8 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
                 ["authorizationIds"] = new long[] { 10L, 20L },
                 ["offset"] = 0L,
                 ["limit"] = 25L,
-            }
+            },
+            PageOrderingMode.DocumentId
         );
 
         var act = () => HydrationBatchBuilder.AddParameters(command, keyset);
@@ -251,7 +304,8 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
                     new QuerySqlParameter(QuerySqlParameterRole.Filter, "localEducationAgencyId"),
                 ]
             ),
-            new Dictionary<string, object?> { ["offset"] = 0L }
+            new Dictionary<string, object?> { ["offset"] = 0L },
+            PageOrderingMode.DocumentId
         );
 
         var act = () => HydrationBatchBuilder.AddParameters(command, keyset);
@@ -287,7 +341,8 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
                 ["unsupported"] = 10L,
                 ["offset"] = 0L,
                 ["limit"] = 25L,
-            }
+            },
+            PageOrderingMode.DocumentId
         );
 
         var exception = Assert.Throws<ArgumentOutOfRangeException>(() =>
@@ -323,7 +378,8 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
                 ["ClaimEducationOrganizationIds"] = 10L,
                 ["offset"] = 0L,
                 ["limit"] = 25L,
-            }
+            },
+            PageOrderingMode.DocumentId
         );
 
         var act = () => HydrationBatchBuilder.AddParameters(command, keyset);
@@ -358,7 +414,8 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
                 ["ClaimEducationOrganizationIds"] = 10L,
                 ["offset"] = 0L,
                 ["limit"] = 25L,
-            }
+            },
+            PageOrderingMode.DocumentId
         );
 
         var act = () => HydrationBatchBuilder.AddParameters(command, keyset);

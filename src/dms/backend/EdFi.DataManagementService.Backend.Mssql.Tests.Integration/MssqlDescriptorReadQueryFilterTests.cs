@@ -646,7 +646,8 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
         int offset = 0,
         ChangeVersionRange? changeVersionRange = null,
         AuthorizationStrategyEvaluator[]? authorizationStrategyEvaluators = null,
-        CollectionPaging? paging = null
+        CollectionPaging? paging = null,
+        PageOrderingMode pageOrderingMode = PageOrderingMode.DocumentId
     )
     {
         await using var scope = _serviceProvider.CreateAsyncScope();
@@ -668,7 +669,8 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
                     )
                 ),
             TraceId: new TraceId(traceId),
-            ChangeVersionRange: changeVersionRange
+            ChangeVersionRange: changeVersionRange,
+            PageOrderingMode: pageOrderingMode
         );
 
         return await scope
@@ -758,13 +760,12 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
                 success.EdfiDocs.Select(document => document!["id"]!.GetValue<string>())
             );
 
-            if (success.HighestSelectedDocumentId is not { } highestSelectedDocumentId)
+            if (success.HighestSelectedAnchor is not { } highestSelectedDocumentId)
             {
                 success.EdfiDocs.Should().BeEmpty("the page that ends a walk selects nothing");
                 break;
             }
 
-            success.AllowsDocumentIdContinuation.Should().BeTrue();
             range = new CursorRange(highestSelectedDocumentId + 1, range.InclusiveMaximum);
         }
 
@@ -788,7 +789,7 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
                 paging: new CollectionPaging.Cursor(CursorRange.From(1), new PageSize(0))
             );
 
-        success.HighestSelectedDocumentId.Should().BeNull();
+        success.HighestSelectedAnchor.Should().BeNull();
         success.EdfiDocs.Should().BeEmpty();
     }
 
@@ -809,8 +810,7 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
 
         success.EdfiDocs.Should().ContainSingle();
         AssertDescriptorDocument(success.EdfiDocs[0]!.AsObject(), PagingSecondSeed);
-        success.HighestSelectedDocumentId.Should().NotBeNull();
-        success.AllowsDocumentIdContinuation.Should().BeTrue();
+        success.HighestSelectedAnchor.Should().NotBeNull();
     }
 
     // A min-only window keeps DocumentId ordering, so a cursor page inside it continues normally.
@@ -830,8 +830,7 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
             );
 
         success.EdfiDocs.Should().HaveCount(PagingDescriptorSeeds.Length);
-        success.HighestSelectedDocumentId.Should().NotBeNull();
-        success.AllowsDocumentIdContinuation.Should().BeTrue();
+        success.HighestSelectedAnchor.Should().NotBeNull();
     }
 
     // A window that excludes every descriptor selects nothing, so the page carries no boundary: the
@@ -852,12 +851,12 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
             );
 
         success.EdfiDocs.Should().BeEmpty();
-        success.HighestSelectedDocumentId.Should().BeNull();
+        success.HighestSelectedAnchor.Should().BeNull();
     }
 
-    // A max-bearing window still leaves a cursor page ordered by DocumentId, so its selected maximum can
-    // anchor a continuation. A traditional page over the same window cannot, and that contrast is the
-    // interim suppression rule observed on a real descriptor query.
+    // A max-bearing window leaves a cursor page and a traditional page anchored differently, and the
+    // contrast is observed here on a real descriptor query: the cursor page reports a DocumentId, the
+    // traditional page the window's highest ContentVersion.
     [Test]
     public async Task It_composes_a_max_bearing_change_version_window_with_the_descriptor_cursor_range()
     {
@@ -874,18 +873,25 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
             );
 
         cursorSuccess.EdfiDocs.Should().HaveCount(PagingDescriptorSeeds.Length);
-        cursorSuccess.HighestSelectedDocumentId.Should().NotBeNull();
-        cursorSuccess.AllowsDocumentIdContinuation.Should().BeTrue();
+        cursorSuccess.HighestSelectedAnchor.Should().NotBeNull();
 
         var traditionalSuccess = (QueryResult.QuerySuccess)
             await ExecuteQueryAsync(
                 [],
                 "mssql-descriptor-traditional-max-window",
-                changeVersionRange: new ChangeVersionRange(null, highestContentVersion)
+                changeVersionRange: new ChangeVersionRange(null, highestContentVersion),
+                pageOrderingMode: PageOrderingMode.ContentVersion
             );
 
-        traditionalSuccess.HighestSelectedDocumentId.Should().NotBeNull();
-        traditionalSuccess.AllowsDocumentIdContinuation.Should().BeFalse();
+        // The traditional page over the same window is ordered by ContentVersion, so its boundary is the
+        // highest ContentVersion this resource's descriptors carry rather than any DocumentId. Scoped to
+        // the documents the query can reach: the window above is bounded by the highest version in the
+        // whole Descriptor table, which spans descriptor types this request never selects from.
+        var inScopeHighestContentVersion = cursorSuccess
+            .EdfiDocs.Select(document => contentVersions[Guid.Parse(document!["id"]!.GetValue<string>())])
+            .Max();
+
+        traditionalSuccess.HighestSelectedAnchor.Should().Be(inScopeHighestContentVersion);
     }
 
     [Test]
@@ -901,7 +907,7 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
             );
 
         success.EdfiDocs.Should().HaveCount(PagingDescriptorSeeds.Length);
-        success.HighestSelectedDocumentId.Should().NotBeNull();
+        success.HighestSelectedAnchor.Should().NotBeNull();
     }
 
     // Observed at the provider command seam rather than inferred from a null TotalCount: a descriptor

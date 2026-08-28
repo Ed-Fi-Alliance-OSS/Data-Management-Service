@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -13,7 +14,7 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 /// <summary>
 /// The partition window statement. It wraps the shared unpaged candidate relation, so every filter,
 /// change-version predicate, and authorization check is applied before any row is numbered or counted,
-/// and it returns starting identifiers only.
+/// and it returns starting anchor values only.
 /// </summary>
 [TestFixture]
 public class PartitionWindowSqlCompilerTests
@@ -293,6 +294,102 @@ public class PartitionWindowSqlCompilerTests
                 );
 
             compile.Should().Throw<ArgumentException>();
+        }
+    }
+
+    /// <summary>
+    /// The same statement over a <c>ContentVersion</c>-anchored candidate relation. That relation
+    /// projects the anchor and nothing else, so every clause here has to follow it: a statement that
+    /// ranked or projected <c>DocumentId</c> would name a column the relation it wraps does not have.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Content_Version_Anchored_Partition_Window : PartitionWindowSqlCompilerTests
+    {
+        private static readonly SqlDialect[] _dialects = [SqlDialect.Pgsql, SqlDialect.Mssql];
+
+        private static string CompileAnchoredWindow(SqlDialect dialect)
+        {
+            return CompileWindow(
+                dialect,
+                new PageCandidateMode.UnpagedCandidates(OrderingMode: PageOrderingMode.ContentVersion)
+            ).PageDocumentIdSql;
+        }
+
+        private static string QuotedContentVersion(SqlDialect dialect)
+        {
+            return dialect == SqlDialect.Pgsql ? "\"ContentVersion\"" : "[ContentVersion]";
+        }
+
+        [TestCaseSource(nameof(_dialects))]
+        public void It_numbers_candidates_by_ascending_content_version(SqlDialect dialect)
+        {
+            CompileAnchoredWindow(dialect)
+                .Should()
+                .Contain($"ROW_NUMBER() OVER (ORDER BY pc.{QuotedContentVersion(dialect)})");
+        }
+
+        [TestCaseSource(nameof(_dialects))]
+        public void It_carries_the_content_version_through_the_ranked_and_sized_expressions(
+            SqlDialect dialect
+        )
+        {
+            string sql = CompileAnchoredWindow(dialect);
+            string quotedContentVersion = QuotedContentVersion(dialect);
+
+            sql.Should().Contain($"pc.{quotedContentVersion},");
+            sql.Should().Contain($"pr.{quotedContentVersion},");
+        }
+
+        [TestCaseSource(nameof(_dialects))]
+        public void It_returns_the_boundary_content_versions_ordered_ascending(SqlDialect dialect)
+        {
+            string sql = CompileAnchoredWindow(dialect);
+            string quotedContentVersion = QuotedContentVersion(dialect);
+
+            sql.Should().Contain($"SELECT ps.{quotedContentVersion}");
+            sql.Should().Contain($"ORDER BY ps.{quotedContentVersion} ASC");
+        }
+
+        [TestCaseSource(nameof(_dialects))]
+        public void It_names_no_document_id_anywhere_in_the_statement(SqlDialect dialect)
+        {
+            // The wrapped relation has no DocumentId to name. This is the assertion that fails if any one
+            // clause is left behind on the old anchor, which the per-clause assertions above would not
+            // catch on their own.
+            CompileAnchoredWindow(dialect).Should().NotContain("DocumentId");
+        }
+
+        [TestCaseSource(nameof(_dialects))]
+        public void It_leaves_the_sizing_and_counting_expressions_unchanged_by_the_anchor(SqlDialect dialect)
+        {
+            // Only the anchor column moves. Row numbering, counting, and the modulo start rule are
+            // arithmetic over row numbers, so they are the same statement under either anchor.
+            string anchored = CompileAnchoredWindow(dialect);
+            string documentIdAnchored = CompileWindow(dialect).PageDocumentIdSql;
+            string quotedContentVersion = QuotedContentVersion(dialect);
+            string quotedDocumentId = dialect == SqlDialect.Pgsql ? "\"DocumentId\"" : "[DocumentId]";
+
+            anchored
+                .Replace(quotedContentVersion, quotedDocumentId, StringComparison.Ordinal)
+                .Should()
+                .Be(documentIdAnchored);
+        }
+
+        [TestCaseSource(nameof(_dialects))]
+        public void It_inventories_the_same_parameters_under_either_anchor(SqlDialect dialect)
+        {
+            CompileWindow(
+                dialect,
+                new PageCandidateMode.UnpagedCandidates(OrderingMode: PageOrderingMode.ContentVersion)
+            )
+                .PageParametersInOrder.Select(parameter => (parameter.Role, parameter.ParameterName))
+                .Should()
+                .Equal(
+                    (QuerySqlParameterRole.Filter, "schoolYear"),
+                    (QuerySqlParameterRole.PartitionCount, "number"),
+                    (QuerySqlParameterRole.MinimumPartitionSize, "minimumPartitionSize")
+                );
         }
     }
 }

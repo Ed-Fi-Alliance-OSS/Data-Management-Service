@@ -10,8 +10,8 @@ BEGIN
     IF to_regclass('"dms"."EffectiveSchema"') IS NOT NULL THEN
         SELECT "EffectiveSchemaHash" INTO _stored_hash FROM "dms"."EffectiveSchema"
         WHERE "EffectiveSchemaSingletonId" = 1;
-        IF _stored_hash IS NOT NULL AND _stored_hash <> '632f421a00bf86d5e99e9d2c8489f5d022240eecf4b2a293d5c706188eaade20' THEN
-            RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, '632f421a00bf86d5e99e9d2c8489f5d022240eecf4b2a293d5c706188eaade20';
+        IF _stored_hash IS NOT NULL AND _stored_hash <> '7015c5ec99731a4a1f5b09a5fa7a9bef4c4e80e967776b0f8b437610ca492ed9' THEN
+            RAISE EXCEPTION 'EffectiveSchemaHash mismatch: database has ''%'' but expected ''%''', _stored_hash, '7015c5ec99731a4a1f5b09a5fa7a9bef4c4e80e967776b0f8b437610ca492ed9';
         END IF;
     END IF;
 END $$;
@@ -27,7 +27,7 @@ BEGIN
     IF to_regclass('"dms"."EffectiveSchema"') IS NOT NULL THEN
         SELECT "EffectiveSchemaHash" INTO _stored_hash FROM "dms"."EffectiveSchema"
         WHERE "EffectiveSchemaSingletonId" = 1;
-        IF _stored_hash = '632f421a00bf86d5e99e9d2c8489f5d022240eecf4b2a293d5c706188eaade20' THEN
+        IF _stored_hash = '7015c5ec99731a4a1f5b09a5fa7a9bef4c4e80e967776b0f8b437610ca492ed9' THEN
             IF to_regclass('"dms"."DataStoreIdentity"') IS NULL THEN
                 RAISE EXCEPTION 'Completed dms.EffectiveSchema hash matches this DDL, but dms.DataStoreIdentity is missing. Drop and recreate the database before re-provisioning.';
             END IF;
@@ -38700,8 +38700,6 @@ CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministration_ContentVersion" ON "edfi
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationAssessmentBatteryPart_Ass_2f81256ce2" ON "edfi"."AssessmentAdministrationAssessmentBatteryPart" ("AssessmentBatteryPart_AssessmentBatteryPartName", "AssessmentBatteryPart_AssessmentIdentifier", "AssessmentBatteryPart_Namespace", "AssessmentBatteryPart_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationAssessmentBatteryPart_Ass_6a08acacdc" ON "edfi"."AssessmentAdministrationAssessmentBatteryPart" ("AssessmentBatteryPart_Namespace");
-
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationParticipation_AssessmentA_1a1a632f27" ON "edfi"."AssessmentAdministrationParticipation" ("AssessmentAdministration_AdministrationIdentifier", "AssessmentAdministration_AssessmentIdentifier", "AssessmentAdministration_Namespace", "AssessmentAdministration_AssigningEducationOrganizationId", "AssessmentAdministration_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentAdministrationParticipation_AssessmentA_be9dd67666" ON "edfi"."AssessmentAdministrationParticipation" ("AssessmentAdministration_Namespace");
@@ -38721,8 +38719,6 @@ CREATE INDEX IF NOT EXISTS "IX_AssessmentBatteryPart_Assessment_Namespace_Auth" 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentBatteryPart_ContentVersion" ON "edfi"."AssessmentBatteryPart" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentBatteryPartObjectiveAssessment_Objectiv_5d59d3ea25" ON "edfi"."AssessmentBatteryPartObjectiveAssessment" ("ObjectiveAssessment_AssessmentIdentifier", "ObjectiveAssessment_Namespace", "ObjectiveAssessment_IdentificationCode", "ObjectiveAssessment_DocumentId");
-
-CREATE INDEX IF NOT EXISTS "IX_AssessmentBatteryPartObjectiveAssessment_Objectiv_a3c7942e7c" ON "edfi"."AssessmentBatteryPartObjectiveAssessment" ("ObjectiveAssessment_Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_AssessmentIdentificationCode_AssessmentIdentifica_d001a0cb68" ON "edfi"."AssessmentIdentificationCode" ("AssessmentIdentificationSystemDescriptor_DescriptorId");
 
@@ -39334,8 +39330,6 @@ CREATE INDEX IF NOT EXISTS "IX_GraduationPlanRequiredAssessment_PerformanceLevel
 
 CREATE INDEX IF NOT EXISTS "IX_GraduationPlanRequiredAssessment_RequiredAssessme_7d666843e2" ON "edfi"."GraduationPlanRequiredAssessment" ("RequiredAssessmentAssessment_AssessmentIdentifier", "RequiredAssessmentAssessment_Namespace", "RequiredAssessmentAssessment_DocumentId");
 
-CREATE INDEX IF NOT EXISTS "IX_GraduationPlanRequiredAssessment_RequiredAssessme_8a46212213" ON "edfi"."GraduationPlanRequiredAssessment" ("RequiredAssessmentAssessment_Namespace");
-
 CREATE INDEX IF NOT EXISTS "IX_GraduationPlanRequiredAssessmentScore_AssessmentR_a87b789155" ON "edfi"."GraduationPlanRequiredAssessmentScore" ("AssessmentReportingMethodDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_GraduationPlanRequiredAssessmentScore_ParentColle_6344b15e70" ON "edfi"."GraduationPlanRequiredAssessmentScore" ("ParentCollectionItemId", "GraduationPlan_DocumentId");
@@ -39561,8 +39555,6 @@ CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessment_AssessmentIdentifier_Unified_
 CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessment_ContentVersion" ON "edfi"."ObjectiveAssessment" ("ContentVersion");
 
 CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessment_Namespace_Unified_Auth" ON "edfi"."ObjectiveAssessment" ("Namespace_Unified");
-
-CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessmentAssessmentItem_AssessmentItemA_2f06e55896" ON "edfi"."ObjectiveAssessmentAssessmentItem" ("AssessmentItemAssessmentItem_Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_ObjectiveAssessmentAssessmentItem_AssessmentItemA_44c119b160" ON "edfi"."ObjectiveAssessmentAssessmentItem" ("AssessmentItemAssessmentItem_AssessmentIdentifier", "AssessmentItemAssessmentItem_Namespace", "AssessmentItemAssessmentItem_IdentificationCode", "AssessmentItemAssessmentItem_DocumentId");
 
@@ -40238,8 +40230,6 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentItem_AssessmentItemResultDescrip
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentItem_ResponseIndicatorDescriptor_3ed8739479" ON "edfi"."StudentAssessmentItem" ("ResponseIndicatorDescriptor_DescriptorId");
 
-CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentItem_StudentAssessmentItemAssess_849300e440" ON "edfi"."StudentAssessmentItem" ("StudentAssessmentItemAssessmentItem_Namespace");
-
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentItem_StudentAssessmentItemAssess_a9250caf4a" ON "edfi"."StudentAssessmentItem" ("StudentAssessmentItemAssessmentItem_AssessmentIdentifier", "StudentAssessmentItemAssessmentItem_Namespace", "StudentAssessmentItemAssessmentItem_IdentificationCode", "StudentAssessmentItemAssessmentItem_DocumentId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentPerformanceLevel_AssessmentRepor_96f5ad07fb" ON "edfi"."StudentAssessmentPerformanceLevel" ("AssessmentReportingMethodDescriptor_DescriptorId");
@@ -40289,8 +40279,6 @@ CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentRegistrationBatteryPartAssociati
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentScoreResult_AssessmentReportingM_b46ee6ff10" ON "edfi"."StudentAssessmentScoreResult" ("AssessmentReportingMethodDescriptor_DescriptorId");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentScoreResult_ResultDatatypeTypeDe_fe863b08fd" ON "edfi"."StudentAssessmentScoreResult" ("ResultDatatypeTypeDescriptor_DescriptorId");
-
-CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentStudentObjectiveAssessment_Stude_1c600fbf33" ON "edfi"."StudentAssessmentStudentObjectiveAssessment" ("StudentObjectiveAssessmentObjectiveAssessment_Namespace");
 
 CREATE INDEX IF NOT EXISTS "IX_StudentAssessmentStudentObjectiveAssessment_Stude_81f75a4e4d" ON "edfi"."StudentAssessmentStudentObjectiveAssessment" ("StudentObjectiveAssessmentObjectiveAssessment_Assess_2cf36d20d7", "StudentObjectiveAssessmentObjectiveAssessment_Namespace", "StudentObjectiveAssessmentObjectiveAssessment_Identi_8450435919", "StudentObjectiveAssessmentObjectiveAssessment_DocumentId");
 
@@ -96310,7 +96298,7 @@ END $$;
 
 -- EffectiveSchema singleton insert-if-missing
 INSERT INTO "dms"."EffectiveSchema" ("EffectiveSchemaSingletonId", "ApiSchemaFormatVersion", "EffectiveSchemaHash", "ResourceKeyCount", "ResourceKeySeedHash")
-VALUES (1, '1.0.0', '632f421a00bf86d5e99e9d2c8489f5d022240eecf4b2a293d5c706188eaade20', 384, '\xF7816F4770F793D5E211735A3159B82645766F95178DC8CB784DC6B5CF0BCFB6'::bytea)
+VALUES (1, '1.0.0', '7015c5ec99731a4a1f5b09a5fa7a9bef4c4e80e967776b0f8b437610ca492ed9', 384, '\xF7816F4770F793D5E211735A3159B82645766F95178DC8CB784DC6B5CF0BCFB6'::bytea)
 ON CONFLICT ("EffectiveSchemaSingletonId") DO NOTHING;
 
 -- EffectiveSchema validation (ApiSchemaFormatVersion + ResourceKeyCount + ResourceKeySeedHash)
@@ -96338,10 +96326,10 @@ END $$;
 
 -- SchemaComponent seed inserts (insert-if-missing)
 INSERT INTO "dms"."SchemaComponent" ("EffectiveSchemaHash", "ProjectEndpointName", "ProjectName", "ProjectVersion", "IsExtensionProject")
-VALUES ('632f421a00bf86d5e99e9d2c8489f5d022240eecf4b2a293d5c706188eaade20', 'ed-fi', 'Ed-Fi', '5.2.0', false)
+VALUES ('7015c5ec99731a4a1f5b09a5fa7a9bef4c4e80e967776b0f8b437610ca492ed9', 'ed-fi', 'Ed-Fi', '5.2.0', false)
 ON CONFLICT ("EffectiveSchemaHash", "ProjectEndpointName") DO NOTHING;
 INSERT INTO "dms"."SchemaComponent" ("EffectiveSchemaHash", "ProjectEndpointName", "ProjectName", "ProjectVersion", "IsExtensionProject")
-VALUES ('632f421a00bf86d5e99e9d2c8489f5d022240eecf4b2a293d5c706188eaade20', 'tpdm', 'TPDM', '1.1.0', true)
+VALUES ('7015c5ec99731a4a1f5b09a5fa7a9bef4c4e80e967776b0f8b437610ca492ed9', 'tpdm', 'TPDM', '1.1.0', true)
 ON CONFLICT ("EffectiveSchemaHash", "ProjectEndpointName") DO NOTHING;
 
 -- SchemaComponent exact-match validation (count + content)
@@ -96351,14 +96339,14 @@ DECLARE
     _mismatched_count integer;
     _mismatched_names text;
 BEGIN
-    SELECT COUNT(*) INTO _actual_count FROM "dms"."SchemaComponent" WHERE "EffectiveSchemaHash" = '632f421a00bf86d5e99e9d2c8489f5d022240eecf4b2a293d5c706188eaade20';
+    SELECT COUNT(*) INTO _actual_count FROM "dms"."SchemaComponent" WHERE "EffectiveSchemaHash" = '7015c5ec99731a4a1f5b09a5fa7a9bef4c4e80e967776b0f8b437610ca492ed9';
     IF _actual_count <> 2 THEN
         RAISE EXCEPTION 'dms.SchemaComponent count mismatch: expected 2, found %', _actual_count;
     END IF;
 
     SELECT COUNT(*) INTO _mismatched_count
     FROM "dms"."SchemaComponent" sc
-    WHERE sc."EffectiveSchemaHash" = '632f421a00bf86d5e99e9d2c8489f5d022240eecf4b2a293d5c706188eaade20'
+    WHERE sc."EffectiveSchemaHash" = '7015c5ec99731a4a1f5b09a5fa7a9bef4c4e80e967776b0f8b437610ca492ed9'
     AND NOT EXISTS (
         SELECT 1 FROM (VALUES
             ('ed-fi', 'Ed-Fi', '5.2.0', false),
@@ -96374,7 +96362,7 @@ BEGIN
         FROM (
             SELECT sc."ProjectEndpointName" AS name
             FROM "dms"."SchemaComponent" sc
-            WHERE sc."EffectiveSchemaHash" = '632f421a00bf86d5e99e9d2c8489f5d022240eecf4b2a293d5c706188eaade20'
+            WHERE sc."EffectiveSchemaHash" = '7015c5ec99731a4a1f5b09a5fa7a9bef4c4e80e967776b0f8b437610ca492ed9'
             AND NOT EXISTS (
                 SELECT 1 FROM (VALUES
                     ('ed-fi', 'Ed-Fi', '5.2.0', false),

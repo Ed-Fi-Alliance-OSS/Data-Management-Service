@@ -41,8 +41,7 @@ public sealed class RelationalDocumentStoreRepository(
     IDocumentCacheReadAccelerationCoordinator readAccelerationCoordinator,
     IRelationalParameterConfigurator? relationalParameterConfigurator = null,
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
-        null,
-    ChangeQueryPageOrderingPolicy? orderingPolicy = null
+        null
 ) : IDocumentStoreRepository, IQueryHandler, IPartitionQueryHandler
 {
     private const int GetByIdRelationshipAuthorizationAuth1Index = 0;
@@ -97,24 +96,22 @@ public sealed class RelationalDocumentStoreRepository(
     private readonly IRelationshipAuthorizationProviderFailureExtractor _relationshipAuthorizationProviderFailureExtractor =
         relationshipAuthorizationProviderFailureExtractor
         ?? DefaultRelationshipAuthorizationProviderFailureExtractor.Instance;
-    private readonly ChangeQueryPageOrderingPolicy _orderingPolicy =
-        orderingPolicy ?? ChangeQueryPageOrderingPolicy.Default;
     private readonly IDocumentCacheReadAccelerationCoordinator _readAccelerationCoordinator =
         readAccelerationCoordinator ?? throw new ArgumentNullException(nameof(readAccelerationCoordinator));
     private readonly RelationshipAuthorizationPlanner _relationshipAuthorizationPlanner = new(
         edOrgAuthorizationSubjectSelector
     );
 
-    /// <param name="OrderingMode">
-    /// The ordering the page was planned with. Carried rather than re-resolved so the continuation
-    /// decision is made from the ordering page selection actually used.
-    /// </param>
+    /// <remarks>
+    /// Carries no anchor of its own. <see cref="PlannedQuery" /> was compiled against one and reports
+    /// it, and the selected-keyset result set this preparation leads to is shaped by that same value,
+    /// so a second copy here could name a different column than the one the keyset actually projects.
+    /// </remarks>
     private sealed record RelationalQueryPreparation(
         QualifiedResourceName Resource,
         ResourceReadPlan ReadPlan,
         PageKeysetSpec.Query PlannedQuery,
-        PageDocumentIdAuthorizationSpec? Authorization,
-        PageOrderingMode OrderingMode
+        PageDocumentIdAuthorizationSpec? Authorization
     );
 
     private abstract record RelationalQueryPreparationResult
@@ -1219,6 +1216,7 @@ public sealed class RelationalDocumentStoreRepository(
                         queryRequest.AuthorizationStrategyEvaluators,
                         queryRequest.ReadableProfileProjectionContext,
                         queryRequest.TraceId,
+                        queryRequest.PageOrderingMode,
                         queryRequest.AuthorizationContext,
                         queryRequest.ChangeVersionRange,
                         queryRequest.ResponseContentCoding,
@@ -1265,13 +1263,7 @@ public sealed class RelationalDocumentStoreRepository(
             throw new CustomViewAuthorizationValidationException(ex);
         }
 
-        return BuildQuerySuccess(
-            queryRequest,
-            preparation.Resource,
-            preparation.ReadPlan,
-            hydratedPage,
-            preparation.OrderingMode
-        );
+        return BuildQuerySuccess(queryRequest, preparation.Resource, preparation.ReadPlan, hydratedPage);
     }
 
     private async Task<RelationalQueryPreparationResult> PrepareQueryReadAsync(
@@ -1394,9 +1386,11 @@ public sealed class RelationalDocumentStoreRepository(
 
         PageKeysetSpec.Query? plannedQuery;
 
-        // Resolved once and reused for the selected-keyset boundary below, so the ordering the page was
-        // actually selected with is the ordering the continuation decision is made from.
-        var orderingMode = _orderingPolicy.ResolveForLiveQuery(queryRequest.ChangeVersionRange);
+        // Read off the request rather than resolved here, so the ordering the page is selected with is
+        // the ordering Core stamped on the token it will hand back. It is handed to the planner and
+        // then read back off the planned keyset wherever the selected-keyset boundary is interpreted,
+        // rather than carried alongside it, so the anchor and the column list cannot disagree.
+        PageOrderingMode orderingMode = queryRequest.PageOrderingMode;
 
         try
         {
@@ -1475,13 +1469,7 @@ public sealed class RelationalDocumentStoreRepository(
         }
 
         return new RelationalQueryPreparationResult.Prepared(
-            new RelationalQueryPreparation(
-                resource,
-                readPlan,
-                plannedQuery,
-                pageQueryAuthorization,
-                orderingMode
-            )
+            new RelationalQueryPreparation(resource, readPlan, plannedQuery, pageQueryAuthorization)
         );
     }
 
@@ -1515,6 +1503,7 @@ public sealed class RelationalDocumentStoreRepository(
                     partitionRequest.RequestedPartitionCount,
                     partitionRequest.MinimumPartitionSize,
                     partitionRequest.TraceId,
+                    partitionRequest.PageOrderingMode,
                     partitionRequest.AuthorizationContext,
                     partitionRequest.ChangeVersionRange,
                     partitionRequest.TenantKey
@@ -1722,7 +1711,8 @@ public sealed class RelationalDocumentStoreRepository(
                     out _,
                     comparisonOperatorResolver: null,
                     authorization: partitionAuthorization,
-                    changeVersionRange: partitionRequest.ChangeVersionRange
+                    changeVersionRange: partitionRequest.ChangeVersionRange,
+                    orderingMode: partitionRequest.PageOrderingMode
                 ) || plannedCandidates is null
             )
             {
@@ -1826,7 +1816,6 @@ public sealed class RelationalDocumentStoreRepository(
                     preparation.ReadPlan,
                     preparation.PlannedQuery,
                     queryRequest.Paging,
-                    preparation.OrderingMode,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -1848,13 +1837,8 @@ public sealed class RelationalDocumentStoreRepository(
                             "query candidate selection"
                         )
                         : null,
-                    candidatePage.ContinuationBoundary.SelectedMaximum
+                    candidatePage.HighestSelectedAnchor
                 )
-                {
-                    AllowsDocumentIdContinuation = candidatePage
-                        .ContinuationBoundary
-                        .AllowsDocumentIdContinuation,
-                }
             );
         }
 
@@ -1863,7 +1847,6 @@ public sealed class RelationalDocumentStoreRepository(
             fallbackCancellationToken =>
                 HydrateSelectedQueryCandidatePageAsync(
                     queryRequest,
-                    preparation.OrderingMode,
                     preparation.Resource,
                     preparation.ReadPlan,
                     preparation.Authorization?.CustomViewChecks,
@@ -1875,7 +1858,6 @@ public sealed class RelationalDocumentStoreRepository(
 
     private async Task<QueryResult> HydrateSelectedQueryCandidatePageAsync(
         IQueryRequest queryRequest,
-        PageOrderingMode orderingMode,
         QualifiedResourceName resource,
         ResourceReadPlan readPlan,
         IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck>? customViewChecks,
@@ -1910,7 +1892,7 @@ public sealed class RelationalDocumentStoreRepository(
         hydratedPage = hydratedPage with
         {
             TotalCount = candidatePage.TotalCount,
-            HighestSelectedDocumentId = candidatePage.ContinuationBoundary.SelectedMaximum,
+            HighestSelectedAnchor = candidatePage.HighestSelectedAnchor,
         };
 
         if (!SelectedQueryCandidatePageStillMatches(candidatePage, hydratedPage.DocumentMetadata))
@@ -1918,7 +1900,7 @@ public sealed class RelationalDocumentStoreRepository(
             return await QueryDocumentsRelationalAsync(queryRequest, cancellationToken).ConfigureAwait(false);
         }
 
-        return BuildQuerySuccess(queryRequest, resource, readPlan, hydratedPage, orderingMode);
+        return BuildQuerySuccess(queryRequest, resource, readPlan, hydratedPage);
     }
 
     private static bool SelectedQueryCandidatePageStillMatches(
@@ -1968,7 +1950,6 @@ public sealed class RelationalDocumentStoreRepository(
         ResourceReadPlan readPlan,
         PageKeysetSpec.Query plannedQuery,
         CollectionPaging paging,
-        PageOrderingMode orderingMode,
         CancellationToken cancellationToken
     )
     {
@@ -1983,7 +1964,10 @@ public sealed class RelationalDocumentStoreRepository(
                         reader,
                         plannedQuery.Plan.TotalCountSql is not null,
                         paging,
-                        orderingMode,
+                        // Asked of the same predicate the batch above emitted its column list from,
+                        // rather than re-derived from the keyset's anchor here. Both answers would be
+                        // the same today; only this one still is if that predicate ever narrows.
+                        HydrationBatchBuilder.CarriesSelectedAnchor(plannedQuery),
                         resourceKeyId,
                         ct
                     ),
@@ -2033,17 +2017,21 @@ public sealed class RelationalDocumentStoreRepository(
         IRelationalCommandReader reader,
         bool hasTotalCount,
         CollectionPaging paging,
-        PageOrderingMode orderingMode,
+        bool carriesSelectedAnchor,
         short resourceKeyId,
         CancellationToken cancellationToken
     )
     {
         ArgumentNullException.ThrowIfNull(reader);
 
-        // The keyset materialization returns the ids it selected, ahead of every other result set. The
+        // The keyset materialization returns the keys it selected, ahead of every other result set. The
         // boundary is taken from them rather than from the candidates below, so it stays the keys
         // selection chose even when a row is deleted before the metadata select reaches it.
-        long? selectedMaximum = await ReadSelectedDocumentIdMaximumAsync(reader, cancellationToken)
+        long? selectedMaximum = await ReadSelectedAnchorMaximumAsync(
+                reader,
+                carriesSelectedAnchor,
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         if (!await reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
@@ -2086,35 +2074,74 @@ public sealed class RelationalDocumentStoreRepository(
         return new DocumentCacheReadAccelerationCandidatePage(
             candidates,
             totalCount,
-            PageContinuationBoundary.For(paging, orderingMode, selectedMaximum),
+            selectedMaximum,
             IncludesTotalCount: paging.IncludesTotalCount
         );
     }
 
     /// <summary>
-    /// Reads the selected page keyset ids from the current result set and returns the maximum, or
-    /// <see langword="null"/> when the selection was empty. Taken across every returned row because
-    /// neither <c>RETURNING</c> nor <c>OUTPUT</c> promises an order.
+    /// Reads the selected page keyset from the current result set and returns the maximum value of its
+    /// continuation anchor, or <see langword="null"/> when the selection was empty. Taken across every
+    /// returned row because neither <c>RETURNING</c> nor <c>OUTPUT</c> promises an order.
     /// </summary>
-    private static async Task<long?> ReadSelectedDocumentIdMaximumAsync(
+    /// <remarks>
+    /// A <c>ContentVersion</c>-anchored selection projects the anchor beside the ids. This is the
+    /// read-acceleration twin of the hydration reader, over the candidate-metadata batch rather than the
+    /// hydration batch, and it reports a shape disagreement the same way that twin does: a
+    /// materialization that stopped carrying the anchor is a defect in this code, and naming it beats a
+    /// bare ordinal fault raised from inside the row loop.
+    /// <para>
+    /// The anchor is located by name, from the same constant the batch builder projected it under, so
+    /// the two cannot disagree about which column it is. <c>DocumentId</c> keeps its fixed ordinal: it
+    /// is the first column of every keyset result set, anchored or not.
+    /// </para>
+    /// </remarks>
+    private static async Task<long?> ReadSelectedAnchorMaximumAsync(
         IRelationalCommandReader reader,
+        bool carriesAnchorColumn,
         CancellationToken cancellationToken
     )
     {
+        var anchorOrdinal = SelectedDocumentIdOrdinal;
+
+        if (carriesAnchorColumn)
+        {
+            try
+            {
+                anchorOrdinal = reader.GetOrdinal(HydrationSqlConventions.SelectedAnchorColumnName);
+            }
+            catch (IndexOutOfRangeException ex)
+            {
+                throw new InvalidOperationException(
+                    "Expected the selected page keyset result set to carry the continuation anchor as its "
+                        + $"'{HydrationSqlConventions.SelectedAnchorColumnName}' column, but it carries no "
+                        + "such column. The materialization SQL and this reader disagree about the keyset "
+                        + "shape.",
+                    ex
+                );
+            }
+        }
+
         long? selectedMaximum = null;
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            var selectedDocumentId = reader.GetFieldValue<long>(0);
+            var selectedAnchor = reader.GetFieldValue<long>(anchorOrdinal);
 
-            if (selectedMaximum is null || selectedDocumentId > selectedMaximum)
+            if (selectedMaximum is null || selectedAnchor > selectedMaximum)
             {
-                selectedMaximum = selectedDocumentId;
+                selectedMaximum = selectedAnchor;
             }
         }
 
         return selectedMaximum;
     }
+
+    /// <summary>
+    /// <c>DocumentId</c>'s ordinal in the selected page keyset result set. Always first, on an anchored
+    /// page and an unanchored one alike; the anchor beside it is located by name instead.
+    /// </summary>
+    private const int SelectedDocumentIdOrdinal = 0;
 
     private static async Task<long> ReadCandidatePageTotalCountAsync(
         IRelationalCommandReader reader,
@@ -5886,8 +5913,7 @@ public sealed class RelationalDocumentStoreRepository(
         IQueryRequest relationalQueryRequest,
         QualifiedResourceName resource,
         ResourceReadPlan readPlan,
-        HydratedPage hydratedPage,
-        PageOrderingMode orderingMode
+        HydratedPage hydratedPage
     )
     {
         ArgumentNullException.ThrowIfNull(relationalQueryRequest);
@@ -5935,14 +5961,9 @@ public sealed class RelationalDocumentStoreRepository(
         }
 
         // The selected-keyset boundary passes through unchanged, including when the body above came back
-        // empty: it describes what page selection chose, not what survived to hydration. Whether it may
-        // anchor a continuation is a separate fact, decided from the ordering the page was selected with.
-        var continuationBoundary = PageContinuationBoundary.For(
-            relationalQueryRequest.Paging,
-            orderingMode,
-            hydratedPage.HighestSelectedDocumentId
-        );
-
+        // empty: it describes what page selection chose, not what survived to hydration. It is already
+        // expressed in the key the page was ordered by, because selection carried that key out with the
+        // ids, so there is nothing further to qualify it with here.
         return new QueryResult.QuerySuccess(
             edfiDocs,
             relationalQueryRequest.Paging.IncludesTotalCount
@@ -5952,11 +5973,8 @@ public sealed class RelationalDocumentStoreRepository(
                     "query hydration"
                 )
                 : null,
-            continuationBoundary.SelectedMaximum
-        )
-        {
-            AllowsDocumentIdContinuation = continuationBoundary.AllowsDocumentIdContinuation,
-        };
+            hydratedPage.HighestSelectedAnchor
+        );
     }
 
     private static WritePrecondition NormalizeWritePrecondition(WritePrecondition? writePrecondition) =>

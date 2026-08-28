@@ -3807,8 +3807,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
 
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
         success.EdfiDocs.Should().BeEmpty();
-        success.HighestSelectedDocumentId.Should().Be(678L);
-        success.AllowsDocumentIdContinuation.Should().BeTrue();
+        success.HighestSelectedAnchor.Should().Be(678L);
         readAccelerationCoordinator.SelectedQueryCandidatePage.Should().BeNull();
     }
 
@@ -3951,8 +3950,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
         success.EdfiDocs.Should().HaveCount(2);
         success.TotalCount.Should().BeNull();
-        success.HighestSelectedDocumentId.Should().Be(678L);
-        success.AllowsDocumentIdContinuation.Should().BeTrue();
+        success.HighestSelectedAnchor.Should().Be(678L);
         capturedSelectedPage.DocumentIds.Should().Equal(345L, 678L);
         readAccelerationCoordinator.QueryAttempts.Should().Be(1);
         readAccelerationCoordinator.SelectedQueryRequest.Should().NotBeNull();
@@ -3980,10 +3978,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
                         ),
                     ],
                     TotalCount: null,
-                    ContinuationBoundary: new PageContinuationBoundary(
-                        678L,
-                        AllowsDocumentIdContinuation: true
-                    ),
+                    HighestSelectedAnchor: 678L,
                     IncludesTotalCount: false
                 )
             );
@@ -4252,7 +4247,8 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
                 Offset: 1,
                 TotalCount: true,
                 MaximumPageSize: 500
-            )
+            ),
+            pageOrderingMode: PageOrderingMode.ContentVersion
         );
         var readAccelerationCoordinator = new RecordingReadAccelerationCoordinator();
         RelationalCommand candidateSelectionCommand = null!;
@@ -4324,19 +4320,27 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
                     CancellationToken cancellationToken
                 ) =>
                 {
-                    DocumentMetadataRow selectedMetadata = command.CommandText.Contains(
+                    bool contentVersionOrdered = command.CommandText.Contains(
                         "ORDER BY r.\"ContentVersion\" ASC",
                         StringComparison.Ordinal
-                    )
+                    );
+                    DocumentMetadataRow selectedMetadata = contentVersionOrdered
                         ? contentVersionSelectedMetadata
                         : documentIdSelectedMetadata;
 
                     return readAsync(
                         new InMemoryRelationalCommandReader([
+                            // A ContentVersion-anchored selection returns the anchor alongside the id,
+                            // which is the shape the materialization SQL emits for that anchor.
                             InMemoryRelationalResultSet.Create(
-                                RelationalAccessTestData.CreateRow(
-                                    ("DocumentId", selectedMetadata.DocumentId)
-                                )
+                                contentVersionOrdered
+                                    ? RelationalAccessTestData.CreateRow(
+                                        ("DocumentId", selectedMetadata.DocumentId),
+                                        ("ContentVersion", selectedMetadata.ContentVersion)
+                                    )
+                                    : RelationalAccessTestData.CreateRow(
+                                        ("DocumentId", selectedMetadata.DocumentId)
+                                    )
                             ),
                             InMemoryRelationalResultSet.Create(
                                 RelationalAccessTestData.CreateRow(("TotalCount", 3L))
@@ -4375,19 +4379,91 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             .Equal(contentVersionSelectedMetadata.DocumentId);
         authorizedCandidatePage.IncludesTotalCount.Should().BeTrue();
         authorizedCandidatePage.TotalCount.Should().Be(3);
+        // The boundary is the anchor the selection was ordered by, so it is this page's ContentVersion
+        // and not its DocumentId. The two are different values here on purpose.
         authorizedCandidatePage
-            .ContinuationBoundary.SelectedMaximum.Should()
-            .Be(contentVersionSelectedMetadata.DocumentId);
-        authorizedCandidatePage.ContinuationBoundary.AllowsDocumentIdContinuation.Should().BeFalse();
+            .HighestSelectedAnchor.Should()
+            .Be(contentVersionSelectedMetadata.ContentVersion);
 
         var success = acceleratedResult.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
         success.TotalCount.Should().Be(3);
-        success.HighestSelectedDocumentId.Should().Be(contentVersionSelectedMetadata.DocumentId);
-        success.AllowsDocumentIdContinuation.Should().BeFalse();
+        success.HighestSelectedAnchor.Should().Be(contentVersionSelectedMetadata.ContentVersion);
         success.EdfiDocs.Single()!["id"]!
             .GetValue<string>()
             .Should()
             .Be(contentVersionSelectedDocumentUuid.Value.ToString());
+    }
+
+    /// <summary>
+    /// The read-acceleration twin of the hydration reader's keyset-shape guard. A ContentVersion-anchored
+    /// selection whose result set carries no anchor column is a defect in this code rather than anything
+    /// a client did, so it is named as the disagreement it is instead of surfacing as a bare ordinal
+    /// fault raised from inside the row loop.
+    /// </summary>
+    [Test]
+    public async Task It_reports_a_keyset_shape_disagreement_when_an_anchored_candidate_selection_omits_the_anchor()
+    {
+        var mappingSet = CreateChangeVersionQuerySupportedMappingSet(_schoolResourceInfo);
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var selectedMetadata = CreateDocumentMetadataRow(
+            new DocumentUuid(Guid.Parse("efefefef-1111-2222-3333-fefefefefefe")),
+            300L,
+            20L,
+            resourceKeyId: mappingSet.ResourceKeyIdByResource[resource]
+        );
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            changeVersionRange: new ChangeVersionRange(5L, 30L),
+            pageOrderingMode: PageOrderingMode.ContentVersion
+        );
+
+        UseReadAccelerationCoordinator(new RecordingReadAccelerationCoordinator());
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<
+                        Func<
+                            IRelationalCommandReader,
+                            CancellationToken,
+                            Task<DocumentCacheReadAccelerationCandidatePage>
+                        >
+                    >._,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsLazily(
+                (
+                    RelationalCommand _,
+                    Func<
+                        IRelationalCommandReader,
+                        CancellationToken,
+                        Task<DocumentCacheReadAccelerationCandidatePage>
+                    > readAsync,
+                    CancellationToken cancellationToken
+                ) =>
+                    readAsync(
+                        // DocumentId alone, which is the shape a DocumentId-anchored selection emits,
+                        // under a request that resolved the ContentVersion anchor. Reading ordinal 1
+                        // blindly would have failed here without naming what disagreed.
+                        new InMemoryRelationalCommandReader([
+                            InMemoryRelationalResultSet.Create(
+                                RelationalAccessTestData.CreateRow(
+                                    ("DocumentId", selectedMetadata.DocumentId)
+                                )
+                            ),
+                        ]),
+                        cancellationToken
+                    )
+            );
+
+        var act = async () => await _sut.QueryDocuments(queryRequest);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*disagree about the keyset shape*");
     }
 
     [Test]
@@ -4958,7 +5034,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             (345L, "Lincoln High")
         ) with
         {
-            HighestSelectedDocumentId = 2509L,
+            HighestSelectedAnchor = 2509L,
         };
 
         A.CallTo(() =>
@@ -4981,7 +5057,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.QueryDocuments(queryRequest);
 
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
-        success.HighestSelectedDocumentId.Should().Be(2509L);
+        success.HighestSelectedAnchor.Should().Be(2509L);
         success.EdfiDocs.Should().ContainSingle();
     }
 
@@ -5004,7 +5080,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         var queryRequest = CreateQueryRequest(mappingSet, [], totalCount: false);
         var hydratedPage = new HydratedPage(null, [], [new HydratedTableRows(readPlan.Model.Root, [])], [])
         {
-            HighestSelectedDocumentId = 2509L,
+            HighestSelectedAnchor = 2509L,
         };
 
         A.CallTo(() =>
@@ -5022,7 +5098,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.QueryDocuments(queryRequest);
 
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
-        success.HighestSelectedDocumentId.Should().Be(2509L);
+        success.HighestSelectedAnchor.Should().Be(2509L);
         success.EdfiDocs.Should().BeEmpty();
 
         // Selection ran and chose a keyset; only hydration came back empty. Reporting this as a skipped
@@ -5030,11 +5106,13 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         success.SelectionSkipped.Should().BeFalse();
     }
 
-    // A traditional page over a max-bearing change-version window is ordered by ContentVersion, so its
-    // highest selected DocumentId is a real selected maximum that nevertheless does not describe where
-    // the page ended. The maximum is reported as selected; only continuation eligibility is withheld.
+    // A traditional page over a max-bearing window anchors on ContentVersion, and the boundary it
+    // reports is a ContentVersion — 875, inside the request's window, not a DocumentId. Nothing is
+    // withheld from such a page any more: it reports its anchor like any other, and Core stamps that
+    // anchor on the continuation token it hands out. The anchor arrives on the request, so it is
+    // supplied alongside the window Core resolved it from rather than inferred from that window here.
     [Test]
-    public async Task It_keeps_the_real_boundary_but_disallows_continuation_for_a_windowed_traditional_page()
+    public async Task It_reports_a_content_version_boundary_for_a_windowed_traditional_page()
     {
         var mappingSet = CreateQuerySupportedMappingSet(
             _schoolResourceInfo,
@@ -5050,22 +5128,24 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             mappingSet,
             [],
             totalCount: false,
-            changeVersionRange: new ChangeVersionRange(null, 900L)
+            changeVersionRange: new ChangeVersionRange(null, 900L),
+            pageOrderingMode: PageOrderingMode.ContentVersion
         );
 
-        StubHydrationWithBoundary(readPlan, 2509L);
+        StubHydrationWithBoundary(readPlan, 875L);
 
         var result = await _sut.QueryDocuments(queryRequest);
 
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
-        success.HighestSelectedDocumentId.Should().Be(2509L);
-        success.AllowsDocumentIdContinuation.Should().BeFalse();
+        success.HighestSelectedAnchor.Should().Be(875L);
     }
 
-    // The legacy ordering switch keeps a windowed traditional page ordered by DocumentId, so the same
-    // request really can anchor a continuation. Eligibility follows the effective ordering, not the filter.
+    // A deployment running with the legacy ordering switch resolves a DocumentId anchor even for a
+    // max-bearing window, so the same request's boundary really is a DocumentId. The repository reads
+    // the anchor off the request, which is what lets this case exist at all: the boundary's units follow
+    // the ordering the page was selected with, never the filter the request carried.
     [Test]
-    public async Task It_allows_continuation_for_a_windowed_traditional_page_under_legacy_document_id_ordering()
+    public async Task It_reports_a_document_id_boundary_for_a_windowed_traditional_page_anchored_on_the_document_id()
     {
         var mappingSet = CreateQuerySupportedMappingSet(
             _schoolResourceInfo,
@@ -5081,19 +5161,16 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             mappingSet,
             [],
             totalCount: false,
-            changeVersionRange: new ChangeVersionRange(null, 900L)
+            changeVersionRange: new ChangeVersionRange(null, 900L),
+            pageOrderingMode: PageOrderingMode.DocumentId
         );
 
-        _sut = CreateRepositoryWithOrderingPolicy(
-            new ChangeQueryPageOrderingPolicy(useLegacyDocumentIdOrdering: true)
-        );
         StubHydrationWithBoundary(readPlan, 2509L);
 
         var result = await _sut.QueryDocuments(queryRequest);
 
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
-        success.HighestSelectedDocumentId.Should().Be(2509L);
-        success.AllowsDocumentIdContinuation.Should().BeTrue();
+        success.HighestSelectedAnchor.Should().Be(2509L);
     }
 
     [Test]
@@ -5122,8 +5199,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.QueryDocuments(queryRequest);
 
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
-        success.HighestSelectedDocumentId.Should().Be(2509L);
-        success.AllowsDocumentIdContinuation.Should().BeTrue();
+        success.HighestSelectedAnchor.Should().Be(2509L);
     }
 
     /// <summary>
@@ -5159,7 +5235,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
 
         readAccelerationCoordinator.QueryAttempts.Should().Be(0);
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
-        success.HighestSelectedDocumentId.Should().Be(2509L);
+        success.HighestSelectedAnchor.Should().Be(2509L);
     }
 
     /// <summary>
@@ -5190,33 +5266,11 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         readAccelerationCoordinator.QueryAttempts.Should().Be(1);
     }
 
-    private RelationalDocumentStoreRepository CreateRepositoryWithOrderingPolicy(
-        ChangeQueryPageOrderingPolicy orderingPolicy
-    ) =>
-        new(
-            _logger,
-            _writeExecutor,
-            _currentEtagPreconditionChecker,
-            new ThrowingDescriptorWriteHandler(),
-            _descriptorReadHandler,
-            _referenceResolver,
-            _documentHydrator,
-            _readTargetLookupService,
-            _readMaterializer,
-            _readableProfileProjector,
-            _writeExceptionClassifier,
-            _deleteConstraintResolver,
-            _writeSessionFactory,
-            CreateAuthorizationSubjectSelector(),
-            _singleRecordRelationshipAuthorizationExecutor,
-            _namespaceAuthorizationExecutor,
-            _customViewAuthorizationExecutor,
-            _commandExecutor,
-            readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance,
-            orderingPolicy: orderingPolicy
-        );
-
-    private void StubHydrationWithBoundary(ResourceReadPlan readPlan, long highestSelectedDocumentId)
+    /// <param name="highestSelectedAnchor">
+    /// The boundary hydration reports. Not a DocumentId in particular: its units are whichever anchor
+    /// the request resolved, and the repository passes it through without reinterpreting it.
+    /// </param>
+    private void StubHydrationWithBoundary(ResourceReadPlan readPlan, long highestSelectedAnchor)
     {
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
@@ -5229,7 +5283,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             .Returns(
                 new HydratedPage(null, [], [new HydratedTableRows(readPlan.Model.Root, [])], [])
                 {
-                    HighestSelectedDocumentId = highestSelectedDocumentId,
+                    HighestSelectedAnchor = highestSelectedAnchor,
                 }
             );
         A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
@@ -5277,7 +5331,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.QueryDocuments(queryRequest);
 
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
-        success.HighestSelectedDocumentId.Should().BeNull();
+        success.HighestSelectedAnchor.Should().BeNull();
     }
 
     [TestCase("1.5")]
@@ -15089,7 +15143,8 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         IReadOnlyList<string>? namespacePrefixes = null,
         ChangeVersionRange? changeVersionRange = null,
         PaginationParameters? paginationParameters = null,
-        CollectionPaging? paging = null
+        CollectionPaging? paging = null,
+        PageOrderingMode pageOrderingMode = PageOrderingMode.DocumentId
     )
     {
         authorizationStrategyEvaluators ??= [];
@@ -15106,6 +15161,13 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         var queryRequest = A.Fake<IQueryRequest>();
         A.CallTo(() => queryRequest.ChangeVersionRange)
             .Returns(changeVersionRange ?? ChangeVersionRange.None);
+
+        // Stubbed explicitly rather than left to the fake's default. The anchor now arrives on the
+        // request instead of being resolved from the window inside the repository, and DocumentId is
+        // the enum's zero value: an unstubbed property would hand every test the DocumentId anchor
+        // while reading as though the window decided it, so a ContentVersion expectation would fail
+        // loudly but a DocumentId one would pass without the mode ever being supplied.
+        A.CallTo(() => queryRequest.PageOrderingMode).Returns(pageOrderingMode);
         A.CallTo(() => queryRequest.ResourceInfo).Returns(resourceInfo);
         A.CallTo(() => queryRequest.MappingSet).Returns(mappingSet);
         A.CallTo(() => queryRequest.QueryElements).Returns(queryElements);

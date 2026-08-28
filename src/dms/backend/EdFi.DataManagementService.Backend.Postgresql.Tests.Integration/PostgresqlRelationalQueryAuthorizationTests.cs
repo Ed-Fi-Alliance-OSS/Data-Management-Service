@@ -1467,6 +1467,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
                 )
             ),
             TraceId: new TraceId($"{resourceName}-authorization-query"),
+            PageOrderingMode: PageOrderingMode.DocumentId,
             ChangeVersionRange: changeVersionRange
         );
 

@@ -7,6 +7,7 @@ using System.Data;
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Npgsql;
@@ -566,7 +567,8 @@ public class Given_HydrationBatchBuilder_With_Pgsql_Single_Document_Fast_Path
         );
         var keyset = new PageKeysetSpec.Query(
             queryPlan,
-            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L }
+            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L },
+            PageOrderingMode.DocumentId
         );
 
         var batch = HydrationBatchBuilder.Build(
@@ -598,7 +600,8 @@ public class Given_HydrationBatchBuilder_With_Pgsql_Single_Document_Fast_Path
         );
         var keyset = new PageKeysetSpec.Query(
             queryPlan,
-            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L }
+            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L },
+            PageOrderingMode.DocumentId
         );
         var readPlan = BuildTestReadPlan(SqlDialect.Pgsql, includeSingleDocumentSql: true);
 
@@ -1014,7 +1017,8 @@ public class Given_HydrationBatchBuilder_With_Query_Keyset
         );
         var keyset = new PageKeysetSpec.Query(
             queryPlan,
-            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L }
+            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L },
+            PageOrderingMode.DocumentId
         );
 
         _pgsqlBatch = HydrationBatchBuilder.Build(plan, keyset, SqlDialect.Pgsql);
@@ -1091,7 +1095,8 @@ public class Given_HydrationBatchBuilder_With_Compiled_Query_Keyset
             );
             var keyset = new PageKeysetSpec.Query(
                 compiledQueryPlan,
-                new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L }
+                new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L },
+                PageOrderingMode.DocumentId
             );
 
             var batch = HydrationBatchBuilder.Build(plan, keyset, dialect);
@@ -1243,7 +1248,8 @@ public class Given_HydrationBatchBuilder_With_Zero_Limit_Query_Keyset
                 PageParametersInOrder: [new QuerySqlParameter(QuerySqlParameterRole.Offset, "offset")],
                 TotalCountParametersInOrder: null
             ),
-            new Dictionary<string, object?> { ["offset"] = 0L }
+            new Dictionary<string, object?> { ["offset"] = 0L },
+            PageOrderingMode.DocumentId
         );
 
         var batch = HydrationBatchBuilder.Build(plan, keyset, SqlDialect.Mssql);
@@ -1275,7 +1281,8 @@ public class Given_HydrationBatchBuilder_With_Zero_Limit_Query_Keyset
 
         return new PageKeysetSpec.Query(
             compiledQueryPlan,
-            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = limitValue }
+            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = limitValue },
+            PageOrderingMode.DocumentId
         );
     }
 
@@ -1307,7 +1314,8 @@ public class Given_HydrationBatchBuilder_With_Query_Keyset_Without_TotalCount
         );
         var keyset = new PageKeysetSpec.Query(
             queryPlan,
-            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L }
+            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L },
+            PageOrderingMode.DocumentId
         );
 
         _pgsqlBatch = HydrationBatchBuilder.Build(plan, keyset, SqlDialect.Pgsql);
@@ -1329,7 +1337,8 @@ public class Given_HydrationBatchBuilder_AddParameters_With_Query_Keyset
         var command = new RecordingDbCommand(new DataTable().CreateDataReader());
         var keyset = new PageKeysetSpec.Query(
             CreateQueryPlan(totalCountParameterNames: null),
-            new Dictionary<string, object?> { ["offset"] = 0L }
+            new Dictionary<string, object?> { ["offset"] = 0L },
+            PageOrderingMode.DocumentId
         );
 
         var act = () => HydrationBatchBuilder.AddParameters(command, keyset);
@@ -1345,7 +1354,8 @@ public class Given_HydrationBatchBuilder_AddParameters_With_Query_Keyset
         var command = new RecordingDbCommand(new DataTable().CreateDataReader());
         var keyset = new PageKeysetSpec.Query(
             CreateQueryPlan(totalCountParameterNames: ["schoolYear"]),
-            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L }
+            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L },
+            PageOrderingMode.DocumentId
         );
 
         var act = () => HydrationBatchBuilder.AddParameters(command, keyset);
@@ -1369,7 +1379,8 @@ public class Given_HydrationBatchBuilder_AddParameters_With_Query_Keyset
                 ["schoolYear"] = null,
                 ["offset"] = 0L,
                 ["limit"] = 25L,
-            }
+            },
+            PageOrderingMode.DocumentId
         );
 
         HydrationBatchBuilder.AddParameters(command, keyset);

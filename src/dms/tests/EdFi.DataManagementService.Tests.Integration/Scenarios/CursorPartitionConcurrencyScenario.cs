@@ -335,8 +335,10 @@ internal static class CursorPartitionConcurrencyScenario
         // assumed: every partition but the last names a finite upper bound, and the last does not.
         for (var index = 0; index < pageTokens.Count; index++)
         {
+            // The anchor is discarded: what these assertions rest on is which partitions are bounded
+            // above, and that is a property of the range whichever column the range is expressed in.
             PageTokenCodec
-                .TryDecode(pageTokens[index], out CursorRange? range)
+                .TryDecode(pageTokens[index], out CursorRange? range, out _)
                 .Should()
                 .BeTrue("a token the partitions response handed out must decode through the codec");
 

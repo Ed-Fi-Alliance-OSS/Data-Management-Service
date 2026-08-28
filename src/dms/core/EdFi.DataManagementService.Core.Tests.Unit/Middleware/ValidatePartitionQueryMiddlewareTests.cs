@@ -99,7 +99,8 @@ public class ValidatePartitionQueryMiddlewareTests
         IPipelineStep middleware = new ValidatePartitionQueryMiddleware(
             NullLogger.Instance,
             DefaultPartitionCount,
-            collectionPagingTelemetry ?? NoOpCollectionPagingTelemetry.Instance
+            collectionPagingTelemetry ?? NoOpCollectionPagingTelemetry.Instance,
+            _useLegacyDocumentIdOrderingForChangeQueries: false
         );
 
         await middleware.Execute(requestInfo, NullNext);
@@ -138,6 +139,12 @@ public class ValidatePartitionQueryMiddlewareTests
             .BeNull("a rejected request must not carry a count a handler could act on");
         requestInfo.QueryElements.Should().BeEmpty();
         requestInfo.ChangeVersionRange.Should().Be(ChangeVersionRange.None);
+        requestInfo
+            .PageOrderingMode.Should()
+            .Be(
+                PageOrderingMode.DocumentId,
+                "a rejected request must not carry a boundary anchor a handler could act on"
+            );
         requestInfo
             .CollectionPaging.Should()
             .Be(No.CollectionPaging, "a partitions request has no page in any outcome");
@@ -379,6 +386,59 @@ public class ValidatePartitionQueryMiddlewareTests
             requestInfo.RequestedPartitionCount.Should().Be(4);
         }
 
+        /// <summary>
+        /// The boundary anchor, resolved by the same rule GET-many resolves its page anchor by: a
+        /// max-bearing window balances boundaries by ContentVersion, every other window shape keeps
+        /// DocumentId. Resolved from the parsed window rather than from parameter presence, so a
+        /// present-but-blank maximum is not max-bearing.
+        /// </summary>
+        [TestCase("maxChangeVersion", "200", PageOrderingMode.ContentVersion, TestName = "max only")]
+        [TestCase("minChangeVersion", "100", PageOrderingMode.DocumentId, TestName = "min only")]
+        [TestCase("maxChangeVersion", "", PageOrderingMode.DocumentId, TestName = "blank maximum")]
+        [TestCase("schoolId", "255901", PageOrderingMode.DocumentId, TestName = "no window")]
+        public async Task It_resolves_the_boundary_anchor_from_the_window(
+            string parameter,
+            string value,
+            PageOrderingMode expected
+        )
+        {
+            RequestInfo requestInfo = await Execute((parameter, value));
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(expected);
+        }
+
+        [Test]
+        public async Task It_anchors_a_min_and_max_window_on_the_content_version()
+        {
+            RequestInfo requestInfo = await Execute(("minChangeVersion", "100"), ("maxChangeVersion", "200"));
+
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.ContentVersion);
+        }
+
+        /// <summary>
+        /// The kill switch reaches partition anchoring too, which is what keeps the partition tokens a
+        /// legacy deployment issues replayable against it.
+        /// </summary>
+        [Test]
+        public async Task It_anchors_a_max_bearing_window_on_the_document_id_under_legacy_ordering()
+        {
+            RequestInfo requestInfo = RequestInfoFor(
+                ("minChangeVersion", "100"),
+                ("maxChangeVersion", "200")
+            );
+
+            await new ValidatePartitionQueryMiddleware(
+                NullLogger.Instance,
+                DefaultPartitionCount,
+                NoOpCollectionPagingTelemetry.Instance,
+                _useLegacyDocumentIdOrderingForChangeQueries: true
+            ).Execute(requestInfo, NullNext);
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+        }
+
         // A partitions request has no page, so nothing on this pipeline may leave a paging choice a
         // handler could act on.
         [Test]
@@ -398,7 +458,8 @@ public class ValidatePartitionQueryMiddlewareTests
             await new ValidatePartitionQueryMiddleware(
                 NullLogger.Instance,
                 DefaultPartitionCount,
-                NoOpCollectionPagingTelemetry.Instance
+                NoOpCollectionPagingTelemetry.Instance,
+                _useLegacyDocumentIdOrderingForChangeQueries: false
             ).Execute(
                 requestInfo,
                 () =>
@@ -439,7 +500,8 @@ public class ValidatePartitionQueryMiddlewareTests
             await new ValidatePartitionQueryMiddleware(
                 NullLogger.Instance,
                 DefaultPartitionCount,
-                telemetry
+                telemetry,
+                _useLegacyDocumentIdOrderingForChangeQueries: false
             ).Execute(requestInfo, NullNext);
 
             requestInfo.FrontendResponse.StatusCode.Should().Be(400);

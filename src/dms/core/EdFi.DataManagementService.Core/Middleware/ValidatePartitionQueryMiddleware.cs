@@ -24,6 +24,10 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// rather than read here, so the pipeline that serves partitions is the only place the default enters
 /// request handling.
 /// </param>
+/// <param name="_useLegacyDocumentIdOrderingForChangeQueries">
+/// The deployment-wide kill switch that restores <c>DocumentId</c> boundary ordering for every
+/// change-version window. Supplied the same way and for the same reason as the count.
+/// </param>
 /// <remarks>
 /// The GET-many counterpart of this step validates paging first, because a paging fault is the first
 /// thing wrong with a page request. This operation has no page, so the order is the change-version
@@ -43,9 +47,19 @@ namespace EdFi.DataManagementService.Core.Middleware;
 internal class ValidatePartitionQueryMiddleware(
     ILogger _logger,
     int _defaultPartitionCount,
-    ICollectionPagingTelemetry _collectionPagingTelemetry
+    ICollectionPagingTelemetry _collectionPagingTelemetry,
+    bool _useLegacyDocumentIdOrderingForChangeQueries
 ) : IPipelineStep
 {
+    /// <summary>
+    /// Resolves the boundary anchor from the request's change-version window, with the same resolver
+    /// the GET-many step uses. Sharing it is what makes a boundary set describe the same ordering a
+    /// page of the same request would be selected in.
+    /// </summary>
+    private readonly ChangeQueryPageOrderingPolicy _orderingPolicy = new(
+        _useLegacyDocumentIdOrderingForChangeQueries
+    );
+
     /// <summary>
     /// The parameter names this operation owns, matched case-sensitively. The five reserved paging
     /// names are matched the way <see cref="ValidateQueryMiddleware" /> parses them, and the count is
@@ -170,12 +184,13 @@ internal class ValidatePartitionQueryMiddleware(
             return;
         }
 
-        // The single accepting exit, and the only place any of the three reach request state. A
+        // The single accepting exit, and the only place any of the four reach request state. A
         // request rejected by any phase above carries none of them, so a handler cannot act on a
-        // filter, a window, or a count that this step declined to accept. CollectionPaging is
-        // deliberately never assigned on this pipeline: a partitions request has no page.
+        // filter, a window, an anchor, or a count that this step declined to accept. CollectionPaging
+        // is deliberately never assigned on this pipeline: a partitions request has no page.
         requestInfo.QueryElements = ((ResourceQueryFilterResult.Valid)filterResult).QueryElements;
         requestInfo.ChangeVersionRange = changeVersionResult.Range;
+        requestInfo.PageOrderingMode = _orderingPolicy.ResolveForLiveQuery(changeVersionResult.Range);
         requestInfo.RequestedPartitionCount =
             partitionResult.RequestedPartitionCount ?? _defaultPartitionCount;
 

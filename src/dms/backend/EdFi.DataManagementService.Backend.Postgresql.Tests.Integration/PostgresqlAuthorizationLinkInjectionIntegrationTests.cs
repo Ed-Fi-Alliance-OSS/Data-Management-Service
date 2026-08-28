@@ -365,7 +365,8 @@ public class Given_A_Postgresql_AcademicWeek_Read_With_Different_Caller_Authoriz
                     MaximumPageSize: MaximumPageSize
                 )
             ),
-            TraceId: new TraceId("pg-32-query-academicweek")
+            TraceId: new TraceId("pg-32-query-academicweek"),
+            PageOrderingMode: PageOrderingMode.DocumentId
         );
 
         QueryResult result = await scope

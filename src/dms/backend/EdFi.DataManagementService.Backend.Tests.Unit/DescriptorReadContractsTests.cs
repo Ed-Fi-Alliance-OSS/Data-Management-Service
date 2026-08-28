@@ -92,7 +92,8 @@ public class Given_Descriptor_Read_Contracts
             paging,
             authorizationStrategyEvaluators,
             readableProfileProjectionContext,
-            traceId
+            traceId,
+            PageOrderingMode.ContentVersion
         );
 
         request.Should().NotBeAssignableTo<IQueryRequest>();
@@ -104,6 +105,10 @@ public class Given_Descriptor_Read_Contracts
         request.ReadableProfileProjectionContext.Should().BeSameAs(readableProfileProjectionContext);
         request.TraceId.Should().Be(traceId);
         request.ChangeVersionRange.Should().Be(ChangeVersionRange.None);
+
+        // Asserted with the non-default anchor: DocumentId is the enum's zero value, so a request
+        // built with it would carry the right value whether or not the parameter reached the property.
+        request.PageOrderingMode.Should().Be(PageOrderingMode.ContentVersion);
     }
 
     [Test]
@@ -124,6 +129,7 @@ public class Given_Descriptor_Read_Contracts
             [],
             null,
             new TraceId("trace-id"),
+            PageOrderingMode.ContentVersion,
             changeVersionRange: changeVersionRange
         );
 

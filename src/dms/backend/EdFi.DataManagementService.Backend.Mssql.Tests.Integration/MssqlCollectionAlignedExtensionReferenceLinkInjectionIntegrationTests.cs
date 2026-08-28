@@ -318,7 +318,8 @@ public class Given_A_Mssql_ParentResource_With_Collection_Aligned_Extension_Spon
                     MaximumPageSize: MaximumPageSize
                 )
             ),
-            TraceId: new TraceId("mssql-29d-query-parentresource")
+            TraceId: new TraceId("mssql-29d-query-parentresource"),
+            PageOrderingMode: PageOrderingMode.DocumentId
         );
 
         return await scope

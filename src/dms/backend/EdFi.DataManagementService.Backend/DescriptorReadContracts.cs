@@ -99,6 +99,13 @@ public sealed record DescriptorGetByIdRequest
 /// </summary>
 public sealed record DescriptorQueryRequest
 {
+    /// <remarks>
+    /// <paramref name="pageOrderingMode" /> is required rather than defaulted, and sits ahead of the
+    /// optional parameters to stay that way. This record is the descriptor path's only source for the
+    /// anchor — descriptor reads do not travel on <c>IQueryRequest</c> — so a default would let every
+    /// existing construction site keep compiling while silently anchoring a ContentVersion-ordered
+    /// page on DocumentId, which is the defect this contract exists to carry the fix for.
+    /// </remarks>
     public DescriptorQueryRequest(
         MappingSet mappingSet,
         QualifiedResourceName resource,
@@ -107,6 +114,7 @@ public sealed record DescriptorQueryRequest
         AuthorizationStrategyEvaluator[] authorizationStrategyEvaluators,
         ReadableProfileProjectionContext? readableProfileProjectionContext,
         TraceId traceId,
+        PageOrderingMode pageOrderingMode,
         RelationalAuthorizationContext? relationalAuthorizationContext = null,
         ChangeVersionRange? changeVersionRange = null,
         ResponseContentCoding responseContentCoding = ResponseContentCoding.Identity,
@@ -122,6 +130,7 @@ public sealed record DescriptorQueryRequest
             ?? throw new ArgumentNullException(nameof(authorizationStrategyEvaluators));
         ReadableProfileProjectionContext = readableProfileProjectionContext;
         TraceId = traceId;
+        PageOrderingMode = pageOrderingMode;
         RelationalAuthorizationContext =
             relationalAuthorizationContext ?? new RelationalAuthorizationContext([]);
         ChangeVersionRange = changeVersionRange ?? ChangeVersionRange.None;
@@ -179,6 +188,14 @@ public sealed record DescriptorQueryRequest
     /// </summary>
     public ChangeVersionRange ChangeVersionRange { get; init; }
 
+    /// <summary>
+    /// The page anchor: the ordering key descriptor page selection walks, and therefore the units of
+    /// this request's cursor bounds and of the continuation token Core issues for its response.
+    /// Resolved by Core from <see cref="ChangeVersionRange" /> and carried here rather than re-derived,
+    /// so descriptor pages and regular-resource pages of the same window anchor identically.
+    /// </summary>
+    public PageOrderingMode PageOrderingMode { get; init; }
+
     /// <summary>The content coding selected for the external response.</summary>
     public ResponseContentCoding ResponseContentCoding { get; init; }
 
@@ -198,6 +215,11 @@ public sealed record DescriptorQueryRequest
 /// </remarks>
 public sealed record DescriptorPartitionRequest
 {
+    /// <remarks>
+    /// <paramref name="pageOrderingMode" /> is required rather than defaulted, for the reason given on
+    /// <see cref="DescriptorQueryRequest" />: this record is the descriptor path's only source for the
+    /// anchor, and boundaries cut on the wrong ordering overlap.
+    /// </remarks>
     public DescriptorPartitionRequest(
         MappingSet mappingSet,
         QualifiedResourceName resource,
@@ -206,6 +228,7 @@ public sealed record DescriptorPartitionRequest
         int requestedPartitionCount,
         long minimumPartitionSize,
         TraceId traceId,
+        PageOrderingMode pageOrderingMode,
         RelationalAuthorizationContext? relationalAuthorizationContext = null,
         ChangeVersionRange? changeVersionRange = null,
         string tenantKey = ""
@@ -220,6 +243,7 @@ public sealed record DescriptorPartitionRequest
         RequestedPartitionCount = requestedPartitionCount;
         MinimumPartitionSize = minimumPartitionSize;
         TraceId = traceId;
+        PageOrderingMode = pageOrderingMode;
         RelationalAuthorizationContext =
             relationalAuthorizationContext ?? new RelationalAuthorizationContext([]);
         ChangeVersionRange = changeVersionRange ?? ChangeVersionRange.None;
@@ -275,6 +299,14 @@ public sealed record DescriptorPartitionRequest
     /// <see cref="Core.External.Model.ChangeVersionRange.None"/> when neither parameter was supplied.
     /// </summary>
     public ChangeVersionRange ChangeVersionRange { get; init; }
+
+    /// <summary>
+    /// The boundary anchor: the ordering key descriptor partitions are ranked, sized, and cut on, and
+    /// therefore the units of every range this request returns. Resolved by Core from
+    /// <see cref="ChangeVersionRange" /> by the same rule a page of the same window resolves, so a
+    /// returned range is always replayable as a page.
+    /// </summary>
+    public PageOrderingMode PageOrderingMode { get; init; }
 
     /// <summary>The normalized request tenant key. Empty string identifies the default target.</summary>
     public string TenantKey { get; init; }
