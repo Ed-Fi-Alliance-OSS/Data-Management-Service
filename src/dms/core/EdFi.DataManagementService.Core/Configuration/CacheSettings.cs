@@ -31,7 +31,9 @@ public class CacheSettings
 
     /// <summary>
     /// How long a validation verdict for a derivative database stays cached, in seconds.
-    /// Default 600, accepted range 1 to 3600; a value outside that range is clamped and logged.
+    /// Default 600, accepted range 1 to 3600. The two out-of-range cases behave differently and both
+    /// are logged: a value above 3600 is clamped to 3600, while a non-positive value falls back to the
+    /// default 600 rather than to the minimum.
     /// </summary>
     /// <remarks>
     /// <b>A non-positive value means use the default, not "never expire."</b> That deliberately

@@ -20,7 +20,11 @@ internal static class DerivativeValidationCacheExpiration
     /// <summary>Used when the setting is absent, and when a configured value is not usable.</summary>
     public const int Default = 600;
 
-    /// <summary>The shortest accepted expiration. Below this, every request re-validates.</summary>
+    /// <summary>
+    /// The shortest accepted expiration. A shorter value is not honored, because it would make nearly
+    /// every request re-validate; a configured value below this falls back to <see cref="Default" />
+    /// rather than being raised to this minimum.
+    /// </summary>
     public const int Minimum = 1;
 
     /// <summary>The longest accepted expiration: one hour.</summary>

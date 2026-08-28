@@ -257,9 +257,12 @@ cached for this duration.
 
 - **Default `600`.** Used when the setting is absent from configuration.
 - **Accepted range `1` to `3600`.** A value inside the range is used as configured, with no log entry.
-- **A value outside the range is clamped, and the clamp is logged as a warning** naming both the
-  configured and the effective value. A value above `3600` becomes `3600`; a value of `0` or below
-  becomes the default `600`.
+- **A value above `3600` is clamped to `3600`**, and the clamp is logged as a warning naming both the
+  configured and the effective value.
+- **A value of `0` or below falls back to the default `600`**, not to the minimum `1`, and that
+  fallback is logged as a warning naming both the configured and the effective value. This is not a
+  clamp: clamping to the accepted range would give `1`, which would re-validate on nearly every
+  request.
 - **A non-positive value means "use the default", not "never expire."** This deliberately inverts the
   convention of `DataStoreCacheExpirationSeconds`, where `0` or a negative value keeps the cached
   configuration until an explicit reload. There is no way to ask for a derivative verdict that never
