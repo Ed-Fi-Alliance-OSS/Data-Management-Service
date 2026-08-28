@@ -28,6 +28,13 @@ public abstract class PostgresqlCompatibilityGateTestsBase : CompatibilityGateTe
 {
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
 
+    /// <summary>
+    /// The readers below lease their connections from this, the same way production does. One cache per
+    /// fixture, so a reader created more than once still shares the data source rather than building a
+    /// second pool for the same database.
+    /// </summary>
+    private readonly NpgsqlDataSourceCache _dataSourceCache = new(NullLogger<NpgsqlDataSourceCache>.Instance);
+
     protected override string ResourceKeyTable => "dms.\"ResourceKey\"";
     protected override string ResourceKeyIdColumn => "\"ResourceKeyId\"";
     protected override string ResourceNameColumn => "\"ResourceName\"";
@@ -37,10 +44,16 @@ public abstract class PostgresqlCompatibilityGateTestsBase : CompatibilityGateTe
     protected override SqlDialect GetSqlDialect() => SqlDialect.Pgsql;
 
     protected override IResourceKeyRowReader CreateResourceKeyRowReader() =>
-        new PostgresqlResourceKeyRowReader(NullLogger<PostgresqlResourceKeyRowReader>.Instance);
+        new PostgresqlResourceKeyRowReader(
+            _dataSourceCache,
+            NullLogger<PostgresqlResourceKeyRowReader>.Instance
+        );
 
     protected override IDatabaseFingerprintReader CreateDatabaseFingerprintReader() =>
-        new PostgresqlDatabaseFingerprintReader(NullLogger<PostgresqlDatabaseFingerprintReader>.Instance);
+        new PostgresqlDatabaseFingerprintReader(
+            _dataSourceCache,
+            NullLogger<PostgresqlDatabaseFingerprintReader>.Instance
+        );
 
     protected override async Task ExecuteTamperAsync(string sql)
     {
@@ -56,6 +69,10 @@ public abstract class PostgresqlCompatibilityGateTestsBase : CompatibilityGateTe
 
     protected override async Task DisposeDatabaseAsync()
     {
+        // Before the database, so nothing this fixture leased outlives the database it was leased
+        // against.
+        _dataSourceCache.Dispose();
+
         if (_database is not null)
         {
             await _database.DisposeAsync();

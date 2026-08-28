@@ -38,6 +38,19 @@ public sealed class NpgsqlDataSourceLease : IAsyncDisposable, IDisposable
     /// <summary>Whether this lease has already been released.</summary>
     public bool IsReleased => Volatile.Read(ref _released) != 0;
 
+    /// <summary>Constructs an unopened connection against this lease's data source.</summary>
+    /// <remarks>
+    /// For the callers whose shared support owns the open and therefore needs a connection factory
+    /// rather than an open connection. Refusing once the lease is released is what stops a connection
+    /// being created against a data source this lease no longer keeps alive.
+    /// </remarks>
+    public NpgsqlConnection CreateConnection()
+    {
+        ObjectDisposedException.ThrowIf(IsReleased, this);
+
+        return DataSource.CreateConnection();
+    }
+
     public void Dispose() => Release();
 
     public ValueTask DisposeAsync()

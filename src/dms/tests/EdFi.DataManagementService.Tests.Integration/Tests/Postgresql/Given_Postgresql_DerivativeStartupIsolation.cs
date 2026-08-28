@@ -52,11 +52,16 @@ public sealed class Given_Postgresql_DerivativeStartupIsolation : PostgresqlApiI
         ]);
     }
 
+    // Ordered rather than left to the runner's own ordering: the last test is the only request in
+    // the fixture that realizes a derivative, so running it first would make the zero counts in
+    // It_realizes_no_derivative untrue for reasons that have nothing to do with the code.
     [Test]
+    [Order(1)]
     public Task It_starts_and_reports_healthy() =>
         DerivativeStartupIsolationScenario.It_starts_and_reports_healthy(Harness);
 
     [Test]
+    [Order(2)]
     public Task It_realizes_no_derivative() =>
         DerivativeStartupIsolationScenario.It_realizes_no_derivative(
             Harness,
@@ -67,6 +72,11 @@ public sealed class Given_Postgresql_DerivativeStartupIsolation : PostgresqlApiI
         );
 
     [Test]
+    [Order(3)]
     public Task It_still_offers_the_configured_snapshot() =>
-        DerivativeStartupIsolationScenario.It_still_offers_the_configured_snapshot(Harness);
+        DerivativeStartupIsolationScenario.It_still_offers_the_configured_snapshot(
+            Harness,
+            _recorder,
+            _snapshotConnectionString
+        );
 }

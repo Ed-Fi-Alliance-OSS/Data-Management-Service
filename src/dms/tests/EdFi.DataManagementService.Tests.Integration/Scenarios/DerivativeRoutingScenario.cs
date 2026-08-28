@@ -243,7 +243,7 @@ internal static class DerivativeRoutingScenario
         ApiIntegrationHarness harness
     )
     {
-        foreach ((HttpMethod method, string uri) in InvalidMutationShapes())
+        foreach ((HttpMethod method, string uri, _) in InvalidMutationShapes())
         {
             using HttpContent? content =
                 method == HttpMethod.Delete
@@ -261,7 +261,7 @@ internal static class DerivativeRoutingScenario
             await AssertGenericMethodNotAllowedAsync(
                 response,
                 $"{method} {uri} with a snapshot request",
-                expectAllowHeader: false
+                expectedAllow: null
             );
         }
     }
@@ -277,7 +277,7 @@ internal static class DerivativeRoutingScenario
     {
         foreach (string? headerValue in new[] { null, "false" })
         {
-            foreach ((HttpMethod method, string uri) in InvalidMutationShapes())
+            foreach ((HttpMethod method, string uri, string[] allowed) in InvalidMutationShapes())
             {
                 using HttpContent? content =
                     method == HttpMethod.Delete
@@ -295,40 +295,52 @@ internal static class DerivativeRoutingScenario
                 await AssertGenericMethodNotAllowedAsync(
                     response,
                     $"{method} {uri} with Use-Snapshot {headerValue ?? "absent"}",
-                    expectAllowHeader: true
+                    expectedAllow: allowed
                 );
             }
         }
     }
 
+    /// <summary>The methods a collection path supports, which is what its route semantics advertises.</summary>
+    private static readonly string[] _collectionMethods = ["GET", "POST"];
+
+    /// <summary>And the methods an item path supports.</summary>
+    private static readonly string[] _itemMethods = ["GET", "PUT", "DELETE"];
+
     /// <summary>
-    /// The invalid shapes: a method against a path that has no route semantics for it. The item id is
-    /// well formed and names nothing, because whether the document exists must not matter.
+    /// The invalid shapes: a method against a path that has no route semantics for it, paired with the
+    /// exact method set that path does support. The item id is well formed and names nothing, because
+    /// whether the document exists must not matter.
     /// </summary>
-    private static IEnumerable<(HttpMethod Method, string Uri)> InvalidMutationShapes()
+    private static IEnumerable<(HttpMethod Method, string Uri, string[] Allowed)> InvalidMutationShapes()
     {
         string absentDocumentId = Guid.NewGuid().ToString();
 
-        yield return (HttpMethod.Delete, DerivativeRoutingSupport.StudentsEndpoint);
-        yield return (HttpMethod.Put, DerivativeRoutingSupport.StudentsEndpoint);
-        yield return (HttpMethod.Post, $"{DerivativeRoutingSupport.StudentsEndpoint}/{absentDocumentId}");
+        yield return (HttpMethod.Delete, DerivativeRoutingSupport.StudentsEndpoint, _collectionMethods);
+        yield return (HttpMethod.Put, DerivativeRoutingSupport.StudentsEndpoint, _collectionMethods);
+        yield return (
+            HttpMethod.Post,
+            $"{DerivativeRoutingSupport.StudentsEndpoint}/{absentDocumentId}",
+            _itemMethods
+        );
     }
 
     /// <summary>
     /// The generic method-not-allowed body both answers share: status, problem type, title, detail, and
     /// content type.
     /// </summary>
-    /// <param name="expectAllowHeader">
-    /// Whether an <c>Allow</c> header is expected. The two answers differ here and only here. Route
-    /// semantics advertises the methods the path does support; the interim snapshot rejection carries
-    /// none, because the allowed-method set for a snapshot request is defined by separate work. That
-    /// difference is the one thing a caller can use to tell the two apart, so it is asserted rather
-    /// than glossed over.
+    /// <param name="expectedAllow">
+    /// The exact <c>Allow</c> set expected, or null for the interim snapshot rejection, which carries
+    /// none because the allowed-method set for a snapshot request is defined by separate work. The two
+    /// answers differ here and only here, so this is the one thing a caller can use to tell them apart.
+    /// The set is asserted exactly rather than as merely present: an <c>Allow</c> naming the very
+    /// method being rejected, or silently narrowed to one entry, would satisfy a non-empty check and
+    /// still be wrong.
     /// </param>
     private static async Task AssertGenericMethodNotAllowedAsync(
         HttpResponseMessage response,
         string because,
-        bool expectAllowHeader
+        string[]? expectedAllow
     )
     {
         string body = await response.Content.ReadAsStringAsync();
@@ -339,11 +351,14 @@ internal static class DerivativeRoutingScenario
             .Should()
             .Be("application/json; charset=utf-8", because);
 
-        if (expectAllowHeader)
+        if (expectedAllow is not null)
         {
             response
                 .Content.Headers.Allow.Should()
-                .NotBeEmpty($"{because}: route semantics advertises the methods the path supports");
+                .BeEquivalentTo(
+                    expectedAllow,
+                    $"{because}: route semantics advertises exactly the methods the path supports"
+                );
         }
         else
         {

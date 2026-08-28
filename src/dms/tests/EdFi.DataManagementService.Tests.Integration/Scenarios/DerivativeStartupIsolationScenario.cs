@@ -76,9 +76,19 @@ internal static class DerivativeStartupIsolationScenario
 
     /// <summary>
     /// And a read that does ask for the snapshot fails, rather than the configuration having been
-    /// quietly discarded at startup - the derivative is configured, it is simply unusable.
+    /// quietly discarded at startup - the derivative is configured, it is simply unusable. The
+    /// recorder sees that request realize the snapshot, which is what makes the zero counts above a
+    /// statement about the requests that ran rather than about a boundary nothing ever reaches.
     /// </summary>
-    public static async Task It_still_offers_the_configured_snapshot(ApiIntegrationHarness harness)
+    /// <remarks>
+    /// Runs after <see cref="It_realizes_no_derivative" />, because it is the one request in the
+    /// fixture that deliberately does realize a derivative.
+    /// </remarks>
+    public static async Task It_still_offers_the_configured_snapshot(
+        ApiIntegrationHarness harness,
+        DerivativeRealizationRecorder recorder,
+        string snapshotConnectionString
+    )
     {
         using HttpResponseMessage response = await DerivativeRoutingSupport.SendAsync(
             harness,
@@ -96,5 +106,15 @@ internal static class DerivativeStartupIsolationScenario
         response
             .StatusCode.Should()
             .NotBe(HttpStatusCode.OK, "and it cannot be opened, so the request cannot succeed");
+
+        recorder
+            .CountFor(snapshotConnectionString)
+            .Should()
+            .BeGreaterThan(
+                0,
+                "a request that selects the snapshot reaches its database through the recorded "
+                    + "acquisition boundary, starting with the fingerprint and resource-key "
+                    + "validation reads"
+            );
     }
 }

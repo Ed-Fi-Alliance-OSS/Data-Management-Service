@@ -5,12 +5,21 @@
 
 using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
-using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;
 
-public class PostgresqlResourceKeyRowReader(ILogger<PostgresqlResourceKeyRowReader> logger)
-    : IResourceKeyRowReader
+/// <summary>
+/// Reads the resource-key seed rows from whichever database the request selected.
+/// </summary>
+/// <remarks>
+/// The connection comes from the leased data-source cache for the same reason the fingerprint reader's
+/// does: this is the second database touch of a request, and both must share the data source whose
+/// lifetime the ownership rules govern rather than opening a pool the cache does not know about.
+/// </remarks>
+public class PostgresqlResourceKeyRowReader(
+    NpgsqlDataSourceCache dataSourceCache,
+    ILogger<PostgresqlResourceKeyRowReader> logger
+) : IResourceKeyRowReader
 {
     private const string ResourceKeySelectSql = """
         SELECT "ResourceKeyId", "ProjectName", "ResourceName", "ResourceVersion"
@@ -23,12 +32,16 @@ public class PostgresqlResourceKeyRowReader(ILogger<PostgresqlResourceKeyRowRead
         CancellationToken cancellationToken = default
     )
     {
+        ArgumentNullException.ThrowIfNull(target);
+
         logger.LogDebug("Reading resource key rows from dms.ResourceKey");
 
-        await using var connection = new NpgsqlConnection(target.ConnectionString);
-        await connection.OpenAsync(cancellationToken);
+        await using LeasedNpgsqlConnection leased = await dataSourceCache.OpenLeasedConnectionAsync(
+            target.ConnectionString,
+            cancellationToken
+        );
 
-        await using var command = connection.CreateCommand();
+        await using var command = leased.Connection.CreateCommand();
         command.CommandText = ResourceKeySelectSql;
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

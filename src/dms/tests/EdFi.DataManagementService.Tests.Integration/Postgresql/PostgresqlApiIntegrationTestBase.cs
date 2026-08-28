@@ -74,16 +74,24 @@ public abstract class PostgresqlApiIntegrationTestBase : ApiIntegrationTestBase
         new PostgresqlTargetReachability();
 
     /// <summary>
-    /// PostgreSQL refuses new connections to a database whose CONNECTION LIMIT is zero, without
+    /// PostgreSQL refuses every new connection to a database whose ALLOW_CONNECTIONS is false, without
     /// touching the database itself or the connection string that names it.
     /// </summary>
+    /// <remarks>
+    /// Deliberately not CONNECTION LIMIT 0, which reads like the same thing and is not: a superuser is
+    /// exempt from it, and these suites connect as one, so a limit of zero leaves the database fully
+    /// reachable. A request would then fail only if it happened to reuse a pooled session the
+    /// termination below had killed, and succeed the moment anything reopened - which makes every
+    /// unreachable-target proof built on it depend on pooling rather than on reachability.
+    /// ALLOW_CONNECTIONS binds superusers too.
+    /// </remarks>
     private sealed class PostgresqlTargetReachability : IDerivativeTargetReachability
     {
         public Task MakeUnreachableAsync(string leasedConnectionString) =>
-            SetConnectionLimitAsync(leasedConnectionString, limit: 0);
+            SetAllowConnectionsAsync(leasedConnectionString, allow: false);
 
         public Task MakeReachableAsync(string leasedConnectionString) =>
-            SetConnectionLimitAsync(leasedConnectionString, limit: -1);
+            SetAllowConnectionsAsync(leasedConnectionString, allow: true);
 
         public string AbsentDatabaseConnectionString(string leasedConnectionString) =>
             new NpgsqlConnectionStringBuilder(leasedConnectionString)
@@ -91,7 +99,7 @@ public abstract class PostgresqlApiIntegrationTestBase : ApiIntegrationTestBase
                 Database = $"absent_{Guid.NewGuid():N}",
             }.ConnectionString;
 
-        private static async Task SetConnectionLimitAsync(string leasedConnectionString, int limit)
+        private static async Task SetAllowConnectionsAsync(string leasedConnectionString, bool allow)
         {
             NpgsqlConnectionStringBuilder leased = new(leasedConnectionString);
             string databaseName = leased.Database!;
@@ -104,12 +112,12 @@ public abstract class PostgresqlApiIntegrationTestBase : ApiIntegrationTestBase
             await using NpgsqlCommand command = connection.CreateCommand();
             command.CommandText =
                 $"ALTER DATABASE \"{databaseName.Replace("\"", "\"\"", StringComparison.Ordinal)}\" "
-                + $"WITH CONNECTION LIMIT {limit};";
+                + $"WITH ALLOW_CONNECTIONS {(allow ? "true" : "false")};";
             await command.ExecuteNonQueryAsync();
 
-            if (limit == 0)
+            if (!allow)
             {
-                // Existing sessions are unaffected by the limit, so anything pooled against this
+                // Existing sessions are unaffected by the flag, so anything pooled against this
                 // database is terminated too; otherwise a reused connection would hide the failure.
                 await using NpgsqlCommand terminate = connection.CreateCommand();
                 terminate.CommandText =

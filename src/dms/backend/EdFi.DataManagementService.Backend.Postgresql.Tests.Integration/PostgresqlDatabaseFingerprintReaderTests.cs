@@ -96,7 +96,10 @@ public class Given_A_Provisioned_EffectiveSchema_Table
 
         await ExecuteNonQueryAsync(insertSql);
 
+        using NpgsqlDataSourceCache dataSourceCache = new(NullLogger<NpgsqlDataSourceCache>.Instance);
+
         var reader = new PostgresqlDatabaseFingerprintReader(
+            dataSourceCache,
             NullLogger<PostgresqlDatabaseFingerprintReader>.Instance
         );
 
