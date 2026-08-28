@@ -60,11 +60,17 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
         // (e.g. by a downstream step) is never observed through a scope already handed to a
         // validator. The branded record-struct keys and values are unwrapped here because
         // Dictionary<RouteQualifierName, RouteQualifierValue> does not itself implement
-        // IReadOnlyDictionary<string, string>.
-        var routeQualifiers = requestInfo.FrontendRequest.RouteQualifiers.ToDictionary(
-            routeQualifier => routeQualifier.Key.Value,
-            routeQualifier => routeQualifier.Value.Value
-        );
+        // IReadOnlyDictionary<string, string>. Wrapped with AsReadOnly() rather than handed out as
+        // the raw Dictionary<,> so a validator cannot downcast ValidationScope.RouteQualifiers back
+        // to a mutable dictionary and change what a later validator in the same request observes -
+        // the same validator-to-validator leak the per-validator DeepClone() below exists to
+        // prevent, on this other input.
+        var routeQualifiers = requestInfo
+            .FrontendRequest.RouteQualifiers.ToDictionary(
+                routeQualifier => routeQualifier.Key.Value,
+                routeQualifier => routeQualifier.Value.Value
+            )
+            .AsReadOnly();
 
         var scope = new ValidationScope(requestInfo.FrontendRequest.Tenant, routeQualifiers);
 
@@ -84,7 +90,9 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
             // validator that ignores the read-only contract rule cannot silently change what a
             // later one sees. Cloned from the profile-effective body rather than ParsedBody
             // directly, so a validator sees the profile-shaped writable surface when a writable
-            // profile applied and the raw submitted body otherwise.
+            // profile applied, and the profile-effective body as it stands at this point in the
+            // pipeline otherwise - after type coercion and after InjectVersionMetadataToEdFiDocumentMiddleware
+            // has written "_lastModifiedDate" into it, not the raw submitted body.
             var document = ProfileWriteValidationBody.Effective(requestInfo).DeepClone();
 
             // The validator's own type name is implementer-authored, unlike every other value on

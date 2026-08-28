@@ -224,6 +224,12 @@ public static class Utility
     /// <summary>
     /// Executes an operation within a resilience pipeline, handling retry logging.
     /// </summary>
+    /// <param name="resilienceCancellationToken">
+    /// The token the resilience context - and therefore the operation itself - is seeded with.
+    /// Defaults to <see cref="RequestInfo.RequestCancellationToken" /> for the read-path callers.
+    /// Write-path callers pass <see cref="CancellationToken.None" /> instead: see the call sites in
+    /// <c>UpsertHandler</c> and <c>UpdateByIdHandler</c> for why.
+    /// </param>
     internal static async Task<TResult> ExecuteWithRetryLogging<TResult>(
         ResiliencePipeline resiliencePipeline,
         ILogger logger,
@@ -232,12 +238,15 @@ public static class Utility
         Func<TResult, bool> isRetryExhausted,
         Func<TResult, bool> isSuccess,
         Func<CancellationToken, ValueTask<TResult>> operation,
-        RequestInfo requestInfo
+        RequestInfo requestInfo,
+        CancellationToken? resilienceCancellationToken = null
     )
         where TResult : class
     {
         int attemptCount = 0;
-        var context = ResilienceContextPool.Shared.Get(requestInfo.RequestCancellationToken);
+        var context = ResilienceContextPool.Shared.Get(
+            resilienceCancellationToken ?? requestInfo.RequestCancellationToken
+        );
         context.Properties.Set(TraceIdKey, traceId.Value);
         context.Properties.Set(OperationNameKey, operationName);
 

@@ -176,6 +176,35 @@ public class CustomResourceValidationMiddlewareTests
     }
 
     /// <summary>
+    /// A validator that downcasts <see cref="ValidationScope.RouteQualifiers"/> back to the mutable
+    /// concrete dictionary type and mutates it, for proving the middleware's projection is hardened
+    /// against that rather than merely typed as read-only.
+    /// Dictionary&lt;string, string&gt; implements IReadOnlyDictionary&lt;string, string&gt;, so
+    /// nothing in the interface itself stops a conforming-looking validator from doing this.
+    /// </summary>
+    internal sealed class RouteQualifierMutatingValidator : ICustomResourceValidator
+    {
+        public IReadOnlyList<ValidatedResource> AppliesTo { get; init; } = [];
+
+        public Task<IReadOnlyList<CustomValidationFailure>> ValidateAsync(
+            JsonNode document,
+            ValidatedResourceInfo resource,
+            CustomValidationOperation operation,
+            ValidationScope scope,
+            string traceId,
+            CancellationToken cancellationToken
+        )
+        {
+            if (scope.RouteQualifiers is Dictionary<string, string> mutable)
+            {
+                mutable["district"] = "tampered-by-first-validator";
+            }
+
+            return Task.FromResult<IReadOnlyList<CustomValidationFailure>>([]);
+        }
+    }
+
+    /// <summary>
     /// A simple ILogger that captures log entries for test verification, matching the pattern
     /// used by the other middleware fixtures in this directory.
     /// </summary>
@@ -761,6 +790,55 @@ public class CustomResourceValidationMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Validator_Downcasts_And_Mutates_The_Route_Qualifiers_Dictionary
+        : CustomResourceValidationMiddlewareTests
+    {
+        private FakeValidator _second = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var first = new RouteQualifierMutatingValidator
+            {
+                AppliesTo = [new ValidatedResource("Ed-Fi", "School")],
+            };
+            _second = new FakeValidator { AppliesTo = [new ValidatedResource("Ed-Fi", "School")] };
+
+            var scopedServiceProvider = new ServiceCollection()
+                .AddSingleton<ICustomResourceValidator>(first)
+                .AddSingleton<ICustomResourceValidator>(_second)
+                .BuildServiceProvider();
+
+            var requestInfo = BuildRequestInfo(
+                scopedServiceProvider,
+                routeQualifiers: new Dictionary<RouteQualifierName, RouteQualifierValue>
+                {
+                    [new RouteQualifierName("district")] = new RouteQualifierValue("255901"),
+                }
+            );
+            await ExecuteAndCaptureNext(requestInfo);
+        }
+
+        /// <summary>
+        /// The projection is handed out via AsReadOnly() rather than as the raw Dictionary&lt;,&gt;
+        /// it was built from, so the first validator's downcast above cannot succeed and the second
+        /// validator in the same request never observes the attempted mutation - the same
+        /// validator-to-validator leak the per-validator DeepClone() on the document already
+        /// prevents, closed here on the route-qualifiers input too.
+        /// </summary>
+        [Test]
+        public void It_does_not_let_the_second_validator_observe_the_attempted_mutation()
+        {
+            _second
+                .ReceivedScopes.Should()
+                .ContainSingle()
+                .Which.RouteQualifiers.Should()
+                .BeEquivalentTo(new Dictionary<string, string> { ["district"] = "255901" });
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Writable_Profile_Applies : CustomResourceValidationMiddlewareTests
     {
         private FakeValidator _validator = null!;
@@ -1186,6 +1264,53 @@ public class CustomResourceValidationMiddlewareTests
         public void It_carries_no_location_header_path()
         {
             _requestInfo.FrontendResponse.LocationHeaderPath.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Applicable_Validator_Its_Elapsed_Time_Log_Entry
+        : CustomResourceValidationMiddlewareTests
+    {
+        private CapturingLogger _logger = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _logger = new CapturingLogger();
+
+            var validator = new FakeValidator { AppliesTo = [new ValidatedResource("Ed-Fi", "School")] };
+
+            var scopedServiceProvider = new ServiceCollection()
+                .AddSingleton<ICustomResourceValidator>(validator)
+                .BuildServiceProvider();
+
+            var requestInfo = BuildRequestInfo(scopedServiceProvider, traceId: "elapsed-trace-id-3");
+
+            await new CustomResourceValidationMiddleware(_logger, CustomValidationOperation.Upsert).Execute(
+                requestInfo,
+                () => Task.CompletedTask
+            );
+        }
+
+        /// <summary>
+        /// This design puts third-party network I/O on the write path with no timeout the contract
+        /// controls, so per-validator elapsed time is the only diagnostic a deployment has when a
+        /// validator is slow. This proves that record actually exists, names the validator, and
+        /// carries the request's own TraceId for correlation.
+        /// </summary>
+        [Test]
+        public void It_logs_the_validators_elapsed_time_against_the_trace_id()
+        {
+            _logger
+                .Entries.Should()
+                .Contain(entry =>
+                    entry.Level == LogLevel.Debug
+                    && entry.Message.Contains(nameof(FakeValidator))
+                    && entry.Message.Contains("ran in")
+                    && entry.Message.Contains("ms")
+                    && entry.Message.Contains("elapsed-trace-id-3")
+                );
         }
     }
 

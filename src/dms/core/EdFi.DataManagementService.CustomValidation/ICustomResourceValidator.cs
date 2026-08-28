@@ -10,9 +10,10 @@ namespace EdFi.DataManagementService.CustomValidation;
 /// <summary>
 /// A custom, implementer-authored rule to be run against a document on the write path, in addition to
 /// DMS's own core validation.
-/// DMS does not yet resolve or invoke this interface: nothing in the request pipeline reads it, so an
-/// implementation of it does not run today. This declares the shape that support will be built
-/// against.
+/// The write pipeline (POST and PUT) now resolves registered instances of this interface and invokes
+/// those whose <see cref="AppliesTo"/> matches the current request's resource, but no supported
+/// registration seam ships yet: an implementer has no documented way to register one, so in practice
+/// nothing runs today. This declares the shape that support will be built against.
 /// When host support lands, an implementation is compiled into the host deployment and registered
 /// into DMS's composition; it is not loaded from a dropped-in assembly at runtime.
 /// </summary>
@@ -36,9 +37,14 @@ public interface ICustomResourceValidator
     /// Validates a document on the write path, returning the failures found.
     /// </summary>
     /// <param name="document">
-    /// The document to validate. This is the profile-effective body, which is the raw submitted body
-    /// only when no writable profile shaped it. The document is received read-only as a contract rule
-    /// that the type system cannot itself enforce; a validator must not mutate it.
+    /// The document to validate. This is the profile-effective body as it stands at this point in the
+    /// write pipeline: after type coercion (date formats, date-times, and other request-value
+    /// coercions) and after version-metadata injection, which writes a server-assigned
+    /// "_lastModifiedDate" property into it. It is the profile-shaped writable surface when a
+    /// writable profile applied, and the coerced, version-stamped submitted body otherwise - never
+    /// the raw submitted body byte-for-byte. A validator doing strict property checking should
+    /// expect to see "_lastModifiedDate". The document is received read-only as a contract rule that
+    /// the type system cannot itself enforce; a validator must not mutate it.
     /// </param>
     /// <param name="resource">The resource the document belongs to.</param>
     /// <param name="operation">The write pipeline the document arrived through.</param>
