@@ -1,6 +1,6 @@
 {
   "dialect": "pgsql",
-  "effective_schema_hash": "632f421a00bf86d5e99e9d2c8489f5d022240eecf4b2a293d5c706188eaade20",
+  "effective_schema_hash": "7015c5ec99731a4a1f5b09a5fa7a9bef4c4e80e967776b0f8b437610ca492ed9",
   "relational_mapping_version": "v3",
   "projects": [
     {
@@ -3829,18 +3829,6 @@
       ]
     },
     {
-      "name": "IX_AssessmentAdministrationAssessmentBatteryPart_Ass_6a08acacdc",
-      "table": {
-        "schema": "edfi",
-        "name": "AssessmentAdministrationAssessmentBatteryPart"
-      },
-      "kind": "Authorization",
-      "is_unique": false,
-      "key_columns": [
-        "AssessmentBatteryPart_Namespace"
-      ]
-    },
-    {
       "name": "PK_AssessmentAdministrationAssessmentBatteryPart",
       "table": {
         "schema": "edfi",
@@ -4225,18 +4213,6 @@
         "ObjectiveAssessment_Namespace",
         "ObjectiveAssessment_IdentificationCode",
         "ObjectiveAssessment_DocumentId"
-      ]
-    },
-    {
-      "name": "IX_AssessmentBatteryPartObjectiveAssessment_Objectiv_a3c7942e7c",
-      "table": {
-        "schema": "edfi",
-        "name": "AssessmentBatteryPartObjectiveAssessment"
-      },
-      "kind": "Authorization",
-      "is_unique": false,
-      "key_columns": [
-        "ObjectiveAssessment_Namespace"
       ]
     },
     {
@@ -13491,18 +13467,6 @@
       ]
     },
     {
-      "name": "IX_GraduationPlanRequiredAssessment_RequiredAssessme_8a46212213",
-      "table": {
-        "schema": "edfi",
-        "name": "GraduationPlanRequiredAssessment"
-      },
-      "kind": "Authorization",
-      "is_unique": false,
-      "key_columns": [
-        "RequiredAssessmentAssessment_Namespace"
-      ]
-    },
-    {
       "name": "PK_GraduationPlanRequiredAssessment",
       "table": {
         "schema": "edfi",
@@ -17081,18 +17045,6 @@
         "Namespace_Unified",
         "IdentificationCode",
         "DocumentId"
-      ]
-    },
-    {
-      "name": "IX_ObjectiveAssessmentAssessmentItem_AssessmentItemA_2f06e55896",
-      "table": {
-        "schema": "edfi",
-        "name": "ObjectiveAssessmentAssessmentItem"
-      },
-      "kind": "Authorization",
-      "is_unique": false,
-      "key_columns": [
-        "AssessmentItemAssessmentItem_Namespace"
       ]
     },
     {
@@ -26288,18 +26240,6 @@
       ]
     },
     {
-      "name": "IX_StudentAssessmentItem_StudentAssessmentItemAssess_849300e440",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentAssessmentItem"
-      },
-      "kind": "Authorization",
-      "is_unique": false,
-      "key_columns": [
-        "StudentAssessmentItemAssessmentItem_Namespace"
-      ]
-    },
-    {
       "name": "IX_StudentAssessmentItem_StudentAssessmentItemAssess_a9250caf4a",
       "table": {
         "schema": "edfi",
@@ -26925,18 +26865,6 @@
       "key_columns": [
         "StudentAssessment_DocumentId",
         "Ordinal"
-      ]
-    },
-    {
-      "name": "IX_StudentAssessmentStudentObjectiveAssessment_Stude_1c600fbf33",
-      "table": {
-        "schema": "edfi",
-        "name": "StudentAssessmentStudentObjectiveAssessment"
-      },
-      "kind": "Authorization",
-      "is_unique": false,
-      "key_columns": [
-        "StudentObjectiveAssessmentObjectiveAssessment_Namespace"
       ]
     },
     {

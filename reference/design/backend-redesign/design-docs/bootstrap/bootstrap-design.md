@@ -248,12 +248,12 @@ DMS. That explains the current `.env.example` pattern, for example:
 ```json
 [
   {
-    "version": "1.0.334",
+    "version": "1.0.335",
     "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
     "name": "EdFi.DataStandard52.ApiSchema"
   },
   {
-    "version": "1.0.334",
+    "version": "1.0.335",
     "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
     "name": "EdFi.DataStandard52.Sample.ApiSchema"
   }
@@ -1127,7 +1127,7 @@ Example shape:
   "schema": {
     "selectionMode": "Standard",
     "selectedExtensions": [],
-    "selectedPackages": ["EdFi.DataStandard52.ApiSchema@1.0.334"],
+    "selectedPackages": ["EdFi.DataStandard52.ApiSchema@1.0.335"],
     "effectiveSchemaHash": "...",
     "workspaceFingerprint": "...",
     "apiSchemaManifestPath": "ApiSchema/bootstrap-api-schema-manifest.json"
