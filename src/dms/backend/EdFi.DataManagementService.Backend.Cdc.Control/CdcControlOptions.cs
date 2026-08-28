@@ -92,10 +92,12 @@ public sealed class CdcControlOptions
     public string ConnectorPrincipal { get; set; } = string.Empty;
 
     /// <summary>
-    /// Deployment-supplied consumer principals. An empty list is valid for local and no-consumer
-    /// deployments.
+    /// Deployment-supplied instance consumers, each paired with the one consumer group it reads
+    /// through. The pairing is required because a consumer may be granted only its own group; a flat
+    /// principal list would force every consumer onto every group. An empty list is valid for local
+    /// and no-consumer deployments.
     /// </summary>
-    public IList<string> ConsumerPrincipals { get; set; } = new List<string>();
+    public IList<CdcConsumerOptions> Consumers { get; set; } = new List<CdcConsumerOptions>();
 
     public string ConnectWorkerPrincipal { get; set; } = string.Empty;
 
@@ -157,6 +159,17 @@ public sealed class CdcControlOptions
 
     public CdcKafkaClientSecurityProperties ToKafkaClientSecurityProperties() =>
         new(new Dictionary<string, string>(KafkaClientSecurityProperties, StringComparer.Ordinal));
+}
+
+/// <summary>
+/// One deployment-supplied instance consumer: the principal that reads the binding's public topic and
+/// the single consumer group it is granted.
+/// </summary>
+public sealed class CdcConsumerOptions
+{
+    public string Principal { get; set; } = string.Empty;
+
+    public string ConsumerGroup { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -282,17 +295,36 @@ public sealed class CdcControlOptionsValidator : IValidateOptions<CdcControlOpti
 
     private static void ValidateAcls(CdcControlOptions options, List<string> failures)
     {
-        if (options.ConsumerPrincipals.Any(string.IsNullOrWhiteSpace))
+        if (
+            options.Consumers.Any(consumer =>
+                string.IsNullOrWhiteSpace(consumer.Principal)
+                || string.IsNullOrWhiteSpace(consumer.ConsumerGroup)
+            )
+        )
         {
-            failures.Add($"{nameof(CdcControlOptions.ConsumerPrincipals)} must not contain blank entries.");
+            failures.Add(
+                $"{nameof(CdcControlOptions.Consumers)} must not contain a blank principal or consumer group."
+            );
         }
 
         if (
-            options.ConsumerPrincipals.Distinct(StringComparer.Ordinal).Count()
-            != options.ConsumerPrincipals.Count
+            options.Consumers.Select(consumer => consumer.Principal).Distinct(StringComparer.Ordinal).Count()
+            != options.Consumers.Count
         )
         {
-            failures.Add($"{nameof(CdcControlOptions.ConsumerPrincipals)} must not contain duplicates.");
+            failures.Add(
+                $"{nameof(CdcControlOptions.Consumers)} must not grant one principal more than one consumer group."
+            );
+        }
+
+        if (
+            options
+                .Consumers.Select(consumer => consumer.ConsumerGroup)
+                .Distinct(StringComparer.Ordinal)
+                .Count() != options.Consumers.Count
+        )
+        {
+            failures.Add($"{nameof(CdcControlOptions.Consumers)} must not share one consumer group.");
         }
 
         if (!options.AclsEnabled)

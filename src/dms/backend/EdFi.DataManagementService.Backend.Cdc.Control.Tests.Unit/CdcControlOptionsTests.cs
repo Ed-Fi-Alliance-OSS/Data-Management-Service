@@ -230,13 +230,13 @@ public class Given_CdcControlOptionsTests
     }
 
     [Test]
-    public void It_accepts_an_empty_consumer_principal_list()
+    public void It_accepts_an_empty_consumer_list()
     {
         CdcControlOptions options = ValidOptions();
         options.AclsEnabled = true;
         options.ConnectorPrincipal = "User:connector";
         options.ConnectWorkerPrincipal = "User:worker";
-        options.ConsumerPrincipals = new List<string>();
+        options.Consumers = new List<CdcConsumerOptions>();
 
         ValidateOptionsResult result = Validate(options);
 
@@ -247,24 +247,52 @@ public class Given_CdcControlOptionsTests
     public void It_rejects_a_blank_consumer_principal()
     {
         CdcControlOptions options = ValidOptions();
-        options.ConsumerPrincipals = ["User:reader", "  "];
+        options.Consumers = [Consumer("User:reader", "reader-group"), Consumer("  ", "other-group")];
 
-        AssertFailsWith(options, nameof(CdcControlOptions.ConsumerPrincipals));
+        AssertFailsWith(options, nameof(CdcControlOptions.Consumers));
     }
 
     [Test]
-    public void It_rejects_duplicate_consumer_principals()
+    public void It_rejects_a_blank_consumer_group()
     {
         CdcControlOptions options = ValidOptions();
-        options.ConsumerPrincipals = ["User:reader", "User:reader"];
+        options.Consumers = [Consumer("User:reader", "")];
+
+        AssertFailsWith(options, nameof(CdcControlOptions.Consumers));
+    }
+
+    [Test]
+    public void It_rejects_one_principal_granted_more_than_one_consumer_group()
+    {
+        CdcControlOptions options = ValidOptions();
+        options.Consumers = [Consumer("User:reader", "group-a"), Consumer("User:reader", "group-b")];
 
         ValidateOptionsResult result = Validate(options);
 
         result.Succeeded.Should().BeFalse();
         result
             .Failures.Should()
-            .ContainSingle(failure => failure.Contains("duplicates", StringComparison.Ordinal));
+            .ContainSingle(failure =>
+                failure.Contains("more than one consumer group", StringComparison.Ordinal)
+            );
     }
+
+    [Test]
+    public void It_rejects_consumers_sharing_one_consumer_group()
+    {
+        CdcControlOptions options = ValidOptions();
+        options.Consumers = [Consumer("User:reader", "shared"), Consumer("User:other", "shared")];
+
+        ValidateOptionsResult result = Validate(options);
+
+        result.Succeeded.Should().BeFalse();
+        result
+            .Failures.Should()
+            .ContainSingle(failure => failure.Contains("share one consumer group", StringComparison.Ordinal));
+    }
+
+    private static CdcConsumerOptions Consumer(string principal, string consumerGroup) =>
+        new() { Principal = principal, ConsumerGroup = consumerGroup };
 
     [Test]
     public void It_requires_acl_principals_when_acls_are_enabled()

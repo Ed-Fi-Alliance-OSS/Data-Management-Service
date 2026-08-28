@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using Confluent.Kafka;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Backend.Postgresql;
@@ -50,6 +51,8 @@ public static class CdcControlServiceCollectionExtensions
 
         services.AddCdcConnectorTemplates();
         services.AddCdcProviderSetup();
+        services.TryAddSingleton(BuildAdminClient);
+        services.TryAddSingleton<ICdcKafkaAdmin, CdcKafkaAdminAdapter>();
 
         string datastore = configuration.GetSection(DatastoreSectionName).Value ?? string.Empty;
 
@@ -68,5 +71,25 @@ public static class CdcControlServiceCollectionExtensions
         throw new InvalidOperationException(
             $"{DatastoreSectionName} must be one of: {PostgresqlDatastore}, {MssqlDatastore}"
         );
+    }
+
+    /// <summary>
+    /// Builds the admin client from the deployment's bootstrap servers and Kafka client security
+    /// properties. Construction is deferred to first resolution so a registration-time graph check
+    /// never opens a broker connection.
+    /// </summary>
+    private static IAdminClient BuildAdminClient(IServiceProvider serviceProvider)
+    {
+        CdcControlOptions options = serviceProvider.GetRequiredService<IOptions<CdcControlOptions>>().Value;
+
+        AdminClientConfig config = new() { BootstrapServers = options.KafkaBootstrapServers };
+        foreach (
+            KeyValuePair<string, string> property in options.ToKafkaClientSecurityProperties().Properties
+        )
+        {
+            config.Set(property.Key, property.Value);
+        }
+
+        return new AdminClientBuilder(config).Build();
     }
 }
