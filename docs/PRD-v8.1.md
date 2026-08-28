@@ -663,7 +663,6 @@ Maintainability & Supply Chain).
 
 | Component | Responsibility | Notes |
 | --- | --- | --- |
-| Rostering service (optional) | Serves industry-standard rostering data derived from the same operational data | Would share credentials and access-governance with the core API; deployed and scaled independently |
 | Custom extensions (optional) | Host-supplied configuration/secret sources, custom access rules, identity-system integrations, or wholly new capabilities | Would be the platform's primary supported way for hosts to extend behavior without forking core code |
 | External secret-management system (optional) | Alternative source for sensitive configuration such as data-store credentials | Alternative/supplement to the administrative service's own encrypted storage |
 | Operational data store derivative(s) | Read-only replica and/or point-in-time snapshot copies of the primary operational data store | Would extend the operational data store described in the v8.0 companion PRD |
