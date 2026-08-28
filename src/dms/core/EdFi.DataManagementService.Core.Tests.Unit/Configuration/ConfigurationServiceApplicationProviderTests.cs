@@ -329,7 +329,8 @@ public class Given_ConfigurationServiceApplicationProvider
                     Content = new StringContent(responseBody, Encoding.UTF8, "application/json"),
                 },
                 useResponseHandler
-            ) { }
+            )
+        { }
 
         public ProviderFixture(Exception exception)
         {
