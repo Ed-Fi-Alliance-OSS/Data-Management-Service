@@ -413,18 +413,25 @@ public class Given_A_Host_Using_The_Relational_Backend
                     );
 
                 var applicationContextProvider = A.Fake<IApplicationContextProvider>();
+                var applicationContextResult = new ApplicationContextResult.Success(
+                    new ApplicationContext(
+                        Id: 1,
+                        ApplicationId: 1,
+                        ClientId: "smoke-client",
+                        ClientUuid: Guid.Parse("11111111-1111-1111-1111-111111111111"),
+                        DataStoreIds: [1],
+                        CreatorOwnershipTokenId: null,
+                        OwnershipTokenIds: []
+                    )
+                );
                 A.CallTo(() =>
                         applicationContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null)
                     )
-                    .Returns(
-                        Task.FromResult<ApplicationContextResult>(new ApplicationContextResult.NotFound())
-                    );
+                    .Returns(applicationContextResult);
                 A.CallTo(() =>
                         applicationContextProvider.ReloadApplicationByClientIdAsync(A<string>._, tenant: null)
                     )
-                    .Returns(
-                        Task.FromResult<ApplicationContextResult>(new ApplicationContextResult.NotFound())
-                    );
+                    .Returns(applicationContextResult);
 
                 var resourceKeyValidator = A.Fake<IResourceKeyValidator>();
                 A.CallTo(() =>
