@@ -16,6 +16,21 @@
 # No YAML parser is available in this lane, so (following DmsPullRequestMssqlWorkflow.Tests.ps1)
 # named blocks are extracted by their two-space job key and invariants are asserted inside them.
 
+# The nine jobs that each ran their own solution build before the shared build artifact landed.
+# Declared at file scope rather than in BeforeAll because Pester binds -ForEach during discovery,
+# which happens before any BeforeAll body has run.
+$buildOutputConsumer = @(
+    @{ JobName = 'run-unit-tests' }
+    @{ JobName = 'run-e2e-tests' }
+    @{ JobName = 'run-e2e-tests-ds61' }
+    @{ JobName = 'run-e2e-tests-partition-sizing' }
+    @{ JobName = 'run-e2e-tests-mssql' }
+    @{ JobName = 'run-e2e-tests-mssql-ds61' }
+    @{ JobName = 'run-instance-management-e2e-tests' }
+    @{ JobName = 'run-instance-management-e2e-tests-mssql' }
+    @{ JobName = 'build-and-start-dms' }
+)
+
 Describe "on-dms-pullrequest.yml CI budget wiring" {
     BeforeAll {
         $script:workflowPath = [System.IO.Path]::GetFullPath(
@@ -200,6 +215,54 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
             'run-unit-tests'
             'dms-ci-gate'
         )
+
+        function Get-StepChunk {
+            # The job's steps as ordered text chunks, split on the six-space `- ` step markers. Order
+            # matters here as much as presence: a download step that lands after the step consuming
+            # the build output is present and still useless.
+            param([Parameter(Mandatory)] [string] $JobName)
+
+            $block = Get-JobBlock -JobName $JobName
+            if ($null -eq $block) {
+                throw "Job '$JobName' was not found in $script:workflowPath."
+            }
+
+            $blockLines = $block -split "`n"
+            $stepsIndex = -1
+            for ($i = 0; $i -lt $blockLines.Count; $i++) {
+                if ($blockLines[$i] -match '^    steps:\s*$') {
+                    $stepsIndex = $i
+                    break
+                }
+            }
+
+            if ($stepsIndex -lt 0) {
+                throw "Job '$JobName' has no steps: block in $script:workflowPath."
+            }
+
+            $chunks = [System.Collections.Generic.List[string]]::new()
+            $current = $null
+
+            for ($i = $stepsIndex + 1; $i -lt $blockLines.Count; $i++) {
+                if ($blockLines[$i] -match '^      - ') {
+                    if ($null -ne $current) {
+                        $chunks.Add($current -join "`n")
+                    }
+                    $current = @($blockLines[$i])
+                    continue
+                }
+
+                if ($null -ne $current) {
+                    $current += $blockLines[$i]
+                }
+            }
+
+            if ($null -ne $current) {
+                $chunks.Add($current -join "`n")
+            }
+
+            return $chunks.ToArray()
+        }
     }
 
     Context "Pull request trigger types" {
@@ -408,6 +471,89 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
             foreach ($dependency in $needs) {
                 $definedJob | Should -Contain $dependency
             }
+        }
+    }
+
+    Context "One shared solution build feeds every build consumer" {
+        It "build-dms-solution exists and uploads the dms-build-output artifact" {
+            $block = Get-JobBlock -JobName 'build-dms-solution'
+
+            $block | Should -Not -BeNullOrEmpty
+            $block | Should -Match 'actions/upload-artifact'
+            $block | Should -Match 'name: dms-build-output'
+            # An empty artifact has to fail the producer rather than fail nine consumers later with
+            # a confusing missing-assembly error.
+            $block | Should -Match 'if-no-files-found: error'
+        }
+
+        It "build-dms-solution runs on DMS relevance and is not draft-gated" {
+            # A draft-gated producer would skip run-unit-tests through the dependency, which is the
+            # opposite of keeping fast feedback on draft pull requests.
+            $condition = Get-JobIfCondition -JobName 'build-dms-solution'
+
+            $condition | Should -Match 'dms_relevant'
+            $condition | Should -Not -Match 'draft'
+        }
+
+        It "<JobName> depends on build-dms-solution" -ForEach $buildOutputConsumer {
+            Get-JobNeed -JobName $JobName | Should -Contain 'build-dms-solution'
+        }
+
+        It "<JobName> downloads dms-build-output" -ForEach $buildOutputConsumer {
+            $block = Get-JobBlock -JobName $JobName
+
+            $block | Should -Match 'actions/download-artifact'
+            $block | Should -Match 'name: dms-build-output'
+        }
+
+        It "<JobName> no longer runs its own solution build" -ForEach $buildOutputConsumer {
+            # Anchored on the run line rather than the step name, so renaming a step cannot hide a
+            # build that is still happening.
+            $block = Get-JobBlock -JobName $JobName
+
+            $block | Should -Not -Match 'build-dms\.ps1 Build'
+        }
+
+        It "<JobName> downloads the artifact before the first step needing compiled output" -ForEach $buildOutputConsumer {
+            $chunks = [string[]] (Get-StepChunk -JobName $JobName)
+
+            $downloadIndex = [array]::FindIndex(
+                $chunks, [Predicate[string]] { $args[0] -match 'name: dms-build-output' }
+            )
+            $firstUseIndex = [array]::FindIndex(
+                $chunks,
+                [Predicate[string]] {
+                    $args[0] -match 'build-dms\.ps1 (UnitTest|E2ETest|InstanceE2ETest)' -or
+                    $args[0] -match 'preflight-dms-schema-compile\.ps1'
+                }
+            )
+
+            $downloadIndex | Should -BeGreaterThan -1
+            $firstUseIndex | Should -BeGreaterThan -1
+            $downloadIndex | Should -BeLessThan $firstUseIndex
+        }
+
+        It "only the producer runs a solution build, with no inert -IdentityProvider" {
+            # -IdentityProvider never affected Build; it was carried along by copy-paste and is
+            # removed with the deleted steps. The producer is the one remaining Build call site.
+            $buildLines = @($script:lines | Where-Object { $_ -match 'build-dms\.ps1 Build\b' })
+
+            $buildLines.Count | Should -Be 1
+            $buildLines[0] | Should -Not -Match '-IdentityProvider'
+            (Get-JobBlock -JobName 'build-dms-solution') | Should -Match 'build-dms\.ps1 Build'
+        }
+
+        It "the aggregate gate waits on the producer" {
+            Get-JobNeed -JobName 'dms-ci-gate' | Should -Contain 'build-dms-solution'
+        }
+
+        It "build-integration-test-assemblies keeps its own artifact contract" {
+            # Deliberately not re-staged from dms-build-output: that would couple the six fast
+            # integration lanes to a much larger download.
+            $block = Get-JobBlock -JobName 'build-integration-test-assemblies'
+
+            $block | Should -Match 'name: dms-integration-test-assemblies'
+            $block | Should -Not -Match 'dms-build-output'
         }
     }
 }

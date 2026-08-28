@@ -413,9 +413,12 @@ jobs:
             -PackageVersion $packageVersion `
             -NuGetPackagesDirectory (Join-Path $env:RUNNER_TEMP "nuget-verify-custom-validation")
 
-  run-unit-tests:
-    name: Run Unit Tests
+  build-dms-solution:
+    name: Build DMS Solution
     needs: detect-fresh-build-changes
+    # Gated on DMS relevance only, and deliberately not draft-gated: run-unit-tests depends on this
+    # producer, so draft-gating here would skip unit tests on every draft DMS pull request through
+    # the dependency.
     if: >-
       github.event_name != 'pull_request' ||
       needs.detect-fresh-build-changes.outputs.dms_relevant == 'true'
@@ -444,6 +447,102 @@ jobs:
 
       - name: Build
         run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
+
+      - name: Stage DMS Build Output
+        run: |
+          $configuration = "${{ env.CONFIGURATION }}"
+          $artifactRoot = "./TestArtifacts/dms-build-output"
+
+          if (Test-Path $artifactRoot) {
+            Remove-Item -LiteralPath $artifactRoot -Recurse -Force
+          }
+
+          $repositoryRoot = (Get-Location).Path
+
+          # Compiled output for every project, plus the per-project NuGet evaluation markers that
+          # `dotnet test --no-build` and `dotnet run --no-build` read when they evaluate a project
+          # without compiling it. obj/$configuration is deliberately excluded: --no-build evaluates
+          # the project but never reads intermediate output or reference assemblies.
+          # The directories are resolved first and then walked with -LiteralPath. A wildcard -Path
+          # combined with -Recurse makes Get-ChildItem treat the last segment as a name filter, so
+          # "./src/dms/*/*/bin/$configuration" -Recurse -File searches for files *named*
+          # "$configuration" and silently matches nothing.
+          $binDirectories = @(Get-ChildItem -Path "./src/dms/*/*/bin/$configuration" -Directory -Force)
+          $objDirectories = @(Get-ChildItem -Path "./src/dms/*/*/obj" -Directory -Force)
+
+          $stagedFiles = @(
+            $binDirectories | ForEach-Object {
+              Get-ChildItem -LiteralPath $_.FullName -Recurse -File -Force
+            }
+            $objDirectories | ForEach-Object {
+              Get-ChildItem -LiteralPath $_.FullName -File -Force
+            } | Where-Object {
+              $_.Name -in @('project.assets.json', 'project.nuget.cache') -or
+              $_.Name -like '*.csproj.nuget.g.props' -or
+              $_.Name -like '*.csproj.nuget.g.targets'
+            }
+          )
+
+          # An empty set means the build produced nothing where this expects it, which would upload
+          # an empty artifact and fail every consumer with a confusing missing-assembly error.
+          if ($stagedFiles.Count -eq 0) {
+            throw "No build output found to stage. Expected compiled output under src/dms/*/*/bin/$configuration."
+          }
+
+          # Staged at repository-relative paths so a consumer extracting the artifact over its own
+          # checkout root gets every file exactly where its own build would have written it.
+          foreach ($file in $stagedFiles) {
+            $relativePath = [System.IO.Path]::GetRelativePath($repositoryRoot, $file.FullName)
+            $destination = Join-Path $artifactRoot $relativePath
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
+            Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
+          }
+
+          $totalBytes = ($stagedFiles | Measure-Object -Property Length -Sum).Sum
+          Write-Output "Staged $($stagedFiles.Count) files ($([math]::Round($totalBytes / 1MB, 1)) MB) to $artifactRoot"
+
+      - name: Upload DMS Build Output
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        with:
+          name: dms-build-output
+          path: TestArtifacts/dms-build-output
+          if-no-files-found: error
+          retention-days: 1
+
+  run-unit-tests:
+    name: Run Unit Tests
+    needs: [detect-fresh-build-changes, build-dms-solution]
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Cache Nuget packages
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Download DMS Build Output
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-build-output
+          path: .
 
       - name: Restore .NET tools
         if: success()
@@ -1558,7 +1657,7 @@ jobs:
 
   run-e2e-tests:
     name: Run PostgreSQL DMS E2E (${{ matrix.identityprovider }}, Shard ${{ matrix.shard }})
-    needs: build-ci-docker-images
+    needs: [build-ci-docker-images, build-dms-solution]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -1648,8 +1747,11 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Build
-        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }} -IdentityProvider ${{matrix.identityprovider}}
+      - name: Download DMS Build Output
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-build-output
+          path: .
 
       - name: Run DMS E2E (IdentityProvider ${{ matrix.identityprovider }}, Shard ${{ matrix.shard }})
         id: e2e
@@ -1733,7 +1835,7 @@ jobs:
   # (EdFi.DataManagementService.Tests.E2E.filtered.trx).
   run-e2e-tests-ds61:
     name: Run PostgreSQL DMS E2E (DS 6.1, version-coupled)
-    needs: build-ci-docker-images
+    needs: [build-ci-docker-images, build-dms-solution]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1818,8 +1920,11 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Build
-        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }} -IdentityProvider self-contained
+      - name: Download DMS Build Output
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-build-output
+          path: .
 
       - name: Add Kafka hostname to /etc/hosts
         run: echo "127.0.0.1 dms-kafka1" | sudo tee -a /etc/hosts
@@ -1909,7 +2014,7 @@ jobs:
   # writes the filtered TRX (EdFi.DataManagementService.Tests.E2E.filtered.trx).
   run-e2e-tests-partition-sizing:
     name: Run PostgreSQL DMS E2E (partition sizing, isolated page size)
-    needs: build-ci-docker-images
+    needs: [build-ci-docker-images, build-dms-solution]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1994,8 +2099,11 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Build
-        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }} -IdentityProvider self-contained
+      - name: Download DMS Build Output
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-build-output
+          path: .
 
       - name: Run DMS E2E (partition sizing)
         id: e2e_partition_sizing
@@ -2081,7 +2189,7 @@ jobs:
   # runs regardless of outcome, and diagnostic artifacts are sanitized before any upload or report.
   run-e2e-tests-mssql:
     name: Run SQL Server DMS E2E (${{ matrix.identityprovider }}, representative)
-    needs: build-ci-docker-images
+    needs: [build-ci-docker-images, build-dms-solution]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -2170,8 +2278,11 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Build
-        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }} -IdentityProvider ${{matrix.identityprovider}}
+      - name: Download DMS Build Output
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-build-output
+          path: .
 
       - name: Run SQL Server DMS E2E (IdentityProvider ${{ matrix.identityprovider }}, representative)
         id: e2e
@@ -2297,7 +2408,7 @@ jobs:
   # (EdFi.DataManagementService.Tests.E2E.filtered.trx).
   run-e2e-tests-mssql-ds61:
     name: Run SQL Server DMS E2E (DS 6.1, version-coupled)
-    needs: build-ci-docker-images
+    needs: [build-ci-docker-images, build-dms-solution]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -2382,8 +2493,11 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Build
-        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }} -IdentityProvider self-contained
+      - name: Download DMS Build Output
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-build-output
+          path: .
 
       - name: Run DS 6.1 SQL Server DMS E2E (version-coupled scenarios)
         id: e2e_ds61_mssql
@@ -2532,7 +2646,7 @@ jobs:
 
   run-instance-management-e2e-tests:
     name: Run Instance Management E2E Tests (Shard ${{ matrix.shard }})
-    needs: build-ci-docker-images
+    needs: [build-ci-docker-images, build-dms-solution]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -2621,8 +2735,11 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Build
-        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
+      - name: Download DMS Build Output
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-build-output
+          path: .
 
       - name: Run Instance Management E2E Tests
         if: success()
@@ -2715,7 +2832,7 @@ jobs:
   # sanitized before any upload or report.
   run-instance-management-e2e-tests-mssql:
     name: Run SQL Server Instance Management E2E Tests (Shard ${{ matrix.shard }})
-    needs: build-ci-docker-images
+    needs: [build-ci-docker-images, build-dms-solution]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -2804,8 +2921,11 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Build
-        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
+      - name: Download DMS Build Output
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-build-output
+          path: .
 
       - name: Run SQL Server Instance Management E2E Tests
         id: e2e
@@ -2923,7 +3043,7 @@ jobs:
 
   build-and-start-dms:
     name: Build and Start DMS, Download OpenAPI Specs
-    needs: build-ci-docker-images
+    needs: [build-ci-docker-images, build-dms-solution]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -3008,8 +3128,11 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Build
-        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
+      - name: Download DMS Build Output
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-build-output
+          path: .
 
       - name: Preflight DMS Schema Compile
         run: |
@@ -3362,6 +3485,7 @@ jobs:
       - run-bootstrap-pester-tests
       - verify-lock-files
       - verify-dms-packages
+      - build-dms-solution
       - run-unit-tests
       - build-integration-test-assemblies
       - build-ci-docker-images
