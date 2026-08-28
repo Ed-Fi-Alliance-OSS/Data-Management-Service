@@ -91,6 +91,25 @@ internal static class DerivativeDocumentCacheScenario
             )
             .Should()
             .Be(0, "a parent read is not a derivative read");
+
+        // Without this the control would pass for a host where read acceleration was simply off, which
+        // would make the bypass above prove nothing.
+        harness
+            .DocumentCacheReadTelemetryRecorder!.TelemetryRecords.Count(record =>
+                record.EventName == nameof(IDocumentCacheReadTelemetry.RecordAttempt)
+            )
+            .Should()
+            .BeGreaterThan(0, "the parent read must reach the cache lookup");
+
+        harness
+            .DocumentCacheReadTelemetryRecorder!.TelemetryRecords.Should()
+            .Contain(
+                record =>
+                    record.EventName == nameof(IDocumentCacheReadTelemetry.RecordMiss)
+                    || record.EventName == nameof(IDocumentCacheReadTelemetry.RecordHit)
+                    || record.EventName == nameof(IDocumentCacheReadTelemetry.RecordPageHit),
+                "the lookup must reach a real cache outcome rather than being skipped earlier"
+            );
     }
 
     /// <summary>

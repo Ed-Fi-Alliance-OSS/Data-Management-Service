@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Tests.Integration.Doubles;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
+using EdFi.DataManagementService.Tests.Integration.Scenarios;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -211,6 +212,12 @@ public abstract class ApiIntegrationTestBase
 
     /// <summary>Releases one database taken through <see cref="LeaseAdditionalDatabaseAsync" />.</summary>
     protected abstract Task ReleaseAdditionalDatabaseAsync(string leasedConnectionString);
+
+    /// <summary>
+    /// Switches a leased database's reachability at the server, for a fixture that proves a request
+    /// never touched a target other than the one it selected.
+    /// </summary>
+    protected abstract IDerivativeTargetReachability Reachability { get; }
 
     /// <summary>
     /// Hook for a fixture that must substitute a production service in the booted host, for example to

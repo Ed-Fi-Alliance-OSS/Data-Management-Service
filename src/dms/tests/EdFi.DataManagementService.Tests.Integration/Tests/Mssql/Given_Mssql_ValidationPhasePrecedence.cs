@@ -9,12 +9,12 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
-using EdFi.DataManagementService.Tests.Integration.Postgresql;
+using EdFi.DataManagementService.Tests.Integration.Mssql;
 using FluentAssertions;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
-using Npgsql;
 
-namespace EdFi.DataManagementService.Tests.Integration.Tests.Postgresql;
+namespace EdFi.DataManagementService.Tests.Integration.Tests.Mssql;
 
 /// <summary>
 /// The endpoint-validation phase answers before the database-validation phase, so when both would
@@ -31,7 +31,7 @@ namespace EdFi.DataManagementService.Tests.Integration.Tests.Postgresql;
 /// served from those cached verdicts and every assertion below would pass vacuously. Every fixture
 /// asserts a control proving its stage really does fail, so that failure mode stays detectable.
 /// </summary>
-public abstract class PostgresqlValidationPhasePrecedenceTestBase : PostgresqlApiIntegrationTestBase
+public abstract class MssqlValidationPhasePrecedenceTestBase : MssqlApiIntegrationTestBase
 {
     /// <summary>A resource the ApiSchema does not define, so endpoint validation rejects it.</summary>
     private const string UnknownResourceEndpoint = "/data/ed-fi/nonexistentThings";
@@ -103,9 +103,9 @@ public abstract class PostgresqlValidationPhasePrecedenceTestBase : PostgresqlAp
 
         if (BreakLaterStageSql is { } sql)
         {
-            await using NpgsqlConnection connection = new(leasedConnectionString);
+            await using SqlConnection connection = new(leasedConnectionString);
             await connection.OpenAsync();
-            await using NpgsqlCommand command = connection.CreateCommand();
+            await using SqlCommand command = connection.CreateCommand();
             command.CommandText = sql;
             await command.ExecuteNonQueryAsync();
         }
@@ -319,10 +319,9 @@ public abstract class PostgresqlValidationPhasePrecedenceTestBase : PostgresqlAp
 /// Fingerprint validation fails: the provisioned database has no dms.EffectiveSchema row at all, which
 /// is the unprovisioned-database case.
 /// </summary>
-public sealed class Given_Postgresql_Precedence_Over_Fingerprint_Failure
-    : PostgresqlValidationPhasePrecedenceTestBase
+public sealed class Given_Mssql_Precedence_Over_Fingerprint_Failure : MssqlValidationPhasePrecedenceTestBase
 {
-    protected override string BreakLaterStageSql => """DELETE FROM dms."EffectiveSchema";""";
+    protected override string BreakLaterStageSql => "DELETE FROM dms.EffectiveSchema;";
 }
 
 /// <summary>
@@ -330,11 +329,12 @@ public sealed class Given_Postgresql_Precedence_Over_Fingerprint_Failure
 /// schema hash still matches what the process expects, so the fingerprint is valid, while the recorded
 /// resource-key seed hash no longer matches the seed the process computed.
 /// </summary>
-public sealed class Given_Postgresql_Precedence_Over_Resource_Key_Mismatch
-    : PostgresqlValidationPhasePrecedenceTestBase
+public sealed class Given_Mssql_Precedence_Over_Resource_Key_Mismatch : MssqlValidationPhasePrecedenceTestBase
 {
+    // SQL Server has no decode/repeat; a 32-byte literal is the same deliberate mismatch.
     protected override string BreakLaterStageSql =>
-        """UPDATE dms."EffectiveSchema" SET "ResourceKeySeedHash" = decode(repeat('ab', 32), 'hex');""";
+        "UPDATE dms.EffectiveSchema SET ResourceKeySeedHash = "
+        + "0xABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB;";
 }
 
 /// <summary>
@@ -342,8 +342,7 @@ public sealed class Given_Postgresql_Precedence_Over_Resource_Key_Mismatch
 /// the third and last edge the phase reorder moves. The database stays healthy; the switchable provider
 /// is what stops resolving, and only after startup has completed through the real one.
 /// </summary>
-public sealed class Given_Postgresql_Precedence_Over_Mapping_Set_Failure
-    : PostgresqlValidationPhasePrecedenceTestBase
+public sealed class Given_Mssql_Precedence_Over_Mapping_Set_Failure : MssqlValidationPhasePrecedenceTestBase
 {
     protected override void BreakLaterStageAfterSetup() => StopResolvingMappingSets();
 }

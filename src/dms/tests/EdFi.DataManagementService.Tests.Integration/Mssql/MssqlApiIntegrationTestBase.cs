@@ -6,6 +6,7 @@
 using System.Data.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
+using EdFi.DataManagementService.Tests.Integration.Scenarios;
 using Microsoft.Data.SqlClient;
 
 namespace EdFi.DataManagementService.Tests.Integration.Mssql;
@@ -71,6 +72,11 @@ public abstract class MssqlApiIntegrationTestBase : ApiIntegrationTestBase
             await SetReadCommittedSnapshotAsync(lease.Database.DatabaseName, enabled: true);
         }
 
+        if (MatchProductionWriteIsolation)
+        {
+            await SetAllowSnapshotIsolationAsync(lease.Database.DatabaseName, enabled: true);
+        }
+
         _additionalLeases[lease.Database.ConnectionString] = lease;
 
         return lease.Database.ConnectionString;
@@ -81,13 +87,55 @@ public abstract class MssqlApiIntegrationTestBase : ApiIntegrationTestBase
         if (_additionalLeases.Remove(leasedConnectionString, out IMssqlGeneratedDdlBaselineLease? lease))
         {
             // The isolation configuration lives in master rather than in the data pages, so it is
-            // returned to the pooled default before the slot goes back, exactly as the primary's is.
+            // returned to the pooled default before the slot goes back, exactly as the primary's is -
+            // both settings, in the same order the primary reverts them.
+            if (MatchProductionWriteIsolation)
+            {
+                await SetAllowSnapshotIsolationAsync(lease.Database.DatabaseName, enabled: false);
+            }
+
             if (EnableDocumentCacheReadAcceleration || MatchProductionWriteIsolation)
             {
-                await SetReadCommittedSnapshotAsync(lease.Database.DatabaseName, enabled: false);
+                await SetReadCommittedSnapshotAsync(
+                    lease.Database.DatabaseName,
+                    enabled: EnableDocumentCacheReadAcceleration
+                );
             }
 
             await lease.DisposeAsync();
+        }
+    }
+
+    protected override IDerivativeTargetReachability Reachability { get; } = new MssqlTargetReachability();
+
+    /// <summary>
+    /// SQL Server refuses connections to an offline database, without touching the connection string
+    /// that names it, so the identity and therefore the pool it realizes to are unchanged.
+    /// </summary>
+    private sealed class MssqlTargetReachability : IDerivativeTargetReachability
+    {
+        public Task MakeUnreachableAsync(string leasedConnectionString) =>
+            SetOfflineAsync(leasedConnectionString, offline: true);
+
+        public Task MakeReachableAsync(string leasedConnectionString) =>
+            SetOfflineAsync(leasedConnectionString, offline: false);
+
+        public string AbsentDatabaseConnectionString(string leasedConnectionString) =>
+            new SqlConnectionStringBuilder(leasedConnectionString)
+            {
+                InitialCatalog = $"absent_{Guid.NewGuid():N}",
+            }.ConnectionString;
+
+        private static Task SetOfflineAsync(string leasedConnectionString, bool offline)
+        {
+            string databaseName = new SqlConnectionStringBuilder(leasedConnectionString).InitialCatalog;
+            string quotedDatabaseName = MssqlTestDatabaseHelper.QuoteIdentifier(databaseName);
+
+            return MssqlTestDatabaseHelper.ExecuteAdminNonQueryAsync(
+                offline
+                    ? $"ALTER DATABASE {quotedDatabaseName} SET OFFLINE WITH ROLLBACK IMMEDIATE;"
+                    : $"ALTER DATABASE {quotedDatabaseName} SET ONLINE;"
+            );
         }
     }
 

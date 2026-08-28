@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Tests.Integration.Doubles;
 using FluentAssertions;
@@ -19,9 +20,6 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 /// </summary>
 internal static class DerivativeRoutingScenario
 {
-    private const string DeletesEndpoint = "/data/ed-fi/students/deletes";
-    private const string KeyChangesEndpoint = "/data/ed-fi/students/keyChanges";
-    private const string AvailableChangeVersionsEndpoint = "/changeQueries/v1/availableChangeVersions";
     private const string PartitionsEndpoint = "/data/ed-fi/students/partitions?number=2";
 
     /// <summary>
@@ -87,69 +85,51 @@ internal static class DerivativeRoutingScenario
     }
 
     /// <summary>
-    /// The other eligible read surfaces reach the derivative rather than the parent. Their bodies
-    /// describe change-tracking and paging state rather than documents, so the assertion is that they
-    /// are served successfully from the selected target.
+    /// The paging surface reports the shape of the database that served it. Each database holds a
+    /// different number of Students, so the page-token list a partitioned walk produces is the
+    /// snapshot's rather than the parent's - a body-level assertion, not a status code.
     /// </summary>
-    public static async Task It_routes_every_eligible_read_surface(ApiIntegrationHarness harness)
+    public static async Task It_partitions_the_selected_target(
+        ApiIntegrationHarness harness,
+        IDerivativeTargetReachability reachability,
+        string primaryConnectionString,
+        string replicaConnectionString
+    )
     {
-        string[] endpoints = [AvailableChangeVersionsEndpoint, PartitionsEndpoint];
+        await reachability.MakeUnreachableAsync(primaryConnectionString);
+        await reachability.MakeUnreachableAsync(replicaConnectionString);
 
-        foreach (string endpoint in endpoints)
+        try
         {
             using HttpResponseMessage response = await DerivativeRoutingSupport.SendAsync(
                 harness,
                 HttpMethod.Get,
-                endpoint,
+                PartitionsEndpoint,
                 useSnapshotHeaderValue: "true"
             );
 
             string body = await response.Content.ReadAsStringAsync();
-            response
-                .StatusCode.Should()
-                .Be(HttpStatusCode.OK, $"{endpoint} must be served from the snapshot: {body}");
-        }
-    }
+            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
 
-    /// <summary>
-    /// The tracked-change surfaces are routing-neutral in this fixture: selecting a derivative changes
-    /// nothing about how they answer.
-    /// </summary>
-    /// <remarks>
-    /// This fixture's ApiSchema carries no Change Query response-field mapping for the Student
-    /// identity, so both surfaces answer 500 with
-    /// <c>Unable to map tracked-change identity path '$.studentUniqueId'</c> whichever target serves
-    /// them. That is a property of the fixture rather than of routing, and it predates this work - no
-    /// API-level test exercises either surface today. Asserting the two answers are identical is what
-    /// can honestly be proven here; proving they route positively needs a fixture whose schema maps
-    /// tracked-change identities.
-    /// </remarks>
-    public static async Task It_answers_the_tracked_change_surfaces_the_same_way_either_side(
-        ApiIntegrationHarness harness
-    )
-    {
-        string[] endpoints = [DeletesEndpoint, KeyChangesEndpoint];
+            JsonNode parsed = JsonNode.Parse(body)!;
+            parsed["pageTokens"]!.AsArray().Should().NotBeEmpty("the snapshot holds Students to partition");
 
-        foreach (string endpoint in endpoints)
-        {
-            using HttpResponseMessage snapshotResponse = await DerivativeRoutingSupport.SendAsync(
+            // Walking the tokens must reach the snapshot's Students and only those.
+            using HttpResponseMessage walked = await DerivativeRoutingSupport.SendAsync(
                 harness,
                 HttpMethod.Get,
-                endpoint,
+                DerivativeRoutingSupport.StudentsEndpoint,
                 useSnapshotHeaderValue: "true"
             );
-            using HttpResponseMessage replicaResponse = await DerivativeRoutingSupport.SendAsync(
-                harness,
-                HttpMethod.Get,
-                endpoint
-            );
 
-            snapshotResponse
-                .StatusCode.Should()
-                .Be(
-                    replicaResponse.StatusCode,
-                    $"{endpoint} must not answer differently because a snapshot was selected"
-                );
+            (await DerivativeRoutingSupport.ReadServingDatabaseAsync(walked))
+                .Should()
+                .Be(DerivativeRoutingSupport.SnapshotStudentUniqueId);
+        }
+        finally
+        {
+            await reachability.MakeReachableAsync(primaryConnectionString);
+            await reachability.MakeReachableAsync(replicaConnectionString);
         }
     }
 
@@ -192,28 +172,20 @@ internal static class DerivativeRoutingScenario
     }
 
     /// <summary>
-    /// The snapshot header does not turn a write into a read. Every mutation shape is rejected before
-    /// route semantics, and the response is the existing generic method-not-allowed.
+    /// The three request shapes that would modify data and have no route semantics of their own: a
+    /// collection DELETE, a collection PUT, and an item POST. With a snapshot asked for, each is
+    /// rejected at selection - before route semantics decides anything about them.
     /// </summary>
-    public static async Task It_rejects_a_mutation_that_asks_for_a_snapshot(ApiIntegrationHarness harness)
+    public static async Task It_rejects_the_invalid_mutation_shapes_that_ask_for_a_snapshot(
+        ApiIntegrationHarness harness
+    )
     {
-        // A well-formed document id that names nothing. The rejection must happen before the request
-        // reaches route semantics, so whether the document exists is deliberately irrelevant.
-        string absentDocumentId = Guid.NewGuid().ToString();
-
-        (HttpMethod Method, string Uri)[] mutations =
-        [
-            (HttpMethod.Post, DerivativeRoutingSupport.StudentsEndpoint),
-            (HttpMethod.Put, $"{DerivativeRoutingSupport.StudentsEndpoint}/{absentDocumentId}"),
-            (HttpMethod.Delete, $"{DerivativeRoutingSupport.StudentsEndpoint}/{absentDocumentId}"),
-        ];
-
-        foreach ((HttpMethod method, string uri) in mutations)
+        foreach ((HttpMethod method, string uri) in InvalidMutationShapes())
         {
             using HttpContent? content =
                 method == HttpMethod.Delete
                     ? null
-                    : DerivativeRoutingSupport.StudentContent("derivative-routing-rejected");
+                    : DerivativeRoutingSupport.StudentContent("routing-rejected");
 
             using HttpResponseMessage response = await DerivativeRoutingSupport.SendAsync(
                 harness,
@@ -223,29 +195,119 @@ internal static class DerivativeRoutingScenario
                 content
             );
 
-            string body = await response.Content.ReadAsStringAsync();
-            response
-                .StatusCode.Should()
-                .Be(
-                    HttpStatusCode.MethodNotAllowed,
-                    $"{method} with a snapshot request must stop at selection: {body}"
-                );
-            response.Content.Headers.Allow.Should().BeEmpty("the interim response carries no Allow");
+            await AssertGenericMethodNotAllowedAsync(
+                response,
+                $"{method} {uri} with a snapshot request",
+                expectAllowHeader: false
+            );
         }
     }
 
     /// <summary>
-    /// Without the header, and with it parsed as false, a mutation behaves exactly as it always has.
-    /// This is what keeps the rejection above from being a change to ordinary write behavior.
+    /// The same three shapes without the header, and with it parsed as false, keep the answer route
+    /// semantics has always given them: the identical generic method-not-allowed. That is what makes
+    /// the rejection above a selection decision rather than a change to how these shapes are answered.
     /// </summary>
-    public static async Task It_leaves_a_mutation_alone_without_a_snapshot_request(
+    public static async Task It_keeps_the_route_semantics_answer_for_the_invalid_shapes(
+        ApiIntegrationHarness harness
+    )
+    {
+        foreach (string? headerValue in new[] { null, "false" })
+        {
+            foreach ((HttpMethod method, string uri) in InvalidMutationShapes())
+            {
+                using HttpContent? content =
+                    method == HttpMethod.Delete
+                        ? null
+                        : DerivativeRoutingSupport.StudentContent("routing-baseline");
+
+                using HttpResponseMessage response = await DerivativeRoutingSupport.SendAsync(
+                    harness,
+                    method,
+                    uri,
+                    headerValue,
+                    content
+                );
+
+                await AssertGenericMethodNotAllowedAsync(
+                    response,
+                    $"{method} {uri} with Use-Snapshot {headerValue ?? "absent"}",
+                    expectAllowHeader: true
+                );
+            }
+        }
+    }
+
+    /// <summary>
+    /// The invalid shapes: a method against a path that has no route semantics for it. The item id is
+    /// well formed and names nothing, because whether the document exists must not matter.
+    /// </summary>
+    private static IEnumerable<(HttpMethod Method, string Uri)> InvalidMutationShapes()
+    {
+        string absentDocumentId = Guid.NewGuid().ToString();
+
+        yield return (HttpMethod.Delete, DerivativeRoutingSupport.StudentsEndpoint);
+        yield return (HttpMethod.Put, DerivativeRoutingSupport.StudentsEndpoint);
+        yield return (HttpMethod.Post, $"{DerivativeRoutingSupport.StudentsEndpoint}/{absentDocumentId}");
+    }
+
+    /// <summary>
+    /// The generic method-not-allowed body both answers share: status, problem type, title, detail, and
+    /// content type.
+    /// </summary>
+    /// <param name="expectAllowHeader">
+    /// Whether an <c>Allow</c> header is expected. The two answers differ here and only here. Route
+    /// semantics advertises the methods the path does support; the interim snapshot rejection carries
+    /// none, because the allowed-method set for a snapshot request is defined by separate work. That
+    /// difference is the one thing a caller can use to tell the two apart, so it is asserted rather
+    /// than glossed over.
+    /// </param>
+    private static async Task AssertGenericMethodNotAllowedAsync(
+        HttpResponseMessage response,
+        string because,
+        bool expectAllowHeader
+    )
+    {
+        string body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed, $"{because}: {body}");
+        response
+            .Content.Headers.ContentType?.ToString()
+            .Should()
+            .Be("application/json; charset=utf-8", because);
+
+        if (expectAllowHeader)
+        {
+            response
+                .Content.Headers.Allow.Should()
+                .NotBeEmpty($"{because}: route semantics advertises the methods the path supports");
+        }
+        else
+        {
+            response
+                .Content.Headers.Allow.Should()
+                .BeEmpty($"{because}: the interim snapshot rejection defines no allowed-method set");
+        }
+
+        JsonNode problem = JsonNode.Parse(body)!;
+        problem["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:method-not-allowed", because);
+        problem["title"]!.GetValue<string>().Should().Be("Method Not Allowed", because);
+        problem["detail"]!.GetValue<string>().Should().Be("The request construction was invalid.", because);
+        problem["status"]!.GetValue<int>().Should().Be(405, because);
+    }
+
+    /// <summary>
+    /// A valid write with no snapshot asked for still reaches the parent, so the rejection above is
+    /// about the invalid shapes rather than about writes in general.
+    /// </summary>
+    public static async Task It_leaves_a_valid_write_alone_without_a_snapshot_request(
         ApiIntegrationHarness harness
     )
     {
         foreach (string? headerValue in new[] { null, "false" })
         {
             using HttpContent content = DerivativeRoutingSupport.StudentContent(
-                $"derivative-routing-write-{headerValue ?? "absent"}"
+                $"routing-write-{headerValue ?? "absent"}"
             );
 
             using HttpResponseMessage response = await DerivativeRoutingSupport.SendAsync(
@@ -259,7 +321,7 @@ internal static class DerivativeRoutingScenario
             string body = await response.Content.ReadAsStringAsync();
             response
                 .StatusCode.Should()
-                .Be(HttpStatusCode.Created, $"a write must still reach the parent: {body}");
+                .Be(HttpStatusCode.Created, $"a valid write must still reach the parent: {body}");
         }
     }
 
@@ -294,7 +356,7 @@ internal static class DerivativeRoutingScenario
 
         IReadOnlyList<string> served = await DerivativeRoutingSupport.ReadStudentUniqueIdsAsync(readResponse);
 
-        served.Should().ContainSingle().Which.Should().Be(DerivativeRoutingSupport.ReplicaStudentUniqueId);
+        served.Should().ContainSingle(id => id == DerivativeRoutingSupport.ReplicaStudentUniqueId);
         served
             .Should()
             .NotContain(
@@ -385,13 +447,16 @@ internal static class DerivativeRoutingScenario
     }
 
     /// <summary>
-    /// A configuration change while requests are in flight does not interrupt them. Each request keeps
-    /// the target it selected, and every one of them answers successfully from a database that held a
-    /// Student.
+    /// A configuration change published while a request is provably in flight does not interrupt or
+    /// redirect it. The held request is parked at hydration, which runs long after its target was
+    /// selected and its repository query ran, so it is committed to the replica when the replacement
+    /// is published; it must still answer from the replica, and the next request must observe the new
+    /// configuration.
     /// </summary>
-    public static async Task It_does_not_interrupt_in_flight_requests_when_configuration_changes(
+    public static async Task It_does_not_interrupt_an_in_flight_request_when_configuration_changes(
         ApiIntegrationHarness harness,
         MutableInstanceProvider provider,
+        HydrationGate gate,
         long dataStoreId,
         RelationalProviderToken providerToken,
         string primaryConnectionString,
@@ -399,51 +464,44 @@ internal static class DerivativeRoutingScenario
         string snapshotConnectionString
     )
     {
-        const int RequestCount = 12;
+        gate.Arm();
 
-        Task<HttpResponseMessage>[] inFlight =
-        [
-            .. Enumerable
-                .Range(0, RequestCount)
-                .Select(_ =>
-                    DerivativeRoutingSupport.SendAsync(
-                        harness,
-                        HttpMethod.Get,
-                        DerivativeRoutingSupport.StudentsEndpoint
-                    )
-                ),
-        ];
+        Task<HttpResponseMessage> inFlight = DerivativeRoutingSupport.SendAsync(
+            harness,
+            HttpMethod.Get,
+            DerivativeRoutingSupport.StudentsEndpoint
+        );
 
-        // Published while those requests are outstanding.
+        // Deterministic: the request is inside hydration, past selection and past its query.
+        await gate.Arrived.WaitAsync(TimeSpan.FromSeconds(30));
+
         provider.Publish([
             DerivativeRoutingSupport.ParentOnly(dataStoreId, primaryConnectionString, providerToken),
         ]);
 
-        HttpResponseMessage[] responses = await Task.WhenAll(inFlight);
+        gate.Release();
 
-        try
-        {
-            foreach (HttpResponseMessage response in responses)
-            {
-                string served = await DerivativeRoutingSupport.ReadServingDatabaseAsync(response);
-                served
-                    .Should()
-                    .BeOneOf(
-                        [
-                            DerivativeRoutingSupport.ReplicaStudentUniqueId,
-                            DerivativeRoutingSupport.PrimaryStudentUniqueId,
-                        ],
-                        "every request must complete against one whole database, whichever configuration it observed"
-                    );
-            }
-        }
-        finally
-        {
-            foreach (HttpResponseMessage response in responses)
-            {
-                response.Dispose();
-            }
-        }
+        using HttpResponseMessage held = await inFlight;
+
+        (await DerivativeRoutingSupport.ReadServingDatabaseAsync(held))
+            .Should()
+            .Be(
+                DerivativeRoutingSupport.ReplicaStudentUniqueId,
+                "a request already committed to the replica must finish there"
+            );
+
+        using HttpResponseMessage next = await DerivativeRoutingSupport.SendAsync(
+            harness,
+            HttpMethod.Get,
+            DerivativeRoutingSupport.StudentsEndpoint
+        );
+
+        (await DerivativeRoutingSupport.ReadServingDatabaseAsync(next))
+            .Should()
+            .Be(
+                DerivativeRoutingSupport.PrimaryStudentUniqueId,
+                "the next request must observe the configuration published while the first was held"
+            );
 
         DerivativeRoutingSupport.PublishFullArrangement(
             provider,

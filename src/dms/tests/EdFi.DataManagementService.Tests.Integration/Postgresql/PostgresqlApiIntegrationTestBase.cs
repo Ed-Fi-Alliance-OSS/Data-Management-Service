@@ -6,6 +6,7 @@
 using System.Data.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
+using EdFi.DataManagementService.Tests.Integration.Scenarios;
 using Npgsql;
 
 namespace EdFi.DataManagementService.Tests.Integration.Postgresql;
@@ -66,6 +67,57 @@ public abstract class PostgresqlApiIntegrationTestBase : ApiIntegrationTestBase
         if (_additionalDbs.Remove(leasedConnectionString, out PostgresqlGeneratedDdlTestDatabase? database))
         {
             await database.DisposeAsync();
+        }
+    }
+
+    protected override IDerivativeTargetReachability Reachability { get; } =
+        new PostgresqlTargetReachability();
+
+    /// <summary>
+    /// PostgreSQL refuses new connections to a database whose CONNECTION LIMIT is zero, without
+    /// touching the database itself or the connection string that names it.
+    /// </summary>
+    private sealed class PostgresqlTargetReachability : IDerivativeTargetReachability
+    {
+        public Task MakeUnreachableAsync(string leasedConnectionString) =>
+            SetConnectionLimitAsync(leasedConnectionString, limit: 0);
+
+        public Task MakeReachableAsync(string leasedConnectionString) =>
+            SetConnectionLimitAsync(leasedConnectionString, limit: -1);
+
+        public string AbsentDatabaseConnectionString(string leasedConnectionString) =>
+            new NpgsqlConnectionStringBuilder(leasedConnectionString)
+            {
+                Database = $"absent_{Guid.NewGuid():N}",
+            }.ConnectionString;
+
+        private static async Task SetConnectionLimitAsync(string leasedConnectionString, int limit)
+        {
+            NpgsqlConnectionStringBuilder leased = new(leasedConnectionString);
+            string databaseName = leased.Database!;
+
+            NpgsqlConnectionStringBuilder admin = new(leasedConnectionString) { Database = "postgres" };
+
+            await using NpgsqlConnection connection = new(admin.ConnectionString);
+            await connection.OpenAsync();
+
+            await using NpgsqlCommand command = connection.CreateCommand();
+            command.CommandText =
+                $"ALTER DATABASE \"{databaseName.Replace("\"", "\"\"", StringComparison.Ordinal)}\" "
+                + $"WITH CONNECTION LIMIT {limit};";
+            await command.ExecuteNonQueryAsync();
+
+            if (limit == 0)
+            {
+                // Existing sessions are unaffected by the limit, so anything pooled against this
+                // database is terminated too; otherwise a reused connection would hide the failure.
+                await using NpgsqlCommand terminate = connection.CreateCommand();
+                terminate.CommandText =
+                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                    + "WHERE datname = @databaseName AND pid <> pg_backend_pid();";
+                terminate.Parameters.AddWithValue("databaseName", databaseName);
+                await terminate.ExecuteNonQueryAsync();
+            }
         }
     }
 

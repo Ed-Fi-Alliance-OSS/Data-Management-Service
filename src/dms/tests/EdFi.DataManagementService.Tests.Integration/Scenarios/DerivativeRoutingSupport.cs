@@ -37,6 +37,17 @@ internal static class DerivativeRoutingSupport
     /// <summary>The Student unique id held only by the snapshot.</summary>
     public const string SnapshotStudentUniqueId = "derivative-routing-snapshot";
 
+    /// <summary>
+    /// How many Students each database holds. The counts differ so that a surface which reports shape
+    /// rather than documents - a partition token list, a change version - still names the database that
+    /// answered, instead of being identical across three clones.
+    /// </summary>
+    public const int PrimaryStudentCount = 1;
+
+    public const int ReplicaStudentCount = 2;
+
+    public const int SnapshotStudentCount = 3;
+
     public static FakeDataStoreDefinition ParentOnly(
         long id,
         string connectionString,
@@ -65,13 +76,13 @@ internal static class DerivativeRoutingSupport
     )
     {
         provider.Publish([ParentOnly(dataStoreId, replicaConnectionString, providerToken)]);
-        await PostStudentAsync(harness, ReplicaStudentUniqueId);
+        await SeedDatabaseAsync(harness, ReplicaStudentUniqueId, ReplicaStudentCount);
 
         provider.Publish([ParentOnly(dataStoreId, snapshotConnectionString, providerToken)]);
-        await PostStudentAsync(harness, SnapshotStudentUniqueId);
+        await SeedDatabaseAsync(harness, SnapshotStudentUniqueId, SnapshotStudentCount);
 
         provider.Publish([ParentOnly(dataStoreId, primaryConnectionString, providerToken)]);
-        await PostStudentAsync(harness, PrimaryStudentUniqueId);
+        await SeedDatabaseAsync(harness, PrimaryStudentUniqueId, PrimaryStudentCount);
 
         PublishFullArrangement(
             provider,
@@ -103,6 +114,24 @@ internal static class DerivativeRoutingSupport
                 }
             ),
         ]);
+
+    /// <summary>
+    /// Writes the marker Student that names this database, plus enough filler Students to reach the
+    /// count that distinguishes it from the other two.
+    /// </summary>
+    private static async Task SeedDatabaseAsync(
+        ApiIntegrationHarness harness,
+        string markerStudentUniqueId,
+        int totalCount
+    )
+    {
+        await PostStudentAsync(harness, markerStudentUniqueId);
+
+        for (int index = 1; index < totalCount; index++)
+        {
+            await PostStudentAsync(harness, $"{markerStudentUniqueId}-{index}");
+        }
+    }
 
     public static async Task PostStudentAsync(ApiIntegrationHarness harness, string studentUniqueId)
     {
@@ -151,18 +180,41 @@ internal static class DerivativeRoutingSupport
     }
 
     /// <summary>
-    /// The one Student the target that served this request holds. Each database holds exactly one, so
-    /// the identity of the row is the identity of the database.
+    /// The marker Student of whichever database served this request. Each database holds exactly one
+    /// marker and a different total count, so both the identity and the shape of the response name it.
     /// </summary>
     public static async Task<string> ReadServingDatabaseAsync(HttpResponseMessage response)
     {
         IReadOnlyList<string> studentUniqueIds = await ReadStudentUniqueIdsAsync(response);
 
-        return studentUniqueIds
+        string marker = studentUniqueIds.Should().ContainSingle(id => Markers.Contains(id)).Subject;
+
+        studentUniqueIds
             .Should()
-            .ContainSingle("each leased database holds exactly one Student")
-            .Subject;
+            .HaveCount(
+                ExpectedCountFor(marker),
+                $"the database holding {marker} holds a distinguishing number of Students"
+            );
+
+        return marker;
     }
+
+    private static readonly string[] Markers =
+    [
+        PrimaryStudentUniqueId,
+        ReplicaStudentUniqueId,
+        SnapshotStudentUniqueId,
+    ];
+
+    /// <summary>How many Students the database identified by this marker holds.</summary>
+    public static int ExpectedCountFor(string markerStudentUniqueId) =>
+        markerStudentUniqueId switch
+        {
+            PrimaryStudentUniqueId => PrimaryStudentCount,
+            ReplicaStudentUniqueId => ReplicaStudentCount,
+            SnapshotStudentUniqueId => SnapshotStudentCount,
+            _ => throw new ArgumentOutOfRangeException(nameof(markerStudentUniqueId)),
+        };
 
     public static StringContent StudentContent(string studentUniqueId)
     {
