@@ -81,14 +81,11 @@ internal class ProfileResolutionMiddleware(
 
             // Strategy selection must run before this response is returned so a mandatory application
             // context demand can take precedence without performing another CMS lookup.
-            requestInfo.DeferredProfileContextFailureResponse = CreateProfileError(
-                statusCode: GetNotFoundStatusCode(requestInfo.Method),
-                errorType: "urn:ed-fi:api:profile:invalid-profile-usage",
-                title: "Invalid Profile Usage",
-                detail: "The request construction was invalid with respect to usage of a data policy.",
-                errors: ["Unable to resolve application context for profile validation."],
-                traceId: requestInfo.FrontendRequest.TraceId
-            );
+            requestInfo.DeferredProfileContextFailureResponse =
+                ApplicationContextFailureResponseFactory.Create(
+                    applicationContextResult,
+                    requestInfo.FrontendRequest.TraceId
+                );
             await next();
             return;
         }
@@ -167,18 +164,6 @@ internal class ProfileResolutionMiddleware(
         }
 
         return requestInfo.FrontendRequest.Headers.TryGetValue(headerName, out var value) ? value : null;
-    }
-
-    private static int GetNotFoundStatusCode(RequestMethod method)
-    {
-        // GET uses 406 Not Acceptable, POST/PUT use 415 Unsupported Media Type
-        return method switch
-        {
-            RequestMethod.GET => 406,
-            RequestMethod.POST => 415,
-            RequestMethod.PUT => 415,
-            _ => throw new InvalidOperationException($"Unexpected method for profile resolution: {method}"),
-        };
     }
 
     private static FrontendResponse CreateProfileError(

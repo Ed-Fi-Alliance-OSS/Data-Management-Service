@@ -274,22 +274,20 @@ public class ProfileResolutionMiddlewareTests
         }
 
         [Test]
-        public void It_returns_406_for_GET()
+        public void It_defers_generic_401_for_GET()
         {
-            _requestInfo.DeferredProfileContextFailureResponse!.StatusCode.Should().Be(406);
+            TestHelper.AssertUnauthorizedProblemDetails(
+                _requestInfo.DeferredProfileContextFailureResponse!,
+                "Unable to resolve application context for the authenticated client."
+            );
         }
 
         [Test]
-        public void It_returns_the_expected_problem_details_payload()
+        public void It_returns_the_expected_application_context_failure_payload()
         {
-            AssertExpectedProblemDetailsResponse(
+            TestHelper.AssertUnauthorizedProblemDetails(
                 _requestInfo.DeferredProfileContextFailureResponse!,
-                expectedStatusCode: 406,
-                expectedType: "urn:ed-fi:api:profile:invalid-profile-usage",
-                expectedTitle: "Invalid Profile Usage",
-                expectedDetail: "The request construction was invalid with respect to usage of a data policy.",
-                expectedCorrelationId: "test-trace-id",
-                "Unable to resolve application context for profile validation."
+                "Unable to resolve application context for the authenticated client."
             );
         }
     }
@@ -323,22 +321,20 @@ public class ProfileResolutionMiddlewareTests
         }
 
         [Test]
-        public void It_returns_415_for_POST()
+        public void It_defers_generic_401_for_POST()
         {
-            _requestInfo.DeferredProfileContextFailureResponse!.StatusCode.Should().Be(415);
+            TestHelper.AssertUnauthorizedProblemDetails(
+                _requestInfo.DeferredProfileContextFailureResponse!,
+                "Unable to resolve application context for the authenticated client."
+            );
         }
 
         [Test]
-        public void It_returns_the_expected_problem_details_payload()
+        public void It_returns_the_expected_application_context_failure_payload()
         {
-            AssertExpectedProblemDetailsResponse(
+            TestHelper.AssertUnauthorizedProblemDetails(
                 _requestInfo.DeferredProfileContextFailureResponse!,
-                expectedStatusCode: 415,
-                expectedType: "urn:ed-fi:api:profile:invalid-profile-usage",
-                expectedTitle: "Invalid Profile Usage",
-                expectedDetail: "The request construction was invalid with respect to usage of a data policy.",
-                expectedCorrelationId: "test-trace-id",
-                "Unable to resolve application context for profile validation."
+                "Unable to resolve application context for the authenticated client."
             );
         }
     }
@@ -372,9 +368,12 @@ public class ProfileResolutionMiddlewareTests
         }
 
         [Test]
-        public void It_returns_415_for_PUT()
+        public void It_defers_generic_401_for_PUT()
         {
-            _requestInfo.DeferredProfileContextFailureResponse!.StatusCode.Should().Be(415);
+            TestHelper.AssertUnauthorizedProblemDetails(
+                _requestInfo.DeferredProfileContextFailureResponse!,
+                "Unable to resolve application context for the authenticated client."
+            );
         }
     }
 

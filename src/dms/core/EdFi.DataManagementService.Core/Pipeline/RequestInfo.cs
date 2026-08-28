@@ -182,8 +182,8 @@ internal class RequestInfo(
     public ApplicationContext? ApplicationContext { get; set; }
 
     /// <summary>
-    /// The method-specific profile response to return after resource-action strategy selection when
-    /// an explicit profile could not be validated because application context was unavailable.
+    /// The application-context failure response to return after resource-action strategy selection when
+    /// an explicit profile could not be validated because application context did not resolve.
     /// </summary>
     public IFrontendResponse? DeferredProfileContextFailureResponse { get; set; }
 

@@ -150,6 +150,52 @@ public class ApplicationContextRequirementMiddlewareTests
             .MustNotHaveHappened();
     }
 
+    [TestCase("GET")]
+    [TestCase("PUT")]
+    public async Task It_maps_a_profile_required_NotFound_to_generic_401_when_context_is_not_otherwise_required(
+        string methodName
+    )
+    {
+        RequestMethod method = Enum.Parse<RequestMethod>(methodName);
+        var provider = CreateProvider(new ApplicationContextResult.NotFound());
+        RequestInfo requestInfo = CreateRequestInfo(method, provider);
+        requestInfo.FrontendRequest = requestInfo.FrontendRequest with
+        {
+            Headers = CreateProfileHeaders(method),
+        };
+
+        await ExecuteProfileAndApplicationContextRequirementMiddlewareAsync(requestInfo);
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(401);
+        TestHelper.AssertUnauthorizedProblemDetails(
+            requestInfo.FrontendResponse,
+            "Unable to resolve application context for the authenticated client."
+        );
+    }
+
+    [TestCase("GET")]
+    [TestCase("PUT")]
+    public async Task It_maps_a_profile_required_Unavailable_to_generic_503_when_context_is_not_otherwise_required(
+        string methodName
+    )
+    {
+        RequestMethod method = Enum.Parse<RequestMethod>(methodName);
+        var provider = CreateProvider(new ApplicationContextResult.Unavailable());
+        RequestInfo requestInfo = CreateRequestInfo(method, provider);
+        requestInfo.FrontendRequest = requestInfo.FrontendRequest with
+        {
+            Headers = CreateProfileHeaders(method),
+        };
+
+        await ExecuteProfileAndApplicationContextRequirementMiddlewareAsync(requestInfo);
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(503);
+        requestInfo.FrontendResponse.Body!["type"]!
+            .GetValue<string>()
+            .Should()
+            .Be("urn:ed-fi:api:service-unavailable");
+    }
+
     [Test]
     public async Task It_maps_required_NotFound_to_generic_401_before_a_profile_fallback()
     {
@@ -193,7 +239,7 @@ public class ApplicationContextRequirementMiddlewareTests
     }
 
     [Test]
-    public async Task It_reuses_the_scoped_profile_lookup_and_gives_required_401_precedence()
+    public async Task It_reuses_the_scoped_profile_lookup_and_returns_generic_401()
     {
         var configurationProvider = A.Fake<IConfigurationServiceApplicationProvider>();
         A.CallTo(() => configurationProvider.GetApplicationByClientIdAsync(ClientId, Tenant))
@@ -236,14 +282,56 @@ public class ApplicationContextRequirementMiddlewareTests
         );
 
         handlerCalled.Should().BeFalse();
-        requestInfo.DeferredProfileContextFailureResponse!.StatusCode.Should().Be(406);
-        requestInfo.FrontendResponse.StatusCode.Should().Be(401);
+        TestHelper.AssertUnauthorizedProblemDetails(
+            requestInfo.DeferredProfileContextFailureResponse!,
+            "Unable to resolve application context for the authenticated client."
+        );
+        TestHelper.AssertUnauthorizedProblemDetails(
+            requestInfo.FrontendResponse,
+            "Unable to resolve application context for the authenticated client."
+        );
         A.CallTo(() => configurationProvider.GetApplicationByClientIdAsync(ClientId, Tenant))
             .MustHaveHappenedOnceExactly();
     }
 
     private static ApplicationContextRequirementMiddleware CreateMiddleware() =>
         new(NullLogger<ApplicationContextRequirementMiddleware>.Instance);
+
+    private static async Task ExecuteProfileAndApplicationContextRequirementMiddlewareAsync(
+        RequestInfo requestInfo
+    )
+    {
+        var profileMiddleware = new ProfileResolutionMiddleware(
+            A.Fake<IProfileService>(),
+            NullLogger<ProfileResolutionMiddleware>.Instance
+        );
+
+        await profileMiddleware.Execute(
+            requestInfo,
+            async () =>
+            {
+                requestInfo.ResourceActionAuthStrategies =
+                [
+                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+                ];
+                await CreateMiddleware().Execute(requestInfo, TestHelper.NullNext);
+            }
+        );
+    }
+
+    private static Dictionary<string, string> CreateProfileHeaders(RequestMethod method) =>
+        method switch
+        {
+            RequestMethod.GET => new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Accept"] = "application/vnd.ed-fi.student.testprofile.readable+json",
+            },
+            RequestMethod.PUT => new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Content-Type"] = "application/vnd.ed-fi.student.testprofile.writable+json",
+            },
+            _ => throw new ArgumentOutOfRangeException(nameof(method), method, null),
+        };
 
     private static IApplicationContextProvider CreateProvider(ApplicationContextResult result)
     {
