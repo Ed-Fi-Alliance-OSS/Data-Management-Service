@@ -5,19 +5,25 @@ epic: DMS-1345
 source_spike: DMS-1346
 ---
 
-# Story: Add the Custom-Validator Composition Seam and Startup Guard
+# Story: Add the Custom-Validator Startup Guard
 
 ## Description
 
-The contract gives an implementer something to implement and the fan-in step gives DMS something that invokes it, but nothing yet gets an implementer's validator into the container, and nothing checks that what did get in is registered correctly. This story adds both, per:
+The contract gives an implementer something to implement and the fan-in step gives DMS something that invokes it, but nothing yet checks that a validator that reached the container is registered correctly. This story adds that check, per:
 
-- `reference/design/custom-validation-DMS-1345/design.md` ("### Registration and Composition", "### Lifetime and Resolution", "### Startup Failure Semantics")
+- `reference/design/custom-validation-DMS-1345/design.md` ("### Lifetime and Resolution", "### Startup Failure Semantics")
 
-Delivery is compiled-in. An implementer references the published abstractions package from their own assembly, exposes an ordinary `IServiceCollection` extension that registers their validators with `TryAddEnumerable` and binds their own options, and the deployment adds one call to that extension at DMS's composition root. There is no DMS-owned configuration section for this feature and no switch that turns it on or off: a deployment that registered no validators has none.
+**Scope change 2026-08-27: this story is the guard only. The composition seam moved to the plugin spine.**
+The original story also owned delivery: compiled-in, one call at DMS's composition root, no configuration section and no switch.
+Spike DMS-1462 reversed that decision (`reference/design/plugins-DMS-1462/design.md`, "## Divergence from the Custom Validation Epic"): a validator reaches the container as a plugin, its `ContributeServices` hook is invoked by the plugin loader, and `Plugins:Allowed` is the switch.
+The seam is delivered by the spine's host-integration story, and the three cardinality checks the spine adds to this guard are delivered by its recording-wrapper story, which depends on this one.
+Everything about the guard below is unchanged, and matters more: under drop-in delivery the implementer's registration code was compiled somewhere else entirely, and this guard is the only thing between a third-party registration mistake and a captive-dependency defect in production.
+
+An implementer still writes the same registration code, `TryAddEnumerable` plus options binding; the call site is the plugin hook rather than the composition root.
 
 Core's contribution is the guard, not the registration. Core ships an extension the frontend calls once, unconditionally, which registers a startup guard and captures the live `IServiceCollection` so the guard can read the final descriptor set after the container is built.
 
-Reading the descriptors post-container rather than at the extension's own call site is the load-bearing decision in this story. The implementer's registration call may sit before or after Core's, and the implementer is exactly the party the guard exists to check, so any "register your validators before the guard" rule would be broken by the party it protects, and would fail silently. A post-container guard removes ordering from the problem entirely.
+Reading the descriptors post-container rather than at the extension's own call site is the load-bearing decision in this story. The plugin loader's invocation of implementer hooks may sit before or after Core's, and the implementer is exactly the party the guard exists to check, so any "register your validators before the guard" rule would be broken by the party it protects, and would fail silently. A post-container guard removes ordering from the problem entirely, which is also what lets the plugin spine add checks to it without caring about contribution order.
 
 This story depends on the abstractions-contract story. It does not depend on the fan-in step: the guard audits and activates registrations regardless of whether anything consumes them.
 
@@ -32,11 +38,11 @@ This story depends on the abstractions-contract story. It does not depend on the
 - A descriptor carrying an `ImplementationFactory` aborts startup, proven with `services.Add(ServiceDescriptor.Transient<ICustomResourceValidator>(_ => sharedInstance))`. That descriptor reports a transient lifetime while handing every request the same object, so a lifetime-only audit passes it; this criterion is what forces the descriptor-shape half of the audit. Use `Add` and not `TryAddEnumerable` here, since `TryAddEnumerable` throws `ArgumentException` for a factory descriptor whose implementation type is indistinguishable from the service type and the fixture would fail before reaching the audit.
 - A transient, implementation-type-based descriptor is accepted.
 - A validator with an unsatisfiable constructor dependency aborts startup rather than failing the first matching write, proven the same way: the guard's activation probe takes the fatal startup path, with `IStartupProcessExit` substituted, before any request is served.
-- A validator registered **after** Core's guard-registering extension is still audited and still activated. This is what proves the guard reads the final descriptor set post-container rather than whatever had been registered at its own call site, and an implementation that audits inline at the extension's call site must fail it.
+- A validator registered **after** Core's guard-registering extension is still audited and still activated, which is the position a plugin-contributed registration will be in. This is what proves the guard reads the final descriptor set post-container rather than whatever had been registered at its own call site, and an implementation that audits inline at the extension's call site must fail it.
 - The guard runs and does not fail when no validator is registered at all, so a deployment that has adopted nothing still boots.
 - The guard logs each registered validator's `AppliesTo` entries through `LoggingSanitizer.SanitizeForLogging`, since those strings originate in implementer code.
 - An `AppliesTo` entry matching no resource in the effective ApiSchema produces a prominent startup warning and not a failure, proven with a fixture validator naming a nonexistent resource. It warns rather than fails because an entry can legitimately target an extension resource absent from the current deployment.
-- No DMS-owned configuration section is added for this feature: `docs/CONFIGURATION.md` and the frontend `appsettings.json` are unchanged by this story.
+- SUPERSEDED by the scope change above. The `Plugins` configuration section belongs to the plugin spine's host-integration story; this story still adds no configuration of its own.
 - `dotnet test src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit` passes.
 
 ## Tasks
@@ -45,6 +51,6 @@ This story depends on the abstractions-contract story. It does not depend on the
 2. Call that extension exactly once, unconditionally, from `WebApplicationBuilderExtensions.AddServices`. Custom-validator composition is datastore-independent, so it is not routed through the per-datastore branches.
 3. Implement the guard as an `IDmsStartupTask` performing three checks in one pass: audit every `ICustomResourceValidator` descriptor for transient lifetime and implementation-type-based shape; resolve the full `IEnumerable<ICustomResourceValidator>` once from a throwaway scope and discard the instances; and log each validator's `AppliesTo`, warning on entries matching no resource in the effective ApiSchema.
 4. Pin the guard's `Order` in the 200s and add the comment recording the band-label mismatch.
-5. Write the startup-abort tests in `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit`, registering fixture validators through the test host's `ConfigureServices` seam. That seam reaches the guard because the guard is a post-container startup task. Substitute `IStartupProcessExit` with a non-exiting double in every one of these tests, following the existing precedents, and assert on what the double recorded; the production implementation calls `Environment.Exit`.
+5. Write the startup-abort tests in `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit`, registering fixture validators through the test host's `ConfigureServices` seam, which stands in for the plugin hook the spine adds later. That seam reaches the guard because the guard is a post-container startup task. Substitute `IStartupProcessExit` with a non-exiting double in every one of these tests, following the existing precedents, and assert on what the double recorded; the production implementation calls `Environment.Exit`.
 6. Write the ordering-independence test by registering a fixture validator after the Core extension has run, and confirm once that an inline-audit implementation fails it.
 7. Confirm once, by temporarily moving the `Order` outside an executed window, that the guard-executed test fails.

@@ -8,8 +8,12 @@ This document is the design output of spike `DMS-1346` under epic `DMS-1345`; th
 This document describes the **custom validation extension point** for the Data Management Service.
 The feature lets a district or vendor enforce its own business rules on documents as they are written, with the rules living in their own versioned assembly rather than in DMS core source: a public abstractions contract the implementer compiles against, registered into DMS's composition at build time, and invoked by a Core-authored fan-in step on the POST and PUT write paths.
 
-Delivery is **compiled-in only** in this version.
-Loading a validator from a dropped-in assembly at runtime is a separate design stream, deliberately not pre-filed as a ticket; nothing here forecloses it, and the contract and pipeline seam this document specifies are exactly what that stream would reuse (see [Rejected Alternatives](#rejected-alternatives)).
+**Delta 2026-08-27: delivery is a plugin, not compiled-in.**
+The separate design stream this document deferred to ran as spike DMS-1462 and reversed the delivery decision: a validator reaches DMS as a plugin directory loaded by the host at startup, named in `Plugins:Allowed`, with its registration code invoked from an `EdFiApiPlugin.ContributeServices` hook rather than from DMS's composition root (`reference/design/plugins-DMS-1462/design.md`, "## Divergence from the Custom Validation Epic").
+The prediction under [Rejected Alternatives](#rejected-alternatives) held: the contract, the fan-in step, the failure surfacing, and the startup guard transfer unchanged, and only the composition seam and the two documents that described it change.
+This document is not rewritten.
+Where it says "compiled-in", "composition root", or "no configuration section", the spine document is authoritative, and the three affected ticket drafts beside this file carry the change in place.
+Compiling a validator into a DMS build remains possible and is the in-repo fixture route; it is no longer the documented one.
 
 - [README.md](./README.md) - epic overview and ticket index
 - [01-add-custom-validator-abstractions-contract.md](./01-add-custom-validator-abstractions-contract.md) - the contract types
@@ -688,7 +692,7 @@ The package becomes load-bearing under the deferred runtime-loading model, where
 
 | Deferred item | Reason |
 | --- | --- |
-| Runtime assembly loading (the plugin spike) | Its own design stream when a deployment needs it; deliberately not pre-filed. Inherits this contract, the fan-in step, the failure surfacing, and the startup guard unchanged; adds a discovery-and-registration path feeding the same collection. |
+| ~~Runtime assembly loading (the plugin spike)~~ | **Delivered as the decision, not deferred.** Spike DMS-1462 designed it and it became the documented delivery path; see the Status delta at the top of this document. It inherited this contract, the fan-in step, the failure surfacing, and the startup guard unchanged, exactly as predicted here. |
 | Store-read capability for validators | Additive to the contract surface (a validator obtains it by constructor injection, not as a parameter), so adding it later breaks no signature. Needs its own error-contract design. It is one of two things the ODS UniqueId not-changed rule needs, not the only one: that rule keys on the persisted document's identifier (`EdFi.Ods.Features/UniqueIdIntegration/Validation/UniqueIdNotChangedEntityValidator.cs:39`), and this version's `ValidateAsync` exposes neither a `DocumentUuid` nor the route, so DMS-1414 needs a document-identity capability alongside store access. The document body does not stand in for it: an `Upsert` body carries no `id` by construction (`Middleware/RejectResourceIdentifierMiddleware.cs:35-45`), and although an `Update` body must carry one matching the route id (`Validation/MatchingDocumentUuidsValidator.cs:23-27`), a writable profile can strip it from the profile-effective body the validator receives, since an `IncludeOnly` member filter keeps only the members the profile names (`Profile/WritableRequestShaper.cs:661-670`). |
 | A wildcard in `AppliesTo` | Additive to `ValidatedResource`. Only worth adding against a real requirement for breadth, which is arguably a different extension point. |
 | ~~Distinct handling for `OperationCanceledException`~~ | **Closed, not deferred.** Core already rethrows a cancelled request's `OperationCanceledException` ahead of its catch-all (`Middleware/CoreExceptionLoggingMiddleware.cs:52-55`), so a validator's inherits that outcome and there is nothing for the fan-in ticket to decide. |

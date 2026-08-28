@@ -15,11 +15,14 @@ The design shows on paper that the contract and composition seam are sufficient 
 
 A neutral, no-I/O sample validator, shaped like Scenario 2 in the design's driving-scenarios table (document-only, no constructor dependencies) but not framed as an implementation of that scenario's business rule, is delivered as a test fixture. It never lives inside `EdFi.DataManagementService.Core` or `EdFi.DataManagementService.Core.External`.
 
-The validator reaches the host the way a real one does: a fixture assembly referencing the abstractions contract, exposing its own registration extension, wired into the test host's composition. The proof asserts on HTTP status codes and JSON body shape, not on internal pipeline state.
+**Scope change 2026-08-27: the validator reaches the host as a plugin.**
+Spike DMS-1462 reversed compiled-in delivery (`reference/design/plugins-DMS-1462/design.md`, "## Divergence from the Custom Validation Epic"), so proving the compiled-in path would prove a path no implementer will take.
+The validator reaches the host the way a real one does: a fixture assembly referencing `EdFi.Api.CustomValidation` and `EdFi.Api.Plugins`, exposing an `EdFiApiPlugin` subclass whose `ContributeServices` registers the validator, published `--no-self-contained` into a plugin directory, and allowlisted in `Plugins:Allowed`. The proof asserts on HTTP status codes and JSON body shape, not on internal pipeline state.
+This fixture is also the payload for the plugin spine's local-image and pulled-image end-to-end proofs, so it is built once here and reused there.
 
 This story also carries the field-level scenario grounding behind the design's driving-scenarios table, in "## Scenario Grounding" below. That grounding is fixture-specific, which is why it lives here rather than in the design document.
 
-This story depends on the abstractions-contract, fan-in-step, and composition-seam stories.
+This story depends on the abstractions-contract, fan-in-step, and startup-guard stories, and on the plugin spine's host-integration story, which is what loads the fixture.
 
 ## Acceptance Criteria
 
@@ -28,17 +31,17 @@ This story depends on the abstractions-contract, fan-in-step, and composition-se
 - A PUT exercises the same fixture validator on the update pipeline and produces the same 400 shape on failure.
 - A POST to a resource the fixture validator's `AppliesTo` does not match is unaffected by the validator being registered.
 - The 400 body from the fixture validator is byte-identical in its `detail`, `type`, `title`, and `status` members to the corresponding core schema-validation 400, asserted over real HTTP rather than in a unit test, so a divergence introduced anywhere in the composed stack is caught. The member set matches the fan-in story's unit-level parity criterion, so the two do not drift apart. The fixture returns an `OnPath` failure for this assertion, since that is the arm core schema validation actually produces; `DocumentValidator` never emits an `errors`-arm 400 to compare an `OnResource` failure against.
-- With the fixture validator's registration removed and nothing else changed, the same failing POST returns the normal success response. This proves the validator was actually reached through the registration the story added, mirroring the one line a real deployment adds at the composition root, rather than through some other path.
-- The fixture validator lives in its own assembly whose only reference is the abstractions contract, so the test proves what an external implementer can actually build rather than what a project with access to Core internals can build.
+- With the fixture's name removed from `Plugins:Allowed` and nothing else changed, the same failing POST returns the normal success response. This proves the validator was actually reached through the plugin the story added, the way a real deployment enables one, rather than through some other path.
+- The fixture validator lives in its own assembly whose only references are `EdFi.Api.CustomValidation` and `EdFi.Api.Plugins`, consumed as packed nupkgs from the local folder feed rather than as project references, so the test proves what an external implementer can actually build rather than what a project with access to Core internals can build.
 - `dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration` passes.
 
 ## Tasks
 
 1. Use `EdFi.DataManagementService.Tests.Integration`'s existing `WebApplicationFactory<Program>`-based harness, which already drives real HTTP requests through the actual ASP.NET `Program` and its real, DI-composed pipeline.
-2. Build a minimal fixture class library referencing only the abstractions contract, containing the sample validator and its own registration extension.
-3. Register the fixture's extension into the test host's composition, mirroring the one line a real deployment adds at its composition root.
+2. Build a minimal fixture class library referencing only the two packed contracts, containing the sample validator and an `EdFiApiPlugin` subclass that registers it, and publish it `--no-self-contained` into a plugin directory as a test asset.
+3. Point the test host at that directory through `Plugins:Directory` and name the fixture in `Plugins:Allowed`, the way a real deployment enables a plugin.
 4. Exercise the validator through actual `HttpClient.PostAsync`/`PutAsync` calls against an existing routed-resource fixture, asserting on status code and JSON body shape.
-5. Add the negative control: a run with the registration removed, asserting the same POST now succeeds.
+5. Add the negative control: a run with the name removed from `Plugins:Allowed`, asserting the same POST now succeeds.
 
 ## Scenario Grounding
 
