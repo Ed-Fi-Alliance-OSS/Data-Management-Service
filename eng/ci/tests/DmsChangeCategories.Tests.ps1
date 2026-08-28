@@ -125,8 +125,9 @@ Describe "DMS pull request change classifier" {
                     Expected = @('backend_mssql_relevant')
                 }
                 @{
+                    # CDC source reaches the backend MSSQL lane as well; see the dedicated spec below.
                     Path     = "src/dms/backend/EdFi.DataManagementService.Backend.Cdc/Something.cs"
-                    Expected = @('cdc_relevant')
+                    Expected = @('backend_mssql_relevant', 'cdc_relevant')
                 }
                 @{
                     Path     = "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/Something.cs"
@@ -220,6 +221,28 @@ Describe "DMS pull request change classifier" {
                     Should -BeNullOrEmpty
             }
 
+            It "promotes the backend MSSQL lane for a change to CDC source" {
+                # EdFi.DataManagementService.Backend.Mssql.Tests.Integration references
+                # EdFi.DataManagementService.Backend.Cdc and holds the only DB-backed CDC tests in
+                # the suite - MssqlCdcSourcePositionAdapterTests is [Category("DatabaseIntegration")]
+                # and [Category("MssqlIntegration")]. The promoted CDC lane cannot cover them: it
+                # runs with --filter "Category!=DatabaseIntegration". Without this category a CDC
+                # source change ran no DB-backed CDC test at all.
+                Get-SetCategory -Path "src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcSourcePositionAdapter.cs" |
+                    Should -Contain 'backend_mssql_relevant'
+            }
+
+            It "leaves the CDC test projects reaching only the CDC lane" {
+                # The reference runs from the MSSQL integration project to CDC *source*, not to the
+                # CDC test projects, so those stay narrow.
+                foreach ($path in @(
+                        "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/x.cs"
+                        "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/x.cs"
+                    )) {
+                    Get-SetCategory -Path $path | Should -Be @('cdc_relevant')
+                }
+            }
+
             It "matches category paths case-sensitively, as Git does" {
                 Get-SetCategory -Path "SRC/DMS/backend/EdFi.DataManagementService.Backend.Cdc/x.cs" |
                     Should -BeNullOrEmpty
@@ -228,8 +251,11 @@ Describe "DMS pull request change classifier" {
 
         Context "Categories combine across a file list" {
             It "unions the categories of every changed file" {
+                # Deliberately the CDC integration test project rather than CDC source: that path
+                # reaches one lane, so this stays a test about unioning rather than about the
+                # backend MSSQL promotion, which has its own spec.
                 $result = Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @(
-                    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc/x.cs",
+                    "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/x.cs",
                     "src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/y.cs"
                 )
 
@@ -496,7 +522,9 @@ Describe "Write-DmsChangeCategories output contract" {
     }
 
     It "emits every promoted category flag the workflow gates on" {
-        Set-Content -LiteralPath $script:changedFilePath -Value "src/dms/backend/EdFi.DataManagementService.Backend.Cdc/x.cs"
+        # The CDC integration test project, not CDC source: this spec needs categories that stay
+        # false to prove a false flag is still written.
+        Set-Content -LiteralPath $script:changedFilePath -Value "src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/x.cs"
 
         & $script:writeScript `
             -EventName "pull_request" `

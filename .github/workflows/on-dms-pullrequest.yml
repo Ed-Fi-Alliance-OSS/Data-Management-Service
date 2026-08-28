@@ -506,6 +506,11 @@ jobs:
         with:
           name: dms-build-output
           path: TestArtifacts/dms-build-output
+          # upload-artifact ignores hidden files by default. The staged output contains the
+          # Playwright driver under bin/Release/net10.0/.playwright - 930 files including the node
+          # binary the driver executes - so without this the consumers download build output that
+          # looks complete and fails at run time in the Playwright-backed lanes.
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 1
 

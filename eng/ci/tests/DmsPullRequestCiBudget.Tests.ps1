@@ -486,6 +486,14 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
             $block | Should -Match 'if-no-files-found: error'
         }
 
+        It "the producer uploads hidden files" {
+            # upload-artifact ignores hidden files by default, and the staged tree carries the
+            # Playwright driver under bin/Release/net10.0/.playwright. Dropping it produces an
+            # artifact that looks complete, downloads without error, and fails at run time in every
+            # Playwright-backed lane - the worst shape a missing file can take.
+            (Get-JobBlock -JobName 'build-dms-solution') | Should -Match 'include-hidden-files: true'
+        }
+
         It "build-dms-solution runs on DMS relevance and is not draft-gated" {
             # A draft-gated producer would skip run-unit-tests through the dependency, which is the
             # opposite of keeping fast feedback on draft pull requests.

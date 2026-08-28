@@ -95,7 +95,11 @@ $script:NarrowPathCategory = @(
     @{ Prefix = 'src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/'; Category = @('backend_mssql_relevant') }
     @{ Prefix = 'src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/'; Category = @() }
     @{ Prefix = 'src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/'; Category = @('dms_api_relevant', 'schematools_relevant') }
-    @{ Prefix = 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc/'; Category = @('cdc_relevant') }
+    # Also reaches the backend MSSQL lane. The MSSQL integration project references
+    # Backend.Cdc and holds the only DB-backed CDC tests in the suite, because the CDC lane
+    # itself runs with --filter "Category!=DatabaseIntegration". Classifying CDC source as
+    # cdc-only would skip every DB-backed CDC test on a change to CDC source.
+    @{ Prefix = 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc/'; Category = @('cdc_relevant', 'backend_mssql_relevant') }
     @{ Prefix = 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/'; Category = @('cdc_relevant') }
     @{ Prefix = 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/'; Category = @('cdc_relevant') }
     @{ Prefix = 'src/dms/frontend/'; Category = @('dms_api_relevant') }
