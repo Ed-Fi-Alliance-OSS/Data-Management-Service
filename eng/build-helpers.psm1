@@ -283,21 +283,30 @@ function Assert-CoverageThreshold {
             throw "Coverage report '$Path' declares $rateName as '$rawRate', which is not a number, so the $Threshold% threshold cannot be enforced."
         }
 
-        $measured[$rateName] = [math]::Round($parsedRate * 100, 2)
+        # Held as the raw rate, unrounded. Rounding to a display percentage before the comparison
+        # opens a false-pass window just under the gate: 0.57995 is 57.995%, which rounds to 58.00
+        # and would pass a threshold it is below.
+        $measured[$rateName] = $parsedRate
     }
 
+    # Compared as rates rather than percentages. Scaling to a percentage first makes an
+    # exactly-at-threshold report fail, because 0.58 * 100 is 57.99999999999999 as a double, while
+    # 0.58 and 58 / 100.0 are the same double. Comparing rates is what keeps the boundary exact in
+    # both directions.
+    $thresholdRate = $Threshold / 100.0
+
     $below = @(
-        $measured.Keys | Where-Object { $measured[$_] -lt $Threshold }
+        $measured.Keys | Where-Object { $measured[$_] -lt $thresholdRate }
     )
 
     if ($below.Count -gt 0) {
-        $detail = ($measured.Keys | ForEach-Object { "$_ $($measured[$_])%" }) -join ', '
+        $detail = ($measured.Keys | ForEach-Object { "$_ $([math]::Round($measured[$_] * 100, 2))%" }) -join ', '
         throw "Coverage is below the $Threshold% threshold for $($below -join ' and '). Measured: $detail."
     }
 
     return [pscustomobject]@{
-        LinePercentage   = $measured['line-rate']
-        BranchPercentage = $measured['branch-rate']
+        LinePercentage   = [math]::Round($measured['line-rate'] * 100, 2)
+        BranchPercentage = [math]::Round($measured['branch-rate'] * 100, 2)
         Threshold        = $Threshold
     }
 }

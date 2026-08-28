@@ -108,6 +108,39 @@ Describe "Unit test coverage threshold gate" {
         }
     }
 
+    Context "The threshold boundary is exact in both directions" {
+        It "throws on a <RateName> that is below the threshold but rounds to 58.00" -ForEach @(
+            @{ RateName = 'line-rate'; Line = '0.57995'; Branch = '0.99' }
+            @{ RateName = 'line-rate'; Line = '0.579999'; Branch = '0.99' }
+            @{ RateName = 'branch-rate'; Line = '0.99'; Branch = '0.57995' }
+            @{ RateName = 'branch-rate'; Line = '0.99'; Branch = '0.579999' }
+        ) {
+            # Comparing display percentages passes these: 57.995 and 57.9999 both round to 58.00, so
+            # the gate would accept coverage it is meant to reject. The real merged report carries
+            # rates at this precision - line-rate="0.8338407252748307" - so the window is reachable.
+            {
+                Assert-CoverageThreshold -Path (Add-CoberturaReportFixture -LineRate $Line -BranchRate $Branch) -Threshold 58
+            } | Should -Throw -ExpectedMessage "*$RateName*"
+        }
+
+        It "still passes a rate that is exactly at the threshold" {
+            # The other direction of the same boundary. Scaling to a percentage before comparing
+            # fails this case, because 0.58 * 100 is 57.99999999999999 as a double.
+            $measured = Assert-CoverageThreshold `
+                -Path (Add-CoberturaReportFixture -LineRate "0.58" -BranchRate "0.58") -Threshold 58
+
+            $measured.LinePercentage | Should -Be 58
+            $measured.BranchPercentage | Should -Be 58
+        }
+
+        It "passes a rate a hair above the threshold" {
+            $measured = Assert-CoverageThreshold `
+                -Path (Add-CoberturaReportFixture -LineRate "0.580001" -BranchRate "0.580001") -Threshold 58
+
+            $measured.LinePercentage | Should -Be 58
+        }
+    }
+
     Context "Reports that cannot be evaluated fail rather than pass" {
         It "throws when the report was never produced" {
             # A silently missing report is how a coverage gate stops gating without anyone noticing.
