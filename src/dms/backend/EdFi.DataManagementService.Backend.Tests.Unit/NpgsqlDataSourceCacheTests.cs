@@ -5,6 +5,7 @@
 
 using System.Reflection;
 using EdFi.DataManagementService.Backend.Postgresql;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using FluentAssertions;
 using Npgsql;
@@ -368,6 +369,85 @@ public class Given_NpgsqlDataSourceCache
         await DoubleDisposal.OfAsync(leased);
 
         _lifetime.DisposeCountOf(dataSource).Should().Be(1);
+    }
+
+    /// <summary>
+    /// An owner that holds a transaction over a leased connection must give the claim back even when
+    /// disposing the transaction throws. Stranding it does not fail visibly: it parks a retired data
+    /// source for the life of the process.
+    /// </summary>
+    [Test]
+    public async Task It_should_release_an_owned_connection_when_the_preceding_disposal_throws()
+    {
+        _cache.Reconcile(OwnershipSnapshots.Of(1, PrimaryConnectionString));
+
+        LeasedNpgsqlConnection leased = await _cache.OpenLeasedConnectionAsync(PrimaryConnectionString);
+        NpgsqlDataSource dataSource = _lifetime.Built.Single();
+
+        Func<Task> act = async () =>
+            await LeasedNpgsqlConnection.DisposeOwnedAsync(new ThrowingAsyncDisposable(), leased);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("Simulated transaction disposal failure.");
+
+        _cache.Reconcile(OwnershipSnapshots.Empty(2));
+
+        _lifetime
+            .DisposeCountOf(dataSource)
+            .Should()
+            .Be(1, "the claim was released despite the transaction disposal failure");
+    }
+
+    [Test]
+    public async Task It_should_release_an_owned_connection_exactly_once_on_the_ordinary_path()
+    {
+        _cache.Reconcile(OwnershipSnapshots.Of(1, PrimaryConnectionString));
+
+        LeasedNpgsqlConnection leased = await _cache.OpenLeasedConnectionAsync(PrimaryConnectionString);
+        NpgsqlDataSource dataSource = _lifetime.Built.Single();
+        RecordingAsyncDisposable transaction = new();
+
+        await LeasedNpgsqlConnection.DisposeOwnedAsync(transaction, leased);
+        await LeasedNpgsqlConnection.DisposeOwnedAsync(transaction, leased);
+
+        transaction.DisposeCount.Should().Be(2, "each call disposes what it was handed");
+
+        _cache.Reconcile(OwnershipSnapshots.Empty(2));
+        _lifetime
+            .DisposeCountOf(dataSource)
+            .Should()
+            .Be(1, "the second release must not decrement another holder's claim");
+    }
+
+    /// <summary>
+    /// Ownership publication is the compute half and can throw; everything after it is assignment. If
+    /// the version moved first, a retry carrying that same version would look stale and the old owner
+    /// set would stay live for good.
+    /// </summary>
+    [Test]
+    public void It_should_apply_a_retried_snapshot_after_a_failed_one_of_the_same_version()
+    {
+        _cache.Reconcile(OwnershipSnapshots.Of(1, PrimaryConnectionString));
+
+        NpgsqlDataSourceLease lease = _cache.AcquireLease(PrimaryConnectionString);
+        NpgsqlDataSource dataSource = lease.DataSource;
+        lease.Dispose();
+
+        // A default ImmutableArray throws when enumerated, which is where the compute half faults.
+        FluentActions
+            .Invoking(() => _cache.Reconcile(new DataStoreOwnershipSnapshot(2, default)))
+            .Should()
+            .Throw<Exception>();
+
+        _lifetime.DisposeCountOf(dataSource).Should().Be(0, "a failed publication must retire nothing");
+
+        _cache.Reconcile(OwnershipSnapshots.Empty(2));
+
+        _lifetime
+            .DisposeCountOf(dataSource)
+            .Should()
+            .Be(1, "the retry at the same version must apply in full");
     }
 
     [Test]

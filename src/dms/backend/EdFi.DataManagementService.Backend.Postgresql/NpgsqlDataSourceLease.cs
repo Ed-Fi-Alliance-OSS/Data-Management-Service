@@ -86,6 +86,34 @@ public sealed class LeasedNpgsqlConnection : IAsyncDisposable
     internal NpgsqlDataSourceLease Lease => _lease;
 
     /// <summary>
+    /// Disposes something that must be released before its connection - a transaction - and then the
+    /// leased connection itself, so the claim is given back even when that first disposal throws. The
+    /// first exception is the one that propagates; a later cleanup failure does not replace it.
+    /// </summary>
+    /// <remarks>
+    /// Every owner that holds a transaction over a leased connection needs this exact ordering, and
+    /// getting it wrong strands a lease for the life of the process rather than failing visibly, so it
+    /// lives here once rather than being rewritten at each owner.
+    /// </remarks>
+    internal static async ValueTask DisposeOwnedAsync(
+        IAsyncDisposable precedingResource,
+        LeasedNpgsqlConnection? owned
+    )
+    {
+        try
+        {
+            await precedingResource.DisposeAsync();
+        }
+        finally
+        {
+            if (owned is not null)
+            {
+                await owned.DisposeAsync();
+            }
+        }
+    }
+
+    /// <summary>
     /// Disposes the connection, then releases the lease - in that order, because releasing first could
     /// dispose the data source out from under a connection still being returned to its pool.
     /// </summary>

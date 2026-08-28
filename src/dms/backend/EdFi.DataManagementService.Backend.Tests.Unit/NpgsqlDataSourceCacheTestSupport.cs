@@ -192,6 +192,28 @@ internal sealed class CapturingLogger<T> : ILogger<T>
 }
 
 /// <summary>
+/// Stands in for a transaction whose disposal fails, so an owner's cleanup ordering can be proven
+/// without a database.
+/// </summary>
+internal sealed class ThrowingAsyncDisposable : IAsyncDisposable
+{
+    public ValueTask DisposeAsync() =>
+        throw new InvalidOperationException("Simulated transaction disposal failure.");
+}
+
+/// <summary>Stands in for a transaction that disposes normally, counting how often it was asked to.</summary>
+internal sealed class RecordingAsyncDisposable : IAsyncDisposable
+{
+    public int DisposeCount { get; private set; }
+
+    public ValueTask DisposeAsync()
+    {
+        DisposeCount++;
+        return ValueTask.CompletedTask;
+    }
+}
+
+/// <summary>
 /// Disposes one handle twice, to prove disposal is idempotent. Written as a loop over two references
 /// to the same handle rather than as two statements, because two statements read as a redundant
 /// disposal and this is the property under test.
@@ -205,6 +227,28 @@ internal static class DoubleDisposal
         foreach (IDisposable each in twice)
         {
             each.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Disposes one handle through both disposal forms, for a type that implements each and must
+    /// still release only once.
+    /// </summary>
+    public static async Task ThroughBothFormsAsync<T>(T handle)
+        where T : IDisposable, IAsyncDisposable
+    {
+        IDisposable[] synchronously = [handle];
+
+        foreach (IDisposable each in synchronously)
+        {
+            each.Dispose();
+        }
+
+        IAsyncDisposable[] asynchronously = [handle];
+
+        foreach (IAsyncDisposable each in asynchronously)
+        {
+            await each.DisposeAsync();
         }
     }
 

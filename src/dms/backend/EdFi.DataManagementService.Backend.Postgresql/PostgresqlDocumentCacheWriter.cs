@@ -1215,13 +1215,12 @@ internal sealed class PostgresqlDocumentCacheWriter(
                 return;
             }
 
-            await Transaction.DisposeAsync().ConfigureAwait(false);
-
-            if (_ownedConnection is not null)
-            {
-                // Disposes the connection and then releases its lease, in that order.
-                await _ownedConnection.DisposeAsync().ConfigureAwait(false);
-            }
+            // Disposes the transaction, then the connection, then releases the claim. The claim is
+            // given back even when disposing the transaction throws, because a stranded lease parks a
+            // retired data source for the life of the process instead of failing visibly.
+            await LeasedNpgsqlConnection
+                .DisposeOwnedAsync(Transaction, _ownedConnection)
+                .ConfigureAwait(false);
         }
     }
 }

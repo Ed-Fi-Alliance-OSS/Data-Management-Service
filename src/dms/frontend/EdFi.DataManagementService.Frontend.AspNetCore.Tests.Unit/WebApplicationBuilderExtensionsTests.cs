@@ -595,12 +595,10 @@ public class WebApplicationBuilderExtensionsTests
         }
 
         [Test]
-        public async Task It_registers_the_relational_repository_surface()
+        public void It_registers_the_relational_repository_surface()
         {
             using var serviceProvider = CreateServices("postgresql");
-            // Asynchronous, because this scope resolves the PostgreSQL data-source provider: it holds
-            // data-source leases and is asynchronously disposable, which a synchronous disposal refuses.
-            await using var scope = serviceProvider.CreateAsyncScope();
+            using var scope = serviceProvider.CreateScope();
 
             scope
                 .ServiceProvider.GetServices<IDocumentStoreRepository>()
@@ -630,12 +628,10 @@ public class WebApplicationBuilderExtensionsTests
         }
 
         [Test]
-        public async Task It_registers_the_postgresql_relational_runtime_composition_surface()
+        public void It_registers_the_postgresql_relational_runtime_composition_surface()
         {
             using var serviceProvider = CreateServices("postgresql");
-            // Asynchronous, because this scope resolves the PostgreSQL data-source provider: it holds
-            // data-source leases and is asynchronously disposable, which a synchronous disposal refuses.
-            await using var scope = serviceProvider.CreateAsyncScope();
+            using var scope = serviceProvider.CreateScope();
 
             scope
                 .ServiceProvider.GetRequiredService<IReferenceResolver>()
@@ -711,12 +707,10 @@ public class WebApplicationBuilderExtensionsTests
         }
 
         [Test]
-        public async Task It_registers_only_the_postgresql_relational_token_info_lookup()
+        public void It_registers_only_the_postgresql_relational_token_info_lookup()
         {
             using var serviceProvider = CreateServices("postgresql");
-            // Asynchronous, because this scope resolves the PostgreSQL data-source provider: it holds
-            // data-source leases and is asynchronously disposable, which a synchronous disposal refuses.
-            await using var scope = serviceProvider.CreateAsyncScope();
+            using var scope = serviceProvider.CreateScope();
 
             scope
                 .ServiceProvider.GetServices<IRelationalTokenInfoEducationOrganizationLookup>()

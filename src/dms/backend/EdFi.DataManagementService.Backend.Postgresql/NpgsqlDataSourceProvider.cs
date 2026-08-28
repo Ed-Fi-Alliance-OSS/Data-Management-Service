@@ -20,12 +20,17 @@ namespace EdFi.DataManagementService.Backend.Postgresql;
 /// because several seams open connections from the same data source during one request and the data
 /// source must not be disposed between them. The DI scope disposes this provider, which releases
 /// every lease it took.
+///
+/// Both disposal interfaces are implemented deliberately. Releasing a lease is synchronous, so there
+/// is nothing to await, and a service that is only asynchronously disposable makes a synchronous
+/// <c>IServiceScope.Dispose()</c> throw rather than release anything - which would break every caller
+/// that builds a synchronous scope around a database operation.
 /// </remarks>
 public sealed class NpgsqlDataSourceProvider(
     IDataStoreSelection dataStoreSelection,
     NpgsqlDataSourceCache dataSourceCache,
     ILogger<NpgsqlDataSourceProvider> logger
-) : IAsyncDisposable
+) : IDisposable, IAsyncDisposable
 {
     private readonly Dictionary<string, NpgsqlDataSourceLease> _leases = new(StringComparer.Ordinal);
     private bool _disposed;
@@ -70,7 +75,20 @@ public sealed class NpgsqlDataSourceProvider(
     /// <summary>
     /// Releases every lease this request took. Called by the DI scope at the end of the request.
     /// </summary>
-    public async ValueTask DisposeAsync()
+    public void Dispose() => ReleaseLeases();
+
+    /// <inheritdoc cref="Dispose" />
+    public ValueTask DisposeAsync()
+    {
+        ReleaseLeases();
+        return ValueTask.CompletedTask;
+    }
+
+    /// <summary>
+    /// The one release path both disposal forms use, so whichever the container calls - and even if it
+    /// calls both - every lease is given back exactly once.
+    /// </summary>
+    private void ReleaseLeases()
     {
         if (_disposed)
         {
@@ -81,7 +99,7 @@ public sealed class NpgsqlDataSourceProvider(
 
         foreach (NpgsqlDataSourceLease lease in _leases.Values)
         {
-            await lease.DisposeAsync();
+            lease.Dispose();
         }
 
         _leases.Clear();

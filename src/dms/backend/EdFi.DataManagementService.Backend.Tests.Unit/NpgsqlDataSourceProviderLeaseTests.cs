@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using NUnit.Framework;
@@ -44,13 +45,24 @@ public class Given_NpgsqlDataSourceProvider_Holding_Leases
         _lifetime.Dispose();
     }
 
-    private NpgsqlDataSourceProvider ProviderFor(params EffectiveDataStoreTarget[] targets)
+    private static IDataStoreSelection SelectionOf(params EffectiveDataStoreTarget[] targets)
     {
         IDataStoreSelection selection = A.Fake<IDataStoreSelection>();
-        A.CallTo(() => selection.GetEffectiveTarget()).ReturnsNextFromSequence(targets);
 
-        return new NpgsqlDataSourceProvider(selection, _cache, A.Fake<ILogger<NpgsqlDataSourceProvider>>());
+        if (targets.Length == 1)
+        {
+            A.CallTo(() => selection.GetEffectiveTarget()).Returns(targets[0]);
+        }
+        else
+        {
+            A.CallTo(() => selection.GetEffectiveTarget()).ReturnsNextFromSequence(targets);
+        }
+
+        return selection;
     }
+
+    private NpgsqlDataSourceProvider ProviderFor(params EffectiveDataStoreTarget[] targets) =>
+        new(SelectionOf(targets), _cache, A.Fake<ILogger<NpgsqlDataSourceProvider>>());
 
     [Test]
     public async Task It_should_take_one_lease_per_string_however_often_the_source_is_read()
@@ -116,6 +128,61 @@ public class Given_NpgsqlDataSourceProvider_Holding_Leases
         _cache.Reconcile(OwnershipSnapshots.Empty(2));
 
         await DoubleDisposal.OfAsync(provider);
+
+        _lifetime.DisposeCountOf(dataSource).Should().Be(0, "the other holder's claim must still be counted");
+
+        await concurrent.DisposeAsync();
+        _lifetime.DisposeCountOf(dataSource).Should().Be(1);
+    }
+
+    /// <summary>
+    /// A service that is only asynchronously disposable makes a synchronous scope disposal throw
+    /// rather than release anything, and the existing PostgreSQL repository, write-session, and
+    /// hydration fixtures all build synchronous scopes around a database operation. Both disposal
+    /// forms therefore have to release.
+    /// </summary>
+    [Test]
+    public void It_should_release_its_leases_through_a_synchronous_scope_disposal()
+    {
+        _cache.Reconcile(OwnershipSnapshots.Of(1, PrimaryConnectionString));
+
+        ServiceCollection services = [];
+        services.AddSingleton(_cache);
+        services.AddSingleton(A.Fake<ILogger<NpgsqlDataSourceProvider>>());
+        services.AddScoped(_ => SelectionOf(EffectiveDataStoreTarget.Primary(PrimaryConnectionString)));
+        services.AddScoped<NpgsqlDataSourceProvider>();
+
+        using ServiceProvider serviceProvider = services.BuildServiceProvider();
+        NpgsqlDataSource dataSource;
+
+        // A real synchronous scope, disposed synchronously - exactly what those fixtures do.
+        using (IServiceScope scope = serviceProvider.CreateScope())
+        {
+            dataSource = scope.ServiceProvider.GetRequiredService<NpgsqlDataSourceProvider>().DataSource;
+
+            _cache.Reconcile(OwnershipSnapshots.Empty(2));
+            _lifetime.DisposeCountOf(dataSource).Should().Be(0, "the scope still holds its claim");
+        }
+
+        _lifetime.DisposeCountOf(dataSource).Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_should_release_its_leases_only_once_across_both_disposal_forms()
+    {
+        _cache.Reconcile(OwnershipSnapshots.Of(1, PrimaryConnectionString));
+
+        NpgsqlDataSourceProvider provider = ProviderFor(
+            EffectiveDataStoreTarget.Primary(PrimaryConnectionString)
+        );
+
+        NpgsqlDataSource dataSource = provider.DataSource;
+
+        // A second holder, so a double release would show up as a disposal while a claim is still out.
+        NpgsqlDataSourceLease concurrent = _cache.AcquireLease(PrimaryConnectionString);
+        _cache.Reconcile(OwnershipSnapshots.Empty(2));
+
+        await DoubleDisposal.ThroughBothFormsAsync(provider);
 
         _lifetime.DisposeCountOf(dataSource).Should().Be(0, "the other holder's claim must still be counted");
 

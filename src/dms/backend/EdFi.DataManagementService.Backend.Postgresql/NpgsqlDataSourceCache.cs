@@ -189,15 +189,21 @@ public sealed class NpgsqlDataSourceCache : IDataStoreOwnershipReconciler, IDisp
                 return;
             }
 
-            _ownershipVersion = snapshot.Version;
-
-            // String set operations only. Nothing here parses a connection string, so a value no
-            // provider could open participates in ownership like any other.
-            // Every owner of every kind, because a string one kind stops claiming may still be
-            // claimed by another - a primary and some other store's replica can name one database.
-            _configuredOwners = snapshot
+            // Computed first, into a local. String set operations only - nothing here parses a
+            // connection string, so a value no provider could open participates in ownership like any
+            // other - and every owner of every kind participates, because a string one kind stops
+            // claiming may still be claimed by another.
+            //
+            // Enumerating the snapshot is the only thing in this method that can throw, and nothing
+            // may be mutated before it succeeds: advancing the version first would make a retry
+            // carrying that same version look stale, leaving the old owner set live for good.
+            HashSet<string> newConfiguredOwners = snapshot
                 .Owners.Select(owner => owner.ConfiguredConnectionString)
                 .ToHashSet(StringComparer.Ordinal);
+
+            // From here down it is assignments and dictionary operations, none of which can throw.
+            _ownershipVersion = snapshot.Version;
+            _configuredOwners = newConfiguredOwners;
 
             foreach ((string key, ReadyEntry entry) in _entries)
             {
