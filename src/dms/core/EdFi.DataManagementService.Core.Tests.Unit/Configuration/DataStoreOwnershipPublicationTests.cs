@@ -375,6 +375,35 @@ public class DataStoreOwnershipPublicationTests
     [TestFixture]
     public class Given_A_Reconciler_That_Throws : DataStoreOwnershipPublicationTests
     {
+        /// <summary>
+        /// Every rendered message, every structured property value, and every attached exception, so a
+        /// secret cannot hide in any of the three.
+        /// </summary>
+        private static IEnumerable<string> AllLoggedText(
+            RecordingLogger<ConfigurationServiceDataStoreProvider> logger
+        ) =>
+            [
+                .. logger.Records.Select(record => record.Message),
+                .. logger.Records.SelectMany(record =>
+                    record.Properties.Values.Select(value => value?.ToString() ?? string.Empty)
+                ),
+                .. logger.Records.Select(record => record.Exception?.ToString() ?? string.Empty),
+            ];
+
+        /// <summary>
+        /// An exception carrying configured connection material in every place one can hide: the
+        /// message, the inner exception, and the data dictionary. A reconciler is arbitrary code that
+        /// was just handed every configured string, so an exception quoting one back is the expected
+        /// case rather than a contrived one.
+        /// </summary>
+        private static Exception LeakyException()
+        {
+            InvalidOperationException inner = new($"inner names the snapshot: {SnapshotConnection}");
+            InvalidOperationException exception = new($"reconciler failed against {TenantAPrimary}", inner);
+            exception.Data["connection"] = SharedReplica;
+            return exception;
+        }
+
         private RecordingLogger<ConfigurationServiceDataStoreProvider> _logger = null!;
         private ThrowingReconciler _throwing = null!;
         private RecordingReconciler _after = null!;
@@ -384,7 +413,7 @@ public class DataStoreOwnershipPublicationTests
         public async Task Setup()
         {
             _logger = new RecordingLogger<ConfigurationServiceDataStoreProvider>();
-            _throwing = new ThrowingReconciler(new InvalidOperationException("reconciler failed"));
+            _throwing = new ThrowingReconciler(LeakyException());
             _after = new RecordingReconciler();
 
             var provider = CreateProvider(
@@ -393,7 +422,13 @@ public class DataStoreOwnershipPublicationTests
                     {
                         ["tenant-a"] = new[]
                         {
-                            DataStoreJson(1, "A", TenantAPrimary, Derivative("Snapshot", SnapshotConnection)),
+                            DataStoreJson(
+                                1,
+                                "A",
+                                TenantAPrimary,
+                                Derivative("Snapshot", SnapshotConnection),
+                                Derivative("ReadReplica", SharedReplica)
+                            ),
                         },
                     }
                 ),
@@ -423,36 +458,46 @@ public class DataStoreOwnershipPublicationTests
         }
 
         [Test]
-        public void It_warns_about_the_failure()
+        public void It_warns_naming_the_reconciler_and_the_exception_type()
         {
-            _logger
+            LogRecord warning = _logger
                 .Records.Where(record => record.Level == LogLevel.Warning)
                 .Should()
                 .ContainSingle()
-                .Which.Message.Should()
-                .Contain("ThrowingReconciler");
+                .Subject;
+
+            warning.Message.Should().Contain("ThrowingReconciler");
+            warning.Message.Should().Contain(nameof(InvalidOperationException));
         }
 
         /// <summary>
-        /// The warning names the reconciler and the tenant. It must not name what the reconciler was
-        /// reconciling: a connection string in a log is a secret in a log.
+        /// Nothing the reconciler put in its exception reaches the log: not the message, not the inner
+        /// exception, not the data dictionary, and not the exception object itself, which the logger
+        /// would render in full.
         /// </summary>
         [Test]
         public void It_logs_no_connection_material()
         {
-            IEnumerable<string> loggedText =
-            [
-                .. _logger.Records.Select(record => record.Message),
-                .. _logger.Records.SelectMany(record =>
-                    record.Properties.Values.Select(value => value?.ToString() ?? string.Empty)
-                ),
-                .. _logger.Records.Select(record => record.Exception?.ToString() ?? string.Empty),
-            ];
+            IEnumerable<string> loggedText = AllLoggedText(_logger);
 
             loggedText.Should().NotContain(text => text.Contains(TenantAPrimary, StringComparison.Ordinal));
             loggedText
                 .Should()
                 .NotContain(text => text.Contains(SnapshotConnection, StringComparison.Ordinal));
+            loggedText.Should().NotContain(text => text.Contains(SharedReplica, StringComparison.Ordinal));
+        }
+
+        /// <summary>
+        /// Stated separately because it is the mechanism: attaching the exception at all would render
+        /// its message, inner exception, and stack into the log regardless of the message template.
+        /// </summary>
+        [Test]
+        public void It_attaches_no_exception_to_the_warning()
+        {
+            _logger
+                .Records.Where(record => record.Level == LogLevel.Warning)
+                .Should()
+                .OnlyContain(record => record.Exception == null);
         }
     }
 
@@ -460,104 +505,176 @@ public class DataStoreOwnershipPublicationTests
     public class Given_Overlapping_Tenant_Publications : DataStoreOwnershipPublicationTests
     {
         /// <summary>
-        /// Two loads that are genuinely in flight at once must serialize: their versions must be
-        /// distinct and increasing, and one reconciliation must finish before the next begins. A
-        /// reconciler that observed two snapshots at once could retire an owner the newer
-        /// configuration still claims.
+        /// Two loads, both genuinely in flight, whose fetches are released one at a time so the test
+        /// chooses which tenant publishes first. The first reconciliation is then held until the other
+        /// load's fetch has completed, so the second load is past its I/O and heading for publication
+        /// while the first is still inside the critical section.
         /// </summary>
         /// <remarks>
-        /// The reconciler is the detector: it counts how many reconciliations are inside it at once and
-        /// holds each one there long enough that a second, if the lock did not exist, would arrive
-        /// while the first is still present. With the lock the count never exceeds one.
+        /// Every step is driven by a gate rather than by elapsed time. The timeouts exist only so a
+        /// broken or deadlocked implementation fails instead of hanging the suite; none of them
+        /// creates the interleaving, and none of them is what an assertion reads.
+        ///
+        /// Run for both completion orders and for shared as well as distinct configured strings,
+        /// because the union and the ownership count differ between those two shapes.
         /// </remarks>
-        [TestCase("tenant-a", "tenant-b")]
-        [TestCase("tenant-b", "tenant-a")]
-        public async Task It_reconciles_one_publication_at_a_time(string first, string second)
+        [TestCase("tenant-a", "tenant-b", true)]
+        [TestCase("tenant-b", "tenant-a", true)]
+        [TestCase("tenant-a", "tenant-b", false)]
+        [TestCase("tenant-b", "tenant-a", false)]
+        public async Task It_publishes_in_the_order_the_fetches_complete(
+            string firstTenant,
+            string secondTenant,
+            bool shareConnectionString
+        )
         {
+            static Task WithTimeout(Task task) => task.WaitAsync(TimeSpan.FromSeconds(10));
+
+            Dictionary<string, TaskCompletionSource> fetchGates = new()
+            {
+                [firstTenant] = new TaskCompletionSource(),
+                [secondTenant] = new TaskCompletionSource(),
+            };
+            Dictionary<string, TaskCompletionSource> fetchCompleted = new()
+            {
+                [firstTenant] = new TaskCompletionSource(),
+                [secondTenant] = new TaskCompletionSource(),
+            };
+
+            string aConnection = TenantAPrimary;
+            string bConnection = shareConnectionString ? TenantAPrimary : TenantBPrimary;
+
+            Dictionary<string, object> responses = new()
+            {
+                ["tenant-a"] = new[] { DataStoreJson(1, "A", aConnection) },
+                ["tenant-b"] = new[] { DataStoreJson(2, "B", bConnection) },
+            };
+
+            // The handler holds each tenant's fetch until the test releases it, and announces when it
+            // has returned, so completion order is chosen rather than raced for.
+            HttpMessageHandler handler = new GatedResponseHandler(responses, fetchGates, fetchCompleted);
+
+            using ManualResetEventSlim releaseFirstReconcile = new(initialState: false);
+            TaskCompletionSource firstReconcileEntered = new();
+
             int inside = 0;
-            bool overlapped = false;
+            int maxInside = 0;
             List<long> versions = [];
 
-            RecordingReconciler reconciler = new(snapshot =>
+            RecordingReconciler reconciler = new(_ =>
             {
-                if (Interlocked.Increment(ref inside) > 1)
-                {
-                    overlapped = true;
-                }
+                int now = Interlocked.Increment(ref inside);
+                InterlockedMax(ref maxInside, now);
 
-                // Held until the other load has been given every chance to arrive. Waiting on an
-                // event that is never set is the hold: it expires on its own, so nothing here depends
-                // on a sleep the analyzer would rightly object to, and with the lock in place the
-                // other reconciliation simply cannot be inside while this one waits.
-                using (ManualResetEventSlim hold = new(initialState: false))
+                if (firstReconcileEntered.TrySetResult())
                 {
-                    hold.Wait(TimeSpan.FromMilliseconds(100));
-                }
-
-                lock (versions)
-                {
-                    versions.Add(snapshot.Version);
+                    // Held open until the test says otherwise. Nothing about the duration matters:
+                    // the test releases it only once the other load has finished its fetch.
+                    releaseFirstReconcile.Wait(TimeSpan.FromSeconds(10));
                 }
 
                 Interlocked.Decrement(ref inside);
             });
 
-            Dictionary<string, object> responses = new()
-            {
-                ["tenant-a"] = new[] { DataStoreJson(1, "A", TenantAPrimary) },
-                ["tenant-b"] = new[] { DataStoreJson(2, "B", TenantBPrimary) },
-            };
-
             var provider = CreateProvider(
-                HandlerFor(responses),
+                handler,
                 new RecordingLogger<ConfigurationServiceDataStoreProvider>(),
                 reconciler
             );
 
-            // Started on the thread pool rather than awaited in turn: the fake token handler and HTTP
-            // handler both complete synchronously, so awaiting them in sequence would let the first
-            // load finish before the second began and there would be nothing to serialize.
-            Task<IList<DataStore>> firstLoad = Task.Run(() => provider.LoadDataStores(first));
-            Task<IList<DataStore>> secondLoad = Task.Run(() => provider.LoadDataStores(second));
+            Task<IList<DataStore>> firstLoad = Task.Run(() => provider.LoadDataStores(firstTenant));
+            Task<IList<DataStore>> secondLoad = Task.Run(() => provider.LoadDataStores(secondTenant));
 
-            await Task.WhenAll(firstLoad, secondLoad);
+            // Let the first tenant's fetch complete, and wait until its reconciliation is inside.
+            fetchGates[firstTenant].SetResult();
+            await WithTimeout(fetchCompleted[firstTenant].Task);
+            await WithTimeout(firstReconcileEntered.Task);
 
-            overlapped.Should().BeFalse("publication is serialized by the provider-wide lock");
-            versions.Order().Should().Equal(1L, 2L);
+            // Now let the second tenant's fetch complete. It is past its I/O and heading for
+            // publication while the first reconciliation is still inside.
+            fetchGates[secondTenant].SetResult();
+            await WithTimeout(fetchCompleted[secondTenant].Task);
 
-            // Whichever order they completed in, the final snapshot is the full union.
-            ConnectionStringsOf(reconciler.Snapshots[^1])
+            releaseFirstReconcile.Set();
+            await WithTimeout(Task.WhenAll(firstLoad, secondLoad));
+
+            lock (versions)
+            {
+                versions.AddRange(reconciler.Snapshots.Select(snapshot => snapshot.Version));
+            }
+
+            // Exact order, unsorted: the tenant whose fetch completed first must be version 1.
+            versions.Should().Equal(1L, 2L);
+            maxInside.Should().Be(1, "publication is serialized by the provider-wide lock");
+
+            reconciler.Snapshots[0].Owners.Select(owner => owner.TenantKey).Should().Equal(firstTenant);
+
+            // The last snapshot is the full union either way; with a shared string both tenants own it.
+            reconciler
+                .Snapshots[1]
+                .Owners.Select(owner => owner.TenantKey)
                 .Should()
-                .BeEquivalentTo(TenantAPrimary, TenantBPrimary);
+                .BeEquivalentTo("tenant-a", "tenant-b");
+
+            ConnectionStringsOf(reconciler.Snapshots[1])
+                .Should()
+                .BeEquivalentTo(
+                    shareConnectionString ? [aConnection, aConnection] : [aConnection, bConnection]
+                );
+        }
+
+        private static void InterlockedMax(ref int target, int candidate)
+        {
+            int observed = Volatile.Read(ref target);
+
+            while (candidate > observed)
+            {
+                int exchanged = Interlocked.CompareExchange(ref target, candidate, observed);
+
+                if (exchanged == observed)
+                {
+                    return;
+                }
+
+                observed = exchanged;
+            }
         }
 
         /// <summary>
-        /// Two concurrent loads of the *same* tenant still serialize, and the last one to publish is
-        /// the one whose configuration is left in place.
+        /// Holds each tenant's response until that tenant's gate is released, then announces that the
+        /// fetch has returned.
         /// </summary>
-        [Test]
-        public async Task It_serializes_two_loads_of_one_tenant()
+        private sealed class GatedResponseHandler(
+            IReadOnlyDictionary<string, object> responses,
+            IReadOnlyDictionary<string, TaskCompletionSource> gates,
+            IReadOnlyDictionary<string, TaskCompletionSource> completed
+        ) : HttpMessageHandler
         {
-            RecordingReconciler reconciler = new();
+            protected override async Task<HttpResponseMessage> SendAsync(
+                HttpRequestMessage request,
+                CancellationToken cancellationToken
+            )
+            {
+                string tenant = request.Headers.TryGetValues("Tenant", out IEnumerable<string>? values)
+                    ? values.FirstOrDefault() ?? string.Empty
+                    : string.Empty;
 
-            var provider = CreateProvider(
-                HandlerFor(
-                    new Dictionary<string, object>
-                    {
-                        ["tenant-a"] = new[] { DataStoreJson(1, "A", TenantAPrimary) },
-                    }
-                ),
-                new RecordingLogger<ConfigurationServiceDataStoreProvider>(),
-                reconciler
-            );
+                if (gates.TryGetValue(tenant, out TaskCompletionSource? gate))
+                {
+                    await gate.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+                }
 
-            await Task.WhenAll(
-                Task.Run(() => provider.LoadDataStores("tenant-a")),
-                Task.Run(() => provider.LoadDataStores("tenant-a"))
-            );
+                string content = responses.TryGetValue(tenant, out object? response)
+                    ? JsonSerializer.Serialize(response)
+                    : "[]";
 
-            reconciler.Snapshots.Select(snapshot => snapshot.Version).Should().Equal(1L, 2L);
-            ConnectionStringsOf(reconciler.Snapshots[1]).Should().BeEquivalentTo(TenantAPrimary);
+                HttpResponseMessage message = new(HttpStatusCode.OK) { Content = new StringContent(content) };
+
+                completed.TryGetValue(tenant, out TaskCompletionSource? done);
+                done?.TrySetResult();
+
+                return message;
+            }
         }
     }
 

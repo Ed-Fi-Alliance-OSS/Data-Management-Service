@@ -262,13 +262,25 @@ public class ConfigurationServiceDataStoreProvider(
                     // configuration is already published and correct, and a reconciler that could not
                     // act on it will be handed the full authoritative snapshot again by the next
                     // publication.
+                    //
+                    // Only the exception's type is logged, never the exception itself and never its
+                    // message, data, or inner exceptions. A reconciler is arbitrary code that was just
+                    // handed every configured connection string; an exception it throws is exactly the
+                    // kind of value likely to quote one back, and passing it to the logger would put
+                    // that in the log.
+                    // S6667 asks for the caught exception to be passed to the logger. That is the
+                    // right default and the wrong thing here, for the reason above: the exception is
+                    // the untrusted value. Its type is logged instead, which is the part that helps
+                    // an operator without carrying anything the reconciler put in it.
+#pragma warning disable S6667
                     logger.LogWarning(
-                        exception,
-                        "Ownership reconciler {Reconciler} failed for tenant {Tenant} at ownership version {Version}. Configuration was published; the next publication will deliver the complete snapshot again",
+                        "Ownership reconciler {Reconciler} failed with {ExceptionType} for tenant {Tenant} at ownership version {Version}. Configuration was published; the next publication will deliver the complete snapshot again",
                         LoggingSanitizer.SanitizeForLogging(reconciler.GetType().Name),
+                        LoggingSanitizer.SanitizeForLogging(exception.GetType().Name),
                         LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)"),
                         snapshot.Version
                     );
+#pragma warning restore S6667
                 }
             }
         }
