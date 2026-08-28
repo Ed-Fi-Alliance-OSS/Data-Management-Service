@@ -20,6 +20,9 @@ namespace EdFi.DataManagementService.Tests.Integration.Postgresql;
 public abstract class PostgresqlApiIntegrationTestBase : ApiIntegrationTestBase
 {
     private PostgresqlGeneratedDdlTestDatabase? _leasedDb;
+    private readonly Dictionary<string, PostgresqlGeneratedDdlTestDatabase> _additionalDbs = new(
+        StringComparer.Ordinal
+    );
 
     protected override string Datastore => "postgresql";
 
@@ -45,6 +48,25 @@ public abstract class PostgresqlApiIntegrationTestBase : ApiIntegrationTestBase
         );
         _leasedDb = await baseline.CreateIsolatedDatabaseAsync();
         return _leasedDb.ConnectionString;
+    }
+
+    protected override async Task<string> LeaseAdditionalDatabaseAsync(FixtureContext fixture)
+    {
+        PostgresqlGeneratedDdlBaselineDatabase baseline = await PostgresqlBaselineCache.CreateOrGetAsync(
+            fixture
+        );
+        PostgresqlGeneratedDdlTestDatabase database = await baseline.CreateIsolatedDatabaseAsync();
+        _additionalDbs[database.ConnectionString] = database;
+
+        return database.ConnectionString;
+    }
+
+    protected override async Task ReleaseAdditionalDatabaseAsync(string leasedConnectionString)
+    {
+        if (_additionalDbs.Remove(leasedConnectionString, out PostgresqlGeneratedDdlTestDatabase? database))
+        {
+            await database.DisposeAsync();
+        }
     }
 
     protected override async Task<DbConnection> OpenAssertionConnectionAsync(string leasedConnectionString)

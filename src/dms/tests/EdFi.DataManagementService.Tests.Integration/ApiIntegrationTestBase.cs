@@ -30,6 +30,8 @@ public abstract class ApiIntegrationTestBase
 {
     private WebApplicationFactory<Program>? _factory;
     private string? _leasedConnectionString;
+    private readonly Dictionary<DataStoreDerivativeType, string> _leasedDerivativeConnectionStrings = new();
+    private readonly List<string> _extraLeases = [];
     private DbConnection? _assertionConnection;
     private FixtureContext? _fixtureContext;
     private string? _startupStatusFilePath;
@@ -43,6 +45,29 @@ public abstract class ApiIntegrationTestBase
 
     /// <summary>The fixture this test class is bound to.</summary>
     protected abstract FixtureKey Fixture { get; }
+
+    /// <summary>
+    /// Derivative kinds this fixture wants provisioned as their own leased databases, each seeded
+    /// distinguishably so a response proves which one served it. Empty by default, so no existing
+    /// fixture leases anything extra.
+    /// </summary>
+    protected virtual IReadOnlyList<DataStoreDerivativeType> LeasedDerivatives => [];
+
+    /// <summary>
+    /// The leased connection string for a derivative this fixture asked for. Throws rather than
+    /// returning the primary's, because a silent fallback would make every routing assertion pass.
+    /// </summary>
+    protected string DerivativeConnectionString(DataStoreDerivativeType derivativeType) =>
+        _leasedDerivativeConnectionStrings.TryGetValue(derivativeType, out string? connectionString)
+            ? connectionString
+            : throw new InvalidOperationException(
+                $"No {derivativeType} database was leased for this fixture. Add it to {nameof(LeasedDerivatives)}."
+            );
+
+    /// <summary>The primary's leased connection string.</summary>
+    protected string PrimaryConnectionString =>
+        _leasedConnectionString
+        ?? throw new InvalidOperationException("The primary database has not been leased yet.");
 
     /// <summary>
     /// Datastore identifier consumed by <c>AppSettings:Datastore</c>; supplied by
@@ -151,6 +176,15 @@ public abstract class ApiIntegrationTestBase
     protected virtual IReadOnlyList<string> AssignedProfileNames => [];
 
     /// <summary>
+    /// Replaces the data-store provider the host resolves, for a fixture that publishes derivatives or
+    /// changes its configuration between requests. Null keeps the single-instance stub.
+    /// </summary>
+    protected virtual IDataStoreProvider? CreateDataStoreProvider(
+        FixtureContext fixture,
+        string primaryConnectionString
+    ) => null;
+
+    /// <summary>
     /// Builds the claim set provider used by the in-process host.
     /// </summary>
     protected virtual IClaimSetProvider CreateClaimSetProvider(FixtureContext fixture) =>
@@ -170,6 +204,15 @@ public abstract class ApiIntegrationTestBase
     protected abstract Task ReleaseDatabaseAsync(string leasedConnectionString);
 
     /// <summary>
+    /// Provisions one more database from the same baseline, for a fixture that needs several
+    /// distinguishable targets in one test. Released by <see cref="ReleaseAdditionalDatabaseAsync" />.
+    /// </summary>
+    protected abstract Task<string> LeaseAdditionalDatabaseAsync(FixtureContext fixture);
+
+    /// <summary>Releases one database taken through <see cref="LeaseAdditionalDatabaseAsync" />.</summary>
+    protected abstract Task ReleaseAdditionalDatabaseAsync(string leasedConnectionString);
+
+    /// <summary>
     /// Hook for a fixture that must substitute a production service in the booted host, for example to
     /// force one validation stage to fail so that a precedence rule between stages becomes observable.
     /// It runs after the standard doubles are registered, so a replacement made here wins.
@@ -181,6 +224,16 @@ public abstract class ApiIntegrationTestBase
     {
         _fixtureContext = FixtureContextLoader.Load(Fixture);
         _leasedConnectionString = await LeaseDatabaseAsync(_fixtureContext);
+
+        foreach (DataStoreDerivativeType derivativeType in LeasedDerivatives)
+        {
+            // A separate provisioned database per derivative, so a request that reaches the wrong one
+            // returns different rows rather than the same rows from a shared database.
+            string derivativeConnectionString = await LeaseAdditionalDatabaseAsync(_fixtureContext);
+            _leasedDerivativeConnectionStrings[derivativeType] = derivativeConnectionString;
+            _extraLeases.Add(derivativeConnectionString);
+        }
+
         _startupStatusFilePath = Path.Combine(Path.GetTempPath(), $"api-int-startup-{Guid.NewGuid():N}.json");
         _queryRecorder = CaptureQueryPlans ? new ApiIntegrationQueryRecorder() : null;
         _documentCacheReadAcquisitionFailureRecorder = ForceDocumentCacheReadLookupAdapterAcquisitionFailure
@@ -210,6 +263,10 @@ public abstract class ApiIntegrationTestBase
         var suppressHydratedRowsOnce = SuppressHydratedRowsOnce;
         var multiTenancy = MultiTenancy;
         var applicationContextConfigurationProviderOverride = ApplicationContextConfigurationProviderOverride;
+        IDataStoreProvider? dataStoreProviderOverride = CreateDataStoreProvider(
+            _fixtureContext,
+            _leasedConnectionString
+        );
 
         _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -277,7 +334,8 @@ public abstract class ApiIntegrationTestBase
                     documentCacheDirectFillTimeoutRecorder,
                     documentCacheReadTelemetryRecorder,
                     assignedProfileNames,
-                    applicationContextConfigurationProviderOverride
+                    applicationContextConfigurationProviderOverride,
+                    dataStoreProviderOverride
                 );
 
                 if (queryRecorder is not null)
@@ -345,6 +403,14 @@ public abstract class ApiIntegrationTestBase
             await ReleaseDatabaseAsync(_leasedConnectionString);
             _leasedConnectionString = null;
         }
+
+        foreach (string extraLease in _extraLeases)
+        {
+            await ReleaseAdditionalDatabaseAsync(extraLease);
+        }
+
+        _extraLeases.Clear();
+        _leasedDerivativeConnectionStrings.Clear();
 
         _fixtureContext = null;
         _queryRecorder = null;

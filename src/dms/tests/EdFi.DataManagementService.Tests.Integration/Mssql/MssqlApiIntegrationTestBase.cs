@@ -20,6 +20,9 @@ namespace EdFi.DataManagementService.Tests.Integration.Mssql;
 public abstract class MssqlApiIntegrationTestBase : ApiIntegrationTestBase
 {
     private IMssqlGeneratedDdlBaselineLease? _lease;
+    private readonly Dictionary<string, IMssqlGeneratedDdlBaselineLease> _additionalLeases = new(
+        StringComparer.Ordinal
+    );
 
     protected override string Datastore => "mssql";
 
@@ -56,6 +59,36 @@ public abstract class MssqlApiIntegrationTestBase : ApiIntegrationTestBase
         }
 
         return _lease.Database.ConnectionString;
+    }
+
+    protected override async Task<string> LeaseAdditionalDatabaseAsync(FixtureContext fixture)
+    {
+        IMssqlGeneratedDdlBaselineDatabase baseline = await MssqlBaselineCache.CreateOrGetAsync(fixture);
+        IMssqlGeneratedDdlBaselineLease lease = await baseline.AcquireRestoredDatabaseAsync();
+
+        if (EnableDocumentCacheReadAcceleration || MatchProductionWriteIsolation)
+        {
+            await SetReadCommittedSnapshotAsync(lease.Database.DatabaseName, enabled: true);
+        }
+
+        _additionalLeases[lease.Database.ConnectionString] = lease;
+
+        return lease.Database.ConnectionString;
+    }
+
+    protected override async Task ReleaseAdditionalDatabaseAsync(string leasedConnectionString)
+    {
+        if (_additionalLeases.Remove(leasedConnectionString, out IMssqlGeneratedDdlBaselineLease? lease))
+        {
+            // The isolation configuration lives in master rather than in the data pages, so it is
+            // returned to the pooled default before the slot goes back, exactly as the primary's is.
+            if (EnableDocumentCacheReadAcceleration || MatchProductionWriteIsolation)
+            {
+                await SetReadCommittedSnapshotAsync(lease.Database.DatabaseName, enabled: false);
+            }
+
+            await lease.DisposeAsync();
+        }
     }
 
     protected override async Task<DbConnection> OpenAssertionConnectionAsync(string leasedConnectionString)
