@@ -311,7 +311,8 @@ public class Given_ConfigurationServiceApplicationProvider
                 {
                     Content = new StringContent(responseBody, Encoding.UTF8, "application/json"),
                 }
-            ) { }
+            )
+        { }
 
         public ProviderFixture(Exception exception)
         {
