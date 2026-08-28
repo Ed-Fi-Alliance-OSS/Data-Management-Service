@@ -67,66 +67,66 @@ jobs:
 
       - name: Detect files that require a fresh rebuild
         id: detect
-        shell: bash
+        shell: pwsh
+        env:
+          # Read through the environment rather than interpolated into the script body, so a ref
+          # or SHA can never be parsed as PowerShell.
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.sha }}
         run: |
-          # emit <fresh_build_required> <dms_relevant>
-          emit() {
-            echo "fresh_build_required=$1" >> "$GITHUB_OUTPUT"
-            echo "dms_relevant=$2" >> "$GITHUB_OUTPUT"
+          # PowerShell 7.4 makes a non-zero native exit code terminating under
+          # ErrorActionPreference Stop, which this step must not be: a git failure is handled
+          # below by running the full suite, not by failing the job.
+          $PSNativeCommandUseErrorActionPreference = $false
+
+          # The classification rules live in eng/ci/dms-change-categories.psm1 so Pester can
+          # exercise them directly. Producing the changed-file list stays here, because only the
+          # workflow knows the diff base. Any failure to produce a trustworthy list leaves
+          # $diffUnavailable set, and the classifier then reports the full suite.
+          $changedFilePath = Join-Path $env:RUNNER_TEMP "dms-changed-files.txt"
+          $diffUnavailable = $false
+
+          switch ($env:EVENT_NAME) {
+            "pull_request" {
+              git fetch --no-tags origin "$($env:BASE_REF):refs/remotes/origin/$($env:BASE_REF)"
+
+              if ($LASTEXITCODE -ne 0) {
+                $diffUnavailable = $true
+              }
+              else {
+                git diff --no-renames --name-only "origin/$($env:BASE_REF)...HEAD" |
+                  Set-Content -LiteralPath $changedFilePath
+
+                if ($LASTEXITCODE -ne 0) {
+                  $diffUnavailable = $true
+                }
+              }
+            }
+            "merge_group" {
+              if ([string]::IsNullOrWhiteSpace($env:MERGE_GROUP_BASE_SHA)) {
+                $diffUnavailable = $true
+              }
+              else {
+                git diff --no-renames --name-only $env:MERGE_GROUP_BASE_SHA $env:HEAD_SHA |
+                  Set-Content -LiteralPath $changedFilePath
+
+                if ($LASTEXITCODE -ne 0) {
+                  $diffUnavailable = $true
+                }
+              }
+            }
           }
 
-          # Non-pull_request events (merge_group, workflow_dispatch) always run the full
-          # suite, so dms_relevant is reported true and only fresh_build_required is meaningful.
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            emit true true
-            exit 0
-          fi
+          ./eng/ci/Write-DmsChangeCategories.ps1 `
+            -EventName $env:EVENT_NAME `
+            -ChangedFilePath $changedFilePath `
+            -DiffUnavailable:$diffUnavailable
 
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            git fetch --no-tags origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
-            changed_files="$(git diff --no-renames --name-only "origin/${{ github.base_ref }}...HEAD")"
-          elif [[ "${{ github.event_name }}" == "merge_group" ]]; then
-            base_sha="${{ github.event.merge_group.base_sha }}"
-
-            if [[ -z "$base_sha" ]] || ! changed_files="$(git diff --no-renames --name-only "$base_sha" "${{ github.sha }}")"; then
-              emit true true
-              exit 0
-            fi
-          else
-            # Unreachable with the current triggers: workflow_dispatch returned above and the
-            # only other events are pull_request and merge_group. Run the full suite rather
-            # than infer a diff base for an event this script does not model.
-            emit true true
-            exit 0
-          fi
-
-          fresh_build_required=false
-          # For merge_group, force dms_relevant true so nothing is skipped when
-          # validating the merged result; only pull_request narrows to the changed area.
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            dms_relevant=false
-          else
-            dms_relevant=true
-          fi
-
-          while IFS= read -r file; do
-            case "$file" in
-              src/Directory.Packages.props|src/nuget.config|src/dms/Dockerfile|src/config/Dockerfile|eng/docker-compose/*)
-                fresh_build_required=true
-                ;;
-            esac
-            # src/config counts as DMS-relevant: the DMS E2E lanes (incl. the DS 6.1
-            # version-coupled lane) bring up the Config Service built from src/config, so
-            # config-only changes (e.g. ds61 Claims.json, ClaimsProvider, ResourceClaim
-            # seeding) must still trigger this workflow's DMS + DS 6.1 validation.
-            case "$file" in
-              .github/actions/*|.github/workflows/*|build-dms.ps1|eng/*|src/Directory.Packages.props|src/nuget.config|src/dms/*|src/config/*)
-                dms_relevant=true
-                ;;
-            esac
-          done <<< "$changed_files"
-
-          emit "$fresh_build_required" "$dms_relevant"
+          # The step's own success is decided by the classifier having run, not by the exit code
+          # of the last git command, which is deliberately tolerated above.
+          exit 0
 
   scan-actions-bidi:
     name: Scan Actions, scan all files for BIDI Trojan Attacks
@@ -217,6 +217,7 @@ jobs:
             "eng/ci/tests/BuildScriptTestGuards.Tests.ps1",
             "eng/ci/tests/Sanitize-E2EArtifacts.Tests.ps1",
             "eng/ci/tests/DmsPullRequestMssqlWorkflow.Tests.ps1",
+            "eng/ci/tests/DmsChangeCategories.Tests.ps1",
             "eng/ci/tests/PullCiImages.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-Management.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-WorkflowInputs.Tests.ps1",
