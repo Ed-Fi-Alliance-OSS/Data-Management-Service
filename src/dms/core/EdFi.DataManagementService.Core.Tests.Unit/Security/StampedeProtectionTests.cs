@@ -116,7 +116,7 @@ public class StampedeProtectionTests
             _factoryExecutionCount = 0;
             _mockProvider = A.Fake<IConfigurationServiceApplicationProvider>();
 
-            A.CallTo(() => _mockProvider.GetApplicationByClientIdAsync(A<string>.Ignored, tenant: null))
+            A.CallTo(() => _mockProvider.GetApplicationByClientIdAsync(A<string>.Ignored, A<string?>.Ignored))
                 .ReturnsLazily(_ => FetchApplicationContextAsync());
 
             _cachedProvider = new CachedApplicationContextProvider(
@@ -137,7 +137,7 @@ public class StampedeProtectionTests
         }
 
         [Test]
-        public async Task It_Should_Memoize_The_First_Lookup_Task_For_Concurrent_Calls_In_The_Same_Scope()
+        public async Task It_Should_Memoize_Each_Lookup_Task_By_Client_And_Tenant_In_The_Same_Scope()
         {
             var tasks = new[]
             {
@@ -148,11 +148,15 @@ public class StampedeProtectionTests
 
             var results = await Task.WhenAll(tasks);
 
-            _factoryExecutionCount.Should().Be(1);
-            results.Should().AllSatisfy(result => result.Should().BeSameAs(results[0]));
+            _factoryExecutionCount.Should().Be(3);
+            results
+                .Should()
+                .AllSatisfy(result => result.Should().BeOfType<ApplicationContextResult.Success>());
             A.CallTo(() => _mockProvider.GetApplicationByClientIdAsync("first-client", tenant: null))
                 .MustHaveHappenedOnceExactly();
-            A.CallTo(() => _mockProvider.GetApplicationByClientIdAsync(A<string>.Ignored, A<string?>.Ignored))
+            A.CallTo(() => _mockProvider.GetApplicationByClientIdAsync("second-client", "north"))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => _mockProvider.GetApplicationByClientIdAsync("third-client", "south"))
                 .MustHaveHappenedOnceExactly();
         }
 

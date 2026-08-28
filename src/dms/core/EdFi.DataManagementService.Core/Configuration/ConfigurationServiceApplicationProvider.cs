@@ -20,6 +20,9 @@ public class ConfigurationServiceApplicationProvider(
     ILogger<ConfigurationServiceApplicationProvider> logger
 ) : IApplicationContextProvider, IConfigurationServiceApplicationProvider
 {
+    private const short MinimumOwnershipTokenId = 1;
+    private const short MaximumOwnershipTokenId = 32767;
+    private const int MaximumOwnershipTokenCount = 1999;
     private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     /// <inheritdoc />
@@ -91,6 +94,7 @@ public class ConfigurationServiceApplicationProvider(
                 applicationContext is null
                 || !string.Equals(applicationContext.ClientId, clientId, StringComparison.Ordinal)
                 || applicationContext.ClientUuid == Guid.Empty
+                || !HasValidOwnershipConfiguration(applicationContext)
             )
             {
                 logger.LogError(
@@ -170,9 +174,24 @@ public class ConfigurationServiceApplicationProvider(
             && HasProperty(applicationContext, "clientId")
             && HasProperty(applicationContext, "clientUuid")
             && HasProperty(applicationContext, "dataStoreIds")
-            && HasProperty(applicationContext, "creatorOwnershipTokenId")
             && HasProperty(applicationContext, "ownershipTokenIds");
     }
+
+    private static bool HasValidOwnershipConfiguration(ApplicationContext applicationContext)
+    {
+        bool creatorIsValid =
+            applicationContext.CreatorOwnershipTokenId is null
+            || IsValidOwnershipTokenId(applicationContext.CreatorOwnershipTokenId.Value);
+
+        return creatorIsValid
+            && applicationContext.OwnershipTokenIds.Count <= MaximumOwnershipTokenCount
+            && applicationContext.OwnershipTokenIds.Distinct().Count()
+                == applicationContext.OwnershipTokenIds.Count
+            && applicationContext.OwnershipTokenIds.All(IsValidOwnershipTokenId);
+    }
+
+    private static bool IsValidOwnershipTokenId(short tokenId) =>
+        tokenId is >= MinimumOwnershipTokenId and <= MaximumOwnershipTokenId;
 
     private static bool HasProperty(JsonElement element, string propertyName)
     {

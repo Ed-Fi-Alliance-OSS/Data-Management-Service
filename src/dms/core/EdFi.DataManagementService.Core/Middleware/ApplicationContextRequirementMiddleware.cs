@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
@@ -22,7 +23,6 @@ internal sealed class ApplicationContextRequirementMiddleware(
     ILogger<ApplicationContextRequirementMiddleware> logger
 ) : IPipelineStep
 {
-    private const string OwnershipBasedStrategy = "OwnershipBased";
     private const string ApplicationContextUnavailableError =
         "Unable to resolve application context for the authenticated client.";
 
@@ -33,7 +33,7 @@ internal sealed class ApplicationContextRequirementMiddleware(
             || (
                 requestInfo.Method is RequestMethod.GET or RequestMethod.PUT or RequestMethod.DELETE
                 && requestInfo.ResourceActionAuthStrategies.Contains(
-                    OwnershipBasedStrategy,
+                    AuthorizationStrategyNameConstants.OwnershipBased,
                     StringComparer.OrdinalIgnoreCase
                 )
             );

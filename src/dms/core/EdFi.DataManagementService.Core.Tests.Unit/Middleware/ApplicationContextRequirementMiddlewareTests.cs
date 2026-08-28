@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -90,7 +91,10 @@ public class ApplicationContextRequirementMiddlewareTests
     {
         var provider = CreateProvider(new ApplicationContextResult.Success(_applicationContext));
         RequestInfo requestInfo = CreateRequestInfo(RequestMethod.GET, provider);
-        requestInfo.ResourceActionAuthStrategies = ["NoFurtherAuthorizationRequired"];
+        requestInfo.ResourceActionAuthStrategies =
+        [
+            AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+        ];
         var nextCalled = false;
 
         await CreateMiddleware()
@@ -104,6 +108,23 @@ public class ApplicationContextRequirementMiddlewareTests
             );
 
         nextCalled.Should().BeTrue();
+        requestInfo.ApplicationContext.Should().BeNull();
+        A.CallTo(() => provider.GetApplicationByClientIdAsync(A<string>._, A<string?>._))
+            .MustNotHaveHappened();
+    }
+
+    [TestCase("PUT")]
+    [TestCase("DELETE")]
+    public async Task It_does_not_resolve_application_context_for_non_ownership_resource_actions(
+        string methodName
+    )
+    {
+        var provider = CreateProvider(new ApplicationContextResult.Success(_applicationContext));
+        RequestInfo requestInfo = CreateRequestInfo(Enum.Parse<RequestMethod>(methodName), provider);
+        requestInfo.ResourceActionAuthStrategies = ["NoFurtherAuthorizationRequired"];
+
+        await CreateMiddleware().Execute(requestInfo, TestHelper.NullNext);
+
         requestInfo.ApplicationContext.Should().BeNull();
         A.CallTo(() => provider.GetApplicationByClientIdAsync(A<string>._, A<string?>._))
             .MustNotHaveHappened();

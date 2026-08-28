@@ -150,6 +150,21 @@ public class Given_ConfigurationServiceApplicationProvider
     [TestCase(
         "{\"id\":1,\"applicationId\":2,\"clientId\":\"client-id\",\"clientUuid\":\"8c58fef1-7d9b-4423-bb3c-f1581e77e922\",\"dataStoreIds\":[3],\"creatorOwnershipTokenId\":null,\"ownershipTokenIds\":[32768]}"
     )]
+    [TestCase(
+        "{\"id\":1,\"applicationId\":2,\"clientId\":\"client-id\",\"clientUuid\":\"8c58fef1-7d9b-4423-bb3c-f1581e77e922\",\"dataStoreIds\":[3],\"creatorOwnershipTokenId\":0,\"ownershipTokenIds\":[]}"
+    )]
+    [TestCase(
+        "{\"id\":1,\"applicationId\":2,\"clientId\":\"client-id\",\"clientUuid\":\"8c58fef1-7d9b-4423-bb3c-f1581e77e922\",\"dataStoreIds\":[3],\"creatorOwnershipTokenId\":-1,\"ownershipTokenIds\":[]}"
+    )]
+    [TestCase(
+        "{\"id\":1,\"applicationId\":2,\"clientId\":\"client-id\",\"clientUuid\":\"8c58fef1-7d9b-4423-bb3c-f1581e77e922\",\"dataStoreIds\":[3],\"creatorOwnershipTokenId\":null,\"ownershipTokenIds\":[0]}"
+    )]
+    [TestCase(
+        "{\"id\":1,\"applicationId\":2,\"clientId\":\"client-id\",\"clientUuid\":\"8c58fef1-7d9b-4423-bb3c-f1581e77e922\",\"dataStoreIds\":[3],\"creatorOwnershipTokenId\":null,\"ownershipTokenIds\":[-1]}"
+    )]
+    [TestCase(
+        "{\"id\":1,\"applicationId\":2,\"clientId\":\"client-id\",\"clientUuid\":\"8c58fef1-7d9b-4423-bb3c-f1581e77e922\",\"dataStoreIds\":[3],\"creatorOwnershipTokenId\":null,\"ownershipTokenIds\":[7,7]}"
+    )]
     public async Task It_Should_Return_Unavailable_For_OutOfRange_Ownership_Token_Ids(string responseBody)
     {
         using var fixture = new ProviderFixture(HttpStatusCode.OK, responseBody);
@@ -160,6 +175,58 @@ public class Given_ConfigurationServiceApplicationProvider
         );
 
         result.Should().BeOfType<ApplicationContextResult.Unavailable>();
+    }
+
+    [Test]
+    public async Task It_Should_Return_Unavailable_When_Ownership_Token_List_Is_Too_Large()
+    {
+        string ownershipTokenIds = string.Join(",", Enumerable.Repeat("7", 2000));
+        using var fixture = new ProviderFixture(
+            HttpStatusCode.OK,
+            $$"""
+            {
+              "id": 1,
+              "applicationId": 2,
+              "clientId": "client-id",
+              "clientUuid": "8c58fef1-7d9b-4423-bb3c-f1581e77e922",
+              "dataStoreIds": [3],
+              "creatorOwnershipTokenId": null,
+              "ownershipTokenIds": [{{ownershipTokenIds}}]
+            }
+            """
+        );
+
+        ApplicationContextResult result = await fixture.Provider.GetApplicationByClientIdAsync(
+            "client-id",
+            tenant: null
+        );
+
+        result.Should().BeOfType<ApplicationContextResult.Unavailable>();
+    }
+
+    [Test]
+    public async Task It_Should_Accept_A_Response_That_Omits_The_Null_Creator_Token()
+    {
+        using var fixture = new ProviderFixture(
+            HttpStatusCode.OK,
+            """
+            {
+              "id": 1,
+              "applicationId": 2,
+              "clientId": "client-id",
+              "clientUuid": "8c58fef1-7d9b-4423-bb3c-f1581e77e922",
+              "dataStoreIds": [3],
+              "ownershipTokenIds": []
+            }
+            """
+        );
+
+        ApplicationContextResult result = await fixture.Provider.GetApplicationByClientIdAsync(
+            "client-id",
+            tenant: null
+        );
+
+        result.Should().BeOfType<ApplicationContextResult.Success>();
     }
 
     [Test]
@@ -244,9 +311,7 @@ public class Given_ConfigurationServiceApplicationProvider
                 {
                     Content = new StringContent(responseBody, Encoding.UTF8, "application/json"),
                 }
-            )
-        {
-        }
+            ) { }
 
         public ProviderFixture(Exception exception)
         {

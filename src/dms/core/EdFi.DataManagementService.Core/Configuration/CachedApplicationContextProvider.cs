@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Concurrent;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Logging;
@@ -26,7 +27,10 @@ public class CachedApplicationContextProvider(
         Expiration = TimeSpan.FromSeconds(cacheSettings.ApplicationContextCacheExpirationSeconds),
         LocalCacheExpiration = TimeSpan.FromSeconds(cacheSettings.ApplicationContextCacheExpirationSeconds),
     };
-    private Lazy<Task<ApplicationContextResult>>? _requestResult;
+    private readonly ConcurrentDictionary<
+        RequestLookupKey,
+        Lazy<Task<ApplicationContextResult>>
+    > _requestResults = [];
 
     /// <summary>
     /// Gets the cache key for a client ID and tenant.
@@ -39,12 +43,12 @@ public class CachedApplicationContextProvider(
     /// <inheritdoc />
     public Task<ApplicationContextResult> GetApplicationByClientIdAsync(string clientId, string? tenant)
     {
-        var firstLookup = new Lazy<Task<ApplicationContextResult>>(
+        var lookup = new Lazy<Task<ApplicationContextResult>>(
             () => GetFirstApplicationContextAsync(clientId, tenant),
             LazyThreadSafetyMode.ExecutionAndPublication
         );
-        Lazy<Task<ApplicationContextResult>> requestResult =
-            Interlocked.CompareExchange(ref _requestResult, firstLookup, null) ?? firstLookup;
+        RequestLookupKey key = new(clientId, tenant?.ToLowerInvariant());
+        Lazy<Task<ApplicationContextResult>> requestResult = _requestResults.GetOrAdd(key, lookup);
 
         return requestResult.Value;
     }
@@ -132,4 +136,6 @@ public class CachedApplicationContextProvider(
     {
         public ApplicationContextResult Result { get; } = result;
     }
+
+    private readonly record struct RequestLookupKey(string ClientId, string? Tenant);
 }
