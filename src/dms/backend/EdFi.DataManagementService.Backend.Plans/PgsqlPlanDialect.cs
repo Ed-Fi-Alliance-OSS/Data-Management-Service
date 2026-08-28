@@ -104,7 +104,11 @@ internal sealed class PgsqlPlanDialect : IPlanSqlDialect
     }
 
     /// <inheritdoc />
-    public void AppendCreateKeysetTempTable(SqlWriter writer, KeysetTableContract keyset)
+    public void AppendCreateKeysetTempTable(
+        SqlWriter writer,
+        KeysetTableContract keyset,
+        bool includeAnchorColumn = false
+    )
     {
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(keyset);
@@ -119,7 +123,17 @@ internal sealed class PgsqlPlanDialect : IPlanSqlDialect
             .AppendQuoted(keyset.DocumentIdColumnName.Value)
             .Append(" bigint PRIMARY KEY, ")
             .AppendQuoted(HydrationSqlConventions.SelectedPageOrdinalColumnName)
-            .AppendLine(" int NULL) ON COMMIT DROP;");
+            .Append(" int NULL");
+
+        if (includeAnchorColumn)
+        {
+            writer
+                .Append(", ")
+                .AppendQuoted(HydrationSqlConventions.SelectedAnchorColumnName)
+                .Append(" bigint NULL");
+        }
+
+        writer.AppendLine(") ON COMMIT DROP;");
     }
 
     /// <summary>
@@ -127,7 +141,11 @@ internal sealed class PgsqlPlanDialect : IPlanSqlDialect
     /// </summary>
     /// <param name="writer">The SQL writer to append to.</param>
     /// <param name="keyset">The keyset table contract specifying table and column names.</param>
-    public void AppendKeysetSelectedIdOutputClause(SqlWriter writer, KeysetTableContract keyset)
+    public void AppendKeysetSelectedIdOutputClause(
+        SqlWriter writer,
+        KeysetTableContract keyset,
+        bool includeAnchorColumn = false
+    )
     {
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(keyset);
@@ -138,12 +156,21 @@ internal sealed class PgsqlPlanDialect : IPlanSqlDialect
     /// </summary>
     /// <param name="writer">The SQL writer to append to.</param>
     /// <param name="keyset">The keyset table contract specifying table and column names.</param>
-    public void AppendKeysetSelectedIdReturningClause(SqlWriter writer, KeysetTableContract keyset)
+    public void AppendKeysetSelectedIdReturningClause(
+        SqlWriter writer,
+        KeysetTableContract keyset,
+        bool includeAnchorColumn = false
+    )
     {
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(keyset);
 
         writer.Append(" RETURNING ").AppendQuoted(keyset.DocumentIdColumnName.Value);
+
+        if (includeAnchorColumn)
+        {
+            writer.Append(", ").AppendQuoted(HydrationSqlConventions.SelectedAnchorColumnName);
+        }
     }
 
     /// <inheritdoc />

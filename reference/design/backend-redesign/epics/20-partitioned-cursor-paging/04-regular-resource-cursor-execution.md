@@ -40,11 +40,14 @@ half a hidden dependency of the regular-resource half.
 - Pass typed cursor paging through the regular-resource repository and page-keyset execution path.
 - Return inserted collection-query keyset ids from hydration using PostgreSQL `RETURNING` and SQL
   Server `OUTPUT`, without changing GET-by-id hydration result sets.
-- Calculate and carry nullable `HighestSelectedDocumentId` through hydration and `QuerySuccess`.
+- Calculate and carry a nullable highest selected key through hydration and `QuerySuccess`. DMS-1394
+  renamed the carrier to `HighestSelectedAnchor` when a windowed page gained the option of ordering
+  by `ContentVersion`; under this story's `DocumentId` ordering the value is the highest selected
+  `DocumentId`.
 - Pass typed cursor paging through `DescriptorReadHandler` and descriptor query execution, obtaining
   the selected boundary from ordered descriptor query rows without a second query.
 - Emit `Next-Page-Token` from one shared Core path for both resource families whenever
-  `HighestSelectedDocumentId` is present, even when concurrent deletion leaves the hydrated response
+  `HighestSelectedAnchor` is present, even when concurrent deletion leaves the hydrated response
   body empty. Omit it when the selected keyset is empty or selection is skipped, and for the
   `Int64.MaxValue` overflow case.
 - Preserve existing total-count and profile projection behavior in traditional mode, and preserve

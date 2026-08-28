@@ -19,18 +19,41 @@ public class CursorRequestValidatorTests
     /// <summary>
     /// A token the codec actually produces, so decoding is exercised rather than stubbed.
     /// </summary>
-    private static readonly string ValidToken = PageTokenCodec.Encode(new CursorRange(1, 100));
+    private static readonly string ValidToken = PageTokenCodec.Encode(
+        new CursorRange(1, 100),
+        PageOrderingMode.DocumentId
+    );
+
+    /// <summary>
+    /// A <c>ContentVersion</c>-anchored token over the same bounds, so a marker comparison cannot pass
+    /// or fail for any reason other than the marker.
+    /// </summary>
+    private static readonly string ContentVersionToken = PageTokenCodec.Encode(
+        new CursorRange(1, 100),
+        PageOrderingMode.ContentVersion
+    );
 
     private const string UndecodableToken = "!!!";
 
+    /// <summary>
+    /// The overwhelming majority of the cursor rules are anchor-independent, so they are exercised
+    /// against the <c>DocumentId</c> anchor an unwindowed request resolves.
+    /// </summary>
     private static CursorValidationResult Validate(params (string Key, string Value)[] queryParameters) =>
+        ValidateFor(PageOrderingMode.DocumentId, queryParameters);
+
+    private static CursorValidationResult ValidateFor(
+        PageOrderingMode? orderingMode,
+        params (string Key, string Value)[] queryParameters
+    ) =>
         CursorRequestValidator.Validate(
             queryParameters.ToDictionary(
                 static parameter => parameter.Key,
                 static parameter => parameter.Value,
                 StringComparer.Ordinal
             ),
-            MaximumPageSize
+            MaximumPageSize,
+            orderingMode
         );
 
     private static string ErrorFrom(params (string Key, string Value)[] queryParameters) =>
@@ -299,6 +322,169 @@ public class CursorRequestValidatorTests
         }
     }
 
+    /// <summary>
+    /// A token carries the anchor it was issued for; the request resolves its own from its
+    /// change-version window. The two have to agree, because a token stores no filters and its bounds
+    /// are only interpretable in the units of one column. Both directions answer the same standard
+    /// invalid-token message: a token is opaque, so neither direction tells the client anything it
+    /// could act on beyond starting the walk over.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Token_Anchored_Differently_From_The_Request : CursorRequestValidatorTests
+    {
+        private static string ErrorFor(
+            PageOrderingMode orderingMode,
+            params (string Key, string Value)[] queryParameters
+        ) =>
+            ValidateFor(orderingMode, queryParameters)
+                .Should()
+                .BeOfType<CursorValidationResult.Invalid>()
+                .Subject.Error;
+
+        [Test]
+        public void It_rejects_a_content_version_token_under_a_document_id_anchor()
+        {
+            ErrorFor(PageOrderingMode.DocumentId, ("pageToken", ContentVersionToken))
+                .Should()
+                .Be(CursorRequestValidator.InvalidPageToken);
+        }
+
+        [Test]
+        public void It_rejects_a_document_id_token_under_a_content_version_anchor()
+        {
+            ErrorFor(PageOrderingMode.ContentVersion, ("pageToken", ValidToken))
+                .Should()
+                .Be(CursorRequestValidator.InvalidPageToken);
+        }
+
+        [Test]
+        public void It_accepts_a_document_id_token_under_a_document_id_anchor()
+        {
+            ValidateFor(PageOrderingMode.DocumentId, ("pageToken", ValidToken))
+                .Should()
+                .BeOfType<CursorValidationResult.Valid>()
+                .Subject.Paging.Range.Should()
+                .Be(new CursorRange(1, 100));
+        }
+
+        [Test]
+        public void It_accepts_a_content_version_token_under_a_content_version_anchor()
+        {
+            ValidateFor(PageOrderingMode.ContentVersion, ("pageToken", ContentVersionToken))
+                .Should()
+                .BeOfType<CursorValidationResult.Valid>()
+                .Subject.Paging.Range.Should()
+                .Be(new CursorRange(1, 100));
+        }
+
+        /// <summary>
+        /// The comparison belongs to phase 0, so it answers ahead of every conflict a token that
+        /// decoded cleanly would otherwise raise — the same standing an undecodable token has.
+        /// </summary>
+        [Test]
+        public void It_reports_the_anchor_mismatch_ahead_of_every_other_fault()
+        {
+            ErrorFor(
+                    PageOrderingMode.ContentVersion,
+                    ("pageToken", ValidToken),
+                    ("pageSize", "abc"),
+                    ("offset", "-1"),
+                    ("limit", "10"),
+                    ("totalCount", "true")
+                )
+                .Should()
+                .Be(CursorRequestValidator.InvalidPageToken);
+        }
+
+        /// <summary>
+        /// The anchor arrives as a parameter, already resolved — and that resolution accounts for the
+        /// page-ordering kill switch. A deployment running with legacy ordering therefore keeps
+        /// accepting the <c>d</c>-marked tokens it issues, even for a windowed request, instead of
+        /// breaking every walk mid-flight.
+        /// </summary>
+        [Test]
+        public void It_accepts_a_document_id_token_for_a_windowed_request_under_legacy_ordering()
+        {
+            ValidateFor(PageOrderingMode.DocumentId, ("pageToken", ValidToken), ("maxChangeVersion", "200"))
+                .Should()
+                .BeOfType<CursorValidationResult.Valid>();
+        }
+
+        /// <summary>
+        /// The mirror of the case above: under legacy ordering a windowed request resolves
+        /// <c>DocumentId</c>, so a <c>c</c>-marked token issued before the switch was turned on is no
+        /// longer replayable and says so.
+        /// </summary>
+        [Test]
+        public void It_rejects_a_content_version_token_for_a_windowed_request_under_legacy_ordering()
+        {
+            ErrorFor(
+                    PageOrderingMode.DocumentId,
+                    ("pageToken", ContentVersionToken),
+                    ("maxChangeVersion", "200")
+                )
+                .Should()
+                .Be(CursorRequestValidator.InvalidPageToken);
+        }
+
+        /// <summary>
+        /// An undecodable token is rejected without any anchor comparison, so the mismatch rule cannot
+        /// be what a malformed token is reported by.
+        /// </summary>
+        [TestCase(PageOrderingMode.DocumentId)]
+        [TestCase(PageOrderingMode.ContentVersion)]
+        public void It_rejects_an_undecodable_token_under_either_anchor(PageOrderingMode orderingMode)
+        {
+            ErrorFor(orderingMode, ("pageToken", UndecodableToken))
+                .Should()
+                .Be(CursorRequestValidator.InvalidPageToken);
+        }
+
+        /// <summary>
+        /// A null anchor is a request whose change-version window did not parse, so it resolved none.
+        /// There is nothing for a marker to disagree with, and either token decodes to its range: the
+        /// caller is about to reject the request for the window itself, and blaming the token instead
+        /// would name the one piece of state a mid-walk client cannot rebuild.
+        /// </summary>
+        [Test]
+        public void It_compares_no_anchor_when_the_request_resolved_none()
+        {
+            ValidateFor(null, ("pageToken", ContentVersionToken))
+                .Should()
+                .BeOfType<CursorValidationResult.Valid>()
+                .Subject.Paging.Range.Should()
+                .Be(new CursorRange(1, 100));
+
+            ValidateFor(null, ("pageToken", ValidToken))
+                .Should()
+                .BeOfType<CursorValidationResult.Valid>()
+                .Subject.Paging.Range.Should()
+                .Be(new CursorRange(1, 100));
+        }
+
+        /// <summary>
+        /// Skipping the comparison skips only the comparison. Every other phase-0 and phase-1 rule
+        /// still applies to a request that resolved no anchor, so an unparseable window cannot become
+        /// a way to smuggle a malformed token or a mixed-mode parameter past validation.
+        /// </summary>
+        [Test]
+        public void It_still_applies_every_other_rule_when_the_request_resolved_no_anchor()
+        {
+            ValidateFor(null, ("pageToken", UndecodableToken))
+                .Should()
+                .BeOfType<CursorValidationResult.Invalid>()
+                .Subject.Error.Should()
+                .Be(CursorRequestValidator.InvalidPageToken);
+
+            ValidateFor(null, ("pageToken", ContentVersionToken), ("offset", "10"))
+                .Should()
+                .BeOfType<CursorValidationResult.Invalid>()
+                .Subject.Error.Should()
+                .Be(CursorRequestValidator.OffsetWithPageToken);
+        }
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_A_Present_But_Blank_Page_Token : CursorRequestValidatorTests
@@ -387,6 +573,11 @@ public class CursorRequestValidatorTests
                 .Be(CursorRequestValidator.PageSizeOutOfRange(MaximumPageSize));
         }
 
+        /// <summary>
+        /// The validator never reads the change-version parameters itself: the anchor they imply is
+        /// resolved upstream and arrives as a parameter, so these two names are nothing to this step
+        /// but query string it does not own.
+        /// </summary>
         [Test]
         public void It_leaves_change_version_filters_to_their_own_validator()
         {
@@ -398,7 +589,9 @@ public class CursorRequestValidatorTests
         [Test]
         public void It_accepts_a_range_that_is_unbounded_above()
         {
-            PagingFrom(("pageToken", PageTokenCodec.Encode(CursorRange.From(42))))
+            PagingFrom(
+                ("pageToken", PageTokenCodec.Encode(CursorRange.From(42), PageOrderingMode.DocumentId))
+            )
                 .Range.Should()
                 .Be(new CursorRange(42, long.MaxValue));
         }

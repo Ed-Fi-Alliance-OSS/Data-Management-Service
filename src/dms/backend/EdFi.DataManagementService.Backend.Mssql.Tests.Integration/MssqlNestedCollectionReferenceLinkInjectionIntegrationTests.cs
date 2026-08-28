@@ -428,7 +428,8 @@ public class Given_A_Mssql_BellSchedule_With_Nested_Collection_ClassPeriod_Refer
                     MaximumPageSize: MaximumPageSize
                 )
             ),
-            TraceId: new TraceId("mssql-29c-query-bellschedule")
+            TraceId: new TraceId("mssql-29c-query-bellschedule"),
+            PageOrderingMode: PageOrderingMode.DocumentId
         );
 
         return await scope

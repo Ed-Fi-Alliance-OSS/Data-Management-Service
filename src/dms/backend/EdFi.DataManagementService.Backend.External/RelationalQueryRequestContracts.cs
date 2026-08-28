@@ -125,6 +125,19 @@ public interface IQueryRequest : IRequestWithMappingSet
     /// </summary>
     ChangeVersionRange ChangeVersionRange { get; }
 
+    /// <summary>
+    /// The page anchor: the ordering key page selection walks, and therefore the units this request's
+    /// cursor bounds and the continuation token Core issues for its response are expressed in.
+    /// </summary>
+    /// <remarks>
+    /// Resolved by Core from <see cref="ChangeVersionRange" /> and carried here rather than re-derived,
+    /// because the anchor is needed on both sides of the request: Core stamps it on the outgoing token
+    /// and checks an incoming one's marker against it, and the compiler builds page selection against
+    /// the column it names. Two derivations of one rule could disagree, and a page selected by one
+    /// ordering whose token claims another is a walk that skips rows.
+    /// </remarks>
+    PageOrderingMode PageOrderingMode { get; }
+
     /// <summary>The content coding selected for the external response.</summary>
     ResponseContentCoding ResponseContentCoding { get; }
 }
@@ -168,6 +181,18 @@ public interface IPartitionRequest : IRequestWithMappingSet
     /// <see cref="Model.ChangeVersionRange.None"/> when neither parameter was supplied.
     /// </summary>
     ChangeVersionRange ChangeVersionRange { get; }
+
+    /// <summary>
+    /// The boundary anchor: the ordering key partitions are ranked, sized, and cut on, and therefore
+    /// the units of every range this request returns.
+    /// </summary>
+    /// <remarks>
+    /// Resolved by Core from <see cref="ChangeVersionRange" /> by the same rule that resolves a page's
+    /// anchor, which is what makes a boundary set describe the same ordering a page of the same request
+    /// would be selected in. A boundary calculated on one ordering and replayed as a page on another
+    /// would return overlapping ranges and leave rows in no partition at all.
+    /// </remarks>
+    PageOrderingMode PageOrderingMode { get; }
 
     /// <summary>
     /// The desired partition count: the client's validated value, or the configured default when the

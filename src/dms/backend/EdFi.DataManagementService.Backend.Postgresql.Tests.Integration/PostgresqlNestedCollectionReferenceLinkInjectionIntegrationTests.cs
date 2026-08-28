@@ -423,7 +423,8 @@ public class Given_A_Postgresql_BellSchedule_With_Nested_Collection_ClassPeriod_
                     MaximumPageSize: MaximumPageSize
                 )
             ),
-            TraceId: new TraceId("pg-29c-query-bellschedule")
+            TraceId: new TraceId("pg-29c-query-bellschedule"),
+            PageOrderingMode: PageOrderingMode.DocumentId
         );
 
         return await scope

@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using NUnit.Framework;
@@ -126,7 +127,8 @@ public class Given_Mssql_RelationalQuery_Parameter_Binding
                 ["ClaimEducationOrganizationIds"] = new long[] { 10L, 20L, 30L },
                 ["offset"] = 1L,
                 ["limit"] = 1L,
-            }
+            },
+            PageOrderingMode.DocumentId
         );
     }
 }

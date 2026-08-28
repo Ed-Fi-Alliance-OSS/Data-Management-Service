@@ -523,7 +523,7 @@
         ]
       },
       "outcome": "parity",
-      "note": "A payload carrying three comma-separated fields. Both token grammars are a fixed two-field form, so both reject."
+      "note": "A payload carrying four comma-separated fields. The approved grammar is a fixed three-field form of an ordering marker and two bounds, and the ODS grammar is a fixed two-field form of two bounds, so both reject on field count."
     },
     {
       "id": "strict-decoder-leading-sign-decimal",
@@ -542,7 +542,7 @@
       },
       "outcome": "difference",
       "approvedDifference": "strict-base64url-and-decimal-decoder",
-      "note": "The approved decimal grammar accepts an optional leading minus and digits only, so a leading plus is rejected. ODS parses its bounds with the framework's default integer styles, which allow a leading sign."
+      "note": "ODS parses its bounds with the framework's default integer styles, which allow a leading sign, so this two-field payload is accepted there. The approved grammar rejects it: it carries an ordering marker ahead of both bounds, so a two-field payload fails on field count before its decimal grammar — which accepts an optional leading minus and digits only — is reached. The payload stays two-field because a marked one would be rejected by ODS on field count and this case would stop being a difference."
     },
     {
       "id": "strict-decoder-whitespace-decimal",
@@ -561,7 +561,7 @@
       },
       "outcome": "difference",
       "approvedDifference": "strict-base64url-and-decimal-decoder",
-      "note": "The approved decimal grammar rejects whitespace inside a bound. ODS's default integer styles allow leading and trailing white space, so the same payload parses there."
+      "note": "ODS's default integer styles allow leading and trailing white space, so this two-field payload parses there. The approved grammar rejects it: it carries an ordering marker ahead of both bounds, so a two-field payload fails on field count before its decimal grammar — which rejects whitespace inside a bound — is reached. The payload stays two-field for the same reason as the leading-sign case."
     }
   ]
 }

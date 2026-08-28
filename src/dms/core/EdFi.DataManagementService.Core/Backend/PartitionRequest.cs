@@ -36,6 +36,13 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// <see cref="External.Model.ChangeVersionRange.None"/> on the relational seam.
 /// </param>
 /// <param name="TenantKey">The normalized request tenant key.</param>
+/// <param name="PageOrderingMode">
+/// The boundary anchor Core resolved from the change-version window. Required rather than defaulted,
+/// and placed ahead of the optional parameters to stay that way: a default would let a construction
+/// site that forgot it keep compiling while cutting boundaries on DocumentId for a request whose pages
+/// are walked by ContentVersion, and boundaries cut on the wrong key overlap and leave rows in no
+/// partition. This is the same rule the descriptor request records carry.
+/// </param>
 internal sealed record RelationalPartitionRequest(
     ResourceInfo ResourceInfo,
     RelationalAuthorizationContext AuthorizationContext,
@@ -45,6 +52,7 @@ internal sealed record RelationalPartitionRequest(
     int RequestedPartitionCount,
     long MinimumPartitionSize,
     TraceId TraceId,
+    PageOrderingMode PageOrderingMode,
     ChangeVersionRange? ChangeVersionRange = null,
     string TenantKey = ""
 ) : IPartitionRequest

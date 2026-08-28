@@ -84,6 +84,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
             evaluators,
             readableProfileProjectionContext: null,
             new TraceId("descriptor-query-contract"),
+            PageOrderingMode.DocumentId,
             context
         );
 
@@ -104,7 +105,8 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
             ),
             [],
             readableProfileProjectionContext: null,
-            new TraceId("descriptor-query-contract-default")
+            new TraceId("descriptor-query-contract-default"),
+            PageOrderingMode.DocumentId
         );
 
         request.AuthorizationStrategyEvaluators.Should().BeEmpty();
@@ -1087,6 +1089,7 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
                 : [authorizationStrategy, additionalAuthorizationStrategy],
             readableProfileProjectionContext: null,
             new TraceId("descriptor-query-namespace"),
+            PageOrderingMode.DocumentId,
             new RelationalAuthorizationContext([], namespacePrefixes)
         );
 

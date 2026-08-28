@@ -180,21 +180,35 @@ internal static class OdsComparisonScenario
         {
             ["{maximumPageSize}"] = hostMaximumPageSize.ToString(CultureInfo.InvariantCulture),
             ["{defaultPartitionCount}"] = HostDefaultPartitionCount.ToString(CultureInfo.InvariantCulture),
-            ["{validToken}"] = PageTokenCodec.Encode(new CursorRange(1, 100)),
+            ["{validToken}"] = EncodeDocumentIdToken(new CursorRange(1, 100)),
             ["{invalidToken}"] = "!!!",
+            // Payloads deliberately left in the two-field form ODS accepts. A three-field variant would
+            // carry a marker ODS's grammar has no room for, so ODS would reject it on field count and
+            // the recorded 200 below — the whole point of these two cases — would no longer hold.
             ["{leadingPlusDecimalToken}"] = EncodePayload("+1,100"),
             ["{whitespaceDecimalToken}"] = EncodePayload("1, 100"),
-            ["{beyondInt32Token}"] = PageTokenCodec.Encode(new CursorRange(3_000_000_000L, 4_000_000_000L)),
+            ["{beyondInt32Token}"] = EncodeDocumentIdToken(new CursorRange(3_000_000_000L, 4_000_000_000L)),
             // Deliberately the same value as {validToken}: the encoder's own output is both "a token that
             // decodes" and "the canonical unpadded transport form", and the decoder cases read better
             // naming which property they turn on.
-            ["{unpaddedToken}"] = PageTokenCodec.Encode(new CursorRange(1, 100)),
-            ["{paddedToken}"] = Pad(PageTokenCodec.Encode(new CursorRange(1, 100))),
+            ["{unpaddedToken}"] = EncodeDocumentIdToken(new CursorRange(1, 100)),
+            ["{paddedToken}"] = Pad(EncodeDocumentIdToken(new CursorRange(1, 100))),
             ["{forbiddenAlphabetToken}"] = "MSwx+DA",
-            ["{invalidPaddingToken}"] = Pad(PageTokenCodec.Encode(new CursorRange(1, 100))) + "=",
+            ["{invalidPaddingToken}"] = Pad(EncodeDocumentIdToken(new CursorRange(1, 100))) + "=",
             ["{invalidUtf8Token}"] = System.Buffers.Text.Base64Url.EncodeToString([0xFF, 0xFE, 0xFD]),
-            ["{extraFieldToken}"] = EncodePayload("1,100,7"),
+            // Four fields: one more than the marked grammar takes, which is what keeps this case about
+            // field count now that three fields are the valid arity rather than the excess.
+            ["{extraFieldToken}"] = EncodePayload("d,1,100,7"),
         };
+
+    /// <summary>
+    /// Encodes a token the way an unwindowed request's response would. Every placeholder here belongs to
+    /// a request that carries no change-version window, which resolves the <c>DocumentId</c> anchor, and
+    /// a token whose marker disagrees with the anchor its request resolves is rejected before any of the
+    /// properties these cases turn on is reached.
+    /// </summary>
+    private static string EncodeDocumentIdToken(CursorRange range) =>
+        PageTokenCodec.Encode(range, PageOrderingMode.DocumentId);
 
     /// <summary>
     /// Restores the padding the encoder omits, giving the correctly padded form of the same token. The

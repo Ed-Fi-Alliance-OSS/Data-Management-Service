@@ -39,37 +39,95 @@ public static class HydrationReader
     }
 
     /// <summary>
-    /// Reads the selected page keyset ids from the current result set and returns the maximum, or
-    /// <see langword="null"/> when the selection was empty.
+    /// Reads the selected page keyset from the current result set and returns the maximum value of its
+    /// continuation anchor, or <see langword="null"/> when the selection was empty.
     /// </summary>
     /// <remarks>
     /// Neither <c>RETURNING</c> nor <c>OUTPUT</c> promises an order, so the maximum is taken across
-    /// every returned row rather than from the first or last one.
+    /// every returned row rather than from the first or last one. That is what makes the widening to
+    /// two columns safe: the anchor's maximum is found the same way whichever row carries it.
     /// </remarks>
     /// <param name="reader">The data reader positioned at the selected keyset result set.</param>
+    /// <param name="carriesAnchorColumn">
+    /// Whether the materialization projected the anchor beside the ids. Supplied by the caller from
+    /// <c>HydrationBatchBuilder.CarriesSelectedAnchor</c>, the same predicate the batch emitted its
+    /// column list from, rather than inferred from the reader's shape: inferring it would read
+    /// <c>DocumentId</c> as the anchor if the projection ever narrowed, which is a wrong continuation
+    /// token rather than a failure.
+    /// </param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>The maximum selected <c>DocumentId</c>, or null when no id was selected.</returns>
-    public static async Task<long?> ReadSelectedDocumentIdMaximumAsync(
+    /// <returns>The maximum selected anchor value, or null when nothing was selected.</returns>
+    public static async Task<long?> ReadSelectedAnchorMaximumAsync(
         DbDataReader reader,
+        bool carriesAnchorColumn,
         CancellationToken ct
     )
     {
         ArgumentNullException.ThrowIfNull(reader);
 
+        var anchorOrdinal = carriesAnchorColumn ? FindSelectedAnchorOrdinal(reader) : DocumentIdColumnOrdinal;
+
         long? selectedMaximum = null;
 
         while (await reader.ReadAsync(ct))
         {
-            var selectedDocumentId = reader.GetInt64(0);
+            var selectedAnchor = reader.GetInt64(anchorOrdinal);
 
-            if (selectedMaximum is null || selectedDocumentId > selectedMaximum)
+            if (selectedMaximum is null || selectedAnchor > selectedMaximum)
             {
-                selectedMaximum = selectedDocumentId;
+                selectedMaximum = selectedAnchor;
             }
         }
 
         return selectedMaximum;
     }
+
+    /// <summary>
+    /// Locates the continuation anchor in the selected page keyset result set by the same name the
+    /// batch builder projected it under, and reports a shape disagreement when it is absent.
+    /// </summary>
+    /// <remarks>
+    /// By name rather than at a fixed ordinal, matching the read-acceleration twin in the repository:
+    /// the anchor's position is a property of the emitted <c>RETURNING</c> and <c>OUTPUT</c> clauses,
+    /// and a column added ahead of it would leave a fixed ordinal reading a plausible <c>long</c> that
+    /// is not the anchor — a continuation token that names the wrong position in the sequence rather
+    /// than a failure. A missing column is a defect in this code, not anything a client did, so it is
+    /// named here instead of surfacing as a bare ordinal fault from inside the row loop.
+    /// <para>
+    /// Scanned rather than resolved through <see cref="DbDataReader.GetOrdinal" />, which raises the
+    /// diagnostic below directly instead of by translating an <see cref="IndexOutOfRangeException" />.
+    /// A preference, not a portability requirement: an absent name is that exception under the ADO.NET
+    /// contract, which is what the read-acceleration twin in the repository catches.
+    /// </para>
+    /// </remarks>
+    private static int FindSelectedAnchorOrdinal(DbDataReader reader)
+    {
+        for (var ordinal = 0; ordinal < reader.FieldCount; ordinal++)
+        {
+            if (
+                string.Equals(
+                    reader.GetName(ordinal),
+                    HydrationSqlConventions.SelectedAnchorColumnName,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                return ordinal;
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Expected the selected page keyset result set to carry the continuation anchor as its "
+                + $"'{HydrationSqlConventions.SelectedAnchorColumnName}' column, but it carries no such "
+                + "column. The materialization SQL and this reader disagree about the keyset shape."
+        );
+    }
+
+    /// <summary>
+    /// <c>DocumentId</c>'s ordinal in the selected page keyset result set. Always first, on an anchored
+    /// page and an unanchored one alike; the anchor beside it is located by name instead.
+    /// </summary>
+    private const int DocumentIdColumnOrdinal = 0;
 
     /// <summary>
     /// Expected column count for the document metadata result set, defined by

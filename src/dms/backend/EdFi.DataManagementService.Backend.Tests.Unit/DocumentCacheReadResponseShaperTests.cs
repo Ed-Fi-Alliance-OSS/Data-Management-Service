@@ -203,7 +203,7 @@ public class Given_DocumentCacheReadResponseShaper
         var candidatePage = new DocumentCacheReadAccelerationCandidatePage(
             [first, second],
             TotalCount: 7,
-            ContinuationBoundary: new PageContinuationBoundary(346, AllowsDocumentIdContinuation: true),
+            HighestSelectedAnchor: 346,
             IncludesTotalCount: true
         );
 
@@ -215,8 +215,7 @@ public class Given_DocumentCacheReadResponseShaper
 
         var success = result.CachedResult.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
         success.TotalCount.Should().Be(7);
-        success.HighestSelectedDocumentId.Should().Be(346);
-        success.AllowsDocumentIdContinuation.Should().BeTrue();
+        success.HighestSelectedAnchor.Should().Be(346);
 
         // A page answered from cache still selected its candidates with a command, so it reports the same
         // selection fact the relational path would.
@@ -228,8 +227,11 @@ public class Given_DocumentCacheReadResponseShaper
     }
 
     [Test]
-    public void It_shapes_a_fresh_query_page_that_cannot_anchor_a_document_id_continuation()
+    public void It_shapes_a_fresh_query_page_anchored_on_content_version()
     {
+        // The anchor of a max-bearing windowed page is a ContentVersion, and it is unrelated to the
+        // candidate's DocumentId. Shaping reports the anchor selection chose rather than deriving one
+        // from the candidates it is holding, so the two are deliberately different values here.
         var sut = CreateShaper();
         var candidate = Candidate(documentId: 345, documentUuid: DocumentUuid);
         var hitPage = DocumentCacheReadBatchLookupResult.FromDocuments([
@@ -238,7 +240,7 @@ public class Given_DocumentCacheReadResponseShaper
         var candidatePage = new DocumentCacheReadAccelerationCandidatePage(
             [candidate],
             TotalCount: 1,
-            ContinuationBoundary: new PageContinuationBoundary(345, AllowsDocumentIdContinuation: false),
+            HighestSelectedAnchor: 9_100,
             IncludesTotalCount: true
         );
 
@@ -249,8 +251,7 @@ public class Given_DocumentCacheReadResponseShaper
         );
 
         var success = result.CachedResult.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
-        success.HighestSelectedDocumentId.Should().Be(345);
-        success.AllowsDocumentIdContinuation.Should().BeFalse();
+        success.HighestSelectedAnchor.Should().Be(9_100);
     }
 
     [Test]
@@ -264,7 +265,7 @@ public class Given_DocumentCacheReadResponseShaper
         var candidatePage = new DocumentCacheReadAccelerationCandidatePage(
             [candidate],
             TotalCount: 1,
-            ContinuationBoundary: new PageContinuationBoundary(null, AllowsDocumentIdContinuation: true),
+            HighestSelectedAnchor: null,
             IncludesTotalCount: true
         );
 
@@ -275,7 +276,7 @@ public class Given_DocumentCacheReadResponseShaper
         );
 
         var success = result.CachedResult.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
-        success.HighestSelectedDocumentId.Should().BeNull();
+        success.HighestSelectedAnchor.Should().BeNull();
     }
 
     [Test]
@@ -289,7 +290,7 @@ public class Given_DocumentCacheReadResponseShaper
         var candidatePage = new DocumentCacheReadAccelerationCandidatePage(
             [candidate],
             TotalCount: 7,
-            ContinuationBoundary: default,
+            HighestSelectedAnchor: null,
             IncludesTotalCount: false
         );
 
@@ -316,7 +317,7 @@ public class Given_DocumentCacheReadResponseShaper
         var candidatePage = new DocumentCacheReadAccelerationCandidatePage(
             [authorized],
             TotalCount: 1,
-            ContinuationBoundary: new PageContinuationBoundary(345, AllowsDocumentIdContinuation: true),
+            HighestSelectedAnchor: 345,
             IncludesTotalCount: true
         );
 
@@ -354,7 +355,7 @@ public class Given_DocumentCacheReadResponseShaper
         var candidatePage = new DocumentCacheReadAccelerationCandidatePage(
             [first, second],
             TotalCount: 2,
-            ContinuationBoundary: new PageContinuationBoundary(346, AllowsDocumentIdContinuation: true),
+            HighestSelectedAnchor: 346,
             IncludesTotalCount: true
         );
 

@@ -413,7 +413,8 @@ public partial class Given_DescriptorReadHandler
         DescriptorQueryCapability? descriptorQueryCapability = null,
         ChangeVersionRange? changeVersionRange = null,
         int requestedPartitionCount = 4,
-        long minimumPartitionSize = 500L
+        long minimumPartitionSize = 500L,
+        PageOrderingMode pageOrderingMode = PageOrderingMode.DocumentId
     )
     {
         var mappingSet = CreateQueryMappingSet(
@@ -429,6 +430,7 @@ public partial class Given_DescriptorReadHandler
             requestedPartitionCount,
             minimumPartitionSize,
             new TraceId("descriptor-partition-trace"),
+            pageOrderingMode,
             new RelationalAuthorizationContext([], namespacePrefixes ?? []),
             changeVersionRange
         );

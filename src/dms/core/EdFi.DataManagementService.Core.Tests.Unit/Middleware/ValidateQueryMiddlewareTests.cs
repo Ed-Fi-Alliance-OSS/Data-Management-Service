@@ -34,13 +34,14 @@ public class ValidateQueryMiddlewareTests
             NullLogger.Instance,
             _maxPageSize,
             _cursorParametersRecognized: true,
-            collectionPagingTelemetry ?? NoOpCollectionPagingTelemetry.Instance
+            collectionPagingTelemetry ?? NoOpCollectionPagingTelemetry.Instance,
+            _useLegacyDocumentIdOrderingForChangeQueries: false
         );
     }
 
     /// <summary>
     /// The Change Query composition, which does not recognize the cursor parameters and does not count
-    /// its faults as collection-paging traffic. Both arguments are fixed here rather than defaulted, so
+    /// its faults as collection-paging traffic. Every argument is fixed here rather than defaulted, so
     /// this factory stays a faithful copy of how CreateGetTrackedChangesPipeline composes the step.
     /// </summary>
     internal static IPipelineStep MiddlewareWithoutCursorRecognition()
@@ -49,7 +50,22 @@ public class ValidateQueryMiddlewareTests
             NullLogger.Instance,
             _maxPageSize,
             _cursorParametersRecognized: false,
-            NoOpCollectionPagingTelemetry.Instance
+            NoOpCollectionPagingTelemetry.Instance,
+            _useLegacyDocumentIdOrderingForChangeQueries: false
+        );
+    }
+
+    /// <summary>
+    /// The live GET-many composition of a deployment running with the page-ordering kill switch on.
+    /// </summary>
+    internal static IPipelineStep MiddlewareWithLegacyDocumentIdOrdering()
+    {
+        return new ValidateQueryMiddleware(
+            NullLogger.Instance,
+            _maxPageSize,
+            _cursorParametersRecognized: true,
+            NoOpCollectionPagingTelemetry.Instance,
+            _useLegacyDocumentIdOrderingForChangeQueries: true
         );
     }
 
@@ -1229,6 +1245,214 @@ public class ValidateQueryMiddlewareTests
                 .GetValue<string>()
                 .Should()
                 .Be("The query field 'Limit' is not valid for this resource.");
+        }
+    }
+
+    /// <summary>
+    /// The page anchor this step resolves: the ordering key a page's bounds and its continuation
+    /// token are expressed in. A max-bearing window (max-only or min+max) anchors on ContentVersion
+    /// because an update pushes a row past the maximum and out of the window entirely; every other
+    /// window shape keeps DocumentId, because an update inside an open-ended window moves a row past
+    /// a ContentVersion anchor while it is still eligible and a walk would return it twice.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Request_Whose_Page_Anchor_Is_Resolved : ValidateQueryMiddlewareTests
+    {
+        private static ApiSchemaDocuments NewApiSchemaDocuments()
+        {
+            return new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("AcademicWeek")
+                .WithStartQueryFieldMapping()
+                .WithQueryField("schoolId", [new("$.schoolId", "number")])
+                .WithEndQueryFieldMapping()
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+        }
+
+        private static RequestInfo NewRequestInfo(params (string Key, string Value)[] queryParameters)
+        {
+            FrontendRequest frontendRequest = new(
+                Path: "/ed-fi/academicWeeks",
+                Body: null,
+                Form: null,
+                Headers: [],
+                QueryParameters: queryParameters.ToDictionary(
+                    static parameter => parameter.Key,
+                    static parameter => parameter.Value,
+                    StringComparer.Ordinal
+                ),
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
+            );
+
+            RequestInfo requestInfo = new(frontendRequest, RequestMethod.GET, No.ServiceProvider)
+            {
+                ApiSchemaDocuments = NewApiSchemaDocuments(),
+                PathComponents = new(
+                    ProjectEndpointName: new("ed-fi"),
+                    EndpointName: new("academicWeeks"),
+                    Operation: ResourcePathOperation.Collection.Instance
+                ),
+            };
+            requestInfo.ProjectSchema = requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
+                new("ed-fi")
+            )!;
+            requestInfo.ResourceSchema = new ResourceSchema(
+                requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("academicWeeks"))
+                    ?? new JsonObject()
+            );
+            return requestInfo;
+        }
+
+        private static async Task<RequestInfo> Execute(
+            IPipelineStep middleware,
+            params (string Key, string Value)[] queryParameters
+        )
+        {
+            RequestInfo requestInfo = NewRequestInfo(queryParameters);
+
+            await middleware.Execute(requestInfo, NullNext);
+
+            return requestInfo;
+        }
+
+        [Test]
+        public async Task It_anchors_a_max_only_window_on_the_content_version()
+        {
+            RequestInfo requestInfo = await Execute(Middleware(), ("maxChangeVersion", "200"));
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.ContentVersion);
+        }
+
+        [Test]
+        public async Task It_anchors_a_min_and_max_window_on_the_content_version()
+        {
+            RequestInfo requestInfo = await Execute(
+                Middleware(),
+                ("minChangeVersion", "100"),
+                ("maxChangeVersion", "200")
+            );
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.ContentVersion);
+        }
+
+        [Test]
+        public async Task It_anchors_a_min_only_window_on_the_document_id()
+        {
+            RequestInfo requestInfo = await Execute(Middleware(), ("minChangeVersion", "100"));
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+        }
+
+        [Test]
+        public async Task It_anchors_an_unfiltered_request_on_the_document_id()
+        {
+            RequestInfo requestInfo = await Execute(Middleware(), ("schoolId", "255901"));
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+        }
+
+        /// <summary>
+        /// A present-but-empty maximum parses to null, so the window is not max-bearing. Resolving
+        /// from parameter presence instead of from the parsed window would anchor this request on
+        /// ContentVersion and issue a token no unwindowed continuation could replay.
+        /// </summary>
+        [TestCase("", TestName = "empty")]
+        [TestCase("   ", TestName = "whitespace")]
+        public async Task It_anchors_a_present_but_blank_maximum_on_the_document_id(string maximum)
+        {
+            RequestInfo requestInfo = await Execute(Middleware(), ("maxChangeVersion", maximum));
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+        }
+
+        /// <summary>
+        /// An unparseable maximum is rejected, and the anchor it would have resolved to is DocumentId
+        /// rather than ContentVersion: the request never carries an anchor a handler could act on, and
+        /// the resolution does not depend on the faulty value.
+        /// </summary>
+        [TestCase("abc", TestName = "not a number")]
+        [TestCase("-2", TestName = "negative")]
+        public async Task It_rejects_an_unparseable_maximum_without_moving_the_anchor(string maximum)
+        {
+            RequestInfo requestInfo = await Execute(Middleware(), ("maxChangeVersion", maximum));
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+        }
+
+        /// <summary>
+        /// The anchor is a function of the window, so the two are applied together: a request never
+        /// carries a window without the anchor it resolves to, nor an anchor without its window.
+        /// Asserted on a request the query-field phase rejects, which is the one outcome that reaches
+        /// state past their shared assignment site and still answers 400.
+        /// </summary>
+        [Test]
+        public async Task It_applies_the_anchor_wherever_it_applies_the_window()
+        {
+            RequestInfo rejectedLater = await Execute(
+                Middleware(),
+                ("maxChangeVersion", "200"),
+                ("notAQueryField", "1")
+            );
+
+            rejectedLater
+                .FrontendResponse.StatusCode.Should()
+                .Be(400, "the arrangement must reach a rejection after the anchor was resolved");
+            rejectedLater.ChangeVersionRange.Should().Be(new ChangeVersionRange(null, 200));
+            rejectedLater.PageOrderingMode.Should().Be(PageOrderingMode.ContentVersion);
+
+            RequestInfo rejectedByTheWindow = await Execute(Middleware(), ("maxChangeVersion", "abc"));
+
+            rejectedByTheWindow.ChangeVersionRange.Should().Be(ChangeVersionRange.None);
+            rejectedByTheWindow.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+        }
+
+        /// <summary>
+        /// The kill switch restores DocumentId ordering for every window shape, which is what keeps
+        /// the tokens a legacy deployment issues replayable against it.
+        /// </summary>
+        [Test]
+        public async Task It_anchors_every_window_on_the_document_id_under_legacy_ordering()
+        {
+            RequestInfo maxOnly = await Execute(
+                MiddlewareWithLegacyDocumentIdOrdering(),
+                ("maxChangeVersion", "200")
+            );
+            RequestInfo minAndMax = await Execute(
+                MiddlewareWithLegacyDocumentIdOrdering(),
+                ("minChangeVersion", "100"),
+                ("maxChangeVersion", "200")
+            );
+
+            maxOnly.FrontendResponse.Should().Be(No.FrontendResponse);
+            maxOnly.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+            minAndMax.FrontendResponse.Should().Be(No.FrontendResponse);
+            minAndMax.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+        }
+
+        /// <summary>
+        /// The Change Query composition resolves the anchor by the same rule, so one composition
+        /// cannot answer a windowed request with an ordering the others would not.
+        /// </summary>
+        [Test]
+        public async Task It_resolves_the_same_anchor_without_cursor_recognition()
+        {
+            RequestInfo requestInfo = await Execute(
+                MiddlewareWithoutCursorRecognition(),
+                ("maxChangeVersion", "200")
+            );
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.ContentVersion);
         }
     }
 }

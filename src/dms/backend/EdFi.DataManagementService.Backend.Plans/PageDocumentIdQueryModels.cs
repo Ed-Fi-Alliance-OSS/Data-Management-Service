@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
@@ -153,21 +154,6 @@ public sealed record PageDocumentIdAuthorizationSpec(
 );
 
 /// <summary>
-/// The page-selection ordering key for page-<c>DocumentId</c> query compilation.
-/// </summary>
-public enum PageOrderingMode
-{
-    /// <summary>Order page selection by the root table's <c>DocumentId</c>. The default.</summary>
-    DocumentId,
-
-    /// <summary>
-    /// Order page selection by the root table's mirrored <c>ContentVersion</c> column. Selected
-    /// only for max-bearing change-version windows; see <c>ChangeQueryPageOrderingPolicy</c>.
-    /// </summary>
-    ContentVersion,
-}
-
-/// <summary>
 /// The canonical bare SQL parameter names used by each page-<c>DocumentId</c> candidate mode.
 /// </summary>
 public static class PageCandidateParameterNames
@@ -178,10 +164,15 @@ public static class PageCandidateParameterNames
     /// <summary>The traditional paging limit parameter name.</summary>
     public const string Limit = "limit";
 
-    /// <summary>The cursor inclusive lower <c>DocumentId</c> bound parameter name.</summary>
+    /// <summary>
+    /// The cursor inclusive lower anchor bound parameter name. The name is deliberately unchanged now
+    /// that the bound can be a <c>ContentVersion</c> rather than a <c>DocumentId</c>: renaming it would
+    /// churn every compiled-SQL golden for no behavior change, and the anchor the value belongs to is
+    /// named by the mode's ordering rather than by the parameter.
+    /// </summary>
     public const string CursorInclusiveMinimum = "cursorMin";
 
-    /// <summary>The cursor inclusive upper <c>DocumentId</c> bound parameter name.</summary>
+    /// <summary>The cursor inclusive upper anchor bound parameter name.</summary>
     public const string CursorInclusiveMaximum = "cursorMax";
 
     /// <summary>The cursor page size parameter name.</summary>
@@ -204,10 +195,16 @@ public static class PageCandidateParameterNames
 /// How a page-<c>DocumentId</c> query selects from the shared candidate relation.
 /// </summary>
 /// <remarks>
-/// An explicit choice rather than nullable combinations, so a cursor page with a total count, a
-/// cursor page ordered by <c>ContentVersion</c>, and an unpaged candidate relation with a page size
-/// are all unrepresentable rather than rejected at runtime. Every mode compiles the same candidate
-/// root, predicates, and authorization; only the range, ordering, and size clauses differ.
+/// An explicit choice rather than nullable combinations, so a cursor page with a total count and an
+/// unpaged candidate relation with a page size are both unrepresentable rather than rejected at
+/// runtime. Every mode compiles the same candidate root, predicates, and authorization; only the
+/// range, ordering, and size clauses differ.
+/// <para>
+/// Every mode carries an ordering, because the anchor follows the ordering: a page's bounds, a
+/// partition's boundaries, and the continuation token issued for either are all expressed in the key
+/// the mode names. A mode whose ordering did not match the token issued for it would produce a walk
+/// that skips rows.
+/// </para>
 /// </remarks>
 public abstract record PageCandidateMode
 {
@@ -222,9 +219,9 @@ public abstract record PageCandidateMode
     /// Indicates whether the compiler should include total-count SQL in the emitted plan.
     /// </param>
     /// <param name="OrderingMode">
-    /// The page-selection ordering key. Page membership follows this key while hydration output
-    /// remains ordered by <c>DocumentId</c>. Ordering belongs to this mode alone: a
-    /// <c>ContentVersion</c>-ordered page cannot anchor a <c>DocumentId</c> cursor token.
+    /// The page-selection ordering key, and therefore the anchor the page's continuation token is
+    /// expressed in. Page membership follows this key while hydration output remains ordered by
+    /// <c>DocumentId</c>.
     /// </param>
     public sealed record Traditional(
         string OffsetParameterName = PageCandidateParameterNames.Offset,
@@ -234,16 +231,22 @@ public abstract record PageCandidateMode
     ) : PageCandidateMode;
 
     /// <summary>
-    /// Seek-based cursor page selection over an inclusive <c>DocumentId</c> range, always ordered by
-    /// <c>DocumentId</c>.
+    /// Seek-based cursor page selection over an inclusive range of the anchor column, ordered by that
+    /// same column.
     /// </summary>
     /// <param name="InclusiveMinimumParameterName">The inclusive lower bound parameter name.</param>
     /// <param name="InclusiveMaximumParameterName">The inclusive upper bound parameter name.</param>
     /// <param name="PageSizeParameterName">The page size parameter name.</param>
+    /// <param name="OrderingMode">
+    /// The anchor the range is expressed in and the key the page is ordered by. The two are the same
+    /// key by construction: a page bounded on one column and ordered by another would return rows
+    /// outside its own range.
+    /// </param>
     public sealed record Cursor(
         string InclusiveMinimumParameterName = PageCandidateParameterNames.CursorInclusiveMinimum,
         string InclusiveMaximumParameterName = PageCandidateParameterNames.CursorInclusiveMaximum,
-        string PageSizeParameterName = PageCandidateParameterNames.PageSize
+        string PageSizeParameterName = PageCandidateParameterNames.PageSize,
+        PageOrderingMode OrderingMode = PageOrderingMode.DocumentId
     ) : PageCandidateMode;
 
     /// <summary>
@@ -253,6 +256,12 @@ public abstract record PageCandidateMode
     /// <param name="MinimumPartitionSizeParameterName">
     /// The reserved minimum partition size parameter name.
     /// </param>
+    /// <param name="OrderingMode">
+    /// The anchor the consuming partition-window SQL ranks, sizes, and cuts boundaries on, and
+    /// therefore the units of every range it returns. This relation still emits no ordering of its
+    /// own — see the remarks — so the mode names the column rather than an <c>ORDER BY</c>, and it is
+    /// the same column a page of the same request would be selected in.
+    /// </param>
     /// <remarks>
     /// Emits no <c>ORDER BY</c>: the consumer wraps this relation in a common table expression and
     /// applies its own row numbering, and SQL Server rejects <c>ORDER BY</c> in a CTE that has no
@@ -261,7 +270,8 @@ public abstract record PageCandidateMode
     /// </remarks>
     public sealed record UnpagedCandidates(
         string PartitionCountParameterName = PageCandidateParameterNames.PartitionCount,
-        string MinimumPartitionSizeParameterName = PageCandidateParameterNames.MinimumPartitionSize
+        string MinimumPartitionSizeParameterName = PageCandidateParameterNames.MinimumPartitionSize,
+        PageOrderingMode OrderingMode = PageOrderingMode.DocumentId
     ) : PageCandidateMode;
 }
 

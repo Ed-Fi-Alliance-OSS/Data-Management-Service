@@ -647,6 +647,34 @@ public class Given_RelationalQueryPageKeysetPlanner
         }
     }
 
+    [TestCase(PageOrderingMode.DocumentId, "r.\"DocumentId\"")]
+    [TestCase(PageOrderingMode.ContentVersion, "r.\"ContentVersion\"")]
+    public void It_should_compile_the_unpaged_candidate_relation_against_the_requested_anchor(
+        PageOrderingMode orderingMode,
+        string expectedProjection
+    )
+    {
+        // Partition boundaries are cut on whatever this relation projects, so the anchor the request
+        // resolved has to survive the trip through the planner. Discarding it here still compiles and
+        // still selects the right rows; it just cuts boundaries on a key no page of the same request
+        // seeks on, which a client cannot replay.
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        planner
+            .TryPlanCandidates(
+                CreateRootTable(),
+                CreateParityPreprocessingResult(),
+                out var unpaged,
+                out _,
+                changeVersionRange: new ChangeVersionRange(100L, 200L),
+                orderingMode: orderingMode
+            )
+            .Should()
+            .BeTrue();
+
+        unpaged!.Plan.PageDocumentIdSql.Should().StartWith($"SELECT {expectedProjection}");
+    }
+
     [Test]
     public void It_should_bind_the_cursor_range_and_page_size_as_int64_values()
     {
@@ -696,6 +724,81 @@ public class Given_RelationalQueryPageKeysetPlanner
         cursor.ParameterValues["cursorMin"].Should().Be(long.MinValue);
         cursor.ParameterValues["cursorMax"].Should().Be(long.MaxValue);
         cursor.ParameterValues["pageSize"].Should().Be(500L);
+    }
+
+    [Test]
+    public void It_should_fold_the_change_version_window_into_a_content_version_cursor_pages_bounds()
+    {
+        // Two ranges over one column cost a seek: SQL Server takes one pair into its seek keys and
+        // leaves the other as a residual predicate, so the page reads forward from the window floor and
+        // discards everything below its own. The intersection selects the same rows from one range.
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var cursor = planner.Plan(
+            CreateRootTable(),
+            CreateParityPreprocessingResult(),
+            new CollectionPaging.Cursor(new CursorRange(150L, 250L), new PageSize(25)),
+            changeVersionRange: new ChangeVersionRange(100L, 200L),
+            orderingMode: PageOrderingMode.ContentVersion
+        );
+
+        cursor.ParameterValues["cursorMin"].Should().Be(150L, "the cursor floor is the greater of the two");
+        cursor.ParameterValues["cursorMax"].Should().Be(200L, "the window ceiling is the lesser of the two");
+        cursor
+            .ParameterValues.Keys.Should()
+            .NotContain("minChangeVersion")
+            .And.NotContain("maxChangeVersion");
+
+        cursor.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @cursorMin");
+        cursor.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" <= @cursorMax");
+        cursor.Plan.PageDocumentIdSql.Should().NotContain("@minChangeVersion");
+        cursor.Plan.PageDocumentIdSql.Should().NotContain("@maxChangeVersion");
+    }
+
+    [Test]
+    public void It_should_clip_an_unbounded_cursor_range_to_the_window_it_folds()
+    {
+        // A partition's last range runs to long.MaxValue and relies on the window's ceiling to stop it.
+        // Folding moves that clipping from a second SQL predicate to the bound value, so it has to still
+        // happen — and an absent window bound has to contribute no limit of its own.
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var cursor = planner.Plan(
+            CreateRootTable(),
+            CreateParityPreprocessingResult(),
+            new CollectionPaging.Cursor(new CursorRange(120L, long.MaxValue), new PageSize(25)),
+            changeVersionRange: new ChangeVersionRange(null, 200L),
+            orderingMode: PageOrderingMode.ContentVersion
+        );
+
+        cursor.ParameterValues["cursorMin"].Should().Be(120L);
+        cursor.ParameterValues["cursorMax"].Should().Be(200L);
+        cursor.Plan.PageDocumentIdSql.Should().NotContain("@maxChangeVersion");
+    }
+
+    [Test]
+    public void It_should_keep_both_ranges_for_a_document_id_anchored_cursor_page()
+    {
+        // Under a DocumentId anchor the cursor bounds and the window are ranges over two different
+        // columns, so there is nothing to intersect and both have to be emitted.
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var cursor = planner.Plan(
+            CreateRootTable(),
+            CreateParityPreprocessingResult(),
+            new CollectionPaging.Cursor(new CursorRange(150L, 250L), new PageSize(25)),
+            changeVersionRange: new ChangeVersionRange(100L, 200L),
+            orderingMode: PageOrderingMode.DocumentId
+        );
+
+        cursor.ParameterValues["cursorMin"].Should().Be(150L);
+        cursor.ParameterValues["cursorMax"].Should().Be(250L);
+        cursor.ParameterValues["minChangeVersion"].Should().Be(100L);
+        cursor.ParameterValues["maxChangeVersion"].Should().Be(200L);
+
+        cursor.Plan.PageDocumentIdSql.Should().Contain("r.\"DocumentId\" >= @cursorMin");
+        cursor.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @minChangeVersion");
+        cursor.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" <= @maxChangeVersion");
     }
 
     [Test]
@@ -1148,7 +1251,59 @@ public class Given_RelationalQueryPageKeysetPlanner
 
         act.Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("*mirrored Int64 'ContentVersion'*no non-mirror fallback*");
+            .WithMessage("*mirrored Int64 'ContentVersion'*Neither has a non-mirror fallback*");
+    }
+
+    /// <summary>
+    /// The anchor requires the mirror column on its own, with no change-version bound to require it
+    /// first. The anchor reaches the planner as its own request value rather than being derived from the
+    /// window here, so a plan can name ContentVersion while the window carries no bound — and without
+    /// this check that plan would compile SQL against a column nothing had verified and fail at the
+    /// provider instead.
+    /// </summary>
+    [Test]
+    public void It_should_throw_when_the_content_version_anchor_is_requested_and_the_root_table_has_no_content_version_column()
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var act = () =>
+            planner.Plan(
+                CreateRootTable(contentVersionColumn: null),
+                new RelationalQueryPreprocessingResult(
+                    new RelationalQueryPreprocessingOutcome.Continue(),
+                    []
+                ),
+                new CollectionPaging.Traditional(
+                    new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+                ),
+                changeVersionRange: null,
+                orderingMode: PageOrderingMode.ContentVersion
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*mirrored Int64 'ContentVersion'*Neither has a non-mirror fallback*");
+    }
+
+    /// <summary>
+    /// The complement: a DocumentId-anchored plan with no change-version bound needs no mirror column,
+    /// so widening the check above must not start rejecting the most ordinary request there is.
+    /// </summary>
+    [Test]
+    public void It_should_plan_a_document_id_anchored_page_when_the_root_table_has_no_content_version_column()
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var keyset = planner.Plan(
+            CreateRootTable(contentVersionColumn: null),
+            new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            )
+        );
+
+        keyset.Plan.PageDocumentIdSql.Should().Contain("ORDER BY r.\"DocumentId\" ASC");
+        keyset.Plan.PageDocumentIdSql.Should().NotContain("ContentVersion");
     }
 
     [Test]

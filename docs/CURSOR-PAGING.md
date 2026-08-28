@@ -75,15 +75,12 @@ Next-Page-Token: <opaque token>
 [ { "id": "...", "studentUniqueId": "604822", ... } ]
 ```
 
-> [!WARNING]
-> An ordinary request that includes `maxChangeVersion` cannot be relied on to
-> start a cursor walk. Such a request may return a full page with no
-> `Next-Page-Token`, which is indistinguishable from the end of the collection,
-> so a walk started this way can stop early and silently read only part of the
-> window. To extract a bounded change-version window, start from the
-> collection's `/partitions` operation instead — it accepts the same
-> `minChangeVersion`/`maxChangeVersion` window and returns cursor tokens that
-> continue reliably — or omit `maxChangeVersion` and bound the walk another way.
+> [!NOTE]
+> A `minChangeVersion`/`maxChangeVersion` window is allowed on this first
+> request, and the `Next-Page-Token` it returns continues the walk inside that
+> window like any other token. The window is not carried in the token, so it must
+> be repeated on every later request of the walk — see [Repeat your filters on
+> every request](#repeat-your-filters-on-every-request).
 
 ### 2. Copy the header into the next request
 
@@ -133,8 +130,19 @@ A token names a position in the collection. It does not carry your filters, your
 change-version window, or your authorization. Every request is authorized and
 filtered independently, so the resource route, resource filters, and
 `minChangeVersion`/`maxChangeVersion` values must be identical on every request
-of a walk. Changing a filter mid-walk does not resume the old walk; it starts
-reading a different result set from that token's position.
+of a walk. Changing a resource filter mid-walk does not resume the old walk; it
+starts reading a different result set from that token's position.
+
+Adding or removing `maxChangeVersion` mid-walk is refused rather than answered
+that way. A bounded change-version window walks the collection in a different
+order than an unbounded request does, so a position recorded under one is not a
+position under the other. Replaying a token from a windowed request without
+`maxChangeVersion`, or a token from an unwindowed request with it, is rejected
+with the same message as a malformed token. Tokens are opaque, so there is
+nothing to correct in the token itself: restart the walk under the window you
+mean to read. Changing the *value* of `maxChangeVersion` is not refused — it
+leaves a bounded window bounded — but it reads a different result set from that
+token's position, like any other filter change.
 
 ## Reading a collection in parallel
 
@@ -173,8 +181,19 @@ walks. Filters and authorization are reapplied on every subsequent request
 anyway, so a partition calculated over a different filter set describes segments
 that do not match what the walks will read.
 
+`maxChangeVersion` is stricter than a recommendation. Partition tokens carry the
+same position marker a `Next-Page-Token` does, so the rule in [Repeat your
+filters on every request](#repeat-your-filters-on-every-request) applies to them
+from the moment they are issued: if the partitions request included
+`maxChangeVersion`, every walk that replays one of its tokens must include it
+too, and if the partitions request omitted it, no walk may add it. Either
+mismatch is rejected with the invalid-token message, and the only recovery is a
+new partitions request under the window you mean to read. Resource filters and
+`minChangeVersion` are not refused this way — they change what the walks read, as
+any other filter change does.
+
 ```http
-GET /data/ed-fi/students/partitions?number=4&lastSurname=Smith HTTP/1.1
+GET /data/ed-fi/students/partitions?number=4&lastSurname=Smith&maxChangeVersion=87421 HTTP/1.1
 Host: localhost:8080
 Authorization: Bearer <access token>
 ```
@@ -182,7 +201,8 @@ Authorization: Bearer <access token>
 ### 2. Walk each partition independently
 
 Each returned token is used exactly like a `Next-Page-Token`: send it as
-`pageToken`, with the same filters and an optional `pageSize`.
+`pageToken`, with the same filters — including the change-version window the
+partitions request used — and an optional `pageSize`.
 
 ```bash
 # Each worker takes one token and walks it to completion.
@@ -190,7 +210,8 @@ curl -G "http://localhost:8080/data/ed-fi/students" \
   -H "Authorization: Bearer $TOKEN" \
   --data-urlencode "pageToken=$PARTITION_TOKEN" \
   --data-urlencode "pageSize=500" \
-  --data-urlencode "lastSurname=Smith"
+  --data-urlencode "lastSurname=Smith" \
+  --data-urlencode "maxChangeVersion=87421"
 ```
 
 Partitions are independent, so the walks may run concurrently. Within a
@@ -231,18 +252,22 @@ writes committed during the walk can be observed. Specifically:
   walk changes what later requests return.
 - Retrying a request with the same token may return different data than the
   first attempt, because it observes whatever is committed at that moment.
+- A walk bounded by `maxChangeVersion` normally sees an updated document leave
+  the window rather than move within it, so the document is not returned twice.
+  That holds when the bound is a change version the API has already issued —
+  which is what `GET /changeQueries/v1/availableChangeVersions` returns. A bound
+  chosen above it leaves the window open at the top, so an update can move a
+  document forward inside the window and the walk can return it a second time.
+  Take the bound from that operation rather than choosing one.
 
 If you need a stable view of a collection, do not rely on cursor paging to
 provide one.
 
 > [!NOTE]
 > Rely on the actual presence of the `Next-Page-Token` header rather than
-> assuming a full page implies a successor. This is also why an ordinary request
-> carrying `maxChangeVersion` cannot be relied on to start a walk: a
-> change-version window with an upper bound orders its page differently, so the
-> response may carry no token even when more data matches, and the walk ends
-> there. Start a bounded window from `/partitions`, whose tokens continue
-> reliably.
+> assuming a full page implies a successor, and equally do not treat a full page
+> as proof that one is absent. The header is the only signal that a walk has
+> more to read.
 
 ## Parameter reference
 
@@ -250,11 +275,11 @@ provide one.
 
 | Parameter | Rules |
 | --- | --- |
-| `pageToken` | Optional. An opaque token from a `Next-Page-Token` header or a `/partitions` response. Cannot be combined with `offset` or `limit`. An undecodable value is rejected. |
+| `pageToken` | Optional. An opaque token from a `Next-Page-Token` header or a `/partitions` response. Cannot be combined with `offset` or `limit`. An undecodable value is rejected, as is a token issued for a different change-version window shape — see `maxChangeVersion` below. |
 | `pageSize` | Optional, and valid **only** alongside `pageToken`. An integer from `0` to the deployment's configured `MaximumPageSize`. Sending it without `pageToken` is rejected. |
 | `limit`, `offset` | Traditional paging. Rejected alongside `pageToken`. |
 | `totalCount` | `totalCount=true` is rejected alongside a valid `pageToken`. Cursor paging does not report a total. |
-| `minChangeVersion`, `maxChangeVersion` | Allowed. A request that includes `maxChangeVersion` cannot be relied on to start a walk, because it may return a full page with no `Next-Page-Token`; start a bounded window from `/partitions` instead. Once a walk is under way, both must be repeated unchanged on every request. |
+| `minChangeVersion`, `maxChangeVersion` | Allowed, including on the request that starts a walk. Both must be repeated unchanged on every request of the walk. Adding or removing `maxChangeVersion` mid-walk is rejected with the invalid-token message, because a bounded window is walked in a different order than an unbounded request; restart the walk instead. |
 
 `pageSize=0` is accepted and returns an empty response with no
 `Next-Page-Token`, because a page that selects nothing has nowhere to continue
@@ -265,7 +290,8 @@ from. It cannot be used to advance a walk.
 | Parameter | Rules |
 | --- | --- |
 | `number` | Optional. The desired number of partitions, from `1` to `200`. Omitted means the deployment's configured `DefaultPartitionCount`. A non-numeric or out-of-range value is rejected. |
-| Resource filters, `minChangeVersion`, `maxChangeVersion` | Allowed, and should match the filters the walks will use. |
+| Resource filters, `minChangeVersion` | Allowed, and should match the filters the walks will use. A partition calculated over a different filter set describes segments that do not match what the walks read. |
+| `maxChangeVersion` | Allowed, and must match the walks that replay the returned tokens: a token from a request that included it is rejected on a walk that omits it, and a token from a request that omitted it is rejected on a walk that adds it. Same rule and same message as the `maxChangeVersion` row above. |
 | `pageToken`, `pageSize`, `limit`, `offset`, `totalCount` | Not supported on this operation and rejected. They belong to the collection GET-many. |
 
 A `/partitions` response is always `application/json` and never carries

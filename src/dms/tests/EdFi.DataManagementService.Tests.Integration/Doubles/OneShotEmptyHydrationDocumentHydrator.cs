@@ -57,11 +57,7 @@ internal sealed class OneShotEmptyHydrationDocumentHydrator(
         // Only a page that really selected keys and really hydrated rows is worth emptying: suppressing
         // an already-empty page would prove nothing, and would burn the one-shot on a request the test
         // was not aiming at.
-        if (
-            page.HighestSelectedDocumentId is null
-            || page.DocumentMetadata.Count == 0
-            || !_suppression.TryTake()
-        )
+        if (page.HighestSelectedAnchor is null || page.DocumentMetadata.Count == 0 || !_suppression.TryTake())
         {
             return page;
         }

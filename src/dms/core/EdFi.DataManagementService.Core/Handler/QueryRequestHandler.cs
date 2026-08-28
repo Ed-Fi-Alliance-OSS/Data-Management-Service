@@ -245,10 +245,13 @@ internal class QueryRequestHandler(
     /// The success classification, in precedence order: early-empty, then terminal page, then success.
     /// </summary>
     /// <remarks>
-    /// A page that cannot anchor a DocumentId continuation is <c>success</c>, never
-    /// <c>terminal_page</c>. That is a traditional page over a max-bearing change-version window: it is
-    /// ordered by ContentVersion, is served with rows, and the client keeps paging it with limit and
-    /// offset, so reporting it as an ended walk would tell operators a healthy walk had stopped.
+    /// A page that produced no continuation token is <c>terminal_page</c>. Every page that selected
+    /// anything can now hand out a token — the token carries the anchor it was issued for, so a
+    /// ContentVersion-ordered page continues on its own anchor instead of being withheld — which makes
+    /// the absence of a token a statement about the walk rather than about the ordering. This
+    /// classification previously excused one page from that rule, the max-bearing traditional page that
+    /// was served with rows and could not be continued; that page emits a token now, so the exception
+    /// describes a case that can no longer occur.
     /// </remarks>
     private static (string CommandCategory, string Outcome, int? ReturnedPageSize) ClassifySuccess(
         RequestInfo requestInfo,
@@ -275,10 +278,9 @@ internal class QueryRequestHandler(
         string commandCategory = requestInfo.CollectionPaging.IncludesTotalCount
             ? CollectionPagingTelemetryLabel.PageWithCountCommandCategory
             : CollectionPagingTelemetryLabel.PageCommandCategory;
-        string outcome =
-            success.AllowsDocumentIdContinuation && !nextPageTokenProduced
-                ? CollectionPagingTelemetryLabel.TerminalPageOutcome
-                : CollectionPagingTelemetryLabel.SuccessOutcome;
+        string outcome = !nextPageTokenProduced
+            ? CollectionPagingTelemetryLabel.TerminalPageOutcome
+            : CollectionPagingTelemetryLabel.SuccessOutcome;
 
         return (commandCategory, outcome, returnedPageSize);
     }
@@ -347,10 +349,12 @@ internal class QueryRequestHandler(
     /// it as the same <see cref="QuerySuccess"/>, so neither can acquire a header rule of its own. It
     /// asks what page selection chose, never what the response body contains — a page whose selected
     /// rows were all deleted before hydration still advances the walk past them, and a client that
-    /// stopped on an empty body would stop early. A page that selected nothing, or one whose ordering
-    /// key was not DocumentId, has nothing to anchor a continuation on. At
-    /// <see cref="long.MaxValue"/> there is no next range to name, so the codec reports no token and
-    /// the header is omitted.
+    /// stopped on an empty body would stop early. A page that selected nothing has nothing to anchor a
+    /// continuation on. Ordering is no longer a reason to withhold one: the anchor the page was
+    /// selected on is stamped on the token, so a ContentVersion-ordered page hands out a range in its
+    /// own units and a client replaying it under a different window is rejected rather than served the
+    /// wrong rows. At <see cref="long.MaxValue"/> there is no next range to name, so the codec reports
+    /// no token and the header is omitted.
     /// </remarks>
     private static bool TryCreateNextPageToken(
         RequestInfo requestInfo,
@@ -360,12 +364,7 @@ internal class QueryRequestHandler(
     {
         nextPageToken = null;
 
-        if (success.HighestSelectedDocumentId is not { } highestSelectedDocumentId)
-        {
-            return false;
-        }
-
-        if (!success.AllowsDocumentIdContinuation)
+        if (success.HighestSelectedAnchor is not { } highestSelectedAnchor)
         {
             return false;
         }
@@ -378,8 +377,9 @@ internal class QueryRequestHandler(
             : long.MaxValue;
 
         return PageTokenCodec.TryCreateNextPageToken(
-                highestSelectedDocumentId,
+                highestSelectedAnchor,
                 inclusiveMaximum,
+                requestInfo.PageOrderingMode,
                 out nextPageToken
             ) && nextPageToken is not null;
     }
@@ -399,6 +399,7 @@ internal class QueryRequestHandler(
             TenantKey: requestInfo.FrontendRequest.Tenant ?? string.Empty,
             ReadableProfileProjectionContext: CreateReadableProfileProjectionContext(requestInfo),
             ChangeVersionRange: requestInfo.ChangeVersionRange,
+            PageOrderingMode: requestInfo.PageOrderingMode,
             ResponseContentCoding: GetServedEtagContentCoding(requestInfo)
         );
     }

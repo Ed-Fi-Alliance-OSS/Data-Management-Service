@@ -142,6 +142,22 @@ internal class RequestInfo(
     public ChangeVersionRange ChangeVersionRange { get; set; } = ChangeVersionRange.None;
 
     /// <summary>
+    /// The page anchor: the ordering key a page's cursor bounds, a partition's boundaries, and the
+    /// continuation token this request's response emits are all expressed in. Resolved from
+    /// <see cref="ChangeVersionRange"/> by ValidateQueryMiddleware or
+    /// ValidatePartitionQueryMiddleware, alongside the window it is a function of, so a request
+    /// cannot carry one without the other.
+    /// <para>
+    /// Only the live GET-many and /partitions pipelines act on it. The Change Query pipeline composes
+    /// the same validation step and so resolves a value here too — a /deletes request carrying
+    /// maxChangeVersion resolves ContentVersion like any other — but nothing on that pipeline reads it:
+    /// a tracked-change request travels on its own contract, which carries no anchor. Every remaining
+    /// pipeline leaves the PageOrderingMode.DocumentId default in place.
+    /// </para>
+    /// </summary>
+    public PageOrderingMode PageOrderingMode { get; set; } = PageOrderingMode.DocumentId;
+
+    /// <summary>
     /// The parsed resource-scoped Change Query operation for /deletes or /keyChanges.
     /// Null outside the tracked Change Query pipeline.
     /// </summary>

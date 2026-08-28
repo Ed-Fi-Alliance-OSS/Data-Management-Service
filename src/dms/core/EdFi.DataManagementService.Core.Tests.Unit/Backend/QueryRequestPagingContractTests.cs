@@ -45,4 +45,19 @@ public class Given_The_Relational_Query_Request_Contract
     {
         _properties.Should().NotContain(property => property.PropertyType == typeof(PaginationParameters));
     }
+
+    /// <summary>
+    /// The anchor travels on the request rather than being derived on either side of it, so page
+    /// selection and the continuation token cannot disagree about which column the page walks.
+    /// </summary>
+    [Test]
+    public void It_exposes_the_resolved_page_ordering_mode()
+    {
+        _properties
+            .Should()
+            .Contain(property =>
+                property.Name == nameof(IQueryRequest.PageOrderingMode)
+                && property.PropertyType == typeof(PageOrderingMode)
+            );
+    }
 }

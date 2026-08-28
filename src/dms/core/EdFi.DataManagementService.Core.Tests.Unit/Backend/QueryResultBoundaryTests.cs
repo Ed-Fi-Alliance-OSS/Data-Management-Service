@@ -22,7 +22,7 @@ public class Given_A_Query_Success_Result
     [Test]
     public void It_has_no_selected_keyset_boundary_by_default()
     {
-        new QueryResult.QuerySuccess([], 0).HighestSelectedDocumentId.Should().BeNull();
+        new QueryResult.QuerySuccess([], 0).HighestSelectedAnchor.Should().BeNull();
     }
 
     [Test]
@@ -31,7 +31,7 @@ public class Given_A_Query_Success_Result
         QueryResult.QuerySuccess success = new([JsonValue.Create(1)], null);
 
         success.EdfiDocs.Should().HaveCount(1);
-        success.HighestSelectedDocumentId.Should().BeNull();
+        success.HighestSelectedAnchor.Should().BeNull();
     }
 
     [Test]
@@ -40,33 +40,32 @@ public class Given_A_Query_Success_Result
         QueryResult.QuerySuccess success = new([], null, 2509);
 
         success.EdfiDocs.Should().BeEmpty();
-        success.HighestSelectedDocumentId.Should().Be(2509);
+        success.HighestSelectedAnchor.Should().Be(2509);
     }
 
     [Test]
     public void It_carries_the_boundary_as_a_nullable_long()
     {
         typeof(QueryResult.QuerySuccess)
-            .GetProperty(nameof(QueryResult.QuerySuccess.HighestSelectedDocumentId))!
+            .GetProperty(nameof(QueryResult.QuerySuccess.HighestSelectedAnchor))!
             .PropertyType.Should()
             .Be<long?>();
     }
 
+    /// <summary>
+    /// The boundary is a single value with no companion flag qualifying it. Every page that selects
+    /// keys reports the maximum of the key it was ordered by, so a non-null boundary always describes
+    /// where that page ended; a second member saying whether it may be used would have no false case
+    /// left to name.
+    /// </summary>
     [Test]
-    public void It_allows_a_document_id_continuation_by_default()
+    public void It_carries_the_boundary_with_no_continuation_eligibility_flag()
     {
-        new QueryResult.QuerySuccess([], 0).AllowsDocumentIdContinuation.Should().BeTrue();
-    }
-
-    // The two are independent: a page can select keys it cannot anchor a DocumentId continuation on,
-    // which is a different state from a page that selected none.
-    [Test]
-    public void It_allows_a_selected_boundary_that_cannot_anchor_a_document_id_continuation()
-    {
-        QueryResult.QuerySuccess success = new([], null, 2509) { AllowsDocumentIdContinuation = false };
-
-        success.HighestSelectedDocumentId.Should().Be(2509);
-        success.AllowsDocumentIdContinuation.Should().BeFalse();
+        typeof(QueryResult.QuerySuccess)
+            .GetProperties()
+            .Select(property => property.Name)
+            .Should()
+            .NotContain("AllowsDocumentIdContinuation");
     }
 
     /// <summary>
@@ -77,16 +76,13 @@ public class Given_A_Query_Success_Result
     [Test]
     public void It_preserves_every_other_member_when_a_copy_replaces_only_the_documents()
     {
-        QueryResult.QuerySuccess success = new([JsonValue.Create(1)], 7, 2509)
-        {
-            AllowsDocumentIdContinuation = false,
-        };
+        QueryResult.QuerySuccess success = new([JsonValue.Create(1)], 7, 2509) { SelectionSkipped = true };
 
         var redacted = success with { EdfiDocs = new JsonArray("REDACTED") };
 
         redacted.EdfiDocs.Should().ContainSingle().Which!.GetValue<string>().Should().Be("REDACTED");
         redacted.TotalCount.Should().Be(7);
-        redacted.HighestSelectedDocumentId.Should().Be(2509);
-        redacted.AllowsDocumentIdContinuation.Should().BeFalse();
+        redacted.HighestSelectedAnchor.Should().Be(2509);
+        redacted.SelectionSkipped.Should().BeTrue();
     }
 }

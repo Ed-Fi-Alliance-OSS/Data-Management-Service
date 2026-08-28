@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Npgsql;
 using NUnit.Framework;
@@ -406,7 +407,8 @@ public class Given_A_Postgresql_Descriptor_Only_Resource_Page
                     ],
                     TotalCountParametersInOrder: null
                 ),
-                new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L }
+                new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = 25L },
+                PageOrderingMode.DocumentId
             ),
             SqlDialect.Pgsql,
             CancellationToken.None
@@ -496,6 +498,7 @@ internal static class PostgresqlDocumentReferenceLookupPageKeyset
                 ],
                 TotalCountParametersInOrder: null
             ),
-            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = limit }
+            new Dictionary<string, object?> { ["offset"] = 0L, ["limit"] = limit },
+            PageOrderingMode.DocumentId
         );
 }

@@ -16,33 +16,23 @@ public record QueryResult
     /// </summary>
     /// <param name="EdfiDocs">The documents returned from the query</param>
     /// <param name="TotalCount">The total number of documents returned</param>
-    /// <param name="HighestSelectedDocumentId">
-    /// The maximum DocumentId in the selected page keyset, or null when page selection was skipped or
-    /// selected no keys, including early-empty paths and zero-size pages. Independent of
+    /// <param name="HighestSelectedAnchor">
+    /// The maximum continuation-anchor value in the selected page keyset, or null when page selection
+    /// was skipped or selected no keys, including early-empty paths and zero-size pages. Its units
+    /// follow the anchor the request resolved: DocumentId for an unfiltered or min-only walk,
+    /// ContentVersion for a max-bearing change-version window. Independent of
     /// <paramref name="EdfiDocs"/>: it can be non-null while the body is empty, because every selected
     /// row may be deleted before hydration completes.
     /// </param>
-    public record QuerySuccess(JsonArray EdfiDocs, int? TotalCount, long? HighestSelectedDocumentId = null)
+    /// <remarks>
+    /// There is no companion flag saying whether the maximum may anchor a continuation. Every page that
+    /// selects keys now reports the maximum of the key it was actually ordered by, so a non-null maximum
+    /// always describes where that page ended; the state a flag once distinguished — a page that
+    /// selected keys but was ordered by something the maximum could not express — no longer exists.
+    /// </remarks>
+    public record QuerySuccess(JsonArray EdfiDocs, int? TotalCount, long? HighestSelectedAnchor = null)
         : QueryResult()
     {
-        /// <summary>
-        /// Whether a DocumentId-anchored continuation may be created from
-        /// <see cref="HighestSelectedDocumentId"/>. False when this page was ordered by something else,
-        /// so its highest selected DocumentId does not describe where the page ended.
-        /// </summary>
-        /// <remarks>
-        /// Independent of <see cref="HighestSelectedDocumentId"/>, and deliberately not folded into it:
-        /// a page that selected keys but cannot anchor a DocumentId continuation is a different state
-        /// from a page that selected none, and collapsing the two would make the maximum report a
-        /// selection that happened as one that did not. Defaults to true because only page selection
-        /// ordered by something other than DocumentId can invalidate the anchor, and only the two
-        /// backend sites that produce a real maximum can observe that ordering; every other result
-        /// carries no maximum for this to qualify. Temporary: the only ordering that sets it false is
-        /// traditional paging over a max-bearing change-version window, which acquires its own
-        /// ContentVersion anchor in later work.
-        /// </remarks>
-        public bool AllowsDocumentIdContinuation { get; init; } = true;
-
         /// <summary>
         /// No candidate selection command was issued; this empty success is a short-circuit.
         /// </summary>

@@ -596,11 +596,21 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         return refreshedSchools;
     }
 
+    /// <summary>
+    /// Walks a windowed collection one document per page.
+    /// </summary>
+    /// <remarks>
+    /// The anchor is a required argument rather than derived from
+    /// <paramref name="changeVersionRange" />, because deriving it here would reimplement the Core
+    /// resolver these tests exist to check the consequences of. DocumentId is the enum's zero value, so
+    /// a defaulted anchor would also let a case that means to prove ContentVersion ordering pass
+    /// against DocumentId ordering it never asked for.
+    /// </remarks>
     private async Task<IReadOnlyList<Guid>> WalkPagesAsync(
         ChangeVersionRange changeVersionRange,
+        PageOrderingMode pageOrderingMode,
         int pageCount,
-        string traceIdPrefix,
-        ServiceProvider? serviceProvider = null
+        string traceIdPrefix
     )
     {
         var walkedDocumentUuids = new List<Guid>();
@@ -614,7 +624,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
                 totalCount: offset == 0,
                 traceId: $"{traceIdPrefix}-{offset}",
                 changeVersionRange: changeVersionRange,
-                serviceProvider: serviceProvider
+                pageOrderingMode: pageOrderingMode
             );
 
             var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
@@ -642,6 +652,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
 
         var walkedDocumentUuids = await WalkPagesAsync(
             new ChangeVersionRange(byContentVersion[0].ContentVersion, byContentVersion[^1].ContentVersion),
+            PageOrderingMode.ContentVersion,
             pageCount: refreshedSchools.Count,
             traceIdPrefix: "mssql-cv-ordering-bounded"
         );
@@ -659,6 +670,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
 
         var walkedDocumentUuids = await WalkPagesAsync(
             new ChangeVersionRange(null, byContentVersion[^1].ContentVersion),
+            PageOrderingMode.ContentVersion,
             pageCount: refreshedSchools.Count,
             traceIdPrefix: "mssql-cv-ordering-max-only"
         );
@@ -675,6 +687,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
 
         var walkedDocumentUuids = await WalkPagesAsync(
             new ChangeVersionRange(minContentVersion, null),
+            PageOrderingMode.DocumentId,
             pageCount: refreshedSchools.Count,
             traceIdPrefix: "mssql-cv-ordering-min-only"
         );
@@ -682,22 +695,28 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         walkedDocumentUuids.Should().Equal(expectedProgression);
     }
 
+    /// <summary>
+    /// The ordering a bounded window is paged in is the one the request carries, not one derived from
+    /// the window here: a request whose anchor is DocumentId over a bounded window — what a deployment
+    /// running with the legacy ordering switch produces — pages in DocumentId order.
+    /// </summary>
+    /// <remarks>
+    /// This is the case whose expectation cannot be reached by accident: the fixture's ContentVersion
+    /// order differs from its DocumentId order, so the same window paged under the other anchor returns
+    /// the other progression, which is what the bounded-window test above asserts.
+    /// </remarks>
     [Test]
-    public async Task It_retains_document_id_ordering_for_bounded_windows_when_the_legacy_flag_is_enabled()
+    public async Task It_pages_a_bounded_window_by_document_id_when_the_request_anchors_on_it()
     {
         var refreshedSchools = await UpdateFirstSchoolAndReadStateAsync();
         var byContentVersion = refreshedSchools.OrderBy(s => s.ContentVersion).ToArray();
         var expectedProgression = refreshedSchools.Select(s => s.DocumentUuid).ToArray();
 
-        await using var legacyProvider = CreateServiceProvider(
-            new ChangeQueryPageOrderingPolicy(useLegacyDocumentIdOrdering: true)
-        );
-
         var walkedDocumentUuids = await WalkPagesAsync(
             new ChangeVersionRange(byContentVersion[0].ContentVersion, byContentVersion[^1].ContentVersion),
+            PageOrderingMode.DocumentId,
             pageCount: refreshedSchools.Count,
-            traceIdPrefix: "mssql-cv-ordering-legacy",
-            serviceProvider: legacyProvider
+            traceIdPrefix: "mssql-cv-ordering-document-id-anchor"
         );
 
         walkedDocumentUuids.Should().Equal(expectedProgression);
@@ -730,13 +749,12 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
 
             walkedDocumentIds.AddRange(_recorder.PageMaterializedDocumentIds);
 
-            if (success.HighestSelectedDocumentId is not { } highestSelectedDocumentId)
+            if (success.HighestSelectedAnchor is not { } highestSelectedDocumentId)
             {
                 success.EdfiDocs.Should().BeEmpty();
                 break;
             }
 
-            success.AllowsDocumentIdContinuation.Should().BeTrue();
             range = new CursorRange(highestSelectedDocumentId + 1, range.InclusiveMaximum);
         }
 
@@ -749,7 +767,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         var success = (QueryResult.QuerySuccess)
             await ExecuteCursorQueryAsync(CursorRange.From(1), pageSize: 1, traceId: "mssql-cursor-size-1");
 
-        success.HighestSelectedDocumentId.Should().Be(_persistedSchoolsInDocumentOrder[0].DocumentId);
+        success.HighestSelectedAnchor.Should().Be(_persistedSchoolsInDocumentOrder[0].DocumentId);
         AssertPageMaterialization(_persistedSchoolsInDocumentOrder[0].DocumentId);
     }
 
@@ -763,7 +781,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
                 traceId: "mssql-cursor-size-max"
             );
 
-        success.HighestSelectedDocumentId.Should().Be(_persistedSchoolsInDocumentOrder[^1].DocumentId);
+        success.HighestSelectedAnchor.Should().Be(_persistedSchoolsInDocumentOrder[^1].DocumentId);
         AssertPageMaterialization([
             .. _persistedSchoolsInDocumentOrder.Select(static school => school.DocumentId),
         ]);
@@ -776,7 +794,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         var success = (QueryResult.QuerySuccess)
             await ExecuteCursorQueryAsync(CursorRange.From(1), pageSize: 0, traceId: "mssql-cursor-size-0");
 
-        success.HighestSelectedDocumentId.Should().BeNull();
+        success.HighestSelectedAnchor.Should().BeNull();
         success.EdfiDocs.Should().BeEmpty();
     }
 
@@ -793,7 +811,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
                 traceId: "mssql-cursor-inverted"
             );
 
-        success.HighestSelectedDocumentId.Should().BeNull();
+        success.HighestSelectedAnchor.Should().BeNull();
         success.EdfiDocs.Should().BeEmpty();
     }
 
@@ -818,7 +836,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
                 traceId: "mssql-cursor-unstored-bounds"
             );
 
-        success.HighestSelectedDocumentId.Should().Be(lastDocumentId);
+        success.HighestSelectedAnchor.Should().Be(lastDocumentId);
         AssertPageMaterialization(storedDocumentIds);
     }
 
@@ -836,7 +854,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
                 traceId: "mssql-cursor-excludes-below-minimum"
             );
 
-        success.HighestSelectedDocumentId.Should().Be(_persistedSchoolsInDocumentOrder[^1].DocumentId);
+        success.HighestSelectedAnchor.Should().Be(_persistedSchoolsInDocumentOrder[^1].DocumentId);
         AssertPageMaterialization([
             .. _persistedSchoolsInDocumentOrder.Skip(1).Select(static school => school.DocumentId),
         ]);
@@ -863,7 +881,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
                 ]
             );
 
-        success.HighestSelectedDocumentId.Should().Be(targetSchool.DocumentId);
+        success.HighestSelectedAnchor.Should().Be(targetSchool.DocumentId);
         AssertPageMaterialization(targetSchool.DocumentId);
     }
 
@@ -883,8 +901,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
                 changeVersionRange: new ChangeVersionRange(lowestContentVersion, null)
             );
 
-        success.HighestSelectedDocumentId.Should().Be(_persistedSchoolsInDocumentOrder[^1].DocumentId);
-        success.AllowsDocumentIdContinuation.Should().BeTrue();
+        success.HighestSelectedAnchor.Should().Be(_persistedSchoolsInDocumentOrder[^1].DocumentId);
     }
 
     // A max-bearing window keeps the DocumentId ordering a cursor page always uses, so the page it
@@ -904,19 +921,20 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
                 changeVersionRange: new ChangeVersionRange(null, highestContentVersion)
             );
 
-        success.HighestSelectedDocumentId.Should().Be(_persistedSchoolsInDocumentOrder[^1].DocumentId);
-        success.AllowsDocumentIdContinuation.Should().BeTrue();
+        success.HighestSelectedAnchor.Should().Be(_persistedSchoolsInDocumentOrder[^1].DocumentId);
         AssertSingleQueryHydration().Plan.PageDocumentIdSql.Should().Contain("@cursorMin");
     }
 
-    // A traditional page over the same window is ordered by ContentVersion, so it reports the maximum it
-    // really selected while refusing to let a DocumentId continuation be anchored on it.
+    // A traditional page over the same window is ordered by ContentVersion, so the maximum it reports is
+    // that window's highest ContentVersion and not a DocumentId at all.
     [Test]
-    public async Task It_reports_a_boundary_without_continuation_for_a_windowed_traditional_page()
+    public async Task It_reports_a_content_version_boundary_for_a_windowed_traditional_page()
     {
-        var highestContentVersion = _persistedSchoolsInDocumentOrder.Max(static school =>
-            school.ContentVersion
-        );
+        // Read fresh rather than from the seeded snapshot: other cases in this fixture update a school,
+        // which moves its ContentVersion without moving its DocumentId, so only the live values bound
+        // the window this page is selected over.
+        var currentSchools = await ReadPersistedSchoolsInDocumentOrderAsync();
+        var highestContentVersion = currentSchools.Max(static school => school.ContentVersion);
 
         var success = (QueryResult.QuerySuccess)
             await ExecuteQueryAsync(
@@ -925,11 +943,11 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
                 offset: 0,
                 totalCount: false,
                 traceId: "mssql-traditional-max-window",
-                changeVersionRange: new ChangeVersionRange(null, highestContentVersion)
+                changeVersionRange: new ChangeVersionRange(null, highestContentVersion),
+                pageOrderingMode: PageOrderingMode.ContentVersion
             );
 
-        success.HighestSelectedDocumentId.Should().NotBeNull();
-        success.AllowsDocumentIdContinuation.Should().BeFalse();
+        success.HighestSelectedAnchor.Should().Be(highestContentVersion);
     }
 
     // The boundary set must be anchored on identifiers the caller can actually reach, and every range
@@ -1056,6 +1074,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
             RequestedPartitionCount: requestedPartitionCount,
             MinimumPartitionSize: minimumPartitionSize,
             TraceId: new TraceId(traceId),
+            PageOrderingMode: PageOrderingMode.DocumentId,
             ChangeVersionRange: changeVersionRange
         );
 
@@ -1064,7 +1083,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
             .QueryPartitions(request);
     }
 
-    private static ServiceProvider CreateServiceProvider(ChangeQueryPageOrderingPolicy? orderingPolicy = null)
+    private static ServiceProvider CreateServiceProvider()
     {
         ServiceCollection services = [];
 
@@ -1085,11 +1104,6 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
                 ThrowingRelationalReadTargetLookupService
             >()
         );
-
-        if (orderingPolicy is not null)
-        {
-            services.AddSingleton(orderingPolicy);
-        }
 
         return services.BuildServiceProvider(
             new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
@@ -1148,7 +1162,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         bool totalCount,
         string traceId,
         ChangeVersionRange? changeVersionRange = null,
-        ServiceProvider? serviceProvider = null
+        PageOrderingMode pageOrderingMode = PageOrderingMode.DocumentId
     ) =>
         await ExecuteQueryAsync(
             new CollectionPaging.Traditional(
@@ -1162,7 +1176,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
             queryElements,
             traceId,
             changeVersionRange,
-            serviceProvider
+            pageOrderingMode
         );
 
     private async Task<QueryResult> ExecuteCursorQueryAsync(
@@ -1184,10 +1198,10 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         QueryElement[] queryElements,
         string traceId,
         ChangeVersionRange? changeVersionRange = null,
-        ServiceProvider? serviceProvider = null
+        PageOrderingMode pageOrderingMode = PageOrderingMode.DocumentId
     )
     {
-        await using var scope = (serviceProvider ?? _serviceProvider).CreateAsyncScope();
+        await using var scope = _serviceProvider.CreateAsyncScope();
         SetSelectedInstance(scope.ServiceProvider);
 
         var request = new RelationalQueryRequest(
@@ -1198,7 +1212,8 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
             AuthorizationStrategyEvaluators: [],
             Paging: paging,
             TraceId: new TraceId(traceId),
-            ChangeVersionRange: changeVersionRange
+            ChangeVersionRange: changeVersionRange,
+            PageOrderingMode: pageOrderingMode
         );
 
         return await scope

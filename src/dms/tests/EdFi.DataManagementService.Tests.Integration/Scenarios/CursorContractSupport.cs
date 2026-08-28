@@ -65,8 +65,15 @@ internal static class CursorContractSupport
     /// Decodable by construction rather than by a transcription of the transport encoding happening to
     /// stay in step with it. The encoding is unpadded base64url, so the value needs no escaping when
     /// it is placed in a query string.
+    /// <para>
+    /// Anchored on <c>DocumentId</c> because the scenarios that enter a walk with this token carry no
+    /// change-version window, and a request resolves that anchor for every window shape but a
+    /// max-bearing one. A token whose marker disagrees with the anchor its request resolves is rejected,
+    /// so the two have to be chosen together.
+    /// </para>
     /// </remarks>
-    internal static string EntryPageToken { get; } = PageTokenCodec.Encode(CursorRange.From(1));
+    internal static string EntryPageToken { get; } =
+        PageTokenCodec.Encode(CursorRange.From(1), PageOrderingMode.DocumentId);
 
     /// <summary>
     /// One page as a client sees it: the document ids in the body, the continuation offered, and the
@@ -107,8 +114,12 @@ internal static class CursorContractSupport
         }
 
         string nextPageToken = nextPageTokenValues.Single();
+
+        // The decoded anchor is discarded: this reader serves every collection the contract scenarios
+        // page over, and what it asserts about a continuation is the shape of its range, not which
+        // column that range is expressed in. A scenario that cares about the anchor asserts it itself.
         PageTokenCodec
-            .TryDecode(nextPageToken, out var range)
+            .TryDecode(nextPageToken, out var range, out _)
             .Should()
             .BeTrue("an emitted continuation must decode through the codec that produced it");
         range!
@@ -180,7 +191,7 @@ internal static class CursorContractSupport
         foreach (string pageToken in pageTokens)
         {
             PageTokenCodec
-                .TryDecode(pageToken, out CursorRange? range)
+                .TryDecode(pageToken, out CursorRange? range, out _)
                 .Should()
                 .BeTrue(
                     "{0}: a token the partitions response handed out must decode through the codec",

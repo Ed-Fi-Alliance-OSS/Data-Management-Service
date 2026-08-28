@@ -127,7 +127,11 @@ internal sealed class MssqlPlanDialect : IPlanSqlDialect
     }
 
     /// <inheritdoc />
-    public void AppendCreateKeysetTempTable(SqlWriter writer, KeysetTableContract keyset)
+    public void AppendCreateKeysetTempTable(
+        SqlWriter writer,
+        KeysetTableContract keyset,
+        bool includeAnchorColumn = false
+    )
     {
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(keyset);
@@ -145,7 +149,17 @@ internal sealed class MssqlPlanDialect : IPlanSqlDialect
             .AppendQuoted(keyset.DocumentIdColumnName.Value)
             .Append(" bigint PRIMARY KEY, ")
             .AppendQuoted(HydrationSqlConventions.SelectedPageOrdinalColumnName)
-            .AppendLine(" int NULL);");
+            .Append(" int NULL");
+
+        if (includeAnchorColumn)
+        {
+            writer
+                .Append(", ")
+                .AppendQuoted(HydrationSqlConventions.SelectedAnchorColumnName)
+                .Append(" bigint NULL");
+        }
+
+        writer.AppendLine(");");
     }
 
     /// <summary>
@@ -153,12 +167,23 @@ internal sealed class MssqlPlanDialect : IPlanSqlDialect
     /// </summary>
     /// <param name="writer">The SQL writer to append to.</param>
     /// <param name="keyset">The keyset table contract specifying table and column names.</param>
-    public void AppendKeysetSelectedIdOutputClause(SqlWriter writer, KeysetTableContract keyset)
+    public void AppendKeysetSelectedIdOutputClause(
+        SqlWriter writer,
+        KeysetTableContract keyset,
+        bool includeAnchorColumn = false
+    )
     {
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(keyset);
 
-        writer.Append("OUTPUT INSERTED.").AppendQuoted(keyset.DocumentIdColumnName.Value).AppendLine();
+        writer.Append("OUTPUT INSERTED.").AppendQuoted(keyset.DocumentIdColumnName.Value);
+
+        if (includeAnchorColumn)
+        {
+            writer.Append(", INSERTED.").AppendQuoted(HydrationSqlConventions.SelectedAnchorColumnName);
+        }
+
+        writer.AppendLine();
     }
 
     /// <summary>
@@ -167,7 +192,11 @@ internal sealed class MssqlPlanDialect : IPlanSqlDialect
     /// </summary>
     /// <param name="writer">The SQL writer to append to.</param>
     /// <param name="keyset">The keyset table contract specifying table and column names.</param>
-    public void AppendKeysetSelectedIdReturningClause(SqlWriter writer, KeysetTableContract keyset)
+    public void AppendKeysetSelectedIdReturningClause(
+        SqlWriter writer,
+        KeysetTableContract keyset,
+        bool includeAnchorColumn = false
+    )
     {
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(keyset);

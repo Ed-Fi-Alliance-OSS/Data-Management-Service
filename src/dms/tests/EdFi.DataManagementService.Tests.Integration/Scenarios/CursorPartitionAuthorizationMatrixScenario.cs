@@ -270,7 +270,7 @@ internal static class CursorPartitionAuthorizationMatrixScenario
         var walked = await WalkAsync(
             harness,
             collectionEndpoint,
-            PageTokenCodec.Encode(CursorRange.From(1)),
+            PageTokenCodec.Encode(CursorRange.From(1), PageOrderingMode.DocumentId),
             maximumWalkedPages
         );
         AssertResolvesTheAccessibleSet(walked, seeded, "the cursor walk");
@@ -392,7 +392,10 @@ internal static class CursorPartitionAuthorizationMatrixScenario
         int maximumWalkedPages
     )
     {
-        string widenedToken = PageTokenCodec.Encode(new CursorRange(long.MinValue, long.MaxValue));
+        string widenedToken = PageTokenCodec.Encode(
+            new CursorRange(long.MinValue, long.MaxValue),
+            PageOrderingMode.DocumentId
+        );
 
         // Widening an emitted partition token produces this exact token, so the walk below is the walk of a
         // widened token the endpoint really handed out rather than of an unrelated one, and a second walk
@@ -403,7 +406,8 @@ internal static class CursorPartitionAuthorizationMatrixScenario
                 {
                     InclusiveMinimum = long.MinValue,
                     InclusiveMaximum = long.MaxValue,
-                }
+                },
+                PageOrderingMode.DocumentId
             )
             .Should()
             .Be(widenedToken);
@@ -494,7 +498,7 @@ internal static class CursorPartitionAuthorizationMatrixScenario
         var filteredCursorWalk = await WalkAsync(
             harness,
             filteredCollection,
-            PageTokenCodec.Encode(CursorRange.From(1)),
+            PageTokenCodec.Encode(CursorRange.From(1), PageOrderingMode.DocumentId),
             MaximumWalkedPages(1)
         );
         filteredCursorWalk.Should().Equal(seeded.FilterMatchedId);
@@ -529,7 +533,7 @@ internal static class CursorPartitionAuthorizationMatrixScenario
         var (pageIds, nextPageToken) = await ReadPageAsync(
             harness,
             collectionEndpoint,
-            PageTokenCodec.Encode(CursorRange.From(1))
+            PageTokenCodec.Encode(CursorRange.From(1), PageOrderingMode.DocumentId)
         );
 
         pageIds.Should().BeEmpty();
@@ -611,7 +615,7 @@ internal static class CursorPartitionAuthorizationMatrixScenario
         var (pageIds, nextPageToken) = await ReadPageAsync(
             harness,
             collectionEndpoint,
-            PageTokenCodec.Encode(range)
+            PageTokenCodec.Encode(range, PageOrderingMode.DocumentId)
         );
 
         pageIds.Should().BeEmpty($"{because} selects nothing");
@@ -697,7 +701,7 @@ internal static class CursorPartitionAuthorizationMatrixScenario
         foreach (string pageToken in pageTokens)
         {
             PageTokenCodec
-                .TryDecode(pageToken, out CursorRange? range)
+                .TryDecode(pageToken, out CursorRange? range, out _)
                 .Should()
                 .BeTrue("an emitted partition token must decode through the codec that produced it");
             ranges.Add(range!);

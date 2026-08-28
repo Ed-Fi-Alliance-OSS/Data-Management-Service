@@ -20,8 +20,9 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// unfiltered or unauthorized relation would corrupt every boundary, and no later predicate could
 /// repair it.
 ///
-/// One statement, and it returns starting <c>DocumentId</c> values only. It hydrates nothing, projects
-/// no profile, resolves no descriptor, injects no link, and computes no response total count.
+/// One statement, and it returns starting anchor values only — <c>DocumentId</c> or
+/// <c>ContentVersion</c>, whichever the candidate relation was compiled against. It hydrates nothing,
+/// projects no profile, resolves no descriptor, injects no link, and computes no response total count.
 /// </remarks>
 public sealed class PartitionWindowSqlCompiler(SqlDialect dialect)
 {
@@ -38,7 +39,6 @@ public sealed class PartitionWindowSqlCompiler(SqlDialect dialect)
     private const string RankedAlias = "pr";
     private const string SizedAlias = "ps";
 
-    private const string DocumentIdColumnName = "DocumentId";
     private const string RowNumberColumnName = "row_number";
     private const string CandidateCountColumnName = "candidate_count";
     private const string PartitionSizeColumnName = "partition_size";
@@ -55,7 +55,8 @@ public sealed class PartitionWindowSqlCompiler(SqlDialect dialect)
     /// </param>
     /// <param name="mode">
     /// The candidate mode the plan was compiled with. Supplies the parameter names this statement binds,
-    /// so a mode constructed with non-default names emits the names it reserved.
+    /// so a mode constructed with non-default names emits the names it reserved, and the anchor the
+    /// relation projects, so this statement ranks and cuts on the column that relation actually has.
     /// </param>
     /// <returns>
     /// The compiled statement and its parameter inventory: the candidate relation's filter parameters,
@@ -76,10 +77,14 @@ public sealed class PartitionWindowSqlCompiler(SqlDialect dialect)
 
         var writer = new SqlWriter(_sqlDialect);
 
+        // Resolved once and threaded through every clause, so the ranking, the sizing, and the boundary
+        // projection cannot name different columns within one statement.
+        var anchorColumnName = PageDocumentIdSqlCompiler.ResolveOrderingColumnName(mode);
+
         AppendCandidatesCte(writer, candidatePlan);
-        AppendRankedCte(writer);
-        AppendSizedCte(writer, mode);
-        AppendBoundarySelect(writer);
+        AppendRankedCte(writer, anchorColumnName);
+        AppendSizedCte(writer, mode, anchorColumnName);
+        AppendBoundarySelect(writer, anchorColumnName);
 
         return new PageDocumentIdSqlPlan(
             writer.ToString(),
@@ -161,9 +166,9 @@ public sealed class PartitionWindowSqlCompiler(SqlDialect dialect)
             .AppendLine("),");
     }
 
-    private void AppendRankedCte(SqlWriter writer)
+    private void AppendRankedCte(SqlWriter writer, string anchorColumnName)
     {
-        var quotedDocumentId = _sqlDialect.QuoteIdentifier(DocumentIdColumnName);
+        var quotedAnchor = _sqlDialect.QuoteIdentifier(anchorColumnName);
 
         writer.AppendLine($"{RankedCteName} AS (");
 
@@ -171,8 +176,8 @@ public sealed class PartitionWindowSqlCompiler(SqlDialect dialect)
         {
             writer
                 .AppendLine("SELECT")
-                .AppendLine($"    {CandidatesAlias}.{quotedDocumentId},")
-                .Append($"    ROW_NUMBER() OVER (ORDER BY {CandidatesAlias}.{quotedDocumentId}) AS ")
+                .AppendLine($"    {CandidatesAlias}.{quotedAnchor},")
+                .Append($"    ROW_NUMBER() OVER (ORDER BY {CandidatesAlias}.{quotedAnchor}) AS ")
                 .AppendQuoted(RowNumberColumnName)
                 .AppendLine(",")
                 .Append($"    {_planSqlDialect.CandidateCountOverWindowSql} AS ")
@@ -184,9 +189,13 @@ public sealed class PartitionWindowSqlCompiler(SqlDialect dialect)
         writer.AppendLine("),");
     }
 
-    private void AppendSizedCte(SqlWriter writer, PageCandidateMode.UnpagedCandidates mode)
+    private void AppendSizedCte(
+        SqlWriter writer,
+        PageCandidateMode.UnpagedCandidates mode,
+        string anchorColumnName
+    )
     {
-        var quotedDocumentId = _sqlDialect.QuoteIdentifier(DocumentIdColumnName);
+        var quotedAnchor = _sqlDialect.QuoteIdentifier(anchorColumnName);
         var quotedRowNumber = _sqlDialect.QuoteIdentifier(RowNumberColumnName);
         var quotedCandidateCount = _sqlDialect.QuoteIdentifier(CandidateCountColumnName);
 
@@ -196,7 +205,7 @@ public sealed class PartitionWindowSqlCompiler(SqlDialect dialect)
         {
             writer
                 .AppendLine("SELECT")
-                .AppendLine($"    {RankedAlias}.{quotedDocumentId},")
+                .AppendLine($"    {RankedAlias}.{quotedAnchor},")
                 .AppendLine($"    {RankedAlias}.{quotedRowNumber},")
                 .Append("    ");
 
@@ -218,23 +227,23 @@ public sealed class PartitionWindowSqlCompiler(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Selects the identifier at candidate row 1 and at every partition-size step from it. Selecting the
-    /// actual identity value at those row numbers, rather than dividing the identity range
-    /// arithmetically, is what keeps partitions balanced when identifiers are sparse — which they always
-    /// are after deletes.
+    /// Selects the anchor value at candidate row 1 and at every partition-size step from it. Selecting
+    /// the actual anchor value at those row numbers, rather than dividing the anchor range
+    /// arithmetically, is what keeps partitions balanced when anchor values are sparse — which they
+    /// always are after deletes, and which a <c>ContentVersion</c> window is by construction.
     /// </summary>
-    private void AppendBoundarySelect(SqlWriter writer)
+    private void AppendBoundarySelect(SqlWriter writer, string anchorColumnName)
     {
-        var quotedDocumentId = _sqlDialect.QuoteIdentifier(DocumentIdColumnName);
+        var quotedAnchor = _sqlDialect.QuoteIdentifier(anchorColumnName);
         var quotedRowNumber = _sqlDialect.QuoteIdentifier(RowNumberColumnName);
         var quotedPartitionSize = _sqlDialect.QuoteIdentifier(PartitionSizeColumnName);
 
         writer
-            .AppendLine($"SELECT {SizedAlias}.{quotedDocumentId}")
+            .AppendLine($"SELECT {SizedAlias}.{quotedAnchor}")
             .AppendLine($"FROM {SizedCteName} {SizedAlias}")
             .AppendLine(
                 $"WHERE ({SizedAlias}.{quotedRowNumber} - 1) % {SizedAlias}.{quotedPartitionSize} = 0"
             )
-            .AppendLine($"ORDER BY {SizedAlias}.{quotedDocumentId} ASC;");
+            .AppendLine($"ORDER BY {SizedAlias}.{quotedAnchor} ASC;");
     }
 }

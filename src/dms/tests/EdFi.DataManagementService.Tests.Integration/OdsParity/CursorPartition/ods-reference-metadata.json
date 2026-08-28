@@ -21,15 +21,15 @@
     "{invalidToken}": "A token that cannot decode.",
     "{maximumPageSize}": "The maximum page size the host under test is configured with, substituted at execution time so a message quoting it cannot drift from the running configuration.",
     "{defaultPartitionCount}": "The default partition count the host under test is configured with.",
-    "{leadingPlusDecimalToken}": "A token whose lower bound carries a leading plus sign.",
-    "{whitespaceDecimalToken}": "A token whose upper bound is preceded by a space.",
+    "{leadingPlusDecimalToken}": "An unmarked two-field token whose lower bound carries a leading plus sign. Left unmarked so ODS still accepts it, which is what makes the case a difference.",
+    "{whitespaceDecimalToken}": "An unmarked two-field token whose upper bound is preceded by a space. Left unmarked for the same reason as the leading-sign token.",
     "{beyondInt32Token}": "A token whose bounds both exceed Int32.MaxValue.",
     "{unpaddedToken}": "The canonical unpadded base64url form the encoder emits.",
     "{paddedToken}": "The same token with its base64 padding restored.",
     "{forbiddenAlphabetToken}": "A token containing a standard-base64 character the approved alphabet forbids.",
     "{invalidPaddingToken}": "The correctly padded token with one extra padding character appended, which is a padding run longer than the unpadded length implies.",
     "{invalidUtf8Token}": "A token whose decoded bytes are not valid UTF-8.",
-    "{extraFieldToken}": "A token whose payload carries three comma-separated fields instead of two."
+    "{extraFieldToken}": "A token whose payload carries four comma-separated fields: one more than the approved marked grammar takes, and two more than the ODS grammar takes."
   },
   "recordedOdsOutcomes": "Every recorded ODS outcome is written in fields an observation can really produce: a status, an ordered error list when the exact ODS text is known, and a shell name when the body is known to be neither DMS shell (recorded as 'unrecognized'). A field the recorded outcome does not state is not compared. That is what keeps a declared difference falsifiable: if DMS ever converged on the recorded outcome, the observation would equal it and the case would fail rather than declaring a difference forever."
 }

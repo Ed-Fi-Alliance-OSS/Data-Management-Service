@@ -507,8 +507,7 @@ public partial class Given_DescriptorReadHandler
         var result = await sut.HandleQueryAsync(CreateQueryRequest(SqlDialect.Pgsql));
 
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
-        success.HighestSelectedDocumentId.Should().Be(205L);
-        success.AllowsDocumentIdContinuation.Should().BeTrue();
+        success.HighestSelectedAnchor.Should().Be(205L);
     }
 
     // The page query orders ascending today, but a boundary taken from the last row rather than the
@@ -525,11 +524,7 @@ public partial class Given_DescriptorReadHandler
 
         var result = await sut.HandleQueryAsync(CreateQueryRequest(SqlDialect.Pgsql));
 
-        result
-            .Should()
-            .BeOfType<QueryResult.QuerySuccess>()
-            .Which.HighestSelectedDocumentId.Should()
-            .Be(205L);
+        result.Should().BeOfType<QueryResult.QuerySuccess>().Which.HighestSelectedAnchor.Should().Be(205L);
     }
 
     [Test]
@@ -540,7 +535,7 @@ public partial class Given_DescriptorReadHandler
         var result = await sut.HandleQueryAsync(CreateQueryRequest(SqlDialect.Pgsql));
 
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
-        success.HighestSelectedDocumentId.Should().BeNull();
+        success.HighestSelectedAnchor.Should().BeNull();
         success.EdfiDocs.Should().BeEmpty();
     }
 
@@ -560,8 +555,7 @@ public partial class Given_DescriptorReadHandler
         );
 
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
-        success.HighestSelectedDocumentId.Should().Be(101L);
-        success.AllowsDocumentIdContinuation.Should().BeTrue();
+        success.HighestSelectedAnchor.Should().Be(101L);
         success.TotalCount.Should().BeNull();
         commandExecutor.Commands.Should().ContainSingle();
         commandExecutor.Commands[0].CommandText.Should().Contain("@cursorMin");
@@ -570,10 +564,49 @@ public partial class Given_DescriptorReadHandler
         commandExecutor.Commands[0].CommandText.Should().NotContain("COUNT(1)");
     }
 
-    // A windowed traditional descriptor page is ordered by ContentVersion, so its real selected maximum
-    // is reported while the continuation it cannot anchor is withheld.
+    // A traditional descriptor page whose request anchors on ContentVersion reports the anchor page
+    // selection ordered it by, not the row's DocumentId and not dms.Document's copy of the change
+    // version. The anchor arrives on the request, so it is supplied here alongside the window Core
+    // resolved it from rather than inferred from that window by the handler.
+    //
+    // The three values are deliberately distinct. DocumentId is 205, the joined dms.Document
+    // ContentVersion is 42, and the page-selection relation carried out 77. Only reading the projected
+    // anchor produces 77, so this fails if the boundary ever goes back to the document column — which
+    // is read through a different join in the same statement and can therefore name a version this page
+    // never selected.
     [Test]
-    public async Task It_keeps_the_descriptor_boundary_but_disallows_continuation_for_a_windowed_traditional_page()
+    public async Task It_reports_a_content_version_boundary_for_a_windowed_traditional_descriptor_page()
+    {
+        var sut = CreateHandler(
+            CreateQueryRowsExecutor(
+                CreateDescriptorRow(
+                    Guid.NewGuid(),
+                    documentId: 205L,
+                    contentVersion: 42L,
+                    codeValue: "Charter",
+                    selectedAnchor: 77L
+                )
+            )
+        );
+
+        var result = await sut.HandleQueryAsync(
+            CreateQueryRequest(
+                SqlDialect.Pgsql,
+                changeVersionRange: new ChangeVersionRange(null, 900L),
+                pageOrderingMode: PageOrderingMode.ContentVersion
+            )
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.HighestSelectedAnchor.Should().Be(77L);
+    }
+
+    // The guard behind the assertion above. A request that resolved a ContentVersion anchor whose rows
+    // carry none means the page-rows statement and this boundary disagree about the request's anchor.
+    // Falling back to the document's ContentVersion would hand out a continuation that looks right and
+    // starts the next page past rows this one never returned, so the disagreement fails loudly instead.
+    [Test]
+    public async Task It_refuses_a_windowed_descriptor_page_whose_rows_carry_no_selected_anchor()
     {
         var sut = CreateHandler(
             CreateQueryRowsExecutor(
@@ -581,13 +614,35 @@ public partial class Given_DescriptorReadHandler
             )
         );
 
+        var act = async () =>
+            await sut.HandleQueryAsync(
+                CreateQueryRequest(
+                    SqlDialect.Pgsql,
+                    changeVersionRange: new ChangeVersionRange(null, 900L),
+                    pageOrderingMode: PageOrderingMode.ContentVersion
+                )
+            );
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*anchor*");
+    }
+
+    // A DocumentId-anchored descriptor page reports its DocumentId and needs no projected anchor, which
+    // is what keeps the unwindowed statement emitting the projection it always has.
+    [Test]
+    public async Task It_reports_a_document_id_boundary_without_a_selected_anchor_column()
+    {
+        var sut = CreateHandler(
+            CreateQueryRowsExecutor(
+                CreateDescriptorRow(Guid.NewGuid(), documentId: 205L, contentVersion: 42L)
+            )
+        );
+
         var result = await sut.HandleQueryAsync(
-            CreateQueryRequest(SqlDialect.Pgsql, changeVersionRange: new ChangeVersionRange(null, 900L))
+            CreateQueryRequest(SqlDialect.Pgsql, pageOrderingMode: PageOrderingMode.DocumentId)
         );
 
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
-        success.HighestSelectedDocumentId.Should().Be(205L);
-        success.AllowsDocumentIdContinuation.Should().BeFalse();
+        success.HighestSelectedAnchor.Should().Be(205L);
     }
 
     private static InMemoryRelationalCommandExecutor CreateQueryRowsExecutor(
@@ -1990,10 +2045,7 @@ public partial class Given_DescriptorReadHandler
                         ),
                     ],
                     TotalCount: 7,
-                    ContinuationBoundary: new PageContinuationBoundary(
-                        205L,
-                        AllowsDocumentIdContinuation: true
-                    ),
+                    HighestSelectedAnchor: 205L,
                     IncludesTotalCount: true
                 )
             );
@@ -2008,18 +2060,27 @@ public partial class Given_DescriptorReadHandler
             .MustHaveHappenedOnceExactly();
     }
 
-    // A windowed traditional descriptor page is ordered by ContentVersion, so the candidate page a
-    // cache-served response is shaped from reports the selected maximum without the continuation
-    // eligibility that maximum cannot carry.
+    // A traditional descriptor page anchored on ContentVersion shapes a cache-served response from a
+    // candidate page whose boundary is that anchor. The candidate row's three values differ on purpose —
+    // DocumentId 205, the joined dms.Document ContentVersion 42, and the projected page-selection anchor
+    // 77 — so only reading the anchor produces the value asserted below. Candidate selection is the one
+    // statement on this path that ranges over the page-selection relation, which is why the boundary has
+    // to be taken here rather than re-derived from the rows retrieved afterwards.
     [Test]
-    public async Task It_exposes_a_windowed_descriptor_candidate_page_that_cannot_anchor_a_continuation()
+    public async Task It_exposes_a_content_version_boundary_on_a_windowed_descriptor_candidate_page()
     {
         var documentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-999999999994");
         var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
         var commandExecutor = new InMemoryRelationalCommandExecutor([
             new InMemoryRelationalCommandExecution([
                 InMemoryRelationalResultSet.Create(
-                    CreateDescriptorRow(documentUuid, documentId: 205L, codeValue: "Charter")
+                    CreateDescriptorRow(
+                        documentUuid,
+                        documentId: 205L,
+                        contentVersion: 42L,
+                        codeValue: "Charter",
+                        selectedAnchor: 77L
+                    )
                 ),
             ]),
         ]);
@@ -2048,39 +2109,37 @@ public partial class Given_DescriptorReadHandler
         var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
 
         await sut.HandleQueryAsync(
-            CreateQueryRequest(SqlDialect.Pgsql, changeVersionRange: new ChangeVersionRange(null, 900L))
+            CreateQueryRequest(
+                SqlDialect.Pgsql,
+                changeVersionRange: new ChangeVersionRange(null, 900L),
+                pageOrderingMode: PageOrderingMode.ContentVersion
+            )
         );
 
-        capturedSelection
-            .AuthorizedCandidatePage.ContinuationBoundary.Should()
-            .Be(new PageContinuationBoundary(205L, AllowsDocumentIdContinuation: false));
+        capturedSelection.AuthorizedCandidatePage.HighestSelectedAnchor.Should().Be(77L);
     }
 
-    // An accelerated selection that returned no rows still ran under an ordering, so it answers the
-    // continuation question the same way a non-empty one does. Left on the permissive default, an empty
-    // windowed page would tell Core a walk had ended that could never have been continued at all.
+    // An accelerated selection that returned no rows still ran, so it reports the same absent boundary a
+    // non-empty one would report a real value for.
     [Test]
-    public async Task It_withholds_continuation_from_an_empty_windowed_descriptor_candidate_selection()
+    public async Task It_reports_no_boundary_from_an_empty_windowed_descriptor_candidate_selection()
     {
         var capturedSuccess = await SelectEmptyDescriptorCandidatePageAsync(
-            new ChangeVersionRange(null, 900L)
+            new ChangeVersionRange(null, 900L),
+            PageOrderingMode.ContentVersion
         );
 
         capturedSuccess.EdfiDocs.Should().BeEmpty();
-        capturedSuccess.HighestSelectedDocumentId.Should().BeNull();
-        capturedSuccess.AllowsDocumentIdContinuation.Should().BeFalse();
+        capturedSuccess.HighestSelectedAnchor.Should().BeNull();
     }
 
-    // The unwindowed page really is ordered by DocumentId, so an empty selection there ends the walk.
-    // Withholding continuation from every empty page would erase that distinction.
     [Test]
-    public async Task It_keeps_continuation_for_an_empty_unwindowed_descriptor_candidate_selection()
+    public async Task It_reports_no_boundary_from_an_empty_unwindowed_descriptor_candidate_selection()
     {
         var capturedSuccess = await SelectEmptyDescriptorCandidatePageAsync(changeVersionRange: null);
 
         capturedSuccess.EdfiDocs.Should().BeEmpty();
-        capturedSuccess.HighestSelectedDocumentId.Should().BeNull();
-        capturedSuccess.AllowsDocumentIdContinuation.Should().BeTrue();
+        capturedSuccess.HighestSelectedAnchor.Should().BeNull();
     }
 
     /// <summary>
@@ -2088,7 +2147,8 @@ public partial class Given_DescriptorReadHandler
     /// the short-circuit success the selection completed with.
     /// </summary>
     private static async Task<QueryResult.QuerySuccess> SelectEmptyDescriptorCandidatePageAsync(
-        ChangeVersionRange? changeVersionRange
+        ChangeVersionRange? changeVersionRange,
+        PageOrderingMode pageOrderingMode = PageOrderingMode.DocumentId
     )
     {
         var readAccelerationCoordinator = A.Fake<IDocumentCacheReadAccelerationCoordinator>();
@@ -2122,7 +2182,11 @@ public partial class Given_DescriptorReadHandler
         var sut = CreateHandler(commandExecutor, readAccelerationCoordinator: readAccelerationCoordinator);
 
         await sut.HandleQueryAsync(
-            CreateQueryRequest(SqlDialect.Pgsql, changeVersionRange: changeVersionRange)
+            CreateQueryRequest(
+                SqlDialect.Pgsql,
+                changeVersionRange: changeVersionRange,
+                pageOrderingMode: pageOrderingMode
+            )
         );
 
         return capturedSuccess;
@@ -2650,7 +2714,8 @@ public partial class Given_DescriptorReadHandler
         int? offset = 0,
         bool includeDescriptorMetadata = true,
         CollectionPaging? paging = null,
-        ChangeVersionRange? changeVersionRange = null
+        ChangeVersionRange? changeVersionRange = null,
+        PageOrderingMode pageOrderingMode = PageOrderingMode.DocumentId
     )
     {
         var mappingSet = CreateQueryMappingSet(
@@ -2675,6 +2740,7 @@ public partial class Given_DescriptorReadHandler
             authorizationStrategyEvaluators ?? [],
             readableProfileProjectionContext,
             new TraceId("descriptor-query-trace"),
+            pageOrderingMode,
             new RelationalAuthorizationContext([], namespacePrefixes ?? []),
             changeVersionRange
         );
@@ -2855,6 +2921,12 @@ public partial class Given_DescriptorReadHandler
         );
     }
 
+    /// <param name="selectedAnchor">
+    /// The <c>SelectedAnchor</c> column a ContentVersion-anchored page-rows statement projects out of
+    /// the page-selection relation. Omitted by default, which is the shape every other descriptor
+    /// statement returns — GET-by-id, the selected-page fallback, and any DocumentId-anchored page all
+    /// project no anchor at all, so a row that carries one has to say so.
+    /// </param>
     private static IReadOnlyDictionary<string, object?> CreateDescriptorRow(
         Guid documentUuid,
         long documentId = 101L,
@@ -2866,10 +2938,12 @@ public partial class Given_DescriptorReadHandler
         string? description = "Alternative school type",
         DateOnly? effectiveBeginDate = null,
         DateOnly? effectiveEndDate = null,
-        string? discriminator = "SchoolTypeDescriptor"
+        string? discriminator = "SchoolTypeDescriptor",
+        long? selectedAnchor = null
     )
     {
-        return RelationalAccessTestData.CreateRow(
+        List<(string, object?)> columns =
+        [
             ("DocumentId", documentId),
             ("DocumentUuid", documentUuid),
             ("ContentVersion", contentVersion),
@@ -2884,8 +2958,15 @@ public partial class Given_DescriptorReadHandler
             ("Description", description),
             ("EffectiveBeginDate", effectiveBeginDate),
             ("EffectiveEndDate", effectiveEndDate),
-            ("Discriminator", discriminator)
-        );
+            ("Discriminator", discriminator),
+        ];
+
+        if (selectedAnchor is not null)
+        {
+            columns.Add(("SelectedAnchor", selectedAnchor));
+        }
+
+        return RelationalAccessTestData.CreateRow([.. columns]);
     }
 
     private static string ExpectedComposedDescriptorEtag(long contentVersion) =>

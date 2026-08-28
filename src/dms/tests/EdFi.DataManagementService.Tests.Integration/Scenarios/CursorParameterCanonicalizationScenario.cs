@@ -51,7 +51,10 @@ internal static class CursorParameterCanonicalizationScenario
     /// below need a token that survives token decode, because that is what leaves the later phase free
     /// to answer.
     /// </summary>
-    private static readonly string _decodablePageToken = PageTokenCodec.Encode(new CursorRange(1, 100));
+    private static readonly string _decodablePageToken = PageTokenCodec.Encode(
+        new CursorRange(1, 100),
+        PageOrderingMode.DocumentId
+    );
 
     /// <summary>
     /// An undecodable token first, a valid token last. If the first value won, phase 0 would answer

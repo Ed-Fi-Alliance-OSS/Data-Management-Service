@@ -39,7 +39,12 @@ internal sealed class PartitionWindowPlanner(SqlDialect dialect)
     /// Compiles the boundary statement over <paramref name="candidatePlan" /> and binds the requested
     /// count and minimum size to the names the candidate relation reserved for them.
     /// </summary>
-    /// <param name="candidatePlan">The compiled unpaged candidate relation and its bound filter values.</param>
+    /// <param name="candidatePlan">
+    /// The compiled unpaged candidate relation, its bound filter values, and the anchor it was compiled
+    /// against. The boundary statement ranks, sizes, and projects that same anchor, taken from the plan
+    /// rather than supplied again here: the relation projects exactly one column, and a separately
+    /// supplied anchor could name the other one.
+    /// </param>
     /// <param name="requestedPartitionCount">
     /// The desired partition count. Core validates and defaults it, so a value below one means the
     /// request reached the backend without that validation rather than that a client sent one.
@@ -59,7 +64,7 @@ internal sealed class PartitionWindowPlanner(SqlDialect dialect)
         ArgumentOutOfRangeException.ThrowIfLessThan(requestedPartitionCount, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(minimumPartitionSize, 1);
 
-        var mode = PageCandidateModePlanning.UnpagedCandidatesMode;
+        var mode = PageCandidateModePlanning.UnpagedCandidatesModeFor(candidatePlan.OrderingMode);
         var plan = _sqlCompiler.Compile(candidatePlan.Plan, mode);
 
         // Both are bound as Int64 so the statement's division and modulo stay in the width the row
