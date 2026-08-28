@@ -306,6 +306,143 @@ public class ValidationEntryCacheTests
         }
     }
 
+    /// <summary>
+    /// The two interleavings where a removal could reach past the entry that issued it. Both are
+    /// driven by TaskCompletionSource rather than by timing, so what they assert is the ordering and
+    /// not the scheduler.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Entry_Superseded_While_Still_In_Flight : ValidationEntryCacheTests
+    {
+        /// <summary>
+        /// A reader takes a derivative entry, decides the database is unusable and invalidates it while
+        /// its own production is still running; a second reader installs a replacement that completes;
+        /// only then does the first production fail. The first reader must still see its own exception,
+        /// and its late fault must not remove the replacement it never observed.
+        /// </summary>
+        [Test]
+        public async Task It_keeps_the_replacement_when_the_superseded_production_faults_late()
+        {
+            ControlledTimeProvider time = new(Start);
+            var cache = CacheOf(time);
+
+            TaskCompletionSource<string> inFlight = new();
+            int replacementProductions = 0;
+
+            Task<string> Replacement()
+            {
+                replacementProductions++;
+                return Task.FromResult("B");
+            }
+
+            // A is taken and its production is still running.
+            ValidationCacheRead<string> readA = cache.Read(DerivativeKey(), () => inFlight.Task);
+
+            // A's reader concludes the database is unusable and drops A before A has produced.
+            readA.Token.Invalidate();
+
+            // B is installed and completes while A is still in flight.
+            string b = await cache.Read(DerivativeKey(), Replacement).Value;
+            b.Should().Be("B");
+
+            // Only now does A fail.
+            InvalidOperationException expected = new("A failed after being superseded");
+            inFlight.SetException(expected);
+            Exception? seenByA = await CatchAsync(readA.Value);
+
+            // A's own awaiter sees A's own exception, unchanged.
+            seenByA.Should().BeSameAs(expected);
+
+            // B is still current, and reading again neither produces C nor re-produces B.
+            string current = await cache.Read(DerivativeKey(), Replacement).Value;
+            current.Should().Be("B");
+            replacementProductions.Should().Be(1, "A's late fault must not have removed B");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Two_Readers_Racing_Through_The_Expiry_Boundary : ValidationEntryCacheTests
+    {
+        /// <summary>
+        /// A clock that pauses one caller inside a chosen reading, so a test can hold a reader between
+        /// the moment it decides an entry has expired and the moment it removes it. Nothing in
+        /// production is instrumented: this is the injected clock, blocking on the way out.
+        /// </summary>
+        private sealed class GatedTimeProvider(DateTimeOffset start, int gateOnReading) : TimeProvider
+        {
+            private readonly ManualResetEventSlim _release = new(initialState: false);
+            private readonly ManualResetEventSlim _gateEntered = new(initialState: false);
+            private DateTimeOffset _now = start;
+            private int _readings;
+
+            public void Advance(TimeSpan amount) => _now += amount;
+
+            public void WaitUntilGateEntered() => _gateEntered.Wait(TimeSpan.FromSeconds(10));
+
+            public void Release() => _release.Set();
+
+            public override DateTimeOffset GetUtcNow()
+            {
+                if (Interlocked.Increment(ref _readings) == gateOnReading)
+                {
+                    _gateEntered.Set();
+                    _release.Wait(TimeSpan.FromSeconds(10));
+                }
+
+                return _now;
+            }
+        }
+
+        /// <summary>
+        /// Both readers observe the same expired entry and both try to remove it. Exactly one
+        /// replacement must exist afterwards, produced once: a removal that named the key rather than
+        /// the expired entry it observed would let the paused reader delete the other reader's
+        /// replacement and install a third.
+        /// </summary>
+        /// <remarks>
+        /// The gate fires on the fourth clock reading, which is the expiry check of the paused
+        /// reader's first pass - two readings populate the original entry, and the paused reader's own
+        /// pass takes one for the entry timestamp before the one that decides expiry. That holds it
+        /// between deciding and removing, which is the only window where the two removals can collide.
+        /// </remarks>
+        [Test]
+        public async Task It_produces_exactly_one_replacement()
+        {
+            GatedTimeProvider time = new(Start, gateOnReading: 4);
+            ValidationEntryCache<string> cache = new(time, _expiration, (_, _) => false);
+
+            await cache.Read(DerivativeKey(), () => Task.FromResult("expired")).Value;
+            time.Advance(_expiration);
+
+            int productions = 0;
+
+            Task<string> Produce()
+            {
+                int ordinal = Interlocked.Increment(ref productions);
+                return Task.FromResult($"replacement {ordinal}");
+            }
+
+            // The paused reader stops inside its expiry check, having observed the expired entry.
+            Task<string> paused = Task.Run(async () => await cache.Read(DerivativeKey(), Produce).Value);
+            time.WaitUntilGateEntered();
+
+            // The other reader runs to completion while the first is held, replacing the expired entry.
+            string byOther = await cache.Read(DerivativeKey(), Produce).Value;
+
+            // Now the paused reader resumes and performs its own removal.
+            time.Release();
+            string byPaused = await paused;
+
+            byPaused.Should().Be(byOther, "both readers must end up with the same replacement");
+
+            string current = await cache.Read(DerivativeKey(), Produce).Value;
+            current.Should().Be(byOther, "the replacement must still be the cached entry");
+            productions.Should().Be(1, "the expired entry must be replaced exactly once");
+        }
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_A_Token : ValidationEntryCacheTests

@@ -27,8 +27,45 @@ internal class ValidateDatabaseFingerprintMiddleware(
 ) : IPipelineStep
 {
     private const string MalformedFingerprintTitle = "Database Provisioning Error";
+
+    /// <summary>
+    /// The primary wording, unchanged. A malformed primary verdict is retained for the life of the
+    /// process, so repairing the database on its own genuinely is not enough.
+    /// </summary>
     private const string MalformedFingerprintDetail =
         "The target database contains malformed dms.EffectiveSchema provisioning metadata. Repair the database by re-running 'ddl provision' against an empty database. If provisioning was partial or the database was modified after provisioning, drop and recreate the database before reprovisioning. Restart the Ed-Fi API service after the database has been repaired to clear the cached fingerprint validation failure.";
+
+    /// <summary>
+    /// The same remediation without the restart, because a derivative verdict was already dropped
+    /// when this response was produced. Telling the operator to restart would send them after a
+    /// cached failure that no longer exists.
+    /// </summary>
+    private const string MalformedFingerprintDerivativeDetail =
+        "The target database contains malformed dms.EffectiveSchema provisioning metadata. Repair the database by re-running 'ddl provision' against an empty database. If provisioning was partial or the database was modified after provisioning, drop and recreate the database before reprovisioning. No restart is "
+        + "required: this result was not retained, and the next request will revalidate the database.";
+
+    private const string NotProvisionedDetail =
+        "The target database has not been provisioned. Run 'ddl provision' to initialize the "
+        + "database schema. If this database was provisioned after the Ed-Fi API service first tried "
+        + "to use it, restart the Ed-Fi API service to clear the cached provisioning state.";
+
+    private const string NotProvisionedDerivativeDetail =
+        "The target database has not been provisioned. Run 'ddl provision' to initialize the "
+        + "database schema. No restart is required: this result was not retained, and the next "
+        + "request will revalidate the database.";
+
+    private const string SchemaHashMismatchTitle = "Effective Schema Hash Mismatch";
+
+    private const string SchemaHashMismatchDetail =
+        "The database was provisioned for a different effective schema than the Ed-Fi API service expects. "
+        + "The database must be reprovisioned with 'ddl provision' against a fresh database "
+        + "and the Ed-Fi API service restarted to clear the cached validation state.";
+
+    private const string SchemaHashMismatchDerivativeDetail =
+        "The database was provisioned for a different effective schema than the Ed-Fi API service "
+        + "expects. The database must be reprovisioned with 'ddl provision' against a fresh "
+        + "database. No restart is required: this result was not retained, and the next request "
+        + "will revalidate the database.";
 
     private const string MalformedPrimaryRemediation =
         "Restart the Ed-Fi API service after repairing the database, because a malformed fingerprint "
@@ -38,11 +75,13 @@ internal class ValidateDatabaseFingerprintMiddleware(
         "The cached verdict for this derivative database has already been dropped, so repairing the "
         + "database is enough and no restart is required.";
 
-    private const string SchemaHashMismatchTitle = "Effective Schema Hash Mismatch";
-    private const string SchemaHashMismatchDetail =
-        "The database was provisioned for a different effective schema than the Ed-Fi API service expects. "
-        + "The database must be reprovisioned with 'ddl provision' against a fresh database "
-        + "and the Ed-Fi API service restarted to clear the cached validation state.";
+    /// <summary>
+    /// Which of a paired detail message this request is told, decided by the policy class its
+    /// verdict was cached under. The pairs differ only in their recovery instruction; the problem
+    /// type, title, status, content type, and envelope are identical either way.
+    /// </summary>
+    private static string DetailFor(EffectiveDataStoreTarget target, string primary, string derivative) =>
+        target.Kind == EffectiveTargetKind.Primary ? primary : derivative;
 
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
@@ -86,12 +125,18 @@ internal class ValidateDatabaseFingerprintMiddleware(
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
+            string malformedDetail = DetailFor(
+                target,
+                MalformedFingerprintDetail,
+                MalformedFingerprintDerivativeDetail
+            );
+
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 503,
                 Body: FailureResponse.ForDatabaseFingerprintValidationError(
                     MalformedFingerprintTitle,
-                    MalformedFingerprintDetail,
-                    [.. ex.ValidationIssues, MalformedFingerprintDetail],
+                    malformedDetail,
+                    [.. ex.ValidationIssues, malformedDetail],
                     requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: []
@@ -137,7 +182,7 @@ internal class ValidateDatabaseFingerprintMiddleware(
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 503,
                 Body: FailureResponse.ForDatabaseNotProvisioned(
-                    "The target database has not been provisioned. Run 'ddl provision' to initialize the database schema. If this database was provisioned after the Ed-Fi API service first tried to use it, restart the Ed-Fi API service to clear the cached provisioning state.",
+                    DetailFor(target, NotProvisionedDetail, NotProvisionedDerivativeDetail),
                     requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: []
@@ -162,12 +207,18 @@ internal class ValidateDatabaseFingerprintMiddleware(
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
+            string mismatchDetail = DetailFor(
+                target,
+                SchemaHashMismatchDetail,
+                SchemaHashMismatchDerivativeDetail
+            );
+
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 503,
                 Body: FailureResponse.ForDatabaseFingerprintValidationError(
                     SchemaHashMismatchTitle,
-                    SchemaHashMismatchDetail,
-                    [SchemaHashMismatchDetail],
+                    mismatchDetail,
+                    [mismatchDetail],
                     requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: []

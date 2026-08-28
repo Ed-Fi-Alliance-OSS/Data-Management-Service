@@ -32,10 +32,26 @@ internal class ValidateResourceKeySeedMiddleware(
 ) : IPipelineStep
 {
     private const string ResourceKeySeedMismatchTitle = "Resource Key Seed Mismatch";
+
+    /// <summary>
+    /// The primary wording, unchanged. A primary mismatch is cached for the life of the process,
+    /// so reprovisioning on its own genuinely is not enough.
+    /// </summary>
     private const string ResourceKeySeedMismatchDetail =
         "The database resource key seed does not match the expected schema. "
         + "The database must be reprovisioned with 'ddl provision' against a fresh database "
         + "and the Ed-Fi API service restarted to clear the cached validation state.";
+
+    /// <summary>
+    /// The same remediation without the restart. This request has already dropped the derivative
+    /// verdict, so the next one revalidates; sending the operator after a cached result that no
+    /// longer exists would be false guidance.
+    /// </summary>
+    private const string ResourceKeySeedMismatchDerivativeDetail =
+        "The database resource key seed does not match the expected schema. "
+        + "The database must be reprovisioned with 'ddl provision' against a fresh database. "
+        + "No restart is required: this result was not retained, and the next request will "
+        + "revalidate the database.";
 
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
@@ -118,6 +134,13 @@ internal class ValidateResourceKeySeedMiddleware(
                 // without a restart; for a primary the token is a no-op and the verdict stands.
                 read.Token.Invalidate();
 
+                // The recovery instruction differs by policy class: the primary verdict just
+                // read is retained, the derivative one is not.
+                string mismatchDetail =
+                    target.Kind == EffectiveTargetKind.Primary
+                        ? ResourceKeySeedMismatchDetail
+                        : ResourceKeySeedMismatchDerivativeDetail;
+
                 // Use SanitizeForConsole for the diff report to preserve tuple
                 // punctuation (parentheses, commas, brackets) needed for readability.
                 logger.LogError(
@@ -133,8 +156,8 @@ internal class ValidateResourceKeySeedMiddleware(
                     StatusCode: 503,
                     Body: FailureResponse.ForResourceKeySeedValidationError(
                         ResourceKeySeedMismatchTitle,
-                        ResourceKeySeedMismatchDetail,
-                        [ResourceKeySeedMismatchDetail],
+                        mismatchDetail,
+                        [mismatchDetail],
                         requestInfo.FrontendRequest.TraceId
                     ),
                     Headers: []

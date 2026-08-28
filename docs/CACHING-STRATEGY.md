@@ -491,6 +491,11 @@ The policy class is `Primary` for a parent's own database and `Derivative` for a
 snapshot. Including it in the key is what keeps a primary and a derivative apart when their configured
 text happens to be identical — otherwise one of them would inherit the other's lifetime.
 
+The key deliberately carries no data store id and no tenant. Two data stores configured with the same
+connection string are the same database, so they share one entry and one verdict; that is the point of
+keying on what is being validated rather than on who asked for it. A verdict is likewise not per
+tenant: a database two tenants can reach is validated once.
+
 | Policy class | Successful verdict | Negative verdict (unprovisioned, wrong hash, key mismatch) | Fault |
 | --- | --- | --- | --- |
 | `Primary` | cached for the process lifetime | cached for the process lifetime | evicted, except a malformed-fingerprint failure, which is retained |
@@ -525,8 +530,8 @@ windows; the first request routed to one is what reaches it.
 | NpgsqlDS     | ConcurDict   | Sing. | None   | N/A    | No       | Shutdown     |
 | data store | ConcurDict   | Sing. | Configurable (CacheSettings.DataStoreCacheExpirationSeconds) | Yes    | No       | TTL + Restart      |
 | OIDC Meta    | ConfigMgr    | Sing. | 60 min | No     | Yes      | Auto-refresh |
-| Fingerprint  | ConcurDict   | Sing. | Primary: none. Derivative: CacheSettings.DerivativeValidationCacheExpirationSeconds, bounded by the data store TTL | Per data store | Yes | TTL + reader token + fault eviction |
-| Resource key | ConcurDict   | Sing. | Primary: none. Derivative: same as above | Per data store | Yes | TTL + reader token + fault eviction |
+| Fingerprint  | ConcurDict   | Sing. | Primary: none. Derivative: CacheSettings.DerivativeValidationCacheExpirationSeconds, bounded by the data store TTL | No: keyed by policy class + configured connection string, so data stores and tenants sharing a connection string share one entry | Yes | TTL + reader token + fault eviction |
+| Resource key | ConcurDict   | Sing. | Primary: none. Derivative: same as above | No: same key as above | Yes | TTL + reader token + fault eviction |
 
 ## Cache Invalidation Patterns
 
