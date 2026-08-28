@@ -280,11 +280,7 @@ provider.
   claim and action, and (2) if granted, evaluation of the authorization strategy
   associated with that resource claim and action against the specific data being
   accessed. A request SHALL be denied unless both phases pass.
-- **FR-AUTHZ-2.** When a request is denied because no relationship path could be
-  established between the caller and the requested data, the system SHALL return
-  a response identifying which relationship is missing, to support self-service
-  troubleshooting.
-- **FR-AUTHZ-3.** The system SHALL support at least the following authorization
+- **FR-AUTHZ-2.** The system SHALL support at least the following authorization
   strategies, selectable per resource claim and action:
   - **No further authorization required** — the resource/action check alone is
     sufficient (used where no relationship can or should be checked, such as
@@ -295,6 +291,10 @@ provider.
     granted based on a path between the caller's associated education
     organization(s) and the education organization and/or person referenced by
     the target data.
+- **FR-AUTHZ-3.** When a request is denied because no relationship path could be
+  established between the caller and the requested data, the system SHALL return
+  a response identifying which relationship is missing, to support self-service
+  troubleshooting.
 - **FR-AUTHZ-4.** When more than one relationship-based strategy variant is
   configured for the same resource claim and action, the system SHALL grant
   access if any one of them succeeds (OR logic). Non-relationship strategies
@@ -323,8 +323,9 @@ context from the bearer token.
   of its subordinate education organizations (e.g., its schools), without
   per-school configuration.
 - **FR-RELATIONSHIP-2.** The system SHALL determine a caller's relationship to a
-  student, staff member, or contact through a defined set of primary
-  relationship associations (at minimum: student-school enrollment,
+  student, staff member, or contact through a fixed set of primary relationship
+  associations defined by the system's own security configuration for each
+  resource (at minimum: student-school enrollment,
   student-education-organization responsibility, student-contact association,
   and staff assignment/employment associations), rather than through ad hoc
   inspection of arbitrary resource data.
