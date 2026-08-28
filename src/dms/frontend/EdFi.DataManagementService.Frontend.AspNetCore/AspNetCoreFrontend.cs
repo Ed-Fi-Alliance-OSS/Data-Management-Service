@@ -773,7 +773,8 @@ public static class AspNetCoreFrontend
                     appSettings,
                     includeBody: true,
                     includeForm: false
-                )
+                ),
+                httpContext.RequestAborted
             ),
             httpContext,
             dmsPath
@@ -824,7 +825,8 @@ public static class AspNetCoreFrontend
                     appSettings,
                     includeBody: true,
                     includeForm: false
-                )
+                ),
+                httpContext.RequestAborted
             ),
             httpContext,
             dmsPath

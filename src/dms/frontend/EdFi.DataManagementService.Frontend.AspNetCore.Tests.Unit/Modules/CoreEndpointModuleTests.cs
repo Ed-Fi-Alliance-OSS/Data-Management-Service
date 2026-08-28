@@ -219,9 +219,9 @@ public class CoreEndpointModuleTests
         var apiService = A.Fake<IApiService>();
         A.CallTo(() => apiService.Get(A<FrontendRequest>._, A<CancellationToken>._))
             .Returns(Task.FromResult(FakeCoreOkResponse()));
-        A.CallTo(() => apiService.Upsert(A<FrontendRequest>._))
+        A.CallTo(() => apiService.Upsert(A<FrontendRequest>._, A<CancellationToken>._))
             .Returns(Task.FromResult(FakeCoreOkResponse()));
-        A.CallTo(() => apiService.UpdateById(A<FrontendRequest>._))
+        A.CallTo(() => apiService.UpdateById(A<FrontendRequest>._, A<CancellationToken>._))
             .Returns(Task.FromResult(FakeCoreOkResponse()));
         A.CallTo(() => apiService.DeleteById(A<FrontendRequest>._))
             .Returns(Task.FromResult(FakeCoreOkResponse()));
@@ -663,10 +663,12 @@ public class CoreEndpointModuleTests
                     .MustHaveHappenedOnceExactly();
                 break;
             case "POST":
-                A.CallTo(() => apiService.Upsert(A<FrontendRequest>._)).MustHaveHappenedOnceExactly();
+                A.CallTo(() => apiService.Upsert(A<FrontendRequest>._, A<CancellationToken>._))
+                    .MustHaveHappenedOnceExactly();
                 break;
             case "PUT":
-                A.CallTo(() => apiService.UpdateById(A<FrontendRequest>._)).MustHaveHappenedOnceExactly();
+                A.CallTo(() => apiService.UpdateById(A<FrontendRequest>._, A<CancellationToken>._))
+                    .MustHaveHappenedOnceExactly();
                 break;
             case "DELETE":
                 A.CallTo(() => apiService.DeleteById(A<FrontendRequest>._)).MustHaveHappenedOnceExactly();

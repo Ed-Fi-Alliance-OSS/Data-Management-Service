@@ -20,6 +20,7 @@ using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Telemetry;
 using EdFi.DataManagementService.Core.Validation;
+using EdFi.DataManagementService.CustomValidation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -258,6 +259,7 @@ internal class ApiService : IApiService
             new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
+            new CustomResourceValidationMiddleware(_logger, CustomValidationOperation.Upsert),
             new UpsertHandler(_logger, _resiliencePipeline),
         ]);
 
@@ -400,6 +402,7 @@ internal class ApiService : IApiService
             new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
+            new CustomResourceValidationMiddleware(_logger, CustomValidationOperation.Update),
             new UpdateByIdHandler(_logger, _resiliencePipeline),
         ]);
         return new PipelineProvider(steps);
@@ -603,10 +606,18 @@ internal class ApiService : IApiService
     /// <summary>
     /// DMS entry point for API upsert requests
     /// </summary>
-    public async Task<IFrontendResponse> Upsert(FrontendRequest frontendRequest)
+    public async Task<IFrontendResponse> Upsert(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken = default
+    )
     {
         await using var scope = _serviceScopeFactory.CreateAsyncScope();
-        RequestInfo requestInfo = new(frontendRequest, RequestMethod.POST, scope.ServiceProvider);
+        RequestInfo requestInfo = new(
+            frontendRequest,
+            RequestMethod.POST,
+            scope.ServiceProvider,
+            cancellationToken
+        );
         await _upsertSteps.Value.Run(requestInfo);
         return requestInfo.FrontendResponse;
     }
@@ -681,10 +692,18 @@ internal class ApiService : IApiService
     /// <summary>
     /// DMS entry point for all API PUT requests, which are "by id"
     /// </summary>
-    public async Task<IFrontendResponse> UpdateById(FrontendRequest frontendRequest)
+    public async Task<IFrontendResponse> UpdateById(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken = default
+    )
     {
         await using var scope = _serviceScopeFactory.CreateAsyncScope();
-        RequestInfo requestInfo = new(frontendRequest, RequestMethod.PUT, scope.ServiceProvider);
+        RequestInfo requestInfo = new(
+            frontendRequest,
+            RequestMethod.PUT,
+            scope.ServiceProvider,
+            cancellationToken
+        );
         await _updateSteps.Value.Run(requestInfo);
         return requestInfo.FrontendResponse;
     }

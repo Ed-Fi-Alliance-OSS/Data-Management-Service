@@ -20,7 +20,10 @@ public interface IApiService
     /// <summary>
     /// DMS entry point for API upsert requests
     /// </summary>
-    Task<IFrontendResponse> Upsert(FrontendRequest frontendRequest);
+    Task<IFrontendResponse> Upsert(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// DMS entry point for all API GET by id requests
@@ -33,7 +36,10 @@ public interface IApiService
     /// <summary>
     /// DMS entry point for all API PUT requests, which are "by id"
     /// </summary>
-    Task<IFrontendResponse> UpdateById(FrontendRequest frontendRequest);
+    Task<IFrontendResponse> UpdateById(
+        FrontendRequest frontendRequest,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// DMS entry point for all API DELETE requests, which are "by id"

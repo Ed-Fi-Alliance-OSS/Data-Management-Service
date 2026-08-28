@@ -17,8 +17,10 @@ using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Telemetry;
+using EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using EdFi.DataManagementService.Core.Validation;
+using EdFi.DataManagementService.CustomValidation;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -497,10 +499,12 @@ public class PipelineOrderingTests
 
     /// <summary>
     /// The real ApiService, with <paramref name="collectionPagingTelemetry" /> registered as the
-    /// telemetry its pipeline factories resolve.
+    /// telemetry its pipeline factories resolve, and <paramref name="configureServices" /> given the
+    /// chance to add registrations none of the other fixtures in this file need.
     /// </summary>
     private static ApiService BuildRoutedResourceApiService(
-        ICollectionPagingTelemetry? collectionPagingTelemetry = null
+        ICollectionPagingTelemetry? collectionPagingTelemetry = null,
+        Action<IServiceCollection>? configureServices = null
     )
     {
         var services = new ServiceCollection();
@@ -547,6 +551,8 @@ public class PipelineOrderingTests
         services.AddTransient<ILogger<ProfileWritePipelineMiddleware>>(_ =>
             NullLogger<ProfileWritePipelineMiddleware>.Instance
         );
+
+        configureServices?.Invoke(services);
 
         var serviceProvider = services.BuildServiceProvider();
 
@@ -683,6 +689,112 @@ public class PipelineOrderingTests
                     parseBodyIndex,
                     "ValidateRouteSemanticsMiddleware must reject invalid write route semantics before request body parsing"
                 );
+        }
+
+        // "Immediately after authorization filters" and "immediately before the terminal handler"
+        // both have to hold for the slot to be pinned exactly: a step merely somewhere after
+        // ProvideAuthorizationFiltersMiddleware and somewhere before the handler could still drift
+        // to a different position without either relative-ordering test noticing.
+        [TestCase("CreateUpsertPipeline")]
+        [TestCase("CreateUpdatePipeline")]
+        public void It_places_custom_resource_validation_immediately_after_authorization_filters_and_immediately_before_the_terminal_handler(
+            string factoryMethodName
+        )
+        {
+            var stepTypes = GetRoutedResourcePipelineStepTypes(factoryMethodName);
+            var authorizationFiltersIndex = stepTypes.IndexOf(typeof(ProvideAuthorizationFiltersMiddleware));
+            var customValidationIndex = stepTypes.IndexOf(typeof(CustomResourceValidationMiddleware));
+
+            authorizationFiltersIndex.Should().BeGreaterThanOrEqualTo(0);
+            customValidationIndex.Should().BeGreaterThanOrEqualTo(0);
+            customValidationIndex
+                .Should()
+                .Be(
+                    authorizationFiltersIndex + 1,
+                    "CustomResourceValidationMiddleware must run immediately after ProvideAuthorizationFiltersMiddleware"
+                );
+            customValidationIndex
+                .Should()
+                .Be(
+                    stepTypes.Count - 2,
+                    "CustomResourceValidationMiddleware must run immediately before the terminal handler"
+                );
+        }
+
+        /// <summary>
+        /// GetTokenInfoHandler and AvailableChangeVersionsHandler are both resolved through
+        /// GetRequiredService, and BuildRoutedResourceApiService does not carry either
+        /// registration - no other fixture in this file needs them. This builder adds only what
+        /// those two factories require to build without throwing, so an omitted registration never
+        /// masquerades as an absent CustomResourceValidationMiddleware.
+        /// </summary>
+        private static ApiService BuildOmissionCheckApiService() =>
+            BuildRoutedResourceApiService(configureServices: services =>
+            {
+                services.AddSingleton<IClaimSetProvider>(A.Fake<IClaimSetProvider>());
+                services.AddSingleton(A.Fake<ITokenInfoRelationalMappingSetResolver>());
+                services.AddTransient<GetTokenInfoHandler>();
+                services.AddTransient<ILogger<GetTokenInfoHandler>>(_ =>
+                    NullLogger<GetTokenInfoHandler>.Instance
+                );
+
+                services.AddTransient<AvailableChangeVersionsHandler>();
+                services.AddTransient<ILogger<AvailableChangeVersionsHandler>>(_ =>
+                    NullLogger<AvailableChangeVersionsHandler>.Instance
+                );
+            });
+
+        // Custom validation is POST and PUT only. DELETE belongs in this list even though the
+        // design treats it as a stated non-goal: without a case for it here, an implementation that
+        // added the step to CreateDeleteByIdPipeline would satisfy every other criterion in this
+        // epic and still pass.
+        [TestCase("CreateGetByIdPipeline")]
+        [TestCase("CreateQueryPipeline")]
+        [TestCase("CreateDeleteByIdPipeline")]
+        [TestCase("CreateGetPartitionsPipeline")]
+        [TestCase("CreateGetTokenInfoPipeline")]
+        [TestCase("CreateGetAvailableChangeVersionsPipeline")]
+        [TestCase("CreateGetTrackedChangesPipeline")]
+        [TestCase("CreateMethodNotAllowedPipeline")]
+        [TestCase("CreateTrackedChangeMethodNotAllowedPipeline")]
+        public void It_is_absent_from_every_non_write_pipeline(string factoryMethodName)
+        {
+            var stepTypes = GetStepTypes(BuildOmissionCheckApiService(), factoryMethodName);
+
+            stepTypes.Should().NotContain(typeof(CustomResourceValidationMiddleware));
+        }
+
+        // The enum each write pipeline wires CustomResourceValidationMiddleware with is a
+        // constructor argument fixed at the wiring site in ApiService.cs, so a test that news up the
+        // middleware directly (as CustomResourceValidationMiddlewareTests does) cannot observe it. A
+        // swapped or duplicated mapping between the two pipelines otherwise leaves every other test
+        // in this plan green.
+        [TestCase("CreateUpsertPipeline", CustomValidationOperation.Upsert)]
+        [TestCase("CreateUpdatePipeline", CustomValidationOperation.Update)]
+        public async Task It_wires_the_step_with_the_operation_matching_its_own_pipeline(
+            string factoryMethodName,
+            CustomValidationOperation expectedOperation
+        )
+        {
+            var validator = new CustomResourceValidationMiddlewareTests.FakeValidator
+            {
+                AppliesTo = [new ValidatedResource("Ed-Fi", "School")],
+            };
+            var scopedServiceProvider = new ServiceCollection()
+                .AddSingleton<ICustomResourceValidator>(validator)
+                .BuildServiceProvider();
+
+            IPipelineStep step = GetSteps(BuildRoutedResourceApiService(), factoryMethodName)
+                .OfType<CustomResourceValidationMiddleware>()
+                .Single();
+
+            RequestInfo requestInfo = CustomResourceValidationMiddlewareTests.BuildRequestInfo(
+                scopedServiceProvider
+            );
+
+            await step.Execute(requestInfo, TestHelper.NullNext);
+
+            validator.ReceivedOperations.Should().ContainSingle().Which.Should().Be(expectedOperation);
         }
     }
 
