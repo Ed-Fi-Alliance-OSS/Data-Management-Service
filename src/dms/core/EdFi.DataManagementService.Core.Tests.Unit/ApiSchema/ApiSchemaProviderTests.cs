@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Reflection;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.ApiSchema.Helpers;
@@ -1086,4 +1087,364 @@ internal static class ApiSchemaProviderTestFixtures
             NullLogger.Instance
         );
     }
+}
+
+/// <summary>
+/// Reads Namespace securable elements out of a pinned <c>EdFi.DataStandard*.ApiSchema</c> package
+/// exactly as NuGet restored it. The packaged payload is the artifact the DMS runtime provisions
+/// from by default, so the resource-root scope rule has to hold in the package itself rather than
+/// only in the checked-in authoritative fixtures, and it has to hold with nothing standing between
+/// the package and the assertion, because DMS deliberately applies no load-time correction.
+/// </summary>
+internal static class PackagedApiSchemaContract
+{
+    /// <summary>
+    /// Parses <c>projectSchema.resourceSchemas</c> from the packaged <c>ApiSchema.json</c> of the
+    /// package whose restored root the build recorded under
+    /// <paramref name="packageRootMetadataKey"/>.
+    /// </summary>
+    public static JsonObject LoadPackagedResourceSchemas(string packageRootMetadataKey)
+    {
+        string? packageRoot = typeof(PackagedApiSchemaContract)
+            .Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .SingleOrDefault(attribute =>
+                string.Equals(attribute.Key, packageRootMetadataKey, StringComparison.Ordinal)
+            )
+            ?.Value;
+
+        if (string.IsNullOrWhiteSpace(packageRoot))
+        {
+            throw new InvalidOperationException(
+                $"The build recorded no restored package root for '{packageRootMetadataKey}'. The test "
+                    + "project must reference that package with GeneratePathProperty enabled."
+            );
+        }
+
+        string apiSchemaPath = Path.Combine(
+            packageRoot,
+            "contentFiles",
+            "any",
+            "any",
+            "ApiSchema",
+            "ApiSchema.json"
+        );
+
+        if (!File.Exists(apiSchemaPath))
+        {
+            throw new FileNotFoundException(
+                $"Packaged ApiSchema not found for '{packageRootMetadataKey}': {apiSchemaPath}",
+                apiSchemaPath
+            );
+        }
+
+        if (
+            JsonNode.Parse(File.ReadAllText(apiSchemaPath))?["projectSchema"]?["resourceSchemas"]
+            is not JsonObject resourceSchemas
+        )
+        {
+            throw new InvalidOperationException(
+                $"Packaged ApiSchema is missing projectSchema.resourceSchemas: {apiSchemaPath}"
+            );
+        }
+
+        return resourceSchemas;
+    }
+
+    /// <summary>
+    /// Extracts every <c>securableElements.Namespace</c> entry with its declaring resource endpoint
+    /// name, e.g. <c>("studentAssessments", "$.assessmentReference.namespace")</c>.
+    /// </summary>
+    public static IReadOnlyList<(string Resource, string Path)> NamespaceSecurablePaths(
+        JsonObject resourceSchemas
+    )
+    {
+        List<(string Resource, string Path)> paths = [];
+
+        foreach ((string resourceName, JsonNode? resourceSchema) in resourceSchemas)
+        {
+            if (resourceSchema?["securableElements"]?["Namespace"] is not JsonArray namespacePaths)
+            {
+                continue;
+            }
+
+            foreach (JsonNode? pathNode in namespacePaths)
+            {
+                string path =
+                    pathNode?.GetValue<string>()
+                    ?? throw new InvalidOperationException(
+                        $"Resource '{resourceName}' has a null securableElements.Namespace entry."
+                    );
+                paths.Add((resourceName, path));
+            }
+        }
+
+        return paths;
+    }
+
+    public static IReadOnlyList<(string Resource, string Path)> CollectionScopedPaths(
+        IReadOnlyList<(string Resource, string Path)> namespacePaths
+    ) => [.. namespacePaths.Where(entry => entry.Path.Contains("[*]", StringComparison.Ordinal))];
+
+    public static IReadOnlyList<(string Resource, string Path)> ExtensionScopedPaths(
+        IReadOnlyList<(string Resource, string Path)> namespacePaths
+    ) => [.. namespacePaths.Where(entry => entry.Path.Contains("._ext.", StringComparison.Ordinal))];
+
+    public static Dictionary<string, string[]> GroupByResource(
+        IReadOnlyList<(string Resource, string Path)> namespacePaths
+    ) =>
+        namespacePaths
+            .GroupBy(entry => entry.Resource, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(entry => entry.Path).ToArray(),
+                StringComparer.Ordinal
+            );
+
+    /// <summary>
+    /// Recursively collects every string value beneath a resource-schema section, so a retention
+    /// check can assert a JSONPath is still carried by that section regardless of which property
+    /// holds it.
+    /// </summary>
+    public static HashSet<string> CollectStringValues(JsonNode? node)
+    {
+        HashSet<string> values = new(StringComparer.Ordinal);
+        Collect(node, values);
+        return values;
+
+        static void Collect(JsonNode? current, HashSet<string> accumulator)
+        {
+            switch (current)
+            {
+                case JsonObject jsonObject:
+                    foreach ((_, JsonNode? child) in jsonObject)
+                    {
+                        Collect(child, accumulator);
+                    }
+                    break;
+                case JsonArray jsonArray:
+                    foreach (JsonNode? child in jsonArray)
+                    {
+                        Collect(child, accumulator);
+                    }
+                    break;
+                case JsonValue jsonValue when jsonValue.TryGetValue<string>(out var stringValue):
+                    accumulator.Add(stringValue);
+                    break;
+            }
+        }
+    }
+}
+
+/// <summary>
+/// Namespace-based authorization resolves a securable element only against the resource's own root
+/// table, so a <c>securableElements.Namespace</c> path that descends into a collection
+/// (<c>[*]</c>) or into a resource-extension container (<c>._ext.</c>) can never take part in an
+/// authorization plan; it only yields an authorization index no plan will use. Both Data Standard
+/// families this repository pins are held to that rule, so the assertions are shared and only the
+/// paths each model declares differ.
+/// </summary>
+/// <summary>
+/// A resource endpoint name paired with the exact <c>securableElements.Namespace</c> paths that
+/// resource must still declare, in declaration order.
+/// </summary>
+/// <param name="Resource">The resource endpoint name, e.g. <c>studentAssessments</c>.</param>
+/// <param name="Paths">The root-scope Namespace securable paths the resource must declare.</param>
+public readonly record struct RetainedNamespaceSecurables(string Resource, string[] Paths);
+
+public abstract class PackagedApiSchemaNamespaceSecurableContract
+{
+    /// <summary>
+    /// Key of the assembly metadata entry carrying the restored package root to read.
+    /// </summary>
+    protected abstract string PackageRootMetadataKey { get; }
+
+    /// <summary>
+    /// The collection-scoped Namespace paths this Data Standard historically declared and that must
+    /// never reappear as securable elements. Each one remains valid reference metadata elsewhere in
+    /// its resource schema.
+    /// </summary>
+    protected abstract IReadOnlyList<(string Resource, string Path)> RemovedCollectionPaths { get; }
+
+    /// <summary>
+    /// Root-scope Namespace securable elements that must survive intact, covering both the resources
+    /// the fix touched and unaffected resources that prove it did not over-remove.
+    /// </summary>
+    protected abstract IReadOnlyList<RetainedNamespaceSecurables> RetainedRootScopePaths { get; }
+
+    /// <summary>
+    /// Resources whose only Namespace securable elements were collection-scoped, leaving them
+    /// declaring none at all.
+    /// </summary>
+    protected abstract IReadOnlyList<string> ResourcesWithoutNamespaceSecurables { get; }
+
+    private JsonObject _resourceSchemas = default!;
+    private IReadOnlyList<(string Resource, string Path)> _namespacePaths = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        _resourceSchemas = PackagedApiSchemaContract.LoadPackagedResourceSchemas(PackageRootMetadataKey);
+        _namespacePaths = PackagedApiSchemaContract.NamespaceSecurablePaths(_resourceSchemas);
+    }
+
+    [Test]
+    public void It_declares_no_collection_scoped_namespace_securable_elements()
+    {
+        PackagedApiSchemaContract
+            .CollectionScopedPaths(_namespacePaths)
+            .Should()
+            .BeEmpty("Namespace authorization applies only to resource-root fields");
+    }
+
+    [Test]
+    public void It_declares_no_extension_scoped_namespace_securable_elements()
+    {
+        PackagedApiSchemaContract
+            .ExtensionScopedPaths(_namespacePaths)
+            .Should()
+            .BeEmpty("fields beneath an _ext container must not be Namespace securable elements");
+    }
+
+    [Test]
+    public void It_declares_none_of_the_paths_the_generator_fix_removed()
+    {
+        _namespacePaths.Should().NotContain(RemovedCollectionPaths);
+    }
+
+    [Test]
+    public void It_retains_the_root_scope_namespace_securable_elements()
+    {
+        Dictionary<string, string[]> namespacePathsByResource = PackagedApiSchemaContract.GroupByResource(
+            _namespacePaths
+        );
+
+        foreach ((string resource, string[] paths) in RetainedRootScopePaths)
+        {
+            namespacePathsByResource
+                .Should()
+                .ContainKey(
+                    resource,
+                    "'{0}' must keep its root-scope Namespace securable elements",
+                    resource
+                );
+            namespacePathsByResource[resource].Should().Equal(paths);
+        }
+
+        foreach (string resource in ResourcesWithoutNamespaceSecurables)
+        {
+            namespacePathsByResource
+                .Should()
+                .NotContainKey(resource, "'{0}' has no root-scope Namespace securable element", resource);
+        }
+    }
+
+    [Test]
+    public void It_retains_reference_metadata_for_the_removed_paths()
+    {
+        foreach ((string resource, string path) in RemovedCollectionPaths)
+        {
+            JsonNode? resourceSchema = _resourceSchemas[resource];
+            resourceSchema.Should().NotBeNull($"resource '{resource}' must exist in the package");
+
+            PackagedApiSchemaContract
+                .CollectStringValues(resourceSchema!["documentPathsMapping"])
+                .Should()
+                .Contain(path, $"'{resource}' must keep the reference metadata for '{path}'");
+        }
+    }
+}
+
+/// <summary>
+/// Test fixture for the Namespace securable-element scope contract of the pinned Data Standard 5.2
+/// core ApiSchema package.
+/// </summary>
+[TestFixture]
+public class Given_the_packaged_DataStandard52_core_ApiSchema : PackagedApiSchemaNamespaceSecurableContract
+{
+    /// <inheritdoc />
+    protected override string PackageRootMetadataKey => "DataStandard52ApiSchemaPackageRoot";
+
+    /// <inheritdoc />
+    protected override IReadOnlyList<(string Resource, string Path)> RemovedCollectionPaths =>
+        [
+            (
+                "assessmentAdministrations",
+                "$.assessmentBatteryParts[*].assessmentBatteryPartReference.namespace"
+            ),
+            ("assessmentBatteryParts", "$.objectiveAssessments[*].objectiveAssessmentReference.namespace"),
+            ("graduationPlans", "$.requiredAssessments[*].assessmentReference.namespace"),
+            ("objectiveAssessments", "$.assessmentItems[*].assessmentItemReference.namespace"),
+            ("studentAssessments", "$.items[*].assessmentItemReference.namespace"),
+            ("studentAssessments", "$.studentObjectiveAssessments[*].objectiveAssessmentReference.namespace"),
+        ];
+
+    /// <inheritdoc />
+    protected override IReadOnlyList<RetainedNamespaceSecurables> RetainedRootScopePaths =>
+        [
+            new("assessmentAdministrations", ["$.assessmentReference.namespace"]),
+            new("assessmentBatteryParts", ["$.assessmentReference.namespace"]),
+            new(
+                "objectiveAssessments",
+                ["$.assessmentReference.namespace", "$.parentObjectiveAssessmentReference.namespace"]
+            ),
+            new("studentAssessments", ["$.assessmentReference.namespace"]),
+            new("assessments", ["$.namespace"]),
+            new("assessmentItems", ["$.assessmentReference.namespace"]),
+            new("educationContents", ["$.namespace"]),
+        ];
+
+    /// <inheritdoc />
+    protected override IReadOnlyList<string> ResourcesWithoutNamespaceSecurables => ["graduationPlans"];
+}
+
+/// <summary>
+/// Test fixture for the Namespace securable-element scope contract of the pinned Data Standard 6.1
+/// core ApiSchema package. The 6.1 model folds TPDM into core and models parent objective
+/// assessments and required certifications as collections, so it declared three collection-scoped
+/// paths that 5.2 does not.
+/// </summary>
+[TestFixture]
+public class Given_the_packaged_DataStandard61_core_ApiSchema : PackagedApiSchemaNamespaceSecurableContract
+{
+    /// <inheritdoc />
+    protected override string PackageRootMetadataKey => "DataStandard61ApiSchemaPackageRoot";
+
+    /// <inheritdoc />
+    protected override IReadOnlyList<(string Resource, string Path)> RemovedCollectionPaths =>
+        [
+            (
+                "assessmentAdministrations",
+                "$.assessmentBatteryParts[*].assessmentBatteryPartReference.namespace"
+            ),
+            ("assessmentBatteryParts", "$.objectiveAssessments[*].objectiveAssessmentReference.namespace"),
+            ("certifications", "$.certificationExams[*].certificationExamReference.namespace"),
+            ("graduationPlans", "$.requiredAssessments[*].assessmentReference.namespace"),
+            ("graduationPlans", "$.requiredCertifications[*].certificationReference.namespace"),
+            ("objectiveAssessments", "$.assessmentItems[*].assessmentItemReference.namespace"),
+            (
+                "objectiveAssessments",
+                "$.parentObjectiveAssessments[*].parentObjectiveAssessmentReference.namespace"
+            ),
+            ("studentAssessments", "$.items[*].assessmentItemReference.namespace"),
+            ("studentAssessments", "$.studentObjectiveAssessments[*].objectiveAssessmentReference.namespace"),
+        ];
+
+    /// <inheritdoc />
+    protected override IReadOnlyList<RetainedNamespaceSecurables> RetainedRootScopePaths =>
+        [
+            new("assessmentAdministrations", ["$.assessmentReference.namespace"]),
+            new("assessmentBatteryParts", ["$.assessmentReference.namespace"]),
+            new("certifications", ["$.namespace"]),
+            new("objectiveAssessments", ["$.assessmentReference.namespace"]),
+            new("studentAssessments", ["$.assessmentReference.namespace"]),
+            new("assessments", ["$.namespace"]),
+            new("assessmentItems", ["$.assessmentReference.namespace"]),
+            new("educationContents", ["$.namespace"]),
+        ];
+
+    /// <inheritdoc />
+    protected override IReadOnlyList<string> ResourcesWithoutNamespaceSecurables => ["graduationPlans"];
 }

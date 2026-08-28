@@ -25,6 +25,26 @@
         <PackageReference Include="coverlet.msbuild" />
         <PackageReference Include="Microsoft.CodeAnalysis" />
         <PackageReference Include="EdFi.DataStandard52.ApiSchema" GeneratePathProperty="true" />
+        <!-- Data Standard 6.1 is not bundled into this project's output. Assets are excluded so
+             nothing is staged alongside the 5.2 content the provider loads; only the restored
+             package path is used, to assert the packaged 6.1 schema content directly. -->
+        <PackageReference
+            Include="EdFi.DataStandard61.ApiSchema"
+            GeneratePathProperty="true"
+            ExcludeAssets="all"
+        />
+    </ItemGroup>
+    <ItemGroup>
+        <!-- Surfaces the restored package roots so tests can assert the packaged ApiSchema.json
+             payloads directly, without depending on what this project stages into its output. -->
+        <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+            <_Parameter1>DataStandard52ApiSchemaPackageRoot</_Parameter1>
+            <_Parameter2>$(PkgEdFi_DataStandard52_ApiSchema)</_Parameter2>
+        </AssemblyAttribute>
+        <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+            <_Parameter1>DataStandard61ApiSchemaPackageRoot</_Parameter1>
+            <_Parameter2>$(PkgEdFi_DataStandard61_ApiSchema)</_Parameter2>
+        </AssemblyAttribute>
     </ItemGroup>
     <ItemGroup>
         <None Include="ApiSchema/InvalidResourceSchemas.json">

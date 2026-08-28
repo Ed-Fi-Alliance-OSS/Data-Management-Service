@@ -36,6 +36,12 @@
         "resolved": "1.0.335",
         "contentHash": "cEJOD63KUG7BrIVN8Eq44hsougfJErhb9/fd5NIuJG2TZid0vAK5gNLgC/U040GexpGTVF5N3JxohFdXBMmkxQ=="
       },
+      "EdFi.DataStandard61.ApiSchema": {
+        "type": "Direct",
+        "requested": "[1.0.335, )",
+        "resolved": "1.0.335",
+        "contentHash": "8+oVpyyrX6+51NbBpKTpSh1LzoY5IgxNdzF14q/EewUTT7EoWoPLaEskF7kAAfBQasnaLfmANzTRYk/trwlIDQ=="
+      },
       "FakeItEasy": {
         "type": "Direct",
         "requested": "[8.3.0, )",
