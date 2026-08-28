@@ -12,16 +12,6 @@ using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Control;
 
-/// <summary>
-/// Envelope inputs every Kafka policy observation carries. The adapter never invents an operation,
-/// target, or physical-source fingerprint of its own.
-/// </summary>
-public sealed record CdcKafkaObservationContext(
-    string OperationId,
-    CdcTargetIdentity TargetIdentity,
-    string? PhysicalSourceFingerprint
-);
-
 public interface ICdcKafkaAdmin
 {
     /// <summary>
@@ -35,7 +25,7 @@ public interface ICdcKafkaAdmin
     /// <see cref="CdcConnectOffsetStorePolicyState.Satisfied"/>.
     /// </remarks>
     Task<CdcConnectOffsetStorePolicyObservation> EnsureConnectOffsetStoreAsync(
-        CdcKafkaObservationContext context,
+        CdcObservationContext context,
         CancellationToken cancellationToken
     );
 
@@ -77,7 +67,7 @@ public interface ICdcKafkaAdmin
     /// consumer-side filtering as an isolation control.
     /// </remarks>
     Task<CdcKafkaPolicyObservation> EnsureBindingKafkaPolicyAsync(
-        CdcKafkaObservationContext context,
+        CdcObservationContext context,
         CdcArtifactInventory inventory,
         CancellationToken cancellationToken
     );
@@ -208,7 +198,7 @@ internal sealed class CdcKafkaAdminAdapter(
     ];
 
     public async Task<CdcConnectOffsetStorePolicyObservation> EnsureConnectOffsetStoreAsync(
-        CdcKafkaObservationContext context,
+        CdcObservationContext context,
         CancellationToken cancellationToken
     )
     {
@@ -503,7 +493,7 @@ internal sealed class CdcKafkaAdminAdapter(
     }
 
     public async Task<CdcKafkaPolicyObservation> EnsureBindingKafkaPolicyAsync(
-        CdcKafkaObservationContext context,
+        CdcObservationContext context,
         CdcArtifactInventory inventory,
         CancellationToken cancellationToken
     )
@@ -1864,7 +1854,7 @@ internal sealed class CdcKafkaAdminAdapter(
     }
 
     private CdcConnectOffsetStorePolicyObservation Evaluate(
-        CdcKafkaObservationContext context,
+        CdcObservationContext context,
         CdcControlOptions controlOptions,
         CdcKafkaDurabilityPolicy durability,
         int? replicationFactor,
@@ -1982,7 +1972,7 @@ internal sealed class CdcKafkaAdminAdapter(
     }
 
     private CdcConnectOffsetStorePolicyObservation Unresolved(
-        CdcKafkaObservationContext context,
+        CdcObservationContext context,
         CdcControlOptions controlOptions,
         DateTimeOffset observedAt,
         List<CdcDiagnostic> diagnostics
@@ -2004,7 +1994,7 @@ internal sealed class CdcKafkaAdminAdapter(
     /// validation is degraded to unresolved evidence rather than returned as a policy verdict.
     /// </summary>
     private CdcConnectOffsetStorePolicyObservation Build(
-        CdcKafkaObservationContext context,
+        CdcObservationContext context,
         CdcControlOptions controlOptions,
         CdcConnectOffsetStorePolicyState policyState,
         string? cleanupPolicy,

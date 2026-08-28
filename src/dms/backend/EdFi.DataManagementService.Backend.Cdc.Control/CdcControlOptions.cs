@@ -52,6 +52,13 @@ public sealed class CdcControlOptions
 
     public string ConnectBaseUri { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Optional override for the Connect worker's JMX-over-HTTP metrics bridge, which the connector
+    /// source-lag reading is taken from. The bridge's port is fixed by the Connect image entrypoint,
+    /// so a blank value reads it from the Connect host on that port.
+    /// </summary>
+    public string ConnectMetricsBaseUri { get; set; } = string.Empty;
+
     /// <summary>Identifies the Connect worker group whose offset store is validated.</summary>
     public string ConnectWorkerKey { get; set; } = string.Empty;
 
@@ -239,6 +246,15 @@ public sealed class CdcControlOptionsValidator : IValidateOptions<CdcControlOpti
             failures
         );
         RequireHttpUri(options.ConnectBaseUri, nameof(CdcControlOptions.ConnectBaseUri), failures);
+
+        if (!string.IsNullOrWhiteSpace(options.ConnectMetricsBaseUri))
+        {
+            RequireHttpUri(
+                options.ConnectMetricsBaseUri,
+                nameof(CdcControlOptions.ConnectMetricsBaseUri),
+                failures
+            );
+        }
     }
 
     private static void ValidateRecordSize(CdcControlOptions options, List<string> failures)

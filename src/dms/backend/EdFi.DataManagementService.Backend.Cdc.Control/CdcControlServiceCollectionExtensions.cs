@@ -54,6 +54,16 @@ public static class CdcControlServiceCollectionExtensions
         services.TryAddSingleton(BuildAdminClient);
         services.TryAddSingleton<ICdcKafkaAdmin, CdcKafkaAdminAdapter>();
 
+        services.AddHttpClient(CdcConnectRestAdapter.HttpClientName);
+        services.TryAddSingleton<ICdcConnectClient, CdcConnectRestAdapter>();
+
+        services.AddHttpClient(CdcConnectorJolokiaLagReader.HttpClientName);
+        services.TryAddSingleton<ICdcConnectorLagReader, CdcConnectorJolokiaLagReader>();
+
+        // Scoped because it composes the connector-template service, which the template library
+        // registers as a scoped service.
+        services.TryAddScoped<ICdcConnectorObservationMapper, CdcConnectorObservationMapper>();
+
         string datastore = configuration.GetSection(DatastoreSectionName).Value ?? string.Empty;
 
         if (string.Equals(datastore, PostgresqlDatastore, StringComparison.OrdinalIgnoreCase))

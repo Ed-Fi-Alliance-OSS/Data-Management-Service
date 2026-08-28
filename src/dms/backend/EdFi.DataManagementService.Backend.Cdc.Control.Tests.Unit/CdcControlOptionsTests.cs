@@ -109,6 +109,30 @@ public class Given_CdcControlOptionsTests
         Validate(options).Succeeded.Should().BeTrue();
     }
 
+    [TestCase("connect-metrics.internal:8778")]
+    [TestCase("ftp://connect-metrics.internal:8778")]
+    public void It_rejects_a_metrics_bridge_that_is_not_an_absolute_http_uri(string connectMetricsBaseUri)
+    {
+        CdcControlOptions options = ValidOptions();
+        options.ConnectMetricsBaseUri = connectMetricsBaseUri;
+
+        AssertFailsWith(options, nameof(CdcControlOptions.ConnectMetricsBaseUri));
+    }
+
+    /// <summary>
+    /// The bridge's port is fixed by the Connect image entrypoint, so a deployment that publishes it
+    /// on the Connect host needs no override.
+    /// </summary>
+    [TestCase("")]
+    [TestCase("http://connect-metrics.internal:8778")]
+    public void It_accepts_an_absent_or_absolute_http_metrics_bridge(string connectMetricsBaseUri)
+    {
+        CdcControlOptions options = ValidOptions();
+        options.ConnectMetricsBaseUri = connectMetricsBaseUri;
+
+        Validate(options).Succeeded.Should().BeTrue();
+    }
+
     [TestCase("")]
     [TestCase("Local ")]
     [TestCase("staging")]

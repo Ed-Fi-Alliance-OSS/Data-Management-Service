@@ -59,6 +59,9 @@ public class Given_CdcControlServiceCollectionExtensionsTests
         scope.ServiceProvider.GetRequiredService<ICdcProviderSetupService>().Should().NotBeNull();
         scope.ServiceProvider.GetRequiredService<ICdcBindingLifecycleService>().Should().NotBeNull();
         scope.ServiceProvider.GetRequiredService<ICdcProviderSourcePositionAdapter>().Should().NotBeNull();
+        scope.ServiceProvider.GetRequiredService<ICdcConnectClient>().Should().NotBeNull();
+        scope.ServiceProvider.GetRequiredService<ICdcConnectorLagReader>().Should().NotBeNull();
+        scope.ServiceProvider.GetRequiredService<ICdcConnectorObservationMapper>().Should().NotBeNull();
     }
 
     [TestCase("postgresql")]
