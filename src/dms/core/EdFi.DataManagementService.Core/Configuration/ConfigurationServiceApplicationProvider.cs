@@ -93,6 +93,8 @@ public class ConfigurationServiceApplicationProvider(
 
             if (
                 applicationContext is null
+                || applicationContext.Id <= 0
+                || applicationContext.ApplicationId <= 0
                 || !string.Equals(applicationContext.ClientId, clientId, StringComparison.Ordinal)
                 || applicationContext.ClientUuid == Guid.Empty
                 || !HasValidOwnershipConfiguration(applicationContext)

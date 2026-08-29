@@ -158,6 +158,32 @@ public class Given_ConfigurationServiceApplicationProvider
     }
 
     [TestCase(
+        "{\"id\":0,\"applicationId\":2,\"clientId\":\"client-id\",\"clientUuid\":\"8c58fef1-7d9b-4423-bb3c-f1581e77e922\",\"dataStoreIds\":[3],\"creatorOwnershipTokenId\":null,\"ownershipTokenIds\":[]}"
+    )]
+    [TestCase(
+        "{\"id\":-1,\"applicationId\":2,\"clientId\":\"client-id\",\"clientUuid\":\"8c58fef1-7d9b-4423-bb3c-f1581e77e922\",\"dataStoreIds\":[3],\"creatorOwnershipTokenId\":null,\"ownershipTokenIds\":[]}"
+    )]
+    [TestCase(
+        "{\"id\":1,\"applicationId\":0,\"clientId\":\"client-id\",\"clientUuid\":\"8c58fef1-7d9b-4423-bb3c-f1581e77e922\",\"dataStoreIds\":[3],\"creatorOwnershipTokenId\":null,\"ownershipTokenIds\":[]}"
+    )]
+    [TestCase(
+        "{\"id\":1,\"applicationId\":-1,\"clientId\":\"client-id\",\"clientUuid\":\"8c58fef1-7d9b-4423-bb3c-f1581e77e922\",\"dataStoreIds\":[3],\"creatorOwnershipTokenId\":null,\"ownershipTokenIds\":[]}"
+    )]
+    public async Task It_Should_Return_Unavailable_For_NonPositive_Application_Identifiers(
+        string responseBody
+    )
+    {
+        using var fixture = new ProviderFixture(HttpStatusCode.OK, responseBody);
+
+        ApplicationContextResult result = await fixture.Provider.GetApplicationByClientIdAsync(
+            "client-id",
+            tenant: null
+        );
+
+        result.Should().BeOfType<ApplicationContextResult.Unavailable>();
+    }
+
+    [TestCase(
         "{\"id\":1,\"applicationId\":2,\"clientId\":\"client-id\",\"clientUuid\":\"8c58fef1-7d9b-4423-bb3c-f1581e77e922\",\"dataStoreIds\":[3],\"creatorOwnershipTokenId\":32768,\"ownershipTokenIds\":[]}"
     )]
     [TestCase(
@@ -321,6 +347,7 @@ public class Given_ConfigurationServiceApplicationProvider
 
     private sealed class ProviderFixture : IDisposable
     {
+        // csharpier-ignore - IDE0055 requires this empty delegating constructor body shape.
         public ProviderFixture(
             HttpStatusCode statusCode,
             string responseBody,
