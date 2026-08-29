@@ -112,6 +112,14 @@ param(
     [switch]
     $SkipDockerBuild,
 
+    # Run the E2E routes against compiled output that already exists instead of building it here.
+    # Off by default, so the documented direct commands stay self-sufficient: E2ETest and
+    # InstanceE2ETest provision their databases with CLIs built on demand, and InstanceE2ETest builds
+    # its test project. CI sets it, because those jobs extract the shared build artifact first and
+    # rebuilding it is the cost the artifact exists to remove.
+    [switch]
+    $UsePrebuiltOutput,
+
     # Opts into the seed phase after the stack starts. For StartEnvironment, forwarded to the
     # bootstrap wrapper so it uses the documented API-based seed path. E2ETest rejects this switch
     # because its database is reset and provisioned by provision-e2e-database.ps1 before tests run.
@@ -765,15 +773,15 @@ function Invoke-E2EDatabaseProvisioning {
     try {
         Push-Location "$PSScriptRoot/eng/docker-compose"
         $provisionOutput = @()
-        # -UsePrebuiltTools: this route already requires compiled output, because the test run that
-        # follows resolves a built assembly and never builds one. Provisioning would otherwise
-        # restore and rebuild ApiSchemaDownloader and SchemaTools - and through SchemaTools' project
-        # references, Core and Backend.Ddl - inside every E2E job that just downloaded that output.
+        # Provisioning otherwise restores and rebuilds ApiSchemaDownloader and SchemaTools - and
+        # through SchemaTools' project references, Core and Backend.Ddl - inside every E2E job that
+        # just downloaded exactly that output. Left on for a direct local run, which has no artifact
+        # to reuse.
         ./provision-e2e-database.ps1 `
             -EnvironmentFile $E2ETestSettings.EnvironmentFile `
             -DatabaseEngine $E2ETestSettings.DatabaseEngine `
             -Configuration $Configuration `
-            -UsePrebuiltTools 6>&1 |
+            -UsePrebuiltTools:$UsePrebuiltOutput 6>&1 |
             Tee-Object -Variable provisionOutput |
             ForEach-Object { Write-Host ([string]$_) }
 
@@ -1689,15 +1697,10 @@ function RunInstanceE2E {
         Write-Output "Normalized test filter for VSTest: '$TestFilter' -> '$normalizedTestFilter'"
     }
 
-    # --no-build/--no-restore for the same reason the other test paths carry them: nothing on the
-    # InstanceE2ETest route compiles, so this ran a full restore and build of the project and its
-    # project references every time, including in CI where the compiled output was already present.
     $dotNetTestArguments = @(
         $testProject,
         "--configuration",
         $Configuration,
-        "--no-build",
-        "--no-restore",
         "--logger",
         "trx;LogFileName=$trxFile",
         "--logger",
@@ -1706,6 +1709,14 @@ function RunInstanceE2E {
         "normal",
         "--nologo"
     )
+
+    if ($UsePrebuiltOutput) {
+        # Unlike the other test paths this one builds by default, because it is the only test command
+        # documented as a standalone run: it starts Docker, provisions the route-context databases and
+        # runs the tests, with no prior build expected. CI extracted the shared build artifact first,
+        # so there the build is pure duplication of the project and its whole reference graph.
+        $dotNetTestArguments += @("--no-build", "--no-restore")
+    }
 
     if (-not [string]::IsNullOrWhiteSpace($normalizedTestFilter)) {
         $dotNetTestArguments += @("--filter", $normalizedTestFilter)
@@ -1780,10 +1791,10 @@ function InstanceE2ETests {
             DatabaseEngine          = $instanceSettings.DatabaseEngine
             EnvironmentFile         = $instanceSettings.EnvironmentFile
             ResolvedEnvironmentFile = $instanceSettings.ResolvedEnvironmentFile
-            # This route already requires compiled output - RunInstanceE2E runs the tests with
-            # --no-build - so the three route-context provisioning calls the setup makes must not
-            # rebuild the CLIs the shared build artifact already provided.
-            UsePrebuiltTools        = $true
+            # The three route-context provisioning calls the setup makes must not rebuild the CLIs
+            # the shared build artifact already provided. Off for a direct local run, which is what
+            # keeps this command self-sufficient.
+            UsePrebuiltTools        = $UsePrebuiltOutput
         }
         if ($SkipDockerBuild) {
             $setupParameters.SkipDockerBuild = $true

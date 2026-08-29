@@ -632,7 +632,10 @@ jobs:
 
   build-integration-test-assemblies:
     name: Build Integration Test Assemblies
-    needs: detect-fresh-build-changes
+    needs: [detect-fresh-build-changes, build-dms-solution]
+    # Both a consumer and a producer: it takes the shared build output and republishes the much
+    # smaller slice the eight integration lanes need, so they download megabytes rather than
+    # gigabytes. All five projects it stages are in the solution the shared build already compiles.
     # Draft-gated. This is the root of every integration lane, so gating it here skips all eight
     # through their needs rather than repeating the condition on each.
     if: >-
@@ -662,45 +665,21 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Restore and Build Integration Test Projects
-        run: |
-          $configuration = "${{ env.CONFIGURATION }}"
-          $projects = @(
-            @{
-              Name = "backend-mssql"
-              Project = "./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj"
-              Assembly = "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.dll"
-            },
-            @{
-              Name = "dms-api"
-              Project = "./src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj"
-              Assembly = "EdFi.DataManagementService.Tests.Integration.dll"
-            },
-            @{
-              Name = "backend-postgresql"
-              Project = "./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj"
-              Assembly = "EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.dll"
-            },
-            @{
-              Name = "backend-cdc"
-              Project = "./src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.csproj"
-              Assembly = "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.dll"
-            },
-            @{
-              Name = "schematools"
-              Project = "./src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj"
-              Assembly = "EdFi.DataManagementService.SchemaTools.Tests.Integration.dll"
-            }
-          )
+      - name: Download DMS Build Output
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-build-output
+          path: ${{ runner.temp }}/dms-build-output
 
-          foreach ($project in $projects) {
-            dotnet restore $project.Project --verbosity:normal
-            dotnet build $project.Project `
-              -c $configuration `
-              --no-restore `
-              -v normal `
-              --nologo
-          }
+      - name: Extract DMS Build Output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # -p so the recorded modes are applied exactly. Without it tar masks them with the
+          # runner's umask, and the execute bit this artifact depends on would survive only because
+          # the image happens to use umask 022 - a property of the runner, not of the handoff.
+          tar -xzpf "$RUNNER_TEMP/dms-build-output/dms-build-output.tar.gz" -C .
 
       - name: Stage Integration Test Assemblies
         run: |
@@ -1812,7 +1791,7 @@ jobs:
         id: e2e
         if: success()
         run: |
-          ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-${{ matrix.shard }}'
+          ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-${{ matrix.shard }}'
 
       - name: Export DMS E2E Docker Logs
         if: always() && steps.e2e.outcome == 'failure'
@@ -2000,7 +1979,7 @@ jobs:
         env:
           KAFKA_BOOTSTRAP_SERVERS: dms-kafka1:9092
         run: |
-          ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter 'Category=@StandardVersion-6_1'
+          ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter 'Category=@StandardVersion-6_1'
 
       - name: Export DMS E2E Docker Logs
         if: always() && steps.e2e_ds61.outcome == 'failure'
@@ -2186,7 +2165,7 @@ jobs:
         env:
           KAFKA_BOOTSTRAP_SERVERS: dms-kafka1:9092
         run: |
-          ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.cursorpartitions.e2e' -TestFilter 'Category=@CursorPartitionSizing'
+          ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.cursorpartitions.e2e' -TestFilter 'Category=@CursorPartitionSizing'
 
       - name: Export DMS E2E Docker Logs
         if: always() && steps.e2e_partition_sizing.outcome == 'failure'
@@ -2383,7 +2362,7 @@ jobs:
           $diagDir = "${{ github.workspace }}/logs/e2e-mssql-${{ matrix.identityprovider }}"
           New-Item -ItemType Directory -Path $diagDir -Force | Out-Null
           $diagFile = Join-Path $diagDir 'build-dms-setup.log'
-          & pwsh -NoProfile -File ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter 'Category=@MssqlRepresentative' *> $diagFile
+          & pwsh -NoProfile -File ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter 'Category=@MssqlRepresentative' *> $diagFile
           $buildExitCode = $LASTEXITCODE
           if ($buildExitCode -ne 0) {
               throw "build-dms.ps1 E2ETest failed with exit code $buildExitCode. See the sanitized build-dms-setup.log artifact."
@@ -2604,7 +2583,7 @@ jobs:
           $diagDir = "${{ github.workspace }}/logs/e2e-mssql-ds61"
           New-Item -ItemType Directory -Path $diagDir -Force | Out-Null
           $diagFile = Join-Path $diagDir 'build-dms-setup.log'
-          & pwsh -NoProfile -File ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter 'Category=@StandardVersion-6_1' *> $diagFile
+          & pwsh -NoProfile -File ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter 'Category=@StandardVersion-6_1' *> $diagFile
           $buildExitCode = $LASTEXITCODE
           if ($buildExitCode -ne 0) {
               throw "build-dms.ps1 E2ETest (DS 6.1) failed with exit code $buildExitCode. See the sanitized build-dms-setup.log artifact."
@@ -2852,7 +2831,7 @@ jobs:
           DMS_API_URL: http://localhost:8080
         run: |
           # Build script handles Docker environment setup, database configuration, and test execution
-          ./build-dms.ps1 InstanceE2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -TestFilter 'Category=@instance-management-ci-shard-${{ matrix.shard }}'
+          ./build-dms.ps1 InstanceE2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -TestFilter 'Category=@instance-management-ci-shard-${{ matrix.shard }}'
 
       - name: Export Docker Logs
         if: failure()
@@ -3058,7 +3037,7 @@ jobs:
           $diagDir = "${{ github.workspace }}/logs"
           New-Item -ItemType Directory -Path $diagDir -Force | Out-Null
           $diagFile = Join-Path $diagDir 'build-dms-setup.log'
-          & pwsh -NoProfile -File ./build-dms.ps1 InstanceE2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -TestFilter 'Category=@instance-management-ci-shard-${{ matrix.shard }}' *> $diagFile
+          & pwsh -NoProfile -File ./build-dms.ps1 InstanceE2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -TestFilter 'Category=@instance-management-ci-shard-${{ matrix.shard }}' *> $diagFile
           $buildExitCode = $LASTEXITCODE
           if ($buildExitCode -ne 0) {
               throw "build-dms.ps1 InstanceE2ETest failed with exit code $buildExitCode. See the sanitized build-dms-setup.log artifact."

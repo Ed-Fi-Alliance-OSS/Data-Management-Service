@@ -29,6 +29,10 @@ $buildOutputConsumer = @(
     @{ JobName = 'run-instance-management-e2e-tests' }
     @{ JobName = 'run-instance-management-e2e-tests-mssql' }
     @{ JobName = 'build-and-start-dms' }
+    # Also a producer: it stages the much smaller dms-integration-test-assemblies for the eight
+    # integration lanes. It is a consumer all the same - the five projects it used to compile are in
+    # the solution the shared build already builds.
+    @{ JobName = 'build-integration-test-assemblies' }
 )
 
 Describe "on-dms-pullrequest.yml CI budget wiring" {
@@ -578,7 +582,10 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
                 $chunks,
                 [Predicate[string]] {
                     $args[0] -match 'build-dms\.ps1 (UnitTest|E2ETest|InstanceE2ETest)' -or
-                    $args[0] -match 'preflight-dms-schema-compile\.ps1'
+                    $args[0] -match 'preflight-dms-schema-compile\.ps1' -or
+                    # The integration-assembly producer's first use of compiled output is the copy
+                    # that builds its own artifact, not a test command.
+                    $args[0] -match 'Stage Integration Test Assemblies'
                 }
             )
 
@@ -603,13 +610,15 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
             Get-JobNeed -JobName 'dms-ci-gate' | Should -Contain 'build-dms-solution'
         }
 
-        It "build-integration-test-assemblies keeps its own artifact contract" {
-            # Deliberately not re-staged from dms-build-output: that would couple the six fast
-            # integration lanes to a much larger download.
+        It "build-integration-test-assemblies still publishes its own artifact" {
+            # It consumes the shared build like every other consumer - the assertions for that come
+            # from the consumer list above - but it stays a producer too. The eight integration lanes
+            # download this much smaller artifact, and coupling them to the full build output instead
+            # would undo that.
             $block = Get-JobBlock -JobName 'build-integration-test-assemblies'
 
             $block | Should -Match 'name: dms-integration-test-assemblies'
-            $block | Should -Not -Match 'dms-build-output'
+            $block | Should -Match 'Stage Integration Test Assemblies'
         }
 
         It "E2E provisioning reuses the artifact rather than rebuilding the CLIs" {
@@ -621,7 +630,7 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
             # the script's own behaviour is owned by the docker-compose tests.
             $buildScript = Get-Content -LiteralPath $script:buildScriptPath -Raw
 
-            $buildScript | Should -Match '(?s)function Invoke-E2EDatabaseProvisioning.*?-UsePrebuiltTools'
+            $buildScript | Should -Match '(?s)function Invoke-E2EDatabaseProvisioning.*?-UsePrebuiltTools:\$UsePrebuiltOutput'
         }
 
         It "instance E2E provisioning reuses the artifact rather than rebuilding the CLIs" {
@@ -631,7 +640,35 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
             # same shared-artifact contract.
             $buildScript = Get-Content -LiteralPath $script:buildScriptPath -Raw
 
-            $buildScript | Should -Match '(?s)\$setupParameters = @\{.*?UsePrebuiltTools\s*=\s*\$true'
+            $buildScript | Should -Match '(?s)\$setupParameters = @\{.*?UsePrebuiltTools\s*=\s*\$UsePrebuiltOutput'
+        }
+
+        It "reusing prebuilt output is opt-in, so the documented local commands still build" {
+            # build-dms.ps1 InstanceE2ETest is documented as a standalone command that starts Docker,
+            # provisions and runs the tests. On main it needed no prior host build, and it must not
+            # start needing one: only the CI callers, which have just extracted the shared artifact,
+            # opt out of building.
+            $buildScript = Get-Content -LiteralPath $script:buildScriptPath -Raw
+
+            $buildScript | Should -Match '\[switch\]\s*\r?\n?\s*\$UsePrebuiltOutput'
+            $buildScript | Should -Match '(?s)function RunInstanceE2E.*?if \(\$UsePrebuiltOutput\).*?--no-build'
+        }
+
+        It "every CI E2E call site opts into prebuilt output" {
+            # The other half of the contract above. With the switch defaulting off, a call site that
+            # forgets it silently goes back to rebuilding after downloading the artifact - which is
+            # exactly the defect this replaced, so it is asserted at every call site rather than once.
+            # Anchored on the ./ path so the three `throw "build-dms.ps1 E2ETest failed ..."` message
+            # strings in the MSSQL lanes are not counted as call sites.
+            $e2eInvocation = @(
+                $script:lines | Where-Object { $_ -match '\./build-dms\.ps1 (E2ETest|InstanceE2ETest)\b' }
+            )
+
+            $e2eInvocation.Count | Should -Be 7
+
+            foreach ($invocation in $e2eInvocation) {
+                $invocation | Should -Match '-UsePrebuiltOutput'
+            }
         }
 
         It "no build-dms.ps1 test path rebuilds what the artifact already provides" {
