@@ -52,6 +52,66 @@ public static class AuthorizationDataProvider
     /// <param name="systemAdministratorToken">Bearer token with system administrator privileges for CMS API access</param>
     /// <param name="claimSetName">The name of the claim set to assign to the application (default: "SISVendor")</param>
     /// <returns>A task representing the asynchronous operation</returns>
+    /// <summary>
+    /// Attaches the snapshot/read-replica arrangement the derivative-routing feature reads through, to
+    /// the data store this suite just created.
+    /// </summary>
+    /// <remarks>
+    /// Every client-credential setup gets the arrangement, not just the routing feature's, because DMS
+    /// resolves the data store per request and the suite creates a fresh one per setup; attaching it
+    /// selectively would leave the routing feature's requests on whichever store happened to be
+    /// resolved.
+    ///
+    /// The read replica deliberately points at the data store's own database. On a suite with a single
+    /// data store, a replica pointing anywhere else would serve every replica-eligible read - that is,
+    /// nearly every read in this suite - from a database the suite never wrote to. Pointing it at the
+    /// primary keeps every existing scenario reading the data it wrote while a read replica is
+    /// genuinely configured, which is what snapshot precedence is asserted against.
+    ///
+    /// The snapshot points at a separately provisioned database that is left empty. DMS never writes
+    /// to a derivative, so "empty" is what makes a snapshot-routed read distinguishable from a plain
+    /// one without seeding a database the API cannot reach.
+    /// </remarks>
+    private static async Task AttachDataStoreDerivatives(int dataStoreId)
+    {
+        (string DerivativeType, string ConnectionString)[] derivatives =
+        [
+            ("ReadReplica", DataStoreConnectionStringProvider.Create()),
+            ("Snapshot", AppSettings.DataStoreSnapshotConnectionString),
+        ];
+
+        foreach ((string derivativeType, string connectionString) in derivatives)
+        {
+            using StringContent content = new(
+                JsonSerializer.Serialize(
+                    new
+                    {
+                        dataStoreId,
+                        derivativeType,
+                        connectionString,
+                    }
+                ),
+                Encoding.UTF8,
+                "application/json"
+            );
+
+            using HttpResponseMessage response = await _configurationServiceClient.PostAsync(
+                "v3/dataStoreDerivatives",
+                content
+            );
+
+            if (!response.IsSuccessStatusCode)
+            {
+                // Fail loudly rather than leaving the routing scenarios to report a confusing
+                // "Snapshot not found". The body can carry the connection string, so it is not logged.
+                throw new InvalidOperationException(
+                    $"Failed to register the {derivativeType} derivative for data store {dataStoreId}: "
+                        + $"{(int)response.StatusCode} {response.StatusCode}."
+                );
+            }
+        }
+    }
+
     public static async Task CreateClientCredentials(
         string company,
         string contactName,
@@ -94,6 +154,8 @@ public static class AuthorizationDataProvider
         string dataStoreBody = await dataStoreGetResponse.Content.ReadAsStringAsync();
 
         int dataStoreId = JsonDocument.Parse(dataStoreBody).RootElement.GetProperty("id").GetInt32();
+
+        await AttachDataStoreDerivatives(dataStoreId);
 
         // Create vendor
         using StringContent vendorContent = new(

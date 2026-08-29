@@ -4,7 +4,7 @@
 # See the LICENSE and NOTICES files in the project root for more information.
 
 # The Instance Management E2E orchestration threads the engine and resolved
-# environment, provisions the route-context databases in a fixed order, registers a suite-owned
+# environment, provisions the three route-context databases in a fixed order, registers a suite-owned
 # CMS fixture, restarts DMS exactly once after registration, and runs the routed tests inside a
 # test-process context. These tests AST-extract the build-dms.ps1 orchestration functions and invoke
 # them against mocked leaf boundaries, and assert the setup/dispatch ordering from source where the
@@ -50,7 +50,6 @@ Describe "Get-InstanceE2ETestEnvironmentContext resolves engine, databases, and 
             "INSTANCE_E2E_DATABASE_1_NAME" = "edfi_datamanagementservice_d255901_sy2024"
             "INSTANCE_E2E_DATABASE_2_NAME" = "edfi_datamanagementservice_d255901_sy2025"
             "INSTANCE_E2E_DATABASE_3_NAME" = "edfi_datamanagementservice_d255902_sy2024"
-            "INSTANCE_E2E_DATABASE_4_NAME" = "edfi_datamanagementservice_d255901_sy2026"
         }
 
         Mock Import-Module { }
@@ -74,19 +73,17 @@ Describe "Get-InstanceE2ETestEnvironmentContext resolves engine, databases, and 
     It "carries the explicit mssql engine and builds mssql registration strings" {
         $context = Get-InstanceE2ETestEnvironmentContext -EnvironmentFile "./.env.routeContext.e2e" -DatabaseEngine "mssql"
         $context.DatabaseEngine | Should -Be "mssql"
-        $context.RegistrationConnectionStrings | Should -HaveCount 4
+        $context.RegistrationConnectionStrings | Should -HaveCount 3
         $context.RegistrationConnectionStrings[0] | Should -Be "reg:mssql:edfi_datamanagementservice_d255901_sy2024"
         $context.RegistrationConnectionStrings[2] | Should -Be "reg:mssql:edfi_datamanagementservice_d255902_sy2024"
-        $context.RegistrationConnectionStrings[3] | Should -Be "reg:mssql:edfi_datamanagementservice_d255901_sy2026"
     }
 
-    It "returns every resolved database name in order" {
+    It "returns the three resolved database names in order" {
         $context = Get-InstanceE2ETestEnvironmentContext -EnvironmentFile "./.env.routeContext.e2e" -DatabaseEngine "postgresql"
         $context.DatabaseNames | Should -Be @(
             "edfi_datamanagementservice_d255901_sy2024",
             "edfi_datamanagementservice_d255901_sy2025",
-            "edfi_datamanagementservice_d255902_sy2024",
-            "edfi_datamanagementservice_d255901_sy2026"
+            "edfi_datamanagementservice_d255902_sy2024"
         )
     }
 
@@ -149,15 +146,9 @@ Describe "Get-InstanceE2ETestEnvironmentContext resolves engine, databases, and 
         Should -Invoke New-E2EDataStoreConnectionStrings -Times 0 -Exactly
     }
 
-    It "builds every registration string when every route name is safe and dedicated" {
+    It "builds all three registration strings when every route name is safe and dedicated" {
         Get-InstanceE2ETestEnvironmentContext -EnvironmentFile "./.env.routeContext.e2e" -DatabaseEngine "postgresql" | Out-Null
-        Should -Invoke New-E2EDataStoreConnectionStrings -Times 4 -Exactly
-    }
-
-    It "throws when the derivative-routing route database name is missing" {
-        $script:contextEnvValues.Remove("INSTANCE_E2E_DATABASE_4_NAME")
-        { Get-InstanceE2ETestEnvironmentContext -EnvironmentFile "./.env.routeContext.e2e" -DatabaseEngine "postgresql" } |
-            Should -Throw -ExpectedMessage "*INSTANCE_E2E_DATABASE_4_NAME*"
+        Should -Invoke New-E2EDataStoreConnectionStrings -Times 3 -Exactly
     }
 }
 
@@ -204,15 +195,13 @@ Describe "Register-InstanceE2EFixture registers the canonical suite-owned fixtur
         Mock Add-DataStore { $script:dataStoreSeq++; [long](200 + $script:dataStoreSeq) }
         $script:contextSeq = 0
         Mock Add-DataStoreContext { $script:contextSeq++; [long](400 + $script:contextSeq) }
-        $script:derivativeSeq = 0
-        Mock Add-DataStoreDerivative { $script:derivativeSeq++; [long](500 + $script:derivativeSeq) }
         $script:appSeq = 0
         Mock Add-Application { $script:appSeq++; @{ Id = [long](300 + $script:appSeq); Key = "key$($script:appSeq)"; Secret = "secret$($script:appSeq)" } }
 
         $script:settings = [pscustomobject]@{
             DatabaseEngine                = "mssql"
-            DatabaseNames                 = @("db1", "db2", "db3", "db4")
-            RegistrationConnectionStrings = @("reg-1", "reg-2", "reg-3", "reg-4")
+            DatabaseNames                 = @("db1", "db2", "db3")
+            RegistrationConnectionStrings = @("reg-1", "reg-2", "reg-3")
             EnvironmentValues             = @{}
         }
     }
@@ -249,54 +238,17 @@ Describe "Register-InstanceE2EFixture registers the canonical suite-owned fixtur
         ($script:capturedVendorCompanies.Values | Select-Object -Unique) | Should -HaveCount 2
     }
 
-    It "registers exactly four data stores with the engine-correct registration strings" {
+    It "registers exactly three data stores with the engine-correct registration strings" {
         Register-InstanceE2EFixture -InstanceE2ESettings $script:settings | Out-Null
-        Should -Invoke Add-DataStore -Times 4 -Exactly
+        Should -Invoke Add-DataStore -Times 3 -Exactly
         Should -Invoke Add-DataStore -Times 1 -Exactly -ParameterFilter { $ConnectionString -eq "reg-1" -and $Tenant -eq "Tenant_255901" }
         Should -Invoke Add-DataStore -Times 1 -Exactly -ParameterFilter { $ConnectionString -eq "reg-2" -and $Tenant -eq "Tenant_255901" }
         Should -Invoke Add-DataStore -Times 1 -Exactly -ParameterFilter { $ConnectionString -eq "reg-3" -and $Tenant -eq "Tenant_255902" }
-        Should -Invoke Add-DataStore -Times 1 -Exactly -ParameterFilter { $ConnectionString -eq "reg-4" -and $Tenant -eq "Tenant_255901" }
     }
 
-    It "attaches a read replica and a snapshot to the derivative-routing data store only" {
-        # The derivative-routing route is the only store that may carry derivatives: a replica on any
-        # other route would silently serve every read in that route from a different database and
-        # invalidate the rest of the suite.
-        $script:capturedDerivatives = @()
-        Mock Add-DataStoreDerivative {
-            $script:capturedDerivatives += [pscustomobject]@{
-                DataStoreId      = $DataStoreId
-                DerivativeType   = $DerivativeType
-                ConnectionString = $ConnectionString
-                Tenant           = $Tenant
-            }
-            $script:derivativeSeq++
-            [long](500 + $script:derivativeSeq)
-        }
-
-        $fixture = Register-InstanceE2EFixture -InstanceE2ESettings $script:settings
-
-        Should -Invoke Add-DataStoreDerivative -Times 2 -Exactly
-
-        $derivativeRoute = @($fixture.Routes | Where-Object { $_.SchoolYear -eq "2026" })
-        $derivativeRoute | Should -HaveCount 1
-
-        @($script:capturedDerivatives | ForEach-Object { $_.DataStoreId } | Select-Object -Unique) |
-            Should -Be @($derivativeRoute[0].DataStoreId)
-
-        # The replica and snapshot point at databases 1 and 2, the two ordinary writable routes the
-        # suite seeds through, so a derivative-routed read can name which database answered.
-        @($script:capturedDerivatives | Where-Object { $_.DerivativeType -eq "ReadReplica" })[0].ConnectionString |
-            Should -Be "reg-1"
-        @($script:capturedDerivatives | Where-Object { $_.DerivativeType -eq "Snapshot" })[0].ConnectionString |
-            Should -Be "reg-2"
-        @($script:capturedDerivatives | ForEach-Object { $_.Tenant } | Select-Object -Unique) |
-            Should -Be @("Tenant_255901")
-    }
-
-    It "registers the districtId and schoolYear route contexts for each store (eight total)" {
+    It "registers the districtId and schoolYear route contexts for each store (six total)" {
         Register-InstanceE2EFixture -InstanceE2ESettings $script:settings | Out-Null
-        Should -Invoke Add-DataStoreContext -Times 8 -Exactly
+        Should -Invoke Add-DataStoreContext -Times 6 -Exactly
         Should -Invoke Add-DataStoreContext -Times 1 -Exactly -ParameterFilter { $ContextKey -eq "districtId" -and $ContextValue -eq "255902" }
         Should -Invoke Add-DataStoreContext -Times 1 -Exactly -ParameterFilter { $ContextKey -eq "schoolYear" -and $ContextValue -eq "2025" }
     }
@@ -312,19 +264,19 @@ Describe "Register-InstanceE2EFixture registers the canonical suite-owned fixtur
 
         $fixture.Tenants | Should -HaveCount 2
         $fixture.Tenants[0].TenantName | Should -Be "Tenant_255901"
-        $fixture.Tenants[0].DataStoreIds | Should -HaveCount 3
+        $fixture.Tenants[0].DataStoreIds | Should -HaveCount 2
         $fixture.Tenants[1].TenantName | Should -Be "Tenant_255902"
         $fixture.Tenants[1].DataStoreIds | Should -HaveCount 1
         $fixture.Tenants[0].ClientKey | Should -Not -BeNullOrEmpty
         $fixture.Tenants[0].ClientSecret | Should -Not -BeNullOrEmpty
-        $fixture.DataStoreIds | Should -HaveCount 4
+        $fixture.DataStoreIds | Should -HaveCount 3
         $fixture.ApplicationIds | Should -HaveCount 2
     }
 
     It "returns a structured route record per data store mapping tenant/district/schoolYear to the resolved database" {
         $fixture = Register-InstanceE2EFixture -InstanceE2ESettings $script:settings
 
-        $fixture.Routes | Should -HaveCount 4
+        $fixture.Routes | Should -HaveCount 3
 
         $fixture.Routes[0].TenantName | Should -Be "Tenant_255901"
         $fixture.Routes[0].DistrictId | Should -Be "255901"
@@ -336,33 +288,10 @@ Describe "Register-InstanceE2EFixture registers the canonical suite-owned fixtur
         $fixture.Routes[1].SchoolYear | Should -Be "2025"
         $fixture.Routes[1].DatabaseName | Should -Be "db2"
 
-        # The derivative-routing route belongs to Tenant_255901, so it precedes the Tenant_255902
-        # route in the per-tenant registration order.
-        $fixture.Routes[2].TenantName | Should -Be "Tenant_255901"
-        $fixture.Routes[2].SchoolYear | Should -Be "2026"
-        $fixture.Routes[2].DatabaseOrdinal | Should -Be 4
-        $fixture.Routes[2].DatabaseName | Should -Be "db4"
-
-        $fixture.Routes[3].TenantName | Should -Be "Tenant_255902"
-        $fixture.Routes[3].DistrictId | Should -Be "255902"
-        $fixture.Routes[3].DatabaseName | Should -Be "db3"
-    }
-
-    It "records which database answers each derivative kind on the derivative-routing route" {
-        $fixture = Register-InstanceE2EFixture -InstanceE2ESettings $script:settings
-
-        $derivativeRoute = @($fixture.Routes | Where-Object { $_.SchoolYear -eq "2026" })[0]
-        @($derivativeRoute.Derivatives) | Should -HaveCount 2
-
-        @($derivativeRoute.Derivatives | Where-Object { $_.DerivativeType -eq "ReadReplica" })[0].DatabaseName |
-            Should -Be "db1"
-        @($derivativeRoute.Derivatives | Where-Object { $_.DerivativeType -eq "Snapshot" })[0].DatabaseName |
-            Should -Be "db2"
-
-        # Every other route carries no derivatives at all.
-        foreach ($route in ($fixture.Routes | Where-Object { $_.SchoolYear -ne "2026" })) {
-            @($route.Derivatives) | Should -HaveCount 0
-        }
+        $fixture.Routes[2].TenantName | Should -Be "Tenant_255902"
+        $fixture.Routes[2].DistrictId | Should -Be "255902"
+        $fixture.Routes[2].DatabaseName | Should -Be "db3"
+        $fixture.Routes[2].DataStoreId | Should -Be 203
     }
 
     It "captures both route-context ids per route" {
@@ -393,12 +322,11 @@ Describe "Invoke-WithInstanceE2ETestProcessContext restores prior environment st
 
         $script:settings = [pscustomobject]@{
             DatabaseEngine                = "mssql"
-            DatabaseNames                 = @("db1", "db2", "db3", "db4")
+            DatabaseNames                 = @("db1", "db2", "db3")
             RegistrationConnectionStrings = @(
                 "Server=dms-mssql,1433;Database=db1;User Id=sa;Password=cs-secret1;TrustServerCertificate=true;",
                 "Server=dms-mssql,1433;Database=db2;User Id=sa;Password=cs-secret2;TrustServerCertificate=true;",
-                "Server=dms-mssql,1433;Database=db3;User Id=sa;Password=cs-secret3;TrustServerCertificate=true;",
-                "Server=dms-mssql,1433;Database=db4;User Id=sa;Password=cs-secret4;TrustServerCertificate=true;"
+                "Server=dms-mssql,1433;Database=db3;User Id=sa;Password=cs-secret3;TrustServerCertificate=true;"
             )
         }
         $script:fixture = [pscustomobject]@{
@@ -406,24 +334,19 @@ Describe "Invoke-WithInstanceE2ETestProcessContext restores prior environment st
                 [pscustomobject]@{ TenantName = "Tenant_255901"; VendorId = 101; ApplicationId = 301; ClientKey = "key1"; ClientSecret = "secret1" },
                 [pscustomobject]@{ TenantName = "Tenant_255902"; VendorId = 102; ApplicationId = 302; ClientKey = "key2"; ClientSecret = "secret2" }
             )
-            DataStoreIds   = @(201, 202, 203, 204)
+            DataStoreIds   = @(201, 202, 203)
             ApplicationIds = @(301, 302)
             Routes         = @(
-                [pscustomobject]@{ TenantName = "Tenant_255901"; DistrictId = "255901"; SchoolYear = "2024"; DatabaseOrdinal = 1; DatabaseName = "db1"; DataStoreId = 201; DistrictContextId = 401; SchoolYearContextId = 402; Derivatives = @() },
-                [pscustomobject]@{ TenantName = "Tenant_255901"; DistrictId = "255901"; SchoolYear = "2025"; DatabaseOrdinal = 2; DatabaseName = "db2"; DataStoreId = 202; DistrictContextId = 403; SchoolYearContextId = 404; Derivatives = @() },
-                [pscustomobject]@{ TenantName = "Tenant_255902"; DistrictId = "255902"; SchoolYear = "2024"; DatabaseOrdinal = 3; DatabaseName = "db3"; DataStoreId = 203; DistrictContextId = 405; SchoolYearContextId = 406; Derivatives = @() },
-                [pscustomobject]@{ TenantName = "Tenant_255901"; DistrictId = "255901"; SchoolYear = "2026"; DatabaseOrdinal = 4; DatabaseName = "db4"; DataStoreId = 204; DistrictContextId = 407; SchoolYearContextId = 408; Derivatives = @(
-                        [pscustomobject]@{ DerivativeType = "ReadReplica"; DatabaseOrdinal = 1; DatabaseName = "db1" },
-                        [pscustomobject]@{ DerivativeType = "Snapshot"; DatabaseOrdinal = 2; DatabaseName = "db2" }
-                    ) }
+                [pscustomobject]@{ TenantName = "Tenant_255901"; DistrictId = "255901"; SchoolYear = "2024"; DatabaseOrdinal = 1; DatabaseName = "db1"; DataStoreId = 201; DistrictContextId = 401; SchoolYearContextId = 402 },
+                [pscustomobject]@{ TenantName = "Tenant_255901"; DistrictId = "255901"; SchoolYear = "2025"; DatabaseOrdinal = 2; DatabaseName = "db2"; DataStoreId = 202; DistrictContextId = 403; SchoolYearContextId = 404 },
+                [pscustomobject]@{ TenantName = "Tenant_255902"; DistrictId = "255902"; SchoolYear = "2024"; DatabaseOrdinal = 3; DatabaseName = "db3"; DataStoreId = 203; DistrictContextId = 405; SchoolYearContextId = 406 }
             )
         }
         $script:managedVariables = @(
             "INSTANCE_E2E_DATABASE_ENGINE", "INSTANCE_E2E_DATABASE_1_NAME", "INSTANCE_E2E_DATABASE_2_NAME",
-            "INSTANCE_E2E_DATABASE_3_NAME", "INSTANCE_E2E_DATABASE_4_NAME",
+            "INSTANCE_E2E_DATABASE_3_NAME",
             "INSTANCE_E2E_DATABASE_1_CONNECTION_STRING", "INSTANCE_E2E_DATABASE_2_CONNECTION_STRING",
-            "INSTANCE_E2E_DATABASE_3_CONNECTION_STRING", "INSTANCE_E2E_DATABASE_4_CONNECTION_STRING",
-            "INSTANCE_E2E_ROUTE_MANIFEST",
+            "INSTANCE_E2E_DATABASE_3_CONNECTION_STRING", "INSTANCE_E2E_ROUTE_MANIFEST",
             "INSTANCE_E2E_FIXTURE_TENANT_1_NAME", "INSTANCE_E2E_FIXTURE_TENANT_1_VENDOR_ID",
             "INSTANCE_E2E_FIXTURE_TENANT_1_APPLICATION_ID", "INSTANCE_E2E_FIXTURE_TENANT_1_CLIENT_KEY",
             "INSTANCE_E2E_FIXTURE_TENANT_1_CLIENT_SECRET", "INSTANCE_E2E_FIXTURE_TENANT_2_NAME",
@@ -454,24 +377,22 @@ Describe "Invoke-WithInstanceE2ETestProcessContext restores prior environment st
         $script:observed.Db1 | Should -Be "db1"
         $script:observed.Key1 | Should -Be "key1"
         $script:observed.Secret2 | Should -Be "secret2"
-        $script:observed.Stores | Should -Be "201,202,203,204"
+        $script:observed.Stores | Should -Be "201,202,203"
     }
 
-    It "sets every opaque engine-correct connection string verbatim for the action" {
+    It "sets the three opaque engine-correct connection strings verbatim for the action" {
         $script:observedConnectionStrings = $null
         Invoke-WithInstanceE2ETestProcessContext -InstanceE2ESettings $script:settings -Fixture $script:fixture -Action {
             $script:observedConnectionStrings = @(
                 $env:INSTANCE_E2E_DATABASE_1_CONNECTION_STRING
                 $env:INSTANCE_E2E_DATABASE_2_CONNECTION_STRING
                 $env:INSTANCE_E2E_DATABASE_3_CONNECTION_STRING
-                $env:INSTANCE_E2E_DATABASE_4_CONNECTION_STRING
             )
         }
 
         $script:observedConnectionStrings[0] | Should -Be $script:settings.RegistrationConnectionStrings[0]
         $script:observedConnectionStrings[1] | Should -Be $script:settings.RegistrationConnectionStrings[1]
         $script:observedConnectionStrings[2] | Should -Be $script:settings.RegistrationConnectionStrings[2]
-        $script:observedConnectionStrings[3] | Should -Be $script:settings.RegistrationConnectionStrings[3]
     }
 
     It "never leaks the secret-bearing connection strings into the non-secret route manifest" {
@@ -483,7 +404,6 @@ Describe "Invoke-WithInstanceE2ETestProcessContext restores prior environment st
         $script:manifestForConnectionCheck | Should -Not -Match "cs-secret1"
         $script:manifestForConnectionCheck | Should -Not -Match "cs-secret2"
         $script:manifestForConnectionCheck | Should -Not -Match "cs-secret3"
-        $script:manifestForConnectionCheck | Should -Not -Match "cs-secret4"
         $script:manifestForConnectionCheck | Should -Not -Match "Password="
     }
 
@@ -500,14 +420,14 @@ Describe "Invoke-WithInstanceE2ETestProcessContext restores prior environment st
         $env:INSTANCE_E2E_DATABASE_3_CONNECTION_STRING | Should -Be "prior-connection-string"
     }
 
-    It "exposes every route mapping as a non-secret JSON manifest for the action" {
+    It "exposes the three route mappings as a non-secret JSON manifest for the action" {
         $script:manifestJson = $null
         Invoke-WithInstanceE2ETestProcessContext -InstanceE2ESettings $script:settings -Fixture $script:fixture -Action {
             $script:manifestJson = $env:INSTANCE_E2E_ROUTE_MANIFEST
         }
 
         $manifest = $script:manifestJson | ConvertFrom-Json
-        $manifest | Should -HaveCount 4
+        $manifest | Should -HaveCount 3
         $manifest[0].tenant | Should -Be "Tenant_255901"
         $manifest[0].districtId | Should -Be "255901"
         $manifest[0].schoolYear | Should -Be "2024"
@@ -520,28 +440,6 @@ Describe "Invoke-WithInstanceE2ETestProcessContext restores prior environment st
         # The manifest is non-secret: it never carries client keys or secrets.
         $script:manifestJson | Should -Not -Match "key1"
         $script:manifestJson | Should -Not -Match "secret1"
-    }
-
-    It "carries each route derivative arrangement in the manifest" {
-        # The suite reads which database answers a replica-routed and a snapshot-routed request from
-        # the manifest rather than restating the fixture arrangement, so the two cannot drift apart.
-        $script:derivativeManifestJson = $null
-        Invoke-WithInstanceE2ETestProcessContext -InstanceE2ESettings $script:settings -Fixture $script:fixture -Action {
-            $script:derivativeManifestJson = $env:INSTANCE_E2E_ROUTE_MANIFEST
-        }
-
-        $manifest = $script:derivativeManifestJson | ConvertFrom-Json
-        $derivativeRoute = @($manifest | Where-Object { $_.schoolYear -eq "2026" })[0]
-
-        @($derivativeRoute.derivatives) | Should -HaveCount 2
-        @($derivativeRoute.derivatives | Where-Object { $_.derivativeType -eq "ReadReplica" })[0].databaseName |
-            Should -Be "db1"
-        @($derivativeRoute.derivatives | Where-Object { $_.derivativeType -eq "Snapshot" })[0].databaseName |
-            Should -Be "db2"
-
-        foreach ($route in ($manifest | Where-Object { $_.schoolYear -ne "2026" })) {
-            @($route.derivatives) | Should -HaveCount 0
-        }
     }
 
     It "restores a prior route manifest value verbatim after the action throws" {
@@ -648,7 +546,7 @@ Describe "Instance E2E orchestration and setup ordering (DMS-1284)" {
         $engineResolveIndex | Should -BeGreaterThan $guardIndex
     }
 
-    It "validates every route database name before InfraOnly and provisioning on the standalone path (C5)" {
+    It "validates all three route database names before InfraOnly and provisioning on the standalone path (C5)" {
         $script:setupSource | Should -Match "Import-Module ./database-safety.psm1"
         # The call site (not the function definition) is anchored on its -DatabaseNames argument.
         $validateCallIndex = $script:setupSource.IndexOf("-DatabaseNames `$databases")
@@ -665,7 +563,7 @@ Describe "Instance E2E orchestration and setup ordering (DMS-1284)" {
         $script:buildSource | Should -Match "if \(\`$environmentFileSupplied\)"
     }
 
-    It "runs the setup in InfraOnly, then provisions the route databases, then DmsOnly order" {
+    It "runs the setup in InfraOnly, then provisions three databases, then DmsOnly order" {
         # Match the actual invocation lines (not the doc-comment mentions of the phase switches).
         $infraOnlyIndex = $script:setupSource.IndexOf("-InfraOnly -EnableConfig")
         $provisionIndex = $script:setupSource.IndexOf("& `$provisionE2EDatabaseScript")
@@ -793,7 +691,7 @@ Describe "Instance standalone setup validates every route database name before a
     }
 
     It "throws on a later unsafe/reserved/protected name so an earlier database is never provisioned first" {
-        # The second name is a reserved PostgreSQL system database; validating every name up front means
+        # The second name is a reserved PostgreSQL system database; validating all three up front means
         # the guard rejects it before database 1 could ever be provisioned by the surrounding script.
         {
             Assert-RouteContextDatabaseNamesAreDedicated `

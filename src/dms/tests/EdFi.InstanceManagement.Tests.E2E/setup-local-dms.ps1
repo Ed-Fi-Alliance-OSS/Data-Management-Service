@@ -9,12 +9,12 @@
 .DESCRIPTION
     Owns the engine-neutral setup order for the Instance Management route-context stack:
       1. start-local-dms.ps1 -InfraOnly (Config Service, selected engine, resolved environment);
-      2. provision every resolved route-context database once with generated engine-correct DDL;
+      2. provision all three resolved route-context databases once with generated engine-correct DDL;
       3. verify each database contains the dms.EffectiveSchema singleton and required tables using an
          engine-dispatched helper (PostgreSQL psql/to_regclass, MSSQL sqlcmd/OBJECT_ID) - the
          non-selected provider command is never invoked;
       4. start-local-dms.ps1 -DmsOnly and wait for DMS health.
-    DMS is not started until every schema is provisioned and verified. Unhealthy infrastructure
+    DMS is not started until all three schemas are provisioned and verified. Unhealthy infrastructure
     or failed verification fails the setup (never skips).
 
     Each Docker phase above runs inside the shared schema-settings guard from
@@ -29,7 +29,7 @@
     After DMS starts, the container's schema settings are verified against the environment file with
     the shared Assert-DmsContainerSchemaEnvironment, the same settings-level check the direct DMS E2E
     wrapper runs, so a settings divergence is reported here rather than as opaque routed-request 503s
-    across every route context.
+    across all three route contexts.
 
     Suite-owned fixture registration (tenants, vendor, data stores, route contexts, applications) and
     the single post-registration DMS restart are performed by build-dms.ps1 InstanceE2ETest, not here.
@@ -195,7 +195,7 @@ function Assert-RouteContextDatabaseNamesAreDedicated {
     <#
     .SYNOPSIS
     Validates every route-context database name up front via the shared database-safety guard, so no
-    infrastructure is started and no database is provisioned until every name is safe, not a
+    infrastructure is started and no database is provisioned until all three names are safe, not a
     reserved system database, and dedicated (never the primary or CMS database). Throwing on any name
     (including a later one) guarantees an earlier database is never provisioned before a bad name fails.
     #>
@@ -282,15 +282,12 @@ try {
     }
     $envValues = ReadValuesFromEnvFile $resolvedEnvironmentFile
 
-    # Read the route-context database names from the resolved environment: require non-empty distinct
-    # names, and never fall back to a fixed name after resolution. The count matches the one
-    # Get-InstanceE2ETestEnvironmentContext in build-dms.ps1 reads, which registers one route per
-    # database; the two must be raised together.
-    $routeDatabaseCount = 4
+    # Read the three route-context database names from the resolved environment: require three
+    # non-empty distinct names, and never fall back to a fixed name after resolution.
     $databases = @(
-        foreach ($ordinal in 1..$routeDatabaseCount) {
-            Get-EnvValue -EnvValues $envValues -Name "INSTANCE_E2E_DATABASE_${ordinal}_NAME"
-        }
+        (Get-EnvValue -EnvValues $envValues -Name "INSTANCE_E2E_DATABASE_1_NAME"),
+        (Get-EnvValue -EnvValues $envValues -Name "INSTANCE_E2E_DATABASE_2_NAME"),
+        (Get-EnvValue -EnvValues $envValues -Name "INSTANCE_E2E_DATABASE_3_NAME")
     )
 
     for ($i = 0; $i -lt $databases.Count; $i++) {
@@ -299,11 +296,11 @@ try {
         }
     }
 
-    if (@($databases | Sort-Object -Unique).Count -ne $routeDatabaseCount) {
-        throw "The $routeDatabaseCount INSTANCE_E2E_DATABASE_*_NAME values must be distinct; got: $($databases -join ', ')."
+    if (@($databases | Sort-Object -Unique).Count -ne 3) {
+        throw "The three INSTANCE_E2E_DATABASE_*_NAME values must be distinct; got: $($databases -join ', ')."
     }
 
-    # Validate EVERY name (safe characters, not a reserved system database, dedicated vs the
+    # Validate ALL three names (safe characters, not a reserved system database, dedicated vs the
     # primary/CMS databases by name or embedded connection-string database) BEFORE starting any
     # infrastructure or provisioning any database. This runs on the standalone setup path too, so a
     # direct run can never provision database 1 and then reject an unsafe/reserved/protected database 2
@@ -350,7 +347,7 @@ try {
     # them (start-local-dms.ps1 does exactly that for bootstrap mode) would still be setting it for
     # every later phase.
 
-    # 1. Start only infrastructure and the Configuration Service. DMS starts after every
+    # 1. Start only infrastructure and the Configuration Service. DMS starts after all three
     #    route-context schemas are provisioned and verified.
     Write-Host "`nStarting infrastructure and Configuration Service (DMS not yet started)..." -ForegroundColor Cyan
     # The guard is inside each branch rather than around the if/else: exactly one of these runs, and
@@ -371,7 +368,7 @@ try {
         exit $LASTEXITCODE
     }
 
-    # 2. Provision the route-context databases once with generated engine-correct DDL, then
+    # 2. Provision the three route-context databases once with generated engine-correct DDL, then
     #    verify each with the engine-dispatched schema check.
     Write-Host "`nProvisioning and verifying route-context test databases..." -ForegroundColor Cyan
     $provisionE2EDatabaseScript = Join-Path $dockerComposeDir "provision-e2e-database.ps1"

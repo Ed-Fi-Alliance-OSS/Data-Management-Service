@@ -73,7 +73,7 @@ public class Given_Test_Constants
     [Test]
     public void It_throws_for_an_index_above_range()
     {
-        var act = () => TestConstants.GetConnectionString(5);
+        var act = () => TestConstants.GetConnectionString(4);
 
         act.Should().Throw<ArgumentOutOfRangeException>();
     }

@@ -20,6 +20,7 @@
     ./start-local-dms.ps1 -InfraOnly -EnableConfig -EnvironmentFile <selected env file> -DatabaseEngine <engine> -r -AddExtensionSecurityMetadata
     ./configure-local-data-store.ps1 -EnvironmentFile <selected env file> -DatabaseEngine <engine> -DataStoreDatabaseName <E2E_DATABASE_NAME>
     ./provision-e2e-database.ps1 -EnvironmentFile <selected env file> -DatabaseEngine <engine> -DatabaseName <E2E_DATABASE_NAME>
+    ./provision-e2e-database.ps1 -EnvironmentFile <selected env file> -DatabaseEngine <engine> -DatabaseName <E2E_SNAPSHOT_DATABASE_NAME>
     ./start-local-dms.ps1 -DmsOnly -EnableConfig -EnvironmentFile <selected env file> -DatabaseEngine <engine> -AddExtensionSecurityMetadata
 
     Each Docker phase above runs inside the shared schema-settings guard from
@@ -142,6 +143,18 @@ try {
     $envValues = ReadValuesFromEnvFile $resolvedEnvironmentFile
     $e2eDatabaseName = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "E2E_DATABASE_NAME"
 
+    # The Snapshot derivative's database. Resolved with the same Compose precedence as the primary so
+    # an ambient override wins here exactly as it does there.
+    $e2eSnapshotDatabaseName = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "E2E_SNAPSHOT_DATABASE_NAME"
+
+    if ([string]::IsNullOrWhiteSpace($e2eSnapshotDatabaseName)) {
+        throw "E2E_SNAPSHOT_DATABASE_NAME must be set in '$resolvedEnvironmentFile' or the process environment so the DMS E2E snapshot derivative has a provisioned database."
+    }
+
+    if ($e2eSnapshotDatabaseName -eq $e2eDatabaseName) {
+        throw "E2E_SNAPSHOT_DATABASE_NAME must differ from E2E_DATABASE_NAME; a snapshot pointing at the primary database cannot be told apart from it."
+    }
+
     if ([string]::IsNullOrWhiteSpace($e2eDatabaseName)) {
         throw "E2E_DATABASE_NAME must be set in '$resolvedEnvironmentFile' or the process environment so direct DMS E2E setup creates a CMS data store against the provisioned E2E database."
     }
@@ -164,6 +177,7 @@ try {
     Write-Host "  - Environment File: $resolvedEnvironmentFile" -ForegroundColor Gray
     Write-Host "  - Database Engine: $DatabaseEngine" -ForegroundColor Gray
     Write-Host "  - E2E Database: $e2eDatabaseName" -ForegroundColor Gray
+    Write-Host "  - E2E Snapshot Database: $e2eSnapshotDatabaseName" -ForegroundColor Gray
     Write-Host "  - Force Rebuild: Yes" -ForegroundColor Gray
     Write-Output "  - Extension Security Metadata: Yes"
     Write-Host ""
@@ -208,6 +222,18 @@ try {
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to provision E2E database '$e2eDatabaseName'. Exit code: $LASTEXITCODE"
+        exit $LASTEXITCODE
+    }
+
+    # The snapshot database gets the same generated DDL as the primary and is then left empty. It is
+    # provisioned after the primary so a failure here cannot leave a half-configured primary behind.
+    Write-Host "`nProvisioning E2E snapshot database '$e2eSnapshotDatabaseName'..." -ForegroundColor Cyan
+    Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
+        ./provision-e2e-database.ps1 -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -DatabaseName $e2eSnapshotDatabaseName
+    }
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Failed to provision E2E snapshot database '$e2eSnapshotDatabaseName'. Exit code: $LASTEXITCODE"
         exit $LASTEXITCODE
     }
 

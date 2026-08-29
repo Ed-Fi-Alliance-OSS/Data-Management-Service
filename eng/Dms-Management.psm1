@@ -1262,84 +1262,6 @@ function Add-DataStoreContext {
 
 <#
 .SYNOPSIS
-    Attaches a read replica or snapshot derivative to an existing data store.
-
-.DESCRIPTION
-    Posts one row to v3/dataStoreDerivatives. The connection string is stored encrypted by CMS and is
-    handed to DMS as part of the parent data store, so the caller supplies the Docker-network form the
-    DMS container can reach rather than a host-side form.
-
-    CMS accepts exactly "ReadReplica" and "Snapshot" for -DerivativeType, and permits at most one
-    derivative of each type per data store.
-
-.PARAMETER CmsUrl
-    The base URL of the Config server (e.g., http://localhost:8081).
-
-.PARAMETER DataStoreId
-    The parent data store the derivative belongs to.
-
-.PARAMETER DerivativeType
-    "ReadReplica" or "Snapshot".
-
-.PARAMETER ConnectionString
-    The derivative's connection string, used verbatim.
-
-.PARAMETER AccessToken
-    A CMS access token with write access.
-
-.PARAMETER Tenant
-    Optional tenant header value for multi-tenant deployments.
-#>
-function Add-DataStoreDerivative {
-    [CmdletBinding()]
-    param (
-        [ValidateNotNullOrEmpty()]
-        [string]$CmsUrl = "http://localhost:8081",
-
-        [Parameter(Mandatory = $true)]
-        [long]$DataStoreId,
-
-        [Parameter(Mandatory = $true)]
-        [ValidateSet("ReadReplica", "Snapshot")]
-        [string]$DerivativeType,
-
-        [Parameter(Mandatory = $true)]
-        [ValidateNotNullOrEmpty()]
-        [string]$ConnectionString,
-
-        [Parameter(Mandatory = $true)]
-        [string]$AccessToken,
-
-        [string]$Tenant = ""
-    )
-
-    $derivativeData = @{
-        dataStoreId      = $DataStoreId
-        derivativeType   = $DerivativeType
-        connectionString = $ConnectionString
-    }
-
-    $headers = @{ Authorization = "Bearer $AccessToken" }
-    if ($Tenant) {
-        $headers["Tenant"] = $Tenant
-    }
-
-    $invokeParams = @{
-        BaseUrl     = $CmsUrl
-        RelativeUrl = "v3/dataStoreDerivatives"
-        Method      = "Post"
-        ContentType = "application/json"
-        Body        = ConvertTo-Json -InputObject $derivativeData -Depth 10
-        Headers     = $headers
-    }
-
-    $response = Invoke-Api @invokeParams
-
-    return $response.id
-}
-
-<#
-.SYNOPSIS
     Creates multiple data stores with school year route contexts.
 
 .DESCRIPTION
@@ -1928,4 +1850,4 @@ function Assert-CmsSeedLoaderClaimSetLoaded {
     }
 }
 
-Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Wait-CmsClientAvailable, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, New-DataStoreConnectionString, New-E2EDataStoreConnectionStrings, Get-E2EStartupPhasePlan, Add-DataStore, Get-DataStore, Add-DataStoreContext, Add-DataStoreDerivative, Add-DmsSchoolYearInstances, Add-Tenant, Invoke-Api, Get-HttpErrorResponse, Get-SeedLoaderNamespacePrefixes, Find-CmsApplicationIdsByNameAndVendor, Remove-CmsApplication, New-SeedLoaderCredentials, Assert-CmsSeedLoaderClaimSetLoaded, ConvertTo-FormBody, ConvertTo-PostgresCredential
+Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Wait-CmsClientAvailable, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, New-DataStoreConnectionString, New-E2EDataStoreConnectionStrings, Get-E2EStartupPhasePlan, Add-DataStore, Get-DataStore, Add-DataStoreContext, Add-DmsSchoolYearInstances, Add-Tenant, Invoke-Api, Get-HttpErrorResponse, Get-SeedLoaderNamespacePrefixes, Find-CmsApplicationIdsByNameAndVendor, Remove-CmsApplication, New-SeedLoaderCredentials, Assert-CmsSeedLoaderClaimSetLoaded, ConvertTo-FormBody, ConvertTo-PostgresCredential

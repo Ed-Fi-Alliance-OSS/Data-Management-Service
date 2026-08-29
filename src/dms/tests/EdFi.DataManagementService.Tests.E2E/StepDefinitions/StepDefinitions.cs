@@ -757,6 +757,23 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             current.ToString().Should().Be(_scenarioVariables.GetValueByName(variableName));
         }
 
+        /// <summary>
+        /// The counterpart of the equality step, for proving a value moved rather than that it landed on
+        /// a particular number. A derivative-routing scenario needs this: it captures a change version,
+        /// writes, and then proves the same target reports something different, without depending on how
+        /// much the counter advanced or on what the other target happens to report.
+        /// </summary>
+        [Then("the response body path {string} should not equal request variable {string}")]
+        public async Task ThenTheResponseBodyPathShouldNotEqualRequestVariable(
+            string jsonPath,
+            string variableName
+        )
+        {
+            JsonNode current = await ResolveResponseBodyPath(jsonPath);
+
+            current.ToString().Should().NotBe(_scenarioVariables.GetValueByName(variableName));
+        }
+
         private async Task<JsonNode> ResolveResponseBodyPath(string jsonPath)
         {
             string responseBody = await _apiResponse.TextAsync();
