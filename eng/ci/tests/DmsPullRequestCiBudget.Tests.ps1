@@ -612,6 +612,28 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
             $block | Should -Not -Match 'dms-build-output'
         }
 
+        It "E2E provisioning reuses the artifact rather than rebuilding the CLIs" {
+            # provision-e2e-database.ps1 runs ApiSchemaDownloader and SchemaTools through dotnet run,
+            # which builds by default. It stays self-sufficient for the local setup scripts that call
+            # it directly, so the opt-in has to come from the build path - and this is the only
+            # caller that can promise compiled output, whether from a local build or the artifact.
+            # Asserted here because it is the shared-artifact contract that makes the opt-in correct;
+            # the script's own behaviour is owned by the docker-compose tests.
+            $buildScript = Get-Content -LiteralPath $script:buildScriptPath -Raw
+
+            $buildScript | Should -Match '(?s)function Invoke-E2EDatabaseProvisioning.*?-UsePrebuiltTools'
+        }
+
+        It "instance E2E provisioning reuses the artifact rather than rebuilding the CLIs" {
+            # The instance lanes reach provisioning through their own setup script rather than
+            # Invoke-E2EDatabaseProvisioning, so the DMS-route opt-in above does not cover them and
+            # they would otherwise keep rebuilding. Both halves are pinned here because both are the
+            # same shared-artifact contract.
+            $buildScript = Get-Content -LiteralPath $script:buildScriptPath -Raw
+
+            $buildScript | Should -Match '(?s)\$setupParameters = @\{.*?UsePrebuiltTools\s*=\s*\$true'
+        }
+
         It "no build-dms.ps1 test path rebuilds what the artifact already provides" {
             # The workflow guard above sees only commands written in the workflow. Consumers reach
             # their tests through build-dms.ps1, so a test path that omits --no-build there

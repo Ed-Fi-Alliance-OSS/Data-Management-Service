@@ -765,10 +765,15 @@ function Invoke-E2EDatabaseProvisioning {
     try {
         Push-Location "$PSScriptRoot/eng/docker-compose"
         $provisionOutput = @()
+        # -UsePrebuiltTools: this route already requires compiled output, because the test run that
+        # follows resolves a built assembly and never builds one. Provisioning would otherwise
+        # restore and rebuild ApiSchemaDownloader and SchemaTools - and through SchemaTools' project
+        # references, Core and Backend.Ddl - inside every E2E job that just downloaded that output.
         ./provision-e2e-database.ps1 `
             -EnvironmentFile $E2ETestSettings.EnvironmentFile `
             -DatabaseEngine $E2ETestSettings.DatabaseEngine `
-            -Configuration $Configuration 6>&1 |
+            -Configuration $Configuration `
+            -UsePrebuiltTools 6>&1 |
             Tee-Object -Variable provisionOutput |
             ForEach-Object { Write-Host ([string]$_) }
 
@@ -1775,6 +1780,10 @@ function InstanceE2ETests {
             DatabaseEngine          = $instanceSettings.DatabaseEngine
             EnvironmentFile         = $instanceSettings.EnvironmentFile
             ResolvedEnvironmentFile = $instanceSettings.ResolvedEnvironmentFile
+            # This route already requires compiled output - RunInstanceE2E runs the tests with
+            # --no-build - so the three route-context provisioning calls the setup makes must not
+            # rebuild the CLIs the shared build artifact already provided.
+            UsePrebuiltTools        = $true
         }
         if ($SkipDockerBuild) {
             $setupParameters.SkipDockerBuild = $true

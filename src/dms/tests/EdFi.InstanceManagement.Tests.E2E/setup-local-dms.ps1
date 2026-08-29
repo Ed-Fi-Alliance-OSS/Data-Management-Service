@@ -67,7 +67,13 @@ param(
     $EnvironmentFile = "./.env.routeContext.e2e",
 
     [string]
-    $ResolvedEnvironmentFile
+    $ResolvedEnvironmentFile,
+
+    # Forwarded to each provisioning call so its CLI invocations reuse compiled output instead of
+    # letting `dotnet run` rebuild them. Opt-in, and off by default, because this script is also run
+    # directly by a developer who has built nothing; only the build path can promise compiled output.
+    [switch]
+    $UsePrebuiltTools
 )
 
 function Assert-PostgresRouteContextSchema {
@@ -372,6 +378,10 @@ try {
     #    verify each with the engine-dispatched schema check.
     Write-Host "`nProvisioning and verifying route-context test databases..." -ForegroundColor Cyan
     $provisionE2EDatabaseScript = Join-Path $dockerComposeDir "provision-e2e-database.ps1"
+    # Reported because it is the difference between provisioning compiling the CLIs and reusing an
+    # existing build, which is the first thing worth knowing when provisioning fails in one context
+    # and not the other.
+    Write-Host "Provisioning CLI mode: $(if ($UsePrebuiltTools) { 'reusing prebuilt output' } else { 'building on demand' })" -ForegroundColor DarkGray
     # PostgreSQL verification connects as the resolved role, not a hardcoded superuser, so a stack
     # started with a non-default POSTGRES_USER still verifies. Resolved with Compose precedence
     # (ambient wins) because Compose interpolates POSTGRES_USER into the container the same way
@@ -387,7 +397,8 @@ try {
                 -EnvironmentFile $resolvedEnvironmentFile `
                 -DatabaseEngine $DatabaseEngine `
                 -DatabaseName $db `
-                -Configuration Release
+                -Configuration Release `
+                -UsePrebuiltTools:$UsePrebuiltTools
         }
 
         if ($LASTEXITCODE -ne 0) {
