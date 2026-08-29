@@ -226,9 +226,16 @@ public static class Utility
     /// </summary>
     /// <param name="resilienceCancellationToken">
     /// The token the resilience context - and therefore the operation itself - is seeded with.
-    /// Defaults to <see cref="RequestInfo.RequestCancellationToken" /> for the read-path callers.
-    /// Write-path callers pass <see cref="CancellationToken.None" /> instead: see the call sites in
-    /// <c>UpsertHandler</c> and <c>UpdateByIdHandler</c> for why.
+    /// Defaults to <see cref="RequestInfo.RequestCancellationToken" />, which is what every read
+    /// handler uses.
+    /// <c>UpsertHandler</c> and <c>UpdateByIdHandler</c> pass <see cref="CancellationToken.None" />
+    /// instead, so a client disconnect cannot abandon a non-idempotent write that would otherwise
+    /// have been retried and applied; see those call sites for the full reasoning.
+    /// <c>DeleteByIdHandler</c> is a write too but takes the default, which is safe only because
+    /// <c>ApiService.DeleteById</c> never assigns
+    /// <see cref="RequestInfo.RequestCancellationToken" />, leaving it at <c>default</c>. A change
+    /// that gives DeleteById a real token has to pass <see cref="CancellationToken.None" /> here as
+    /// well, or deletes silently become abandonable mid-retry.
     /// </param>
     internal static async Task<TResult> ExecuteWithRetryLogging<TResult>(
         ResiliencePipeline resiliencePipeline,

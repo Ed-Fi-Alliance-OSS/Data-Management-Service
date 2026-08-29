@@ -37,14 +37,17 @@ public interface ICustomResourceValidator
     /// Validates a document on the write path, returning the failures found.
     /// </summary>
     /// <param name="document">
-    /// The document to validate. This is the profile-effective body as it stands at this point in the
-    /// write pipeline: after type coercion (date formats, date-times, and other request-value
-    /// coercions) and after version-metadata injection, which writes a server-assigned
-    /// "_lastModifiedDate" property into it. It is the profile-shaped writable surface when a
-    /// writable profile applied, and the coerced, version-stamped submitted body otherwise - never
-    /// the raw submitted body byte-for-byte. A validator doing strict property checking should
-    /// expect to see "_lastModifiedDate". The document is received read-only as a contract rule that
-    /// the type system cannot itself enforce; a validator must not mutate it.
+    /// The document to validate. It is never the raw submitted body byte-for-byte, and what it
+    /// carries differs by whether a writable profile applied to the request.
+    /// With no writable profile, it is the submitted body after type coercion (date formats,
+    /// date-times, and other request-value coercions) and after version-metadata injection, so it
+    /// carries a server-assigned "_lastModifiedDate" the client never sent; a validator doing strict
+    /// property checking must expect to see it.
+    /// With a writable profile, it is the profile-shaped writable surface, which is built before
+    /// version-metadata injection and therefore does not carry "_lastModifiedDate" at all.
+    /// A validator that must behave the same either way should not depend on that property's
+    /// presence. The document is received read-only as a contract rule that the type system cannot
+    /// itself enforce; a validator must not mutate it.
     /// </param>
     /// <param name="resource">The resource the document belongs to.</param>
     /// <param name="operation">The write pipeline the document arrived through.</param>

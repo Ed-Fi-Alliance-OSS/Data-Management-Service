@@ -38,7 +38,7 @@ internal class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _d
             if (errors.Length > 0)
             {
                 failureResponse = FailureResponse.ForBadRequest(
-                    "The request could not be processed. See 'errors' for details.",
+                    FailureResponse.ErrorsArmDetail,
                     requestInfo.FrontendRequest.TraceId,
                     validationErrors,
                     errors
@@ -47,7 +47,7 @@ internal class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _d
             else
             {
                 failureResponse = FailureResponse.ForDataValidation(
-                    "Data validation failed. See 'validationErrors' for details.",
+                    FailureResponse.ValidationErrorsArmDetail,
                     requestInfo.FrontendRequest.TraceId,
                     validationErrors,
                     errors

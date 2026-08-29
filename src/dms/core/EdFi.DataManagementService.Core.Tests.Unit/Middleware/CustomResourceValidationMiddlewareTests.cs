@@ -842,6 +842,7 @@ public class CustomResourceValidationMiddlewareTests
     public class Given_A_Writable_Profile_Applies : CustomResourceValidationMiddlewareTests
     {
         private FakeValidator _validator = null!;
+        private JsonObject _shapedBody = null!;
 
         [SetUp]
         public async Task Setup()
@@ -853,14 +854,14 @@ public class CustomResourceValidationMiddlewareTests
                 .BuildServiceProvider();
 
             var parsedBody = new JsonObject { ["raw"] = "value", ["hidden"] = "secret" };
-            var shapedBody = new JsonObject { ["raw"] = "value" };
+            _shapedBody = new JsonObject { ["raw"] = "value" };
 
             var requestInfo = BuildRequestInfo(
                 scopedServiceProvider,
                 parsedBody: parsedBody,
                 backendProfileWriteContext: new BackendProfileWriteContext(
                     Request: new ProfileAppliedWriteRequest(
-                        WritableRequestBody: shapedBody,
+                        WritableRequestBody: _shapedBody,
                         RootResourceCreatable: true,
                         RequestScopeStates: [],
                         VisibleRequestCollectionItems: []
@@ -880,6 +881,20 @@ public class CustomResourceValidationMiddlewareTests
             _validator.ReceivedDocuments.Should().ContainSingle();
             _validator.ReceivedDocuments[0]["hidden"].Should().BeNull();
             _validator.ReceivedDocuments[0]["raw"]!.GetValue<string>().Should().Be("value");
+        }
+
+        /// <summary>
+        /// Selecting the right body is not enough on its own: the profile branch has to be cloned
+        /// too. WritableRequestBody is the instance the backend goes on to persist
+        /// (ProfileWritePipelineMiddleware passes it as canonicalizedRequestBody), so handing the
+        /// live object to a validator would let one that ignores the read-only contract rule change
+        /// what gets written. Asserting only which body was selected would stay green against an
+        /// implementation that cloned unprofiled bodies and passed this one through.
+        /// </summary>
+        [Test]
+        public void It_gives_the_validator_a_clone_rather_than_the_writable_request_body_itself()
+        {
+            _validator.ReceivedDocuments[0].Should().NotBeSameAs(_shapedBody);
         }
     }
 
@@ -1126,7 +1141,7 @@ public class CustomResourceValidationMiddlewareTests
             _requestInfo.FrontendResponse.Body!["detail"]!
                 .GetValue<string>()
                 .Should()
-                .Be("The request could not be processed. See 'errors' for details.");
+                .Be(FailureResponse.ErrorsArmDetail);
         }
 
         [Test]
@@ -1218,7 +1233,7 @@ public class CustomResourceValidationMiddlewareTests
             _requestInfo.FrontendResponse.Body!["detail"]!
                 .GetValue<string>()
                 .Should()
-                .Be("Data validation failed. See 'validationErrors' for details.");
+                .Be(FailureResponse.ValidationErrorsArmDetail);
         }
 
         [Test]

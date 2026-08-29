@@ -178,13 +178,13 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
         JsonNode failureResponse =
             errors.Count > 0
                 ? FailureResponse.ForBadRequest(
-                    "The request could not be processed. See 'errors' for details.",
+                    FailureResponse.ErrorsArmDetail,
                     requestInfo.FrontendRequest.TraceId,
                     validationErrors,
                     [.. errors]
                 )
                 : FailureResponse.ForDataValidation(
-                    "Data validation failed. See 'validationErrors' for details.",
+                    FailureResponse.ValidationErrorsArmDetail,
                     requestInfo.FrontendRequest.TraceId,
                     validationErrors,
                     [.. errors]
