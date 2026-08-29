@@ -510,16 +510,32 @@ jobs:
           $totalBytes = ($stagedFiles | Measure-Object -Property Length -Sum).Sum
           Write-Output "Staged $($stagedFiles.Count) files ($([math]::Round($totalBytes / 1MB, 1)) MB) to $artifactRoot"
 
+      - name: Archive DMS Build Output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Uploaded as a tar rather than as a directory path, because upload-artifact zips a
+          # directory and the zip handoff does not carry Unix mode bits: everything arrives 755/644.
+          # The staged tree contains files that must arrive executable - Playwright's
+          # .playwright/node/*/node, which the driver spawns, and the apphost beside each executable
+          # project - and nothing in a --no-build consumer re-applies the bit, since Playwright's own
+          # chmod target only runs as part of a build. A directory upload therefore produces an
+          # artifact that downloads cleanly and then fails at run time with permission denied.
+          #
+          # -C <root> . archives the directory's contents, dotfiles included, which is also what
+          # keeps the .playwright tree in the artifact now that include-hidden-files is gone.
+          tar -czf TestArtifacts/dms-build-output.tar.gz -C TestArtifacts/dms-build-output .
+          ls -l TestArtifacts/dms-build-output.tar.gz
+
       - name: Upload DMS Build Output
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         with:
           name: dms-build-output
-          path: TestArtifacts/dms-build-output
-          # upload-artifact ignores hidden files by default. The staged output contains the
-          # Playwright driver under bin/Release/net10.0/.playwright - 930 files including the node
-          # binary the driver executes - so without this the consumers download build output that
-          # looks complete and fails at run time in the Playwright-backed lanes.
-          include-hidden-files: true
+          path: TestArtifacts/dms-build-output.tar.gz
+          # The tar is already gzipped; zipping it again costs minutes on a multi-gigabyte tree and
+          # saves nothing.
+          compression-level: 0
           if-no-files-found: error
           retention-days: 1
 
@@ -556,7 +572,17 @@ jobs:
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
         with:
           name: dms-build-output
-          path: .
+          path: ${{ runner.temp }}/dms-build-output
+
+      - name: Extract DMS Build Output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # -p so the recorded modes are applied exactly. Without it tar masks them with the
+          # runner's umask, and the execute bit this artifact depends on would survive only because
+          # the image happens to use umask 022 - a property of the runner, not of the handoff.
+          tar -xzpf "$RUNNER_TEMP/dms-build-output/dms-build-output.tar.gz" -C .
 
       - name: Restore .NET tools
         if: success()
@@ -1770,7 +1796,17 @@ jobs:
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
         with:
           name: dms-build-output
-          path: .
+          path: ${{ runner.temp }}/dms-build-output
+
+      - name: Extract DMS Build Output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # -p so the recorded modes are applied exactly. Without it tar masks them with the
+          # runner's umask, and the execute bit this artifact depends on would survive only because
+          # the image happens to use umask 022 - a property of the runner, not of the handoff.
+          tar -xzpf "$RUNNER_TEMP/dms-build-output/dms-build-output.tar.gz" -C .
 
       - name: Run DMS E2E (IdentityProvider ${{ matrix.identityprovider }}, Shard ${{ matrix.shard }})
         id: e2e
@@ -1943,7 +1979,17 @@ jobs:
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
         with:
           name: dms-build-output
-          path: .
+          path: ${{ runner.temp }}/dms-build-output
+
+      - name: Extract DMS Build Output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # -p so the recorded modes are applied exactly. Without it tar masks them with the
+          # runner's umask, and the execute bit this artifact depends on would survive only because
+          # the image happens to use umask 022 - a property of the runner, not of the handoff.
+          tar -xzpf "$RUNNER_TEMP/dms-build-output/dms-build-output.tar.gz" -C .
 
       - name: Add Kafka hostname to /etc/hosts
         run: echo "127.0.0.1 dms-kafka1" | sudo tee -a /etc/hosts
@@ -2122,7 +2168,17 @@ jobs:
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
         with:
           name: dms-build-output
-          path: .
+          path: ${{ runner.temp }}/dms-build-output
+
+      - name: Extract DMS Build Output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # -p so the recorded modes are applied exactly. Without it tar masks them with the
+          # runner's umask, and the execute bit this artifact depends on would survive only because
+          # the image happens to use umask 022 - a property of the runner, not of the handoff.
+          tar -xzpf "$RUNNER_TEMP/dms-build-output/dms-build-output.tar.gz" -C .
 
       - name: Run DMS E2E (partition sizing)
         id: e2e_partition_sizing
@@ -2301,7 +2357,17 @@ jobs:
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
         with:
           name: dms-build-output
-          path: .
+          path: ${{ runner.temp }}/dms-build-output
+
+      - name: Extract DMS Build Output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # -p so the recorded modes are applied exactly. Without it tar masks them with the
+          # runner's umask, and the execute bit this artifact depends on would survive only because
+          # the image happens to use umask 022 - a property of the runner, not of the handoff.
+          tar -xzpf "$RUNNER_TEMP/dms-build-output/dms-build-output.tar.gz" -C .
 
       - name: Run SQL Server DMS E2E (IdentityProvider ${{ matrix.identityprovider }}, representative)
         id: e2e
@@ -2516,7 +2582,17 @@ jobs:
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
         with:
           name: dms-build-output
-          path: .
+          path: ${{ runner.temp }}/dms-build-output
+
+      - name: Extract DMS Build Output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # -p so the recorded modes are applied exactly. Without it tar masks them with the
+          # runner's umask, and the execute bit this artifact depends on would survive only because
+          # the image happens to use umask 022 - a property of the runner, not of the handoff.
+          tar -xzpf "$RUNNER_TEMP/dms-build-output/dms-build-output.tar.gz" -C .
 
       - name: Run DS 6.1 SQL Server DMS E2E (version-coupled scenarios)
         id: e2e_ds61_mssql
@@ -2758,7 +2834,17 @@ jobs:
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
         with:
           name: dms-build-output
-          path: .
+          path: ${{ runner.temp }}/dms-build-output
+
+      - name: Extract DMS Build Output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # -p so the recorded modes are applied exactly. Without it tar masks them with the
+          # runner's umask, and the execute bit this artifact depends on would survive only because
+          # the image happens to use umask 022 - a property of the runner, not of the handoff.
+          tar -xzpf "$RUNNER_TEMP/dms-build-output/dms-build-output.tar.gz" -C .
 
       - name: Run Instance Management E2E Tests
         if: success()
@@ -2944,7 +3030,17 @@ jobs:
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
         with:
           name: dms-build-output
-          path: .
+          path: ${{ runner.temp }}/dms-build-output
+
+      - name: Extract DMS Build Output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # -p so the recorded modes are applied exactly. Without it tar masks them with the
+          # runner's umask, and the execute bit this artifact depends on would survive only because
+          # the image happens to use umask 022 - a property of the runner, not of the handoff.
+          tar -xzpf "$RUNNER_TEMP/dms-build-output/dms-build-output.tar.gz" -C .
 
       - name: Run SQL Server Instance Management E2E Tests
         id: e2e
@@ -3151,7 +3247,17 @@ jobs:
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
         with:
           name: dms-build-output
-          path: .
+          path: ${{ runner.temp }}/dms-build-output
+
+      - name: Extract DMS Build Output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # -p so the recorded modes are applied exactly. Without it tar masks them with the
+          # runner's umask, and the execute bit this artifact depends on would survive only because
+          # the image happens to use umask 022 - a property of the runner, not of the handoff.
+          tar -xzpf "$RUNNER_TEMP/dms-build-output/dms-build-output.tar.gz" -C .
 
       - name: Preflight DMS Schema Compile
         run: |

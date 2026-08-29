@@ -1684,10 +1684,15 @@ function RunInstanceE2E {
         Write-Output "Normalized test filter for VSTest: '$TestFilter' -> '$normalizedTestFilter'"
     }
 
+    # --no-build/--no-restore for the same reason the other test paths carry them: nothing on the
+    # InstanceE2ETest route compiles, so this ran a full restore and build of the project and its
+    # project references every time, including in CI where the compiled output was already present.
     $dotNetTestArguments = @(
         $testProject,
         "--configuration",
         $Configuration,
+        "--no-build",
+        "--no-restore",
         "--logger",
         "trx;LogFileName=$trxFile",
         "--logger",

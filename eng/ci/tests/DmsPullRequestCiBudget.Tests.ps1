@@ -490,12 +490,22 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
             $block | Should -Match 'if-no-files-found: error'
         }
 
-        It "the producer uploads hidden files" {
-            # upload-artifact ignores hidden files by default, and the staged tree carries the
-            # Playwright driver under bin/Release/net10.0/.playwright. Dropping it produces an
-            # artifact that looks complete, downloads without error, and fails at run time in every
-            # Playwright-backed lane - the worst shape a missing file can take.
-            (Get-JobBlock -JobName 'build-dms-solution') | Should -Match 'include-hidden-files: true'
+        It "the producer ships a tar archive rather than a directory tree" {
+            # The artifact carries files that have to arrive executable - Playwright's
+            # .playwright/node/*/node, which the driver spawns, and the apphost beside each
+            # executable project. upload-artifact zips a directory path, and the zip handoff drops
+            # Unix mode bits: everything lands 755/644. Nothing in a --no-build consumer re-applies
+            # them, so a directory upload produces an artifact that downloads cleanly and then fails
+            # at run time with permission denied. tar records the modes and carries them through.
+            $block = Get-JobBlock -JobName 'build-dms-solution'
+
+            # -C <staged root> . archives the directory's contents, dotfiles included, so the
+            # .playwright tree needs no separate opt-in the way include-hidden-files was.
+            $block | Should -Match 'tar -czf [^\r\n]*dms-build-output\.tar\.gz -C [^\r\n]*dms-build-output \.'
+            $block | Should -Match 'path: [^\r\n]*dms-build-output\.tar\.gz'
+            # Re-compressing an already gzipped archive costs minutes on a multi-gigabyte tree and
+            # buys nothing.
+            $block | Should -Match 'compression-level: 0'
         }
 
         It "build-dms-solution runs on DMS relevance and is not draft-gated" {
@@ -544,11 +554,25 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
             $compiling | Should -BeNullOrEmpty
         }
 
-        It "<JobName> downloads the artifact before the first step needing compiled output" -ForEach $buildOutputConsumer {
+        It "<JobName> extracts the archive with permissions preserved" -ForEach $buildOutputConsumer {
+            # -p rather than relying on the runner's umask: umask 022 happens to leave the execute
+            # bit alone, but that is a property of the runner image, not of the handoff, and this
+            # artifact's correctness rests on the execute bit surviving.
+            $block = Get-JobBlock -JobName $JobName
+
+            $block | Should -Match 'tar -xzpf [^\r\n]*dms-build-output\.tar\.gz'
+        }
+
+        It "<JobName> extracts the artifact before the first step needing compiled output" -ForEach $buildOutputConsumer {
+            # Ordering is asserted against the extract, not the download: an artifact that has been
+            # downloaded but not unpacked is exactly as useless as one that never arrived.
             $chunks = [string[]] (Get-StepChunk -JobName $JobName)
 
             $downloadIndex = [array]::FindIndex(
                 $chunks, [Predicate[string]] { $args[0] -match 'name: dms-build-output' }
+            )
+            $extractIndex = [array]::FindIndex(
+                $chunks, [Predicate[string]] { $args[0] -match 'tar -xzpf' }
             )
             $firstUseIndex = [array]::FindIndex(
                 $chunks,
@@ -559,8 +583,10 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
             )
 
             $downloadIndex | Should -BeGreaterThan -1
+            $extractIndex | Should -BeGreaterThan -1
             $firstUseIndex | Should -BeGreaterThan -1
-            $downloadIndex | Should -BeLessThan $firstUseIndex
+            $downloadIndex | Should -BeLessThan $extractIndex
+            $extractIndex | Should -BeLessThan $firstUseIndex
         }
 
         It "only the producer runs a solution build, with no inert -IdentityProvider" {
@@ -584,6 +610,31 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
 
             $block | Should -Match 'name: dms-integration-test-assemblies'
             $block | Should -Not -Match 'dms-build-output'
+        }
+
+        It "no build-dms.ps1 test path rebuilds what the artifact already provides" {
+            # The workflow guard above sees only commands written in the workflow. Consumers reach
+            # their tests through build-dms.ps1, so a test path that omits --no-build there
+            # recompiles just as surely and is invisible to a YAML scan. Asserted per function so a
+            # fourth test path added later cannot inherit a pass from its siblings.
+            $buildScript = Get-Content -LiteralPath $script:buildScriptPath -Raw
+            $functionBlock = [regex]::Split($buildScript, '(?m)^function ') |
+                Select-Object -Skip 1 |
+                # Anchored at the start of a line so a comment or a Write-Output that merely names
+                # the command is not mistaken for one, which the parameter documentation above the
+                # functions and the two explanatory comments inside them would otherwise trip.
+                Where-Object { $_ -match '(?m)^\s*dotnet test\b' }
+
+            $functionBlock | Should -Not -BeNullOrEmpty
+
+            foreach ($block in $functionBlock) {
+                $name = ($block -split '\s', 2)[0]
+
+                # The invocation and the flags can be separated by an argument array, so the
+                # function body as a whole is the unit, not the command line.
+                $block | Should -Match '--no-build' -Because "$name invokes dotnet test"
+                $block | Should -Match '--no-restore' -Because "$name invokes dotnet test"
+            }
         }
     }
 
