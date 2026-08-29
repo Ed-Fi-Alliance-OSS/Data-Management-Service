@@ -297,6 +297,15 @@ jobs:
     needs: detect-fresh-build-changes
     # Draft-gated: BuildAndPublish plus four package builds and two scratch-consumer compiles is one
     # of the most expensive jobs here, and nothing about packaging is feedback a draft needs.
+    #
+    # Deliberately NOT a dms-build-output consumer, even though it does compile the solution. Its
+    # target is BuildAndPublish, not Build, and the difference is the whole point of the job:
+    # BuildAndPublish regenerates src/dms/Directory.Build.props to version-stamp the assemblies
+    # before compiling them, restores in locked mode, and publishes output the shared artifact does
+    # not stage. The shared producer runs plain Build, so its assemblies carry the tracked props
+    # version; packing those would emit packages whose assembly version disagrees with the package
+    # version they are labelled with. eng/ci/tests/DmsPullRequestCiBudget.Tests.ps1 pins this
+    # exclusion together with the reason, so the decision has to be revisited if the reason moves.
     if: >-
       github.event_name != 'pull_request' ||
       (needs.detect-fresh-build-changes.outputs.dms_relevant == 'true' &&
@@ -561,10 +570,15 @@ jobs:
         # they can share its fixture types) but are pure unit tests that need no Docker. build-dms.ps1
         # UnitTest only runs *.Tests.Unit projects and the instance E2E shard jobs filter on shard tags,
         # so without this step these tests would run in no PR job. They are selected by the
-        # InstanceFixtureUnit category and run standalone here.
+        # InstanceFixtureUnit category and run standalone here, against the downloaded build output
+        # like every other step in this job: without --no-build this recompiles the project and its
+        # whole ProjectReference graph, because the artifact stages bin without the intermediate
+        # output an incremental build would need.
         run: >-
           dotnet test src/dms/tests/EdFi.InstanceManagement.Tests.E2E/EdFi.InstanceManagement.Tests.E2E.csproj
           --configuration ${{ env.CONFIGURATION }}
+          --no-build
+          --no-restore
           --filter "Category=InstanceFixtureUnit"
           --logger "trx;LogFileName=instance-fixture-unit.trx"
 

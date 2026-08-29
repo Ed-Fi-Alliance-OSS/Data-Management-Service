@@ -38,6 +38,10 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
         )
         $script:lines = (Get-Content -LiteralPath $script:workflowPath -Raw) -split "\r?\n"
 
+        $script:buildScriptPath = [System.IO.Path]::GetFullPath(
+            (Join-Path $PSScriptRoot "../../../build-dms.ps1")
+        )
+
         function Get-JobBlock {
             # Text of a top-level job (two-space key) up to the next top-level job key or EOF.
             param([Parameter(Mandatory)] [string] $JobName)
@@ -522,6 +526,24 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
             $block | Should -Not -Match 'build-dms\.ps1 Build'
         }
 
+        It "<JobName> compiles nothing of its own" -ForEach $buildOutputConsumer {
+            # Wider than the solution-build check above, because a consumer can recompile without
+            # ever naming build-dms.ps1: a bare `dotnet test <project>` builds that project and its
+            # whole ProjectReference graph. The producer stages bin only, so such a step has no
+            # intermediate output to reuse and pays close to a full compile - exactly the redundancy
+            # the shared artifact exists to remove. Scoped to the consumer set: the artifact
+            # producers and the jobs that build only their own matrix project are supposed to build.
+            $chunks = [string[]] (Get-StepChunk -JobName $JobName)
+
+            $compiling = @(
+                $chunks | Where-Object {
+                    $_ -match 'dotnet (test|build|run|publish)\b' -and $_ -notmatch '--no-build'
+                }
+            )
+
+            $compiling | Should -BeNullOrEmpty
+        }
+
         It "<JobName> downloads the artifact before the first step needing compiled output" -ForEach $buildOutputConsumer {
             $chunks = [string[]] (Get-StepChunk -JobName $JobName)
 
@@ -562,6 +584,49 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
 
             $block | Should -Match 'name: dms-integration-test-assemblies'
             $block | Should -Not -Match 'dms-build-output'
+        }
+    }
+
+    Context "Package verification is deliberately not a shared-build consumer" {
+        # It is the one job DMS-1474 counts among the redundant solution builds that does not become
+        # a consumer, so the decision is pinned here rather than left as an omission from the
+        # consumer list. The last two assertions carry the reason, so that if the ground it rests on
+        # moves, this fails and forces the exclusion to be decided again instead of inherited.
+
+        It "runs BuildAndPublish rather than the shared Build target" {
+            $block = Get-JobBlock -JobName 'verify-dms-packages'
+
+            $block | Should -Match 'build-dms\.ps1 BuildAndPublish'
+            $block | Should -Not -Match 'build-dms\.ps1 Build\b'
+        }
+
+        It "neither needs nor downloads the shared build output" {
+            Get-JobNeed -JobName 'verify-dms-packages' | Should -Not -Contain 'build-dms-solution'
+            (Get-JobBlock -JobName 'verify-dms-packages') | Should -Not -Match 'name: dms-build-output'
+        }
+
+        It "states in the workflow why it is excluded" {
+            $block = Get-JobBlock -JobName 'verify-dms-packages'
+
+            $block | Should -Match 'dms-build-output'
+            $block | Should -Match 'version-stamp'
+        }
+
+        It "BuildAndPublish still stamps the version before it compiles" {
+            # The shared producer runs the plain Build target, so its assemblies carry the version in
+            # the tracked props file. This job's packages must carry the release version instead, and
+            # only the stamping step ahead of the compile puts it there.
+            $buildScript = Get-Content -LiteralPath $script:buildScriptPath -Raw
+
+            $buildScript | Should -Match 'BuildAndPublish \{[^}]*Invoke-SetAssemblyInfo[^}]*Invoke-Build'
+        }
+
+        It "version stamping rewrites the props file that governs the shared build" {
+            $buildScript = Get-Content -LiteralPath $script:buildScriptPath -Raw
+
+            $buildScript | Should -Match 'function SetDMSAssemblyInfo'
+            $buildScript | Should -Match 'Directory\.Build\.props'
+            $buildScript | Should -Match '<VersionPrefix>'
         }
     }
 }
