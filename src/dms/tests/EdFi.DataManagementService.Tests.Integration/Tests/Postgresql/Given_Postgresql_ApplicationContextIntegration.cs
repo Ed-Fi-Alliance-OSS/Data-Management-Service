@@ -26,6 +26,8 @@ public sealed class Given_Postgresql_ApplicationContextIntegration : PostgresqlA
     private const string SecondIsolationTenant = "app-context-tenant-b";
     private const string NotFoundTenant = "app-context-not-found-tenant";
     private const string OwnershipNotFoundTenant = "app-context-ownership-not-found-tenant";
+    private const string OwnershipGetPutNotFoundTenant = "app-context-ownership-get-put-not-found-tenant";
+    private const string OwnershipSuccessTenant = "app-context-ownership-success-tenant";
     private const string UnavailableTenant = "app-context-unavailable-tenant";
     private const string ProfileNotFoundTenant = "app-context-profile-not-found-tenant";
     private const string ProfileUnavailableTenant = "app-context-profile-unavailable-tenant";
@@ -92,11 +94,20 @@ public sealed class Given_Postgresql_ApplicationContextIntegration : PostgresqlA
         );
 
     [Test]
-    public Task It_requires_application_context_for_ownership_authorized_get_put_and_delete() =>
-        ApplicationContextIntegrationScenario.It_requires_application_context_for_ownership_authorized_get_put_and_delete(
+    public Task It_requires_application_context_at_the_ownership_gate_for_delete() =>
+        ApplicationContextIntegrationScenario.It_requires_application_context_at_the_ownership_gate_for_delete(
             Harness,
             _applicationContextProvider,
             OwnershipNotFoundTenant
+        );
+
+    [Test]
+    public Task It_requires_application_context_for_ownership_authorized_gets_and_puts() =>
+        ApplicationContextIntegrationScenario.It_requires_application_context_for_ownership_authorized_gets_and_puts(
+            Harness,
+            _applicationContextProvider,
+            OwnershipGetPutNotFoundTenant,
+            OwnershipSuccessTenant
         );
 
     private static ApplicationContextResult Resolve(string clientId, string? tenant) =>
@@ -104,6 +115,8 @@ public sealed class Given_Postgresql_ApplicationContextIntegration : PostgresqlA
         {
             NotFoundTenant => new ApplicationContextResult.NotFound(),
             OwnershipNotFoundTenant => new ApplicationContextResult.NotFound(),
+            OwnershipGetPutNotFoundTenant => new ApplicationContextResult.NotFound(),
+            OwnershipSuccessTenant => Success(applicationId: 203),
             UnavailableTenant => new ApplicationContextResult.Unavailable(),
             ProfileNotFoundTenant => new ApplicationContextResult.NotFound(),
             ProfileUnavailableTenant => new ApplicationContextResult.Unavailable(),
