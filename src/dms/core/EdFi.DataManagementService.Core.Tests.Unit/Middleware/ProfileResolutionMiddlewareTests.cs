@@ -224,9 +224,69 @@ public class ProfileResolutionMiddlewareTests
         }
 
         [Test]
-        public void It_calls_next()
+        public void It_does_not_call_next()
         {
-            _nextCalled.Should().BeTrue();
+            _nextCalled.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_returns_generic_401()
+        {
+            TestHelper.AssertUnauthorizedProblemDetails(
+                _requestInfo.FrontendResponse,
+                "Unable to resolve application context for the authenticated client."
+            );
+        }
+    }
+
+    [TestFixture]
+    public class Given_Unavailable_Application_Context_And_No_Profile_Header
+        : ProfileResolutionMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var appContextProvider = A.Fake<IApplicationContextProvider>();
+            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+                .Returns(
+                    Task.FromResult<ApplicationContextResult>(new ApplicationContextResult.Unavailable())
+                );
+
+            _requestInfo = CreateRequestInfo(
+                RequestMethod.GET,
+                scopedServiceProvider: BuildScopedServiceProvider(appContextProvider)
+            );
+            _nextCalled = false;
+
+            var middleware = CreateMiddleware();
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_does_not_call_next()
+        {
+            _nextCalled.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_returns_generic_503()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(503);
+            _requestInfo.FrontendResponse.Body!["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:api:service-unavailable");
         }
     }
 

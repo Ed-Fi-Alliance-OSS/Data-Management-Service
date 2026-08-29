@@ -72,13 +72,8 @@ internal class ProfileResolutionMiddleware(
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
-            // If no application context and no profile header, continue without profile
-            if (parseResult.ParsedHeader is null)
-            {
-                await next();
-                return;
-            }
-
+            // Fail closed: profile resolution requires application context, whether the client named a
+            // profile explicitly or has profiles assigned for implicit selection.
             requestInfo.FrontendResponse = ApplicationContextFailureResponseFactory.Create(
                 applicationContextResult,
                 requestInfo.FrontendRequest.TraceId
