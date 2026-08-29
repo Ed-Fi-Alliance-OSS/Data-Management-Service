@@ -445,7 +445,7 @@ Default values: ClaimSets, AppContext, and data store = 10 minutes; Token = 25 m
 
 | Cache        | Mechanism    | Scope | TTL    | Tenant | Stampede | Invalidation |
 | ------------ | ------------ | ----- | ------ | ------ | -------- | ------------ |
-| App Context  | HybridCache  | Sing. | 10 min | No     | Yes      | Manual + TTL |
+| App Context  | HybridCache  | Sing. | 10 min | Yes    | Yes      | Manual + TTL |
 | ClaimSets    | HybridCache  | Sing. | 10 min | Yes    | Yes      | Manual + TTL |
 | Comp. Schema | ConcurDict   | Sing. | None   | No     | No       | Reload ID    |
 | CMS Token    | HybridCache  | Sing. | 25 min | No     | Yes      | TTL only     |
