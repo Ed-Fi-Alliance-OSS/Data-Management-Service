@@ -8,7 +8,7 @@ using System.Globalization;
 namespace EdFi.InstanceManagement.Tests.E2E.Configuration;
 
 /// <summary>
-/// Resolves the route-context database identity for the three pre-registered instances from the
+/// Resolves the route-context database identity for the pre-registered instances from the
 /// environment contract the suite-owned fixture publishes before the tests run. The database names and
 /// connection strings are engine-correct and opaque: they are produced by the setup/build orchestration
 /// (PostgreSQL or SQL Server) and consumed here verbatim, so no fixed database name, default password,
@@ -17,7 +17,7 @@ namespace EdFi.InstanceManagement.Tests.E2E.Configuration;
 public static class TestConstants
 {
     private const int MinimumDatabaseIndex = 1;
-    private const int MaximumDatabaseIndex = 3;
+    private const int MaximumDatabaseIndex = 4;
 
     /// <summary>
     /// Gets the database name for the given 1-based route database ordinal, read verbatim from

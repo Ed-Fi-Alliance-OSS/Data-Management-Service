@@ -102,6 +102,13 @@ public class InstanceManagementContext
     public Dictionary<string, long> CapturedChangeVersions { get; } = new();
 
     /// <summary>
+    /// Resource ids captured during a scenario (variableName -> id), for a later by-id request. Kept
+    /// apart from <see cref="DescriptorLocations"/> because a bare id is not a location and cannot be
+    /// requested as one.
+    /// </summary>
+    public Dictionary<string, string> CapturedIds { get; } = new();
+
+    /// <summary>
     /// Last HTTP response for assertions
     /// </summary>
     public HttpResponseMessage? LastResponse { get; set; }
@@ -198,6 +205,7 @@ public class InstanceManagementContext
         DmsToken = null;
         DescriptorLocations.Clear();
         CapturedChangeVersions.Clear();
+        CapturedIds.Clear();
         LastResponse = null;
         DmsClient?.Dispose();
         DmsClient = null;

@@ -19,11 +19,16 @@ internal static class FixtureEnvironmentBuilder
     public const string Tenant2Key = "key-255902";
     public const string Tenant2Secret = "secret-255902";
 
+    /// <summary>
+    /// The manifest shape the build orchestration publishes: four routes, of which exactly one carries a
+    /// read replica and a snapshot pointing at two of the other route databases.
+    /// </summary>
     public const string RouteManifestJson = """
         [
-          {"tenant":"Tenant_255901","districtId":"255901","schoolYear":"2024","databaseOrdinal":1,"databaseName":"db1","dataStoreId":201,"districtContextId":401,"schoolYearContextId":402},
-          {"tenant":"Tenant_255901","districtId":"255901","schoolYear":"2025","databaseOrdinal":2,"databaseName":"db2","dataStoreId":202,"districtContextId":403,"schoolYearContextId":404},
-          {"tenant":"Tenant_255902","districtId":"255902","schoolYear":"2024","databaseOrdinal":3,"databaseName":"db3","dataStoreId":203,"districtContextId":405,"schoolYearContextId":406}
+          {"tenant":"Tenant_255901","districtId":"255901","schoolYear":"2024","databaseOrdinal":1,"databaseName":"db1","dataStoreId":201,"districtContextId":401,"schoolYearContextId":402,"derivatives":[]},
+          {"tenant":"Tenant_255901","districtId":"255901","schoolYear":"2025","databaseOrdinal":2,"databaseName":"db2","dataStoreId":202,"districtContextId":403,"schoolYearContextId":404,"derivatives":[]},
+          {"tenant":"Tenant_255902","districtId":"255902","schoolYear":"2024","databaseOrdinal":3,"databaseName":"db3","dataStoreId":203,"districtContextId":405,"schoolYearContextId":406,"derivatives":[]},
+          {"tenant":"Tenant_255901","districtId":"255901","schoolYear":"2026","databaseOrdinal":4,"databaseName":"db4","dataStoreId":204,"districtContextId":407,"schoolYearContextId":408,"derivatives":[{"derivativeType":"ReadReplica","databaseOrdinal":1,"databaseName":"db1"},{"derivativeType":"Snapshot","databaseOrdinal":2,"databaseName":"db2"}]}
         ]
         """;
 
@@ -34,6 +39,7 @@ internal static class FixtureEnvironmentBuilder
             ["INSTANCE_E2E_DATABASE_1_NAME"] = "db1",
             ["INSTANCE_E2E_DATABASE_2_NAME"] = "db2",
             ["INSTANCE_E2E_DATABASE_3_NAME"] = "db3",
+            ["INSTANCE_E2E_DATABASE_4_NAME"] = "db4",
             ["INSTANCE_E2E_ROUTE_MANIFEST"] = RouteManifestJson,
             ["INSTANCE_E2E_FIXTURE_TENANT_1_NAME"] = Tenant1Name,
             ["INSTANCE_E2E_FIXTURE_TENANT_1_VENDOR_ID"] = "101",
@@ -45,7 +51,7 @@ internal static class FixtureEnvironmentBuilder
             ["INSTANCE_E2E_FIXTURE_TENANT_2_APPLICATION_ID"] = "302",
             ["INSTANCE_E2E_FIXTURE_TENANT_2_CLIENT_KEY"] = Tenant2Key,
             ["INSTANCE_E2E_FIXTURE_TENANT_2_CLIENT_SECRET"] = Tenant2Secret,
-            ["INSTANCE_E2E_FIXTURE_DATASTORE_IDS"] = "201,202,203",
+            ["INSTANCE_E2E_FIXTURE_DATASTORE_IDS"] = "201,202,203,204",
         };
 
     public static Dictionary<string, string?> With(string key, string? value)

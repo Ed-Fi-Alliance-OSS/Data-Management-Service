@@ -9,6 +9,27 @@ using System.Text.Json;
 namespace EdFi.InstanceManagement.Tests.E2E.Management;
 
 /// <summary>
+/// The derivative kinds a data store can carry. The names match the values CMS stores and DMS reads, so a
+/// scenario names a derivative the same way the configuration does.
+/// </summary>
+public static class InstanceFixtureDerivativeTypes
+{
+    public const string ReadReplica = "ReadReplica";
+    public const string Snapshot = "Snapshot";
+}
+
+/// <summary>
+/// One derivative attached to a route's data store, and the route-context database that serves it. The
+/// database is one of the fixture's own route databases, so a scenario seeds it through that ordinary
+/// route and then proves a derivative-routed read was answered by it.
+/// </summary>
+public sealed record InstanceFixtureDerivative(
+    string DerivativeType,
+    int DatabaseOrdinal,
+    string DatabaseName
+);
+
+/// <summary>
 /// One pre-registered route (tenant + districtId/schoolYear) mapped to its route-context database and the
 /// CMS records the suite-owned fixture created for it.
 /// </summary>
@@ -20,11 +41,26 @@ public sealed record InstanceFixtureRoute(
     string DatabaseName,
     int DataStoreId,
     int DistrictContextId,
-    int SchoolYearContextId
+    int SchoolYearContextId,
+    IReadOnlyList<InstanceFixtureDerivative> Derivatives
 )
 {
     /// <summary>The route qualifier segment pair as used in URLs and step definitions, e.g. "255901/2024".</summary>
     public string RouteQualifier => $"{DistrictId}/{SchoolYear}";
+
+    /// <summary>Whether this route's data store carries any derivative.</summary>
+    public bool HasDerivatives => Derivatives.Count > 0;
+
+    /// <summary>
+    /// The derivative of the given kind attached to this route's data store.
+    /// </summary>
+    public InstanceFixtureDerivative GetDerivative(string derivativeType) =>
+        Derivatives.FirstOrDefault(d =>
+            string.Equals(d.DerivativeType, derivativeType, StringComparison.Ordinal)
+        )
+        ?? throw new InvalidOperationException(
+            $"Route '{RouteQualifier}' has no '{derivativeType}' derivative."
+        );
 }
 
 /// <summary>
@@ -50,8 +86,14 @@ public sealed class InstanceFixtureState
     public const string RouteManifestVariableName = "INSTANCE_E2E_ROUTE_MANIFEST";
     public const string DatabaseEngineVariableName = "INSTANCE_E2E_DATABASE_ENGINE";
 
-    private const int ExpectedRouteCount = 3;
+    private const int ExpectedRouteCount = 4;
     private const int ExpectedTenantCount = 2;
+
+    /// <summary>
+    /// Exactly one fixture route carries derivatives. A second one would silently serve every read of
+    /// another route from a different database, so the shape is asserted rather than assumed.
+    /// </summary>
+    private const int ExpectedDerivativeRouteCount = 1;
 
     private static readonly Lazy<InstanceFixtureState> _current = new(() => Parse(ReadEnvironment()));
 
@@ -83,6 +125,13 @@ public sealed class InstanceFixtureState
     public IReadOnlyList<InstanceFixtureTenant> Tenants { get; }
 
     public IReadOnlyList<InstanceFixtureRoute> Routes { get; }
+
+    /// <summary>
+    /// The one route whose data store carries a read replica and a snapshot. Parsing has already proven
+    /// exactly one exists, so scenarios read the arrangement from the fixture that built it rather than
+    /// naming a route qualifier the fixture could later move.
+    /// </summary>
+    public InstanceFixtureRoute DerivativeRoutingRoute => Routes.First(r => r.HasDerivatives);
 
     /// <summary>Immutable fixture application IDs that per-scenario cleanup must never delete during the run.</summary>
     public IReadOnlySet<int> ApplicationIds { get; }
@@ -250,8 +299,18 @@ public sealed class InstanceFixtureState
                     databaseName,
                     dataStoreId,
                     districtContextId,
-                    schoolYearContextId
+                    schoolYearContextId,
+                    ParseDerivatives(element, districtId, schoolYear, databaseOrdinal, environment)
                 )
+            );
+        }
+
+        var derivativeRouteCount = routes.Count(r => r.HasDerivatives);
+        if (derivativeRouteCount != ExpectedDerivativeRouteCount)
+        {
+            throw new InvalidOperationException(
+                $"Exactly {ExpectedDerivativeRouteCount} route manifest record must carry derivatives, but "
+                    + $"{derivativeRouteCount} do."
             );
         }
 
@@ -279,6 +338,107 @@ public sealed class InstanceFixtureState
         }
 
         return routes;
+    }
+
+    /// <summary>
+    /// Parses the derivatives attached to one route's data store. Absent or empty is the ordinary case:
+    /// most routes carry none.
+    /// </summary>
+    private static IReadOnlyList<InstanceFixtureDerivative> ParseDerivatives(
+        JsonElement routeElement,
+        string districtId,
+        string schoolYear,
+        int parentDatabaseOrdinal,
+        IReadOnlyDictionary<string, string?> environment
+    )
+    {
+        if (
+            !routeElement.TryGetProperty("derivatives", out var derivativesProperty)
+            || derivativesProperty.ValueKind == JsonValueKind.Null
+        )
+        {
+            return [];
+        }
+
+        if (derivativesProperty.ValueKind != JsonValueKind.Array)
+        {
+            throw new InvalidOperationException(
+                $"Route manifest property 'derivatives' for route '{districtId}/{schoolYear}' must be an array."
+            );
+        }
+
+        var derivatives = new List<InstanceFixtureDerivative>();
+        foreach (var element in derivativesProperty.EnumerateArray())
+        {
+            var derivativeType = RequireStringProperty(element, "derivativeType");
+            if (
+                derivativeType
+                is not InstanceFixtureDerivativeTypes.ReadReplica
+                    and not InstanceFixtureDerivativeTypes.Snapshot
+            )
+            {
+                throw new InvalidOperationException(
+                    $"Route manifest derivativeType must be "
+                        + $"'{InstanceFixtureDerivativeTypes.ReadReplica}' or "
+                        + $"'{InstanceFixtureDerivativeTypes.Snapshot}' but was '{derivativeType}'."
+                );
+            }
+
+            var databaseOrdinal = RequireIntProperty(element, "databaseOrdinal");
+            if (databaseOrdinal is < 1 or > ExpectedRouteCount)
+            {
+                throw new InvalidOperationException(
+                    $"Route manifest derivative databaseOrdinal must be between 1 and {ExpectedRouteCount} "
+                        + $"but was {databaseOrdinal}."
+                );
+            }
+
+            // A derivative pointing at its own parent's database would make every routed read
+            // indistinguishable from a primary read, so the arrangement could not prove anything.
+            if (databaseOrdinal == parentDatabaseOrdinal)
+            {
+                throw new InvalidOperationException(
+                    $"Route '{districtId}/{schoolYear}' has a '{derivativeType}' derivative pointing at its "
+                        + "own parent database."
+                );
+            }
+
+            var databaseName = RequireStringProperty(element, "databaseName");
+            var expectedDatabaseName = RequireValue(
+                environment,
+                $"INSTANCE_E2E_DATABASE_{databaseOrdinal}_NAME"
+            );
+            if (!string.Equals(databaseName, expectedDatabaseName, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Route manifest derivative databaseName '{databaseName}' for ordinal {databaseOrdinal} "
+                        + $"does not match 'INSTANCE_E2E_DATABASE_{databaseOrdinal}_NAME'."
+                );
+            }
+
+            derivatives.Add(new InstanceFixtureDerivative(derivativeType, databaseOrdinal, databaseName));
+        }
+
+        if (
+            derivatives.Select(d => d.DerivativeType).Distinct(StringComparer.Ordinal).Count()
+            != derivatives.Count
+        )
+        {
+            throw new InvalidOperationException(
+                $"Route '{districtId}/{schoolYear}' declares the same derivative type more than once."
+            );
+        }
+
+        // Two derivatives sharing one database would make a snapshot-routed read indistinguishable from a
+        // replica-routed one, so snapshot precedence could not be proven.
+        if (derivatives.Select(d => d.DatabaseOrdinal).Distinct().Count() != derivatives.Count)
+        {
+            throw new InvalidOperationException(
+                $"Route '{districtId}/{schoolYear}' points more than one derivative at the same database."
+            );
+        }
+
+        return derivatives;
     }
 
     private static IReadOnlyList<InstanceFixtureTenant> ParseTenants(

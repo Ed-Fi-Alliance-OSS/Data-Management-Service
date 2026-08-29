@@ -44,7 +44,7 @@ public class Given_The_Fixture_Is_Hydrated_Into_A_Fresh_Context
     {
         _context.FixtureApplicationIds.Should().BeEquivalentTo(new List<int> { 301, 302 });
         _context.FixtureVendorIds.Should().BeEquivalentTo(new List<int> { 101, 102 });
-        _context.FixtureDataStoreIds.Should().BeEquivalentTo(new List<int> { 201, 202, 203 });
+        _context.FixtureDataStoreIds.Should().BeEquivalentTo(new List<int> { 201, 202, 203, 204 });
     }
 
     [Test]
@@ -68,7 +68,7 @@ public class Given_The_Fixture_Is_Hydrated_Into_A_Fresh_Context
         InstanceFixtureHydrator.HydrateAll(_context, _state);
 
         _context.TenantNames.Should().BeEquivalentTo(new List<string> { "Tenant_255901", "Tenant_255902" });
-        _context.DataStoreIds.Should().BeEquivalentTo(new List<int> { 201, 202, 203 });
+        _context.DataStoreIds.Should().BeEquivalentTo(new List<int> { 201, 202, 203, 204 });
         _context.ScenarioOwnedApplications.Should().BeEmpty();
     }
 }

@@ -1334,12 +1334,20 @@ function Get-InstanceE2ETestEnvironmentContext {
         -DockerComposeRoot $dockerComposeRoot
     $environmentValues = ReadValuesFromEnvFile $resolvedEnvironmentFile
 
-    # Read the three route-context database names from the resolved environment; require three
-    # non-empty distinct names and never fall back to a fixed name.
+    # One route-context database per canonical route: 255901/2024, 255901/2025, 255902/2024, and the
+    # derivative-routing route 255901/2026. Declared here rather than at script scope because the
+    # orchestration tests dot-source this function on its own. Raising it requires an
+    # INSTANCE_E2E_DATABASE_<n>_NAME in the route-context environment file, a matching route in
+    # Register-InstanceE2EFixture, and the same count in the Instance E2E setup script.
+    $routeDatabaseCount = 4
+
+    # Read the route-context database names from the resolved environment; require non-empty distinct
+    # names and never fall back to a fixed name. Database 4 backs the derivative-routing route, whose
+    # data store carries a read replica and a snapshot pointing at databases 1 and 2.
     $databaseNames = @(
-        (Get-EnvValue -EnvValues $environmentValues -Name "INSTANCE_E2E_DATABASE_1_NAME"),
-        (Get-EnvValue -EnvValues $environmentValues -Name "INSTANCE_E2E_DATABASE_2_NAME"),
-        (Get-EnvValue -EnvValues $environmentValues -Name "INSTANCE_E2E_DATABASE_3_NAME")
+        foreach ($ordinal in 1..$routeDatabaseCount) {
+            Get-EnvValue -EnvValues $environmentValues -Name "INSTANCE_E2E_DATABASE_${ordinal}_NAME"
+        }
     )
 
     for ($databaseIndex = 0; $databaseIndex -lt $databaseNames.Count; $databaseIndex++) {
@@ -1349,7 +1357,7 @@ function Get-InstanceE2ETestEnvironmentContext {
     }
 
     if (@($databaseNames | Sort-Object -Unique).Count -ne $databaseNames.Count) {
-        throw "The three INSTANCE_E2E_DATABASE_*_NAME values must be distinct; got: $($databaseNames -join ', ')."
+        throw "The $routeDatabaseCount INSTANCE_E2E_DATABASE_*_NAME values must be distinct; got: $($databaseNames -join ', ')."
     }
 
     # Validate every route-context database name up front - safe characters, not a reserved system
@@ -1420,13 +1428,27 @@ function Register-InstanceE2EFixture {
     $postgresPassword = Get-ComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name "POSTGRES_PASSWORD" -DefaultValue "abcdefgh1!"
     $postgresCredential = ConvertTo-PostgresCredential -UserName $postgresUser -Secret $postgresPassword
 
-    # Canonical fixture routes: three data stores under two tenants (255901/2024 and 255901/2025 under
-    # Tenant_255901; 255902/2024 under Tenant_255902). Index maps to the resolved database/registration
-    # string in $InstanceE2ESettings.
+    # Canonical fixture routes: four data stores under two tenants (255901/2024, 255901/2025 and the
+    # derivative-routing route 255901/2026 under Tenant_255901; 255902/2024 under Tenant_255902). Index
+    # maps to the resolved database/registration string in $InstanceE2ESettings.
+    #
+    # 255901/2026 is the only route whose data store carries derivatives. Its read replica and snapshot
+    # point at the databases behind 255901/2024 and 255901/2025, which are ordinary writable routes, so
+    # the suite seeds each physical database through the normal API and then proves which one answered
+    # a derivative-routed read. Nothing else routes to database 4, so a write through 255901/2026 -
+    # which the design sends to the parent - cannot disturb another feature.
     $routeDefinitions = @(
         [pscustomobject]@{ TenantName = "Tenant_255901"; DistrictId = "255901"; SchoolYear = "2024"; Index = 0 },
         [pscustomobject]@{ TenantName = "Tenant_255901"; DistrictId = "255901"; SchoolYear = "2025"; Index = 1 },
-        [pscustomobject]@{ TenantName = "Tenant_255902"; DistrictId = "255902"; SchoolYear = "2024"; Index = 2 }
+        [pscustomobject]@{ TenantName = "Tenant_255902"; DistrictId = "255902"; SchoolYear = "2024"; Index = 2 },
+        [pscustomobject]@{ TenantName = "Tenant_255901"; DistrictId = "255901"; SchoolYear = "2026"; Index = 3 }
+    )
+
+    # The derivative arrangement attached to 255901/2026 after its data store exists: the parent is
+    # database 4, its read replica is database 1, and its snapshot is database 2.
+    $derivativeDefinitions = @(
+        [pscustomobject]@{ DistrictId = "255901"; SchoolYear = "2026"; DerivativeType = "ReadReplica"; Index = 0 },
+        [pscustomobject]@{ DistrictId = "255901"; SchoolYear = "2026"; DerivativeType = "Snapshot"; Index = 1 }
     )
     $tenantOrder = @("Tenant_255901", "Tenant_255902")
 
@@ -1462,6 +1484,26 @@ function Register-InstanceE2EFixture {
                     $districtContextId = Add-DataStoreContext -CmsUrl $cmsUrl -AccessToken $accessToken -Tenant $tenantName -DataStoreId $dataStoreId -ContextKey "districtId" -ContextValue $route.DistrictId
                     $schoolYearContextId = Add-DataStoreContext -CmsUrl $cmsUrl -AccessToken $accessToken -Tenant $tenantName -DataStoreId $dataStoreId -ContextKey "schoolYear" -ContextValue $route.SchoolYear
 
+                    # Attach this route's derivatives, if it has any. Registered here rather than in a
+                    # later pass because DMS loads a data store and its derivatives together, and the
+                    # fixture completes before DMS starts, so the arrangement is visible on the first
+                    # load and no configuration-cache refresh has to be waited on mid-suite.
+                    $routeDerivatives = @(
+                        $derivativeDefinitions | Where-Object {
+                            $_.DistrictId -eq $route.DistrictId -and $_.SchoolYear -eq $route.SchoolYear
+                        }
+                    )
+
+                    foreach ($derivative in $routeDerivatives) {
+                        Add-DataStoreDerivative `
+                            -CmsUrl $cmsUrl `
+                            -AccessToken $accessToken `
+                            -Tenant $tenantName `
+                            -DataStoreId $dataStoreId `
+                            -DerivativeType $derivative.DerivativeType `
+                            -ConnectionString $InstanceE2ESettings.RegistrationConnectionStrings[$derivative.Index] | Out-Null
+                    }
+
                     [pscustomobject]@{
                         TenantName          = $tenantName
                         DistrictId          = $route.DistrictId
@@ -1471,6 +1513,18 @@ function Register-InstanceE2EFixture {
                         DataStoreId         = [long]$dataStoreId
                         DistrictContextId   = $districtContextId
                         SchoolYearContextId = $schoolYearContextId
+                        # Which database ordinal answers this route for each derivative kind. Carried
+                        # so the test process reads the arrangement from the fixture that built it
+                        # instead of restating it, which would let the two drift apart silently.
+                        Derivatives         = @(
+                            foreach ($derivative in $routeDerivatives) {
+                                [pscustomobject]@{
+                                    DerivativeType  = [string]$derivative.DerivativeType
+                                    DatabaseOrdinal = [int]($derivative.Index + 1)
+                                    DatabaseName    = [string]$InstanceE2ESettings.DatabaseNames[$derivative.Index]
+                                }
+                            }
+                        )
                     }
                 }
             )
@@ -1534,6 +1588,15 @@ function Invoke-WithInstanceE2ETestProcessContext {
                 dataStoreId         = [long]$route.DataStoreId
                 districtContextId   = [long]$route.DistrictContextId
                 schoolYearContextId = [long]$route.SchoolYearContextId
+                derivatives         = @(
+                    foreach ($derivative in $route.Derivatives) {
+                        [ordered]@{
+                            derivativeType  = [string]$derivative.DerivativeType
+                            databaseOrdinal = [int]$derivative.DatabaseOrdinal
+                            databaseName    = [string]$derivative.DatabaseName
+                        }
+                    }
+                )
             }
         }
     )
@@ -1548,9 +1611,11 @@ function Invoke-WithInstanceE2ETestProcessContext {
         "INSTANCE_E2E_DATABASE_1_NAME"                 = [string]$InstanceE2ESettings.DatabaseNames[0]
         "INSTANCE_E2E_DATABASE_2_NAME"                 = [string]$InstanceE2ESettings.DatabaseNames[1]
         "INSTANCE_E2E_DATABASE_3_NAME"                 = [string]$InstanceE2ESettings.DatabaseNames[2]
+        "INSTANCE_E2E_DATABASE_4_NAME"                 = [string]$InstanceE2ESettings.DatabaseNames[3]
         "INSTANCE_E2E_DATABASE_1_CONNECTION_STRING"    = [string]$InstanceE2ESettings.RegistrationConnectionStrings[0]
         "INSTANCE_E2E_DATABASE_2_CONNECTION_STRING"    = [string]$InstanceE2ESettings.RegistrationConnectionStrings[1]
         "INSTANCE_E2E_DATABASE_3_CONNECTION_STRING"    = [string]$InstanceE2ESettings.RegistrationConnectionStrings[2]
+        "INSTANCE_E2E_DATABASE_4_CONNECTION_STRING"    = [string]$InstanceE2ESettings.RegistrationConnectionStrings[3]
         "INSTANCE_E2E_ROUTE_MANIFEST"                  = [string]$routeManifestJson
         "INSTANCE_E2E_FIXTURE_TENANT_1_NAME"           = [string]$Fixture.Tenants[0].TenantName
         "INSTANCE_E2E_FIXTURE_TENANT_1_VENDOR_ID"      = [string]$Fixture.Tenants[0].VendorId
@@ -1672,11 +1737,11 @@ function InstanceE2ETests {
         $EnvironmentFile = ""
     )
 
-    # Instance management tests require route qualifiers and three explicitly provisioned route-context databases.
+    # Instance management tests require route qualifiers and explicitly provisioned route-context databases.
     Write-Host "Setting up instance management E2E tests..." -ForegroundColor Cyan
 
-    # Resolve the environment/engine and the three route-context databases once. The setup script,
-    # fixture registration, teardown, and the test process all consume this context.
+    # Resolve the environment/engine and the route-context databases once. The setup script, fixture
+    # registration, teardown, and the test process all consume this context.
     $instanceSettings = Get-InstanceE2ETestEnvironmentContext -EnvironmentFile $EnvironmentFile -DatabaseEngine $DatabaseEngine
 
     # Tear down any prior dms-local stack for the SAME engine and the SAME final resolved environment
@@ -1700,8 +1765,8 @@ function InstanceE2ETests {
 
     if (Test-Path $instanceSetupScript) {
         Write-Host "Starting Docker environment and route-context provisioning ($($instanceSettings.DatabaseEngine))..." -ForegroundColor Cyan
-        # The setup script owns the deterministic order: InfraOnly/Config Service -> provision all three
-        # route-context databases (generated engine-correct DDL) -> engine-dispatched schema verification
+        # The setup script owns the deterministic order: InfraOnly/Config Service -> provision every
+        # route-context database (generated engine-correct DDL) -> engine-dispatched schema verification
         # -> DmsOnly -> DMS health. The environment was already composed once here; pass both the base
         # file (for teardown guidance) and the resolved file (-ResolvedEnvironmentFile, used verbatim)
         # so the setup performs no second overlay composition.

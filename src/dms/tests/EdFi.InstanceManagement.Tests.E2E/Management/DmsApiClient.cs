@@ -68,6 +68,43 @@ public class DmsApiClient : IDisposable
         BuildPath($"/{districtId}/{schoolYear}/data/ed-fi/{resource}");
 
     /// <summary>
+    /// The request header that asks DMS to serve a read from the data store's configured snapshot rather
+    /// than from current data.
+    /// </summary>
+    public const string UseSnapshotHeaderName = "Use-Snapshot";
+
+    /// <summary>
+    /// Sends one request, optionally asking for a snapshot.
+    /// </summary>
+    /// <remarks>
+    /// The header is attached per request rather than to the client's default headers, so one client can
+    /// send a snapshot-requesting and a plain request in the same scenario and a stray default cannot
+    /// leak into a later assertion. The value is the caller's verbatim text, because the parsing rule -
+    /// only a value that parses as boolean true asks for a snapshot - is the behavior under test.
+    /// </remarks>
+    private async Task<HttpResponseMessage> SendAsync(
+        HttpMethod method,
+        string url,
+        object? body = null,
+        string? useSnapshot = null
+    )
+    {
+        using var request = new HttpRequestMessage(method, url);
+
+        if (body is not null)
+        {
+            request.Content = JsonContent.Create(body);
+        }
+
+        if (useSnapshot is not null)
+        {
+            request.Headers.TryAddWithoutValidation(UseSnapshotHeaderName, useSnapshot);
+        }
+
+        return await _httpClient.SendAsync(request);
+    }
+
+    /// <summary>
     /// POST a resource to DMS with route qualifiers
     /// </summary>
     public async Task<HttpResponseMessage> PostResourceAsync(
@@ -78,9 +115,8 @@ public class DmsApiClient : IDisposable
     )
     {
         var url = ResourcePath(districtId, schoolYear, resource);
-        var response = await _httpClient.PostAsJsonAsync(url, body);
 
-        return response;
+        return await SendAsync(HttpMethod.Post, url, body);
     }
 
     /// <summary>
@@ -90,7 +126,8 @@ public class DmsApiClient : IDisposable
         string districtId,
         string schoolYear,
         string resource,
-        string? query = null
+        string? query = null,
+        string? useSnapshot = null
     )
     {
         var url = ResourcePath(districtId, schoolYear, resource);
@@ -100,9 +137,24 @@ public class DmsApiClient : IDisposable
             url = $"{url}?{query}";
         }
 
-        var response = await _httpClient.GetAsync(url);
+        return await SendAsync(HttpMethod.Get, url, useSnapshot: useSnapshot);
+    }
 
-        return response;
+    /// <summary>
+    /// GET one resource by id under route qualifiers, so a by-id read can be routed the same way a
+    /// collection read is.
+    /// </summary>
+    public async Task<HttpResponseMessage> GetResourceByIdAsync(
+        string districtId,
+        string schoolYear,
+        string resource,
+        string id,
+        string? useSnapshot = null
+    )
+    {
+        var url = $"{ResourcePath(districtId, schoolYear, resource)}/{id}";
+
+        return await SendAsync(HttpMethod.Get, url, useSnapshot: useSnapshot);
     }
 
     /// <summary>
@@ -141,11 +193,13 @@ public class DmsApiClient : IDisposable
     /// </summary>
     public async Task<HttpResponseMessage> GetAvailableChangeVersionsAsync(
         string districtId,
-        string schoolYear
+        string schoolYear,
+        string? useSnapshot = null
     )
     {
         var url = BuildPath($"/{districtId}/{schoolYear}/changeQueries/v1/availableChangeVersions");
-        return await _httpClient.GetAsync(url);
+
+        return await SendAsync(HttpMethod.Get, url, useSnapshot: useSnapshot);
     }
 
     /// <summary>
@@ -155,11 +209,13 @@ public class DmsApiClient : IDisposable
         string districtId,
         string schoolYear,
         string resource,
-        string segment
+        string segment,
+        string? useSnapshot = null
     )
     {
         var url = $"{ResourcePath(districtId, schoolYear, resource)}/{segment}";
-        return await _httpClient.GetAsync(url);
+
+        return await SendAsync(HttpMethod.Get, url, useSnapshot: useSnapshot);
     }
 
     /// <summary>
