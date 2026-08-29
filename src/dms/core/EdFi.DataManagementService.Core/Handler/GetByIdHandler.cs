@@ -46,7 +46,10 @@ internal class GetByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePip
             r => IsRetryableResult(r),
             r => r is GetSuccess,
             async ct => await documentStoreRepository.GetDocumentById(CreateGetRequest(requestInfo), ct),
-            requestInfo
+            requestInfo,
+            // A read is safe to abandon when the client disconnects: nothing is persisted,
+            // so stopping the retry loop only stops work nobody is waiting for.
+            requestInfo.RequestCancellationToken
         );
         _logger.LogDebug(
             "Document store GetDocumentById returned {GetResult}- {TraceId}",

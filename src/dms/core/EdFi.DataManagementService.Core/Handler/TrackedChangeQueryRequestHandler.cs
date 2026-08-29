@@ -63,7 +63,10 @@ internal sealed class TrackedChangeQueryRequestHandler(
             static _ => false,
             static _ => true,
             async ct => await changeQueryRepository.QueryTrackedChanges(trackedChangeQueryRequest, ct),
-            requestInfo
+            requestInfo,
+            // A read is safe to abandon when the client disconnects: nothing is persisted,
+            // so stopping the retry loop only stops work nobody is waiting for.
+            requestInfo.RequestCancellationToken
         );
 
         if (trackedChangeQueryResult.AuthorizationFailure is { } authorizationFailure)

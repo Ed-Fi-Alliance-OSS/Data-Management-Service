@@ -1370,7 +1370,7 @@ public class CustomResourceValidationMiddlewareTests
             _logger
                 .Entries.Should()
                 .Contain(entry =>
-                    entry.Level == LogLevel.Debug
+                    entry.Level == LogLevel.Information
                     && entry.Message.Contains(nameof(FakeValidator))
                     && entry.Message.Contains("1 failure")
                     && entry.Message.Contains("logging-trace-id-7")

@@ -39,10 +39,12 @@ public interface ICustomResourceValidator
     /// <param name="document">
     /// The document to validate. It is never the raw submitted body byte-for-byte, and what it
     /// carries differs by whether a writable profile applied to the request.
-    /// With no writable profile, it is the submitted body after type coercion (date formats,
-    /// date-times, and other request-value coercions) and after version-metadata injection, so it
-    /// carries a server-assigned "_lastModifiedDate" the client never sent; a validator doing strict
-    /// property checking must expect to see it.
+    /// With no writable profile, it is the submitted body after date-format and date-time coercion
+    /// and after version-metadata injection, so it carries a server-assigned "_lastModifiedDate" the
+    /// client never sent; a validator doing strict property checking must expect to see it. Broader
+    /// request-value coercion is applied too unless the deployment sets
+    /// <c>AppSettings:BypassTypeCoercion</c>, which removes that step from the pipeline, so a
+    /// validator must not assume every value has been coerced to its schema type.
     /// With a writable profile, it is the profile-shaped writable surface, which is built before
     /// version-metadata injection and therefore does not carry "_lastModifiedDate" at all.
     /// A validator that must behave the same either way should not depend on that property's

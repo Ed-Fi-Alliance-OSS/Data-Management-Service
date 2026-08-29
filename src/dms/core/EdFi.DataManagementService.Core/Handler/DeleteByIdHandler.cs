@@ -54,6 +54,8 @@ internal class DeleteByIdHandler(ILogger _logger, ResiliencePipeline _resilience
                     }
                 ),
             requestInfo
+        // No resilience token argument: a delete is a write, so it takes the conservative
+        // default and must not become abandonable if DeleteById is ever given a real token.
         );
         _logger.LogDebug(
             "Document store DeleteDocumentById returned {DeleteResult}- {TraceId}",

@@ -226,16 +226,18 @@ public static class Utility
     /// </summary>
     /// <param name="resilienceCancellationToken">
     /// The token the resilience context - and therefore the operation itself - is seeded with.
-    /// Defaults to <see cref="RequestInfo.RequestCancellationToken" />, which is what every read
-    /// handler uses.
-    /// <c>UpsertHandler</c> and <c>UpdateByIdHandler</c> pass <see cref="CancellationToken.None" />
-    /// instead, so a client disconnect cannot abandon a non-idempotent write that would otherwise
-    /// have been retried and applied; see those call sites for the full reasoning.
-    /// <c>DeleteByIdHandler</c> is a write too but takes the default, which is safe only because
-    /// <c>ApiService.DeleteById</c> never assigns
-    /// <see cref="RequestInfo.RequestCancellationToken" />, leaving it at <c>default</c>. A change
-    /// that gives DeleteById a real token has to pass <see cref="CancellationToken.None" /> here as
-    /// well, or deletes silently become abandonable mid-retry.
+    /// Defaults to <see cref="CancellationToken.None" />, so the retry loop is not abandonable
+    /// unless a caller opts in.
+    /// The default is deliberately the conservative direction rather than the convenient one: a
+    /// write handler that forgets to opt out would silently drop a non-idempotent write that would
+    /// otherwise have been retried and applied, while a read handler that forgets to opt in only
+    /// keeps retrying work nobody is waiting for. The failure modes are not symmetric, so the
+    /// default protects the one that loses data.
+    /// Read handlers therefore pass <see cref="RequestInfo.RequestCancellationToken" /> explicitly.
+    /// <c>UpsertHandler</c> and <c>UpdateByIdHandler</c> also pass <see cref="CancellationToken.None" />
+    /// explicitly rather than relying on the default, so the durability choice stays visible at the
+    /// call site and survives anyone changing this default back. <c>DeleteByIdHandler</c> relies on
+    /// the default.
     /// </param>
     internal static async Task<TResult> ExecuteWithRetryLogging<TResult>(
         ResiliencePipeline resiliencePipeline,
@@ -246,14 +248,12 @@ public static class Utility
         Func<TResult, bool> isSuccess,
         Func<CancellationToken, ValueTask<TResult>> operation,
         RequestInfo requestInfo,
-        CancellationToken? resilienceCancellationToken = null
+        CancellationToken resilienceCancellationToken = default
     )
         where TResult : class
     {
         int attemptCount = 0;
-        var context = ResilienceContextPool.Shared.Get(
-            resilienceCancellationToken ?? requestInfo.RequestCancellationToken
-        );
+        var context = ResilienceContextPool.Shared.Get(resilienceCancellationToken);
         context.Properties.Set(TraceIdKey, traceId.Value);
         context.Properties.Set(OperationNameKey, operationName);
 

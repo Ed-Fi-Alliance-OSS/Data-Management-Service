@@ -95,9 +95,11 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
             // has written "_lastModifiedDate" into it, not the raw submitted body.
             var document = ProfileWriteValidationBody.Effective(requestInfo).DeepClone();
 
-            // The validator's own type name is implementer-authored, unlike every other value on
-            // this log line, so it is routed through the sanitizer before it ever reaches a log
-            // template.
+            // The validator's own type name is implementer-authored, so it is routed through the
+            // sanitizer before it reaches a log template. Note this is not the only externally
+            // influenced value here: TraceId is client-supplied whenever AppSettings:CorrelationIdHeader
+            // is configured, and is logged unsanitized, matching what every other middleware in Core
+            // does with it.
             string sanitizedValidatorTypeName = LoggingSanitizer.SanitizeForLogging(validator.GetType().Name);
             long validatorStartTimestamp = Stopwatch.GetTimestamp();
 
@@ -119,8 +121,10 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
                 );
 
             // This design puts third-party network I/O on the write path with no timeout the
-            // contract controls, so per-validator elapsed time is the only diagnostic a deployment
-            // has when a validator is slow.
+            // contract controls, so per-validator elapsed time is what a deployment reaches for when
+            // a validator is slow. Left at Debug because it is per-request detail: the shipped
+            // Serilog default is Information (appsettings.json), so an operator chasing a slow
+            // validator has to turn Debug on for this namespace to see it.
             _logger.LogDebug(
                 "{ValidatorTypeName} ran in {ElapsedMilliseconds} ms - {TraceId}",
                 sanitizedValidatorTypeName,
@@ -130,9 +134,14 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
 
             if (failures.Count > 0)
             {
+                // Information rather than Debug: this is a client-visible rejection, and at Debug
+                // it would never appear in a default deployment, leaving a custom-validation 400
+                // with no operator trace at all. The count is bounded by what one validator
+                // returned, so this cannot become a per-document flood the way the timing record
+                // could.
                 // Names the validator and the failure count only. Failure messages are never
                 // logged: they can quote submitted document values.
-                _logger.LogDebug(
+                _logger.LogInformation(
                     "{ValidatorTypeName} returned {FailureCount} failure(s) - {TraceId}",
                     sanitizedValidatorTypeName,
                     failures.Count,
