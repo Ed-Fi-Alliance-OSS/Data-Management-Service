@@ -39,6 +39,25 @@ application, the following defaults are automatically assigned:
 as an identity tag and may be expanded in the future to support additional
 authorization logic.
 
+### CMS Scopes Are Not Tenant-Scoped
+
+CMS scopes control **what operations** a client may perform. They do not control
+**which tenant** those operations apply to.
+
+In a multi-tenant deployment, the tenant a request operates on is selected by the
+`Tenant` request header. CMS access tokens carry no tenant claim, and the header is
+not validated against the caller's identity. A client holding
+`edfi_admin_api/full_access` therefore has full administrative access to **every**
+tenant in the deployment, and a client holding `edfi_admin_api/readonly_access` can
+read every tenant's configuration.
+
+This is deliberate: the tenant partition is a data routing mechanism, not a security
+boundary. Issue CMS credentials accordingly — treat every one as platform-wide.
+Where a hard boundary between tenants is required, deploy a separate CMS instance per
+boundary. See
+[Getting Started with Multi-Tenancy](./MULTI-TENANCY-GETTING-STARTED.md#tenant-header)
+for details.
+
 ## DMS Application
 
 ### Token Generation
