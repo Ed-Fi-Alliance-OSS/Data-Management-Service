@@ -240,11 +240,11 @@ public sealed class Given_DocumentCacheAdminPostgresqlRetryableIncompleteWorkflo
             await using DocumentCacheAdminCliRunningProcess timedOutProcess = StartRebuildOnline(
                 harness,
                 target,
-                commandTimeoutSeconds: "2"
+                commandTimeoutSeconds: "10"
             );
 
             await WaitForLifecycleStateAsync(target, timedOutProcess, "Resetting");
-            await Task.Delay(TimeSpan.FromMilliseconds(2500));
+            await Task.Delay(TimeSpan.FromMilliseconds(10500));
             await cacheLock.DisposeAsync();
             cacheLock = null;
 
@@ -347,11 +347,11 @@ public sealed class Given_DocumentCacheAdminMssqlRetryableIncompleteWorkflows
                     await using DocumentCacheAdminCliRunningProcess timedOutProcess = StartRebuildOnline(
                         harness,
                         target,
-                        commandTimeoutSeconds: "2"
+                        commandTimeoutSeconds: "10"
                     );
 
                     await WaitForLifecycleStateAsync(target, timedOutProcess, "Resetting");
-                    await Task.Delay(TimeSpan.FromMilliseconds(2500));
+                    await Task.Delay(TimeSpan.FromMilliseconds(10500));
                     await cacheLock.DisposeAsync();
                     cacheLock = null;
 

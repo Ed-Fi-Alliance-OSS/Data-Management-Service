@@ -223,7 +223,7 @@
       "Run: `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCache`",
       "Run: `dotnet csharpier format src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Performance Qualification",
