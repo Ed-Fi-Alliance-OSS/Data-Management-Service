@@ -18,6 +18,13 @@ namespace EdFi.DataManagementService.Backend.Cdc.Control;
 
 public static class CdcControlServiceCollectionExtensions
 {
+    /// <summary>
+    /// Configuration section the durable binding state store's root path is bound from. The core control
+    /// plane registers the options without a source of its own, so a host that never binds this section
+    /// silently writes binding records to the built-in default root.
+    /// </summary>
+    public const string BindingStateStoreSectionName = $"{CdcControlOptions.SectionName}:BindingStateStore";
+
     private const string DatastoreSectionName = "AppSettings:Datastore";
     private const string PostgresqlDatastore = "postgresql";
     private const string MssqlDatastore = "mssql";
@@ -50,6 +57,9 @@ public static class CdcControlServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IValidateOptions<CdcControlOptions>, CdcControlOptionsValidator>()
         );
+        services
+            .AddOptions<CoreCdc.CdcBindingStateStoreOptions>()
+            .Bind(configuration.GetSection(BindingStateStoreSectionName));
 
         services.AddCdcConnectorTemplates();
         services.AddCdcProviderSetup();
@@ -80,6 +90,11 @@ public static class CdcControlServiceCollectionExtensions
             ICdcInstanceDatabaseConnectionFactory,
             CdcInstanceDatabaseConnectionFactory
         >();
+
+        // Derives the provider-setup inputs from the authoritative effective schema rather than from
+        // caller input, so no host can assert a source shape the instance database does not have. The
+        // host must register the relational mapping-set services its datastore uses.
+        services.TryAddSingleton<ICdcProviderSetupInputsFactory, CdcProviderSetupInputsFactory>();
 
         // Scoped because it composes the scoped provider-setup and template services. The host must
         // also register the DocumentCache runtime services for its datastore: the guarded new-empty

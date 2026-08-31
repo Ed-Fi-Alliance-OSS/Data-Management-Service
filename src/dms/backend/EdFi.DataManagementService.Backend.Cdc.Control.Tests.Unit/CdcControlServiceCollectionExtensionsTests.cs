@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.Ddl;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using FakeItEasy;
 using FluentAssertions;
@@ -64,6 +65,7 @@ public class Given_CdcControlServiceCollectionExtensionsTests
         scope.ServiceProvider.GetRequiredService<ICdcConnectorLagReader>().Should().NotBeNull();
         scope.ServiceProvider.GetRequiredService<ICdcConnectorObservationMapper>().Should().NotBeNull();
         scope.ServiceProvider.GetRequiredService<ICdcProjectionCorrelationCollector>().Should().NotBeNull();
+        scope.ServiceProvider.GetRequiredService<ICdcProviderSetupInputsFactory>().Should().NotBeNull();
         scope.ServiceProvider.GetRequiredService<ICdcSetupController>().Should().NotBeNull();
     }
 
@@ -141,10 +143,12 @@ public class Given_CdcControlServiceCollectionExtensionsTests
         services.AddLogging();
         services.Configure<CdcBindingStateStoreOptions>(options => options.RootPath = stateRoot.Path);
 
-        // The guarded new-empty activation the setup controller invokes is registered by the host with
-        // the DocumentCache runtime services for its datastore, as the administrative CLI does, rather
-        // than by the CDC control plane.
+        // The guarded new-empty activation the setup controller invokes, and the relational mapping-set
+        // services the provider-setup inputs are derived from, are registered by the host with the
+        // DocumentCache runtime services for its datastore, as the administrative CLI does, rather than
+        // by the CDC control plane.
         services.AddSingleton(A.Fake<IDocumentCacheGuardedNewEmptyActivationCommand>());
+        services.AddSingleton(A.Fake<IMappingSetProvider>());
         services.AddDmsCdcControl(BuildConfiguration(datastore, stateRoot.Path));
 
         return services.BuildServiceProvider(
@@ -184,6 +188,7 @@ public class Given_CdcControlServiceCollectionExtensionsTests
             [$"{section}:DeploymentKey"] = "deployment",
             [$"{section}:InstanceKey"] = "instance",
             [$"{section}:TopicPrefix"] = "edfi.documents.instance",
+            [$"{section}:SetupPrincipal"] = "setup_principal",
             [$"{section}:Generation"] = "1",
             [$"{section}:PartitionCount"] = "3",
             [$"{section}:KafkaBootstrapServers"] = "localhost:9092",

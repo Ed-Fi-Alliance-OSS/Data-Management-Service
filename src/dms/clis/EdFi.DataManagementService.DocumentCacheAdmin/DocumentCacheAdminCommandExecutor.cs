@@ -11,6 +11,7 @@ using System.Globalization;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -24,7 +25,8 @@ internal static class DocumentCacheAdminCommandExecutor
         IServiceProvider serviceProvider,
         TextWriter standardOutput,
         TextWriter? standardError = null,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken = default,
+        TextReader? standardInput = null
     )
     {
         ArgumentNullException.ThrowIfNull(parseResult);
@@ -32,7 +34,16 @@ internal static class DocumentCacheAdminCommandExecutor
         ArgumentNullException.ThrowIfNull(serviceProvider);
         ArgumentNullException.ThrowIfNull(standardOutput);
 
-        string commandName = parseResult.CommandResult.Command.Name;
+        // The cdc verb group has its own dispatch and shares the verb name `status` with the
+        // DocumentCache status command, so every name comparison below is scoped away from it, and its
+        // verbs report under their scoped label. A leaf name alone cannot identify a command once a verb
+        // group exists.
+        bool isCdcCommand = DocumentCacheAdminCommandSurface.IsCdcCommand(parseResult);
+        string? cdcVerbName = DocumentCacheAdminCommandSurface.CdcVerbName(parseResult);
+        string commandName = cdcVerbName is null
+            ? parseResult.CommandResult.Command.Name
+            : DocumentCacheAdminCommandSurface.CdcCommandLabel(cdcVerbName);
+
         bool jsonOutput = parseResult.GetValue<bool>(DocumentCacheAdminCommandSurface.JsonOptionName);
         IDocumentCacheAdminCliTelemetry telemetry =
             serviceProvider.GetService<IDocumentCacheAdminCliTelemetry>()
@@ -59,8 +70,93 @@ internal static class DocumentCacheAdminCommandExecutor
             return exitCode;
         }
 
+        if (isCdcCommand && cdcVerbName is not null)
+        {
+            if (
+                !DocumentCacheAdminCdcCommandRequestBuilder.TryBuild(
+                    parseResult,
+                    cdcVerbName,
+                    invocationTarget,
+                    BindingJsonLoader(standardInput),
+                    out DocumentCacheAdminCdcCommandRequest? cdcRequest,
+                    out string? cdcFailure
+                )
+            )
+            {
+                await WriteErrorAsync(standardError, cdcFailure).ConfigureAwait(false);
+
+                return CompleteCommand(
+                    DocumentCacheAdminExitCodes.ArgumentError,
+                    "argumentError",
+                    "cdcRequestValidation"
+                );
+            }
+
+            IDocumentCacheAdminCdcCommandDispatcher? cdcDispatcher =
+                serviceProvider.GetService<IDocumentCacheAdminCdcCommandDispatcher>();
+            if (cdcDispatcher is null)
+            {
+                await WriteErrorAsync(
+                        standardError,
+                        "CDC control plane services are not configured for this invocation."
+                    )
+                    .ConfigureAwait(false);
+
+                return CompleteCommand(
+                    DocumentCacheAdminExitCodes.ConfigurationError,
+                    "configurationError",
+                    "cdcServicesMissing"
+                );
+            }
+
+            try
+            {
+                // No CLI-level timeout scope: the control plane owns per-step timeouts, and a step that
+                // times out returns a fail-closed contract rather than an abandoned operation. A
+                // wall-clock budget imposed here could only discard evidence the operation already has.
+                DocumentCacheAdminCdcCommandResult cdcResult = await cdcDispatcher
+                    .ExecuteAsync(cdcRequest!, cancellationToken)
+                    .ConfigureAwait(false);
+
+                await WriteCdcResultAsync(cdcResult, jsonOutput, standardOutput, standardError)
+                    .ConfigureAwait(false);
+
+                return CompleteCommand(cdcResult.ExitCode, cdcResult.Outcome, cdcResult.Category);
+            }
+            catch (OperationCanceledException)
+            {
+                await WriteErrorAsync(
+                        standardError,
+                        "CDC operation was cancelled before a shared contract could be produced."
+                    )
+                    .ConfigureAwait(false);
+
+                return CompleteCommand(
+                    DocumentCacheAdminExitCodes.IncompleteRetryable,
+                    "incompleteRetryable",
+                    "cdcCancelled"
+                );
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                await WriteErrorAsync(
+                        standardError,
+                        "CDC operation failed before a shared contract could be produced",
+                        exception.Message
+                    )
+                    .ConfigureAwait(false);
+
+                return CompleteCommand(
+                    DocumentCacheAdminExitCodes.UnexpectedFailure,
+                    "unexpectedFailure",
+                    "cdcDispatcherFailure"
+                );
+            }
+        }
+
         if (
-            string.Equals(
+            !isCdcCommand
+            && string.Equals(
                 commandName,
                 DocumentCacheAdminCommandSurface.StatusCommandName,
                 StringComparison.Ordinal
@@ -166,7 +262,7 @@ internal static class DocumentCacheAdminCommandExecutor
             }
         }
 
-        if (DocumentCacheAdminCommandSurface.IsMutatingCommand(commandName))
+        if (!isCdcCommand && DocumentCacheAdminCommandSurface.IsMutatingCommand(commandName))
         {
             if (
                 !DocumentCacheAdminMutatingCommandRequestBuilder.TryBuild(
@@ -337,6 +433,114 @@ internal static class DocumentCacheAdminCommandExecutor
 
         return await parseResult.InvokeAsync().ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Reads a <c>--binding-json</c> value from a file or from standard input. When no reader was
+    /// supplied, stdin reads as empty rather than reaching the process console, so a caller that did not
+    /// offer stdin cannot have a binding read out from under it.
+    /// </summary>
+    private static Func<string, string> BindingJsonLoader(TextReader? standardInput) =>
+        path =>
+            string.Equals(path, "-", StringComparison.Ordinal)
+                ? (standardInput ?? TextReader.Null).ReadToEnd()
+                : File.ReadAllText(path);
+
+    private static async Task WriteCdcResultAsync(
+        DocumentCacheAdminCdcCommandResult result,
+        bool jsonOutput,
+        TextWriter standardOutput,
+        TextWriter? standardError
+    )
+    {
+        if (result.Contract is { } contract && result.ContractType is { } contractType)
+        {
+            if (jsonOutput)
+            {
+                await standardOutput
+                    .WriteLineAsync(
+                        DocumentCacheAdminJsonSerializer.SerializeCdcContract(contract, contractType)
+                    )
+                    .ConfigureAwait(false);
+                return;
+            }
+
+            await WriteHumanCdcResultAsync(result, standardOutput).ConfigureAwait(false);
+            return;
+        }
+
+        // No contract was produced, so the diagnostics are the whole answer. They go to stderr in JSON
+        // mode so stdout still contains exactly one shared contract document or nothing at all.
+        foreach (CdcDiagnostic diagnostic in result.Diagnostics)
+        {
+            await WriteErrorAsync(
+                    jsonOutput ? standardError : standardOutput,
+                    $"{result.VerbName}: {diagnostic.Code}",
+                    diagnostic.Message
+                )
+                .ConfigureAwait(false);
+        }
+    }
+
+    private static async Task WriteHumanCdcResultAsync(
+        DocumentCacheAdminCdcCommandResult result,
+        TextWriter standardOutput
+    )
+    {
+        await standardOutput
+            .WriteLineAsync($"CDC {result.VerbName} outcome={result.Outcome}")
+            .ConfigureAwait(false);
+
+        if (result.GovernedNames is { } names)
+        {
+            await standardOutput
+                .WriteLineAsync(
+                    $"  connector={DocumentCacheAdminOutput.BoundedLabel(names.ConnectorName)} provider={names.Provider} dataStoreId={names.DataStoreId} instanceKey={DocumentCacheAdminOutput.BoundedLabel(names.InstanceKey)}"
+                )
+                .ConfigureAwait(false);
+            await standardOutput
+                .WriteLineAsync(
+                    $"  topic={DocumentCacheAdminOutput.BoundedLabel(names.TopicName)} progressTopic={DocumentCacheAdminOutput.BoundedLabel(names.ProgressTopicName)} schemaHistoryTopic={FormatOptionalLabel(names.SchemaHistoryTopicName)}"
+                )
+                .ConfigureAwait(false);
+        }
+
+        switch (result.Contract)
+        {
+            case CdcAdmission admission:
+                await standardOutput
+                    .WriteLineAsync(
+                        $"  admission={admission.AdmissionState} blocking={admission.PrimaryBlockingCategory} diagnostics={admission.Diagnostics.Count.ToString(CultureInfo.InvariantCulture)}"
+                    )
+                    .ConfigureAwait(false);
+                break;
+            case CdcStatus status:
+                await standardOutput
+                    .WriteLineAsync(
+                        $"  readiness={status.Readiness} blocking={status.PrimaryBlockingCategory} targets={status.Targets.Count.ToString(CultureInfo.InvariantCulture)}"
+                    )
+                    .ConfigureAwait(false);
+                break;
+            case CdcAdoptionProof adoptionProof:
+                await standardOutput
+                    .WriteLineAsync(
+                        $"  verifications={adoptionProof.VerificationResults.Count.ToString(CultureInfo.InvariantCulture)}"
+                    )
+                    .ConfigureAwait(false);
+                break;
+            case CdcCleanupProof cleanupProof:
+                await standardOutput
+                    .WriteLineAsync(
+                        $"  cleanupMode={cleanupProof.CleanupMode} governedArtifacts={cleanupProof.GovernedArtifacts.Count.ToString(CultureInfo.InvariantCulture)}"
+                    )
+                    .ConfigureAwait(false);
+                break;
+            default:
+                break;
+        }
+    }
+
+    private static string FormatOptionalLabel(string? value) =>
+        value is null ? "null" : DocumentCacheAdminOutput.BoundedLabel(value);
 
     private static async Task WriteAdministrativeCommandResultAsync(
         DocumentCacheAdministrativeCommandResult result,

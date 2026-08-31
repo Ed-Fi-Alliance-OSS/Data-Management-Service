@@ -52,6 +52,12 @@ public class Given_CdcControlOptionsTests
         yield return Case(nameof(CdcControlOptions.DeploymentKey), options => options.DeploymentKey = "   ");
         yield return Case(nameof(CdcControlOptions.InstanceKey), options => options.InstanceKey = "");
         yield return Case(nameof(CdcControlOptions.TopicPrefix), options => options.TopicPrefix = "");
+        // Unlike the ACL principals, the provider-setup principal is required whether or not an
+        // authorizer is enabled: every cdc verb runs a provider-setup pass as it.
+        yield return Case(
+            nameof(CdcControlOptions.SetupPrincipal),
+            options => options.SetupPrincipal = "   "
+        );
         yield return Case(
             nameof(CdcControlOptions.KafkaBootstrapServers),
             options => options.KafkaBootstrapServers = ""
@@ -467,6 +473,7 @@ public class Given_CdcControlOptionsTests
             DeploymentKey = "deployment",
             InstanceKey = "instance",
             TopicPrefix = "edfi.documents.instance",
+            SetupPrincipal = "setup_principal",
             Generation = 7,
             PartitionCount = 3,
             KafkaBootstrapServers = "localhost:9092",

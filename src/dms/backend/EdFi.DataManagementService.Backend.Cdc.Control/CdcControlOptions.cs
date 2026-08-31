@@ -96,6 +96,14 @@ public sealed class CdcControlOptions
     /// </summary>
     public bool AclsEnabled { get; set; }
 
+    /// <summary>
+    /// Database principal the provider-setup pass runs as. Required for every cdc operation, because
+    /// both the create pass and the validate-only pass report the grants this principal made; unlike
+    /// <see cref="ConnectorPrincipal"/> it has nothing to do with Kafka ACLs, so it is required whether
+    /// or not an authorizer is enabled.
+    /// </summary>
+    public string SetupPrincipal { get; set; } = string.Empty;
+
     public string ConnectorPrincipal { get; set; } = string.Empty;
 
     /// <summary>
@@ -230,6 +238,7 @@ public sealed class CdcControlOptionsValidator : IValidateOptions<CdcControlOpti
         RequireText(options.DeploymentKey, nameof(CdcControlOptions.DeploymentKey), failures);
         RequireText(options.InstanceKey, nameof(CdcControlOptions.InstanceKey), failures);
         RequireText(options.TopicPrefix, nameof(CdcControlOptions.TopicPrefix), failures);
+        RequireText(options.SetupPrincipal, nameof(CdcControlOptions.SetupPrincipal), failures);
 
         if (options.Generation <= 0)
         {

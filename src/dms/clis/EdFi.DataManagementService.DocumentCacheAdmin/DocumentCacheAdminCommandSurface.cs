@@ -7,6 +7,8 @@ using System.CommandLine;
 using System.CommandLine.Help;
 using System.CommandLine.Parsing;
 using System.Globalization;
+using System.Numerics;
+using EdFi.DataManagementService.Backend.Cdc.Control;
 using EdFi.DataManagementService.Core.DocumentCache;
 
 namespace EdFi.DataManagementService.DocumentCacheAdmin;
@@ -20,6 +22,21 @@ internal static class DocumentCacheAdminCommandSurface
     public const string RebuildOnlineCommandName = "rebuild-online";
     public const string ScrubCommandName = "scrub";
     public const string RecoverCacheAheadCommandName = "recover-cache-ahead";
+
+    /// <summary>
+    /// Deployment-owned CDC binding operations are a verb group rather than seven more root commands,
+    /// so their verbs are scoped names: <c>cdc status</c> is not the DocumentCache <c>status</c>
+    /// command even though the two share a verb name. Use <see cref="IsCdcCommand(ParseResult)"/>
+    /// wherever command identity is decided from a parse result.
+    /// </summary>
+    public const string CdcCommandName = "cdc";
+
+    public const string CdcEnableVerbName = "enable";
+    public const string CdcStatusVerbName = "status";
+    public const string CdcRestartVerbName = "restart";
+    public const string CdcAdoptVerbName = "adopt";
+    public const string CdcReplaceSourceVerbName = "replace-source";
+    public const string CdcRetireVerbName = "retire";
 
     public const string JsonOptionName = "--json";
     public const string VerboseOptionName = "--verbose";
@@ -37,6 +54,19 @@ internal static class DocumentCacheAdminCommandSurface
     public const string StatusObservationTimeoutSecondsOptionName = "--status-observation-timeout-seconds";
     public const string StatusTimeoutSecondsOptionName = "--status-timeout-seconds";
 
+    public const string CdcBindingStatePathOptionName = "--cdc-binding-state-path";
+    public const string DeploymentKeyOptionName = "--deployment-key";
+    public const string InstanceKeyOptionName = "--instance-key";
+    public const string GenerationOptionName = "--generation";
+    public const string PreviousGenerationOptionName = "--previous-generation";
+    public const string KafkaBootstrapServersOptionName = "--kafka-bootstrap-servers";
+    public const string ConnectBaseUrlOptionName = "--connect-base-url";
+    public const string MaxRecordBytesOptionName = "--max-record-bytes";
+    public const string DurabilityProfileOptionName = "--durability-profile";
+    public const string DatabaseCreationModeOptionName = "--database-creation-mode";
+    public const string WriteAdmissionOptionName = "--write-admission";
+    public const string BindingJsonOptionName = "--binding-json";
+
     public const string PostgresqlDatastoreOptionValue = "postgresql";
     public const string SqlServerDatastoreOptionValue = "sqlserver";
     public const string MssqlAppSettingsDatastoreValue = "mssql";
@@ -53,6 +83,42 @@ internal static class DocumentCacheAdminCommandSurface
     public const string DefaultStatusTimeoutSeconds = "30";
     public const string OfflineWriterAdmissionClosedAndDrainedOptionValue =
         DocumentCacheOfflineWriterAdmission.ClosedAndDrainedJsonValue;
+
+    // The durability-profile and provisioning-evidence tokens are the CDC control plane's own, so they
+    // are taken from its declarations rather than restated: an operator token that drifted from the
+    // token the control plane matches would be accepted here and refused there.
+    public const string LocalDurabilityProfileOptionValue = CdcControlOptions.LocalDurabilityProfile;
+    public const string ProductionDurabilityProfileOptionValue =
+        CdcControlOptions.ProductionDurabilityProfile;
+    public const string DatabaseCreationModeCreatedForInitialCdcProvisioningOptionValue =
+        CdcProvisioningProofFactory.CreatedForInitialCdcProvisioningToken;
+    public const string WriteAdmissionClosedNeverOpenedOptionValue =
+        CdcProvisioningProofFactory.ClosedNeverOpenedToken;
+
+    public const string CdcSourceReplacementConfirmationOptionValue = "cdcSourceReplacement";
+    public const string CdcBindingRetirementConfirmationOptionValue = "cdcBindingRetirement";
+
+    public const string CdcDeploymentKeyConfigurationKey = $"{CdcControlOptions.SectionName}:DeploymentKey";
+    public const string CdcInstanceKeyConfigurationKey = $"{CdcControlOptions.SectionName}:InstanceKey";
+    public const string CdcGenerationConfigurationKey = $"{CdcControlOptions.SectionName}:Generation";
+    public const string CdcKafkaBootstrapServersConfigurationKey =
+        $"{CdcControlOptions.SectionName}:KafkaBootstrapServers";
+    public const string CdcConnectBaseUriConfigurationKey = $"{CdcControlOptions.SectionName}:ConnectBaseUri";
+    public const string CdcMaxRecordBytesConfigurationKey = $"{CdcControlOptions.SectionName}:MaxRecordBytes";
+    public const string CdcDurabilityProfileConfigurationKey =
+        $"{CdcControlOptions.SectionName}:DurabilityProfile";
+    public const string CdcBindingStateRootPathConfigurationKey =
+        $"{CdcControlServiceCollectionExtensions.BindingStateStoreSectionName}:RootPath";
+
+    public static IReadOnlyList<string> CdcVerbNames { get; } =
+    [
+        CdcEnableVerbName,
+        CdcStatusVerbName,
+        CdcRestartVerbName,
+        CdcAdoptVerbName,
+        CdcReplaceSourceVerbName,
+        CdcRetireVerbName,
+    ];
 
     public static RootCommand CreateRootCommand()
     {
@@ -81,6 +147,7 @@ internal static class DocumentCacheAdminCommandSurface
         rootCommand.Subcommands.Add(
             CreateMutatingCommand(RecoverCacheAheadCommandName, "Recover from a required cache-ahead state")
         );
+        rootCommand.Subcommands.Add(CreateCdcCommand());
 
         return rootCommand;
     }
@@ -95,6 +162,15 @@ internal static class DocumentCacheAdminCommandSurface
         if (!string.IsNullOrWhiteSpace(datastore))
         {
             overrides[AppSettingsDatastoreConfigurationKey] = ToAppSettingsDatastoreValue(datastore);
+        }
+
+        if (IsCdcCommand(parseResult))
+        {
+            // A cdc verb carries none of the DocumentCache status or administrative timeout options, and
+            // its `status` verb shares a name with the DocumentCache `status` command, so the group is
+            // recognized before any name comparison below.
+            AddCdcConfigurationOverrides(parseResult, overrides);
+            return overrides;
         }
 
         string commandName = parseResult.CommandResult.Command.Name;
@@ -126,6 +202,65 @@ internal static class DocumentCacheAdminCommandSurface
 
     public static bool IsMutatingCommand(string commandName) =>
         DocumentCacheAdminMutatingCommandContracts.TryGet(commandName, out _);
+
+    /// <summary>
+    /// True when the parsed command is the <c>cdc</c> group or one of its verbs. Command identity for a
+    /// verb group cannot come from the leaf name alone, because <c>cdc status</c> and the DocumentCache
+    /// <c>status</c> command share one.
+    /// </summary>
+    public static bool IsCdcCommand(ParseResult parseResult)
+    {
+        ArgumentNullException.ThrowIfNull(parseResult);
+
+        Command command = parseResult.CommandResult.Command;
+        return string.Equals(command.Name, CdcCommandName, StringComparison.Ordinal)
+            || command.Parents.Any(parent =>
+                string.Equals(parent.Name, CdcCommandName, StringComparison.Ordinal)
+            );
+    }
+
+    /// <summary>
+    /// The cdc verb the parse result names, or null when it is not a cdc verb. The bare <c>cdc</c> group
+    /// yields null: a group with no verb is a parse error rather than an operation.
+    /// </summary>
+    public static string? CdcVerbName(ParseResult parseResult)
+    {
+        ArgumentNullException.ThrowIfNull(parseResult);
+
+        if (!IsCdcCommand(parseResult))
+        {
+            return null;
+        }
+
+        string commandName = parseResult.CommandResult.Command.Name;
+        return CdcVerbNames.Contains(commandName, StringComparer.Ordinal) ? commandName : null;
+    }
+
+    /// <summary>
+    /// The scoped label one cdc verb is reported and logged under. The leaf verb name alone would put
+    /// <c>cdc status</c> and the DocumentCache <c>status</c> command under one label.
+    /// </summary>
+    public static string CdcCommandLabel(string verbName) => $"{CdcCommandName} {verbName}";
+
+    /// <summary>
+    /// The exact confirmation token a cdc verb requires, or null when the verb takes no confirmation.
+    /// </summary>
+    public static string? ExpectedCdcConfirmationOptionValue(string verbName) =>
+        verbName switch
+        {
+            CdcReplaceSourceVerbName => CdcSourceReplacementConfirmationOptionValue,
+            CdcRetireVerbName => CdcBindingRetirementConfirmationOptionValue,
+            _ => null,
+        };
+
+    /// <summary>
+    /// True for the cdc verbs that run the initial readiness sequence, which is admitted only against
+    /// operator-attested provisioning evidence. <c>replace-source</c> is included because the replacing
+    /// generation runs that same sequence and its request carries the same evidence.
+    /// </summary>
+    public static bool RequiresCdcProvisioningEvidence(string verbName) =>
+        string.Equals(verbName, CdcEnableVerbName, StringComparison.Ordinal)
+        || string.Equals(verbName, CdcReplaceSourceVerbName, StringComparison.Ordinal);
 
     public static bool RequiresOfflineWriterAdmission(string commandName) =>
         DocumentCacheAdminMutatingCommandContracts.TryGet(
@@ -279,6 +414,209 @@ internal static class DocumentCacheAdminCommandSurface
         return command;
     }
 
+    /// <summary>
+    /// Projects the cdc options onto the configuration keys the control plane binds
+    /// <see cref="CdcControlOptions"/> from, so a command-line value and a settings-file value reach the
+    /// same place. Only options the operator actually supplied are written: an absent option must leave
+    /// the configured value alone rather than overwrite it with a blank.
+    /// </summary>
+    private static void AddCdcConfigurationOverrides(
+        ParseResult parseResult,
+        Dictionary<string, string?> overrides
+    )
+    {
+        AddSuppliedText(parseResult, overrides, DeploymentKeyOptionName, CdcDeploymentKeyConfigurationKey);
+        AddSuppliedText(parseResult, overrides, InstanceKeyOptionName, CdcInstanceKeyConfigurationKey);
+        AddSuppliedText(
+            parseResult,
+            overrides,
+            KafkaBootstrapServersOptionName,
+            CdcKafkaBootstrapServersConfigurationKey
+        );
+        AddSuppliedText(parseResult, overrides, ConnectBaseUrlOptionName, CdcConnectBaseUriConfigurationKey);
+        AddSuppliedText(
+            parseResult,
+            overrides,
+            DurabilityProfileOptionName,
+            CdcDurabilityProfileConfigurationKey
+        );
+        AddSuppliedText(
+            parseResult,
+            overrides,
+            CdcBindingStatePathOptionName,
+            CdcBindingStateRootPathConfigurationKey
+        );
+        AddSuppliedNumber<long>(parseResult, overrides, GenerationOptionName, CdcGenerationConfigurationKey);
+        AddSuppliedNumber<int>(
+            parseResult,
+            overrides,
+            MaxRecordBytesOptionName,
+            CdcMaxRecordBytesConfigurationKey
+        );
+    }
+
+    private static void AddSuppliedText(
+        ParseResult parseResult,
+        Dictionary<string, string?> overrides,
+        string optionName,
+        string configurationKey
+    )
+    {
+        if (GetSpecifiedOption(parseResult, optionName)?.GetValueOrDefault<string?>() is { } value)
+        {
+            overrides[configurationKey] = value;
+        }
+    }
+
+    private static void AddSuppliedNumber<T>(
+        ParseResult parseResult,
+        Dictionary<string, string?> overrides,
+        string optionName,
+        string configurationKey
+    )
+        where T : struct, INumber<T>
+    {
+        if (GetSpecifiedOption(parseResult, optionName)?.GetValueOrDefault<T?>() is { } value)
+        {
+            overrides[configurationKey] = value.ToString(null, CultureInfo.InvariantCulture);
+        }
+    }
+
+    private static Command CreateCdcCommand()
+    {
+        var command = new Command(
+            CdcCommandName,
+            "Deployment-owned CDC binding operations for one DocumentCache target"
+        );
+
+        foreach (string verbName in CdcVerbNames)
+        {
+            command.Subcommands.Add(CreateCdcVerbCommand(verbName));
+        }
+
+        return command;
+    }
+
+    private static Command CreateCdcVerbCommand(string verbName)
+    {
+        var command = new Command(verbName, CdcVerbDescription(verbName));
+
+        AddTargetOptions(command);
+        command.Options.Add(
+            new Option<string?>(CdcBindingStatePathOptionName)
+            {
+                Description = "Root path of the durable CDC binding state store",
+            }
+        );
+        command.Options.Add(
+            new Option<string?>(DeploymentKeyOptionName)
+            {
+                Description = "Opaque deployment key contributing to governed artifact names",
+            }
+        );
+        command.Options.Add(
+            new Option<string?>(InstanceKeyOptionName)
+            {
+                Description = "Opaque instance key contributing to governed artifact names",
+            }
+        );
+        command.Options.Add(
+            CreatePositiveNumberOption<long>(GenerationOptionName, "Positive binding generation")
+        );
+        command.Options.Add(
+            new Option<string?>(KafkaBootstrapServersOptionName)
+            {
+                Description = "Kafka bootstrap servers the governed topics are provisioned through",
+            }
+        );
+        command.Options.Add(
+            new Option<string?>(ConnectBaseUrlOptionName)
+            {
+                Description = "Base URL of the Kafka Connect REST interface",
+            }
+        );
+        command.Options.Add(
+            CreatePositiveNumberOption<int>(
+                MaxRecordBytesOptionName,
+                "Largest record the pipeline must carry end to end"
+            )
+        );
+
+        var durabilityProfileOption = new Option<string?>(DurabilityProfileOptionName)
+        {
+            Description =
+                $"Durability profile: {LocalDurabilityProfileOptionValue} or {ProductionDurabilityProfileOptionValue}",
+        };
+        durabilityProfileOption.AcceptOnlyFromAmong(
+            LocalDurabilityProfileOptionValue,
+            ProductionDurabilityProfileOptionValue
+        );
+        command.Options.Add(durabilityProfileOption);
+
+        if (RequiresCdcProvisioningEvidence(verbName))
+        {
+            command.Options.Add(
+                new Option<string?>(DatabaseCreationModeOptionName)
+                {
+                    Description =
+                        $"Operator evidence that the physical database was created for this CDC provisioning; must be '{DatabaseCreationModeCreatedForInitialCdcProvisioningOptionValue}'",
+                }
+            );
+            command.Options.Add(
+                new Option<string?>(WriteAdmissionOptionName)
+                {
+                    Description =
+                        $"Operator evidence that write admission has been closed since the database was created; must be '{WriteAdmissionClosedNeverOpenedOptionValue}'",
+                }
+            );
+        }
+
+        if (string.Equals(verbName, CdcReplaceSourceVerbName, StringComparison.Ordinal))
+        {
+            command.Options.Add(
+                CreatePositiveNumberOption<long>(
+                    PreviousGenerationOptionName,
+                    "Positive generation being replaced; it is named explicitly and never inferred"
+                )
+            );
+        }
+
+        if (string.Equals(verbName, CdcAdoptVerbName, StringComparison.Ordinal))
+        {
+            command.Options.Add(
+                new Option<string?>(BindingJsonOptionName)
+                {
+                    Description =
+                        "Path to the complete binding record to adopt, or '-' for stdin; adoption never "
+                        + "infers a binding from the artifacts that happen to exist",
+                }
+            );
+        }
+
+        if (ExpectedCdcConfirmationOptionValue(verbName) is not null)
+        {
+            command.Options.Add(
+                new Option<string?>(ConfirmOptionName) { Description = "Command confirmation token" }
+            );
+        }
+
+        command.Validators.Add(result => ValidateCdcCommandOptions(result, verbName));
+        command.SetAction(ExecuteCommandSurfaceOnly);
+        return command;
+    }
+
+    private static string CdcVerbDescription(string verbName) =>
+        verbName switch
+        {
+            CdcEnableVerbName => "Enable CDC on a target created for this provisioning",
+            CdcStatusVerbName => "Report deployment-owned CDC readiness for one binding",
+            CdcRestartVerbName => "Restart the binding's connector after affirmative continuity evidence",
+            CdcAdoptVerbName => "Adopt an operator-supplied binding around a complete governed artifact set",
+            CdcReplaceSourceVerbName => "Replace the physical source behind an enabled target",
+            CdcRetireVerbName => "Retire a binding and its governed artifacts",
+            _ => throw new ArgumentException($"'{verbName}' is not a cdc verb.", nameof(verbName)),
+        };
+
     private static void AddTargetOptions(Command command)
     {
         var dataStoreIdOption = new Option<long?>(DataStoreIdOptionName)
@@ -325,6 +663,21 @@ internal static class DocumentCacheAdminCommandSurface
             if (!TryParsePositiveSeconds(value, out _))
             {
                 result.AddError($"{name} must be a positive numeric seconds value.");
+            }
+        });
+        return option;
+    }
+
+    private static Option<T?> CreatePositiveNumberOption<T>(string name, string description)
+        where T : struct, INumber<T>
+    {
+        var option = new Option<T?>(name) { Description = description };
+        option.Validators.Add(result =>
+        {
+            T? value = result.GetValueOrDefault<T?>();
+            if (value is { } suppliedValue && suppliedValue <= T.Zero)
+            {
+                result.AddError($"{name} must be a positive integer.");
             }
         });
         return option;
@@ -378,6 +731,57 @@ internal static class DocumentCacheAdminCommandSurface
         }
     }
 
+    private static void ValidateCdcCommandOptions(CommandResult result, string verbName)
+    {
+        if (ExpectedCdcConfirmationOptionValue(verbName) is { } expectedConfirmation)
+        {
+            ValidateRequiredExactOption(
+                result,
+                ConfirmOptionName,
+                expectedConfirmation,
+                "confirmation token"
+            );
+        }
+
+        if (
+            string.Equals(verbName, CdcReplaceSourceVerbName, StringComparison.Ordinal)
+            && GetSpecifiedOption(result, PreviousGenerationOptionName) is null
+        )
+        {
+            result.AddError(
+                $"{PreviousGenerationOptionName} is required for '{CdcCommandName} {CdcReplaceSourceVerbName}'."
+            );
+        }
+
+        if (
+            string.Equals(verbName, CdcAdoptVerbName, StringComparison.Ordinal)
+            && GetSpecifiedOption(result, BindingJsonOptionName) is null
+        )
+        {
+            result.AddError(
+                $"{BindingJsonOptionName} is required for '{CdcCommandName} {CdcAdoptVerbName}'."
+            );
+        }
+
+        if (!RequiresCdcProvisioningEvidence(verbName))
+        {
+            return;
+        }
+
+        ValidateRequiredExactOption(
+            result,
+            DatabaseCreationModeOptionName,
+            DatabaseCreationModeCreatedForInitialCdcProvisioningOptionValue,
+            "database creation mode evidence"
+        );
+        ValidateRequiredExactOption(
+            result,
+            WriteAdmissionOptionName,
+            WriteAdmissionClosedNeverOpenedOptionValue,
+            "write admission evidence"
+        );
+    }
+
     private static void ValidateRequiredExactOption(
         CommandResult result,
         string optionName,
@@ -407,6 +811,12 @@ internal static class DocumentCacheAdminCommandSurface
     private static OptionResult? GetSpecifiedOption(SymbolResult symbolResult, string optionName)
     {
         OptionResult? optionResult = symbolResult.GetResult(optionName) as OptionResult;
+        return optionResult is { Implicit: false } ? optionResult : null;
+    }
+
+    private static OptionResult? GetSpecifiedOption(ParseResult parseResult, string optionName)
+    {
+        OptionResult? optionResult = parseResult.GetResult(optionName) as OptionResult;
         return optionResult is { Implicit: false } ? optionResult : null;
     }
 
