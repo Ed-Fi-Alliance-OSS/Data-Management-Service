@@ -1,7 +1,9 @@
 # DocumentCache References
 
 This folder contains DMS-1317-owned references for the durable E18 DocumentCache
-implementation, operations, evidence, and qualification work.
+implementation, operations, evidence, and qualification work. It is the index for
+the implemented projection-boundary guidance, not a Kafka connector or downstream
+consumer runbook.
 
 - [Operations runbook](operations-runbook.md) documents status interpretation, activation,
   deactivation, rebuild, scrub, cache-ahead recovery, SQL Server prerequisite correction,
@@ -16,8 +18,8 @@ Owning design and implementation references:
 - [DMS-1317 story](../design/backend-redesign/epics/18-document-cache/07-documentcache-integration-tests-and-runbooks.md)
 - [Backend redesign summary](../design/backend-redesign/design-docs/summary.md)
 - [DocumentCache and CDC design](../design/backend-redesign/design-docs/cdc/cdc-streaming.md)
-- [DocumentCacheAdmin CLI story](../design/backend-redesign/epics/18-document-cache/09-documentcache-administration-cli.md)
-- [DocumentCacheAdmin CLI README](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md)
+- [DMS-1428 DocumentCacheAdmin CLI story](../design/backend-redesign/epics/18-document-cache/09-documentcache-administration-cli.md)
+- [DMS-1428 DocumentCacheAdmin CLI README](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md)
 - [DMS configuration](../../docs/CONFIGURATION.md#datamanagementdocumentcache)
 - [Relational backend guide](../../docs/RELATIONAL-BACKEND.md#always-provisioned-documentcache-inventory)
 

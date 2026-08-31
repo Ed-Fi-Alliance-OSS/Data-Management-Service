@@ -13,7 +13,7 @@
       "Run: `test -f reference/document-cache/README.md`",
       "Manually confirm the linked files are intentionally created in `reference/document-cache/` rather than under `docs/`."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Evidence Matrix",
