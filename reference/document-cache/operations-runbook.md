@@ -27,8 +27,10 @@ runbook concerns. Use this runbook only up to the DMS projection boundary, then 
 [E19 CDC operations](../design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md)
 when connector or downstream state may be affected.
 
-Representation restamp is owned by DMS-1318. Until that implementation lands, this
-runbook does not claim restamp coverage and does not replace it with manual SQL.
+Representation restamp is owned by
+[DMS-1318](../design/backend-redesign/epics/18-document-cache/08-representation-restamp-utility.md).
+Until that implementation lands, this runbook does not claim restamp coverage and does
+not replace it with manual SQL.
 
 Owning design sections:
 
@@ -346,15 +348,18 @@ latch condition through the supported workflow before claiming caught-up.
 
 ## Restamp Disposition
 
-Representation restamp is deferred to DMS-1318 unless that story has landed in the branch
-being operated. Until then:
+Representation restamp is deferred to
+[DMS-1318](../design/backend-redesign/epics/18-document-cache/08-representation-restamp-utility.md)
+unless that story has landed in the branch being operated. Current DMS-1317 branch
+disposition: DMS-1318 has not landed, so DMS-1317 does not provide restamp tests,
+commands, or operational recovery. Until then:
 
 - do not claim restamp test or operational coverage from DMS-1317;
 - do not update `ContentVersion`, resource mirrors, cache rows, or tracked-change tables
   with manual SQL;
 - do not use rebuild or scrub as a byte-changing representation correction; and
 - link operator guidance to the DMS-1318 restamp implementation or to
-  [Contract Change and Repair Operations](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations).
+  [Offline byte-changing representation correction](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#offline-byte-changing-representation-correction).
 
 When DMS-1318 is present, use its own offline utility and runbook. Its preflight decides
 between projection/publication mode and canonical-only mode; neither mode certifies a new

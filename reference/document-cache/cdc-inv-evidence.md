@@ -27,8 +27,10 @@ implementation or Kafka end-to-end evidence.
 
 Representation restamp implementation and primary restamp tests are owned by DMS-1318
 ([DMS-1318 story](../design/backend-redesign/epics/18-document-cache/08-representation-restamp-utility.md)).
-Until that story lands, restamp evidence is conditional/blocked and is not fabricated in
-the rows below; this is the conditional DMS-1317 evidence disposition.
+Current DMS-1317 branch disposition: DMS-1318 has not landed; code search finds no
+DocumentCache restamp runtime or CLI implementation under `src/dms`. Until that story
+lands, restamp evidence is conditional/blocked and is not fabricated in the rows below;
+this is the conditional DMS-1317 evidence disposition.
 
 ## Matrix
 
@@ -51,6 +53,7 @@ the rows below; this is the conditional DMS-1317 evidence disposition.
   is bounded component evidence. The release/local representative-scale qualification,
   thresholds, and durable-baseline-cursor Jira escalation belong to
   the task-14 performance qualification reference when that task is complete.
-- If DMS-1318 lands before DMS-1317 closes, add follow-up evidence for Tracking, Disabled,
-  Resetting, Rebuilding, set-latch rejection, API validators, Change Query mirrors, cache
-  reads, and status; until then those restamp claims remain blocked/conditional.
+- If DMS-1318 lands before DMS-1317 closes, add follow-up test tasks and evidence for
+  Tracking, Disabled, Resetting, Rebuilding, set-latch rejection, API validators, Change
+  Query mirrors, cache reads, and status; until then those restamp claims remain
+  blocked/conditional.

@@ -256,6 +256,6 @@
       "Run: `rg -n \"Restamp|restamp\" src/dms --glob \"*.cs\"`",
       "Manually confirm the matrix labels restamp as blocked, deferred, or implemented with matching evidence."
     ],
-    "completed": false
+    "completed": true
   }
 ]
