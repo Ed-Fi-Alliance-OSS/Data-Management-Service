@@ -401,6 +401,7 @@ public abstract class ApiIntegrationTestBase
 
         Harness = new ApiIntegrationHarness(
             httpClient,
+            _factory.Services,
             _assertionConnection,
             _fixtureContext,
             _queryRecorder,

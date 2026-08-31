@@ -20,6 +20,7 @@ public sealed class ApiIntegrationHarness : IAsyncDisposable
 {
     public ApiIntegrationHarness(
         HttpClient httpClient,
+        IServiceProvider services,
         DbConnection dbConnection,
         FixtureContext fixture,
         ApiIntegrationQueryRecorder? queryRecorder = null,
@@ -30,6 +31,7 @@ public sealed class ApiIntegrationHarness : IAsyncDisposable
     )
     {
         HttpClient = httpClient;
+        Services = services;
         DbConnection = dbConnection;
         Fixture = fixture;
         QueryRecorder = queryRecorder;
@@ -45,6 +47,7 @@ public sealed class ApiIntegrationHarness : IAsyncDisposable
     }
 
     public HttpClient HttpClient { get; }
+    public IServiceProvider Services { get; }
     public DbConnection DbConnection { get; }
     public FixtureContext Fixture { get; }
     public ApiIntegrationQueryRecorder? QueryRecorder { get; }
