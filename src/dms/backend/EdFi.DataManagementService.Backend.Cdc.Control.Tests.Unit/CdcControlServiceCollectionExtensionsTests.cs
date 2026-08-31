@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -63,6 +64,7 @@ public class Given_CdcControlServiceCollectionExtensionsTests
         scope.ServiceProvider.GetRequiredService<ICdcConnectorLagReader>().Should().NotBeNull();
         scope.ServiceProvider.GetRequiredService<ICdcConnectorObservationMapper>().Should().NotBeNull();
         scope.ServiceProvider.GetRequiredService<ICdcProjectionCorrelationCollector>().Should().NotBeNull();
+        scope.ServiceProvider.GetRequiredService<ICdcSetupController>().Should().NotBeNull();
     }
 
     [TestCase("postgresql")]
@@ -138,6 +140,11 @@ public class Given_CdcControlServiceCollectionExtensionsTests
 
         services.AddLogging();
         services.Configure<CdcBindingStateStoreOptions>(options => options.RootPath = stateRoot.Path);
+
+        // The guarded new-empty activation the setup controller invokes is registered by the host with
+        // the DocumentCache runtime services for its datastore, as the administrative CLI does, rather
+        // than by the CDC control plane.
+        services.AddSingleton(A.Fake<IDocumentCacheGuardedNewEmptyActivationCommand>());
         services.AddDmsCdcControl(BuildConfiguration(datastore, stateRoot.Path));
 
         return services.BuildServiceProvider(

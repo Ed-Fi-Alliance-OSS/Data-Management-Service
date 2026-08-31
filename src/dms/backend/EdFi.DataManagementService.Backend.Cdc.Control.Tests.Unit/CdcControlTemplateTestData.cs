@@ -21,6 +21,29 @@ internal static class CdcControlTemplateTestData
     public const string InstanceKey = "binding";
     public const string TopicPrefix = "edfi.documents";
     public const string HeartbeatSql = "select 1";
+    public const string KafkaBootstrapServers = "broker-1:9092,broker-2:9092";
+    public const int MaxRecordBytes = 67_108_864;
+
+    /// <summary>
+    /// The retained WAL range a PostgreSQL replication slot reports. The values are safe-encoded, which
+    /// is how provider history evidence carries a WAL LSN.
+    /// </summary>
+    public const string PostgresqlRetainedRangeStart = "0_16B6C50";
+
+    public const string PostgresqlRetainedRangeEnd = "0_16B6C60";
+
+    /// <summary>
+    /// The retained change range SQL Server capture instances report, as the 20 hex digits the provider
+    /// encodes a 10-byte LSN with. The range brackets the connector's committed position, which is what
+    /// makes the retained range cover it.
+    /// </summary>
+    public const string SqlServerRetainedRangeStart = "0x00000027000000000000";
+
+    public const string SqlServerRetainedRangeEnd = "0x0000002700000c790000";
+
+    public static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(5);
+
+    public static readonly TimeSpan SqlServerPollInterval = TimeSpan.FromSeconds(2);
 
     private const string SourceIdentity = "f81d4fae-7dec-11d0-a765-00a0c91e6bf6";
 
@@ -87,10 +110,10 @@ internal static class CdcControlTemplateTestData
                 )
             ),
             new CdcConnectorTemplateDeploymentPolicy(
-                "broker-1:9092,broker-2:9092",
-                maxRecordBytes: 67_108_864,
-                heartbeatInterval: TimeSpan.FromSeconds(5),
-                sqlServerPollInterval: provider == CdcProvider.SqlServer ? TimeSpan.FromSeconds(2) : null
+                KafkaBootstrapServers,
+                maxRecordBytes: MaxRecordBytes,
+                heartbeatInterval: HeartbeatInterval,
+                sqlServerPollInterval: provider == CdcProvider.SqlServer ? SqlServerPollInterval : null
             ),
             new CdcProviderConnectionProperties(provider, BuildConnectionProperties(provider)),
             new CdcKafkaClientSecurityProperties(new Dictionary<string, string>())
@@ -159,7 +182,7 @@ internal static class CdcControlTemplateTestData
             BoundPhysicalSourceFingerprint: SourceFingerprint(provider),
             ObservedSourceFingerprint: SourceFingerprint(provider),
             ArtifactInventory: BuildArtifactInventory(provider),
-            GrantInventory: [],
+            GrantInventory: BuildGrantInventory(provider),
             SourceTableInventory: BuildSourceTableInventory(provider),
             ExpectedMessageKeyColumns:
             [
@@ -171,6 +194,35 @@ internal static class CdcControlTemplateTestData
             ManifestPayload: null,
             Diagnostics: []
         );
+
+    /// <summary>
+    /// The heartbeat table the connector's own heartbeat action query writes to. It is part of every
+    /// provider's artifact inventory, because heartbeat evidence is what proves the connector is reading
+    /// a source that is still advancing.
+    /// </summary>
+    private static CdcProviderArtifactObservation BuildHeartbeatTableArtifact() =>
+        new(
+            CdcProviderArtifactKind.HeartbeatTable,
+            new CdcSafeName("dms_cdcheartbeat"),
+            CdcProviderArtifactState.Matched,
+            new Dictionary<string, string>()
+        );
+
+    /// <summary>
+    /// The privileges the setup pass granted the connector principal on the source it reads.
+    /// </summary>
+    private static IReadOnlyList<CdcGrantObservation> BuildGrantInventory(CdcProvider provider) =>
+        [
+            .. BuildSourceTableInventory(provider)
+                .Select(sourceTable => new CdcGrantObservation(
+                    CdcPrincipalKind.ConnectorPrincipal,
+                    new CdcSafeName("connector_principal"),
+                    CdcProviderArtifactKind.SourceTable,
+                    new CdcSafeName(sourceTable.TableName.Name.ToLowerInvariant()),
+                    ["SELECT"],
+                    [.. sourceTable.Columns.Select(column => column.ColumnName)]
+                )),
+        ];
 
     private static IReadOnlyList<CdcProviderArtifactObservation> BuildArtifactInventory(CdcProvider provider)
     {
@@ -192,11 +244,13 @@ internal static class CdcControlTemplateTestData
                     CdcProviderArtifactState.Matched,
                     new Dictionary<string, string>()
                 ),
+                BuildHeartbeatTableArtifact(),
             ];
         }
 
         return
         [
+            BuildHeartbeatTableArtifact(),
             new(
                 CdcProviderArtifactKind.ProviderHistory,
                 new CdcSafeName("sqlserver_snapshot_isolation"),
@@ -245,26 +299,69 @@ internal static class CdcControlTemplateTestData
         CdcProvider provider
     )
     {
-        if (provider != CdcProvider.SqlServer)
+        if (provider == CdcProvider.Postgresql)
         {
-            return [];
+            // The slot's retained WAL range is what source-history continuity is decided against, so a
+            // PostgreSQL setup result that omitted it would carry no continuity evidence at all.
+            return
+            [
+                new CdcProviderHistoryObservation(
+                    CdcProviderArtifactKind.PostgresqlReplicationSlot,
+                    BuildProviderArtifactNames(provider).Postgresql!.ReplicationSlotName,
+                    new Dictionary<string, string>
+                    {
+                        ["restart_lsn"] = PostgresqlRetainedRangeStart,
+                        ["confirmed_flush_lsn"] = PostgresqlRetainedRangeEnd,
+                        ["wal_status"] = "reserved",
+                    },
+                    CdcProviderRetryContinuityClassification.None
+                ),
+            ];
         }
 
         CdcSqlServerProviderArtifactNames names = BuildProviderArtifactNames(provider).SqlServer!;
 
+        // SQL Server continuity is decided from the database-level CDC job health plus the retained
+        // change range every required capture instance reports, so a setup result that omitted either
+        // would carry no continuity evidence at all.
         return
         [
-            .. new[] { CdcSourceTableKind.DocumentCache, CdcSourceTableKind.Document }.Select(
-                tableKind => new CdcProviderHistoryObservation(
-                    CdcProviderArtifactKind.SqlServerCaptureInstance,
-                    names.CaptureInstanceNames[tableKind],
-                    new Dictionary<string, string>
-                    {
-                        ["capture_instance"] = names.CaptureInstanceNames[tableKind].Value,
-                    },
-                    CdcProviderRetryContinuityClassification.None
-                )
+            new CdcProviderHistoryObservation(
+                CdcProviderArtifactKind.ProviderHistory,
+                new CdcSafeName("sqlserver_database_cdc"),
+                new Dictionary<string, string>
+                {
+                    ["database_cdc_enabled"] = "True",
+                    ["capture_job_present"] = "True",
+                    ["capture_job_name"] = "cdc.edfi_datastore_capture",
+                    ["capture_job_enabled"] = "True",
+                    ["capture_job_running"] = "True",
+                    ["capture_job_last_run_status"] = "1",
+                    ["cleanup_job_present"] = "True",
+                    ["cleanup_job_name"] = "cdc.edfi_datastore_cleanup",
+                    ["cleanup_job_enabled"] = "True",
+                    ["cleanup_job_running"] = "True",
+                    ["cleanup_job_last_run_status"] = "1",
+                    ["retained_max_lsn"] = SqlServerRetainedRangeEnd,
+                },
+                CdcProviderRetryContinuityClassification.None
             ),
+            .. new[]
+            {
+                CdcSourceTableKind.DocumentCache,
+                CdcSourceTableKind.Document,
+                CdcSourceTableKind.CdcHeartbeat,
+            }.Select(tableKind => new CdcProviderHistoryObservation(
+                CdcProviderArtifactKind.SqlServerCaptureInstance,
+                names.CaptureInstanceNames[tableKind],
+                new Dictionary<string, string>
+                {
+                    ["capture_instance"] = names.CaptureInstanceNames[tableKind].Value,
+                    ["retained_min_lsn"] = SqlServerRetainedRangeStart,
+                    ["retained_max_lsn"] = SqlServerRetainedRangeEnd,
+                },
+                CdcProviderRetryContinuityClassification.None
+            )),
         ];
     }
 
@@ -292,7 +389,7 @@ internal static class CdcControlTemplateTestData
             );
     }
 
-    private static IReadOnlyList<CdcSourceTableInventory> BuildSourceTableInventory(CdcProvider provider) =>
+    public static IReadOnlyList<CdcSourceTableInventory> BuildSourceTableInventory(CdcProvider provider) =>
         [
             BuildSourceTable(provider, CdcSourceTableKind.DocumentCache, "DocumentCache", ["DocumentUuid"]),
             BuildSourceTable(provider, CdcSourceTableKind.Document, "Document", ["DocumentUuid"]),

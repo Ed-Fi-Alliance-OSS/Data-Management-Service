@@ -953,9 +953,10 @@ internal sealed class CdcConnectorObservationMapper(
     /// classified its own text — an unsafe property name arrives hashed and an unsafe value arrives
     /// redacted — and the shared diagnostic sanitizes every field again on construction.
     /// </summary>
-    private static CdcDiagnostic ToDiagnostic(
+    internal static CdcDiagnostic ToDiagnostic(
         CdcConnectorTemplateDiagnostic diagnostic,
-        DateTimeOffset observedAt
+        DateTimeOffset observedAt,
+        string message = "CDC connector live configuration does not match the rendered connector template."
     ) =>
         new CdcDiagnostic(
             diagnostic.Code,
@@ -963,7 +964,7 @@ internal sealed class CdcConnectorObservationMapper(
             ToSeverity(diagnostic.Severity),
             CdcDiagnosticComponent.ConnectorConfig,
             observedAt,
-            "CDC connector live configuration does not match the rendered connector template.",
+            message,
             retryable: false,
             artifactKind: diagnostic.PropertyName,
             artifactName: diagnostic.SafeArtifactOrObjectName?.Value,

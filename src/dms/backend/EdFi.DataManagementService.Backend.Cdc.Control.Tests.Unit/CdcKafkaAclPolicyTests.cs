@@ -418,6 +418,42 @@ public class Given_CdcKafkaAclPolicy
         observation.RecordSizePolicy.State.Should().Be(CdcKafkaPolicyItemState.Unknown);
     }
 
+    /// <summary>
+    /// The describe-only pass reports a grant the resource does not hold rather than creating it. It is
+    /// what adoption verifies against, and adoption repairs missing deployment state around an already
+    /// complete artifact set rather than provisioning one.
+    /// </summary>
+    [Test]
+    public async Task It_reports_a_missing_grant_without_repairing_it_when_only_describing()
+    {
+        CdcArtifactInventory inventory = Inventory(CdcProvider.Postgresql);
+        List<AclBinding> acls = ConformingAcls(inventory);
+        acls.RemoveAll(binding =>
+            binding.Entry.Principal == ReaderPrincipal && binding.Entry.Operation == AclOperation.Read
+        );
+        IAdminClient adminClient = Broker(inventory, acls);
+
+        CdcKafkaPolicyObservation observation = await DescribePolicyAsync(adminClient, inventory);
+
+        observation.PublicTopicAcls.State.Should().Be(CdcKafkaPolicyItemState.Invalid);
+        A.CallTo(() => adminClient.CreateAclsAsync(A<IEnumerable<AclBinding>>._, A<CreateAclsOptions>._))
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_accepts_an_exactly_matching_grant_set_when_only_describing()
+    {
+        CdcArtifactInventory inventory = Inventory(CdcProvider.Postgresql);
+        IAdminClient adminClient = Broker(inventory, ConformingAcls(inventory));
+
+        CdcKafkaPolicyObservation observation = await DescribePolicyAsync(adminClient, inventory);
+
+        observation.PublicTopicAcls.State.Should().Be(CdcKafkaPolicyItemState.Satisfied);
+        observation.ProgressTopicAcls.State.Should().Be(CdcKafkaPolicyItemState.Satisfied);
+        A.CallTo(() => adminClient.CreateAclsAsync(A<IEnumerable<AclBinding>>._, A<CreateAclsOptions>._))
+            .MustNotHaveHappened();
+    }
+
     private static async Task<CdcKafkaBindingAclPolicies> RunAclsAsync(
         IAdminClient adminClient,
         CdcArtifactInventory inventory,
@@ -446,6 +482,22 @@ public class Given_CdcKafkaAclPolicy
             .BeTrue("every composed Kafka policy observation must satisfy its own contract");
 
         return observation;
+    }
+
+    private static async Task<CdcKafkaPolicyObservation> DescribePolicyAsync(
+        IAdminClient adminClient,
+        CdcArtifactInventory inventory,
+        bool aclsEnabled = true
+    )
+    {
+        CdcTargetIdentity targetIdentity = TargetIdentity(inventory);
+
+        return await Adapter(adminClient, inventory, aclsEnabled)
+            .DescribeBindingKafkaPolicyAsync(
+                new("operation-1", targetIdentity, null),
+                inventory,
+                CancellationToken.None
+            );
     }
 
     private static CdcKafkaAdminAdapter Adapter(

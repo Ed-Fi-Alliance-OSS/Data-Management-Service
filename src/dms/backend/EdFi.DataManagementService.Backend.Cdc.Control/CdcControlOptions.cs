@@ -198,6 +198,12 @@ public sealed class CdcControlTimeoutOptions
     public TimeSpan ProjectionCaughtUp { get; set; } = TimeSpan.FromMinutes(10);
 
     public TimeSpan ProviderBarrier { get; set; } = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// Interval between reads of a step that waits for evidence to arrive — the projection caught-up
+    /// observations and the provider barrier.
+    /// </summary>
+    public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(2);
 }
 
 public sealed class CdcControlOptionsValidator : IValidateOptions<CdcControlOptions>
@@ -399,6 +405,11 @@ public sealed class CdcControlOptionsValidator : IValidateOptions<CdcControlOpti
         RequirePositive(
             timeouts.ProviderBarrier,
             $"{nameof(CdcControlOptions.Timeouts)}:{nameof(CdcControlTimeoutOptions.ProviderBarrier)}",
+            failures
+        );
+        RequirePositive(
+            timeouts.PollInterval,
+            $"{nameof(CdcControlOptions.Timeouts)}:{nameof(CdcControlTimeoutOptions.PollInterval)}",
             failures
         );
     }

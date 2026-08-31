@@ -30,6 +30,7 @@
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Mssql" />
         <InternalsVisibleTo Include="dms-document-cache" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Cdc.Control" />
+        <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Cdc.Control.Tests.Unit" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit" />
         <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />

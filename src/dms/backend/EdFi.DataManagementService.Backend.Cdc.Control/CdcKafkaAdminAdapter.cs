@@ -73,6 +73,49 @@ public interface ICdcKafkaAdmin
     );
 
     /// <summary>
+    /// Reports the same binding-governed Kafka evidence without provisioning any of it: an absent topic
+    /// is reported as absent and a missing grant as missing, rather than being created or repaired.
+    /// </summary>
+    /// <remarks>
+    /// This is what adoption verifies against. Adoption repairs missing deployment state around an
+    /// already complete governed-artifact set and is not a first-time enablement path, so a pass that
+    /// created what it found absent would turn a refused adoption into a partial provisioning.
+    /// </remarks>
+    Task<CdcKafkaPolicyObservation> DescribeBindingKafkaPolicyAsync(
+        CdcObservationContext context,
+        CdcArtifactInventory inventory,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// Reads the binding's SQL Server schema-history topic and reports the evidence the shared
+    /// source-history continuity classifier requires for that provider. A PostgreSQL binding has no
+    /// schema-history topic and no evidence is composed for it.
+    /// </summary>
+    /// <remarks>
+    /// The read is topic metadata plus earliest and latest partition offsets, never a consumed record:
+    /// every state this evidence can prove is decidable from offsets, and consuming would require
+    /// widening the connector-only history-topic grants. <see cref="CdcSqlServerSchemaHistoryState.RequiredRecordLost"/>
+    /// is never reported — it is not decidable from offsets, and the history topic's own
+    /// delete-with-infinite-retention policy is what prevents that state.
+    /// </remarks>
+    /// <param name="enablementPhase">
+    /// The phase the caller is observing in. It is load-bearing: the classifier leaves a first
+    /// enablement's non-continuous state unknown and latches nothing, while the same state observed
+    /// after initial admission latches a terminal loss.
+    /// </param>
+    /// <param name="connectorCommittedStreamingOffset">
+    /// Whether the connector has committed a streaming offset under the binding's own source partition.
+    /// An empty history topic is a loss only against a retained offset that would need replaying.
+    /// </param>
+    Task<CdcSqlServerSchemaHistoryEvidence?> ReadSqlServerSchemaHistoryAsync(
+        CdcArtifactInventory inventory,
+        CdcSqlServerSchemaHistoryEnablementPhase enablementPhase,
+        bool connectorCommittedStreamingOffset,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
     /// Deletes the binding's governed Kafka topics and their literal ACLs, reporting each as a
     /// <see cref="CdcGovernedArtifact"/> that was deleted or already absent.
     /// </summary>
@@ -127,19 +170,73 @@ public sealed record CdcKafkaRecordSizeEvidence(
 /// Replication and in-sync-replica floors the active deployment durability profile requires of
 /// governed Kafka topics.
 /// </summary>
+/// <summary>
+/// Whether a Kafka policy pass may provision what it finds absent, or must only report it.
+/// </summary>
+internal enum CdcKafkaProvisioningMode
+{
+    /// <summary>Create an absent topic and repair a missing required grant, then validate.</summary>
+    CreateOrValidate,
+
+    /// <summary>
+    /// Report what the broker holds and change nothing. An absent topic and a missing required grant
+    /// are each reported as the nonconformance they are.
+    /// </summary>
+    ValidateOnly,
+}
+
 internal sealed record CdcKafkaDurabilityPolicy(short ReplicationFactor, int MinInSyncReplicas)
 {
     public static CdcKafkaDurabilityPolicy For(CdcDurabilityProfile durabilityProfile) =>
         durabilityProfile == CdcDurabilityProfile.Production ? new(3, 2) : new(1, 1);
 }
 
+/// <summary>
+/// Reads the offsets bounding a topic partition's retained records.
+/// </summary>
+/// <remarks>
+/// Confluent.Kafka exposes <c>ListOffsets</c> as an extension over the concrete admin client rather
+/// than as an <see cref="IAdminClient"/> member, and that extension refuses any other implementation,
+/// so the call sits behind this seam. Without it the schema-history read could not be observed against
+/// anything but a live broker.
+/// </remarks>
+internal interface ICdcKafkaTopicOffsetReader
+{
+    Task<IReadOnlyList<ListOffsetsResultInfo>> ListOffsetsAsync(
+        IReadOnlyList<TopicPartitionOffsetSpec> offsetSpecs,
+        TimeSpan timeout
+    );
+}
+
+internal sealed class CdcKafkaTopicOffsetReader(IAdminClient adminClient) : ICdcKafkaTopicOffsetReader
+{
+    public async Task<IReadOnlyList<ListOffsetsResultInfo>> ListOffsetsAsync(
+        IReadOnlyList<TopicPartitionOffsetSpec> offsetSpecs,
+        TimeSpan timeout
+    ) =>
+        (
+            await adminClient.ListOffsetsAsync(
+                offsetSpecs,
+                new ListOffsetsOptions { RequestTimeout = timeout }
+            )
+        ).ResultInfos
+        ?? [];
+}
+
 internal sealed class CdcKafkaAdminAdapter(
     IAdminClient adminClient,
     IOptions<CdcControlOptions> options,
     TimeProvider timeProvider,
-    ILogger<CdcKafkaAdminAdapter> logger
+    ILogger<CdcKafkaAdminAdapter> logger,
+    ICdcKafkaTopicOffsetReader? topicOffsetReader = null
 ) : ICdcKafkaAdmin
 {
+    /// <summary>
+    /// Reads over the same admin client the adapter already holds unless a caller supplies its own.
+    /// </summary>
+    private readonly ICdcKafkaTopicOffsetReader _topicOffsetReader =
+        topicOffsetReader ?? new CdcKafkaTopicOffsetReader(adminClient);
+
     internal const string CleanupPolicyConfigName = "cleanup.policy";
     internal const string MinInSyncReplicasConfigName = "min.insync.replicas";
     internal const string DeleteRetentionConfigName = "delete.retention.ms";
@@ -288,8 +385,14 @@ internal sealed class CdcKafkaAdminAdapter(
         }
     }
 
-    public async Task<CdcKafkaBindingTopicPolicies> EnsureBindingTopicsAsync(
+    public Task<CdcKafkaBindingTopicPolicies> EnsureBindingTopicsAsync(
         CdcArtifactInventory inventory,
+        CancellationToken cancellationToken
+    ) => BindingTopicsAsync(inventory, CdcKafkaProvisioningMode.CreateOrValidate, cancellationToken);
+
+    private async Task<CdcKafkaBindingTopicPolicies> BindingTopicsAsync(
+        CdcArtifactInventory inventory,
+        CdcKafkaProvisioningMode mode,
         CancellationToken cancellationToken
     )
     {
@@ -340,6 +443,7 @@ internal sealed class CdcKafkaAdminAdapter(
         CdcKafkaTopicPolicy publicTopic = await EnsureTopicAsync(
             PublicTopicSpec(inventory, controlOptions),
             durability,
+            mode,
             timeout,
             observedAt,
             diagnostics,
@@ -348,6 +452,7 @@ internal sealed class CdcKafkaAdminAdapter(
         CdcKafkaTopicPolicy progressTopic = await EnsureTopicAsync(
             ProgressTopicSpec(inventory),
             durability,
+            mode,
             timeout,
             observedAt,
             diagnostics,
@@ -357,6 +462,7 @@ internal sealed class CdcKafkaAdminAdapter(
             ? await EnsureTopicAsync(
                 schemaHistorySpec,
                 durability,
+                mode,
                 timeout,
                 observedAt,
                 diagnostics,
@@ -492,9 +598,29 @@ internal sealed class CdcKafkaAdminAdapter(
         }
     }
 
-    public async Task<CdcKafkaPolicyObservation> EnsureBindingKafkaPolicyAsync(
+    public Task<CdcKafkaPolicyObservation> EnsureBindingKafkaPolicyAsync(
         CdcObservationContext context,
         CdcArtifactInventory inventory,
+        CancellationToken cancellationToken
+    ) =>
+        BindingKafkaPolicyAsync(
+            context,
+            inventory,
+            CdcKafkaProvisioningMode.CreateOrValidate,
+            cancellationToken
+        );
+
+    public Task<CdcKafkaPolicyObservation> DescribeBindingKafkaPolicyAsync(
+        CdcObservationContext context,
+        CdcArtifactInventory inventory,
+        CancellationToken cancellationToken
+    ) =>
+        BindingKafkaPolicyAsync(context, inventory, CdcKafkaProvisioningMode.ValidateOnly, cancellationToken);
+
+    private async Task<CdcKafkaPolicyObservation> BindingKafkaPolicyAsync(
+        CdcObservationContext context,
+        CdcArtifactInventory inventory,
+        CdcKafkaProvisioningMode mode,
         CancellationToken cancellationToken
     )
     {
@@ -504,9 +630,9 @@ internal sealed class CdcKafkaAdminAdapter(
         CdcControlOptions controlOptions = options.Value;
         DateTimeOffset observedAt = timeProvider.GetUtcNow();
 
-        CdcKafkaBindingTopicPolicies topics = await EnsureBindingTopicsAsync(inventory, cancellationToken);
+        CdcKafkaBindingTopicPolicies topics = await BindingTopicsAsync(inventory, mode, cancellationToken);
         CdcKafkaRecordSizeEvidence recordSize = await VerifyRecordSizeAsync(inventory, cancellationToken);
-        CdcKafkaBindingAclPolicies acls = await EnsureBindingAclsAsync(inventory, cancellationToken);
+        CdcKafkaBindingAclPolicies acls = await BindingAclsAsync(inventory, mode, cancellationToken);
 
         CdcKafkaPolicyItemState[] states =
         [
@@ -572,6 +698,212 @@ internal sealed class CdcKafkaAdminAdapter(
             Diagnostics = CdcDiagnostic.NormalizeDiagnostics([.. diagnostics, .. validation.Diagnostics]),
         };
     }
+
+    public async Task<CdcSqlServerSchemaHistoryEvidence?> ReadSqlServerSchemaHistoryAsync(
+        CdcArtifactInventory inventory,
+        CdcSqlServerSchemaHistoryEnablementPhase enablementPhase,
+        bool connectorCommittedStreamingOffset,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(inventory);
+
+        if (
+            inventory.Provider != CdcProvider.SqlServer
+            || inventory.SchemaHistoryTopicName is not { } topicName
+        )
+        {
+            // A PostgreSQL binding has no schema-history topic, and the classifier returns before it
+            // consults the field for that provider, so the topic is never read and no evidence is
+            // composed rather than a not-applicable evidence record being invented.
+            return null;
+        }
+
+        DateTimeOffset observedAt = timeProvider.GetUtcNow();
+        TimeSpan timeout = options.Value.Timeouts.KafkaAdmin;
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (FindTopic(topicName, timeout) is not { } topicMetadata)
+            {
+                return Evidence(
+                    enablementPhase,
+                    CdcSqlServerSchemaHistoryState.Missing,
+                    SchemaHistoryLost(
+                        topicName,
+                        observedAt,
+                        "CDC SQL Server schema-history topic is absent.",
+                        "absent"
+                    )
+                );
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            bool? retainsRecords = await RetainsSchemaHistoryRecordsAsync(topicMetadata, timeout);
+
+            if (retainsRecords is null)
+            {
+                return Evidence(
+                    enablementPhase,
+                    CdcSqlServerSchemaHistoryState.Unreadable,
+                    SchemaHistoryUnavailable(
+                        topicName,
+                        observedAt,
+                        "CDC SQL Server schema-history topic offsets are unavailable from the broker.",
+                        topicName
+                    )
+                );
+            }
+
+            if (retainsRecords.Value)
+            {
+                // The connector writes its schema history during the snapshot, so a topic holding
+                // records is the continuous state and carries no diagnostic of its own.
+                return Evidence(enablementPhase, CdcSqlServerSchemaHistoryState.Valid);
+            }
+
+            // An empty history topic is a loss only against a committed streaming offset the connector
+            // would have to replay history to resume from. Without one it has simply not written its
+            // history yet, which no offset can decide either way.
+            return connectorCommittedStreamingOffset
+                ? Evidence(
+                    enablementPhase,
+                    CdcSqlServerSchemaHistoryState.EmptyWithRetainedOffset,
+                    SchemaHistoryLost(
+                        topicName,
+                        observedAt,
+                        "CDC SQL Server schema-history topic is empty while the connector has committed a "
+                            + "streaming offset.",
+                        "empty"
+                    )
+                )
+                : Evidence(
+                    enablementPhase,
+                    CdcSqlServerSchemaHistoryState.Unknown,
+                    SchemaHistoryUnavailable(
+                        topicName,
+                        observedAt,
+                        "CDC SQL Server schema-history topic is empty and the connector has committed no "
+                            + "streaming offset to decide it against.",
+                        "empty"
+                    )
+                );
+        }
+        catch (KafkaException exception)
+        {
+            // The broker response body is never surfaced verbatim; the error code is bounded evidence.
+            return Evidence(
+                enablementPhase,
+                CdcSqlServerSchemaHistoryState.Unreadable,
+                SchemaHistoryUnavailable(
+                    topicName,
+                    observedAt,
+                    "CDC SQL Server schema-history evidence is unavailable from the broker.",
+                    exception.Error.Code.ToString()
+                )
+            );
+        }
+    }
+
+    /// <summary>
+    /// Whether any partition of the topic still holds a record. Null means the bounding offsets could
+    /// not be read, which is never reported as an empty topic.
+    /// </summary>
+    private async Task<bool?> RetainsSchemaHistoryRecordsAsync(TopicMetadata topicMetadata, TimeSpan timeout)
+    {
+        // Earliest and latest are requested separately so each result set is correlated by the request
+        // that produced it: one flat response carrying both would only be separable by comparing values.
+        IReadOnlyDictionary<int, long>? earliest = await ReadPartitionOffsetsAsync(
+            topicMetadata,
+            OffsetSpec.Earliest(),
+            timeout
+        );
+        IReadOnlyDictionary<int, long>? latest = await ReadPartitionOffsetsAsync(
+            topicMetadata,
+            OffsetSpec.Latest(),
+            timeout
+        );
+
+        if (earliest is null || latest is null)
+        {
+            return null;
+        }
+
+        bool retainsRecords = false;
+        foreach (KeyValuePair<int, long> partition in latest)
+        {
+            if (!earliest.TryGetValue(partition.Key, out long start))
+            {
+                return null;
+            }
+
+            retainsRecords |= partition.Value > start;
+        }
+
+        return retainsRecords;
+    }
+
+    /// <summary>
+    /// The offset each partition reports for one bound. Null means at least one partition did not
+    /// answer with a usable offset, so the topic's contents cannot be decided.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<int, long>?> ReadPartitionOffsetsAsync(
+        TopicMetadata topicMetadata,
+        OffsetSpec offsetSpec,
+        TimeSpan timeout
+    )
+    {
+        if (topicMetadata.Partitions.Exists(partition => partition.Error.IsError))
+        {
+            return null;
+        }
+
+        List<TopicPartitionOffsetSpec> offsetSpecs =
+        [
+            .. topicMetadata.Partitions.Select(partition => new TopicPartitionOffsetSpec
+            {
+                TopicPartition = new(topicMetadata.Topic, new Partition(partition.PartitionId)),
+                OffsetSpec = offsetSpec,
+            }),
+        ];
+
+        if (offsetSpecs.Count == 0)
+        {
+            return null;
+        }
+
+        Dictionary<int, long> offsets = [];
+        foreach (
+            ListOffsetsResultInfo result in await _topicOffsetReader.ListOffsetsAsync(offsetSpecs, timeout)
+        )
+        {
+            if (
+                result?.TopicPartitionOffsetError is not { } entry
+                || entry.Error.IsError
+                || entry.Offset.IsSpecial
+            )
+            {
+                return null;
+            }
+
+            offsets[entry.Partition.Value] = entry.Offset.Value;
+        }
+
+        return offsets.Count == offsetSpecs.Count ? offsets : null;
+    }
+
+    private static CdcSqlServerSchemaHistoryEvidence Evidence(
+        CdcSqlServerSchemaHistoryEnablementPhase enablementPhase,
+        CdcSqlServerSchemaHistoryState state,
+        CdcDiagnostic? diagnostic = null
+    ) =>
+        new(enablementPhase, state)
+        {
+            Diagnostics = diagnostic is null ? [] : CdcDiagnostic.NormalizeDiagnostics([diagnostic]),
+        };
 
     public async Task<IReadOnlyList<CdcGovernedArtifact>> DeleteBindingArtifactsAsync(
         CdcArtifactInventory inventory,
@@ -738,8 +1070,14 @@ internal sealed class CdcKafkaAdminAdapter(
     /// grants its consumers require, repairing a missing required grant and failing closed on any grant
     /// broader than the binding owns.
     /// </summary>
-    internal async Task<CdcKafkaBindingAclPolicies> EnsureBindingAclsAsync(
+    internal Task<CdcKafkaBindingAclPolicies> EnsureBindingAclsAsync(
         CdcArtifactInventory inventory,
+        CancellationToken cancellationToken
+    ) => BindingAclsAsync(inventory, CdcKafkaProvisioningMode.CreateOrValidate, cancellationToken);
+
+    private async Task<CdcKafkaBindingAclPolicies> BindingAclsAsync(
+        CdcArtifactInventory inventory,
+        CdcKafkaProvisioningMode mode,
         CancellationToken cancellationToken
     )
     {
@@ -785,6 +1123,7 @@ internal sealed class CdcKafkaAdminAdapter(
                 inventory.TopicName,
                 "publicTopicAcls",
                 PublicTopicRequirements(controlOptions),
+                mode,
                 timeout,
                 observedAt,
                 diagnostics
@@ -799,6 +1138,7 @@ internal sealed class CdcKafkaAdminAdapter(
                         consumer.ConsumerGroup,
                         "consumerGroupAcls",
                         [new(consumer.Principal, AclOperation.Read)],
+                        mode,
                         timeout,
                         observedAt,
                         diagnostics
@@ -824,6 +1164,7 @@ internal sealed class CdcKafkaAdminAdapter(
                 inventory.ProgressTopicName,
                 "progressTopicAcls",
                 ProducerRequirements(controlOptions),
+                mode,
                 timeout,
                 observedAt,
                 diagnostics
@@ -836,6 +1177,7 @@ internal sealed class CdcKafkaAdminAdapter(
                     schemaHistoryTopicName,
                     "schemaHistoryTopicAcls",
                     SchemaHistoryRequirements(controlOptions),
+                    mode,
                     timeout,
                     observedAt,
                     diagnostics
@@ -908,6 +1250,7 @@ internal sealed class CdcKafkaAdminAdapter(
         string resourceName,
         string artifactKind,
         IReadOnlyList<CdcKafkaAclGrant> required,
+        CdcKafkaProvisioningMode mode,
         TimeSpan timeout,
         DateTimeOffset observedAt,
         List<CdcDiagnostic> diagnostics
@@ -989,7 +1332,24 @@ internal sealed class CdcKafkaAdminAdapter(
                 .Select(grant => ToAclBinding(resourceType, resourceName, grant)),
         ];
 
-        if (missing.Count != 0)
+        if (missing.Count != 0 && mode == CdcKafkaProvisioningMode.ValidateOnly)
+        {
+            // A grant the binding requires and the resource does not hold is reported as the
+            // nonconformance it is, because this pass verifies rather than repairs.
+            invalid = true;
+            diagnostics.Add(
+                AclInvalid(
+                    artifactKind,
+                    resourceName,
+                    $"$.{artifactKind}",
+                    observedAt,
+                    "CDC Kafka resource is missing a grant the binding requires.",
+                    resourceName,
+                    "missing grant"
+                )
+            );
+        }
+        else if (missing.Count != 0)
         {
             await adminClient.CreateAclsAsync(missing, new CreateAclsOptions { RequestTimeout = timeout });
             logger.LogDebug(
@@ -1302,6 +1662,7 @@ internal sealed class CdcKafkaAdminAdapter(
     private async Task<CdcKafkaTopicPolicy> EnsureTopicAsync(
         CdcKafkaTopicSpec spec,
         CdcKafkaDurabilityPolicy durability,
+        CdcKafkaProvisioningMode mode,
         TimeSpan timeout,
         DateTimeOffset observedAt,
         List<CdcDiagnostic> diagnostics,
@@ -1313,7 +1674,7 @@ internal sealed class CdcKafkaAdminAdapter(
             cancellationToken.ThrowIfCancellationRequested();
 
             TopicMetadata? topicMetadata = FindTopic(spec.TopicName, timeout);
-            if (topicMetadata is null)
+            if (topicMetadata is null && mode == CdcKafkaProvisioningMode.CreateOrValidate)
             {
                 await CreateTopicAsync(
                     spec.TopicName,
@@ -1324,6 +1685,23 @@ internal sealed class CdcKafkaAdminAdapter(
                     timeout
                 );
                 topicMetadata = FindTopic(spec.TopicName, timeout);
+            }
+
+            if (topicMetadata is null && mode == CdcKafkaProvisioningMode.ValidateOnly)
+            {
+                // The topic is reported absent rather than created: a pass that provisions is not a
+                // verification of what the deployment already holds.
+                diagnostics.Add(
+                    TopicUnavailable(
+                        spec,
+                        "$.topicName",
+                        observedAt,
+                        "CDC Kafka governed topic does not exist.",
+                        "absent"
+                    )
+                );
+
+                return UnresolvedTopic(spec);
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -2195,6 +2573,52 @@ internal sealed class CdcKafkaAdminAdapter(
             message,
             artifactKind,
             artifactName,
+            null,
+            observed
+        );
+
+    /// <summary>
+    /// A schema-history state that would end continuity. The enablement phase decides whether the
+    /// classifier latches it, so the diagnostic reports the observed state and never the verdict.
+    /// </summary>
+    private static CdcDiagnostic SchemaHistoryLost(
+        string topicName,
+        DateTimeOffset observedAt,
+        string message,
+        string observed
+    ) =>
+        Diagnostic(
+            "sqlServerSchemaHistory",
+            CdcDiagnosticCategory.SourceHistoryLost,
+            CdcDiagnosticComponent.SourceHistory,
+            CdcDiagnosticSeverity.Error,
+            false,
+            "$.sqlServerSchemaHistory.state",
+            observedAt,
+            message,
+            "schemaHistoryTopic",
+            topicName,
+            "a schema history the connector can replay",
+            observed
+        );
+
+    private static CdcDiagnostic SchemaHistoryUnavailable(
+        string topicName,
+        DateTimeOffset observedAt,
+        string message,
+        string observed
+    ) =>
+        Diagnostic(
+            "sqlServerSchemaHistory",
+            CdcDiagnosticCategory.StatusObservationUnavailable,
+            CdcDiagnosticComponent.SourceHistory,
+            CdcDiagnosticSeverity.Warning,
+            true,
+            "$.sqlServerSchemaHistory.state",
+            observedAt,
+            message,
+            "schemaHistoryTopic",
+            topicName,
             null,
             observed
         );

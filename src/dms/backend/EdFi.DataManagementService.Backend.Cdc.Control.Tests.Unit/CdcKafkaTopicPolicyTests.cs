@@ -407,6 +407,74 @@ public class Given_CdcKafkaTopicPolicy
         A.CallTo(() => adminClient.GetMetadata(A<TimeSpan>._)).MustNotHaveHappened();
     }
 
+    /// <summary>
+    /// The describe-only pass reports an absent governed topic rather than creating it. It is what
+    /// adoption verifies against: a pass that provisioned what it found absent would make a refused
+    /// adoption a partial first-time enablement.
+    /// </summary>
+    [Test]
+    public async Task It_reports_an_absent_topic_without_creating_it_when_only_describing()
+    {
+        CdcArtifactInventory inventory = Inventory(CdcProvider.Postgresql);
+        IAdminClient adminClient = Broker([]);
+
+        CdcKafkaPolicyObservation observation = await DescribePolicyAsync(adminClient, inventory);
+
+        observation.PublicTopic.State.Should().Be(CdcKafkaPolicyItemState.Unknown);
+        observation.ProgressTopic.State.Should().Be(CdcKafkaPolicyItemState.Unknown);
+        observation
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Observed == "absent" && diagnostic.ArtifactKind == "publicTopic"
+            );
+        A.CallTo(() =>
+                adminClient.CreateTopicsAsync(A<IEnumerable<TopicSpecification>>._, A<CreateTopicsOptions>._)
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_accepts_conforming_topics_when_only_describing()
+    {
+        CdcArtifactInventory inventory = Inventory(CdcProvider.SqlServer);
+        IAdminClient adminClient = Broker(ConformingTopics(inventory));
+
+        CdcKafkaPolicyObservation observation = await DescribePolicyAsync(adminClient, inventory);
+
+        observation.PublicTopic.State.Should().Be(CdcKafkaPolicyItemState.Satisfied);
+        observation.ProgressTopic.State.Should().Be(CdcKafkaPolicyItemState.Satisfied);
+        observation.SchemaHistoryTopic!.State.Should().Be(CdcKafkaPolicyItemState.Satisfied);
+        A.CallTo(() =>
+                adminClient.CreateTopicsAsync(A<IEnumerable<TopicSpecification>>._, A<CreateTopicsOptions>._)
+            )
+            .MustNotHaveHappened();
+    }
+
+    private static Task<CdcKafkaPolicyObservation> DescribePolicyAsync(
+        IAdminClient adminClient,
+        CdcArtifactInventory inventory
+    ) =>
+        new CdcKafkaAdminAdapter(
+            adminClient,
+            Options.Create(ControlOptions(inventory, CdcControlOptions.LocalDurabilityProfile)),
+            new FixedTimeProvider(ObservedAt),
+            NullLogger<CdcKafkaAdminAdapter>.Instance
+        ).DescribeBindingKafkaPolicyAsync(
+            new("operation-1", TargetIdentity(inventory), null),
+            inventory,
+            CancellationToken.None
+        );
+
+    private static CdcTargetIdentity TargetIdentity(CdcArtifactInventory inventory) =>
+        new(
+            inventory.DeploymentKey,
+            CdcTargetValidator.DefaultBindingTenantKey,
+            "1",
+            inventory.InstanceKey,
+            inventory.Generation,
+            inventory.Provider
+        );
+
     private static async Task<CdcKafkaBindingTopicPolicies> RunAsync(
         IAdminClient adminClient,
         CdcArtifactInventory inventory,

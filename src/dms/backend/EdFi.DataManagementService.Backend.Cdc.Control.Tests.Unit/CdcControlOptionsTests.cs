@@ -395,6 +395,10 @@ public class Given_CdcControlOptionsTests
             nameof(CdcControlTimeoutOptions.ProviderBarrier),
             timeouts => timeouts.ProviderBarrier = TimeSpan.Zero
         );
+        yield return TimeoutCase(
+            nameof(CdcControlTimeoutOptions.PollInterval),
+            timeouts => timeouts.PollInterval = TimeSpan.Zero
+        );
     }
 
     [Test]

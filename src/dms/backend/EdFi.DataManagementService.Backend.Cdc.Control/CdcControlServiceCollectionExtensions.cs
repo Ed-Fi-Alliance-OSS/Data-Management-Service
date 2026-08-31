@@ -72,6 +72,21 @@ public static class CdcControlServiceCollectionExtensions
         // registers as a scoped service.
         services.TryAddScoped<ICdcConnectorObservationMapper, CdcConnectorObservationMapper>();
 
+        // Reads the ORIGINAL configuration rather than the bound DocumentCache options, which an
+        // administrative host replaces with its own invocation target.
+        services.TryAddSingleton<CdcExplicitProjectionTargetProof>();
+
+        services.TryAddSingleton<
+            ICdcInstanceDatabaseConnectionFactory,
+            CdcInstanceDatabaseConnectionFactory
+        >();
+
+        // Scoped because it composes the scoped provider-setup and template services. The host must
+        // also register the DocumentCache runtime services for its datastore: the guarded new-empty
+        // activation the controller invokes is registered there, alongside the projector runtime, and
+        // is not the CDC control plane's to register.
+        services.TryAddScoped<ICdcSetupController, CdcSetupController>();
+
         string datastore = configuration.GetSection(DatastoreSectionName).Value ?? string.Empty;
 
         if (string.Equals(datastore, PostgresqlDatastore, StringComparison.OrdinalIgnoreCase))
@@ -79,6 +94,9 @@ public static class CdcControlServiceCollectionExtensions
             services.AddPostgresqlDmsCdcControlPlane();
             services.TryAddSingleton<ICdcEligibilityProbe>(serviceProvider =>
                 EligibilityProbe(serviceProvider, CoreCdc.CdcProvider.Postgresql)
+            );
+            services.TryAddSingleton<ICdcProviderArtifactTeardown>(serviceProvider =>
+                ArtifactTeardown(serviceProvider, CoreCdc.CdcProvider.Postgresql)
             );
             return services;
         }
@@ -88,6 +106,9 @@ public static class CdcControlServiceCollectionExtensions
             services.AddMssqlDmsCdcControlPlane();
             services.TryAddSingleton<ICdcEligibilityProbe>(serviceProvider =>
                 EligibilityProbe(serviceProvider, CoreCdc.CdcProvider.SqlServer)
+            );
+            services.TryAddSingleton<ICdcProviderArtifactTeardown>(serviceProvider =>
+                ArtifactTeardown(serviceProvider, CoreCdc.CdcProvider.SqlServer)
             );
             return services;
         }
@@ -111,6 +132,16 @@ public static class CdcControlServiceCollectionExtensions
             serviceProvider.GetRequiredService<TimeProvider>(),
             serviceProvider.GetRequiredService<ILogger<CdcEligibilityProbe>>()
         );
+
+    /// <summary>
+    /// Builds the provider-artifact teardown for the datastore the deployment selected. Like the probe,
+    /// it issues provider-specific statements against the instance database rather than resolving
+    /// through the provider extensions.
+    /// </summary>
+    private static CdcProviderArtifactTeardown ArtifactTeardown(
+        IServiceProvider serviceProvider,
+        CoreCdc.CdcProvider provider
+    ) => new(provider, serviceProvider.GetRequiredService<ILogger<CdcProviderArtifactTeardown>>());
 
     /// <summary>
     /// Builds the admin client from the deployment's bootstrap servers and Kafka client security
