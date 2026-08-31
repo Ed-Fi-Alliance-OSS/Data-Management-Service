@@ -390,7 +390,11 @@ internal class QueryRequestHandler(
 
         return new RelationalQueryRequest(
             ResourceInfo: requestInfo.ResourceInfo,
-            AuthorizationContext: RelationalAuthorizationContext.Create(requestInfo.ClientAuthorizations),
+            AuthorizationContext: RelationalAuthorizationContext.Create(
+                requestInfo.ClientAuthorizations,
+                requestInfo.ApplicationContext?.CreatorOwnershipTokenId,
+                requestInfo.ApplicationContext?.OwnershipTokenIds
+            ),
             MappingSet: mappingSet,
             QueryElements: requestInfo.QueryElements,
             AuthorizationStrategyEvaluators: requestInfo.AuthorizationStrategyEvaluators,

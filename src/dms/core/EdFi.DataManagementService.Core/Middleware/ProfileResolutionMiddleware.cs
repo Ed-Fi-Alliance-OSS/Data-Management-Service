@@ -59,36 +59,30 @@ internal class ProfileResolutionMiddleware(
         // Get application context to find ApplicationId
         var applicationContextProvider =
             requestInfo.ScopedServiceProvider.GetRequiredService<IApplicationContextProvider>();
-        ApplicationContext? appContext = await applicationContextProvider.GetApplicationByClientIdAsync(
-            requestInfo.ClientAuthorizations.ClientId
-        );
+        ApplicationContextResult applicationContextResult =
+            await applicationContextProvider.GetApplicationByClientIdAsync(
+                requestInfo.ClientAuthorizations.ClientId,
+                requestInfo.FrontendRequest.Tenant
+            );
 
-        if (appContext == null)
+        if (applicationContextResult is not ApplicationContextResult.Success success)
         {
             logger.LogWarning(
-                "Application context not found for client during profile resolution. ClientId: {ClientId} - {TraceId}",
-                LoggingSanitizer.SanitizeForLogging(requestInfo.ClientAuthorizations.ClientId),
+                "Application context could not be resolved for client during profile resolution - {TraceId}",
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
-            // If no application context and no profile header, continue without profile
-            if (parseResult.ParsedHeader == null)
-            {
-                await next();
-                return;
-            }
-
-            // If profile header was specified but we can't find app context, return error
-            requestInfo.FrontendResponse = CreateProfileError(
-                statusCode: GetNotFoundStatusCode(requestInfo.Method),
-                errorType: "urn:ed-fi:api:profile:invalid-profile-usage",
-                title: "Invalid Profile Usage",
-                detail: "The request construction was invalid with respect to usage of a data policy.",
-                errors: ["Unable to resolve application context for profile validation."],
-                traceId: requestInfo.FrontendRequest.TraceId
+            // Fail closed: profile resolution requires application context, whether the client named a
+            // profile explicitly or has profiles assigned for implicit selection.
+            requestInfo.FrontendResponse = ApplicationContextFailureResponseFactory.Create(
+                applicationContextResult,
+                requestInfo.FrontendRequest.TraceId
             );
             return;
         }
+
+        ApplicationContext appContext = success.ApplicationContext;
+        requestInfo.ApplicationContext = appContext;
 
         // Get tenant ID if multi-tenancy is enabled
         string? tenantId = requestInfo.FrontendRequest.Tenant;
@@ -161,18 +155,6 @@ internal class ProfileResolutionMiddleware(
         }
 
         return requestInfo.FrontendRequest.Headers.TryGetValue(headerName, out var value) ? value : null;
-    }
-
-    private static int GetNotFoundStatusCode(RequestMethod method)
-    {
-        // GET uses 406 Not Acceptable, POST/PUT use 415 Unsupported Media Type
-        return method switch
-        {
-            RequestMethod.GET => 406,
-            RequestMethod.POST => 415,
-            RequestMethod.PUT => 415,
-            _ => throw new InvalidOperationException($"Unexpected method for profile resolution: {method}"),
-        };
     }
 
     private static FrontendResponse CreateProfileError(

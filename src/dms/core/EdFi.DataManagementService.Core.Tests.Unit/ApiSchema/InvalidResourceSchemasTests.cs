@@ -100,15 +100,21 @@ public class InvalidResourceSchemasTests
             services.AddTransient<ResolveDataStoreMiddleware>();
 
             var fakeApplicationContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => fakeApplicationContextProvider.GetApplicationByClientIdAsync(A<string>._))
+            A.CallTo(() =>
+                    fakeApplicationContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null)
+                )
                 .Returns(
-                    Task.FromResult<ApplicationContext?>(
-                        new ApplicationContext(
-                            Id: 1,
-                            ApplicationId: 1,
-                            ClientId: "test-client",
-                            ClientUuid: Guid.NewGuid(),
-                            DataStoreIds: [1]
+                    Task.FromResult<ApplicationContextResult>(
+                        new ApplicationContextResult.Success(
+                            new ApplicationContext(
+                                Id: 1,
+                                ApplicationId: 1,
+                                ClientId: "test-client",
+                                ClientUuid: Guid.NewGuid(),
+                                DataStoreIds: [1],
+                                CreatorOwnershipTokenId: null,
+                                OwnershipTokenIds: []
+                            )
                         )
                     )
                 );

@@ -48,7 +48,9 @@ internal class DeleteByIdHandler(ILogger _logger, ResiliencePipeline _resilience
                     )
                     {
                         AuthorizationContext = RelationalAuthorizationContext.Create(
-                            requestInfo.ClientAuthorizations
+                            requestInfo.ClientAuthorizations,
+                            requestInfo.ApplicationContext?.CreatorOwnershipTokenId,
+                            requestInfo.ApplicationContext?.OwnershipTokenIds
                         ),
                         AuthorizationStrategyEvaluators = requestInfo.AuthorizationStrategyEvaluators,
                     }

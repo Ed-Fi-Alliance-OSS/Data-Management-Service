@@ -57,16 +57,32 @@ built-in stampede protection
 
 **Cache Structure:**
 
-- **Key:** `ApplicationContext_{clientId}` (e.g., `ApplicationContext_my-api-client`)
+- **Key:** scoped to the requesting tenant:
+  - Single tenant: `ApplicationContext:single:{clientId}`
+    (e.g., `ApplicationContext:single:my-api-client`)
+  - Multi-tenant: `ApplicationContext:tenant:{tenant.ToLowerInvariant()}:{clientId}`
+    (e.g., `ApplicationContext:tenant:tenant-a:my-api-client`)
 - **Value:** Single `ApplicationContext` record containing:
   - `Id` - API client database ID
   - `ApplicationId` - Parent application ID
   - `ClientId` - Client identifier string
   - `ClientUuid` - Client UUID
   - `DataStoreIds` - List of authorized data store IDs
+  - `CreatorOwnershipTokenId` - Ownership token assigned to documents this
+    client creates, or null when the client has none
+  - `OwnershipTokenIds` - Ownership tokens this client is authorized against
 
-**Multi-Tenancy Support:** No - one cache entry per API client, not per tenant.
-Each client's `DataStoreIds` determine which data they can access.
+**Multi-Tenancy Support:** Yes - the tenant is part of the cache key, so the
+same API client resolves and caches an independent context per tenant. Each
+client's `DataStoreIds` determine which data they can access.
+
+**Dependency Scope:** Every authenticated resource request path that runs
+`ProfileResolutionMiddleware` requires a resolvable application context, because
+profile resolution needs the `ApplicationId`. This is broader than the
+ownership-gated operations alone. With a cold or missing cache entry, a CMS
+outage or a malformed CMS response makes those requests fail closed with
+`503 Service Unavailable`. A `NotFound` context still maps to
+`401 Unauthorized` as an invalid token.
 
 **TTL:** 10 minutes (configurable via `CacheSettings:ApplicationContextCacheExpirationSeconds`)
 
@@ -437,7 +453,7 @@ Default values: ClaimSets, AppContext, and data store = 10 minutes; Token = 25 m
 
 | Cache        | Mechanism    | Scope | TTL    | Tenant | Stampede | Invalidation |
 | ------------ | ------------ | ----- | ------ | ------ | -------- | ------------ |
-| App Context  | HybridCache  | Sing. | 10 min | No     | Yes      | Manual + TTL |
+| App Context  | HybridCache  | Sing. | 10 min | Yes    | Yes      | Manual + TTL |
 | ClaimSets    | HybridCache  | Sing. | 10 min | Yes    | Yes      | Manual + TTL |
 | Comp. Schema | ConcurDict   | Sing. | None   | No     | No       | Reload ID    |
 | CMS Token    | HybridCache  | Sing. | 25 min | No     | Yes      | TTL only     |

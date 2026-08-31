@@ -39,6 +39,12 @@ internal static class ExternalDoublesRegistration
     /// Collects the real provider exceptions observed while <paramref name="providerFailureTransform"/> is
     /// active, so a scenario can assert genuine <c>SqlException</c> provenance.
     /// </param>
+    /// <param name="applicationContextConfigurationProvider">
+    /// When supplied, replaces only the singleton CMS-facing <c>IConfigurationServiceApplicationProvider</c>
+    /// and leaves the production scoped <c>CachedApplicationContextProvider</c> registration in place, so a
+    /// scenario can observe the real per-request memoization instead of the always-stable fake. Null keeps
+    /// the historical behavior of replacing <c>IApplicationContextProvider</c> outright.
+    /// </param>
     public static void RegisterAll(
         IServiceCollection services,
         FixtureContext fixture,
@@ -55,7 +61,8 @@ internal static class ExternalDoublesRegistration
         DocumentCacheReadAcquisitionFailureRecorder? documentCacheReadAcquisitionFailureRecorder = null,
         DocumentCacheDirectFillTimeoutRecorder? documentCacheDirectFillTimeoutRecorder = null,
         DocumentCacheReadTelemetryRecorder? documentCacheReadTelemetryRecorder = null,
-        IReadOnlyList<string>? assignedProfileNames = null
+        IReadOnlyList<string>? assignedProfileNames = null,
+        IConfigurationServiceApplicationProvider? applicationContextConfigurationProvider = null
     )
     {
         if (
@@ -71,7 +78,17 @@ internal static class ExternalDoublesRegistration
         services.RemoveAll<IJwtValidationService>();
         services.RemoveAll<IConfigurationManager<OpenIdConnectConfiguration>>();
         services.RemoveAll<IClaimSetProvider>();
-        services.RemoveAll<IApplicationContextProvider>();
+        if (applicationContextConfigurationProvider is null)
+        {
+            services.RemoveAll<IApplicationContextProvider>();
+        }
+        else
+        {
+            // Leave the production scoped IApplicationContextProvider registration (CachedApplicationContextProvider)
+            // in place and swap only the CMS-facing dependency it wraps, so per-request memoization is real.
+            services.RemoveAll<IConfigurationServiceApplicationProvider>();
+            services.AddSingleton(applicationContextConfigurationProvider);
+        }
         services.RemoveAll<IDataStoreProvider>();
         services.RemoveAll<IProfileCmsProvider>();
         services.RemoveAll<IStartupProcessExit>();
@@ -101,7 +118,10 @@ internal static class ExternalDoublesRegistration
 
         services.AddSingleton(FakeOidcConfigurationManager.Stable());
         services.AddSingleton(claimSetProvider);
-        services.AddSingleton<IApplicationContextProvider>(FakeApplicationContextProvider.Stable());
+        if (applicationContextConfigurationProvider is null)
+        {
+            services.AddSingleton<IApplicationContextProvider>(FakeApplicationContextProvider.Stable());
+        }
         services.AddSingleton<IDataStoreProvider>(
             FakeDataStoreProvider.WithSingleInstance(
                 id: ExternalDoublesConstants.StableDataStoreId,

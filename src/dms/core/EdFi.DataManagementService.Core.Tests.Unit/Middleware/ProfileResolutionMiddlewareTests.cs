@@ -66,8 +66,10 @@ public class ProfileResolutionMiddlewareTests
 
         if (appContextProvider is null)
         {
-            A.CallTo(() => applicationContextProvider.GetApplicationByClientIdAsync(A<string>._))
-                .Returns(Task.FromResult<ApplicationContext?>(null));
+            A.CallTo(() =>
+                    applicationContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null)
+                )
+                .Returns(Task.FromResult<ApplicationContextResult>(new ApplicationContextResult.NotFound()));
         }
 
         return new ServiceCollection()
@@ -83,7 +85,9 @@ public class ProfileResolutionMiddlewareTests
             ApplicationId: applicationId,
             ClientId: "client123",
             ClientUuid: Guid.NewGuid(),
-            DataStoreIds: []
+            DataStoreIds: [],
+            CreatorOwnershipTokenId: null,
+            OwnershipTokenIds: []
         );
 
     private static RequestInfo CreateRequestInfo(
@@ -198,55 +202,11 @@ public class ProfileResolutionMiddlewareTests
         public async Task Setup()
         {
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._))
-                .Returns(Task.FromResult<ApplicationContext?>(null));
+            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+                .Returns(Task.FromResult<ApplicationContextResult>(new ApplicationContextResult.NotFound()));
 
             _requestInfo = CreateRequestInfo(
                 RequestMethod.GET,
-                scopedServiceProvider: BuildScopedServiceProvider(appContextProvider)
-            );
-            _nextCalled = false;
-
-            var middleware = CreateMiddleware();
-
-            await middleware.Execute(
-                _requestInfo,
-                () =>
-                {
-                    _nextCalled = true;
-                    return Task.CompletedTask;
-                }
-            );
-        }
-
-        [Test]
-        public void It_calls_next()
-        {
-            _nextCalled.Should().BeTrue();
-        }
-    }
-
-    [TestFixture]
-    public class Given_No_Application_Context_But_Profile_Header_Specified : ProfileResolutionMiddlewareTests
-    {
-        private RequestInfo _requestInfo = null!;
-        private bool _nextCalled;
-
-        [SetUp]
-        public async Task Setup()
-        {
-            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["Accept"] = "application/vnd.ed-fi.student.testprofile.readable+json",
-            };
-
-            var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._))
-                .Returns(Task.FromResult<ApplicationContext?>(null));
-
-            _requestInfo = CreateRequestInfo(
-                RequestMethod.GET,
-                headers,
                 scopedServiceProvider: BuildScopedServiceProvider(appContextProvider)
             );
             _nextCalled = false;
@@ -270,22 +230,128 @@ public class ProfileResolutionMiddlewareTests
         }
 
         [Test]
-        public void It_returns_406_for_GET()
+        public void It_returns_generic_401()
         {
-            _requestInfo.FrontendResponse!.StatusCode.Should().Be(406);
+            TestHelper.AssertUnauthorizedProblemDetails(
+                _requestInfo.FrontendResponse,
+                "Unable to resolve application context for the authenticated client."
+            );
+        }
+    }
+
+    [TestFixture]
+    public class Given_Unavailable_Application_Context_And_No_Profile_Header
+        : ProfileResolutionMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var appContextProvider = A.Fake<IApplicationContextProvider>();
+            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+                .Returns(
+                    Task.FromResult<ApplicationContextResult>(new ApplicationContextResult.Unavailable())
+                );
+
+            _requestInfo = CreateRequestInfo(
+                RequestMethod.GET,
+                scopedServiceProvider: BuildScopedServiceProvider(appContextProvider)
+            );
+            _nextCalled = false;
+
+            var middleware = CreateMiddleware();
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
         }
 
         [Test]
-        public void It_returns_the_expected_problem_details_payload()
+        public void It_does_not_call_next()
         {
-            AssertExpectedProblemDetailsResponse(
+            _nextCalled.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_returns_generic_503()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(503);
+            _requestInfo.FrontendResponse.Body!["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:api:service-unavailable");
+        }
+    }
+
+    [TestFixture]
+    public class Given_No_Application_Context_But_Profile_Header_Specified : ProfileResolutionMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Accept"] = "application/vnd.ed-fi.student.testprofile.readable+json",
+            };
+
+            var appContextProvider = A.Fake<IApplicationContextProvider>();
+            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+                .Returns(Task.FromResult<ApplicationContextResult>(new ApplicationContextResult.NotFound()));
+
+            _requestInfo = CreateRequestInfo(
+                RequestMethod.GET,
+                headers,
+                scopedServiceProvider: BuildScopedServiceProvider(appContextProvider)
+            );
+            _nextCalled = false;
+
+            var middleware = CreateMiddleware();
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_returns_the_fail_closed_response_without_continuing_the_pipeline()
+        {
+            _nextCalled.Should().BeFalse();
+            TestHelper.AssertUnauthorizedProblemDetails(
                 _requestInfo.FrontendResponse!,
-                expectedStatusCode: 406,
-                expectedType: "urn:ed-fi:api:profile:invalid-profile-usage",
-                expectedTitle: "Invalid Profile Usage",
-                expectedDetail: "The request construction was invalid with respect to usage of a data policy.",
-                expectedCorrelationId: "test-trace-id",
-                "Unable to resolve application context for profile validation."
+                "Unable to resolve application context for the authenticated client."
+            );
+        }
+
+        [Test]
+        public void It_returns_generic_401_for_GET()
+        {
+            TestHelper.AssertUnauthorizedProblemDetails(
+                _requestInfo.FrontendResponse,
+                "Unable to resolve application context for the authenticated client."
+            );
+        }
+
+        [Test]
+        public void It_returns_the_expected_application_context_failure_payload()
+        {
+            TestHelper.AssertUnauthorizedProblemDetails(
+                _requestInfo.FrontendResponse,
+                "Unable to resolve application context for the authenticated client."
             );
         }
     }
@@ -304,8 +370,8 @@ public class ProfileResolutionMiddlewareTests
             };
 
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._))
-                .Returns(Task.FromResult<ApplicationContext?>(null));
+            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+                .Returns(Task.FromResult<ApplicationContextResult>(new ApplicationContextResult.NotFound()));
 
             _requestInfo = CreateRequestInfo(
                 RequestMethod.POST,
@@ -319,22 +385,20 @@ public class ProfileResolutionMiddlewareTests
         }
 
         [Test]
-        public void It_returns_415_for_POST()
+        public void It_returns_generic_401_for_POST()
         {
-            _requestInfo.FrontendResponse!.StatusCode.Should().Be(415);
+            TestHelper.AssertUnauthorizedProblemDetails(
+                _requestInfo.FrontendResponse,
+                "Unable to resolve application context for the authenticated client."
+            );
         }
 
         [Test]
-        public void It_returns_the_expected_problem_details_payload()
+        public void It_returns_the_expected_application_context_failure_payload()
         {
-            AssertExpectedProblemDetailsResponse(
-                _requestInfo.FrontendResponse!,
-                expectedStatusCode: 415,
-                expectedType: "urn:ed-fi:api:profile:invalid-profile-usage",
-                expectedTitle: "Invalid Profile Usage",
-                expectedDetail: "The request construction was invalid with respect to usage of a data policy.",
-                expectedCorrelationId: "test-trace-id",
-                "Unable to resolve application context for profile validation."
+            TestHelper.AssertUnauthorizedProblemDetails(
+                _requestInfo.FrontendResponse,
+                "Unable to resolve application context for the authenticated client."
             );
         }
     }
@@ -353,8 +417,8 @@ public class ProfileResolutionMiddlewareTests
             };
 
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._))
-                .Returns(Task.FromResult<ApplicationContext?>(null));
+            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+                .Returns(Task.FromResult<ApplicationContextResult>(new ApplicationContextResult.NotFound()));
 
             _requestInfo = CreateRequestInfo(
                 RequestMethod.PUT,
@@ -368,9 +432,12 @@ public class ProfileResolutionMiddlewareTests
         }
 
         [Test]
-        public void It_returns_415_for_PUT()
+        public void It_returns_generic_401_for_PUT()
         {
-            _requestInfo.FrontendResponse!.StatusCode.Should().Be(415);
+            TestHelper.AssertUnauthorizedProblemDetails(
+                _requestInfo.FrontendResponse,
+                "Unable to resolve application context for the authenticated client."
+            );
         }
     }
 
@@ -389,8 +456,8 @@ public class ProfileResolutionMiddlewareTests
             };
 
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._))
-                .Returns(CreateApplicationContext());
+            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+                .Returns(new ApplicationContextResult.Success(CreateApplicationContext()));
 
             _requestInfo = CreateRequestInfo(
                 RequestMethod.GET,
@@ -481,8 +548,8 @@ public class ProfileResolutionMiddlewareTests
             };
 
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._))
-                .Returns(CreateApplicationContext());
+            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+                .Returns(new ApplicationContextResult.Success(CreateApplicationContext()));
 
             _requestInfo = CreateRequestInfo(
                 RequestMethod.GET,
@@ -555,8 +622,8 @@ public class ProfileResolutionMiddlewareTests
         public async Task Setup()
         {
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._))
-                .Returns(CreateApplicationContext());
+            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+                .Returns(new ApplicationContextResult.Success(CreateApplicationContext()));
 
             _requestInfo = CreateRequestInfo(
                 RequestMethod.GET,
@@ -616,8 +683,8 @@ public class ProfileResolutionMiddlewareTests
             };
 
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._))
-                .Returns(CreateApplicationContext());
+            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+                .Returns(new ApplicationContextResult.Success(CreateApplicationContext()));
 
             _requestInfo = CreateRequestInfo(
                 RequestMethod.PUT,
@@ -690,8 +757,8 @@ public class ProfileResolutionMiddlewareTests
         public async Task Setup()
         {
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._))
-                .Returns(CreateApplicationContext());
+            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+                .Returns(new ApplicationContextResult.Success(CreateApplicationContext()));
 
             _requestInfo = CreateRequestInfo(
                 RequestMethod.DELETE,
@@ -761,8 +828,8 @@ public class ProfileResolutionMiddlewareTests
             };
 
             var appContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._))
-                .Returns(CreateApplicationContext());
+            A.CallTo(() => appContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null))
+                .Returns(new ApplicationContextResult.Success(CreateApplicationContext()));
 
             _requestInfo = CreateRequestInfo(
                 RequestMethod.GET,
@@ -828,12 +895,16 @@ public class ProfileResolutionMiddlewareTests
         public async Task Setup()
         {
             _firstApplicationContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => _firstApplicationContextProvider.GetApplicationByClientIdAsync("client123"))
-                .Returns(CreateApplicationContext(11));
+            A.CallTo(() =>
+                    _firstApplicationContextProvider.GetApplicationByClientIdAsync("client123", tenant: null)
+                )
+                .Returns(new ApplicationContextResult.Success(CreateApplicationContext(11)));
 
             _secondApplicationContextProvider = A.Fake<IApplicationContextProvider>();
-            A.CallTo(() => _secondApplicationContextProvider.GetApplicationByClientIdAsync("client123"))
-                .Returns(CreateApplicationContext(22));
+            A.CallTo(() =>
+                    _secondApplicationContextProvider.GetApplicationByClientIdAsync("client123", tenant: null)
+                )
+                .Returns(new ApplicationContextResult.Success(CreateApplicationContext(22)));
 
             _profileService = A.Fake<IProfileService>();
             A.CallTo(() =>

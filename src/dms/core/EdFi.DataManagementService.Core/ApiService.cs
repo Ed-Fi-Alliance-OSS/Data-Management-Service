@@ -41,6 +41,7 @@ internal class ApiService : IApiService
     private readonly IDecimalValidator _decimalValidator;
     private readonly ILogger<ApiService> _logger;
     private readonly ILogger<RequestResponseLoggingMiddleware> _requestResponseLogger;
+    private readonly ILogger<ApplicationContextRequirementMiddleware> _applicationContextRequirementLogger;
     private readonly IOptions<AppSettings> _appSettings;
     private readonly ResiliencePipeline _resiliencePipeline;
     private readonly CircuitBreakerSettings _circuitBreakerSettings;
@@ -157,6 +158,8 @@ internal class ApiService : IApiService
         _decimalValidator = decimalValidator;
         _logger = logger;
         _requestResponseLogger = loggerFactory.CreateLogger<RequestResponseLoggingMiddleware>();
+        _applicationContextRequirementLogger =
+            loggerFactory.CreateLogger<ApplicationContextRequirementMiddleware>();
         _appSettings = appSettings;
         _resiliencePipeline = resiliencePipeline;
         _resourceLoadCalculator = resourceLoadCalculator;
@@ -227,6 +230,7 @@ internal class ApiService : IApiService
             new ParseBodyMiddleware(_logger),
             new RequestInfoBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
             new DuplicatePropertiesMiddleware(_logger),
+            new ApplicationContextRequirementMiddleware(_applicationContextRequirementLogger),
             _serviceProvider.GetRequiredService<ProfileResolutionMiddleware>(),
             new RejectResourceIdentifierMiddleware(_logger),
             new CoerceDateFormatMiddleware(_logger),
@@ -257,6 +261,7 @@ internal class ApiService : IApiService
             new ArrayUniquenessValidationMiddleware(_logger),
             new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
+            new ApplicationContextRequirementMiddleware(_applicationContextRequirementLogger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
             new UpsertHandler(_logger, _resiliencePipeline),
         ]);
@@ -277,6 +282,7 @@ internal class ApiService : IApiService
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
             ),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
+            new ApplicationContextRequirementMiddleware(_applicationContextRequirementLogger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
             new GetByIdHandler(_logger, _resiliencePipeline),
         ]);
@@ -304,6 +310,7 @@ internal class ApiService : IApiService
                 _appSettings.Value.UseLegacyDocumentIdOrderingForChangeQueries
             ),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
+            new ApplicationContextRequirementMiddleware(_applicationContextRequirementLogger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
             new QueryRequestHandler(
                 _logger,
@@ -345,6 +352,7 @@ internal class ApiService : IApiService
                 _appSettings.Value.UseLegacyDocumentIdOrderingForChangeQueries
             ),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
+            new ApplicationContextRequirementMiddleware(_applicationContextRequirementLogger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
             new PartitionRequestHandler(
                 _logger,
@@ -399,6 +407,7 @@ internal class ApiService : IApiService
             new ArrayUniquenessValidationMiddleware(_logger),
             new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
+            new ApplicationContextRequirementMiddleware(_applicationContextRequirementLogger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
             new UpdateByIdHandler(_logger, _resiliencePipeline),
         ]);
@@ -418,6 +427,7 @@ internal class ApiService : IApiService
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
             ),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
+            new ApplicationContextRequirementMiddleware(_applicationContextRequirementLogger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
             new DeleteByIdHandler(_logger, _resiliencePipeline),
         ]);
@@ -485,6 +495,7 @@ internal class ApiService : IApiService
             ),
             new ValidateTrackedChangeQueryMiddleware(_logger),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
+            new ApplicationContextRequirementMiddleware(_applicationContextRequirementLogger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
             new TrackedChangeQueryRequestHandler(_logger, _resiliencePipeline),
         ]);

@@ -15,14 +15,16 @@ public interface IConfigurationServiceApplicationProvider
     /// Retrieves application context for a client ID from the Configuration Service API.
     /// </summary>
     /// <param name="clientId">The client ID to look up.</param>
-    /// <returns>Application context if found, null otherwise.</returns>
-    Task<ApplicationContext?> GetApplicationByClientIdAsync(string clientId);
+    /// <param name="tenant">The optional tenant context for the request.</param>
+    /// <returns>The typed application-context lookup outcome.</returns>
+    Task<ApplicationContextResult> GetApplicationByClientIdAsync(string clientId, string? tenant);
 
     /// <summary>
     /// Forces a reload of application context from the Configuration Service API.
     /// Use this when the application may have been recently created or modified.
     /// </summary>
     /// <param name="clientId">The client ID to reload.</param>
-    /// <returns>Application context if found, null otherwise.</returns>
-    Task<ApplicationContext?> ReloadApplicationByClientIdAsync(string clientId);
+    /// <param name="tenant">The optional tenant context for the request.</param>
+    /// <returns>The typed application-context reload outcome.</returns>
+    Task<ApplicationContextResult> ReloadApplicationByClientIdAsync(string clientId, string? tenant);
 }

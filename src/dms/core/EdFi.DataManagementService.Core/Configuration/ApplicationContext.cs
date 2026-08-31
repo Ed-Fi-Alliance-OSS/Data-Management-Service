@@ -28,5 +28,13 @@ public record ApplicationContext(
     /// <summary>
     /// List of data store IDs this application is authorized to access
     /// </summary>
-    List<long> DataStoreIds
+    List<long> DataStoreIds,
+    /// <summary>
+    /// Ownership token that created the application, when configured
+    /// </summary>
+    short? CreatorOwnershipTokenId,
+    /// <summary>
+    /// Ownership tokens assigned to the application
+    /// </summary>
+    IReadOnlyList<short> OwnershipTokenIds
 );

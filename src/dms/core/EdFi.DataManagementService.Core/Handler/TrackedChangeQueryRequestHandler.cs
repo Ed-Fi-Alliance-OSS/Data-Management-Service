@@ -201,7 +201,11 @@ internal sealed class TrackedChangeQueryRequestHandler(
             PaginationParameters: requestInfo.PaginationParameters,
             ChangeVersionRange: requestInfo.ChangeVersionRange,
             TraceId: requestInfo.FrontendRequest.TraceId,
-            AuthorizationContext: RelationalAuthorizationContext.Create(requestInfo.ClientAuthorizations),
+            AuthorizationContext: RelationalAuthorizationContext.Create(
+                requestInfo.ClientAuthorizations,
+                requestInfo.ApplicationContext?.CreatorOwnershipTokenId,
+                requestInfo.ApplicationContext?.OwnershipTokenIds
+            ),
             AuthorizationStrategyEvaluators: requestInfo.AuthorizationStrategyEvaluators,
             MappingSet: mappingSet,
             ResourceModel: resourceModel,

@@ -145,11 +145,13 @@ internal partial class GetTokenInfoHandler(
         }
 
         // Get application context to find ApplicationId
-        ApplicationContext? appContext = await applicationContextProvider.GetApplicationByClientIdAsync(
-            requestInfo.ClientAuthorizations.ClientId
-        );
+        ApplicationContextResult applicationContextResult =
+            await applicationContextProvider.GetApplicationByClientIdAsync(
+                requestInfo.ClientAuthorizations.ClientId,
+                requestInfo.FrontendRequest.Tenant
+            );
 
-        if (appContext == null)
+        if (applicationContextResult is ApplicationContextResult.NotFound)
         {
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 401,
@@ -162,6 +164,21 @@ internal partial class GetTokenInfoHandler(
             );
             return;
         }
+
+        if (applicationContextResult is ApplicationContextResult.Unavailable)
+        {
+            requestInfo.FrontendResponse = new FrontendResponse(
+                StatusCode: 503,
+                Body: FailureResponse.ForServiceUnavailable(requestInfo.FrontendRequest.TraceId),
+                Headers: [],
+                ContentType: "application/problem+json"
+            );
+            return;
+        }
+
+        ApplicationContextResult.Success success = (ApplicationContextResult.Success)applicationContextResult;
+
+        ApplicationContext appContext = success.ApplicationContext;
 
         var educationOrganizations = await GetAuthorizedEducationOrganizations(
             requestInfo,

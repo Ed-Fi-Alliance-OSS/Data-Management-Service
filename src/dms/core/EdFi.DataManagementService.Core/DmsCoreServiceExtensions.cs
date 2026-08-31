@@ -293,12 +293,20 @@ public static class DmsCoreServiceExtensions
         );
 
         services.AddHybridCache();
-        services.TryAddSingleton(_ =>
+        if (!services.Any(descriptor => descriptor.ServiceType == typeof(IConfigureOptions<CacheSettings>)))
         {
-            CacheSettings cacheSettings = new();
-            configuration.GetSection("CacheSettings").Bind(cacheSettings);
-            return cacheSettings;
-        });
+            services
+                .AddOptions<CacheSettings>()
+                .Bind(configuration.GetSection("CacheSettings"))
+                .ValidateOnStart();
+        }
+
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IValidateOptions<CacheSettings>, CacheSettingsValidator>()
+        );
+        services.TryAddSingleton(serviceProvider =>
+            serviceProvider.GetRequiredService<IOptions<CacheSettings>>().Value
+        );
 
         services.AddTransient<ConfigurationServiceResponseHandler>();
         services
