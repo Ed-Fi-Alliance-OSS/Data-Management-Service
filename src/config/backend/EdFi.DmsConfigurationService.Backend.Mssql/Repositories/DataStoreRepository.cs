@@ -37,15 +37,16 @@ public class DataStoreRepository(
         try
         {
             var sql = """
-                INSERT INTO dmscs.DataStore (DataStoreType, Name, ConnectionString, CreatedBy, TenantId)
+                INSERT INTO dmscs.DataStore (DataStoreType, Name, Provider, ConnectionString, CreatedBy, TenantId)
                 OUTPUT INSERTED.Id
-                VALUES (@DataStoreType, @Name, @ConnectionString, @CreatedBy, @TenantId);
+                VALUES (@DataStoreType, @Name, @Provider, @ConnectionString, @CreatedBy, @TenantId);
                 """;
 
             var parameters = new
             {
                 command.DataStoreType,
                 command.Name,
+                command.Provider,
                 ConnectionString = encryptionService.Encrypt(command.ConnectionString),
                 CreatedBy = auditContext.GetCurrentUser(),
                 TenantId,
@@ -106,7 +107,7 @@ public class DataStoreRepository(
             string orderByClause = BuildOrderByClause(query);
             string filterClause = BuildFilterClause(query);
             var sql = $"""
-                SELECT Id, DataStoreType, Name, ConnectionString, TenantId
+                SELECT Id, DataStoreType, Name, Provider, ConnectionString, TenantId
                 FROM dmscs.DataStore
                 WHERE {TenantContext.TenantWhereClause()}{filterClause}
                 {orderByClause}
@@ -117,6 +118,7 @@ public class DataStoreRepository(
                 int Id,
                 string DataStoreType,
                 string Name,
+                string? Provider,
                 byte[]? ConnectionString,
                 long? TenantId
             )>(
@@ -185,6 +187,7 @@ public class DataStoreRepository(
                 Id = row.Id,
                 DataStoreType = row.DataStoreType,
                 Name = row.Name,
+                Provider = row.Provider,
                 ConnectionString = row.ConnectionString is null
                     ? null
                     : Convert.ToBase64String(row.ConnectionString),
@@ -207,7 +210,7 @@ public class DataStoreRepository(
         try
         {
             var sql = $"""
-                SELECT Id, DataStoreType, Name, ConnectionString, TenantId
+                SELECT Id, DataStoreType, Name, Provider, ConnectionString, TenantId
                 FROM dmscs.DataStore
                 WHERE Id = @Id AND {TenantContext.TenantWhereClause()};
                 """;
@@ -216,6 +219,7 @@ public class DataStoreRepository(
                 int Id,
                 string DataStoreType,
                 string Name,
+                string? Provider,
                 byte[]? ConnectionString,
                 long? TenantId
             )?>(sql, new { Id = id, TenantId });
@@ -255,6 +259,7 @@ public class DataStoreRepository(
                 Id = result.Value.Id,
                 DataStoreType = result.Value.DataStoreType,
                 Name = result.Value.Name,
+                Provider = result.Value.Provider,
                 ConnectionString = result.Value.ConnectionString is null
                     ? null
                     : Convert.ToBase64String(result.Value.ConnectionString),
@@ -288,7 +293,7 @@ public class DataStoreRepository(
 
             var sql = $"""
                 UPDATE dmscs.DataStore
-                SET DataStoreType = @DataStoreType, Name = @Name, {connectionStringAssignment}
+                SET DataStoreType = @DataStoreType, Name = @Name, Provider = @Provider, {connectionStringAssignment}
                     LastModifiedAt = @LastModifiedAt, ModifiedBy = @ModifiedBy
                 WHERE Id = @Id AND {TenantContext.TenantWhereClause()};
                 """;
@@ -299,6 +304,7 @@ public class DataStoreRepository(
                     command.Id,
                     command.DataStoreType,
                     command.Name,
+                    command.Provider,
                     LastModifiedAt = auditContext.GetCurrentTimestamp(),
                     ModifiedBy = auditContext.GetCurrentUser(),
                     TenantId,

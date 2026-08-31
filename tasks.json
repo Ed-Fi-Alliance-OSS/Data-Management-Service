@@ -257,5 +257,150 @@
       "Manually confirm the matrix labels restamp as blocked, deferred, or implemented with matching evidence."
     ],
     "completed": true
+  },
+  {
+    "category": "E2E",
+    "description": "[E2E] Add a hosted DocumentCache happy-path and status smoke scenario that starts the real E2E Docker stack with a test environment overlay enabling `DataManagement:DocumentCache:Targets`, `DataManagement:DocumentCache:ReadAcceleration:Enabled`, and `DataManagement:DocumentCache:Status:RequiredRole`; runs `dms-document-cache activate-new-empty` before writes; performs POST, GET-by-id, GET-many query, PUT, waits for `/health/document-cache` to report caught-up, performs GET-by-id and GET-many query again, and then DELETE; asserts cache-backed reads work without public cache-disclosure headers or body content; and validates the real configuration, CMS data-store resolution, built DMS container, and background projector path that the current in-process tests bypass.",
+    "acceptance-criteria": [
+      "The E2E stack is started through the existing Docker E2E setup path with a test environment overlay that enables an explicit DocumentCache target, read acceleration, and the status role.",
+      "The scenario invokes `dms-document-cache activate-new-empty` against the same provisioned E2E data store before issuing API writes.",
+      "The scenario creates a resource through POST, reads it through GET-by-id and GET-many query, updates it through PUT, waits until `/health/document-cache` reports caught-up, reads it again through GET-by-id and GET-many query, and deletes it through DELETE.",
+      "The scenario proves the projected cache is populated and used after caught-up status without changing the public API response shape.",
+      "The scenario asserts public response headers and bodies do not reveal DocumentCache or read-acceleration usage.",
+      "The scenario exercises real runtime configuration, CMS data-store resolution, the built DMS container, and the hosted background projector rather than replacing those dependencies with in-process doubles."
+    ],
+    "steps-to-verify": [
+      "Run: `./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@DocumentCacheHostedHappyPath'`",
+      "Run: `rg -n \"DocumentCacheHostedHappyPath|activate-new-empty|health/document-cache|ReadAcceleration\" src/dms/tests/EdFi.DataManagementService.Tests.E2E`",
+      "Inspect the E2E output and API container logs to confirm the hosted projector drained work and the scenario did not rely on in-process integration-test doubles."
+    ],
+    "completed": true
+  },
+  {
+    "category": "E2E",
+    "description": "[E2E] Add a projector outage or target removal/re-add resume scenario that activates Tracking, runs with no projector target or a very long poll interval, writes and updates several resources while projection is not draining, verifies canonical API routing remains open while `dms.DocumentProjectionWork` is queued, restarts or reconfigures the stack with the target enabled, waits for caught-up status, and verifies cache rows are populated and reads remain correct; this directly exercises projector-stopped writes, long outage behavior, restart from durable work, and the contract that backlog never gates canonical API routing.",
+    "acceptance-criteria": [
+      "The scenario activates DocumentCache Tracking before the outage or target-removal phase.",
+      "The stack is run with projection intentionally not draining by using no projector target or a very long projector poll interval.",
+      "The scenario writes and updates several resources while projection is stopped or effectively paused.",
+      "The scenario verifies canonical POST, PUT, GET-by-id, and GET-many routes remain available while `dms.DocumentProjectionWork` has queued work.",
+      "The scenario verifies `/health/document-cache` reports queued work and not-caught-up status during the outage without treating the canonical API as unhealthy.",
+      "The stack is restarted or reconfigured with the DocumentCache target enabled so projection resumes from durable work instead of rescanning source state.",
+      "After projection resumes, the scenario waits for caught-up status and verifies cache rows are populated and API reads remain correct."
+    ],
+    "steps-to-verify": [
+      "Run: `./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@DocumentCacheProjectorResume'`",
+      "Run: `rg -n \"DocumentCacheProjectorResume|DocumentProjectionWork|queueNotEmpty|notCaughtUp|caughtUp\" src/dms/tests/EdFi.DataManagementService.Tests.E2E`",
+      "Inspect the E2E output and API container logs to confirm the queued work survived the stopped-projector phase and drained only after the target was re-enabled."
+    ],
+    "completed": false
+  },
+  {
+    "category": "E2E",
+    "description": "[E2E] Add a real authorization and profile cache-hit safety scenario that uses an existing profile E2E resource flow with DocumentCache enabled, lets projection create the cache row, then reads through a profiled content type and a real E2E client/claimset; asserts hidden profile fields are still filtered and authorization is still relationally enforced; and covers the highest-risk hosted failure mode where caller-agnostic cached JSON could be served too directly.",
+    "acceptance-criteria": [
+      "The scenario uses an existing profile E2E resource flow with DocumentCache enabled in the hosted stack.",
+      "Projection creates the cache row through the normal hosted projector path, not by manually inserting cache data.",
+      "The scenario reads the cached resource through a profiled content type using a real E2E client and claimset.",
+      "The scenario asserts hidden profile fields are filtered from the response even when the response body is assembled from cached JSON.",
+      "The scenario asserts readable-profile `_etag` behavior remains correct for the profiled response.",
+      "The scenario includes an authorization-denied read path proving authorization is still enforced from relational sources before any cached body can be served.",
+      "The scenario proves caller-agnostic cached JSON is not served directly in a way that bypasses profile shaping or authorization."
+    ],
+    "steps-to-verify": [
+      "Run: `./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@DocumentCacheProfileAuthorization'`",
+      "Run: `rg -n \"DocumentCacheProfileAuthorization|profiled|content type|claimset|authorization\" src/dms/tests/EdFi.DataManagementService.Tests.E2E`",
+      "Inspect the E2E output to confirm the scenario uses real E2E authorization/profile setup and not the integration-test bypass authorization path."
+    ],
+    "completed": false
+  },
+  {
+    "category": "E2E",
+    "description": "[E2E] Add one operator runbook workflow scenario against the live local E2E stack that runs `dms-document-cache status` against the same database used by E2E, simulates a missing or mismatched work condition, runs `dms-document-cache scrub`, verifies queued work appears, waits for DMS to drain it and return caught-up, and runs `dms-document-cache rebuild-online` while canonical API writes continue.",
+    "acceptance-criteria": [
+      "The scenario runs `dms-document-cache status` against the same provisioned database used by the E2E API scenario.",
+      "The scenario simulates a missing or mismatched `dms.DocumentProjectionWork` condition in the live local stack.",
+      "The scenario runs `dms-document-cache scrub` with the required confirmation and physical-source guard when available.",
+      "The scenario verifies scrub leaves or creates queued work for the affected document rather than clearing evidence silently.",
+      "The scenario waits for the hosted DMS projector to drain the queued work and for status to return caught-up.",
+      "The scenario runs `dms-document-cache rebuild-online` against the same live stack while canonical API writes continue.",
+      "The scenario verifies rebuild-online returns to Tracking, preserves canonical write availability, and leaves API reads correct after the queue drains."
+    ],
+    "steps-to-verify": [
+      "Run: `./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@DocumentCacheRunbookWorkflow'`",
+      "Run: `rg -n \"DocumentCacheRunbookWorkflow|dms-document-cache status|dms-document-cache scrub|rebuild-online|DocumentProjectionWork\" src/dms/tests/EdFi.DataManagementService.Tests.E2E`",
+      "Inspect the E2E output and command transcripts to confirm the CLI commands targeted the same E2E database used by the API requests."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Review Remediation",
+    "description": "[Review finding] Representative-scale DocumentCache qualification is not actually evidenced. The DMS-1317 story requires qualifying interrupted baseline/rebuild restart from the beginning at representative scale against predefined completion-time, database-load, and repeated queue-DML/write-amplification limits, and requires creating a durable-baseline-cursor Jira ticket if a limit fails. The branch currently defines thresholds and result artifact expectations in `reference/document-cache/performance-qualification.md`, but `eng/performance/invoke-documentcache-qualification.ps1` only runs bounded unit/query-plan guards and optional explicit writer evidence, then writes a summary listing required follow-up artifacts. No checked-in measured qualification artifacts such as `threshold-results.json`, outage drain evidence, or provider metrics are present. Simplest responsible solution: add validation for a committed `threshold-results.json` plus required evidence artifact paths, then add the representative-run result artifacts for PostgreSQL and SQL Server. DMS-1317 should not be marked complete without those measured results.",
+    "acceptance-criteria": [
+      "`eng/performance/invoke-documentcache-qualification.ps1` validates the committed representative-run `threshold-results.json` against the provider threshold rows documented in `reference/document-cache/performance-qualification.md`.",
+      "The validation checks that every required result artifact path exists, including `qualification-summary.md`, `threshold-results.json`, query-plan guard output, outage-drain evidence, PostgreSQL WAL/vacuum/bloat evidence, and SQL Server log/ghost/index evidence.",
+      "The representative-run artifacts include measured PostgreSQL and SQL Server results for baseline/rebuild completion time, interrupted restart-from-beginning completion time, database CPU/IO/log pressure, repeated queue DML or write amplification, status/oldest-work latency, canonical write overhead, queue growth and drain after outage, and same-document enqueue/ack lock waits.",
+      "`threshold-results.json` records one row per provider threshold with measured value, pass/fail, evidence path, and reviewer note.",
+      "If any interrupted baseline/rebuild restart-from-beginning limit fails, the results record the durable-baseline-cursor Jira ticket and the branch does not claim production qualification without that prerequisite.",
+      "`reference/document-cache/cdc-inv-evidence.md`, `reference/document-cache/performance-qualification.md`, and this task list no longer imply that DMS-1317 representative-scale qualification is complete based only on threshold documentation or bounded CI guards."
+    ],
+    "steps-to-verify": [
+      "Run the new qualification validation mode against the committed representative-run artifact directory.",
+      "Run: `rg -n \"threshold-results|qualification-summary|outage-drain|provider-metrics|durable-baseline-cursor\" reference/document-cache eng/performance tasks.json`",
+      "Manually confirm the PostgreSQL and SQL Server measured-result rows match the thresholds in `reference/document-cache/performance-qualification.md` and that every evidence path resolves."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Review Remediation",
+    "description": "[Review finding] The completed-projection update tests can pass through read-time direct fill instead of proving the background projector update path. Both provider wrappers enable read acceleration and set `DocumentCacheReadAccelerationDirectFillTimeout` to `00:00:05`. The shared scenario performs a stale-cache GET before `DrainProjectionUntilIdleAsync`, and the read coordinator direct-fills stale rows by materializing and writing through `DocumentCacheWriterPurpose.DirectFill`. The later assertion explicitly allows \"projection or direct fill\" to acknowledge the update work row, so a broken ordinary projector update path could still pass. Simplest responsible solution: move the stale-cache GET until after `DrainProjectionUntilIdleAsync` in the completed-projection scenario, so the test proves the background projector updated and acknowledged the work row before any read can direct-fill it.",
+    "acceptance-criteria": [
+      "In the ordinary-resource completed-projection scenario, after API PUT the test asserts the work row exists and the cache row is stale, then calls `DrainProjectionUntilIdleAsync` before any GET-by-id or query path that can trigger direct fill.",
+      "In the descriptor completed-projection scenario, after descriptor API update the test asserts the work row exists and the cache row is stale, then calls `DrainProjectionUntilIdleAsync` before any GET-by-id or query path that can trigger direct fill.",
+      "After the drain, the tests assert the work row is gone because projection acknowledged it, the cache row contains the updated content version, stream etag, and JSON, and subsequent reads return the updated representation from the cache path.",
+      "The completed-projection scenario no longer uses assertion text that allows \"projection or direct fill\" for the projector acknowledgement check.",
+      "The completed-projection scenario does not contain a pre-drain stale-cache GET or query that can repair the cache and remove work through direct fill before the projector assertion is made."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"projection or direct fill|staleAvoidanceGet|DrainProjectionUntilIdleAsync|DocumentCacheReadAccelerationDirectFillTimeout\" src/dms/tests/EdFi.DataManagementService.Tests.Integration/Scenarios/DocumentCacheCompletedProjectionScenario.cs src/dms/tests/EdFi.DataManagementService.Tests.Integration/Tests/Postgresql/Given_Postgresql_DocumentCacheCompletedProjection.cs src/dms/tests/EdFi.DataManagementService.Tests.Integration/Tests/Mssql/Given_Mssql_DocumentCacheCompletedProjection.cs`",
+      "Manually inspect the ordinary and descriptor completed-projection flows to confirm no read path can invoke direct fill before projection drain assertions.",
+      "Run: `dotnet csharpier format src/dms/tests/EdFi.DataManagementService.Tests.Integration/Scenarios/DocumentCacheCompletedProjectionScenario.cs src/dms/tests/EdFi.DataManagementService.Tests.Integration/Tests/Postgresql/Given_Postgresql_DocumentCacheCompletedProjection.cs src/dms/tests/EdFi.DataManagementService.Tests.Integration/Tests/Mssql/Given_Mssql_DocumentCacheCompletedProjection.cs`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Review Remediation",
+    "description": "[Review finding] The DMS-1317 evidence matrix validation is too shallow to protect the evidence claims. `DocumentCacheEvidenceMatrixTests` verifies that each in-scope CDC-INV row appears, that referenced repository files exist, that external scope boundaries are labelled, and that each row contains a `src/dms` path. It does not verify that the named test methods or classes cited in `reference/document-cache/cdc-inv-evidence.md` actually exist in the referenced source files. A cited method such as a writer race, performance evidence, status endpoint, or completed-projection scenario could be renamed or removed while the matrix test still passes because the file remains present. Simplest responsible solution: extend `DocumentCacheEvidenceMatrixTests` so every cited test method/class name in `cdc-inv-evidence.md` must exist in the referenced source file.",
+    "acceptance-criteria": [
+      "`reference/document-cache/cdc-inv-evidence.md` uses a consistent citation format that pairs each cited `.cs` evidence path with the concrete test method or class names being claimed from that file.",
+      "`DocumentCacheEvidenceMatrixTests` extracts every cited test method or class name from `reference/document-cache/cdc-inv-evidence.md` and asserts that the referenced source file contains that member name.",
+      "The existing evidence matrix checks for one row per in-scope CDC-INV contract, existing repository file paths, explicit E19/DMS-1318 boundaries, and concrete `src/dms` evidence remain in place.",
+      "The validation fails when a cited test method or class name in the matrix is misspelled, renamed, or removed from the referenced source file.",
+      "The validation remains a unit-level documentation/evidence guard and does not require PostgreSQL, SQL Server, Docker, or provider integration databases."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"DocumentCacheEvidenceMatrix|cdc-inv-evidence|ReferencedRepositoryPaths|MatrixRows\" src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DocumentCacheEvidenceMatrixTests.cs reference/document-cache/cdc-inv-evidence.md`",
+      "Temporarily change one cited method name in `reference/document-cache/cdc-inv-evidence.md`, confirm the matrix validation fails, and restore the correct citation.",
+      "Run: `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DocumentCacheEvidenceMatrixTests.cs`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Review Remediation",
+    "description": "[Review finding] The retryable-incomplete DocumentCache admin CLI tests use fixed 10.5-second sleeps after starting a command with a 10-second provider command timeout. PostgreSQL and SQL Server both wait for `Resetting`, then call `Task.Delay(TimeSpan.FromMilliseconds(10500))` before releasing the cache lock and awaiting process exit. This adds at least 21 seconds of unconditional wall-clock delay to the integration suite and keeps the tests timing-sensitive. Simplest responsible solution: replace the unconditional `Task.Delay(10500)` calls with a polling helper that waits until the CLI process exits with the expected retryable-incomplete result, bounded by the existing outer timeout.",
+    "acceptance-criteria": [
+      "The PostgreSQL retryable-incomplete rebuild workflow no longer calls `Task.Delay(TimeSpan.FromMilliseconds(10500))` or any equivalent unconditional sleep to wait out the provider command timeout.",
+      "The SQL Server retryable-incomplete rebuild workflow no longer calls `Task.Delay(TimeSpan.FromMilliseconds(10500))` or any equivalent unconditional sleep to wait out the provider command timeout.",
+      "A shared helper keeps the blocking cache lock held after the lifecycle reaches `Resetting`, waits for the CLI process to exit with the expected retryable-incomplete result, and bounds that wait with the existing outer timeout.",
+      "The helper asserts the expected retryable-incomplete exit code and JSON result, including command `onlineCacheRebuild`, status `incompleteRetryable`, classification `providerCommandTimeout`, mutated `true`, and lifecycle `resetting`.",
+      "The tests release the blocking cache lock only after the retryable-incomplete process result has been captured, then reissue the same rebuild command and assert the workflow resumes to completed Tracking state with cache rows preserved and work rows drained.",
+      "No fixed sleep longer than a short polling interval remains in the retryable-incomplete CLI tests."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"Task.Delay|10500|providerCommandTimeout|incompleteRetryable\" src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/Given_DocumentCacheAdminAdministrativeMutexConcurrency.cs`",
+      "Manually inspect the PostgreSQL and SQL Server retryable-incomplete workflows to confirm process exit is awaited by the polling helper while the lock is still held.",
+      "Run: `dotnet csharpier format src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/Given_DocumentCacheAdminAdministrativeMutexConcurrency.cs`"
+    ],
+    "completed": false
   }
 ]

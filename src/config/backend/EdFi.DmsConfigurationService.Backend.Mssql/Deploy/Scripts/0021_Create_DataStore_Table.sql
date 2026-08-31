@@ -9,6 +9,7 @@ BEGIN
         Id INT IDENTITY(1,1) CONSTRAINT PK_DataStore PRIMARY KEY,
         DataStoreType NVARCHAR(50) NOT NULL,
         Name NVARCHAR(256) NOT NULL,
+        Provider NVARCHAR(50),
         ConnectionString VARBINARY(MAX),
         CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
         CreatedBy NVARCHAR(256),

@@ -1075,6 +1075,7 @@ function Add-DataStore {
     # such a name reaches the provider as the bare name. The registered-name collision guard therefore
     # compares the provider-parsed value, never the parameter text, and follows that exception instead
     # of missing it.
+    $provider = ""
     if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
         # ConvertTo-PostgresCredential deliberately accepts an empty secret, and the serializer
         # accepts one for PostgreSQL: a passwordless (trust-authenticated) server is a real
@@ -1089,12 +1090,22 @@ function Add-DataStore {
             -Username $PostgresCredential.UserName `
             -Password $postgresPassword `
             -DatabaseName $PostgresDbName
+        $provider = "postgresql"
+    }
+    elseif ($ConnectionString -match "(?i)(^|;)\s*(Server|Data Source)\s*=") {
+        $provider = "sqlserver"
+    }
+    elseif ($ConnectionString -match "(?i)(^|;)\s*Host\s*=") {
+        $provider = "postgresql"
     }
 
     $dataStoreData = @{
         dataStoreType = $DataStoreType
         name          = $Name
         connectionString = $ConnectionString
+    }
+    if (-not [string]::IsNullOrWhiteSpace($provider)) {
+        $dataStoreData.provider = $provider
     }
 
     $headers = @{ Authorization = "Bearer $AccessToken" }
