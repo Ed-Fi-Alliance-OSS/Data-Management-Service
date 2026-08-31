@@ -366,7 +366,7 @@
       "Manually inspect the ordinary and descriptor completed-projection flows to confirm no read path can invoke direct fill before projection drain assertions.",
       "Run: `dotnet csharpier format src/dms/tests/EdFi.DataManagementService.Tests.Integration/Scenarios/DocumentCacheCompletedProjectionScenario.cs src/dms/tests/EdFi.DataManagementService.Tests.Integration/Tests/Postgresql/Given_Postgresql_DocumentCacheCompletedProjection.cs src/dms/tests/EdFi.DataManagementService.Tests.Integration/Tests/Mssql/Given_Mssql_DocumentCacheCompletedProjection.cs`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Review Remediation",

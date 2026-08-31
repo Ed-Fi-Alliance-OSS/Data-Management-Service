@@ -110,26 +110,45 @@ internal static class DocumentCacheCompletedProjectionScenario
             .ContentVersion.Should()
             .Be(createdCacheRow.ContentVersion, "the pre-drain cache row is stale after HTTP update");
 
-        JsonObject staleAvoidanceGet = await GetJsonObjectAsync(harness, createdStudent.LocationPath);
-        staleAvoidanceGet["firstName"]!
-            .GetValue<string>()
-            .Should()
-            .Be("Projected Update", "read acceleration must not serve the stale cache row");
-        staleAvoidanceGet["_etag"]!.GetValue<string>().Should().Be(updateEtag);
-        AssertReadTelemetryContains(
-            recorder,
-            "RecordMiss",
-            "StaleCacheRow",
-            "the stale cache row should be detected before relational fallback"
-        );
-
         await DrainProjectionUntilIdleAsync(harness);
 
         (await CountProjectionWorkRowsAsync(harness, createdMetadata.DocumentId))
             .Should()
-            .Be(0, "projection or direct fill must acknowledge the update work row");
+            .Be(0, "projection must acknowledge the update work row before read acceleration can repair it");
         DocumentCacheRow updatedCacheRow = await ReadCacheRowAsync(harness, createdMetadata.DocumentId);
+        updatedCacheRow
+            .StreamEtag.Should()
+            .Be(updateEtag, "projection must cache the updated caller-agnostic stream version");
         AssertStudentCacheRow(updatedCacheRow, updatedMetadata, studentUniqueId, "Projected Update");
+
+        int hitCountBeforeUpdatedGet = recorder.CountTelemetryRecords("RecordHit", "Hit");
+        JsonObject updatedCachedGet = await GetJsonObjectAsync(harness, createdStudent.LocationPath);
+        updatedCachedGet["firstName"]!.GetValue<string>().Should().Be("Projected Update");
+        updatedCachedGet["_etag"]!.GetValue<string>().Should().Be(updatedCacheRow.StreamEtag);
+        AssertReadTelemetryCountIncreased(
+            recorder,
+            "RecordHit",
+            "Hit",
+            hitCountBeforeUpdatedGet,
+            "updated GET-by-id should be served from the projected cache row"
+        );
+
+        int pageHitCountBeforeUpdatedQuery = recorder.CountTelemetryRecords("RecordPageHit", "PageHit");
+        JsonArray updatedCachedQuery = await GetJsonArrayAsync(
+            harness,
+            $"{StudentsEndpoint}?offset=0&limit=1&totalCount=true",
+            expectedTotalCount: 1
+        );
+        updatedCachedQuery.Should().ContainSingle();
+        updatedCachedQuery[0]!["studentUniqueId"]!.GetValue<string>().Should().Be(studentUniqueId);
+        updatedCachedQuery[0]!["firstName"]!.GetValue<string>().Should().Be("Projected Update");
+        AssertReadTelemetryCountIncreased(
+            recorder,
+            "RecordPageHit",
+            "PageHit",
+            pageHitCountBeforeUpdatedQuery,
+            "updated GET-many should be served from the projected cache row"
+        );
 
         using HttpResponseMessage deleteResponse = await harness.HttpClient.DeleteAsync(
             createdStudent.LocationPath
@@ -260,34 +279,59 @@ internal static class DocumentCacheCompletedProjectionScenario
                 "the pre-drain descriptor cache row is stale after HTTP update"
             );
 
-        JsonObject staleAvoidanceGet = await GetJsonObjectAsync(harness, createdDescriptor.LocationPath);
-        staleAvoidanceGet["shortDescription"]!
-            .GetValue<string>()
-            .Should()
-            .Be(
-                "Projected descriptor update",
-                "read acceleration must not serve the stale descriptor cache row"
-            );
-        staleAvoidanceGet["_etag"]!.GetValue<string>().Should().Be(updateEtag);
-        AssertReadTelemetryContains(
-            recorder,
-            "RecordMiss",
-            "StaleCacheRow",
-            "the stale descriptor cache row should be detected before relational fallback"
-        );
-
         await DrainProjectionUntilIdleAsync(harness);
 
         (await CountProjectionWorkRowsAsync(harness, createdMetadata.DocumentId))
             .Should()
-            .Be(0, "projection or direct fill must acknowledge the descriptor update work row");
+            .Be(
+                0,
+                "projection must acknowledge the descriptor update work row before read acceleration can repair it"
+            );
         DocumentCacheRow updatedCacheRow = await ReadCacheRowAsync(harness, createdMetadata.DocumentId);
+        updatedCacheRow
+            .StreamEtag.Should()
+            .Be(updateEtag, "projection must cache the updated descriptor stream version");
         AssertSchoolTypeDescriptorCacheRow(
             updatedCacheRow,
             updatedMetadata,
             namespaceName,
             codeValue,
             "Projected descriptor update"
+        );
+
+        int hitCountBeforeUpdatedGet = recorder.CountTelemetryRecords("RecordHit", "Hit");
+        JsonObject updatedCachedGet = await GetJsonObjectAsync(harness, createdDescriptor.LocationPath);
+        updatedCachedGet["shortDescription"]!.GetValue<string>().Should().Be("Projected descriptor update");
+        updatedCachedGet["_etag"]!.GetValue<string>().Should().Be(updatedCacheRow.StreamEtag);
+        AssertReadTelemetryCountIncreased(
+            recorder,
+            "RecordHit",
+            "Hit",
+            hitCountBeforeUpdatedGet,
+            "updated descriptor GET-by-id should be served from the projected cache row"
+        );
+
+        int pageHitCountBeforeUpdatedQuery = recorder.CountTelemetryRecords("RecordPageHit", "PageHit");
+        JsonArray updatedCachedQuery = await GetJsonArrayAsync(
+            harness,
+            $"{SchoolTypeDescriptorsEndpoint}?namespace={Uri.EscapeDataString(namespaceName)}&codeValue={Uri.EscapeDataString(codeValue)}&totalCount=true",
+            expectedTotalCount: 1
+        );
+        updatedCachedQuery.Should().ContainSingle();
+        updatedCachedQuery[0]!["id"]!
+            .GetValue<string>()
+            .Should()
+            .Be(createdDescriptor.DocumentUuid.ToString());
+        updatedCachedQuery[0]!["shortDescription"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Projected descriptor update");
+        AssertReadTelemetryCountIncreased(
+            recorder,
+            "RecordPageHit",
+            "PageHit",
+            pageHitCountBeforeUpdatedQuery,
+            "updated descriptor GET-many should be served from the projected cache row"
         );
 
         using HttpResponseMessage deleteResponse = await harness.HttpClient.DeleteAsync(
@@ -1116,6 +1160,23 @@ internal static class DocumentCacheCompletedProjectionScenario
             .CountTelemetryRecords(eventName, outcome)
             .Should()
             .BeGreaterThan(0, $"{because}. Recorded telemetry: {string.Join(", ", records)}");
+    }
+
+    private static void AssertReadTelemetryCountIncreased(
+        DocumentCacheReadTelemetryRecorder recorder,
+        string eventName,
+        string outcome,
+        int previousCount,
+        string because
+    )
+    {
+        string[] records = recorder
+            .TelemetryRecords.Select(record => $"{record.EventName}:{record.Operation}:{record.Outcome}")
+            .ToArray();
+        recorder
+            .CountTelemetryRecords(eventName, outcome)
+            .Should()
+            .BeGreaterThan(previousCount, $"{because}. Recorded telemetry: {string.Join(", ", records)}");
     }
 
     private static string ToPath(Uri location) =>
