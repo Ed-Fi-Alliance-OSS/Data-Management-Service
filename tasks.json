@@ -31,7 +31,7 @@
       "Run: `rg -n \"cdc-inv-evidence\" reference/document-cache/README.md`",
       "Manually confirm every matrix row has provider-specific evidence or an explicit gap/exclusion."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Evidence Matrix",
