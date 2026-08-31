@@ -8,7 +8,6 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Postgresql;
-using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -102,19 +101,10 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddDmsCdcControlPlane();
-        services.TryAddSingleton<NpgsqlDataSourceCache>();
 
-        // The very same singleton is registered as the ownership reconciler. Registering the type
-        // again would create a second cache holding its own data sources, which would then be
-        // reconciled while the one the request path uses was not.
-        // Both type arguments are supplied deliberately: TryAddEnumerable identifies a factory
-        // registration by the factory's own return type, so a factory typed to the interface is
-        // indistinguishable from every other reconciler and is rejected outright.
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IDataStoreOwnershipReconciler, NpgsqlDataSourceCache>(provider =>
-                provider.GetRequiredService<NpgsqlDataSourceCache>()
-            )
-        );
+        // Registered here as well as in AddPostgresqlDatastore because the CDC control plane is also
+        // composed on its own, and its provider work leases connections through the same cache.
+        services.AddNpgsqlDataSourceCache();
         services.TryAdd(
             ServiceDescriptor.Singleton<
                 IDocumentCacheProviderCommandTimeoutClassifier,

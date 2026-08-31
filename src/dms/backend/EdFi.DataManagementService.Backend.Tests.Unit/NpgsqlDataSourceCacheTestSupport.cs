@@ -192,13 +192,14 @@ internal sealed class CapturingLogger<T> : ILogger<T>
 }
 
 /// <summary>
-/// Stands in for a transaction whose disposal fails, so an owner's cleanup ordering can be proven
-/// without a database.
+/// Stands in for a resource whose disposal fails, so an owner's cleanup ordering can be proven
+/// without a database. The message names which resource, for the double-fault cases where only one
+/// of two failures may propagate.
 /// </summary>
-internal sealed class ThrowingAsyncDisposable : IAsyncDisposable
+internal sealed class ThrowingAsyncDisposable(string message = "Simulated transaction disposal failure.")
+    : IAsyncDisposable
 {
-    public ValueTask DisposeAsync() =>
-        throw new InvalidOperationException("Simulated transaction disposal failure.");
+    public ValueTask DisposeAsync() => throw new InvalidOperationException(message);
 }
 
 /// <summary>Stands in for a transaction that disposes normally, counting how often it was asked to.</summary>

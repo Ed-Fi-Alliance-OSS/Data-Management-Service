@@ -27,9 +27,23 @@ public static class MssqlServiceExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.AddRelationalMappingSetServices(configuration, SqlDialect.Mssql, new MssqlDialectRules());
+        services.AddMssqlConnectionAcquisition();
 
-        // The single SQL Server acquisition boundary, shared by every seam that opens a connection for
-        // a request, so all of them realize the same effective connection string for a given target.
+        return services;
+    }
+
+    /// <summary>
+    /// The single SQL Server acquisition boundary, shared by every seam that opens a connection for a
+    /// request, so all of them realize the same effective connection string for a given target.
+    /// </summary>
+    /// <remarks>
+    /// Expressed once because two composition roots need it: <see cref="AddMssqlDatastore" />, and the
+    /// standalone <see cref="MssqlReferenceResolverServiceCollectionExtensions.AddMssqlReferenceResolver" />
+    /// whose seams take the boundary by constructor injection. One shared registration is what keeps
+    /// the two roots from drifting to different lifetimes or implementation types.
+    /// </remarks>
+    internal static IServiceCollection AddMssqlConnectionAcquisition(this IServiceCollection services)
+    {
         services.TryAddSingleton<ISqlServerPoolClearing, SqlClientPoolClearing>();
 
         // Registered as the concrete type so both the acquisition boundary and the ownership

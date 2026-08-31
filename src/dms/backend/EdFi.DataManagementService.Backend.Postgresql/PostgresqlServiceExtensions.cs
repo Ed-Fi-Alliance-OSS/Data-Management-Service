@@ -31,7 +31,22 @@ public static class PostgresqlServiceExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.AddRelationalMappingSetServices(configuration, SqlDialect.Pgsql, new PgsqlDialectRules());
+        services.AddNpgsqlDataSourceCache();
+        services.TryAddScoped<NpgsqlDataSourceProvider>();
 
+        return services;
+    }
+
+    /// <summary>
+    /// The leased-only data-source cache and its ownership-reconciler registration.
+    /// </summary>
+    /// <remarks>
+    /// Expressed once because two composition roots need it: <see cref="AddPostgresqlDatastore" />,
+    /// and the standalone CDC control plane. One shared registration is what keeps the two roots from
+    /// drifting to different lifetimes or implementation types.
+    /// </remarks>
+    internal static IServiceCollection AddNpgsqlDataSourceCache(this IServiceCollection services)
+    {
         services.TryAddSingleton<NpgsqlDataSourceCache>();
 
         // The very same singleton is registered as the ownership reconciler. Registering the type
@@ -45,7 +60,6 @@ public static class PostgresqlServiceExtensions
                 provider.GetRequiredService<NpgsqlDataSourceCache>()
             )
         );
-        services.TryAddScoped<NpgsqlDataSourceProvider>();
 
         return services;
     }

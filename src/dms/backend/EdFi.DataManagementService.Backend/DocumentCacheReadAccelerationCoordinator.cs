@@ -27,6 +27,7 @@ internal enum DocumentCacheReadAccelerationFallbackReason
     ReadAccelerationDisabled,
     InvalidTargetKey,
     SelectedDataStoreUnavailable,
+    EffectiveTargetNotSelected,
     UnresolvedTarget,
     DerivativeTargetSelected,
     CacheLookupMiss,
@@ -970,13 +971,10 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             return false;
         }
 
-        // The database this request will actually read. Reaching here means either no effective target
-        // was selected - the DocumentCache's own background paths, which route nowhere - or a Primary
-        // one, whose connection string is the parent's; the guard above already turned every derivative
-        // away.
-        string? readConnectionString = _dataStoreSelection.IsEffectiveTargetSet
-            ? _dataStoreSelection.GetEffectiveTarget().ConnectionString
-            : selectedDataStore.ConnectionString;
+        // The database this request will actually read. Reaching here means a Primary effective
+        // target: the guards above turned away every derivative and every request that never
+        // selected a target at all.
+        string? readConnectionString = _dataStoreSelection.GetEffectiveTarget().ConnectionString;
 
         if (!TargetMatchesSelectedDataStore(selectedDataStore, readConnectionString, resolvedTargetContext))
         {
@@ -1038,6 +1036,17 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         {
             fallbackReason = DocumentCacheReadAccelerationFallbackReason.SelectedDataStoreUnavailable;
             directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedSelectedDataStoreUnavailable;
+            return false;
+        }
+
+        // Selection is fail-fast by design: every pipeline that resolves a data store also selects an
+        // effective target before any database work, and the relational path refuses to read without
+        // one. Serving the parent's cache here anyway could hide that missing selection behind a
+        // cache hit, so the cache is bypassed and the relational read surfaces the defect instead.
+        if (!_dataStoreSelection.IsEffectiveTargetSet)
+        {
+            fallbackReason = DocumentCacheReadAccelerationFallbackReason.EffectiveTargetNotSelected;
+            directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedEffectiveTargetNotSelected;
             return false;
         }
 

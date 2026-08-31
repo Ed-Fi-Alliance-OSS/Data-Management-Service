@@ -102,7 +102,11 @@ public sealed class NpgsqlDataSourceCache : IDataStoreOwnershipReconciler, IDisp
         // Built outside the lock. This is where Npgsql parses, and where a provider-invalid string
         // throws - inside the acquisition boundary, with no shared state touched.
         NpgsqlDataSource candidate = Build(connectionString);
-        NpgsqlDataSource? loser = null;
+
+        // The candidate is the cleanup target until ownership is transferred to a published entry, so
+        // every exit that does not publish it - a lost build race, or a cache disposed while the build
+        // ran - disposes it rather than leaking it.
+        NpgsqlDataSource? unpublished = candidate;
 
         try
         {
@@ -114,7 +118,6 @@ public sealed class NpgsqlDataSourceCache : IDataStoreOwnershipReconciler, IDisp
                 {
                     // Another builder won while this one was outside the lock. Lease the winner and
                     // discard this candidate rather than replacing a source others may already hold.
-                    loser = candidate;
                     return LeaseLocked(connectionString, published);
                 }
 
@@ -127,6 +130,7 @@ public sealed class NpgsqlDataSourceCache : IDataStoreOwnershipReconciler, IDisp
                 };
 
                 _entries[connectionString] = entry;
+                unpublished = null;
 
                 return new NpgsqlDataSourceLease(this, connectionString, entry.DataSource);
             }
@@ -134,7 +138,7 @@ public sealed class NpgsqlDataSourceCache : IDataStoreOwnershipReconciler, IDisp
         finally
         {
             // Outside the lock, and only ever this call's own candidate.
-            DisposeSafely(loser);
+            DisposeSafely(unpublished);
         }
     }
 

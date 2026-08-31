@@ -71,13 +71,13 @@ internal abstract record EffectiveTargetSelectionResult
     /// fallback: serving current data would silently discard the point-in-time guarantee the request
     /// asked for.
     /// </summary>
-    public sealed record MissingSnapshot(long ParentDataStoreId) : EffectiveTargetSelectionResult;
+    public sealed record MissingSnapshot : EffectiveTargetSelectionResult;
 
     /// <summary>
     /// A snapshot was requested on a pipeline whose requests would modify data. A snapshot is read-only,
     /// so the request is rejected before any validation that would open a database.
     /// </summary>
-    public sealed record RejectedAsMutation(long ParentDataStoreId) : EffectiveTargetSelectionResult;
+    public sealed record RejectedAsMutation : EffectiveTargetSelectionResult;
 }
 
 /// <summary>
@@ -112,10 +112,10 @@ internal static class EffectiveTargetSelector
                         out string? snapshotConnectionString
                     )
                         ? Select(EffectiveTargetKind.Snapshot, snapshotConnectionString)
-                        : new EffectiveTargetSelectionResult.MissingSnapshot(parent.Id);
+                        : new EffectiveTargetSelectionResult.MissingSnapshot();
 
                 case SnapshotEligibility.RejectedAsMutation:
-                    return new EffectiveTargetSelectionResult.RejectedAsMutation(parent.Id);
+                    return new EffectiveTargetSelectionResult.RejectedAsMutation();
 
                 case SnapshotEligibility.NotApplicable:
                 default:

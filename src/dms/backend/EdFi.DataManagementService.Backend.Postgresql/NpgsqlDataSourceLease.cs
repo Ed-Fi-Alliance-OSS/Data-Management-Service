@@ -110,19 +110,37 @@ public sealed class LeasedNpgsqlConnection : IAsyncDisposable
     /// </remarks>
     internal static async ValueTask DisposeOwnedAsync(
         IAsyncDisposable precedingResource,
-        LeasedNpgsqlConnection? owned
+        IAsyncDisposable? owned
     )
     {
         try
         {
             await precedingResource.DisposeAsync();
         }
-        finally
+        catch
         {
+            // Failure handling: the exception that started the cleanup is the one the caller must
+            // see, and .NET has no way to attach a secondary fault to it without changing the type
+            // the caller catches - so a fault from the owned disposal here is swallowed, matching
+            // the SQL Server backend's DisposeWithoutMaskingAsync.
             if (owned is not null)
             {
-                await owned.DisposeAsync();
+                try
+                {
+                    await owned.DisposeAsync();
+                }
+                catch (Exception)
+                {
+                    // Intentionally ignored; see above.
+                }
             }
+
+            throw;
+        }
+
+        if (owned is not null)
+        {
+            await owned.DisposeAsync();
         }
     }
 

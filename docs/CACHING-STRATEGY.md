@@ -248,12 +248,15 @@ connection pooling and avoid connection string parsing overhead.
 - `src/dms/backend/.../Postgresql/NpgsqlDataSourceCache.cs`
 - `src/dms/backend/.../Postgresql/NpgsqlDataSourceProvider.cs`
 
-**Implementation:** `ConcurrentDictionary<string, NpgsqlDataSource>` (singleton)
+**Implementation:** `Dictionary<string, entry>` guarded by a lock (singleton). Every entry carries
+its data source, a lease count, and a retirement flag; the public surface is leased-only, so a data
+source cannot be obtained without also holding the claim that keeps it alive.
 
 **Cache Structure:**
 
-- **Key:** Database connection string (e.g., `"Host=localhost;Database=edfi;..."`)
-- **Value:** `NpgsqlDataSource` instance - manages its own internal connection pool
+- **Key:** Configured connection string (e.g., `"Host=localhost;Database=edfi;..."`)
+- **Value:** `NpgsqlDataSource` instance - manages its own internal connection pool - plus its lease
+  count and retirement state
 
 **Connection Pool Settings:**
 
@@ -264,7 +267,8 @@ csb.AutoPrepareMinUsages = 3;        // Auto-prepare after 3 uses
 csb.MaxAutoPrepare = 256;            // Max prepared statements
 ```
 
-**TTL:** Application lifetime (disposed on shutdown)
+**TTL:** None. An entry lives while the Configuration Service still names its connection string or
+any lease on it is outstanding.
 
 **Architecture:**
 
@@ -273,15 +277,18 @@ csb.MaxAutoPrepare = 256;            // Max prepared statements
 
 **Cache Operations:**
 
-| Operation  | Method                 | Description                 |
-| ---------- | ---------------------- | --------------------------- |
-| Get/Create | `GetOrCreate(connStr)` | Creates or retrieves source |
-| Dispose    | `Dispose()`            | Disposes all cached sources |
+| Operation | Method                                | Description                                           |
+| --------- | ------------------------------------- | ----------------------------------------------------- |
+| Lease     | `AcquireLease(connStr)`               | Builds or reuses the source, counting a claim on it   |
+| Open      | `OpenLeasedConnectionAsync(connStr)`  | Leases and opens a connection, transferring both      |
+| Reconcile | `Reconcile(snapshot)`                 | Retires entries no configuration names any more       |
+| Dispose   | `Dispose()`                           | Disposes all remaining sources at shutdown            |
 
 **Invalidation Strategy:**
 
-- No runtime invalidation
-- All data sources disposed on application shutdown
+- Configuration reconciliation: when a data-store publication stops naming a connection string, the
+  entry is retired and its data source disposed once the last lease is released
+- All remaining data sources disposed on application shutdown as a backstop
 - Implements `IDisposable` for proper cleanup
 
 ---
@@ -413,13 +420,15 @@ Configuration Service during cache expiration under high load.
 | Application Context            | Yes                | HybridCache.GetOrCreateAsync   |
 | Configuration Service Token    | Yes                | HybridCache.GetOrCreateAsync   |
 | Compiled Schemas               | No*                | ConcurrentDictionary.GetOrAdd  |
-| NpgsqlDataSource               | No*                | ConcurrentDictionary.GetOrAdd  |
+| NpgsqlDataSource               | No*                | Single-winner publish under lock |
 | data stores                  | No                 | Direct assignment on startup   |
 | OIDC Metadata                  | Yes                | ConfigurationManager (built-in)|
 
-*These caches use `ConcurrentDictionary.GetOrAdd()` which provides atomic
-factory execution but not waiting behavior - concurrent requests may execute
-the factory multiple times, though only one result is stored.
+*These caches provide no waiting behavior - concurrent requests may execute
+the factory multiple times, though only one result is stored. Compiled Schemas
+uses `ConcurrentDictionary.GetOrAdd()`; the data-source cache builds outside
+its lock, publishes a single winner under it, and disposes the losing
+candidate.
 
 ### Configuration
 
@@ -527,7 +536,7 @@ windows; the first request routed to one is what reaches it.
 | ClaimSets    | HybridCache  | Sing. | 10 min | Yes    | Yes      | Manual + TTL |
 | Comp. Schema | ConcurDict   | Sing. | None   | No     | No       | Reload ID    |
 | CMS Token    | HybridCache  | Sing. | 25 min | No     | Yes      | TTL only     |
-| NpgsqlDS     | ConcurDict   | Sing. | None   | N/A    | No       | Shutdown     |
+| NpgsqlDS     | Dict + lock  | Sing. | None   | N/A    | No       | Reconcile + Shutdown |
 | data store | ConcurDict   | Sing. | Configurable (CacheSettings.DataStoreCacheExpirationSeconds) | Yes    | No       | TTL + Restart      |
 | OIDC Meta    | ConfigMgr    | Sing. | 60 min | No     | Yes      | Auto-refresh |
 | Fingerprint  | ConcurDict   | Sing. | Primary: none. Derivative: CacheSettings.DerivativeValidationCacheExpirationSeconds, bounded by the data store TTL | No: keyed by policy class + configured connection string, so data stores and tenants sharing a connection string share one entry | Yes | TTL + reader token + fault eviction |
@@ -578,10 +587,12 @@ Requires `EnableClaimsetReload: true` in configuration.
 
 ### 4. Lifetime-Based (Application Shutdown)
 
-Used by: NpgsqlDataSource, data stores
+Used by: data stores; NpgsqlDataSource as a backstop only
 
 Cache persists for the entire application lifetime and is only cleared on
-shutdown. Suitable for rarely-changing configuration data.
+shutdown. Suitable for rarely-changing configuration data. For NpgsqlDataSource
+the shutdown disposal is the last resort: entries are ordinarily retired by
+configuration reconciliation and disposed when their last lease is released.
 
 ## Design Patterns
 

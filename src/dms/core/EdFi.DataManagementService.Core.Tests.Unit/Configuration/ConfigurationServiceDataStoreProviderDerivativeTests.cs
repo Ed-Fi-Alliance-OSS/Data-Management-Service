@@ -549,6 +549,21 @@ public class ConfigurationServiceDataStoreProviderDerivativeTests
                     || text.Contains(TestEncryptionKey, StringComparison.Ordinal)
                 );
         }
+
+        /// <summary>
+        /// The no-secret guarantee belongs to this boundary, not to the current decryptor's message
+        /// discipline: the exception object never reaches the log at all, only its type name does.
+        /// </summary>
+        [Test]
+        public void It_should_log_the_exception_type_but_not_the_exception()
+        {
+            var errorRecords = _logger.Records.Where(record => record.Level == LogLevel.Error).ToList();
+
+            errorRecords.Should().AllSatisfy(record => record.Exception.Should().BeNull());
+            errorRecords
+                .Should()
+                .AllSatisfy(record => record.Message.Should().Contain(nameof(InvalidOperationException)));
+        }
     }
 
     /// <summary>

@@ -33,6 +33,7 @@ internal static class DocumentCacheReadTelemetryLabel
     public const string UnexpectedException = "UnexpectedException";
     public const string SkippedFallbackNotSuccessful = "SkippedFallbackNotSuccessful";
     public const string SkippedSelectedDataStoreUnavailable = "SkippedSelectedDataStoreUnavailable";
+    public const string SkippedEffectiveTargetNotSelected = "SkippedEffectiveTargetNotSelected";
     public const string SkippedInvalidTargetKey = "SkippedInvalidTargetKey";
     public const string SkippedUnresolvedTarget = "SkippedUnresolvedTarget";
     public const string SkippedTargetRegistryUnavailable = "SkippedTargetRegistryUnavailable";

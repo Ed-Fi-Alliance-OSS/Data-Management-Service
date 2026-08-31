@@ -12,9 +12,8 @@ namespace EdFi.DataManagementService.Core.Middleware;
 
 /// <summary>
 /// Produces the response for a request that asked for a target it cannot be served from. Kept behind
-/// an interface because the exact snapshot problem-detail bodies are owned by separate work: replacing
-/// this one registration replaces both responses, and an implementation may also read
-/// <see cref="RequestInfo.EffectiveTargetSelection"/> to tell the two cases apart itself.
+/// an interface because the exact snapshot problem-detail bodies are owned by separate work:
+/// replacing this one registration replaces both responses.
 /// </summary>
 internal interface IEffectiveTargetSelectionResponseFactory
 {

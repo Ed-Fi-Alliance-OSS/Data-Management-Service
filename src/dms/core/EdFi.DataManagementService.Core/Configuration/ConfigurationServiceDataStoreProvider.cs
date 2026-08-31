@@ -595,15 +595,19 @@ public class ConfigurationServiceDataStoreProvider(
                 // The decryption service wraps invalid Base64, a payload no longer than the IV, and a
                 // wrong-key failure in this one exception type. Catching only it keeps an unrelated
                 // runtime or programming defect from being reinterpreted as absent configuration.
-                // Nothing about the ciphertext, the plaintext, the key, or any connection string is
-                // logged; the tenant, parent data store, and derivative type identify the bad row.
+                // The exception object itself is not logged, so the no-secret guarantee is this
+                // boundary's own rather than the decryptor's message discipline: the tenant, parent
+                // data store, derivative type, and exception type identify the bad row, and nothing
+                // about the ciphertext, the plaintext, the key, or any connection string can leak.
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - Deliberate: the exception object is withheld so nothing it might carry can reach the log; its type name travels in the message template instead
                 logger.LogError(
-                    ex,
-                    "Unable to decrypt the connection string for the {DerivativeType} derivative of tenant {Tenant}, parent data store {DataStoreId}. That derivative is treated as not configured; the parent data store and its remaining derivatives are unaffected",
+                    "Unable to decrypt the connection string for the {DerivativeType} derivative of tenant {Tenant}, parent data store {DataStoreId} ({ExceptionType}). That derivative is treated as not configured; the parent data store and its remaining derivatives are unaffected",
                     derivativeType,
                     sanitizedTenant,
-                    response.Id
+                    response.Id,
+                    ex.GetType().Name
                 );
+#pragma warning restore S6667
                 continue;
             }
 

@@ -101,11 +101,7 @@ public class EffectiveTargetSelectorTests
         {
             var result = EffectiveTargetSelector.Select(_readPolicy, DataStoreWith(), true);
 
-            result
-                .Should()
-                .BeOfType<EffectiveTargetSelectionResult.MissingSnapshot>()
-                .Which.ParentDataStoreId.Should()
-                .Be(7);
+            result.Should().BeOfType<EffectiveTargetSelectionResult.MissingSnapshot>();
         }
 
         /// <summary>
@@ -126,9 +122,7 @@ public class EffectiveTargetSelectorTests
             EffectiveTargetSelector
                 .Select(_mutationPolicy, DataStoreWith(Snapshot()), true)
                 .Should()
-                .BeOfType<EffectiveTargetSelectionResult.RejectedAsMutation>()
-                .Which.ParentDataStoreId.Should()
-                .Be(7);
+                .BeOfType<EffectiveTargetSelectionResult.RejectedAsMutation>();
 
             EffectiveTargetSelector
                 .Select(_mutationPolicy, DataStoreWith(), true)

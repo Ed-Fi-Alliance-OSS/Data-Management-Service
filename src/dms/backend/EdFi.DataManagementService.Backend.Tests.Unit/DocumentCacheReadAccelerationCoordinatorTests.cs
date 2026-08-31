@@ -2751,6 +2751,101 @@ public class Given_DocumentCacheReadAccelerationCoordinator
     }
 
     /// <summary>
+    /// Target selection is fail-fast by design: every request pipeline that resolves a data store
+    /// also selects an effective target before any database work, and the relational path refuses to
+    /// read without one. A coordinator invoked without one is therefore a composition defect, and
+    /// serving the parent's cache anyway would hide that defect behind a cache hit. The cache is
+    /// bypassed instead, so the relational read surfaces whatever the missing selection really means.
+    /// </summary>
+    [Test]
+    public async Task It_bypasses_the_cache_when_no_effective_target_was_selected_for_a_get_by_id()
+    {
+        var lookupAdapter = new FailFastLookupAdapter();
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter();
+        var telemetry = new RecordingReadTelemetry();
+        var relationalResult = new GetResult.GetFailureNotExists();
+
+        DataStoreSelection selection = new();
+        selection.SetSelectedDataStore(SelectedDataStore());
+
+        DocumentCacheReadAccelerationCoordinator sut = CreateCoordinator(
+            lookupAdapter,
+            CreateRegistry(ExecutionContext()),
+            materializer,
+            writer,
+            readTelemetry: telemetry,
+            dataStoreSelection: selection
+        );
+
+        GetResult result = await sut.GetByIdAsync(
+            CreateGetByIdRequest(_ => Task.FromResult<GetResult>(relationalResult))
+        );
+
+        result.Should().BeSameAs(relationalResult);
+        lookupAdapter.Invocations.Should().BeEmpty("no cache lookup may be attempted at all");
+        materializer.Requests.Should().BeEmpty();
+        writer.Requests.Should().BeEmpty();
+        telemetry
+            .Events.Should()
+            .Contain(
+                (
+                    "fallback",
+                    DocumentCacheReadAccelerationFallbackReason.EffectiveTargetNotSelected.ToString()
+                )
+            );
+        telemetry
+            .Events.Should()
+            .Contain(("directFill", DocumentCacheReadTelemetryLabel.SkippedEffectiveTargetNotSelected));
+    }
+
+    [Test]
+    public async Task It_bypasses_the_cache_when_no_effective_target_was_selected_for_a_query()
+    {
+        var lookupAdapter = new FailFastLookupAdapter();
+        var materializer = new RecordingMaterializer();
+        var writer = new RecordingCacheWriter();
+        var telemetry = new RecordingReadTelemetry();
+        var relationalResult = new QueryResult.QuerySuccess(
+            [JsonNode.Parse("""{"id":"relational"}""")!],
+            1,
+            HighestSelectedAnchor: 345
+        );
+
+        DataStoreSelection selection = new();
+        selection.SetSelectedDataStore(SelectedDataStore());
+
+        DocumentCacheReadAccelerationCoordinator sut = CreateCoordinator(
+            lookupAdapter,
+            CreateRegistry(ExecutionContext()),
+            materializer,
+            writer,
+            readTelemetry: telemetry,
+            dataStoreSelection: selection
+        );
+
+        QueryResult result = await sut.QueryAsync(
+            CreateQueryRequest(_ => Task.FromResult<QueryResult>(relationalResult))
+        );
+
+        result.Should().BeSameAs(relationalResult);
+        lookupAdapter.Invocations.Should().BeEmpty();
+        materializer.Requests.Should().BeEmpty();
+        writer.Requests.Should().BeEmpty();
+        telemetry
+            .Events.Should()
+            .Contain(
+                (
+                    "fallback",
+                    DocumentCacheReadAccelerationFallbackReason.EffectiveTargetNotSelected.ToString()
+                )
+            );
+        telemetry
+            .Events.Should()
+            .Contain(("directFill", DocumentCacheReadTelemetryLabel.SkippedEffectiveTargetNotSelected));
+    }
+
+    /// <summary>
     /// The guard turns away derivatives, not routing itself. A request that selected the parent still
     /// reaches the cache exactly as it did before this bypass existed.
     /// </summary>
@@ -2907,7 +3002,13 @@ public class Given_DocumentCacheReadAccelerationCoordinator
             DataStoreSelection defaultDataStoreSelection = new();
             if (selectDataStore)
             {
-                defaultDataStoreSelection.SetSelectedDataStore(selectedDataStore ?? SelectedDataStore());
+                // Both phases, matching the request pipelines: the resolver records the parent, then
+                // target selection records the effective Primary the coordinator requires.
+                DataStore parent = selectedDataStore ?? SelectedDataStore();
+                defaultDataStoreSelection.SetSelectedDataStore(parent);
+                defaultDataStoreSelection.SetEffectiveTarget(
+                    EffectiveDataStoreTarget.Primary(parent.ConnectionString!)
+                );
             }
 
             return defaultDataStoreSelection;

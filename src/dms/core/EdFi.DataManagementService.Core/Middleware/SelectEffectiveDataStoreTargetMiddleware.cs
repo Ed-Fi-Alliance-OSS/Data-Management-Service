@@ -44,10 +44,6 @@ internal class SelectEffectiveDataStoreTargetMiddleware(
             UseSnapshotHeader.TryReadRequested(requestInfo.FrontendRequest)
         );
 
-        // Recorded before it is acted on, so the verdict is observable on every path, both
-        // rejections included.
-        requestInfo.EffectiveTargetSelection = result;
-
         switch (result)
         {
             case EffectiveTargetSelectionResult.Selected selected:

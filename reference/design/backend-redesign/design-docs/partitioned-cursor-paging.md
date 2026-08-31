@@ -883,6 +883,15 @@ does not confer access and is not promised to produce meaningful results.
 This feature adds no long-running transactions, no server-side cursor state, no snapshot handles,
 and no repeatable-read guarantees.
 
+**Relationship to derivative routing.** `/partitions` and GET-many are snapshot- and
+read-replica-eligible under
+[39-snapshot-read-replica-runtime-routing.md](../epics/10-update-tracking-change-queries/39-snapshot-read-replica-runtime-routing.md):
+target selection keeps a request's partition sizing and the pages it anchors on one selected
+database. A client that sends `Use-Snapshot: true` on every request of a walk reads a database that
+does not change underneath it, but that stability comes from the snapshot, not from cursor paging —
+the non-goal above stands. A walk that mixes targets mid-stream is a walk across databases, with the
+token-portability caveat above.
+
 **Relationship to change-query extraction.** [change-queries.md](change-queries.md) catalogues the
 hazards of extracting a `ChangeVersion` window without snapshots. Cursor paging changes one of them
 and none of the others.

@@ -20,7 +20,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 /// <summary>
 /// The step that turns the routing verdict into request state. The verdicts themselves are covered by
 /// EffectiveTargetSelectorTests; what these fixtures pin is what the step does with one - what it
-/// assigns, when it records the outcome, and what a rejected request never reaches.
+/// assigns, what it answers, and what a rejected request never reaches.
 /// </summary>
 [TestFixture]
 [Parallelizable]
@@ -147,16 +147,6 @@ public class SelectEffectiveDataStoreTargetMiddlewareTests
         }
 
         [Test]
-        public void It_records_the_outcome()
-        {
-            _requestInfo
-                .EffectiveTargetSelection.Should()
-                .BeOfType<EffectiveTargetSelectionResult.Selected>()
-                .Which.Target.Kind.Should()
-                .Be(EffectiveTargetKind.Primary);
-        }
-
-        [Test]
         public void It_calls_next()
         {
             _nextCalled.Should().BeTrue();
@@ -261,16 +251,6 @@ public class SelectEffectiveDataStoreTargetMiddlewareTests
             );
         }
 
-        [Test]
-        public void It_records_the_missing_snapshot_outcome()
-        {
-            _requestInfo
-                .EffectiveTargetSelection.Should()
-                .BeOfType<EffectiveTargetSelectionResult.MissingSnapshot>()
-                .Which.ParentDataStoreId.Should()
-                .Be(7);
-        }
-
         /// <summary>
         /// Nothing downstream can be served the primary or the replica by accident, because no target
         /// exists for anything to read.
@@ -321,16 +301,6 @@ public class SelectEffectiveDataStoreTargetMiddlewareTests
         }
 
         [Test]
-        public void It_records_the_mutation_rejection_outcome()
-        {
-            _requestInfo
-                .EffectiveTargetSelection.Should()
-                .BeOfType<EffectiveTargetSelectionResult.RejectedAsMutation>()
-                .Which.ParentDataStoreId.Should()
-                .Be(7);
-        }
-
-        [Test]
         public void It_assigns_no_target()
         {
             _selection.IsEffectiveTargetSet.Should().BeFalse();
@@ -372,78 +342,6 @@ public class SelectEffectiveDataStoreTargetMiddlewareTests
         public void It_uses_the_default_content_type()
         {
             _requestInfo.FrontendResponse.ContentType.Should().Be("application/json");
-        }
-    }
-
-    /// <summary>
-    /// The recorded outcome must be observable to whatever inspects the request afterwards, which
-    /// means it is written before the response is produced rather than after.
-    /// </summary>
-    [TestFixture]
-    [Parallelizable]
-    public class Given_A_Rejection_Is_Being_Turned_Into_A_Response
-        : SelectEffectiveDataStoreTargetMiddlewareTests
-    {
-        private sealed class OutcomeObservingResponseFactory : IEffectiveTargetSelectionResponseFactory
-        {
-            public EffectiveTargetSelectionResult? ObservedAtMissingSnapshot { get; private set; }
-
-            public EffectiveTargetSelectionResult? ObservedAtRejectedAsMutation { get; private set; }
-
-            public IFrontendResponse ForMissingSnapshot(RequestInfo requestInfo)
-            {
-                ObservedAtMissingSnapshot = requestInfo.EffectiveTargetSelection;
-                return No.FrontendResponse;
-            }
-
-            public IFrontendResponse ForRejectedAsMutation(RequestInfo requestInfo)
-            {
-                ObservedAtRejectedAsMutation = requestInfo.EffectiveTargetSelection;
-                return No.FrontendResponse;
-            }
-        }
-
-        private static async Task<OutcomeObservingResponseFactory> ExecuteWithObservingFactory(
-            DerivativeRoutingPolicy policy,
-            DataStore parent
-        )
-        {
-            OutcomeObservingResponseFactory factory = new();
-            DataStoreSelection selection = new();
-            selection.SetSelectedDataStore(parent);
-
-            SelectEffectiveDataStoreTargetMiddleware middleware = new(
-                policy,
-                factory,
-                NullLogger<SelectEffectiveDataStoreTargetMiddleware>.Instance
-            );
-
-            await middleware.Execute(
-                RequestInfoFor(selection, useSnapshotHeader: true),
-                () => Task.CompletedTask
-            );
-
-            return factory;
-        }
-
-        [Test]
-        public async Task It_has_already_recorded_a_missing_snapshot()
-        {
-            var factory = await ExecuteWithObservingFactory(_readPolicy, DataStoreWith());
-
-            factory
-                .ObservedAtMissingSnapshot.Should()
-                .BeOfType<EffectiveTargetSelectionResult.MissingSnapshot>();
-        }
-
-        [Test]
-        public async Task It_has_already_recorded_a_mutation_rejection()
-        {
-            var factory = await ExecuteWithObservingFactory(_mutationPolicy, DataStoreWith());
-
-            factory
-                .ObservedAtRejectedAsMutation.Should()
-                .BeOfType<EffectiveTargetSelectionResult.RejectedAsMutation>();
         }
     }
 }

@@ -10,7 +10,6 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Profile;
 
@@ -201,14 +200,6 @@ internal class RequestInfo(
     /// Null if no profile applies (no profile assigned, or not a profiled endpoint).
     /// </summary>
     public ProfileContext? ProfileContext { get; set; }
-
-    /// <summary>
-    /// Which physical database this request was routed to, and why. Set by
-    /// SelectEffectiveDataStoreTargetMiddleware before it acts on the verdict, so a rejected request
-    /// carries the reason it was rejected as well as a served one carries its target. Null only on a
-    /// pipeline that performs no database access, or before the selection step has run.
-    /// </summary>
-    public EffectiveTargetSelectionResult? EffectiveTargetSelection { get; set; }
 
     /// <summary>
     /// The cached database fingerprint from the dms.EffectiveSchema singleton row.

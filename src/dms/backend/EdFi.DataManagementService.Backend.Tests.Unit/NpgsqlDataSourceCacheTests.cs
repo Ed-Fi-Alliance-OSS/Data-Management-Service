@@ -399,6 +399,24 @@ public class Given_NpgsqlDataSourceCache
             .Be(1, "the claim was released despite the transaction disposal failure");
     }
 
+    /// <summary>
+    /// When both disposals fail, the transaction's exception is the one the caller must see: it is
+    /// what started the cleanup, and a cleanup fault replacing it would hide the original failure.
+    /// </summary>
+    [Test]
+    public async Task It_should_propagate_the_preceding_failure_when_the_owned_disposal_also_throws()
+    {
+        Func<Task> act = async () =>
+            await LeasedNpgsqlConnection.DisposeOwnedAsync(
+                new ThrowingAsyncDisposable(),
+                new ThrowingAsyncDisposable("Simulated owned cleanup failure.")
+            );
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("Simulated transaction disposal failure.");
+    }
+
     [Test]
     public async Task It_should_release_an_owned_connection_exactly_once_on_the_ordinary_path()
     {
@@ -473,6 +491,25 @@ public class Given_NpgsqlDataSourceCache
             .Invoking(() => _cache.AcquireLease(PrimaryConnectionString))
             .Should()
             .Throw<ObjectDisposedException>();
+    }
+
+    /// <summary>
+    /// The build runs outside the lock, so the cache can be disposed while one is in flight. The
+    /// acquisition still refuses, but the candidate it already built belongs to nobody else and must
+    /// be disposed rather than leaked.
+    /// </summary>
+    [Test]
+    public void It_should_dispose_a_candidate_built_while_the_cache_was_being_disposed()
+    {
+        _lifetime.OnBuild = _ => _cache.Dispose();
+
+        FluentActions
+            .Invoking(() => _cache.AcquireLease(PrimaryConnectionString))
+            .Should()
+            .Throw<ObjectDisposedException>();
+
+        NpgsqlDataSource candidate = _lifetime.Built.Should().ContainSingle().Subject;
+        _lifetime.DisposeCountOf(candidate).Should().Be(1);
     }
 
     /// <summary>
