@@ -91,11 +91,28 @@ public class ConfigurationServiceApplicationProvider(
             string responseBody = await response.Content.ReadAsStringAsync();
             ApplicationContext? applicationContext = DeserializeApplicationContext(responseBody);
 
+            if (applicationContext is null)
+            {
+                logger.LogError(
+                    "Failed to deserialize application context for clientId: {ClientId}",
+                    clientId
+                );
+                return new ApplicationContextResult.Unavailable();
+            }
+
+            if (!string.Equals(applicationContext.ClientId, clientId, StringComparison.Ordinal))
+            {
+                logger.LogError(
+                    "Configuration Service returned an application context for a different clientId. Requested clientId: {RequestedClientId}, returned clientId: {ResponseClientId}",
+                    clientId,
+                    applicationContext.ClientId
+                );
+                return new ApplicationContextResult.Unavailable();
+            }
+
             if (
-                applicationContext is null
-                || applicationContext.Id <= 0
+                applicationContext.Id <= 0
                 || applicationContext.ApplicationId <= 0
-                || !string.Equals(applicationContext.ClientId, clientId, StringComparison.Ordinal)
                 || applicationContext.ClientUuid == Guid.Empty
                 || !HasValidOwnershipConfiguration(applicationContext)
             )

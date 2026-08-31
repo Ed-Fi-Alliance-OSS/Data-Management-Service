@@ -8,8 +8,10 @@ using System.Net.Http.Headers;
 using System.Text;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
@@ -139,6 +141,37 @@ public class Given_ConfigurationServiceApplicationProvider
         );
 
         result.Should().BeOfType<ApplicationContextResult.Unavailable>();
+    }
+
+    [Test]
+    public async Task It_Should_Log_A_Distinct_Error_When_Response_Client_Id_Is_A_Different_Client()
+    {
+        RecordingLogger<ConfigurationServiceApplicationProvider> logger = new();
+        using var fixture = new ProviderFixture(
+            HttpStatusCode.OK,
+            ValidApplicationContextJson(clientId: "other-client"),
+            logger: logger
+        );
+
+        ApplicationContextResult result = await fixture.Provider.GetApplicationByClientIdAsync(
+            "client-id",
+            tenant: null
+        );
+
+        result.Should().BeOfType<ApplicationContextResult.Unavailable>();
+
+        LogRecord rejection = logger
+            .Records.Should()
+            .ContainSingle(record => record.Level == LogLevel.Error)
+            .Subject;
+        rejection.Message.Should().NotContain("Failed to deserialize application context");
+        rejection
+            .Message.Should()
+            .Be(
+                "Configuration Service returned an application context for a different clientId. Requested clientId: client-id, returned clientId: other-client"
+            );
+        rejection.Properties.Should().Contain("RequestedClientId", "client-id");
+        rejection.Properties.Should().Contain("ResponseClientId", "other-client");
     }
 
     [Test]
@@ -351,14 +384,16 @@ public class Given_ConfigurationServiceApplicationProvider
         public ProviderFixture(
             HttpStatusCode statusCode,
             string responseBody,
-            bool useResponseHandler = false
+            bool useResponseHandler = false,
+            ILogger<ConfigurationServiceApplicationProvider>? logger = null
         )
             : this(
                 new HttpResponseMessage(statusCode)
                 {
                     Content = new StringContent(responseBody, Encoding.UTF8, "application/json"),
                 },
-                useResponseHandler
+                useResponseHandler,
+                logger
             )
         { }
 
@@ -369,7 +404,11 @@ public class Given_ConfigurationServiceApplicationProvider
             Provider = CreateProvider(Client);
         }
 
-        private ProviderFixture(HttpResponseMessage response, bool useResponseHandler = false)
+        private ProviderFixture(
+            HttpResponseMessage response,
+            bool useResponseHandler = false,
+            ILogger<ConfigurationServiceApplicationProvider>? logger = null
+        )
         {
             Handler = new CapturingHttpMessageHandler(response);
             HttpMessageHandler messageHandler = useResponseHandler
@@ -381,7 +420,7 @@ public class Given_ConfigurationServiceApplicationProvider
                 }
                 : Handler;
             Client = new HttpClient(messageHandler) { BaseAddress = new Uri("https://cms.example/") };
-            Provider = CreateProvider(Client);
+            Provider = CreateProvider(Client, logger);
         }
 
         public HttpClient Client { get; }
@@ -396,7 +435,10 @@ public class Given_ConfigurationServiceApplicationProvider
             Handler.Dispose();
         }
 
-        private static ConfigurationServiceApplicationProvider CreateProvider(HttpClient httpClient)
+        private static ConfigurationServiceApplicationProvider CreateProvider(
+            HttpClient httpClient,
+            ILogger<ConfigurationServiceApplicationProvider>? logger = null
+        )
         {
             var tokenHandler = A.Fake<IConfigurationServiceTokenHandler>();
             A.CallTo(() =>
@@ -413,7 +455,7 @@ public class Given_ConfigurationServiceApplicationProvider
                 new ConfigurationServiceApiClient(httpClient),
                 tokenHandler,
                 new ConfigurationServiceContext("cms-client", "cms-secret", "cms-scope"),
-                NullLogger<ConfigurationServiceApplicationProvider>.Instance
+                logger ?? NullLogger<ConfigurationServiceApplicationProvider>.Instance
             );
         }
     }
