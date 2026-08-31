@@ -76,10 +76,10 @@
     ],
     "steps-to-verify": [
       "Run: `dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheCompletedProjection`",
-      "Run: `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheMaterializerDescriptor`",
+      "Run: `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheMaterializer_Descriptor`",
       "Run: `dotnet csharpier format src/dms/tests/EdFi.DataManagementService.Tests.Integration`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "API Integration",

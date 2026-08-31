@@ -26,3 +26,22 @@ public sealed class Given_Mssql_DocumentCacheCompletedProjection : MssqlApiInteg
             Harness
         );
 }
+
+[Category("DocumentCacheCompletedProjection")]
+public sealed class Given_Mssql_DocumentCacheCompletedProjection_With_DescriptorRuntime
+    : MssqlApiIntegrationTestBase
+{
+    protected override FixtureKey Fixture => FixtureKey.DescriptorRuntime;
+
+    protected override bool EnableDocumentCacheReadAcceleration => true;
+
+    protected override bool RecordDocumentCacheReadTelemetry => true;
+
+    protected override string DocumentCacheReadAccelerationDirectFillTimeout => "00:00:05";
+
+    [Test]
+    public Task It_projects_http_created_updated_and_deleted_descriptor() =>
+        DocumentCacheCompletedProjectionScenario.It_projects_http_created_updated_and_deleted_descriptor(
+            Harness
+        );
+}

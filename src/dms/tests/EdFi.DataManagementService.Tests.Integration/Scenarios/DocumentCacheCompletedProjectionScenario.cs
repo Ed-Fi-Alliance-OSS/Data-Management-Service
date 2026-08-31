@@ -19,6 +19,7 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 internal static class DocumentCacheCompletedProjectionScenario
 {
     private const string StudentsEndpoint = "/data/ed-fi/students";
+    private const string SchoolTypeDescriptorsEndpoint = "/data/ed-fi/schoolTypeDescriptors";
     private const string StandardJsonContentType = "application/json";
 
     public static async Task It_projects_http_created_updated_and_deleted_ordinary_resource(
@@ -152,6 +153,165 @@ internal static class DocumentCacheCompletedProjectionScenario
             .Be(0, "DELETE must not leave orphaned projection work");
     }
 
+    public static async Task It_projects_http_created_updated_and_deleted_descriptor(
+        ApiIntegrationHarness harness
+    )
+    {
+        DocumentCacheReadTelemetryRecorder recorder =
+            harness.DocumentCacheReadTelemetryRecorder
+            ?? throw new InvalidOperationException(
+                "The completed-projection scenario requires DocumentCache read telemetry."
+            );
+
+        await SetTrackingLifecycleAsync(harness);
+        await RefreshProjectionTargetsAsync(harness);
+
+        string suffix = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture)[..12];
+        string namespaceName = $"uri://ed-fi.org/SchoolTypeDescriptor/DMS-1317/{suffix}";
+        string codeValue = $"DMS-1317-{suffix}";
+
+        CreatedDocument createdDescriptor = await PostSchoolTypeDescriptorAsync(
+            harness,
+            namespaceName,
+            codeValue,
+            "Projected descriptor create"
+        );
+        DocumentMetadata createdMetadata = await ReadDocumentMetadataAsync(
+            harness,
+            createdDescriptor.DocumentUuid
+        );
+
+        (await CountProjectionWorkRowsAsync(harness, createdMetadata.DocumentId))
+            .Should()
+            .Be(1, "HTTP descriptor create must enqueue durable DocumentCache projection work");
+        (await CountCacheRowsAsync(harness, createdMetadata.DocumentId))
+            .Should()
+            .Be(0, "the descriptor cache row should come from projection, not from the canonical write");
+
+        await DrainProjectionUntilIdleAsync(harness);
+
+        (await CountProjectionWorkRowsAsync(harness, createdMetadata.DocumentId))
+            .Should()
+            .Be(0, "projection must acknowledge the descriptor create work row");
+        DocumentCacheRow createdCacheRow = await ReadCacheRowAsync(harness, createdMetadata.DocumentId);
+        createdCacheRow
+            .StreamEtag.Should()
+            .Be(createdDescriptor.Etag, "projection must cache the descriptor stream version");
+        AssertSchoolTypeDescriptorCacheRow(
+            createdCacheRow,
+            createdMetadata,
+            namespaceName,
+            codeValue,
+            "Projected descriptor create"
+        );
+
+        JsonObject cachedGet = await GetJsonObjectAsync(harness, createdDescriptor.LocationPath);
+        cachedGet["namespace"]!.GetValue<string>().Should().Be(namespaceName);
+        cachedGet["codeValue"]!.GetValue<string>().Should().Be(codeValue);
+        cachedGet["shortDescription"]!.GetValue<string>().Should().Be("Projected descriptor create");
+        cachedGet["_etag"]!.GetValue<string>().Should().Be(createdCacheRow.StreamEtag);
+        AssertReadTelemetryContains(
+            recorder,
+            "RecordHit",
+            "Hit",
+            "GET-by-id should be served from the projected descriptor cache row"
+        );
+
+        JsonArray cachedQuery = await GetJsonArrayAsync(
+            harness,
+            $"{SchoolTypeDescriptorsEndpoint}?namespace={Uri.EscapeDataString(namespaceName)}&codeValue={Uri.EscapeDataString(codeValue)}&totalCount=true",
+            expectedTotalCount: 1
+        );
+        cachedQuery.Should().ContainSingle();
+        cachedQuery[0]!["id"]!.GetValue<string>().Should().Be(createdDescriptor.DocumentUuid.ToString());
+        cachedQuery[0]!["shortDescription"]!.GetValue<string>().Should().Be("Projected descriptor create");
+        AssertReadTelemetryContains(
+            recorder,
+            "RecordPageHit",
+            "PageHit",
+            "descriptor GET-many should be served from the projected cache row"
+        );
+
+        string updateEtag = await PutSchoolTypeDescriptorAsync(
+            harness,
+            createdDescriptor.LocationPath,
+            createdDescriptor.DocumentUuid,
+            namespaceName,
+            codeValue,
+            "Projected descriptor update",
+            createdCacheRow.StreamEtag
+        );
+        DocumentMetadata updatedMetadata = await ReadDocumentMetadataAsync(
+            harness,
+            createdDescriptor.DocumentUuid
+        );
+        updatedMetadata.ContentVersion.Should().BeGreaterThan(createdMetadata.ContentVersion);
+        (await CountProjectionWorkRowsAsync(harness, createdMetadata.DocumentId))
+            .Should()
+            .Be(1, "HTTP descriptor update must enqueue durable projection work");
+
+        DocumentCacheRow staleCacheRow = await ReadCacheRowAsync(harness, createdMetadata.DocumentId);
+        staleCacheRow
+            .ContentVersion.Should()
+            .Be(
+                createdCacheRow.ContentVersion,
+                "the pre-drain descriptor cache row is stale after HTTP update"
+            );
+
+        JsonObject staleAvoidanceGet = await GetJsonObjectAsync(harness, createdDescriptor.LocationPath);
+        staleAvoidanceGet["shortDescription"]!
+            .GetValue<string>()
+            .Should()
+            .Be(
+                "Projected descriptor update",
+                "read acceleration must not serve the stale descriptor cache row"
+            );
+        staleAvoidanceGet["_etag"]!.GetValue<string>().Should().Be(updateEtag);
+        AssertReadTelemetryContains(
+            recorder,
+            "RecordMiss",
+            "StaleCacheRow",
+            "the stale descriptor cache row should be detected before relational fallback"
+        );
+
+        await DrainProjectionUntilIdleAsync(harness);
+
+        (await CountProjectionWorkRowsAsync(harness, createdMetadata.DocumentId))
+            .Should()
+            .Be(0, "projection or direct fill must acknowledge the descriptor update work row");
+        DocumentCacheRow updatedCacheRow = await ReadCacheRowAsync(harness, createdMetadata.DocumentId);
+        AssertSchoolTypeDescriptorCacheRow(
+            updatedCacheRow,
+            updatedMetadata,
+            namespaceName,
+            codeValue,
+            "Projected descriptor update"
+        );
+
+        using HttpResponseMessage deleteResponse = await harness.HttpClient.DeleteAsync(
+            createdDescriptor.LocationPath
+        );
+        string deleteBody = await deleteResponse.Content.ReadAsStringAsync();
+        deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent, deleteBody);
+
+        using HttpResponseMessage getAfterDelete = await harness.HttpClient.GetAsync(
+            createdDescriptor.LocationPath
+        );
+        string getAfterDeleteBody = await getAfterDelete.Content.ReadAsStringAsync();
+        getAfterDelete.StatusCode.Should().Be(HttpStatusCode.NotFound, getAfterDeleteBody);
+        getAfterDeleteBody.Should().NotContain("Projected descriptor update");
+
+        (await CountDocumentRowsAsync(harness, createdDescriptor.DocumentUuid))
+            .Should()
+            .Be(0, "descriptor DELETE must remove the canonical document row");
+        (await CountCacheRowsAsync(harness, createdMetadata.DocumentId))
+            .Should()
+            .Be(0, "descriptor DELETE must cascade-remove the projected cache row");
+        (await CountProjectionWorkRowsAsync(harness, createdMetadata.DocumentId))
+            .Should()
+            .Be(0, "descriptor DELETE must not leave orphaned projection work");
+    }
+
     private static async Task<CreatedDocument> PostStudentAsync(
         ApiIntegrationHarness harness,
         string studentUniqueId,
@@ -195,6 +355,68 @@ internal static class DocumentCacheCompletedProjectionScenario
         string body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.NoContent, body);
         response.TryReadRawEtag(out string etag).Should().BeTrue("PUT must emit the advanced ETag");
+        etag.Should().NotBe(ifMatch);
+        return etag;
+    }
+
+    private static async Task<CreatedDocument> PostSchoolTypeDescriptorAsync(
+        ApiIntegrationHarness harness,
+        string namespaceName,
+        string codeValue,
+        string shortDescription
+    )
+    {
+        var payload = new JsonObject
+        {
+            ["namespace"] = namespaceName,
+            ["codeValue"] = codeValue,
+            ["shortDescription"] = shortDescription,
+        };
+        using HttpResponseMessage response = await PostJsonAsync(
+            harness,
+            SchoolTypeDescriptorsEndpoint,
+            payload
+        );
+        string body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created, body);
+        response.Headers.Location.Should().NotBeNull();
+        response.TryReadRawEtag(out string etag).Should().BeTrue("POST descriptor create must emit an ETag");
+
+        string locationPath = ToPath(response.Headers.Location!);
+        return new(locationPath, Guid.Parse(locationPath.Split('/')[^1]), etag);
+    }
+
+    private static async Task<string> PutSchoolTypeDescriptorAsync(
+        ApiIntegrationHarness harness,
+        string locationPath,
+        Guid documentUuid,
+        string namespaceName,
+        string codeValue,
+        string shortDescription,
+        string ifMatch
+    )
+    {
+        var payload = new JsonObject
+        {
+            ["id"] = documentUuid.ToString(),
+            ["namespace"] = namespaceName,
+            ["codeValue"] = codeValue,
+            ["shortDescription"] = shortDescription,
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Put, locationPath)
+        {
+            Content = new StringContent(payload.ToJsonString(), Encoding.UTF8, StandardJsonContentType),
+        };
+        request.Headers.TryAddWithoutValidation("If-Match", ifMatch);
+
+        using HttpResponseMessage response = await harness.HttpClient.SendAsync(request);
+        string body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent, body);
+        response
+            .TryReadRawEtag(out string etag)
+            .Should()
+            .BeTrue("PUT descriptor must emit the advanced ETag");
         etag.Should().NotBe(ifMatch);
         return etag;
     }
@@ -494,6 +716,28 @@ internal static class DocumentCacheCompletedProjectionScenario
         row.DocumentJson.ContainsKey("_etag")
             .Should()
             .BeFalse("cache JSON should store caller-agnostic stream content");
+    }
+
+    private static void AssertSchoolTypeDescriptorCacheRow(
+        DocumentCacheRow row,
+        DocumentMetadata metadata,
+        string namespaceName,
+        string codeValue,
+        string shortDescription
+    )
+    {
+        row.DocumentId.Should().Be(metadata.DocumentId);
+        row.DocumentUuid.Should().Be(metadata.DocumentUuid);
+        row.ContentVersion.Should().Be(metadata.ContentVersion);
+        row.LastModifiedAt.Should().BeCloseTo(metadata.ContentLastModifiedAt, TimeSpan.FromTicks(10));
+        row.DocumentJson["id"]!.GetValue<string>().Should().Be(metadata.DocumentUuid.ToString());
+        row.DocumentJson["namespace"]!.GetValue<string>().Should().Be(namespaceName);
+        row.DocumentJson["codeValue"]!.GetValue<string>().Should().Be(codeValue);
+        row.DocumentJson["shortDescription"]!.GetValue<string>().Should().Be(shortDescription);
+        row.DocumentJson["_lastModifiedDate"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
+        row.DocumentJson.ContainsKey("_etag")
+            .Should()
+            .BeFalse("descriptor cache JSON should store caller-agnostic stream content");
     }
 
     private static void AssertNoCacheAccelerationDisclosure(HttpResponseMessage response, string body)
