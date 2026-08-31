@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Claims;
@@ -40,6 +41,7 @@ public class Given_DocumentCacheStatusEndpointProductionService
     private const string ValidBearerToken = "valid-status-token";
     private const string StudentsEndpoint = "/data/ed-fi/students";
     private const string StandardJsonContentType = "application/json";
+    private const string LastModifiedDateFormat = "yyyy-MM-ddTHH:mm:ss'Z'";
     private const long EmptyTargetDataStoreId = 1;
     private const long QueuedTargetDataStoreId = 2;
     private const long UnreachableTargetDataStoreId = 3;
@@ -199,25 +201,75 @@ public class Given_DocumentCacheStatusEndpointProductionService
             .Should()
             .Be("caughtUp");
 
-        await InsertQueuedProjectionWorkAsync(_emptyTargetDatabase!);
+        string studentUniqueId = $"cdc-routing-open-{Guid.NewGuid():N}"[..32];
+        string locationPath = await PostStudentAsync(client, studentUniqueId, "Routing Open");
+        DocumentMetadata metadata = await ReadDocumentMetadataAsync(_emptyTargetDatabase!, locationPath);
+        (await CountProjectionWorkRowsAsync(_emptyTargetDatabase!, metadata.DocumentId))
+            .Should()
+            .Be(
+                1,
+                "a Tracking lifecycle with the projector waiting for its next poll must still enqueue API writes"
+            );
+        await UpsertStudentCacheRowAsync(
+            _emptyTargetDatabase!,
+            metadata,
+            studentUniqueId,
+            "Stale Routing Open",
+            contentVersionOverride: metadata.ContentVersion - 1
+        );
 
         using HttpResponseMessage laterStatusResponse = await client.GetAsync("/health/document-cache");
         string laterStatusContent = await laterStatusResponse.Content.ReadAsStringAsync();
         laterStatusResponse.StatusCode.Should().Be(HttpStatusCode.OK, laterStatusContent);
         JsonNode laterStatus = JsonNode.Parse(laterStatusContent)!;
-        TargetByDataStoreId(laterStatus, EmptyTargetDataStoreId)["caughtUp"]!["status"]!
-            .GetValue<string>()
-            .Should()
-            .Be("notCaughtUp");
+        JsonNode target = TargetByDataStoreId(laterStatus, EmptyTargetDataStoreId);
+        target["queueSummary"]!["presence"]!.GetValue<string>().Should().Be("notEmpty");
+        target["executionState"]!["status"]!.GetValue<string>().Should().Be("waitingForPoll");
+        target["caughtUp"]!["status"]!.GetValue<string>().Should().Be("notCaughtUp");
+        target["caughtUp"]!["reason"]!.GetValue<string>().Should().Be("queueNotEmpty");
 
-        string locationPath = await PostStudentAsync(
-            client,
-            $"cdc-routing-open-{Guid.NewGuid():N}",
-            "Routing Open"
-        );
         JsonObject student = await GetJsonObjectAsync(client, locationPath);
 
         student["firstName"]!.GetValue<string>().Should().Be("Routing Open");
+    }
+
+    [Test]
+    public async Task It_reports_disabled_lifecycle_and_bypasses_cache_without_blocking_api_writes()
+    {
+        await SetDisabledLifecycleAsync(_emptyTargetDatabase!, cacheAheadRecoveryRequired: false);
+        await using WebApplicationFactory<Program> factory = CreateFactory();
+        using HttpClient client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            ValidBearerToken
+        );
+
+        await factory
+            .Services.GetRequiredService<IDocumentCacheProjectionSupervisor>()
+            .RefreshAsync(DocumentCacheTargetRefreshReason.Startup);
+
+        using HttpResponseMessage statusResponse = await client.GetAsync("/health/document-cache");
+        string statusContent = await statusResponse.Content.ReadAsStringAsync();
+        statusResponse.StatusCode.Should().Be(HttpStatusCode.OK, statusContent);
+        JsonNode target = TargetByDataStoreId(JsonNode.Parse(statusContent)!, EmptyTargetDataStoreId);
+        target["lifecycle"]!["state"]!.GetValue<string>().Should().Be("disabled");
+        target["operationalHealth"]!["status"]!.GetValue<string>().Should().Be("nonOperational");
+        target["operationalHealth"]!["reason"]!.GetValue<string>().Should().Be("lifecycleDisabled");
+
+        string studentUniqueId = $"cdc-disabled-{Guid.NewGuid():N}"[..32];
+        string locationPath = await PostStudentAsync(client, studentUniqueId, "Lifecycle Disabled");
+        DocumentMetadata metadata = await ReadDocumentMetadataAsync(_emptyTargetDatabase!, locationPath);
+        (await CountProjectionWorkRowsAsync(_emptyTargetDatabase!, metadata.DocumentId))
+            .Should()
+            .Be(0, "disabled lifecycle should commit canonical API data without enqueuing projection work");
+
+        await UpsertStudentCacheRowAsync(_emptyTargetDatabase!, metadata, studentUniqueId, "Cached Disabled");
+
+        JsonObject student = await GetJsonObjectAsync(client, locationPath);
+        student["firstName"]!
+            .GetValue<string>()
+            .Should()
+            .Be("Lifecycle Disabled", "read acceleration must bypass cache rows while lifecycle is disabled");
     }
 
     private WebApplicationFactory<Program> CreateFactory()
@@ -340,16 +392,168 @@ public class Given_DocumentCacheStatusEndpointProductionService
         bool cacheAheadRecoveryRequired
     )
     {
+        await SetLifecycleAsync(database, "Tracking", cacheAheadRecoveryRequired);
+    }
+
+    private static async Task SetDisabledLifecycleAsync(
+        PostgresqlGeneratedDdlTestDatabase database,
+        bool cacheAheadRecoveryRequired
+    )
+    {
+        await SetLifecycleAsync(database, "Disabled", cacheAheadRecoveryRequired);
+    }
+
+    private static async Task SetLifecycleAsync(
+        PostgresqlGeneratedDdlTestDatabase database,
+        string lifecycleState,
+        bool cacheAheadRecoveryRequired
+    )
+    {
         await database.ExecuteNonQueryAsync(
             """
             UPDATE "dms"."DocumentCacheState"
-            SET "ProjectionLifecycleState" = 'Tracking',
+            SET "ProjectionLifecycleState" = @lifecycleState,
                 "CacheAheadRecoveryRequired" = @cacheAheadRecoveryRequired
             WHERE "StateId" = 1;
             """,
+            new NpgsqlParameter("lifecycleState", lifecycleState),
             new NpgsqlParameter("cacheAheadRecoveryRequired", cacheAheadRecoveryRequired)
         );
     }
+
+    private static async Task<DocumentMetadata> ReadDocumentMetadataAsync(
+        PostgresqlGeneratedDdlTestDatabase database,
+        string locationPath
+    )
+    {
+        var documentUuid = Guid.Parse(locationPath.Split('/')[^1]);
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await database.QueryRowsAsync(
+            """
+            SELECT d."DocumentId",
+                   d."DocumentUuid",
+                   d."ContentVersion",
+                   d."ContentLastModifiedAt",
+                   rk."ProjectName",
+                   rk."ResourceName",
+                   rk."ResourceVersion"
+            FROM "dms"."Document" d
+            INNER JOIN "dms"."ResourceKey" rk
+                ON rk."ResourceKeyId" = d."ResourceKeyId"
+            WHERE d."DocumentUuid" = @documentUuid;
+            """,
+            new NpgsqlParameter("documentUuid", NpgsqlDbType.Uuid) { Value = documentUuid }
+        );
+
+        IReadOnlyDictionary<string, object?> row = rows.Should().ContainSingle().Subject;
+        return new(
+            Convert.ToInt64(row["DocumentId"], CultureInfo.InvariantCulture),
+            (Guid)row["DocumentUuid"]!,
+            Convert.ToInt64(row["ContentVersion"], CultureInfo.InvariantCulture),
+            ToUtcDateTimeOffset(row["ContentLastModifiedAt"]!),
+            (string)row["ProjectName"]!,
+            (string)row["ResourceName"]!,
+            (string)row["ResourceVersion"]!
+        );
+    }
+
+    private static async Task<int> CountProjectionWorkRowsAsync(
+        PostgresqlGeneratedDdlTestDatabase database,
+        long documentId
+    )
+    {
+        long count = await database.ExecuteScalarAsync<long>(
+            """
+            SELECT COUNT(*)
+            FROM "dms"."DocumentProjectionWork"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = documentId }
+        );
+        return Convert.ToInt32(count, CultureInfo.InvariantCulture);
+    }
+
+    private static async Task UpsertStudentCacheRowAsync(
+        PostgresqlGeneratedDdlTestDatabase database,
+        DocumentMetadata metadata,
+        string studentUniqueId,
+        string firstName,
+        long? contentVersionOverride = null
+    )
+    {
+        long contentVersion = contentVersionOverride ?? metadata.ContentVersion;
+        var documentJson = new JsonObject
+        {
+            ["id"] = metadata.DocumentUuid.ToString(),
+            ["studentUniqueId"] = studentUniqueId,
+            ["firstName"] = firstName,
+            ["_lastModifiedDate"] = FormatLastModifiedDate(metadata.ContentLastModifiedAt),
+        };
+
+        await database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO "dms"."DocumentCache" (
+                "DocumentId",
+                "DocumentUuid",
+                "ProjectName",
+                "ResourceName",
+                "ResourceVersion",
+                "ContentVersion",
+                "StreamEtag",
+                "LastModifiedAt",
+                "DocumentJson",
+                "ComputedAt"
+            )
+            VALUES (
+                @documentId,
+                @documentUuid,
+                @projectName,
+                @resourceName,
+                @resourceVersion,
+                @contentVersion,
+                @streamEtag,
+                @lastModifiedAt,
+                CAST(@documentJson AS jsonb),
+                @computedAt
+            )
+            ON CONFLICT ("DocumentId") DO UPDATE
+            SET "DocumentUuid" = EXCLUDED."DocumentUuid",
+                "ProjectName" = EXCLUDED."ProjectName",
+                "ResourceName" = EXCLUDED."ResourceName",
+                "ResourceVersion" = EXCLUDED."ResourceVersion",
+                "ContentVersion" = EXCLUDED."ContentVersion",
+                "StreamEtag" = EXCLUDED."StreamEtag",
+                "LastModifiedAt" = EXCLUDED."LastModifiedAt",
+                "DocumentJson" = EXCLUDED."DocumentJson",
+                "ComputedAt" = EXCLUDED."ComputedAt";
+            """,
+            new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = metadata.DocumentId },
+            new NpgsqlParameter("documentUuid", NpgsqlDbType.Uuid) { Value = metadata.DocumentUuid },
+            new NpgsqlParameter("projectName", metadata.ProjectName),
+            new NpgsqlParameter("resourceName", metadata.ResourceName),
+            new NpgsqlParameter("resourceVersion", metadata.ResourceVersion),
+            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion },
+            new NpgsqlParameter("streamEtag", $"status-cache-{contentVersion}"),
+            new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz)
+            {
+                Value = metadata.ContentLastModifiedAt,
+            },
+            new NpgsqlParameter("documentJson", documentJson.ToJsonString()),
+            new NpgsqlParameter("computedAt", NpgsqlDbType.TimestampTz) { Value = DateTimeOffset.UtcNow }
+        );
+    }
+
+    private static DateTimeOffset ToUtcDateTimeOffset(object value) =>
+        value switch
+        {
+            DateTimeOffset dateTimeOffset => dateTimeOffset.ToUniversalTime(),
+            DateTime dateTime => new DateTimeOffset(DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)),
+            _ => throw new InvalidOperationException(
+                $"Unsupported ContentLastModifiedAt value type '{value.GetType().Name}'."
+            ),
+        };
+
+    private static string FormatLastModifiedDate(DateTimeOffset lastModifiedAt) =>
+        lastModifiedAt.UtcDateTime.ToString(LastModifiedDateFormat, CultureInfo.InvariantCulture);
 
     private static async Task InsertQueuedProjectionWorkAsync(PostgresqlGeneratedDdlTestDatabase database)
     {
@@ -417,6 +621,14 @@ public class Given_DocumentCacheStatusEndpointProductionService
 
     private sealed class StatusJwtValidationService : IJwtValidationService
     {
+        private static readonly ClientAuthorizations _authorizations = new(
+            ExternalDoublesConstants.SmokeToken,
+            ExternalDoublesConstants.SmokeClientId,
+            ExternalDoublesConstants.SmokeClaimSetName,
+            [],
+            [],
+            [new DataStoreId(ExternalDoublesConstants.StableDataStoreId)]
+        );
         private static readonly ClaimsPrincipal _principal = new(
             new ClaimsIdentity(
                 [new Claim("client_id", "status-client"), new Claim(RoleClaimType, RequiredRole)],
@@ -429,8 +641,22 @@ public class Given_DocumentCacheStatusEndpointProductionService
             ClientAuthorizations? ClientAuthorizations
         )> ValidateAndExtractClientAuthorizationsAsync(string token, CancellationToken cancellationToken)
         {
-            ClaimsPrincipal? principal = token == ValidBearerToken ? _principal : null;
-            return Task.FromResult<(ClaimsPrincipal?, ClientAuthorizations?)>((principal, null));
+            bool isAcceptedToken =
+                string.Equals(token, ValidBearerToken, StringComparison.Ordinal)
+                || string.Equals(token, ExternalDoublesConstants.SmokeToken, StringComparison.Ordinal);
+            ClaimsPrincipal? principal = isAcceptedToken ? _principal : null;
+            ClientAuthorizations? authorizations = isAcceptedToken ? _authorizations : null;
+            return Task.FromResult((principal, authorizations));
         }
     }
+
+    private sealed record DocumentMetadata(
+        long DocumentId,
+        Guid DocumentUuid,
+        long ContentVersion,
+        DateTimeOffset ContentLastModifiedAt,
+        string ProjectName,
+        string ResourceName,
+        string ResourceVersion
+    );
 }
