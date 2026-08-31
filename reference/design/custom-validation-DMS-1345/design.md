@@ -361,7 +361,10 @@ The implementer supplies their own options type and the deployment supplies its 
 Core is the right home for it because the collection being guarded is Core's own, and hosting it there keeps the guard's internals `internal` rather than forcing new public Core API purely to be callable from the frontend.
 
 **Ordering must not matter, and that is a design constraint rather than a convention.** The implementer's registration call may sit before or after Core's guard call, and an implementer is exactly the party the guard exists to check, so a rule of the form "register the validators before the guard" would be broken by the party it protects and would fail silently.
-Core's extension therefore captures the live collection (`services.AddSingleton<IServiceCollection>(services)`) and the guard reads the final descriptor set after the container is built, when every registration source has contributed by construction.
+Core's extension therefore hands the live collection to the guard in a closure, and the guard reads the final descriptor set after the container is built, when every registration source has contributed by construction.
+Closure capture is the required mechanism, and `services.AddSingleton<IServiceCollection>(services)` with the guard resolving `IServiceCollection` back out of DI is specifically rejected.
+`IServiceCollection` is declared in `Microsoft.Extensions.DependencyInjection.Abstractions`, so under the plugin spine it is a service type a plugin is permitted to register, and a guard that resolved it would read whatever collection the last registration won.
+A closure cannot be displaced at all, and it leaves no public DI registration that exists only for the guard's own benefit.
 An earlier revision anchored this audit at "the last statement of the loader's registration extension", which worked only because a loader owned every registration; with the implementer owning registration, a post-container guard is what restores the guarantee.
 
 ### Lifetime and Resolution
