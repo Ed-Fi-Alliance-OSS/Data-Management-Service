@@ -292,8 +292,10 @@ clear the latch, clear cache, or clear work.
 
 `Rebuilding` after interruption restarts baseline from the beginning because v1 has no
 durable baseline cursor. The
+[DocumentCache Performance Qualification](performance-qualification.md) defines the
+DMS-1317 scale limits for that behavior and links back to the owning
 [Projection Performance Qualification](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-performance-qualification)
-defines the scale limits for that behavior.
+design section.
 
 ## SQL Server Prerequisite Failure Correction
 

@@ -8,6 +8,8 @@ implementation, operations, evidence, and qualification work.
   and restore/direct-mutation response.
 - [CDC-INV evidence matrix](cdc-inv-evidence.md) maps DMS-1317 evidence to the in-scope
   E18 CDC invariant contracts.
+- [Performance qualification](performance-qualification.md) defines the bounded CI guards,
+  representative-scale thresholds, result artifacts, and provider maintenance evidence.
 
 Owning design and implementation references:
 

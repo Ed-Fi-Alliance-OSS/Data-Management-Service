@@ -240,7 +240,7 @@
       "Run provider query-plan tests: `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheQueryPlan`",
       "Manually verify the qualification instructions include pass/fail thresholds before any measured-result placeholder."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Restamp Scope",

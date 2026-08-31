@@ -137,3 +137,13 @@ Server comparison inputs are app-level latency for end-to-end behavior, `db_logi
 and the per-statement plan/IO evidence under `plans/`. And the epic's ratio gates assume
 the final-gate runs reuse the same machine and pinned configuration recorded in the
 manifest.
+
+## DocumentCache qualification
+
+DMS-1317 DocumentCache performance qualification is tracked separately from the
+traditional-paging baseline. The threshold catalog lives in
+`Configuration/DocumentCacheQualification.cs`; the repeatable guard entrypoint is
+`eng/performance/invoke-documentcache-qualification.ps1`; and the release-validation
+thresholds, PostgreSQL WAL/vacuum/bloat observations, SQL Server log/ghost/index
+observations, and durable-baseline-cursor failure rule are documented in
+`reference/document-cache/performance-qualification.md`.
