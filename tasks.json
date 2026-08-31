@@ -207,7 +207,7 @@
       "Run: `dotnet csharpier format src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit`",
       "Temporarily add an invalid `dms-document-cache` example locally and confirm the runbook validation fails before restoring it."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Runbook",

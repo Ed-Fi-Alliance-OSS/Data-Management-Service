@@ -21,17 +21,55 @@ public sealed class Given_DocumentCacheAdminHelpAndDocumentation
     private const string RepositoryBlobUrlPrefix =
         "https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/";
 
+    private static readonly (Regex Pattern, string Description)[] SecretUnsafeExamplePatterns =
+    [
+        (
+            new Regex(@"--connection-string\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+            "connection string command-line options"
+        ),
+        (
+            new Regex(@"--client-secret\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+            "client secret command-line options"
+        ),
+        (
+            new Regex(@"--password\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+            "password command-line options"
+        ),
+        (
+            new Regex(@"--secret\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+            "secret command-line options"
+        ),
+        (
+            new Regex(@"\bPassword\s*=", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+            "connection strings with Password"
+        ),
+        (
+            new Regex(@"\bPwd\s*=", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+            "connection strings with Pwd"
+        ),
+        (
+            new Regex(@"\bConnectionStrings(__|:)", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+            "direct connection string configuration keys"
+        ),
+        (
+            new Regex(@"\bClientSecret\s*=", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+            "direct client secret assignments"
+        ),
+    ];
+
     private static readonly Regex MarkdownLinkPattern = new(
         @"\[[^\]]+\]\((?<href>[^)#]+\.md)(?<anchor>#[^)]+)?\)",
         RegexOptions.Compiled
     );
 
     private string _readme = null!;
+    private string _runbook = null!;
 
     [SetUp]
     public void Setup()
     {
         _readme = File.ReadAllText(ReadmePath());
+        _runbook = File.ReadAllText(RunbookPath());
     }
 
     [Test]
@@ -137,6 +175,40 @@ public sealed class Given_DocumentCacheAdminHelpAndDocumentation
     }
 
     [Test]
+    public void It_keeps_runbook_command_examples_parseable_against_the_real_help_surface()
+    {
+        RootCommand rootCommand = DocumentCacheAdminCommandSurface.CreateRootCommand();
+        string[] commandLines = [.. DocumentedToolCommandLines(RunbookPath())];
+
+        commandLines.Should().NotBeEmpty();
+
+        foreach (string commandLine in commandLines)
+        {
+            string[] tokens = SplitCommandLine(commandLine);
+            tokens[0].Should().Be(DocumentCacheAdminCliConstants.ToolCommandName, commandLine);
+
+            ParseResult parseResult = rootCommand.Parse(tokens[1..]);
+
+            parseResult.Errors.Should().BeEmpty(commandLine);
+        }
+    }
+
+    [Test]
+    public void It_keeps_runbook_examples_secret_safe()
+    {
+        foreach (string exampleLine in MarkdownCodeExampleLines(RunbookPath()))
+        {
+            foreach ((Regex pattern, string description) in SecretUnsafeExamplePatterns)
+            {
+                pattern
+                    .IsMatch(exampleLine)
+                    .Should()
+                    .BeFalse($"runbook example '{exampleLine}' should not expose {description}");
+            }
+        }
+    }
+
+    [Test]
     public void It_links_the_required_runbook_material()
     {
         _readme.Should().Contain("#guarded-new-empty-activation");
@@ -171,34 +243,29 @@ public sealed class Given_DocumentCacheAdminHelpAndDocumentation
     [Test]
     public void It_resolves_all_packaged_repository_markdown_links_and_anchors()
     {
-        MatchCollection matches = MarkdownLinkPattern.Matches(_readme);
-        matches.Should().NotBeEmpty();
+        AssertMarkdownLinksAndAnchorsResolve(ReadmePath(), ReadmeDirectory(), "README", true);
+    }
 
-        foreach (Match match in matches)
+    [Test]
+    public void It_resolves_all_runbook_repository_markdown_links_and_anchors()
+    {
+        AssertMarkdownLinksAndAnchorsResolve(RunbookPath(), RunbookDirectory(), "runbook", false);
+    }
+
+    [Test]
+    public void It_keeps_required_runbook_remediation_topics_documented()
+    {
+        foreach (string requiredTopic in RequiredRunbookTopics())
         {
-            string href = match.Groups["href"].Value;
-            href.Should()
-                .StartWith(
-                    RepositoryBlobUrlPrefix,
-                    $"README link '{href}' should be usable from the installed package"
-                );
-
-            string linkedPath = RepositoryLocalPathFromUrl(href);
-
-            File.Exists(linkedPath).Should().BeTrue($"README link '{href}' should resolve");
-
-            if (!match.Groups["anchor"].Success)
-            {
-                continue;
-            }
-
-            string expectedAnchor = match.Groups["anchor"].Value[1..];
-            MarkdownAnchors(linkedPath).Should().Contain(expectedAnchor, href);
+            _runbook.Should().Contain(requiredTopic);
         }
     }
 
     private static IEnumerable<string> DocumentedToolCommandLines() =>
-        File.ReadLines(ReadmePath())
+        DocumentedToolCommandLines(ReadmePath());
+
+    private static IEnumerable<string> DocumentedToolCommandLines(string markdownPath) =>
+        File.ReadLines(markdownPath)
             .Select(line => line.Trim())
             .Where(line =>
                 line.StartsWith(
@@ -234,6 +301,47 @@ public sealed class Given_DocumentCacheAdminHelpAndDocumentation
             DocumentCacheAdminExitCodes.IncompleteRetryable,
             DocumentCacheAdminExitCodes.ArgumentError,
             DocumentCacheAdminExitCodes.ConfigurationError,
+        ];
+
+    private static IEnumerable<string> MarkdownCodeExampleLines(string markdownPath)
+    {
+        bool insideCodeFence = false;
+
+        foreach (string line in File.ReadLines(markdownPath))
+        {
+            string trimmedLine = line.Trim();
+
+            if (trimmedLine.StartsWith("```", StringComparison.Ordinal))
+            {
+                insideCodeFence = !insideCodeFence;
+                continue;
+            }
+
+            if (insideCodeFence && trimmedLine.Length > 0)
+            {
+                yield return trimmedLine;
+            }
+        }
+    }
+
+    private static IEnumerable<string> RequiredRunbookTopics() =>
+        [
+            "Status Interpretation",
+            "Enqueue vs Processing Availability",
+            "Activation",
+            "Online Rebuild",
+            "Deactivation",
+            "Explicit Integrity Scrub",
+            "Cache-Ahead Recovery",
+            "Persistent Projection Failure and Poison Remediation",
+            "Lifecycle Mismatch and Resetting",
+            "If the intended command cannot be proven",
+            "SQL Server Prerequisite Failure Correction",
+            "Suspected Restore or Direct Mutation",
+            "after suspected restore",
+            "unsupported direct mutation",
+            "Restamp Disposition",
+            "E19 Boundary",
         ];
 
     private static IEnumerable<Command> MutatingCommands() =>
@@ -286,6 +394,74 @@ public sealed class Given_DocumentCacheAdminHelpAndDocumentation
             .Where(line => line.StartsWith('#'))
             .Select(ToMarkdownAnchor)
             .Where(anchor => anchor.Length > 0);
+
+    private static void AssertMarkdownLinksAndAnchorsResolve(
+        string markdownPath,
+        string sourceDirectory,
+        string sourceDescription,
+        bool requireRepositoryBlobUrls
+    )
+    {
+        MatchCollection matches = MarkdownLinkPattern.Matches(File.ReadAllText(markdownPath));
+        matches.Should().NotBeEmpty();
+
+        foreach (Match match in matches)
+        {
+            string href = match.Groups["href"].Value;
+            string linkedPath = ResolveRepositoryMarkdownLink(
+                href,
+                sourceDirectory,
+                sourceDescription,
+                requireRepositoryBlobUrls
+            );
+
+            File.Exists(linkedPath).Should().BeTrue($"{sourceDescription} link '{href}' should resolve");
+
+            if (!match.Groups["anchor"].Success)
+            {
+                continue;
+            }
+
+            string expectedAnchor = match.Groups["anchor"].Value[1..];
+            MarkdownAnchors(linkedPath).Should().Contain(expectedAnchor, href);
+        }
+    }
+
+    private static string ResolveRepositoryMarkdownLink(
+        string href,
+        string sourceDirectory,
+        string sourceDescription,
+        bool requireRepositoryBlobUrls
+    )
+    {
+        if (href.StartsWith(RepositoryBlobUrlPrefix, StringComparison.Ordinal))
+        {
+            return RepositoryLocalPathFromUrl(href);
+        }
+
+        if (href.StartsWith("http", StringComparison.OrdinalIgnoreCase) || requireRepositoryBlobUrls)
+        {
+            href.Should()
+                .StartWith(
+                    RepositoryBlobUrlPrefix,
+                    $"{sourceDescription} link '{href}' should point at an intended repository blob URL"
+                );
+        }
+
+        string repositoryRoot = RepositoryRoot();
+        string linkedPath = Path.GetFullPath(
+            Path.Combine(sourceDirectory, href.Replace('/', Path.DirectorySeparatorChar))
+        );
+
+        linkedPath
+            .Should()
+            .StartWith(
+                repositoryRoot + Path.DirectorySeparatorChar,
+                $"{sourceDescription} link '{href}' should stay inside the repository"
+            );
+
+        return linkedPath;
+    }
 
     private static string RepositoryLocalPathFromUrl(string href)
     {
@@ -349,6 +525,10 @@ public sealed class Given_DocumentCacheAdminHelpAndDocumentation
 
     private static string ReadmeDirectory() =>
         Path.Combine(RepositoryRoot(), "src", "dms", "clis", "EdFi.DataManagementService.DocumentCacheAdmin");
+
+    private static string RunbookPath() => Path.Combine(RunbookDirectory(), "operations-runbook.md");
+
+    private static string RunbookDirectory() => Path.Combine(RepositoryRoot(), "reference", "document-cache");
 
     private static string RepositoryRoot()
     {
