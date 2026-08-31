@@ -324,6 +324,44 @@ public class Given_A_Postgresql_DocumentCacheWriter
     }
 
     [Test]
+    public async Task It_acknowledges_equal_version_work_without_applying_a_stale_candidate()
+    {
+        var telemetry = new RecordingDocumentCacheWriterTelemetry();
+        _writer = CreateWriter(telemetry: telemetry);
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        DateTimeOffset originalComputedAt = new(2026, 1, 2, 3, 4, 5, TimeSpan.Zero);
+        await InsertCacheRowAsync(source, contentVersion: 10, computedAt: originalComputedAt);
+        string beforeComputedAt = await ReadCacheComputedAtTextAsync(source.DocumentId);
+        DocumentCacheMaterializationCandidate staleCandidate = CreateCandidate(
+            source,
+            "stale-candidate-should-not-write",
+            contentVersion: 9
+        );
+
+        DocumentCacheWriterResult result = await WriteAsync(source, staleCandidate);
+
+        result
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.AlreadyCurrentAcknowledged>()
+            .Which.AcknowledgedContentVersion.Should()
+            .Be(10);
+        CacheRow cacheRow = await ReadCacheRowAsync(source.DocumentId);
+        cacheRow.ContentVersion.Should().Be(10);
+        cacheRow.StreamEtag.Should().Be("etag-10");
+        JsonNode.Parse(cacheRow.DocumentJson)!["value"]!.GetValue<string>().Should().Be("cache-10");
+        (await ReadCacheComputedAtTextAsync(source.DocumentId)).Should().Be(beforeComputedAt);
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadCacheAheadLatchAsync()).Should().BeFalse();
+        telemetry
+            .Records.Should()
+            .Contain(record =>
+                record.Name == RecordingDocumentCacheWriterTelemetry.Outcome
+                && record.Context.Outcome == nameof(DocumentCacheWriterOutcome.AlreadyCurrentAcknowledged)
+            );
+    }
+
+    [Test]
     public async Task It_returns_already_current_without_work_when_cache_matches_source()
     {
         await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
