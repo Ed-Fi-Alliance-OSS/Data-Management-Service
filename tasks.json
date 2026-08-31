@@ -175,7 +175,7 @@
       "Run: `dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheAdmin`",
       "Run: `dotnet csharpier format src/dms/backend src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Runbook",
