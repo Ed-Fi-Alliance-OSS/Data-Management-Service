@@ -713,6 +713,13 @@ function RunUnitTestsWithCoverage {
             --nologo
     }
 
+    # A runtime datacollector failure does not fail dotnet test - that project's report just never
+    # exists - and the merge below only fails when it finds zero reports, so the count is asserted
+    # here to keep the threshold from being evaluated against a silently shifted total.
+    Assert-CoverageReportPerProject `
+        -CollectorOutputPath $collectorOutput `
+        -ExpectedProjectName @($unitTestProjects | ForEach-Object { $_.Name })
+
     # Each switch and its value must be ONE argument. A `--` earlier in a native command's arguments
     # puts PowerShell's parser into a mode where `-name:"value"` is emitted as two arguments,
     # `-name:` and the value, and ReportGenerator then reports "No report files specified" for an

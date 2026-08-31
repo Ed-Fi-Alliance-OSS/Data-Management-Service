@@ -224,6 +224,49 @@ function ConvertTo-SolutionFilterContent {
 
 <#
     .DESCRIPTION
+    Assert that a collector run produced exactly one coverage.cobertura.xml per test project. A
+    runtime datacollector failure does not fail dotnet test - the project's report just never
+    exists - and the ReportGenerator merge only fails on zero reports, so without this check the
+    threshold gate would be evaluated against a total that silently lost the projects that failed
+    to report. The collector writes each report into a GUID-named directory, so a shortfall cannot
+    be traced to a specific project; the message names the full expected list instead.
+#>
+function Assert-CoverageReportPerProject {
+    param (
+        # Directory the collector wrote its per-project results into
+        [string]
+        $CollectorOutputPath,
+
+        # Names of the test projects the run was expected to produce reports for
+        [string[]]
+        $ExpectedProjectName
+    )
+
+    # The collector writes each report as <results-dir>/<guid>/coverage.cobertura.xml. The trx
+    # logger shares that directory and copies every attachment a second time, deeper, as
+    # <trx name>/In/<machine>/coverage.cobertura.xml - so only reports directly inside first-level
+    # directories are counted here, or a healthy run would fail as double-counted.
+    $reports = @(
+        if (Test-Path -LiteralPath $CollectorOutputPath -PathType Container) {
+            Get-ChildItem -LiteralPath $CollectorOutputPath -Directory |
+                ForEach-Object {
+                    Get-ChildItem -LiteralPath $_.FullName -File -Filter "coverage.cobertura.xml"
+                }
+        }
+    )
+
+    if ($reports.Count -ne $ExpectedProjectName.Count) {
+        throw (
+            "Expected one coverage.cobertura.xml per unit test project " +
+            "($($ExpectedProjectName.Count): $($ExpectedProjectName -join ', ')) " +
+            "but found $($reports.Count) under '$CollectorOutputPath'. " +
+            "Merging that set would evaluate the coverage threshold against a silently shifted total."
+        )
+    }
+}
+
+<#
+    .DESCRIPTION
     Enforce a total line and branch coverage threshold against a Cobertura report, reproducing
     coverlet's --threshold-type line --threshold-type branch --threshold-stat total. The rates are
     read as XML attributes rather than matched out of the file's text, and parsed with the invariant
@@ -279,8 +322,10 @@ function Assert-CoverageThreshold {
             [ref] $parsedRate
         )
 
-        if (-not $parsed) {
-            throw "Coverage report '$Path' declares $rateName as '$rawRate', which is not a number, so the $Threshold% threshold cannot be enforced."
+        # TryParse under NumberStyles::Float accepts NaN and the infinities, and NaN fails every
+        # -lt comparison, so without the finiteness check a non-finite rate would pass the gate.
+        if (-not $parsed -or -not [double]::IsFinite($parsedRate)) {
+            throw "Coverage report '$Path' declares $rateName as '$rawRate', which is not a finite number, so the $Threshold% threshold cannot be enforced."
         }
 
         # Held as the raw rate, unrounded. Rounding to a display percentage before the comparison

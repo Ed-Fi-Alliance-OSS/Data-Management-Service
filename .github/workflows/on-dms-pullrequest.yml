@@ -12,15 +12,19 @@ on:
   # the heavy jobs skip when no DMS-relevant file changed, so idle PRs stay cheap and the gate
   # still reports (a skipped dependency counts as a pass).
   # The default type set is opened, synchronize and reopened. Declaring types replaces that set
-  # outright, so all three are listed alongside ready_for_review. ready_for_review is what makes
-  # draft gating safe: the expensive jobs below skip while a pull request is a draft, and marking it
-  # ready fires this trigger so the full suite validates it before review.
+  # outright, so all three are listed alongside the two draft transitions. ready_for_review is what
+  # makes draft gating safe: the expensive jobs below skip while a pull request is a draft, and
+  # marking it ready fires this trigger so the full suite validates it before review.
+  # converted_to_draft is the cost side of the same gate: the cancel-in-progress concurrency group
+  # cancels the in-flight run, and the replacement run classifies as a draft, so its expensive jobs
+  # skip instead of finishing for a pull request that just declared itself not ready.
   pull_request:
     types:
       - opened
       - synchronize
       - reopened
       - ready_for_review
+      - converted_to_draft
     branches:
       - main
 
@@ -537,6 +541,8 @@ jobs:
           # saves nothing.
           compression-level: 0
           if-no-files-found: error
+          # Same retention as dms-integration-test-assemblies. Once it expires, re-running a single
+          # failed consumer fails at the download step; a "re-run all jobs" regenerates the artifact.
           retention-days: 1
 
   run-unit-tests:

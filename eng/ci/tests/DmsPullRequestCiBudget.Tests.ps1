@@ -274,12 +274,14 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
     }
 
     Context "Pull request trigger types" {
-        It "declares exactly the three default types plus ready_for_review" {
+        It "declares exactly the three default types plus the two draft transitions" {
             # Declaring types replaces the default set outright. Dropping synchronize would stop CI
             # running on new pushes; omitting ready_for_review would leave a draft-gated pull request
-            # permanently unvalidated once marked ready.
+            # permanently unvalidated once marked ready. converted_to_draft is the cost side of the
+            # same gate: with cancel-in-progress concurrency, converting cancels the in-flight run
+            # and the replacement classifies as a draft, so its expensive jobs skip.
             @(Get-PullRequestTriggerType) | Sort-Object |
-                Should -Be @('opened', 'ready_for_review', 'reopened', 'synchronize')
+                Should -Be @('converted_to_draft', 'opened', 'ready_for_review', 'reopened', 'synchronize')
         }
 
         It "still restricts the trigger to pull requests targeting main" {

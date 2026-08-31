@@ -160,6 +160,25 @@ Describe "Unit test coverage threshold gate" {
                 Assert-CoverageThreshold -Path (Add-CoberturaReportFixture -OmitLineRate) -Threshold 58
             } | Should -Throw -ExpectedMessage "*line-rate*"
         }
+
+        It "throws when a rate is <Rate> rather than treating it as passing" -ForEach @(
+            @{ Rate = 'NaN' }
+            @{ Rate = 'Infinity' }
+            @{ Rate = '-Infinity' }
+        ) {
+            # TryParse under NumberStyles::Float accepts the special values, and NaN fails every
+            # -lt comparison, so without a finiteness check a NaN rate sails past a gate that is
+            # documented as fail-closed.
+            {
+                Assert-CoverageThreshold -Path (Add-CoberturaReportFixture -LineRate $Rate -BranchRate $Rate) -Threshold 58
+            } | Should -Throw -ExpectedMessage "*finite*"
+        }
+
+        It "throws when a rate is not numeric at all" {
+            {
+                Assert-CoverageThreshold -Path (Add-CoberturaReportFixture -LineRate "abc") -Threshold 58
+            } | Should -Throw -ExpectedMessage "*finite*"
+        }
     }
 
     Context "The report shape ReportGenerator actually writes" {
@@ -220,6 +239,118 @@ Describe "Unit test coverage threshold gate" {
                 [System.Threading.Thread]::CurrentThread.CurrentCulture = $originalCulture
             }
         }
+    }
+}
+
+Describe "One collector report per unit test project" {
+    BeforeAll {
+        $script:repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
+        Import-Module (Join-Path $script:repoRoot "eng/build-helpers.psm1") -Force
+
+        function Add-CollectorReportFixture {
+            # One GUID-named subdirectory per report - the shape the XPlat collector writes under
+            # --results-directory, which is also why a missing report cannot be traced back to the
+            # project that failed to produce it.
+            param([string] $CollectorRoot, [int] $Count)
+
+            for ($i = 0; $i -lt $Count; $i++) {
+                $directory = Join-Path $CollectorRoot ([guid]::NewGuid().ToString())
+                New-Item -ItemType Directory -Path $directory -Force | Out-Null
+                Set-Content -LiteralPath (Join-Path $directory "coverage.cobertura.xml") -Value "<coverage />"
+            }
+        }
+
+        function Add-TrxAttachmentCopyFixture {
+            # The trx logger shares the collector's results directory and copies every attachment a
+            # second time, as <trx name>/In/<machine>/coverage.cobertura.xml. Real runs always carry
+            # these copies, so fixtures must too: a count validated without them passes here and
+            # fails on every healthy real run.
+            param([string] $CollectorRoot, [int] $Count)
+
+            for ($i = 0; $i -lt $Count; $i++) {
+                $directory = Join-Path $CollectorRoot "user_machine_2026-01-01_00_00_0$i/In/MACHINE"
+                New-Item -ItemType Directory -Path $directory -Force | Out-Null
+                Set-Content -LiteralPath (Join-Path $directory "coverage.cobertura.xml") -Value "<coverage />"
+            }
+        }
+    }
+
+    AfterAll {
+        Remove-Module build-helpers -Force -ErrorAction SilentlyContinue
+    }
+
+    BeforeEach {
+        $script:collectorRoot = Join-Path $TestDrive ([guid]::NewGuid().ToString())
+        New-Item -ItemType Directory -Path $script:collectorRoot -Force | Out-Null
+    }
+
+    It "passes when every project produced a report, with the trx copies present" {
+        Add-CollectorReportFixture -CollectorRoot $script:collectorRoot -Count 2
+        Add-TrxAttachmentCopyFixture -CollectorRoot $script:collectorRoot -Count 2
+
+        {
+            Assert-CoverageReportPerProject -CollectorOutputPath $script:collectorRoot `
+                -ExpectedProjectName @("A.Tests.Unit.csproj", "B.Tests.Unit.csproj")
+        } | Should -Not -Throw
+    }
+
+    It "does not accept the trx logger's attachment copies in place of collector reports" {
+        # The copies are made from the collector's attachments, so if the collector produced
+        # nothing there is nothing real behind them either way - only first-level collector
+        # directories may satisfy the count.
+        Add-TrxAttachmentCopyFixture -CollectorRoot $script:collectorRoot -Count 2
+
+        {
+            Assert-CoverageReportPerProject -CollectorOutputPath $script:collectorRoot `
+                -ExpectedProjectName @("A.Tests.Unit.csproj", "B.Tests.Unit.csproj")
+        } | Should -Throw -ExpectedMessage "*found 0*"
+    }
+
+    It "throws when a project's report is missing" {
+        # A runtime datacollector failure does not fail dotnet test; the report just never exists,
+        # and the merge would evaluate the threshold against a silently shifted total.
+        Add-CollectorReportFixture -CollectorRoot $script:collectorRoot -Count 1
+        Add-TrxAttachmentCopyFixture -CollectorRoot $script:collectorRoot -Count 1
+
+        {
+            Assert-CoverageReportPerProject -CollectorOutputPath $script:collectorRoot `
+                -ExpectedProjectName @("A.Tests.Unit.csproj", "B.Tests.Unit.csproj")
+        } | Should -Throw -ExpectedMessage "*found 1*"
+    }
+
+    It "throws when no report exists at all" {
+        {
+            Assert-CoverageReportPerProject -CollectorOutputPath (Join-Path $script:collectorRoot "never-created") `
+                -ExpectedProjectName @("A.Tests.Unit.csproj")
+        } | Should -Throw -ExpectedMessage "*found 0*"
+    }
+
+    It "throws when extra reports appear, not only when reports are missing" {
+        # More reports than projects means something outside this run's project list is about to be
+        # merged into the gated total - as wrong as a missing report, just in the other direction.
+        Add-CollectorReportFixture -CollectorRoot $script:collectorRoot -Count 3
+
+        {
+            Assert-CoverageReportPerProject -CollectorOutputPath $script:collectorRoot `
+                -ExpectedProjectName @("A.Tests.Unit.csproj", "B.Tests.Unit.csproj")
+        } | Should -Throw -ExpectedMessage "*found 3*"
+    }
+
+    It "names the expected projects and the searched directory so the failure is diagnosable" {
+        Add-CollectorReportFixture -CollectorRoot $script:collectorRoot -Count 1
+
+        $thrown = $null
+        try {
+            Assert-CoverageReportPerProject -CollectorOutputPath $script:collectorRoot `
+                -ExpectedProjectName @("A.Tests.Unit.csproj", "B.Tests.Unit.csproj")
+        }
+        catch {
+            $thrown = $_.Exception.Message
+        }
+
+        $thrown | Should -BeLike "*A.Tests.Unit.csproj*"
+        $thrown | Should -BeLike "*B.Tests.Unit.csproj*"
+        $thrown | Should -BeLike "*$($script:collectorRoot)*"
     }
 }
 
@@ -445,6 +576,14 @@ Describe "build-dms.ps1 unit test coverage wiring" {
         It "enforces the threshold through the shared helper" {
             Get-InvokedCommandName -FunctionAst (Get-FunctionAst 'RunUnitTestsWithCoverage') |
                 Should -Contain 'Assert-CoverageThreshold'
+        }
+
+        It "asserts one collector report per project before the merge" {
+            # A runtime datacollector failure does not fail dotnet test, and the merge glob only
+            # fails on zero reports, so without this the threshold would be evaluated against a
+            # total that silently lost every project whose collector died.
+            Get-InvokedCommandName -FunctionAst (Get-FunctionAst 'RunUnitTestsWithCoverage') |
+                Should -Contain 'Assert-CoverageReportPerProject'
         }
 
         It "still routes the unit filter through the coverage path" {

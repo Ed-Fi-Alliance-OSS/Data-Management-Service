@@ -107,9 +107,11 @@ $script:NarrowPathCategory = @(
     @{ Prefix = 'src/dms/clis/EdFi.DataManagementService.SchemaTools/'; Category = @('schematools_relevant') }
     @{ Prefix = 'src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/'; Category = @('schematools_relevant') }
     @{ Prefix = 'src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Unit/'; Category = @('schematools_relevant') }
-    @{ Prefix = 'src/dms/clis/EdFi.DataManagementService.SchemaGenerator.Pgsql.Tests.Integration/'; Category = @('schematools_relevant') }
     # No promoted lane builds the other CLIs, the E2E and unit test projects, or the Configuration
-    # Service. They are still DMS-relevant, so their own lanes still run.
+    # Service. They are still DMS-relevant, so the always-on jobs still run, and dedicated lanes
+    # cover some of them: src/config has its own workflow, and the CLI integration matrix runs
+    # exactly ApiSchemaDownloader and OpenApiGenerator. DocumentCacheAdmin.Tests.Integration runs
+    # in no workflow at all.
     @{ Prefix = 'src/dms/clis/'; Category = @() }
     @{ Prefix = 'src/dms/tests/'; Category = @() }
     @{ Prefix = 'src/config/'; Category = @() }
