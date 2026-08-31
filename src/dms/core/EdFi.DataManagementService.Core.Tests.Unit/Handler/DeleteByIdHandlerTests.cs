@@ -844,7 +844,7 @@ actual: {_requestInfo.FrontendResponse.Body}
                 ClientUuid: Guid.Parse("55555555-5555-5555-5555-555555555555"),
                 DataStoreIds: [],
                 CreatorOwnershipTokenId: 303,
-                OwnershipTokenIds: [404, 202, 404]
+                OwnershipTokenIds: [202, 404]
             );
 
             var (deleteByIdHandler, serviceProvider) = Handler(_repository);
@@ -879,7 +879,7 @@ actual: {_requestInfo.FrontendResponse.Body}
                 .AuthorizationContext.NamespacePrefixes.Should()
                 .Equal("uri://sample-a.org", "uri://sample-b.org");
             relationalRequest.AuthorizationContext.CreatorOwnershipTokenId.Should().Be(303);
-            relationalRequest.AuthorizationContext.OwnershipTokenIds.Should().Equal(404, 202, 404);
+            relationalRequest.AuthorizationContext.OwnershipTokenIds.Should().Equal(202, 404);
         }
     }
 }

@@ -33,6 +33,12 @@ public class CachedApplicationContextProvider(
     > _requestResults = [];
 
     /// <summary>
+    /// Gets the request-scoped memoization key for a client ID and tenant.
+    /// </summary>
+    private static RequestLookupKey GetRequestLookupKey(string clientId, string? tenant) =>
+        new(clientId, tenant?.ToLowerInvariant());
+
+    /// <summary>
     /// Gets the cache key for a client ID and tenant.
     /// </summary>
     private static string GetCacheKey(string clientId, string? tenant) =>
@@ -47,7 +53,7 @@ public class CachedApplicationContextProvider(
             () => GetFirstApplicationContextAsync(clientId, tenant),
             LazyThreadSafetyMode.ExecutionAndPublication
         );
-        RequestLookupKey key = new(clientId, tenant?.ToLowerInvariant());
+        RequestLookupKey key = GetRequestLookupKey(clientId, tenant);
         Lazy<Task<ApplicationContextResult>> requestResult = _requestResults.GetOrAdd(key, lookup);
 
         return requestResult.Value;
@@ -61,7 +67,7 @@ public class CachedApplicationContextProvider(
         if (string.IsNullOrWhiteSpace(clientId))
         {
             logger.LogWarning("GetApplicationByClientIdAsync called with null or empty clientId");
-            return new ApplicationContextResult.Unavailable();
+            return new ApplicationContextResult.NotFound();
         }
 
         return await GetOrCreateResultAsync(
@@ -80,8 +86,11 @@ public class CachedApplicationContextProvider(
         if (string.IsNullOrWhiteSpace(clientId))
         {
             logger.LogWarning("ReloadApplicationByClientIdAsync called with null or empty clientId");
-            return new ApplicationContextResult.Unavailable();
+            return new ApplicationContextResult.NotFound();
         }
+
+        // Drop the request-scoped memo so a reload is not shadowed by an earlier lookup in this scope.
+        _requestResults.TryRemove(GetRequestLookupKey(clientId, tenant), out _);
 
         var cacheKey = GetCacheKey(clientId, tenant);
         await hybridCache.RemoveAsync(cacheKey);

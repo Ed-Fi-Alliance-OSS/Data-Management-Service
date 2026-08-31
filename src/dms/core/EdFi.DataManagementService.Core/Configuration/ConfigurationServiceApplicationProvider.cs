@@ -118,8 +118,15 @@ public class ConfigurationServiceApplicationProvider(
             )
             {
                 logger.LogError(
-                    "Failed to deserialize application context for clientId: {ClientId}",
-                    clientId
+                    "Configuration Service returned an invalid application context for clientId: {ClientId}. "
+                        + "Id: {Id}, ApplicationId: {ApplicationId}, ClientUuid: {ClientUuid}, "
+                        + "CreatorOwnershipTokenId: {CreatorOwnershipTokenId}, OwnershipTokenCount: {OwnershipTokenCount}",
+                    clientId,
+                    applicationContext.Id,
+                    applicationContext.ApplicationId,
+                    applicationContext.ClientUuid,
+                    applicationContext.CreatorOwnershipTokenId,
+                    applicationContext.OwnershipTokenIds.Count
                 );
                 return new ApplicationContextResult.Unavailable();
             }
@@ -130,7 +137,14 @@ public class ConfigurationServiceApplicationProvider(
                 applicationContext.ApplicationId
             );
 
-            return new ApplicationContextResult.Success(applicationContext);
+            // CMS query ordering is not part of this contract, so ownership tokens are exposed
+            // sorted-distinct to give downstream authorization a deterministic list.
+            return new ApplicationContextResult.Success(
+                applicationContext with
+                {
+                    OwnershipTokenIds = [.. applicationContext.OwnershipTokenIds.Distinct().Order()],
+                }
+            );
         }
         catch (HttpRequestException ex)
         {
@@ -194,7 +208,6 @@ public class ConfigurationServiceApplicationProvider(
             && HasProperty(applicationContext, "clientId")
             && HasProperty(applicationContext, "clientUuid")
             && HasProperty(applicationContext, "dataStoreIds")
-            && HasProperty(applicationContext, "creatorOwnershipTokenId")
             && HasProperty(applicationContext, "ownershipTokenIds");
     }
 
@@ -206,23 +219,7 @@ public class ConfigurationServiceApplicationProvider(
 
         return creatorIsValid
             && applicationContext.OwnershipTokenIds.Count <= MaximumOwnershipTokenCount
-            && applicationContext.OwnershipTokenIds.Distinct().Count()
-                == applicationContext.OwnershipTokenIds.Count
-            && applicationContext.OwnershipTokenIds.All(IsValidOwnershipTokenId)
-            && IsAscending(applicationContext.OwnershipTokenIds);
-    }
-
-    private static bool IsAscending(IReadOnlyList<short> ownershipTokenIds)
-    {
-        for (int i = 1; i < ownershipTokenIds.Count; i++)
-        {
-            if (ownershipTokenIds[i] <= ownershipTokenIds[i - 1])
-            {
-                return false;
-            }
-        }
-
-        return true;
+            && applicationContext.OwnershipTokenIds.All(IsValidOwnershipTokenId);
     }
 
     private static bool IsValidOwnershipTokenId(short tokenId) =>

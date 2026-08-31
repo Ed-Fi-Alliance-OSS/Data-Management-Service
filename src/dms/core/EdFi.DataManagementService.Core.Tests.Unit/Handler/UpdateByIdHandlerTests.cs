@@ -429,7 +429,7 @@ public class UpdateByIdHandlerTests
                 ClientUuid: Guid.Parse("44444444-4444-4444-4444-444444444444"),
                 DataStoreIds: [],
                 CreatorOwnershipTokenId: 303,
-                OwnershipTokenIds: [404, 202, 404]
+                OwnershipTokenIds: [202, 404]
             );
 
             var (updateByIdHandler, serviceProvider) = Handler(_repository);
@@ -458,7 +458,7 @@ public class UpdateByIdHandlerTests
                 .CapturedRequest.AuthorizationContext.NamespacePrefixes.Should()
                 .Equal("uri://sample.org");
             _repository.CapturedRequest.AuthorizationContext.CreatorOwnershipTokenId.Should().Be(303);
-            _repository.CapturedRequest.AuthorizationContext.OwnershipTokenIds.Should().Equal(404, 202, 404);
+            _repository.CapturedRequest.AuthorizationContext.OwnershipTokenIds.Should().Equal(202, 404);
         }
     }
 

@@ -313,11 +313,11 @@ public class Given_A_CachedApplicationContextProvider
     }
 
     [Test]
-    public async Task It_Returns_A_Typed_Unavailable_Result_For_A_Blank_Client_Without_Caching()
+    public async Task It_Returns_A_Typed_NotFound_Result_For_A_Blank_Client_Without_Caching()
     {
         ApplicationContextResult result = await _provider.GetApplicationByClientIdAsync(" ", tenant: null);
 
-        result.Should().BeOfType<ApplicationContextResult.Unavailable>();
+        result.Should().BeOfType<ApplicationContextResult.NotFound>();
         A.CallTo(() =>
                 _configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
                     A<string>.Ignored,
@@ -325,6 +325,63 @@ public class Given_A_CachedApplicationContextProvider
                 )
             )
             .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_Invalidates_The_Request_Scoped_Memo_On_Reload()
+    {
+        var reloadedContext = CreateApplicationContext("client-id", 9);
+        A.CallTo(() =>
+                _configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
+                    "client-id",
+                    tenant: null
+                )
+            )
+            .Returns(new ApplicationContextResult.NotFound());
+        A.CallTo(() =>
+                _configurationServiceApplicationProvider.ReloadApplicationByClientIdAsync(
+                    "client-id",
+                    tenant: null
+                )
+            )
+            .Returns(new ApplicationContextResult.Success(reloadedContext));
+
+        ApplicationContextResult beforeReload = await _provider.GetApplicationByClientIdAsync(
+            "client-id",
+            tenant: null
+        );
+        ApplicationContextResult reloadResult = await _provider.ReloadApplicationByClientIdAsync(
+            "client-id",
+            tenant: null
+        );
+        ApplicationContextResult afterReload = await _provider.GetApplicationByClientIdAsync(
+            "client-id",
+            tenant: null
+        );
+
+        beforeReload.Should().BeOfType<ApplicationContextResult.NotFound>();
+        reloadResult.Should().BeEquivalentTo(new ApplicationContextResult.Success(reloadedContext));
+        afterReload.Should().BeEquivalentTo(new ApplicationContextResult.Success(reloadedContext));
+    }
+
+    [Test]
+    public async Task It_Preserves_Ownership_Tokens_Through_The_Cache()
+    {
+        ApplicationContext expectedContext = CreateApplicationContext("client-id", 1) with
+        {
+            CreatorOwnershipTokenId = 303,
+            OwnershipTokenIds = [202, 404],
+        };
+        await _hybridCache.SetAsync("ApplicationContext:single:client-id", expectedContext);
+
+        ApplicationContextResult result = await _provider.GetApplicationByClientIdAsync(
+            "client-id",
+            tenant: null
+        );
+
+        var success = result.Should().BeOfType<ApplicationContextResult.Success>().Subject;
+        success.ApplicationContext.CreatorOwnershipTokenId.Should().Be(303);
+        success.ApplicationContext.OwnershipTokenIds.Should().Equal((short)202, (short)404);
     }
 
     private CachedApplicationContextProvider CreateProvider() =>

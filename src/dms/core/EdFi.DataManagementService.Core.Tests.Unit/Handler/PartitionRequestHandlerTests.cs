@@ -104,7 +104,7 @@ public class PartitionRequestHandlerTests
             ClientUuid: Guid.Parse("66666666-6666-6666-6666-666666666666"),
             DataStoreIds: [],
             CreatorOwnershipTokenId: 303,
-            OwnershipTokenIds: [404, 202, 404]
+            OwnershipTokenIds: [202, 404]
         );
 
         await new PartitionRequestHandler(
@@ -301,7 +301,7 @@ public class PartitionRequestHandlerTests
                 .CapturedRequest.AuthorizationContext.NamespacePrefixes.Should()
                 .Equal("uri://sample.org");
             _handler.CapturedRequest.AuthorizationContext.CreatorOwnershipTokenId.Should().Be(303);
-            _handler.CapturedRequest.AuthorizationContext.OwnershipTokenIds.Should().Equal(404, 202, 404);
+            _handler.CapturedRequest.AuthorizationContext.OwnershipTokenIds.Should().Equal(202, 404);
         }
     }
 

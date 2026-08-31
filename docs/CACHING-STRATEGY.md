@@ -76,6 +76,14 @@ built-in stampede protection
 same API client resolves and caches an independent context per tenant. Each
 client's `DataStoreIds` determine which data they can access.
 
+**Dependency Scope:** Every authenticated resource request path that runs
+`ProfileResolutionMiddleware` requires a resolvable application context, because
+profile resolution needs the `ApplicationId`. This is broader than the
+ownership-gated operations alone. With a cold or missing cache entry, a CMS
+outage or a malformed CMS response makes those requests fail closed with
+`503 Service Unavailable`. A `NotFound` context still maps to
+`401 Unauthorized` as an invalid token.
+
 **TTL:** 10 minutes (configurable via `CacheSettings:ApplicationContextCacheExpirationSeconds`)
 
 **Cache Operations:**

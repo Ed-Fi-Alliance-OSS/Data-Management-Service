@@ -62,7 +62,8 @@ public sealed record RelationalAuthorizationContext
 
     /// <summary>
     /// CMS application ownership tokens available for reading and modifying data.
-    /// Preserves the CMS-provided order and duplicates.
+    /// Snapshotted as supplied; the application context provider normalizes CMS values to
+    /// sorted-distinct before they reach here.
     /// </summary>
     public IReadOnlyList<short> OwnershipTokenIds { get; }
 

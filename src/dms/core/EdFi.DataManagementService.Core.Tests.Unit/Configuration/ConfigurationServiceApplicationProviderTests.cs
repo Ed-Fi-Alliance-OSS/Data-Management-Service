@@ -234,12 +234,6 @@ public class Given_ConfigurationServiceApplicationProvider
     [TestCase(
         "{\"id\":1,\"applicationId\":2,\"clientId\":\"client-id\",\"clientUuid\":\"8c58fef1-7d9b-4423-bb3c-f1581e77e922\",\"dataStoreIds\":[3],\"creatorOwnershipTokenId\":null,\"ownershipTokenIds\":[-1]}"
     )]
-    [TestCase(
-        "{\"id\":1,\"applicationId\":2,\"clientId\":\"client-id\",\"clientUuid\":\"8c58fef1-7d9b-4423-bb3c-f1581e77e922\",\"dataStoreIds\":[3],\"creatorOwnershipTokenId\":null,\"ownershipTokenIds\":[7,7]}"
-    )]
-    [TestCase(
-        "{\"id\":1,\"applicationId\":2,\"clientId\":\"client-id\",\"clientUuid\":\"8c58fef1-7d9b-4423-bb3c-f1581e77e922\",\"dataStoreIds\":[3],\"creatorOwnershipTokenId\":null,\"ownershipTokenIds\":[7,6]}"
-    )]
     public async Task It_Should_Return_Unavailable_For_OutOfRange_Ownership_Token_Ids(string responseBody)
     {
         using var fixture = new ProviderFixture(HttpStatusCode.OK, responseBody);
@@ -250,6 +244,38 @@ public class Given_ConfigurationServiceApplicationProvider
         );
 
         result.Should().BeOfType<ApplicationContextResult.Unavailable>();
+    }
+
+    [TestCase("7,7", new short[] { 7 })]
+    [TestCase("7,6", new short[] { 6, 7 })]
+    [TestCase("7,6,7", new short[] { 6, 7 })]
+    public async Task It_Should_Normalize_Ownership_Token_Ids_To_Sorted_Distinct(
+        string responseOwnershipTokenIds,
+        short[] expectedOwnershipTokenIds
+    )
+    {
+        using var fixture = new ProviderFixture(
+            HttpStatusCode.OK,
+            $$"""
+            {
+              "id": 1,
+              "applicationId": 2,
+              "clientId": "client-id",
+              "clientUuid": "8c58fef1-7d9b-4423-bb3c-f1581e77e922",
+              "dataStoreIds": [3],
+              "creatorOwnershipTokenId": null,
+              "ownershipTokenIds": [{{responseOwnershipTokenIds}}]
+            }
+            """
+        );
+
+        ApplicationContextResult result = await fixture.Provider.GetApplicationByClientIdAsync(
+            "client-id",
+            tenant: null
+        );
+
+        var success = result.Should().BeOfType<ApplicationContextResult.Success>().Subject;
+        success.ApplicationContext.OwnershipTokenIds.Should().Equal(expectedOwnershipTokenIds);
     }
 
     [Test]
@@ -280,7 +306,7 @@ public class Given_ConfigurationServiceApplicationProvider
     }
 
     [Test]
-    public async Task It_Should_Return_Unavailable_When_Response_Omits_The_Nullable_Creator_Token()
+    public async Task It_Should_Accept_A_Response_That_Omits_The_Nullable_Creator_Token()
     {
         using var fixture = new ProviderFixture(
             HttpStatusCode.OK,
@@ -291,7 +317,7 @@ public class Given_ConfigurationServiceApplicationProvider
               "clientId": "client-id",
               "clientUuid": "8c58fef1-7d9b-4423-bb3c-f1581e77e922",
               "dataStoreIds": [3],
-              "ownershipTokenIds": []
+              "ownershipTokenIds": [7, 6]
             }
             """
         );
@@ -301,7 +327,9 @@ public class Given_ConfigurationServiceApplicationProvider
             tenant: null
         );
 
-        result.Should().BeOfType<ApplicationContextResult.Unavailable>();
+        var success = result.Should().BeOfType<ApplicationContextResult.Success>().Subject;
+        success.ApplicationContext.CreatorOwnershipTokenId.Should().BeNull();
+        success.ApplicationContext.OwnershipTokenIds.Should().Equal((short)6, (short)7);
     }
 
     [Test]

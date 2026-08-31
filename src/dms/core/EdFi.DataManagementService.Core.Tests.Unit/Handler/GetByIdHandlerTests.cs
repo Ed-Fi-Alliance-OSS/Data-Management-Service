@@ -953,7 +953,7 @@ actual: {requestInfo.FrontendResponse.Body}
                 ClientUuid: Guid.Parse("22222222-2222-2222-2222-222222222222"),
                 DataStoreIds: [],
                 CreatorOwnershipTokenId: 303,
-                OwnershipTokenIds: [404, 202, 404]
+                OwnershipTokenIds: [202, 404]
             );
             _requestInfo.ProfileContext = new ProfileContext(
                 ProfileName: "ReadableProfile",
@@ -1002,7 +1002,7 @@ actual: {requestInfo.FrontendResponse.Body}
                 .CapturedRequest.AuthorizationContext.NamespacePrefixes.Should()
                 .Equal("uri://sample-a.org", "uri://sample-b.org");
             _repository.CapturedRequest.AuthorizationContext.CreatorOwnershipTokenId.Should().Be(303);
-            _repository.CapturedRequest.AuthorizationContext.OwnershipTokenIds.Should().Equal(404, 202, 404);
+            _repository.CapturedRequest.AuthorizationContext.OwnershipTokenIds.Should().Equal(202, 404);
             _repository.CapturedRequest.ReadableProfileProjectionContext.Should().NotBeNull();
             _repository
                 .CapturedRequest.ReadableProfileProjectionContext!.ContentTypeDefinition.Should()
