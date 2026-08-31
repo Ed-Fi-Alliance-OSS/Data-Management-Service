@@ -293,7 +293,7 @@
       "Run: `rg -n \"DocumentCacheProjectorResume|DocumentProjectionWork|queueNotEmpty|notCaughtUp|caughtUp\" src/dms/tests/EdFi.DataManagementService.Tests.E2E`",
       "Inspect the E2E output and API container logs to confirm the queued work survived the stopped-projector phase and drained only after the target was re-enabled."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "E2E",

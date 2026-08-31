@@ -22,7 +22,7 @@ namespace EdFi.DataManagementService.Tests.E2E.DocumentCache;
 [TestFixture]
 [NonParallelizable]
 [Category("DocumentCacheHostedHappyPath")]
-public sealed class DocumentCacheHostedHappyPathTests
+public sealed partial class DocumentCacheHostedHappyPathTests
 {
     private const int TargetDataStoreId = 1;
     private const string LocalDevelopmentDataStoreName = "Local Development Data Store";
