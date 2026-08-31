@@ -145,6 +145,80 @@ public class Given_A_Mssql_DocumentCacheExplicitIntegrityScrub_Command
     }
 
     [Test]
+    public async Task It_leaves_non_cache_ahead_work_mismatch_pending_until_scrub_repairs_the_work_relationship()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: false);
+        SourceDocument source = await InsertDocumentAsync(contentVersion: 20);
+        await ClearProjectionWorkAsync();
+        await InsertProjectionWorkAsync(source, requiredContentVersion: 15);
+        await InsertCacheRowAsync(source, cacheContentVersion: 10);
+        CacheRow cacheBeforeWriter = await ReadCacheRowAsync(source.DocumentId);
+        MssqlDocumentCacheWriter writer = CreateWriter();
+        DocumentCacheMaterializationCandidate candidate = CreateCandidate(
+            source,
+            "candidate-blocked-until-scrub"
+        );
+
+        DocumentCacheWriterResult blockedResult = await writer.WriteAsync(
+            CreateWriterRequest(source, selectedRequiredContentVersion: 15, candidate)
+        );
+
+        DocumentCacheWriterResult.WorkAnomaly anomaly = blockedResult
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.WorkAnomaly>()
+            .Subject;
+        anomaly.Kind.Should().Be(DocumentCacheWriterWorkAnomalyKind.WorkVersionMismatch);
+        anomaly.LifecycleState.Should().Be(DocumentCacheLifecycleState.Tracking);
+        anomaly.CurrentSourceContentVersion.Should().Be(20);
+        anomaly.WorkRequiredContentVersion.Should().Be(15);
+        (await ReadWorkVersionsByDocumentIdAsync())[source.DocumentId].Should().Be(15);
+        (await ReadCacheRowAsync(source.DocumentId)).Should().Be(cacheBeforeWriter);
+        (await ReadLifecycleAsync())
+            .Should()
+            .Be(new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false));
+
+        DocumentCacheExplicitIntegrityScrubCommand command = CreateCommand(
+            new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false),
+            new RecordingObservationSink()
+        );
+
+        DocumentCacheAdministrativeCommandResult scrubResult = await command.ExecuteAsync(
+            new DocumentCacheExplicitIntegrityScrubRequest(
+                AdministrativeTargetKey,
+                Fingerprint,
+                DocumentCacheAdministrativeCommandConfirmation.IntegrityScrub
+            )
+        );
+
+        scrubResult.Status.Should().Be(DocumentCacheAdministrativeCommandStatus.Completed);
+        scrubResult.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
+        scrubResult.Mutated.Should().BeTrue();
+        (await ReadWorkVersionsByDocumentIdAsync())[source.DocumentId].Should().Be(20);
+        (await ReadCacheRowAsync(source.DocumentId)).Should().Be(cacheBeforeWriter);
+        (await ReadLifecycleAsync())
+            .Should()
+            .Be(new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false));
+
+        DocumentCacheWriterResult unblockedResult = await writer.WriteAsync(
+            CreateWriterRequest(source, selectedRequiredContentVersion: 20, candidate)
+        );
+
+        unblockedResult
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.CandidateWrittenAcknowledged>()
+            .Which.AcknowledgedContentVersion.Should()
+            .Be(20);
+        (await ReadWorkVersionsByDocumentIdAsync()).Should().NotContainKey(source.DocumentId);
+        JsonNode.Parse((await ReadCacheRowAsync(source.DocumentId)).DocumentJson)!["value"]!
+            .GetValue<string>()
+            .Should()
+            .Be("candidate-blocked-until-scrub");
+        (await ReadLifecycleAsync())
+            .Should()
+            .Be(new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false));
+    }
+
+    [Test]
     public async Task It_ignores_canonical_rows_inserted_above_the_captured_boundary()
     {
         await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking, cacheAheadRecoveryRequired: false);
@@ -426,6 +500,44 @@ public class Given_A_Mssql_DocumentCacheExplicitIntegrityScrub_Command
         return new(runner);
     }
 
+    private MssqlDocumentCacheWriter CreateWriter() =>
+        new(
+            new DocumentCacheWriterRetryAdapter(
+                new DeadlockRetrySettings
+                {
+                    MaxRetryAttempts = 0,
+                    BaseDelayMilliseconds = 1,
+                    UseJitter = false,
+                },
+                new MssqlRelationalWriteExceptionClassifier(),
+                NullLogger<DocumentCacheWriterRetryAdapter>.Instance
+            ),
+            NullLogger<MssqlDocumentCacheWriter>.Instance,
+            new MssqlDocumentCacheProviderCommandTimeoutClassifier()
+        );
+
+    private DocumentCacheWriterRequest CreateWriterRequest(
+        SourceDocument source,
+        long selectedRequiredContentVersion,
+        DocumentCacheMaterializationCandidate? candidate
+    ) =>
+        new(
+            CreateTargetContext(),
+            source.DocumentId,
+            selectedRequiredContentVersion,
+            DocumentCacheWriterPurpose.DurableWorkProjection,
+            candidate,
+            CancellationToken.None
+        );
+
+    private DocumentCacheMaterializationTargetContext CreateTargetContext() =>
+        new(
+            new DocumentCacheProjectionTargetKey(TargetKey.TenantKey, new DataStoreId(TargetKey.DataStoreId)),
+            _fixture.MappingSet,
+            DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated,
+            _database.ConnectionString
+        );
+
     private DocumentCacheTargetExecutionContext ExecutionContext(
         DocumentCacheLifecycleObservation lifecycle
     ) =>
@@ -547,6 +659,25 @@ public class Given_A_Mssql_DocumentCacheExplicitIntegrityScrub_Command
         return new SourceDocument(Convert.ToInt64(rows.Single()["DocumentId"]), documentUuid, contentVersion);
     }
 
+    private DocumentCacheMaterializationCandidate CreateCandidate(SourceDocument source, string value)
+    {
+        ResourceKeyEntry resourceKey = _fixture.MappingSet.ResourceKeyById[
+            _fixture.MappingSet.ResourceKeyIdByResource[PersonResource]
+        ];
+
+        return new(
+            source.DocumentId,
+            new DocumentUuid(source.DocumentUuid),
+            resourceKey.Resource.ProjectName,
+            resourceKey.Resource.ResourceName,
+            resourceKey.ResourceVersion,
+            source.ContentVersion,
+            ObservedAtOffset,
+            $"etag-{source.ContentVersion}",
+            new JsonObject { ["value"] = value }
+        );
+    }
+
     private Task SetLifecycleAsync(DocumentCacheLifecycleState lifecycle, bool cacheAheadRecoveryRequired) =>
         _database.ExecuteNonQueryAsync(
             """
@@ -654,6 +785,28 @@ public class Given_A_Mssql_DocumentCacheExplicitIntegrityScrub_Command
                 Value = new JsonObject { ["value"] = $"cache-{source.DocumentId}" }.ToJsonString(),
             },
             new SqlParameter("@computedAt", SqlDbType.DateTime2) { Value = ObservedAt.AddMinutes(1) }
+        );
+    }
+
+    private async Task<CacheRow> ReadCacheRowAsync(long documentId)
+    {
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await _database.QueryRowsAsync(
+            """
+            SELECT
+                [ContentVersion],
+                [StreamEtag],
+                [DocumentJson]
+            FROM [dms].[DocumentCache]
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", SqlDbType.BigInt) { Value = documentId }
+        );
+
+        IReadOnlyDictionary<string, object?> row = rows.Should().ContainSingle().Subject;
+        return new CacheRow(
+            Convert.ToInt64(row["ContentVersion"]),
+            (string)row["StreamEtag"]!,
+            (string)row["DocumentJson"]!
         );
     }
 
@@ -983,6 +1136,8 @@ public class Given_A_Mssql_DocumentCacheExplicitIntegrityScrub_Command
     {
         public override DateTimeOffset GetUtcNow() => utcNow;
     }
+
+    private sealed record CacheRow(long ContentVersion, string StreamEtag, string DocumentJson);
 
     private sealed record SourceDocument(long DocumentId, Guid DocumentUuid, long ContentVersion);
 }
