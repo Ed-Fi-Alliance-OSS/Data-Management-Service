@@ -357,6 +357,15 @@ host-configurable limits on token lifetime or concurrency.
   fidelity of the resource document: decimal/numeric values SHALL appear as
   exact JSON numbers, never as strings or lossy floating point, and properties
   absent from the source SHALL be omitted rather than represented as null.
+
+> [!WARNING]
+> Because standard JSON parsers commonly deserialize numeric literals into
+> IEEE-754 double-precision floats regardless of how precisely they were
+> written, consumers requiring exactdecimal precision (e.g., for monetary
+> values) should parse these fields using an arbitrary-precision/decimal type
+> rather than a native floating-point type. This guidance needs to be included
+> in the release documentation.
+
 - **FR-STREAM-9.** The stream SHALL preserve the relative order of events for
   any single document, so a consumer never observes that document's changes out
   of the order they actually occurred.  No such ordering guarantee SHALL be made
@@ -628,6 +637,15 @@ Maintainability & Supply Chain).
   requests SHALL behave exactly as they would if this capability did not
   exist, with no feature flag or configuration override required to achieve
   that default.
+- **NFR-OPS-18**. If the CDC pipeline's record of what it has already captured
+  is invalidated — for example, by a database re-provisioning event (see the
+  v8.0 companion PRD's NFR-OPS-2, on data-model-extension re-provisioning) — the
+  system SHALL NOT recover by resetting that record and resuming into the same
+  event stream. Doing so could silently fail to report deletions that happened
+  before the reset, leaving consumers with stale data they have no way to
+  detect. Recovery SHALL instead require starting a new event stream from
+  scratch; hosts SHALL communicate its location to consumers as part of their
+  re-provisioning procedure.
 
 ### Maintainability & Supply Chain
 
