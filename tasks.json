@@ -191,7 +191,7 @@
       "Run: `rg -n \"Resetting|cache-ahead|integrity scrub|SQL Server prerequisite|restore|direct mutation\" reference/document-cache/operations-runbook.md`",
       "Manually confirm the runbook links point to existing design headings."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Runbook",

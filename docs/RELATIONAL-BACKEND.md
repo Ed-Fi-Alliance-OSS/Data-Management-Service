@@ -128,6 +128,8 @@ cache-backed read behavior is in
 [`05-cache-backed-read-path.md`](../reference/design/backend-redesign/epics/18-document-cache/05-cache-backed-read-path.md);
 runtime configuration is summarized in
 [`docs/CONFIGURATION.md`](./CONFIGURATION.md#datamanagementdocumentcache);
+operator workflows are in
+[`reference/document-cache/operations-runbook.md`](../reference/document-cache/operations-runbook.md);
 and the `CDC-INV-02` / `CDC-INV-03` traceability rows live under
 [`Contract-to-Evidence Traceability`](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-to-evidence-traceability).
 
