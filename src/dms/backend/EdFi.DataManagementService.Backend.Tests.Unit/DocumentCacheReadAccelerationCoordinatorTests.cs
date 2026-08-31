@@ -2720,7 +2720,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
         var relationalResult = new QueryResult.QuerySuccess(
             [JsonNode.Parse("""{"id":"derivative-relational"}""")!],
             1,
-            HighestSelectedDocumentId: 345
+            HighestSelectedAnchor: 345
         );
 
         DocumentCacheReadAccelerationCoordinator sut = CreateCoordinator(
