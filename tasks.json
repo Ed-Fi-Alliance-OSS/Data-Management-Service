@@ -1,0 +1,261 @@
+[
+  {
+    "category": "Reference Documentation",
+    "description": "[Documentation] Create the DocumentCache reference folder index at `reference/document-cache/README.md`.",
+    "acceptance-criteria": [
+      "`reference/document-cache/README.md` exists and explains that the folder contains durable DocumentCache implementation, operations, evidence, and qualification references.",
+      "The index links to `reference/document-cache/operations-runbook.md`, `reference/document-cache/cdc-inv-evidence.md`, and `reference/document-cache/performance-qualification.md`.",
+      "The index links back to the owning E18 design/story docs, the DMS-1428 CLI README, `docs/CONFIGURATION.md`, and `docs/RELATIONAL-BACKEND.md`.",
+      "The index clearly separates DMS-1317-owned DocumentCache references from E19 Kafka/CDC connector runbooks."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"operations-runbook|cdc-inv-evidence|performance-qualification|DocumentCacheAdmin|CONFIGURATION|RELATIONAL-BACKEND\" reference/document-cache/README.md`",
+      "Run: `test -f reference/document-cache/README.md`",
+      "Manually confirm the linked files are intentionally created in `reference/document-cache/` rather than under `docs/`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Evidence Matrix",
+    "description": "[Documentation] Create the DMS-1317 CDC-INV evidence matrix at `reference/document-cache/cdc-inv-evidence.md`, covering CDC-INV-01, CDC-INV-02, CDC-INV-03, CDC-INV-04, CDC-INV-05, CDC-INV-14, and CDC-INV-15.",
+    "acceptance-criteria": [
+      "`reference/document-cache/cdc-inv-evidence.md` maps each in-scope CDC-INV contract to PostgreSQL evidence, SQL Server evidence, existing narrower-story tests, new DMS-1317 tests, and explicit exclusions.",
+      "The matrix uses concrete test identifiers and file paths rather than only prose descriptions.",
+      "The matrix marks DMS-1318 restamp coverage as conditional or blocked unless the restamp implementation has landed.",
+      "The matrix marks CDC-INV-06 through CDC-INV-13 as E19-owned except for runbook cross-links.",
+      "`reference/document-cache/README.md` links to the evidence matrix."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"CDC-INV-01|CDC-INV-02|CDC-INV-03|CDC-INV-04|CDC-INV-05|CDC-INV-14|CDC-INV-15\" reference/document-cache/cdc-inv-evidence.md`",
+      "Run: `rg -n \"DMS-1318|CDC-INV-06|CDC-INV-13|E19\" reference/document-cache/cdc-inv-evidence.md`",
+      "Run: `rg -n \"cdc-inv-evidence\" reference/document-cache/README.md`",
+      "Manually confirm every matrix row has provider-specific evidence or an explicit gap/exclusion."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Evidence Matrix",
+    "description": "[Tests] Add automated validation for the DMS-1317 evidence matrix so referenced test files and documented CDC-INV rows cannot drift silently.",
+    "acceptance-criteria": [
+      "A unit test verifies that every in-scope CDC-INV ID appears in `reference/document-cache/cdc-inv-evidence.md` exactly once or in a clearly documented provider row.",
+      "The test verifies that file paths referenced as test evidence exist in the repository.",
+      "The test verifies that E19 and DMS-1318 exclusions are explicitly labelled rather than omitted.",
+      "The test is narrow and does not require running provider integration databases."
+    ],
+    "steps-to-verify": [
+      "Run: `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~DocumentCache`",
+      "Run: `rg -n \"CDC-INV\" src/dms --glob \"*.cs\"`",
+      "Temporarily break one matrix test path locally and confirm the validation test fails before restoring it."
+    ],
+    "completed": true
+  },
+  {
+    "category": "API Integration",
+    "description": "[Tests] Add shared completed-projection API integration tests for ordinary resources across PostgreSQL and SQL Server.",
+    "acceptance-criteria": [
+      "A shared `DocumentCacheCompletedProjectionScenario` covers API POST, durable work enqueue, projector drain, cache row verification, cached GET/query, API PUT, stale-cache avoidance, API DELETE, cascade cleanup, and public 404 after delete.",
+      "Thin PostgreSQL and SQL Server wrappers execute the shared scenario through the existing API integration harness.",
+      "The scenario verifies caller-agnostic cached JSON and does not duplicate materializer fixture assertions already covered elsewhere.",
+      "The scenario records or exposes enough evidence for `reference/document-cache/cdc-inv-evidence.md` to reference it for CDC-INV-02, CDC-INV-03, CDC-INV-04, and CDC-INV-05."
+    ],
+    "steps-to-verify": [
+      "Run: `dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheCompletedProjection`",
+      "Run: `dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheReadAcceleration`",
+      "Run: `dotnet csharpier format src/dms/tests/EdFi.DataManagementService.Tests.Integration`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "API Integration",
+    "description": "[Tests] Add completed-projection API integration tests for descriptor create, update, cache serving, and delete behavior across PostgreSQL and SQL Server.",
+    "acceptance-criteria": [
+      "The descriptor scenario creates and updates descriptor data through the supported public/API path.",
+      "The test drains projection work and verifies descriptor cache materialization and descriptor read acceleration.",
+      "Descriptor delete behavior does not leave stale cache or work rows.",
+      "The scenario reuses existing descriptor runtime support and references existing descriptor materializer/provider tests in `reference/document-cache/cdc-inv-evidence.md` instead of repeating all fixture-level assertions."
+    ],
+    "steps-to-verify": [
+      "Run: `dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheCompletedProjection`",
+      "Run: `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheMaterializerDescriptor`",
+      "Run: `dotnet csharpier format src/dms/tests/EdFi.DataManagementService.Tests.Integration`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "API Integration",
+    "description": "[Tests] Add public API coverage for disabled lifecycle and projector-stopped backlog behavior without gating canonical API routes.",
+    "acceptance-criteria": [
+      "When lifecycle is `Disabled`, an API write commits canonical data but creates no `DocumentProjectionWork` row.",
+      "When lifecycle is `Disabled`, read acceleration bypasses cache and status reports the expected non-operational state.",
+      "When lifecycle is `Tracking` but projector dispatch is stopped or paused, API writes still commit and enqueue durable work.",
+      "Backlog status is visible while canonical API routing remains available and cached responses are not served until work drains."
+    ],
+    "steps-to-verify": [
+      "Run: `dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheCompletedProjection`",
+      "Run: `dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheStatus`",
+      "Run: `dotnet csharpier format src/dms/tests/EdFi.DataManagementService.Tests.Integration`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "API Integration",
+    "description": "[Tests] Add public API rollback coverage for forced DocumentCache enqueue failure across PostgreSQL and SQL Server.",
+    "acceptance-criteria": [
+      "The test forces an enqueue failure through an existing provider fault hook or a narrowly scoped test-only setup.",
+      "A public API POST or PUT that cannot enqueue work rolls back completely.",
+      "The test verifies no canonical row, relationship row, work row, or cache row is committed after the failure.",
+      "The test covers both PostgreSQL and SQL Server or documents a provider-specific forcing limitation in `reference/document-cache/cdc-inv-evidence.md`."
+    ],
+    "steps-to-verify": [
+      "Run: `dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheCompletedProjection`",
+      "Run: `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter FullyQualifiedName~CanonicalWriteEnqueueRetry`",
+      "Run: `dotnet csharpier format src/dms/tests/EdFi.DataManagementService.Tests.Integration`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Provider Integration",
+    "description": "[Tests] Add focused provider integration coverage for projector and direct-fill races using the shared DocumentCache writer contract.",
+    "acceptance-criteria": [
+      "The test creates current durable work with missing or stale cache for one document.",
+      "A direct-fill path and a projector item process the same document concurrently under real provider state.",
+      "Exactly one path commits the cache write or work acknowledgement, while the other observes an already-current or race-lost outcome.",
+      "Public reads remain correct after the race and the final work/cache state is consistent."
+    ],
+    "steps-to-verify": [
+      "Run: `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheWriter`",
+      "Run: `ConnectionStrings__MssqlAdmin='Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheWriter`",
+      "Run: `dotnet csharpier format src/dms/backend`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Provider Integration",
+    "description": "[Tests] Add provider integration coverage for candidate-independent S = C = W acknowledgement in the presence of a stale materializer candidate.",
+    "acceptance-criteria": [
+      "The test creates a stale materializer candidate and then makes source, cache, and work versions equal and current.",
+      "The writer acknowledges the equal-version work without writing stale JSON.",
+      "Telemetry and result classification identify the already-current acknowledgement path.",
+      "Both PostgreSQL and SQL Server have equivalent coverage or a documented provider-specific reason for different assertions."
+    ],
+    "steps-to-verify": [
+      "Run: `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheWriter`",
+      "Run: `ConnectionStrings__MssqlAdmin='Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheWriter`",
+      "Run: `dotnet csharpier format src/dms/backend`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Provider Integration",
+    "description": "[Tests] Add provider integration coverage for blocked work mismatches and scrub or rebuild-page repair.",
+    "acceptance-criteria": [
+      "The test creates a non-cache-ahead work mismatch under real provider state.",
+      "The projector leaves the mismatch pending and does not set the cache-ahead latch.",
+      "Explicit scrub or rebuild-page repair fixes the work relationship without changing cache incorrectly.",
+      "The behavior is covered for PostgreSQL and SQL Server and referenced from `reference/document-cache/cdc-inv-evidence.md`."
+    ],
+    "steps-to-verify": [
+      "Run: `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheExplicitIntegrityScrub`",
+      "Run: `ConnectionStrings__MssqlAdmin='Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheExplicitIntegrityScrub`",
+      "Run: `dotnet csharpier format src/dms/backend`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Provider Integration",
+    "description": "[Tests] Add runbook-visible status coverage for DocumentCache crash windows and incomplete retryable administrative state.",
+    "acceptance-criteria": [
+      "The tests use existing writer or administrative fault-injection hooks at meaningful transaction boundaries.",
+      "For each crash window, durable state is asserted as one of no mutation, complete cache/work acknowledgement, or incomplete retryable administrative mutation.",
+      "Public status or CLI-visible status exposes diagnostics that match the durable result.",
+      "The tests avoid adding broad new fault-injection mechanisms unless an existing hook cannot express the required window."
+    ],
+    "steps-to-verify": [
+      "Run: `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter FullyQualifiedName~DocumentCacheWriterFaultInjection`",
+      "Run: `dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheAdmin`",
+      "Run: `dotnet csharpier format src/dms/backend src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Runbook",
+    "description": "[Documentation] Create `reference/document-cache/operations-runbook.md` for DMS-1317 operational workflows and link it from existing DocumentCache documentation.",
+    "acceptance-criteria": [
+      "The runbook documents status interpretation, persistent projection failure, poison remediation, enqueue-vs-processing availability, lifecycle mismatch, unsupported Resetting recovery, activation, deactivation, rebuild, scrub, cache-ahead recovery, SQL Server prerequisite failure correction, and required scrub after suspected restore or unsupported direct mutation.",
+      "The runbook uses the shipped `dms-document-cache` command names and confirmation tokens from DMS-1428.",
+      "The runbook links to owning design sections for contracts, recovery constraints, and deferrals rather than copying design text.",
+      "`reference/document-cache/README.md`, `docs/CONFIGURATION.md`, `docs/RELATIONAL-BACKEND.md`, and the DocumentCacheAdmin README link to the new runbook."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"operations-runbook|DocumentCache operations|dms-document-cache\" reference/document-cache docs src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md`",
+      "Run: `rg -n \"Resetting|cache-ahead|integrity scrub|SQL Server prerequisite|restore|direct mutation\" reference/document-cache/operations-runbook.md`",
+      "Manually confirm the runbook links point to existing design headings."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Runbook",
+    "description": "[Tests] Add unit-level runbook validation tests for `reference/document-cache/operations-runbook.md` command snippets, links, and secret-safe examples.",
+    "acceptance-criteria": [
+      "The tests extract documented `dms-document-cache` command lines from the runbook and parse them against the real `System.CommandLine` surface.",
+      "The tests reject examples that include connection strings, passwords, client secrets, or unsupported direct command-line secret patterns.",
+      "The tests verify runbook markdown links and anchors resolve inside the repository or to the intended GitHub blob URLs.",
+      "The tests verify required remediation topics remain documented."
+    ],
+    "steps-to-verify": [
+      "Run: `dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit.csproj --filter FullyQualifiedName~HelpAndDocumentation`",
+      "Run: `dotnet csharpier format src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit`",
+      "Temporarily add an invalid `dms-document-cache` example locally and confirm the runbook validation fails before restoring it."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Runbook",
+    "description": "[Tests] Add integration tests for DMS-1317 runbook workflows that are not already covered by DMS-1428 command-surface tests.",
+    "acceptance-criteria": [
+      "The tests execute selected runbook workflows through the real `dms-document-cache` process against isolated PostgreSQL and SQL Server targets where practical.",
+      "The tests cover status-driven remediation branches, including enqueue-vs-processing availability, cache-ahead recovery routing, scrub admission/rejection, and SQL Server prerequisite correction while lifecycle is Disabled.",
+      "The tests assert shared lower-camel JSON contracts, stable exit codes, and durable state after each workflow.",
+      "The tests intentionally avoid duplicating DMS-1428 parser/README tests unless the runbook workflow adds new behavior."
+    ],
+    "steps-to-verify": [
+      "Run: `dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheAdmin`",
+      "Run: `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCache`",
+      "Run: `dotnet csharpier format src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Performance Qualification",
+    "description": "[Tests and documentation] Add a repeatable DocumentCache scale qualification entrypoint plus `reference/document-cache/performance-qualification.md` thresholds and result artifact guidance for DMS-1317.",
+    "acceptance-criteria": [
+      "The qualification defines provider-specific thresholds for baseline/rebuild completion time, database CPU/IO/log pressure, repeated queue DML or write amplification, status/oldest-work latency, canonical write overhead, queue growth/drain after outage, and same-document enqueue/ack lock waits.",
+      "CI-appropriate guards rely on bounded query-plan/statistics assertions rather than huge data volume.",
+      "`reference/document-cache/performance-qualification.md` documents the heavier local, scheduled, or release-validation run for representative row counts, including PostgreSQL WAL/vacuum/bloat and SQL Server log/ghost/index observations.",
+      "`reference/document-cache/performance-qualification.md` states that a durable-baseline-cursor Jira ticket must be created if restart-from-beginning exceeds the agreed limits.",
+      "`reference/document-cache/README.md` links to the performance qualification artifact."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"DocumentCache|baseline|rebuild|write amplification|oldest work|WAL|ghost\" src/dms/tests/EdFi.DataManagementService.Performance.Harness reference/document-cache eng`",
+      "Run provider query-plan tests: `dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheQueryPlan`",
+      "Manually verify the qualification instructions include pass/fail thresholds before any measured-result placeholder."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Restamp Scope",
+    "description": "[Documentation] Document the DMS-1318 restamp disposition for DMS-1317 and keep the evidence matrix honest about conditional coverage.",
+    "acceptance-criteria": [
+      "`reference/document-cache/cdc-inv-evidence.md` and `reference/document-cache/operations-runbook.md` state whether restamp coverage is deferred to DMS-1318 or included because DMS-1318 has landed.",
+      "If DMS-1318 has not landed, DMS-1317 docs do not fabricate restamp tests or claim restamp coverage.",
+      "If DMS-1318 lands before DMS-1317 closes, follow-up test tasks are added for Tracking, Disabled, Resetting, Rebuilding, set-latch rejection, API validators, Change Query mirrors, cache reads, and status.",
+      "The runbook links to DMS-1318 or the owning restamp design section for operator guidance."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"DMS-1318|restamp\" reference/document-cache reference/design/backend-redesign/epics/18-document-cache plan.md tasks.json`",
+      "Run: `rg -n \"Restamp|restamp\" src/dms --glob \"*.cs\"`",
+      "Manually confirm the matrix labels restamp as blocked, deferred, or implemented with matching evidence."
+    ],
+    "completed": false
+  }
+]
