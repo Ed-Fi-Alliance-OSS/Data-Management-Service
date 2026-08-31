@@ -917,6 +917,70 @@ public class Given_A_Postgresql_DocumentCacheWriter
 
     [Test]
     [Category("DocumentCacheWriterConcurrency")]
+    public async Task DocumentCacheWriterConcurrency_it_resolves_projector_and_direct_fill_racing_same_stale_cache_work()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        await InsertCacheRowAsync(source, contentVersion: 9);
+        DocumentCacheMaterializationCandidate projectorCandidate = CreateCandidate(
+            source,
+            "projector-race-winner"
+        );
+        DocumentCacheMaterializationCandidate directFillCandidate = CreateCandidate(
+            source,
+            "direct-fill-race-contender"
+        );
+        PausingFaultInjectionObserver observer = new(
+            DocumentCacheWriterFaultInjectionHook.AfterCacheDmlBeforeAcknowledgement
+        );
+        PostgresqlDocumentCacheWriter pausedProjectorWriter = CreateWriter(observer);
+
+        Task<DocumentCacheWriterResult> projectorWrite = pausedProjectorWriter.WriteAsync(
+            CreateRequest(source, projectorCandidate, DocumentCacheWriterPurpose.DurableWorkProjection)
+        );
+
+        await observer.WaitUntilReachedAsync(TimeSpan.FromSeconds(10));
+
+        Task<DocumentCacheWriterResult> directFillWrite = _writer.WriteAsync(
+            CreateRequest(source, directFillCandidate, DocumentCacheWriterPurpose.DirectFill)
+        );
+
+        observer.Release();
+
+        DocumentCacheWriterResult[] results = await Task.WhenAll(projectorWrite, directFillWrite)
+            .WaitAsync(TimeSpan.FromSeconds(30));
+        DocumentCacheWriterOutcome[] outcomes = results.Select(result => result.Outcome).ToArray();
+
+        outcomes
+            .Count(outcome => outcome == DocumentCacheWriterOutcome.CandidateWrittenAcknowledged)
+            .Should()
+            .Be(1);
+        outcomes
+            .Should()
+            .BeSubsetOf([
+                DocumentCacheWriterOutcome.CandidateWrittenAcknowledged,
+                DocumentCacheWriterOutcome.AlreadyCurrentNoWork,
+                DocumentCacheWriterOutcome.RacingWriterLost,
+            ]);
+
+        results[0]
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.CandidateWrittenAcknowledged>()
+            .Which.AcknowledgedContentVersion.Should()
+            .Be(10);
+
+        CacheRow cacheRow = await ReadCacheRowAsync(source.DocumentId);
+        cacheRow.ContentVersion.Should().Be(10);
+        JsonNode.Parse(cacheRow.DocumentJson)!["value"]!
+            .GetValue<string>()
+            .Should()
+            .Be("projector-race-winner");
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadCacheAheadLatchAsync()).Should().BeFalse();
+    }
+
+    [Test]
+    [Category("DocumentCacheWriterConcurrency")]
     public async Task DocumentCacheWriterConcurrency_it_rolls_back_cache_write_when_source_and_work_advance_before_acknowledgement()
     {
         await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);

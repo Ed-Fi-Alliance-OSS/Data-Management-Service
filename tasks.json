@@ -127,7 +127,7 @@
       "Run: `ConnectionStrings__MssqlAdmin='Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter FullyQualifiedName~DocumentCacheWriter`",
       "Run: `dotnet csharpier format src/dms/backend`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Provider Integration",
