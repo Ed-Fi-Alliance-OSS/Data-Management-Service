@@ -25,6 +25,12 @@ public sealed class Given_Mssql_DocumentCacheCompletedProjection : MssqlApiInteg
         DocumentCacheCompletedProjectionScenario.It_projects_http_created_updated_and_deleted_ordinary_resource(
             Harness
         );
+
+    [Test]
+    public Task It_rolls_back_http_create_and_update_when_document_cache_enqueue_fails() =>
+        DocumentCacheCompletedProjectionScenario.It_rolls_back_http_create_and_update_when_document_cache_enqueue_fails(
+            Harness
+        );
 }
 
 [Category("DocumentCacheCompletedProjection")]

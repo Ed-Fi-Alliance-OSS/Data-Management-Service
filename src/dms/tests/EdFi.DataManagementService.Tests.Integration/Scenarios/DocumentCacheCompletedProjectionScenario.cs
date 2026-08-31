@@ -20,7 +20,9 @@ internal static class DocumentCacheCompletedProjectionScenario
 {
     private const string StudentsEndpoint = "/data/ed-fi/students";
     private const string SchoolTypeDescriptorsEndpoint = "/data/ed-fi/schoolTypeDescriptors";
+    private const string ProfileRootOnlyMergeItemsEndpoint = "/data/ed-fi/profileRootOnlyMergeItems";
     private const string StandardJsonContentType = "application/json";
+    private const string ForcedEnqueueFailureMessage = "DMS-1317 forced DocumentCache enqueue failure";
 
     public static async Task It_projects_http_created_updated_and_deleted_ordinary_resource(
         ApiIntegrationHarness harness
@@ -312,6 +314,68 @@ internal static class DocumentCacheCompletedProjectionScenario
             .Be(0, "descriptor DELETE must not leave orphaned projection work");
     }
 
+    public static async Task It_rolls_back_http_create_and_update_when_document_cache_enqueue_fails(
+        ApiIntegrationHarness harness
+    )
+    {
+        await SetDocumentCacheLifecycleAsync(harness, "Disabled", cacheAheadRecoveryRequired: false);
+
+        string studentUniqueId = $"dcr-{Guid.NewGuid():N}"[..32];
+        _ = await PostStudentAsync(harness, studentUniqueId, "Rollback Seed");
+        CreatedDocument existingItem = await PostProfileRootOnlyMergeItemAsync(
+            harness,
+            itemId: 1301,
+            displayName: "Rollback original",
+            clearableText: "Clearable original",
+            preservedText: "Preserved original",
+            studentUniqueId
+        );
+
+        RollbackSnapshot before = await ReadRollbackSnapshotAsync(harness);
+        AssertRollbackSnapshotPreconditions(before, studentUniqueId);
+
+        await SetDocumentCacheLifecycleAsync(harness, "Tracking", cacheAheadRecoveryRequired: false);
+        await InstallProjectionWorkFailureTriggerAsync(harness);
+
+        using HttpResponseMessage failedPost = await PostJsonAsync(
+            harness,
+            ProfileRootOnlyMergeItemsEndpoint,
+            CreateProfileRootOnlyMergeItemPayload(
+                itemId: 1302,
+                displayName: "Rollback failed create",
+                clearableText: "Clearable failed create",
+                preservedText: "Preserved failed create",
+                studentUniqueId
+            )
+        );
+        await AssertInternalServerErrorAsync(
+            failedPost,
+            "POST create must fail when enqueue cannot persist work"
+        );
+
+        RollbackSnapshot afterFailedPost = await ReadRollbackSnapshotAsync(harness);
+        afterFailedPost.Should().BeEquivalentTo(before, options => options.WithStrictOrdering());
+
+        using HttpResponseMessage failedPut = await PutProfileRootOnlyMergeItemAsync(
+            harness,
+            existingItem.LocationPath,
+            existingItem.DocumentUuid,
+            itemId: 1301,
+            displayName: "Rollback updated",
+            clearableText: "Clearable updated",
+            preservedText: "Preserved updated",
+            studentUniqueId,
+            existingItem.Etag
+        );
+        await AssertInternalServerErrorAsync(
+            failedPut,
+            "PUT update must fail when enqueue cannot persist work"
+        );
+
+        RollbackSnapshot afterFailedPut = await ReadRollbackSnapshotAsync(harness);
+        afterFailedPut.Should().BeEquivalentTo(before, options => options.WithStrictOrdering());
+    }
+
     private static async Task<CreatedDocument> PostStudentAsync(
         ApiIntegrationHarness harness,
         string studentUniqueId,
@@ -320,6 +384,36 @@ internal static class DocumentCacheCompletedProjectionScenario
     {
         var payload = new JsonObject { ["studentUniqueId"] = studentUniqueId, ["firstName"] = firstName };
         using HttpResponseMessage response = await PostJsonAsync(harness, StudentsEndpoint, payload);
+        string body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created, body);
+        response.Headers.Location.Should().NotBeNull();
+        response.TryReadRawEtag(out string etag).Should().BeTrue("POST create must emit an ETag");
+
+        string locationPath = ToPath(response.Headers.Location!);
+        return new(locationPath, Guid.Parse(locationPath.Split('/')[^1]), etag);
+    }
+
+    private static async Task<CreatedDocument> PostProfileRootOnlyMergeItemAsync(
+        ApiIntegrationHarness harness,
+        int itemId,
+        string displayName,
+        string clearableText,
+        string preservedText,
+        string studentUniqueId
+    )
+    {
+        using HttpResponseMessage response = await PostJsonAsync(
+            harness,
+            ProfileRootOnlyMergeItemsEndpoint,
+            CreateProfileRootOnlyMergeItemPayload(
+                itemId,
+                displayName,
+                clearableText,
+                preservedText,
+                studentUniqueId
+            )
+        );
         string body = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.Created, body);
@@ -357,6 +451,35 @@ internal static class DocumentCacheCompletedProjectionScenario
         response.TryReadRawEtag(out string etag).Should().BeTrue("PUT must emit the advanced ETag");
         etag.Should().NotBe(ifMatch);
         return etag;
+    }
+
+    private static async Task<HttpResponseMessage> PutProfileRootOnlyMergeItemAsync(
+        ApiIntegrationHarness harness,
+        string locationPath,
+        Guid documentUuid,
+        int itemId,
+        string displayName,
+        string clearableText,
+        string preservedText,
+        string studentUniqueId,
+        string ifMatch
+    )
+    {
+        JsonObject payload = CreateProfileRootOnlyMergeItemPayload(
+            itemId,
+            displayName,
+            clearableText,
+            preservedText,
+            studentUniqueId
+        );
+        payload["id"] = documentUuid.ToString();
+        using var request = new HttpRequestMessage(HttpMethod.Put, locationPath)
+        {
+            Content = new StringContent(payload.ToJsonString(), Encoding.UTF8, StandardJsonContentType),
+        };
+        request.Headers.TryAddWithoutValidation("If-Match", ifMatch);
+
+        return await harness.HttpClient.SendAsync(request);
     }
 
     private static async Task<CreatedDocument> PostSchoolTypeDescriptorAsync(
@@ -468,7 +591,35 @@ internal static class DocumentCacheCompletedProjectionScenario
         return await harness.HttpClient.PostAsync(endpoint, content);
     }
 
+    private static JsonObject CreateProfileRootOnlyMergeItemPayload(
+        int itemId,
+        string displayName,
+        string clearableText,
+        string preservedText,
+        string studentUniqueId
+    ) =>
+        new()
+        {
+            ["profileRootOnlyMergeItemId"] = itemId,
+            ["displayName"] = displayName,
+            ["profileScope"] = new JsonObject
+            {
+                ["clearableText"] = clearableText,
+                ["preservedText"] = preservedText,
+            },
+            ["studentReference"] = new JsonObject { ["studentUniqueId"] = studentUniqueId },
+        };
+
     private static async Task SetTrackingLifecycleAsync(ApiIntegrationHarness harness)
+    {
+        await SetDocumentCacheLifecycleAsync(harness, "Tracking", cacheAheadRecoveryRequired: false);
+    }
+
+    private static async Task SetDocumentCacheLifecycleAsync(
+        ApiIntegrationHarness harness,
+        string lifecycleState,
+        bool cacheAheadRecoveryRequired
+    )
     {
         await ExecuteNonQueryAsync(
             harness,
@@ -478,8 +629,8 @@ internal static class DocumentCacheCompletedProjectionScenario
                 "CacheAheadRecoveryRequired" = @cacheAheadRecoveryRequired
             WHERE "StateId" = 1;
             """,
-            ("@lifecycleState", "Tracking"),
-            ("@cacheAheadRecoveryRequired", false)
+            ("@lifecycleState", lifecycleState),
+            ("@cacheAheadRecoveryRequired", cacheAheadRecoveryRequired)
         );
     }
 
@@ -653,6 +804,167 @@ internal static class DocumentCacheCompletedProjectionScenario
         return Convert.ToInt32(result, CultureInfo.InvariantCulture);
     }
 
+    private static async Task<RollbackSnapshot> ReadRollbackSnapshotAsync(ApiIntegrationHarness harness) =>
+        new(
+            await ReadDocumentSnapshotRowsAsync(harness),
+            await ReadReferentialIdentitySnapshotRowsAsync(harness),
+            await ReadProfileRootOnlyMergeItemSnapshotRowsAsync(harness),
+            await CountRowsAsync(harness, "\"dms\".\"DocumentProjectionWork\""),
+            await CountRowsAsync(harness, "\"dms\".\"DocumentCache\""),
+            await CountRowsAsync(harness, "\"tracked_changes_edfi\".\"ProfileRootOnlyMergeItem\"")
+        );
+
+    private static async Task<IReadOnlyList<DocumentSnapshotRow>> ReadDocumentSnapshotRowsAsync(
+        ApiIntegrationHarness harness
+    )
+    {
+        var rows = new List<DocumentSnapshotRow>();
+        await using DbCommand command = harness.DbConnection.CreateCommand();
+        command.CommandText = """
+            SELECT d."DocumentId",
+                   d."DocumentUuid",
+                   rk."ProjectName",
+                   rk."ResourceName",
+                   d."ContentVersion",
+                   d."ContentLastModifiedAt"
+            FROM "dms"."Document" d
+            INNER JOIN "dms"."ResourceKey" rk
+                ON rk."ResourceKeyId" = d."ResourceKeyId"
+            ORDER BY d."DocumentId";
+            """;
+
+        await using DbDataReader reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            rows.Add(
+                new(
+                    Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture),
+                    (Guid)reader.GetValue(1),
+                    reader.GetString(2),
+                    reader.GetString(3),
+                    Convert.ToInt64(reader.GetValue(4), CultureInfo.InvariantCulture),
+                    ToUtcDateTimeOffset(reader.GetValue(5))
+                )
+            );
+        }
+
+        return rows;
+    }
+
+    private static async Task<
+        IReadOnlyList<ReferentialIdentitySnapshotRow>
+    > ReadReferentialIdentitySnapshotRowsAsync(ApiIntegrationHarness harness)
+    {
+        var rows = new List<ReferentialIdentitySnapshotRow>();
+        await using DbCommand command = harness.DbConnection.CreateCommand();
+        command.CommandText = """
+            SELECT "ReferentialId",
+                   "DocumentId",
+                   "ResourceKeyId"
+            FROM "dms"."ReferentialIdentity"
+            ORDER BY "DocumentId", "ResourceKeyId", "ReferentialId";
+            """;
+
+        await using DbDataReader reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            rows.Add(
+                new(
+                    (Guid)reader.GetValue(0),
+                    Convert.ToInt64(reader.GetValue(1), CultureInfo.InvariantCulture),
+                    Convert.ToInt16(reader.GetValue(2), CultureInfo.InvariantCulture)
+                )
+            );
+        }
+
+        return rows;
+    }
+
+    private static async Task<
+        IReadOnlyList<ProfileRootOnlyMergeItemSnapshotRow>
+    > ReadProfileRootOnlyMergeItemSnapshotRowsAsync(ApiIntegrationHarness harness)
+    {
+        var rows = new List<ProfileRootOnlyMergeItemSnapshotRow>();
+        await using DbCommand command = harness.DbConnection.CreateCommand();
+        command.CommandText = """
+            SELECT "DocumentId",
+                   "ProfileRootOnlyMergeItemId",
+                   "DisplayName",
+                   "ProfileScopeClearableText",
+                   "ProfileScopePreservedText",
+                   "StudentReference_DocumentId",
+                   "StudentReference_StudentUniqueId"
+            FROM "edfi"."ProfileRootOnlyMergeItem"
+            ORDER BY "ProfileRootOnlyMergeItemId";
+            """;
+
+        await using DbDataReader reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            rows.Add(
+                new(
+                    Convert.ToInt64(reader.GetValue(0), CultureInfo.InvariantCulture),
+                    Convert.ToInt32(reader.GetValue(1), CultureInfo.InvariantCulture),
+                    await reader.IsDBNullAsync(2) ? null : reader.GetString(2),
+                    await reader.IsDBNullAsync(3) ? null : reader.GetString(3),
+                    await reader.IsDBNullAsync(4) ? null : reader.GetString(4),
+                    await reader.IsDBNullAsync(5)
+                        ? null
+                        : Convert.ToInt64(reader.GetValue(5), CultureInfo.InvariantCulture),
+                    await reader.IsDBNullAsync(6) ? null : reader.GetString(6)
+                )
+            );
+        }
+
+        return rows;
+    }
+
+    private static async Task<long> CountRowsAsync(ApiIntegrationHarness harness, string qualifiedTableName)
+    {
+        await using DbCommand command = harness.DbConnection.CreateCommand();
+        command.CommandText = $"SELECT COUNT(*) FROM {qualifiedTableName};";
+
+        object? result = await command.ExecuteScalarAsync();
+        return Convert.ToInt64(result, CultureInfo.InvariantCulture);
+    }
+
+    private static async Task InstallProjectionWorkFailureTriggerAsync(ApiIntegrationHarness harness)
+    {
+        string commandText = IsSqlServerConnection(harness.DbConnection)
+            ? """
+                CREATE OR ALTER TRIGGER [dms].[TR_DMS1317_ForceDocumentProjectionWorkFailure]
+                ON [dms].[DocumentProjectionWork]
+                AFTER INSERT, UPDATE
+                AS
+                BEGIN
+                    SET NOCOUNT ON;
+                    THROW 50000, N'DMS-1317 forced DocumentCache enqueue failure', 1;
+                END
+                """
+            : """
+                CREATE OR REPLACE FUNCTION "dms"."TF_DMS1317_ForceDocumentProjectionWorkFailure"()
+                RETURNS trigger
+                LANGUAGE plpgsql
+                AS $dms1317$
+                BEGIN
+                    RAISE EXCEPTION 'DMS-1317 forced DocumentCache enqueue failure';
+                END;
+                $dms1317$;
+
+                DROP TRIGGER IF EXISTS "TR_DMS1317_ForceDocumentProjectionWorkFailure" ON "dms"."DocumentProjectionWork";
+
+                CREATE TRIGGER "TR_DMS1317_ForceDocumentProjectionWorkFailure"
+                BEFORE INSERT OR UPDATE ON "dms"."DocumentProjectionWork"
+                FOR EACH ROW
+                EXECUTE FUNCTION "dms"."TF_DMS1317_ForceDocumentProjectionWorkFailure"();
+                """;
+
+        await ExecuteNonQueryAsync(harness, commandText);
+    }
+
+    private static bool IsSqlServerConnection(DbConnection connection) =>
+        connection.GetType().Name.Equals("SqlConnection", StringComparison.Ordinal);
+
     private static async Task ExecuteNonQueryAsync(
         ApiIntegrationHarness harness,
         string commandText,
@@ -755,6 +1067,41 @@ internal static class DocumentCacheCompletedProjectionScenario
         body.Should().NotContain("DocumentCache").And.NotContain("ReadAcceleration");
     }
 
+    private static async Task AssertInternalServerErrorAsync(HttpResponseMessage response, string because)
+    {
+        string body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError, $"{because}: {body}");
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        JsonObject problem = JsonNode.Parse(body)!.AsObject();
+        problem["status"]!.GetValue<int>().Should().Be(500);
+        body.Should().NotContain(ForcedEnqueueFailureMessage, "provider diagnostics must not leak");
+    }
+
+    private static void AssertRollbackSnapshotPreconditions(RollbackSnapshot snapshot, string studentUniqueId)
+    {
+        snapshot
+            .Documents.Select(document => document.ResourceName)
+            .Should()
+            .BeEquivalentTo("Student", "ProfileRootOnlyMergeItem");
+        snapshot.ProfileRootOnlyMergeItems.Should().ContainSingle();
+        ProfileRootOnlyMergeItemSnapshotRow item = snapshot.ProfileRootOnlyMergeItems.Single();
+        snapshot
+            .ReferentialIdentities.Should()
+            .HaveCount(2, "Student and ProfileRootOnlyMergeItem each stamp a referential identity");
+        snapshot
+            .ReferentialIdentities.Should()
+            .ContainSingle(identity => identity.DocumentId == item.DocumentId);
+        item.ProfileRootOnlyMergeItemId.Should().Be(1301);
+        item.DisplayName.Should().Be("Rollback original");
+        item.ProfileScopeClearableText.Should().Be("Clearable original");
+        item.ProfileScopePreservedText.Should().Be("Preserved original");
+        item.StudentReferenceDocumentId.Should().NotBeNull();
+        item.StudentReferenceStudentUniqueId.Should().Be(studentUniqueId);
+        snapshot.ProjectionWorkCount.Should().Be(0);
+        snapshot.CacheCount.Should().Be(0);
+        snapshot.ProfileRootOnlyMergeTrackedChangeCount.Should().Be(0);
+    }
+
     private static void AssertReadTelemetryContains(
         DocumentCacheReadTelemetryRecorder recorder,
         string eventName,
@@ -795,5 +1142,39 @@ internal static class DocumentCacheCompletedProjectionScenario
         string StreamEtag,
         DateTimeOffset LastModifiedAt,
         JsonObject DocumentJson
+    );
+
+    private sealed record RollbackSnapshot(
+        IReadOnlyList<DocumentSnapshotRow> Documents,
+        IReadOnlyList<ReferentialIdentitySnapshotRow> ReferentialIdentities,
+        IReadOnlyList<ProfileRootOnlyMergeItemSnapshotRow> ProfileRootOnlyMergeItems,
+        long ProjectionWorkCount,
+        long CacheCount,
+        long ProfileRootOnlyMergeTrackedChangeCount
+    );
+
+    private sealed record DocumentSnapshotRow(
+        long DocumentId,
+        Guid DocumentUuid,
+        string ProjectName,
+        string ResourceName,
+        long ContentVersion,
+        DateTimeOffset ContentLastModifiedAt
+    );
+
+    private sealed record ReferentialIdentitySnapshotRow(
+        Guid ReferentialId,
+        long DocumentId,
+        short ResourceKeyId
+    );
+
+    private sealed record ProfileRootOnlyMergeItemSnapshotRow(
+        long DocumentId,
+        int ProfileRootOnlyMergeItemId,
+        string? DisplayName,
+        string? ProfileScopeClearableText,
+        string? ProfileScopePreservedText,
+        long? StudentReferenceDocumentId,
+        string? StudentReferenceStudentUniqueId
     );
 }
