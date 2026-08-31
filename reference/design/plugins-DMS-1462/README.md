@@ -50,14 +50,14 @@ The frontend does not reference `EdFi.Api.Plugins.Hosting` today, and `src/dms/D
 Draft 03 adds the `ProjectReference`, because its plugin guard is a frontend-owned startup task and it is the first story the frontend has to see.
 Draft 01 makes the build-stage change that lets an image build with that reference in it, because it is the story that creates the tree and because `.github/workflows/on-dms-pullrequest.yml` builds `src/dms/Dockerfile` in nine places on a relevant pull request, so any later assignment leaves a merge order that breaks CI.
 Draft 04 keeps the other build-lane change, dropping `/p:AssemblyVersion` and `/p:FileVersion` from the publish command line and the `ASSEMBLY_VERSION` build-arg pair from `build-dms.ps1`'s `DockerBuild`, because it is the story whose skew preflight one contract assembly carrying two `AssemblyVersion`s would break.
-Nothing replaces that stamping: `DockerBuild` is deliberately **not** taught to run `SetDMSAssemblyInfo`, which regenerates a tracked props file on every local end-to-end run and drops the build height besides, so a locally built image's DMS assemblies carry the committed `src/dms/Directory.Build.props` version and the release lane is untouched.
+Nothing replaces that stamping: `DockerBuild` is deliberately **not** taught to run `SetDMSAssemblyInfo`, which rewrites a tracked props file on every run of the `E2ETest` or `StartEnvironment` command and drops the build height besides, so a locally built image's DMS assemblies carry the committed `src/dms/Directory.Build.props` version and the release lane is untouched.
 
 **Which story asserts which contract's version, and where.**
 Draft 04's Docker-lane test asserts `EdFi.Api.Plugins.dll` only, and draft 05's host-assembly-manifest assertion covers `EdFi.Api.Plugins` only.
 `EdFi.DataManagementService.CustomValidation`'s csproj declares no version of its own until draft 06, so neither earlier story has anything to assert against for it, and draft 06 extends **both** assertions in the pass that adds the declaration.
 
 **Which story owns the acquisition recipes, and in which direction.**
-Draft 04 creates the two overlay compose files and its end-to-end tiers run them as committed; draft 05 writes the `docs/OPERATIONS.md` chapter and asserts that the chapter's Compose blocks equal those files.
+Draft 04 creates the two overlay compose files and its end-to-end tiers run them as committed, supplying every deployment-specific value through the `:?`-required environment variables the files declare; draft 05 writes the `docs/OPERATIONS.md` chapter and asserts that the chapter's Compose blocks equal those files.
 The files are the artifact and the document is pinned to them, which is why no tier drives a recipe parsed out of Markdown and why draft 07, which makes the published claim, depends on draft 05.
 
 **Draft 07 waits for DMS-1433 as well as for a release carrying draft 04.**
