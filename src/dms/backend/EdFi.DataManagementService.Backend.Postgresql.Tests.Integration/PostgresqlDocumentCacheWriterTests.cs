@@ -1047,6 +1047,68 @@ public class Given_A_Postgresql_DocumentCacheWriter
     }
 
     [Test]
+    [Category("DocumentCacheWriterConcurrency")]
+    public async Task DocumentCacheWriterConcurrency_it_blocks_same_document_canonical_enqueue_during_acknowledgement_without_blocking_unrelated_documents()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        await InsertCacheRowAsync(source, contentVersion: 10);
+        SourceDocument unrelatedSource = await InsertSourceDocumentAsync(contentVersion: 20);
+        PausingFaultInjectionObserver observer = new(
+            DocumentCacheWriterFaultInjectionHook.AfterAcknowledgementBeforeCommit
+        );
+        PostgresqlDocumentCacheWriter pausedWriter = CreateWriter(observer);
+
+        Task<DocumentCacheWriterResult> acknowledgement = pausedWriter.WriteAsync(
+            CreateRequest(source, candidate: null)
+        );
+
+        await observer.WaitUntilReachedAsync(TimeSpan.FromSeconds(10));
+
+        try
+        {
+            await AttemptContentVersionAdvanceWithShortLockTimeoutAsync(
+                unrelatedSource.DocumentId,
+                contentVersion: 21
+            );
+
+            PostgresException exception = (
+                await FluentActions
+                    .Awaiting(() =>
+                        AttemptContentVersionAdvanceWithShortLockTimeoutAsync(
+                            source.DocumentId,
+                            contentVersion: 11
+                        )
+                    )
+                    .Should()
+                    .ThrowAsync<PostgresException>()
+            ).Which;
+
+            exception.SqlState.Should().Be(PostgresErrorCodes.LockNotAvailable);
+            new PostgresqlRelationalWriteExceptionClassifier()
+                .IsTransientFailure(exception)
+                .Should()
+                .BeTrue();
+        }
+        finally
+        {
+            observer.Release();
+        }
+
+        DocumentCacheWriterResult result = await acknowledgement.WaitAsync(TimeSpan.FromSeconds(30));
+
+        result
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.AlreadyCurrentAcknowledged>()
+            .Which.AcknowledgedContentVersion.Should()
+            .Be(10);
+        (await ReadSourceContentVersionAsync(source.DocumentId)).Should().Be(10);
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadSourceContentVersionAsync(unrelatedSource.DocumentId)).Should().Be(21);
+        (await ReadWorkRequiredContentVersionAsync(unrelatedSource.DocumentId)).Should().Be(21);
+    }
+
+    [Test]
     [Category("DocumentCacheWriterTelemetry")]
     public async Task DocumentCacheWriterTelemetry_it_records_expected_metric_coverage()
     {

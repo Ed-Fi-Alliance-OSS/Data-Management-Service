@@ -252,7 +252,7 @@
       "The runbook links to DMS-1318 or the owning restamp design section for operator guidance."
     ],
     "steps-to-verify": [
-      "Run: `rg -n \"DMS-1318|restamp\" reference/document-cache reference/design/backend-redesign/epics/18-document-cache plan.md tasks.json`",
+      "Run: `rg -n \"DMS-1318|restamp\" reference/document-cache reference/design/backend-redesign/epics/18-document-cache tasks.json`",
       "Run: `rg -n \"Restamp|restamp\" src/dms --glob \"*.cs\"`",
       "Manually confirm the matrix labels restamp as blocked, deferred, or implemented with matching evidence."
     ],
