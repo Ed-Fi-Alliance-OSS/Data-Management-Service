@@ -77,6 +77,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                 request.WritePlan,
                 targetContext,
                 mergeResult,
+                request.CreatorOwnershipTokenId,
                 writeSession,
                 cancellationToken
             )
@@ -216,11 +217,16 @@ internal sealed class RelationalWriteNoProfilePersister(
             _ => throw new ArgumentOutOfRangeException(nameof(targetContext), targetContext, null),
         };
 
+    /// <param name="createdByOwnershipTokenId">
+    /// Stamped onto the created <c>dms.Document</c> row. Ignored for an existing target: this path issues no
+    /// statement that mentions the column, which is what preserves the stored token across an update.
+    /// </param>
     private async Task<long> ResolveRootDocumentIdAsync(
         MappingSet mappingSet,
         ResourceWritePlan writePlan,
         RelationalWriteTargetContext targetContext,
         RelationalWriteMergeResult mergeResult,
+        short? createdByOwnershipTokenId,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
@@ -232,6 +238,7 @@ internal sealed class RelationalWriteNoProfilePersister(
                     writePlan,
                     documentUuid,
                     mergeResult,
+                    createdByOwnershipTokenId,
                     writeSession,
                     cancellationToken
                 )
@@ -246,6 +253,7 @@ internal sealed class RelationalWriteNoProfilePersister(
         ResourceWritePlan writePlan,
         DocumentUuid documentUuid,
         RelationalWriteMergeResult mergeResult,
+        short? createdByOwnershipTokenId,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
@@ -254,7 +262,8 @@ internal sealed class RelationalWriteNoProfilePersister(
         var command = RelationalDocumentRowCommandBuilder.BuildInsertCommand(
             mappingSet.Key.Dialect,
             documentUuid,
-            RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource)
+            RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource),
+            createdByOwnershipTokenId
         );
         var relationshipAuthorizationRuntimeCheck = mergeResult.ProposedRelationshipAuthorizationRuntimeCheck;
 

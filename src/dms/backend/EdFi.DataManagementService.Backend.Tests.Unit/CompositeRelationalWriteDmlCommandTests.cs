@@ -52,6 +52,69 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
         resolution.PersistResult!.ContentVersion.Should().Be(77L);
     }
 
+    /// <summary>
+    /// The co-batched create stamps <c>CreatedByOwnershipTokenId</c> from the client's creator token, the same
+    /// value the ordered-segment path binds. The composite statement rewriter renames parameters, so the
+    /// assertion matches on the allocator-stamped name rather than the builder's.
+    /// </summary>
+    [Test]
+    public async Task It_stamps_the_creator_ownership_token_on_the_co_batched_document_insert()
+    {
+        var request = CreateCreatedTargetRequest() with { CreatorOwnershipTokenId = 42 };
+        var session = new ScriptedWriteSession(
+            CreateReader(Scalar(900L), Sentinel(1), PersistObservation(1L))
+        );
+
+        await CreateSut()
+            .ResolveAsync(
+                request,
+                CreateNewRootMergeResult(request),
+                RelationalWriteSecondCommandMode.Dml,
+                session
+            );
+
+        var command = session.Commands.Should().ContainSingle().Subject;
+        command.CommandText.Should().Contain("\"CreatedByOwnershipTokenId\"");
+        command
+            .Parameters.Should()
+            .ContainSingle(parameter =>
+                parameter.Name.Contains("createdByOwnershipTokenId", StringComparison.OrdinalIgnoreCase)
+            )
+            .Which.Value.Should()
+            .Be((short)42);
+    }
+
+    /// <summary>
+    /// An existing-target write must leave the stored ownership token alone, and it does so because no
+    /// statement it emits mentions the column — not because of a runtime guard.
+    /// </summary>
+    [Test]
+    public async Task It_never_writes_the_ownership_column_for_an_existing_target()
+    {
+        var request = CreateExistingTargetRequest() with { CreatorOwnershipTokenId = 42 };
+        var session = new ScriptedWriteSession(CreateReader(Sentinel(0), PersistObservation(77L)));
+
+        await CreateSut()
+            .ResolveAsync(
+                request,
+                CreateChangedRootMergeResult(request),
+                RelationalWriteSecondCommandMode.Dml,
+                session
+            );
+
+        session
+            .Commands.Should()
+            .OnlyContain(command =>
+                !command.CommandText.Contains("CreatedByOwnershipTokenId", StringComparison.Ordinal)
+            );
+        session
+            .Commands.SelectMany(static command => command.Parameters)
+            .Should()
+            .NotContain(parameter =>
+                parameter.Name.Contains("createdByOwnershipTokenId", StringComparison.OrdinalIgnoreCase)
+            );
+    }
+
     [Test]
     public async Task It_co_batches_the_document_insert_with_the_rows_it_makes_room_for()
     {

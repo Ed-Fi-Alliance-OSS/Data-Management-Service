@@ -830,6 +830,24 @@ public sealed record RelationalWriteExecutorRequest
     /// selection inside the executor's write session.
     /// </summary>
     internal PostRelationshipAuthorizationPlans? PostRelationshipAuthorizationPlans { get; init; }
+
+    /// <summary>
+    /// The API client's <c>CreatorOwnershipTokenId</c>, stamped onto <c>dms.Document</c> when this write
+    /// creates a document. Null when the client has no creator token, which stamps null.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Not an authorization input. This value is only ever written; ownership authorization reads the client's
+    /// <c>OwnershipTokenIds</c> against the stored column instead. A create is therefore never denied by
+    /// ownership, whatever this value is.
+    /// </para>
+    /// <para>
+    /// Carried on every write regardless of configured strategies, because stamping is unconditional. It is
+    /// ignored for a write that resolves to an existing target: no <c>UPDATE</c> statement mentions the
+    /// column, which is what preserves the stored token across PUT and upsert-as-update.
+    /// </para>
+    /// </remarks>
+    public short? CreatorOwnershipTokenId { get; init; }
 }
 
 /// <summary>
@@ -945,6 +963,9 @@ public sealed record RelationalWriteExecutorInput
     /// <inheritdoc cref="RelationalWriteExecutorRequest.PostRelationshipAuthorizationPlans"/>
     internal PostRelationshipAuthorizationPlans? PostRelationshipAuthorizationPlans { get; init; }
 
+    /// <inheritdoc cref="RelationalWriteExecutorRequest.CreatorOwnershipTokenId"/>
+    public short? CreatorOwnershipTokenId { get; init; }
+
     /// <summary>
     /// Produces the fully resolved executor request for a target the executor observed inside its
     /// write session. All cross-field validation runs in the resolved request's constructor.
@@ -972,6 +993,7 @@ public sealed record RelationalWriteExecutorInput
         {
             PostRelationshipAuthorizationPlans = PostRelationshipAuthorizationPlans,
             CustomViewAuthorization = CustomViewAuthorization,
+            CreatorOwnershipTokenId = CreatorOwnershipTokenId,
         };
 }
 

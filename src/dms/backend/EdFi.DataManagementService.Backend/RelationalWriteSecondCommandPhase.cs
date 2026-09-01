@@ -122,8 +122,12 @@ internal sealed class CompositeRelationalWriteSecondCommand(
     private const string DocumentInsertLabel = "document-insert";
     private const string ContentVersionReadLabel = "content-version-read";
 
-    /// <summary>The <c>dms.Document</c> insert's bound <c>DocumentUuid</c> and <c>ResourceKeyId</c>.</summary>
-    private const int DocumentInsertParameterCount = 2;
+    /// <summary>
+    /// The <c>dms.Document</c> insert's bound <c>DocumentUuid</c>, <c>ResourceKeyId</c> and
+    /// <c>CreatedByOwnershipTokenId</c>. The ownership token is bound even when null, so the count does not
+    /// vary with whether the client has a creator token.
+    /// </summary>
+    private const int DocumentInsertParameterCount = 3;
 
     /// <summary>
     /// Stands in for the created document id's subquery while a statement's parameter count is measured. Only
@@ -1231,7 +1235,8 @@ internal sealed class CompositeRelationalWriteSecondCommand(
                 RelationalWriteSupport.GetResourceKeyIdOrThrow(
                     request.MappingSet,
                     request.WritePlan.Model.Resource
-                )
+                ),
+                request.CreatorOwnershipTokenId
             ),
             builder.Allocator,
             builder.NextOrdinal
