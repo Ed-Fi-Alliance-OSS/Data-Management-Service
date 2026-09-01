@@ -11,9 +11,11 @@ consumer runbook.
 - [CDC-INV evidence matrix](cdc-inv-evidence.md) maps DMS-1317 evidence to the in-scope
   E18 CDC invariant contracts.
 - [Performance qualification](performance-qualification.md) defines the bounded CI guards,
-  representative-scale thresholds, result artifacts, and provider maintenance evidence.
+  representative-run harness, thresholds, result artifact schema, and provider maintenance
+  evidence contract for the follow-up performance ticket.
 - [Representative qualification runbook](representative-qualification-runbook.md) gives the
-  performance engineer release-validation procedure for producing validated result artifacts.
+  performance engineer release-validation procedure for producing validated result
+  artifacts outside DMS-1317.
 
 Owning design and implementation references:
 

@@ -18,8 +18,10 @@ cross-feature evidence and implementation-specific guidance without restating th
 
 ## Outcome
 
-Validate the completed E18 capability across providers and publish DocumentCache operator
-guidance.
+Validate the completed E18 capability across providers, publish DocumentCache operator
+guidance, and deliver the performance-qualification harness/runbook contract. Actual
+representative performance runs and committed result artifacts are assigned to a follow-up
+ticket.
 
 ## Dependencies
 
@@ -47,12 +49,15 @@ guidance.
   for active/historical downstream state, clear-latch `Tracking` admission and fail-closed
   rejection for the explicit O(N) scrub, concurrent baseline deletes, and poison failures
   exhausting seeding capacity.
-- Qualify interrupted baseline/rebuild restart from the beginning at representative scale
-  against predefined completion-time, database-load, and repeated queue-DML/write-
-  amplification limits. If a limit fails, create the durable-baseline-cursor ticket and
-  make it a production prerequisite.
-- Prove operational-health/caught-up/oldest-work observations use no source scan at scale
-  and that projection failure/backlog never gates canonical API routing.
+- Add the performance-qualification harness, threshold catalog, validator, and runbooks
+  for interrupted baseline/rebuild restart, provider load/log/queue-DML limits,
+  no-source-scan status observations, and durable-baseline-cursor escalation.
+- Use bounded provider guards and documented representative-run requirements to prevent
+  unreviewed scale regressions in this story. Actual PostgreSQL and SQL Server
+  representative performance runs, pass/fail decisions, and committed
+  `reference/document-cache/qualification-results/<run-id>/` artifacts are not part of
+  DMS-1317.
+- Prove projection failure/backlog never gates canonical API routing.
 - Publish operation and troubleshooting guidance for the shipped commands, configuration,
   status, and telemetry.
 - Cross-link E19 procedures where connector or downstream state becomes relevant.
@@ -64,8 +69,9 @@ guidance.
 - Runbook steps are exercised against the implemented commands and status output.
 - Runbooks explain persistent failure remediation, enqueue-vs-processing availability,
   lifecycle mismatch, activation/deactivation, rebuild, set-latch routing to cache-ahead
-  recovery or containment, scrub admission and rejection, reset recovery, and
-  provider-specific performance/maintenance evidence.
+  recovery or containment, scrub admission and rejection, reset recovery, and how
+  provider-specific performance/maintenance evidence is produced and validated by the
+  follow-up performance ticket.
 - Runbooks require an explicit scrub after suspected restore or unsupported direct
   mutation before operators rely on queue-empty caught-up status.
 - Runbooks limit correction and restart after SQL Server prerequisite initialization
@@ -75,7 +81,13 @@ guidance.
   successful validation is outside the supported v1 contract.
 - Runbooks link to the owning design sections for contracts, recovery constraints, and
   deferrals instead of copying them.
+- Performance-qualification documentation, script entry points, threshold catalog, and
+  result validation schema are present, and no DMS-1317 documentation claims completed
+  representative-scale qualification without committed result artifacts.
 
 ## Not Assigned to This Story
 
 - Kafka infrastructure, connector, and consumer operation are assigned to E19.
+- Running the representative PostgreSQL and SQL Server performance qualification and
+  committing validated `reference/document-cache/qualification-results/<run-id>/`
+  artifacts are assigned to a follow-up performance ticket.

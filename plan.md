@@ -2,17 +2,18 @@
 
 ## Goal
 
-Implement a long-running DocumentCache representative benchmark that can produce and validate
-the measured evidence required by the incomplete review-remediation task in `tasks.json`
-lines 336-353.
+Implement a long-running DocumentCache representative benchmark harness that can produce and
+validate the measured evidence needed by a follow-up performance ticket.
 
-The finished branch must not claim representative-scale qualification from bounded CI guards
-alone. It must either commit real measured PostgreSQL and SQL Server qualification artifacts,
-or clearly state that production qualification remains blocked by missing external evidence.
+DMS-1317 must not claim representative-scale qualification from bounded CI guards alone.
+It is complete when the harness, threshold catalog, validator, and operator runbook are in
+place. Real measured PostgreSQL and SQL Server qualification artifacts are out of scope for
+this branch and belong to the follow-up performance ticket.
 
 ## Required Outcome
 
-Create a benchmark and validation workflow that proves, with durable artifacts:
+Create a benchmark and validation workflow that can prove, with durable artifacts in the
+follow-up performance ticket:
 
 - PostgreSQL and SQL Server representative runs were executed against 500,000 canonical
   documents.
@@ -32,7 +33,7 @@ Create a benchmark and validation workflow that proves, with durable artifacts:
 
 ## Artifact Contract
 
-Use a committed release-validation result directory under:
+The follow-up performance ticket uses a committed release-validation result directory under:
 
 ```text
 reference/document-cache/qualification-results/<run-id>/

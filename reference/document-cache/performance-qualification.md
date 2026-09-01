@@ -1,12 +1,17 @@
 # DocumentCache Performance Qualification
 
-This is the DMS-1317 qualification contract for E18 DocumentCache scale behavior. It turns
-the design-level [Projection Performance Qualification](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-performance-qualification)
+This is the DMS-1317 harness and runbook contract for E18 DocumentCache scale behavior. It
+turns the design-level
+[Projection Performance Qualification](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-performance-qualification)
 requirements into executable guard commands, representative-run thresholds, and result
 artifact expectations.
 
 DMS-1317 qualification stops at the DocumentCache projection boundary. Kafka connector,
 topic, offset, ACL, consumer, and downstream publication qualification belongs to E19.
+DMS-1317 delivers the harness, threshold catalog, validator, and operator procedure; the
+actual PostgreSQL and SQL Server representative performance runs and committed
+`reference/document-cache/qualification-results/<run-id>/` artifacts belong to a follow-up
+performance ticket.
 
 ## Entry Point
 
@@ -43,7 +48,7 @@ Run release qualification on dedicated PostgreSQL and SQL Server targets whose s
 not tmpfs and whose CPU, IO, WAL/log, and maintenance metrics can be captured for the run
 window. Follow the step-by-step
 [representative qualification runbook](representative-qualification-runbook.md)
-when producing committed evidence.
+when producing committed evidence in the follow-up performance ticket.
 
 Before the representative run, prepare a strict operator metrics JSON file and pass it
 through `-OperatorMetricsFile` or `PERF_DOCUMENTCACHE_OPERATOR_METRICS_FILE`. The harness
@@ -118,7 +123,7 @@ v1 production use by accepting repeated full restart cost without that ticket.
 
 ## Result Artifacts
 
-Each release-validation run directory must contain:
+Each follow-up release-validation run directory must contain:
 
 | Artifact | Contents |
 | --- | --- |

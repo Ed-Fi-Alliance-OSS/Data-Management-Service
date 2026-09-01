@@ -1,8 +1,11 @@
 # DocumentCache Representative Qualification Runbook
 
-This is the release-validation procedure for the DMS-1317 DocumentCache representative
-benchmark. Use it with the threshold contract in
-[performance-qualification.md](performance-qualification.md).
+This is the release-validation procedure delivered by DMS-1317 for the DocumentCache
+representative benchmark. Use it with the threshold contract in
+[performance-qualification.md](performance-qualification.md). DMS-1317 does not include
+running this benchmark or committing
+`reference/document-cache/qualification-results/<run-id>/` artifacts; that measured
+evidence belongs to a follow-up performance ticket.
 
 DMS-1317 evidence stops at the DocumentCache projection boundary. Kafka connector,
 topic, offset, consumer, and downstream publication qualification belongs to E19.
@@ -109,8 +112,8 @@ rg -n "threshold-results|qualification-summary|outage-drain|provider-metrics|dur
   reference/document-cache eng/performance tasks.json
 ```
 
-If validation passes and every threshold result is acceptable, copy or move the validated
-directory under:
+In the follow-up performance ticket, if validation passes and every threshold result is
+acceptable, copy or move the validated directory under:
 
 ```text
 reference/document-cache/qualification-results/<run-id>/
@@ -123,8 +126,8 @@ pwsh ./eng/performance/invoke-documentcache-qualification.ps1 \
   -ValidateResults ./reference/document-cache/qualification-results/<run-id>
 ```
 
-Commit the complete result directory only after validation succeeds from the committed
-location.
+Commit the complete result directory in that follow-up ticket only after validation
+succeeds from the committed location.
 
 ## Failure Handling
 
