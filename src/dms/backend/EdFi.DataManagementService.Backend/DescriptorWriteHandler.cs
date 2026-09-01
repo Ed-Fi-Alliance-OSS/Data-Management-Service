@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
 using EdFi.DataManagementService.Backend.Etag;
@@ -2627,19 +2628,27 @@ internal sealed class DescriptorWriteHandler(
             request.TraceId.Value
         );
 
+        // Stamped on every descriptor create, exactly as it is for a regular resource, and independently of
+        // whether descriptor ownership enforcement is available: stamping never consults configured
+        // strategies. Descriptor requests configured with OwnershipBased still fail closed with a 501 before
+        // reaching here, so a stamped descriptor row is only ever produced by a request this handler accepts.
+        var createdByOwnershipTokenId = request.RelationalAuthorizationContext.CreatorOwnershipTokenId;
+
         var command = request.MappingSet.Key.Dialect switch
         {
             SqlDialect.Pgsql => BuildPostgresqlInsertCommand(
                 body,
                 documentUuid,
                 resourceKeyId,
-                request.ReferentialId!.Value
+                request.ReferentialId!.Value,
+                createdByOwnershipTokenId
             ),
             SqlDialect.Mssql => BuildMssqlInsertCommand(
                 body,
                 documentUuid,
                 resourceKeyId,
-                request.ReferentialId!.Value
+                request.ReferentialId!.Value,
+                createdByOwnershipTokenId
             ),
             _ => throw new NotSupportedException(
                 $"Descriptor write does not support SQL dialect '{request.MappingSet.Key.Dialect}'."
@@ -3473,15 +3482,16 @@ internal sealed class DescriptorWriteHandler(
         ExtractedDescriptorBody body,
         DocumentUuid documentUuid,
         short resourceKeyId,
-        ReferentialId referentialId
+        ReferentialId referentialId,
+        short? createdByOwnershipTokenId
     )
     {
         // The data-modifying CTE performs the insert graph, then a separate statement reads the inserted
         // document and projection work row so PostgreSQL observes trigger side effects in this transaction.
         const string Sql = """
             WITH new_doc AS (
-                INSERT INTO dms."Document" ("DocumentUuid", "ResourceKeyId")
-                VALUES (@documentUuid, @resourceKeyId)
+                INSERT INTO dms."Document" ("DocumentUuid", "ResourceKeyId", "CreatedByOwnershipTokenId")
+                VALUES (@documentUuid, @resourceKeyId, @createdByOwnershipTokenId)
                 RETURNING "DocumentId"
             )
             , new_descriptor AS (
@@ -3521,7 +3531,7 @@ internal sealed class DescriptorWriteHandler(
 
         return new RelationalCommand(
             Sql,
-            BuildInsertParameters(body, documentUuid, resourceKeyId, referentialId)
+            BuildInsertParameters(body, documentUuid, resourceKeyId, referentialId, createdByOwnershipTokenId)
         );
     }
 
@@ -3529,7 +3539,8 @@ internal sealed class DescriptorWriteHandler(
         ExtractedDescriptorBody body,
         DocumentUuid documentUuid,
         short resourceKeyId,
-        ReferentialId referentialId
+        ReferentialId referentialId,
+        short? createdByOwnershipTokenId
     )
     {
         // Capture the insert-time ContentVersion into a table variable via OUTPUT ... INTO, run every
@@ -3543,9 +3554,9 @@ internal sealed class DescriptorWriteHandler(
             DECLARE @newDocumentId BIGINT;
             DECLARE @insertedContentVersion TABLE ([ContentVersion] BIGINT);
 
-            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
+            INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId], [CreatedByOwnershipTokenId])
             OUTPUT INSERTED.[ContentVersion] INTO @insertedContentVersion ([ContentVersion])
-            VALUES (@documentUuid, @resourceKeyId);
+            VALUES (@documentUuid, @resourceKeyId, @createdByOwnershipTokenId);
 
             SET @newDocumentId = SCOPE_IDENTITY();
 
@@ -3580,7 +3591,7 @@ internal sealed class DescriptorWriteHandler(
 
         return new RelationalCommand(
             Sql,
-            BuildInsertParameters(body, documentUuid, resourceKeyId, referentialId)
+            BuildInsertParameters(body, documentUuid, resourceKeyId, referentialId, createdByOwnershipTokenId)
         );
     }
 
@@ -4008,17 +4019,31 @@ internal sealed class DescriptorWriteHandler(
 
     // ── Parameter builders ───────────────────────────────────────────────
 
+    /// <param name="createdByOwnershipTokenId">
+    /// The API client's <c>CreatorOwnershipTokenId</c>, or <see langword="null"/> when it has none. Bound
+    /// either way so each dialect keeps one insert statement text, and typed explicitly for the same reason
+    /// the regular-resource insert types it: a null reaches the driver as <c>DBNull</c>, which carries no
+    /// type of its own.
+    /// </param>
     private static List<RelationalParameter> BuildInsertParameters(
         ExtractedDescriptorBody body,
         DocumentUuid documentUuid,
         short resourceKeyId,
-        ReferentialId referentialId
+        ReferentialId referentialId,
+        short? createdByOwnershipTokenId
     )
     {
         var parameters = BuildInsertFieldParameters(body);
         parameters.Add(new RelationalParameter("@documentUuid", documentUuid.Value));
         parameters.Add(new RelationalParameter("@resourceKeyId", resourceKeyId));
         parameters.Add(new RelationalParameter("@referentialId", referentialId.Value));
+        parameters.Add(
+            new RelationalParameter(
+                "@createdByOwnershipTokenId",
+                createdByOwnershipTokenId,
+                static parameter => parameter.DbType = DbType.Int16
+            )
+        );
         AddEnqueueOutcomeParameters(parameters);
         return parameters;
     }
