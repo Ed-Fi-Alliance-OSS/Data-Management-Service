@@ -333,6 +333,13 @@ public static class DocumentCacheQualification
         ),
     ];
 
+    public static IReadOnlyList<DocumentCacheQualificationThreshold> OrderedThresholds() =>
+        [
+            .. Thresholds
+                .OrderBy(threshold => threshold.Provider)
+                .ThenBy(threshold => threshold.Id, StringComparer.Ordinal),
+        ];
+
     public static IReadOnlyList<DocumentCacheQualificationThreshold> ThresholdsFor(PerfProvider provider) =>
         Thresholds.Where(threshold => threshold.Provider == provider).ToArray();
 }

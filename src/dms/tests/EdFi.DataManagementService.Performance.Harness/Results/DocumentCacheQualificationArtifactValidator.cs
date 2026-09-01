@@ -77,6 +77,30 @@ public static class DocumentCacheQualificationArtifactValidator
         return failures;
     }
 
+    public static IReadOnlyList<DocumentCacheQualificationValidationFailure> ValidateThresholdResults(
+        string resultsDirectory,
+        IReadOnlyList<DocumentCacheQualificationResult?> results
+    )
+    {
+        List<DocumentCacheQualificationValidationFailure> failures = [];
+
+        if (string.IsNullOrWhiteSpace(resultsDirectory))
+        {
+            failures.Add(new("resultDirectory.required", "Result directory is required."));
+            return failures;
+        }
+
+        string root = Path.GetFullPath(resultsDirectory);
+        if (!Directory.Exists(root))
+        {
+            failures.Add(new("resultDirectory.missing", "Result directory does not exist.", root));
+            return failures;
+        }
+
+        ValidateThresholdRows(root, results, failures);
+        return failures;
+    }
+
     private static void ValidateRequiredArtifacts(
         string root,
         List<DocumentCacheQualificationValidationFailure> failures
@@ -253,6 +277,8 @@ public static class DocumentCacheQualificationArtifactValidator
             }
         }
 
+        ValidateThresholdRowOrder(results, catalog, failures);
+
         for (int index = 0; index < results.Count; index++)
         {
             DocumentCacheQualificationResult? row = results[index];
@@ -269,6 +295,44 @@ public static class DocumentCacheQualificationArtifactValidator
             }
 
             ValidateThresholdRow(root, row, index, catalog, failures);
+        }
+    }
+
+    private static void ValidateThresholdRowOrder(
+        IReadOnlyList<DocumentCacheQualificationResult?> results,
+        IReadOnlyDictionary<string, DocumentCacheQualificationThreshold> catalog,
+        List<DocumentCacheQualificationValidationFailure> failures
+    )
+    {
+        IReadOnlyList<string> actualIds =
+        [
+            .. results
+                .Where(row => !string.IsNullOrWhiteSpace(row?.ThresholdId))
+                .Select(row => row!.ThresholdId!),
+        ];
+        IReadOnlyList<string> expectedIds =
+        [
+            .. DocumentCacheQualification.OrderedThresholds().Select(threshold => threshold.Id),
+        ];
+
+        if (
+            actualIds.Count != expectedIds.Count
+            || actualIds.Distinct(StringComparer.Ordinal).Count() != expectedIds.Count
+            || actualIds.Any(id => !catalog.ContainsKey(id))
+        )
+        {
+            return;
+        }
+
+        if (!actualIds.SequenceEqual(expectedIds, StringComparer.Ordinal))
+        {
+            failures.Add(
+                new(
+                    "thresholdRow.order",
+                    "Threshold rows must be sorted by provider and threshold id.",
+                    ThresholdResultsPath
+                )
+            );
         }
     }
 
@@ -499,10 +563,7 @@ public static class DocumentCacheQualificationArtifactValidator
         List<DocumentCacheQualificationValidationFailure> failures
     )
     {
-        if (
-            threshold.Area is not ("databaseCpu" or "databaseIo")
-            || string.IsNullOrWhiteSpace(row.EvidencePath)
-        )
+        if (threshold.Area != "databaseCpu" || string.IsNullOrWhiteSpace(row.EvidencePath))
         {
             return;
         }
@@ -512,7 +573,7 @@ public static class DocumentCacheQualificationArtifactValidator
             failures.Add(
                 new(
                     "thresholdRow.operatorMetricsEvidencePath",
-                    $"CPU and I/O threshold rows must reference '{DocumentCacheOperatorMetricsEvidence.RelativePath}'.",
+                    $"CPU threshold rows must reference '{DocumentCacheOperatorMetricsEvidence.RelativePath}'.",
                     rowPath,
                     threshold.Id
                 )

@@ -31,18 +31,20 @@ internal sealed class DocumentCacheQualificationArtifactSample : IDisposable
 
     public static List<DocumentCacheQualificationResult> CreateRows() =>
         [
-            .. DocumentCacheQualification.Thresholds.Select(threshold => new DocumentCacheQualificationResult(
-                PerfProviders.ArtifactName(threshold.Provider),
-                threshold.Id,
-                threshold.Area,
-                threshold.Measurement,
-                threshold.Maximum / 2,
-                threshold.Maximum,
-                threshold.Unit,
-                Passed: true,
-                EvidencePath: EvidencePathFor(threshold),
-                ReviewerNote: $"Measured {threshold.Id} against the representative DocumentCache workload."
-            )),
+            .. DocumentCacheQualification
+                .OrderedThresholds()
+                .Select(threshold => new DocumentCacheQualificationResult(
+                    PerfProviders.ArtifactName(threshold.Provider),
+                    threshold.Id,
+                    threshold.Area,
+                    threshold.Measurement,
+                    threshold.Maximum / 2,
+                    threshold.Maximum,
+                    threshold.Unit,
+                    Passed: true,
+                    EvidencePath: EvidencePathFor(threshold),
+                    ReviewerNote: $"Measured {threshold.Id} against the representative DocumentCache workload."
+                )),
         ];
 
     public void RewriteResults(IEnumerable<DocumentCacheQualificationResult> rows)
@@ -93,7 +95,7 @@ internal sealed class DocumentCacheQualificationArtifactSample : IDisposable
     }
 
     private static string EvidencePathFor(DocumentCacheQualificationThreshold threshold) =>
-        threshold.Area is "databaseCpu" or "databaseIo"
+        threshold.Area == "databaseCpu"
             ? DocumentCacheOperatorMetricsEvidence.RelativePath
             : $"phase-metrics/{threshold.Id}.json";
 
@@ -192,6 +194,25 @@ public class Given_A_Valid_DocumentCacheQualification_Result_Directory
         json.Should().Contain("\"thresholdId\"");
         json.Should().Contain("\"measuredValue\"");
         json.Should().NotContain("\"ThresholdId\"");
+    }
+}
+
+[TestFixture]
+public class Given_A_DocumentCacheQualification_Result_Directory_With_Unsorted_Rows
+{
+    [Test]
+    public void It_rejects_rows_that_are_not_sorted_by_provider_and_threshold_id()
+    {
+        using DocumentCacheQualificationArtifactSample sample =
+            DocumentCacheQualificationArtifactSample.Create();
+        sample.RewriteResults(
+            sample.Results.OrderByDescending(row => row.ThresholdId, StringComparer.Ordinal)
+        );
+
+        DocumentCacheQualificationArtifactValidator
+            .ValidateDirectory(sample.ResultDirectory)
+            .Should()
+            .Contain(failure => failure.Code == "thresholdRow.order");
     }
 }
 
@@ -344,7 +365,7 @@ public class Given_A_DocumentCacheQualification_Result_Directory_With_Invalid_Ev
 public class Given_A_DocumentCacheQualification_Result_Directory_With_Invalid_Operator_Metrics
 {
     [Test]
-    public void It_rejects_cpu_and_io_rows_that_do_not_reference_the_operator_metrics_file()
+    public void It_rejects_cpu_rows_that_do_not_reference_the_operator_metrics_file()
     {
         using DocumentCacheQualificationArtifactSample sample =
             DocumentCacheQualificationArtifactSample.Create();

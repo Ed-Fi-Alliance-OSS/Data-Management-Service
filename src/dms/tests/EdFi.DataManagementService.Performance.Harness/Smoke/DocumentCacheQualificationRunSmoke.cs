@@ -39,11 +39,7 @@ internal static class DocumentCacheQualificationRunSmoke
     {
         PerfFixtureKind fixture = PerfFixtureKind.Smoke10k;
         string providerName = PerfProviders.ArtifactName(provider);
-        string resultsDirectoryBase = Path.Combine(
-            Path.GetTempPath(),
-            "dms-document-cache-qualification-smoke",
-            Guid.NewGuid().ToString("N")
-        );
+        string resultsDirectoryBase = ResultsDirectoryBase();
         string operatorMetricsFile = Path.Combine(resultsDirectoryBase, "operator-cpu-io.json");
         Directory.CreateDirectory(resultsDirectoryBase);
         await File.WriteAllTextAsync(
@@ -95,6 +91,16 @@ internal static class DocumentCacheQualificationRunSmoke
         File.Exists(Path.Combine(runDirectory, DocumentCacheOperatorMetricsEvidence.RelativePath))
             .Should()
             .BeTrue();
+        File.Exists(
+                Path.Combine(
+                    runDirectory,
+                    DocumentCacheProviderMetricSummary
+                        .RelativePath(providerName)
+                        .Replace('/', Path.DirectorySeparatorChar)
+                )
+            )
+            .Should()
+            .BeTrue();
         File.Exists(Path.Combine(runDirectory, "provider-metrics", "postgresql-wal-vacuum-bloat.md"))
             .Should()
             .Be(provider == PerfProvider.Postgresql);
@@ -105,6 +111,18 @@ internal static class DocumentCacheQualificationRunSmoke
         await TestContext.Out.WriteLineAsync(
             $"DocumentCache qualification smoke artifacts written to {runDirectory}"
         );
+    }
+
+    private static string ResultsDirectoryBase()
+    {
+        string? configured = Environment.GetEnvironmentVariable(PerfEnvironmentVariables.ResultsDirectory);
+        return string.IsNullOrWhiteSpace(configured)
+            ? Path.Combine(
+                Path.GetTempPath(),
+                "dms-document-cache-qualification-smoke",
+                Guid.NewGuid().ToString("N")
+            )
+            : Path.GetFullPath(configured);
     }
 
     private static void AssertRequiredPhaseArtifacts(string runDirectory, string providerName)

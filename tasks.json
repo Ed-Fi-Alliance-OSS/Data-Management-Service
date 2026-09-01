@@ -539,7 +539,7 @@
       "Temporarily point a generated threshold row to a missing evidence path and confirm validation fails.",
       "Run: `dotnet csharpier format src/dms/tests/EdFi.DataManagementService.Performance.Harness`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Performance Runbook",

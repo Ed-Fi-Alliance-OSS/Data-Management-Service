@@ -17,6 +17,9 @@
     DocumentCacheRepresentativeQualification harness and validate the produced result
     artifacts. Pass -ValidateResults to validate an existing representative result directory
     without running bounded guards, explicit writer evidence, or representative benchmarks.
+    If an interrupted restart, database load, log pressure, or queue-DML threshold fails, pass
+    -DurableBaselineCursorTicket or set PERF_DOCUMENTCACHE_DURABLE_BASELINE_CURSOR_TICKET
+    before rerunning assembly/validation.
 
 .EXAMPLE
     ./eng/performance/invoke-documentcache-qualification.ps1 -Provider postgresql,mssql `
@@ -57,7 +60,10 @@ param(
     [switch] $RunExplicitWriterEvidence,
 
     [Parameter(ParameterSetName = 'Run')]
-    [string] $OperatorMetricsFile
+    [string] $OperatorMetricsFile,
+
+    [Parameter(ParameterSetName = 'Run')]
+    [string] $DurableBaselineCursorTicket
 )
 
 Set-StrictMode -Version Latest
@@ -135,6 +141,33 @@ function Invoke-DocumentCacheQualificationResultValidation {
         )
 }
 
+function Invoke-DocumentCacheQualificationThresholdAssembly {
+    param(
+        [Parameter(Mandatory = $true)][string] $ResultDirectory,
+        [string] $Ticket
+    )
+
+    $arguments = @(
+        'run',
+        '--project',
+        $validationToolProject,
+        '-c',
+        $Configuration,
+        '--',
+        'assemble-threshold-results',
+        $ResultDirectory
+    )
+
+    if (![string]::IsNullOrWhiteSpace($Ticket)) {
+        $arguments += $Ticket
+    }
+
+    Invoke-CheckedCommand `
+        -Label 'document-cache-qualification-threshold-assembly' `
+        -FilePath 'dotnet' `
+        -ArgumentList $arguments
+}
+
 if ($PSCmdlet.ParameterSetName -eq 'Validate') {
     $resolvedResults = (Resolve-Path -Path $ValidateResults).Path
     Invoke-DocumentCacheQualificationResultValidation -ResultDirectory $resolvedResults
@@ -152,6 +185,11 @@ if ($RunRepresentative) {
     }
 
     $OperatorMetricsFile = (Resolve-Path -Path $effectiveOperatorMetricsFile).Path
+}
+
+$effectiveDurableBaselineCursorTicket = $DurableBaselineCursorTicket
+if ([string]::IsNullOrWhiteSpace($effectiveDurableBaselineCursorTicket)) {
+    $effectiveDurableBaselineCursorTicket = [Environment]::GetEnvironmentVariable('PERF_DOCUMENTCACHE_DURABLE_BASELINE_CURSOR_TICKET')
 }
 
 $runId = 'document-cache-qualification-{0:yyyyMMdd-HHmmss}' -f (Get-Date)
@@ -246,6 +284,7 @@ $summaryPath = Join-Path -Path $runDirectory -ChildPath 'qualification-summary.m
     "Representative benchmark: $RunRepresentative",
     "Explicit writer evidence: $RunExplicitWriterEvidence",
     "Operator metrics file: $OperatorMetricsFile",
+    "Durable baseline cursor ticket: $effectiveDurableBaselineCursorTicket",
     '',
     '## Evidence Status',
     '',
@@ -276,6 +315,10 @@ $summaryPath = Join-Path -Path $runDirectory -ChildPath 'qualification-summary.m
 ) | Set-Content -Path $summaryPath -Encoding UTF8
 
 if ($RunRepresentative) {
+    Invoke-DocumentCacheQualificationThresholdAssembly `
+        -ResultDirectory $runDirectory `
+        -Ticket $effectiveDurableBaselineCursorTicket
+
     Invoke-DocumentCacheQualificationResultValidation -ResultDirectory $runDirectory
 }
 

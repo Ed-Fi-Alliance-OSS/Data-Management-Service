@@ -14,6 +14,7 @@ namespace EdFi.DataManagementService.Performance.Harness.Smoke;
 
 [TestFixture]
 [Explicit("DocumentCache qualification pipeline against a live database at smoke scale; run manually")]
+[NonParallelizable]
 [Category("Performance")]
 [Category("DocumentCacheQualificationSmoke")]
 public class Given_Mssql_DocumentCacheQualificationRunSmoke : MssqlApiIntegrationTestBase

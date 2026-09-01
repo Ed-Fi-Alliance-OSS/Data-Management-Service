@@ -223,6 +223,46 @@ public sealed record DocumentCacheQualificationPhaseMetrics(
 }
 
 /// <summary>
+/// Provider-specific measured values emitted from the database metric capture phase. The
+/// human markdown remains the reviewer evidence; this structured summary is the typed input
+/// used to assemble threshold-results.json without parsing markdown tables.
+/// </summary>
+public sealed record DocumentCacheProviderMetricSummary(
+    string SchemaVersion,
+    string Provider,
+    string CapturedAtUtc,
+    IReadOnlyList<DocumentCacheProviderLogMetric> LogPhases,
+    IReadOnlyList<DocumentCacheProviderQueryMetric> QuerySamples,
+    decimal ProviderMaintenanceRatioPercent
+)
+{
+    public static string RelativePath(string provider) => $"provider-metrics/{provider}-summary.json";
+}
+
+public sealed record DocumentCacheProviderLogMetric(
+    string Phase,
+    long ProjectedDocumentCount,
+    decimal Bytes,
+    decimal? BytesPerProjectedDocument
+);
+
+public sealed record DocumentCacheProviderQueryMetric(
+    string Name,
+    string SqlFilePath,
+    string PlanFilePath,
+    string? StatisticsFilePath,
+    long? SharedReadBlocks,
+    long? SharedHitBlocks,
+    long? LogicalReads,
+    long? PhysicalReads,
+    decimal? SharedReadBlocksPerProjectedDocument,
+    decimal? LogicalReadsPerProjectedDocument,
+    double? DbExecutionMs,
+    double? DbCpuMs,
+    double? DbElapsedMs
+);
+
+/// <summary>
 /// One row in threshold-results.json. Nullable fields are intentional: deserialization of
 /// incomplete JSON must succeed far enough for the validator to report every missing field.
 /// </summary>

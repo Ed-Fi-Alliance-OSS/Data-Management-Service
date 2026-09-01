@@ -15,6 +15,40 @@ public static class DocumentCacheQualificationArtifactWriter
 {
     private static readonly UTF8Encoding _utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
+    public static void WriteThresholdResults(
+        string resultsDirectory,
+        IReadOnlyList<DocumentCacheQualificationResult> thresholdResults
+    )
+    {
+        IReadOnlyList<DocumentCacheQualificationValidationFailure> inMemoryFailures =
+            DocumentCacheQualificationArtifactValidator.ValidateThresholdResults(
+                resultsDirectory,
+                [.. thresholdResults]
+            );
+        if (inMemoryFailures.Count > 0)
+        {
+            throw new PerfArtifactValidationException([
+                .. inMemoryFailures.Select(failure => failure.ToString()),
+            ]);
+        }
+
+        string target = Path.GetFullPath(resultsDirectory);
+        WriteText(target, "threshold-results.json", PerfArtifactJson.Serialize(thresholdResults));
+
+        string writtenJson = File.ReadAllText(Path.Combine(target, "threshold-results.json"));
+        IReadOnlyList<DocumentCacheQualificationResult?> reloadedResults = PerfArtifactJson.Deserialize<
+            List<DocumentCacheQualificationResult?>
+        >(writtenJson);
+        IReadOnlyList<DocumentCacheQualificationValidationFailure> diskFailures =
+            DocumentCacheQualificationArtifactValidator.ValidateThresholdResults(target, reloadedResults);
+        if (diskFailures.Count > 0)
+        {
+            throw new PerfArtifactValidationException([
+                .. diskFailures.Select(failure => failure.ToString()),
+            ]);
+        }
+    }
+
     public static void Write(
         string resultsDirectory,
         DocumentCacheQualificationRunManifest manifest,

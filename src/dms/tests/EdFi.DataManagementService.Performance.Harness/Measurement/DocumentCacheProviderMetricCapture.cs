@@ -370,6 +370,10 @@ internal sealed class PostgresqlDocumentCacheProviderMetricCapture(
         _bloatEstimatorEvidence = await CaptureBloatEstimatorEvidenceAsync();
         DocumentCacheOperatorMetricsEvidence operatorMetrics = CopyOperatorMetricsEvidence();
         WriteText(
+            DocumentCacheProviderMetricSummary.RelativePath(ProviderName),
+            PerfArtifactJson.Serialize(BuildSummary())
+        );
+        WriteText(
             "provider-metrics/postgresql-wal-vacuum-bloat.md",
             BuildMarkdown(operatorMetrics.MetricsFor(ProviderName))
         );
@@ -600,6 +604,44 @@ internal sealed class PostgresqlDocumentCacheProviderMetricCapture(
         return builder.ToString();
     }
 
+    private DocumentCacheProviderMetricSummary BuildSummary() =>
+        new(
+            PerfArtifactSchema.Version,
+            ProviderName,
+            UtcTimestamp(),
+            [
+                .. _walPhases.Select(phase => new DocumentCacheProviderLogMetric(
+                    phase.Phase,
+                    phase.ProjectedDocumentCount,
+                    phase.WalBytes,
+                    phase.WalBytesPerProjectedDocument
+                )),
+            ],
+            [
+                .. _planSamples.Select(sample => new DocumentCacheProviderQueryMetric(
+                    sample.Name,
+                    sample.SqlFilePath,
+                    sample.PlanFilePath,
+                    sample.StatisticsFilePath,
+                    sample.Metrics.BuffersRead,
+                    sample.Metrics.BuffersHit,
+                    sample.Metrics.LogicalReads,
+                    sample.Metrics.PhysicalReads,
+                    SharedReadBlocksPerProjectedDocument(sample),
+                    null,
+                    sample.Metrics.DbExecutionMs,
+                    sample.Metrics.DbCpuMs,
+                    sample.Metrics.DbElapsedMs
+                )),
+            ],
+            DeadTupleRatioPercent(_tableStatsAfterVacuum)
+        );
+
+    private decimal? SharedReadBlocksPerProjectedDocument(DocumentCacheProviderPlanSample sample) =>
+        sample.Name == "projection" && sample.Metrics.BuffersRead is { } sharedReadBlocks
+            ? (decimal)sharedReadBlocks / Configuration.PageSize
+            : null;
+
     private static decimal DeadTupleRatioPercent(IReadOnlyList<IReadOnlyDictionary<string, string>> rows)
     {
         long live = rows.Sum(row => ReadLong(row, "LiveTuples"));
@@ -695,6 +737,10 @@ internal sealed class MssqlDocumentCacheProviderMetricCapture(
         await ExecuteNonQueryAsync("""ALTER INDEX ALL ON [dms].[DocumentProjectionWork] REORGANIZE;""");
         _indexStatsAfterMaintenance = await CaptureIndexPhysicalStatsAsync();
         DocumentCacheOperatorMetricsEvidence operatorMetrics = CopyOperatorMetricsEvidence();
+        WriteText(
+            DocumentCacheProviderMetricSummary.RelativePath(ProviderName),
+            PerfArtifactJson.Serialize(BuildSummary())
+        );
         WriteText(
             "provider-metrics/mssql-log-ghost-index.md",
             BuildMarkdown(operatorMetrics.MetricsFor(ProviderName))
@@ -934,6 +980,44 @@ internal sealed class MssqlDocumentCacheProviderMetricCapture(
 
         return builder.ToString();
     }
+
+    private DocumentCacheProviderMetricSummary BuildSummary() =>
+        new(
+            PerfArtifactSchema.Version,
+            ProviderName,
+            UtcTimestamp(),
+            [
+                .. _logPhases.Select(phase => new DocumentCacheProviderLogMetric(
+                    phase.Phase,
+                    phase.ProjectedDocumentCount,
+                    phase.LogBytes,
+                    phase.LogBytesPerProjectedDocument
+                )),
+            ],
+            [
+                .. _planSamples.Select(sample => new DocumentCacheProviderQueryMetric(
+                    sample.Name,
+                    sample.SqlFilePath,
+                    sample.PlanFilePath,
+                    sample.StatisticsFilePath,
+                    sample.Metrics.BuffersRead,
+                    sample.Metrics.BuffersHit,
+                    sample.Metrics.LogicalReads,
+                    sample.Metrics.PhysicalReads,
+                    null,
+                    LogicalReadsPerProjectedDocument(sample),
+                    sample.Metrics.DbExecutionMs,
+                    sample.Metrics.DbCpuMs,
+                    sample.Metrics.DbElapsedMs
+                )),
+            ],
+            GhostRowRatioPercent(_indexStatsAfterMaintenance)
+        );
+
+    private decimal? LogicalReadsPerProjectedDocument(DocumentCacheProviderPlanSample sample) =>
+        sample.Name == "projection" && sample.Metrics.LogicalReads is { } logicalReads
+            ? (decimal)logicalReads / Configuration.PageSize
+            : null;
 
     private static decimal ReadDecimal(IReadOnlyDictionary<string, string> row, string key) =>
         row.TryGetValue(key, out string? value)
