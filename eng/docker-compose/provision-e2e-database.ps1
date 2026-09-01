@@ -33,7 +33,15 @@ param(
     # idempotency guard, so the PostgreSQL invocation is unaffected when this parameter is
     # omitted.
     [ValidateSet("postgresql", "mssql")]
-    [string]$DatabaseEngine = "postgresql"
+    [string]$DatabaseEngine = "postgresql",
+
+    # Reuse already-compiled CLI output instead of letting `dotnet run` restore and build the
+    # ApiSchemaDownloader and SchemaTools projects below. Opt-in rather than the default because the
+    # direct callers - both setup-local-dms.ps1 scripts - build nothing themselves, and that
+    # build-on-demand is what lets this script provision from a fresh worktree. Only build-dms.ps1
+    # can promise compiled output: its E2ETest and InstanceE2ETest routes already require a prior
+    # build for the tests themselves, and in CI the shared build artifact supplies it.
+    [switch]$UsePrebuiltTools
 )
 
 Set-StrictMode -Version Latest
@@ -389,12 +397,17 @@ else {
 
 $script:ResolvedSchemaDirectory =
     Join-Path ([System.IO.Path]::GetTempPath()) "dms-e2e-schema-$([Guid]::NewGuid().ToString('N'))"
+# Appended to both CLI invocations rather than replacing their arguments, so --no-launch-profile -
+# the reason the downloader call overrode the helper's --no-build default in the first place -
+# survives either way.
+$script:PrebuiltToolDotnetRunArgs = if ($UsePrebuiltTools) { @("--no-build", "--no-restore") } else { @() }
+
 $schemaFiles = @(Resolve-SchemaFilesFromEnvironmentFile `
         -EnvironmentFilePath $environmentFilePath `
         -Configuration $Configuration `
         -RepoRoot $repoRoot `
         -SchemaDirectory $script:ResolvedSchemaDirectory `
-        -DownloaderDotnetRunArgs @("--no-launch-profile"))
+        -DownloaderDotnetRunArgs (@("--no-launch-profile") + $script:PrebuiltToolDotnetRunArgs))
 
 try {
     Write-Information "Dropping E2E database if it exists: $e2eDatabaseName" -InformationAction Continue
@@ -435,7 +448,8 @@ try {
 
     $provisionArgs = @(
         "run",
-        "--no-launch-profile",
+        "--no-launch-profile"
+    ) + $script:PrebuiltToolDotnetRunArgs + @(
         "--configuration",
         $Configuration,
         "--project",

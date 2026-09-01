@@ -112,6 +112,14 @@ param(
     [switch]
     $SkipDockerBuild,
 
+    # Run the E2E routes against compiled output that already exists instead of building it here.
+    # Off by default, so the documented direct commands stay self-sufficient: E2ETest and
+    # InstanceE2ETest provision their databases with CLIs built on demand, and InstanceE2ETest builds
+    # its test project. CI sets it, because those jobs extract the shared build artifact first and
+    # rebuilding it is the cost the artifact exists to remove.
+    [switch]
+    $UsePrebuiltOutput,
+
     # Opts into the seed phase after the stack starts. For StartEnvironment, forwarded to the
     # bootstrap wrapper so it uses the documented API-based seed path. E2ETest rejects this switch
     # because its database is reset and provisioned by provision-e2e-database.ps1 before tests run.
@@ -563,8 +571,15 @@ function RunTests {
         $ResultNameSuffix
     )
 
-    # @() so $testAssemblies[-1] below is well defined when exactly one assembly matches: the
-    # pipeline hands back a bare FileInfo in that case rather than a single-element array.
+    # Unit tests are collected in one run so coverage can be measured across the whole set. Every
+    # other filter runs assembly by assembly.
+    if ($Filter.Equals("*.Tests.Unit")) {
+        RunUnitTestsWithCoverage
+        return
+    }
+
+    # @() because the pipeline hands back a bare FileInfo when exactly one assembly matches, and the
+    # loop below has to be able to treat the result as a collection either way.
     $testAssemblies = @(
         Get-RequiredTestAssembly -SolutionRoot $solutionRoot -Filter $Filter -Configuration $Configuration |
             Sort-Object -Property { $_.Name.Length }
@@ -588,82 +603,146 @@ function RunTests {
 
         $target = $_.FullName
 
-        if ($Filter.Equals("*.Tests.Unit")) {
-            # For unit tests, we need to collect coverage but not check thresholds yet
-            $isLastTest = $_ -eq $testAssemblies[-1]
-
-            if ($isLastTest) {
-                # Last test: generate final reports and check thresholds
-                Invoke-Execute {
-                    dotnet tool run coverlet -- $($_) `
-                        --target dotnet --targetargs "test $target --logger:console --logger:trx --nologo --blame"`
-                        --exclude "[EdFi.DataManagementService.Tests.E2E]*" `
-                        --exclude "[EdFi.DataManagementService.Tests.Integration]*" `
-                        --exclude "[EdFi.DataManagementService.Backend.Tests.Integration.Common]*" `
-                        --exclude "[EdFi.DataManagementService.Performance.Harness]*" `
-                        --threshold $thresholdCoverage `
-                        --threshold-type line `
-                        --threshold-type branch `
-                        --threshold-stat total `
-                        --format json `
-                        --format cobertura `
-                        --merge-with "coverage.json"
-                }
+        $fileNameNoExt = $_.Name.subString(0, $_.Name.length - 4)
+        $trxFileName =
+            if ([string]::IsNullOrWhiteSpace($ResultNameSuffix)) {
+                "$fileNameNoExt.trx"
             }
             else {
-                # Not the last test: just collect coverage without threshold check
-                Invoke-Execute {
-                    dotnet tool run coverlet -- $($_) `
-                        --target dotnet --targetargs "test $target --logger:console --logger:trx --nologo --blame"`
-                        --exclude "[EdFi.DataManagementService.Tests.E2E]*" `
-                        --exclude "[EdFi.DataManagementService.Tests.Integration]*" `
-                        --exclude "[EdFi.DataManagementService.Backend.Tests.Integration.Common]*" `
-                        --exclude "[EdFi.DataManagementService.Performance.Harness]*" `
-                        --format json `
-                        --merge-with "coverage.json"
-                }
+                "$fileNameNoExt.$ResultNameSuffix.trx"
             }
+
+        $trxFilePath = Join-Path $testResults $trxFileName
+
+        # Set Query Handler for E2E tests
+        if ($Filter -like "*E2E*") {
+            $dirPath = Split-Path -parent $($_)
+            SetAuthenticationServiceURL($dirPath)
         }
-        else {
-            $fileNameNoExt = $_.Name.subString(0, $_.Name.length - 4)
-            $trxFileName =
-                if ([string]::IsNullOrWhiteSpace($ResultNameSuffix)) {
-                    "$fileNameNoExt.trx"
-                }
-                else {
-                    "$fileNameNoExt.$ResultNameSuffix.trx"
-                }
 
-            $trxFilePath = Join-Path $testResults $trxFileName
+        $dotNetTestArguments = @(
+            $target,
+            "--no-build",
+            "--no-restore",
+            "-v",
+            "normal",
+            "--logger",
+            "trx;LogFileName=$trxFilePath",
+            "--logger",
+            "console",
+            "--nologo"
+        )
 
-            # Set Query Handler for E2E tests
-            if ($Filter -like "*E2E*") {
-                $dirPath = Split-Path -parent $($_)
-                SetAuthenticationServiceURL($dirPath)
-            }
+        if (-not [string]::IsNullOrWhiteSpace($normalizedTestFilter)) {
+            $dotNetTestArguments += @("--filter", $normalizedTestFilter)
+        }
 
-            $dotNetTestArguments = @(
-                $target,
-                "--no-build",
-                "--no-restore",
-                "-v",
-                "normal",
-                "--logger",
-                "trx;LogFileName=$trxFilePath",
-                "--logger",
-                "console",
-                "--nologo"
-            )
-
-            if (-not [string]::IsNullOrWhiteSpace($normalizedTestFilter)) {
-                $dotNetTestArguments += @("--filter", $normalizedTestFilter)
-            }
-
-            Invoke-Execute {
-                dotnet test @dotNetTestArguments
-            }
+        Invoke-Execute {
+            dotnet test @dotNetTestArguments
         }
     }
+}
+
+function RunUnitTestsWithCoverage {
+    # One `dotnet test` over a generated solution filter covering every *.Tests.Unit project.
+    #
+    # What this replaces: each assembly was wrapped in coverlet.console, which rewrote every DLL in
+    # that project's output directory on disk, ran the tests, then restored the directory - once per
+    # assembly, accumulating into a coverage.json that grew each pass. The threshold was applied only
+    # to whichever assembly happened to sort last by name length, and a failure in any assembly
+    # aborted the run before the later ones executed. The collector instruments in-process instead,
+    # the whole set runs even when one project fails, and the threshold is applied once to the merged
+    # total.
+    $unitTestProjects = @(
+        Get-RequiredUnitTestProject -SolutionRoot $solutionRoot -Filter "*.Tests.Unit" |
+            Sort-Object -Property Name
+    )
+
+    Write-Output "Unit Test Projects List"
+    Write-Output $unitTestProjects
+    Write-Output "End Unit Test Projects List"
+
+    if (-not (Test-Path $testResults)) {
+        New-Item -ItemType Directory -Path $testResults -Force | Out-Null
+    }
+
+    $collectorOutput = Join-Path $testResults "unit-coverage"
+    $mergedOutput = Join-Path $testResults "unit-coverage-merged"
+
+    foreach ($staleDirectory in @($collectorOutput, $mergedOutput)) {
+        if (Test-Path $staleDirectory) {
+            # A report left by an earlier run would otherwise be merged into this one's total.
+            Remove-Item -LiteralPath $staleDirectory -Recurse -Force
+        }
+    }
+
+    if (Test-Path $coverageOutputFile) {
+        # Cleared up front so a run that fails before the merge cannot leave the previous run's
+        # report behind, where the workflow's hashFiles check and Coverage would read it as this
+        # run's result.
+        Remove-Item -LiteralPath $coverageOutputFile -Force
+    }
+
+    $solutionFilterPath = Join-Path $testResults "dms-unit-tests.slnf"
+    $solutionFilterContent = ConvertTo-SolutionFilterContent `
+        -SolutionPath ([System.IO.Path]::GetRelativePath($testResults, $defaultSolution)) `
+        -ProjectPath @(
+            $unitTestProjects | ForEach-Object {
+                [System.IO.Path]::GetRelativePath($solutionRoot, $_.FullName)
+            }
+        )
+
+    # The filter is generated rather than tracked so it cannot drift from the projects on disk.
+    [System.IO.File]::WriteAllText(
+        $solutionFilterPath,
+        $solutionFilterContent,
+        [System.Text.UTF8Encoding]::new($false)
+    )
+
+    Invoke-Execute {
+        dotnet test $solutionFilterPath `
+            --configuration $Configuration `
+            --no-build `
+            --no-restore `
+            --blame `
+            --collect:"XPlat Code Coverage" `
+            --settings "$PSScriptRoot/eng/ci/coverlet.runsettings" `
+            --results-directory $collectorOutput `
+            --logger "trx" `
+            --logger "console" `
+            --nologo
+    }
+
+    # A runtime datacollector failure does not fail dotnet test - that project's report just never
+    # exists - and the merge below only fails when it finds zero reports, so the count is asserted
+    # here to keep the threshold from being evaluated against a silently shifted total.
+    Assert-CoverageReportPerProject `
+        -CollectorOutputPath $collectorOutput `
+        -ExpectedProjectName @($unitTestProjects | ForEach-Object { $_.Name })
+
+    # Each switch and its value must be ONE argument. A `--` earlier in a native command's arguments
+    # puts PowerShell's parser into a mode where `-name:"value"` is emitted as two arguments,
+    # `-name:` and the value, and ReportGenerator then reports "No report files specified" for an
+    # invocation that looks correct. Quoting the whole `-name:value` token is what keeps it together.
+    #
+    # The reports glob is single-level for the same reason Assert-CoverageReportPerProject only
+    # counts first-level directories: the trx logger copies every report a second time, deeper,
+    # under <trx name>/In/<machine>/, and a recursive ** would merge each report twice.
+    Invoke-Execute {
+        dotnet tool run reportgenerator -- `
+            "-reports:$collectorOutput/*/coverage.cobertura.xml" `
+            "-targetdir:$mergedOutput" `
+            "-reporttypes:Cobertura"
+    }
+
+    # $coverageOutputFile is relative, so this lands beside the caller exactly where the previous
+    # driver left it - which is what the workflow's hashFiles check and `build-dms.ps1 Coverage`
+    # both look for.
+    Copy-Item -LiteralPath (Join-Path $mergedOutput "Cobertura.xml") -Destination $coverageOutputFile -Force
+
+    $measured = Assert-CoverageThreshold -Path $coverageOutputFile -Threshold $thresholdCoverage
+
+    Write-Output "Coverage: line $($measured.LinePercentage)%, branch $($measured.BranchPercentage)% (threshold $($measured.Threshold)%)"
 }
 
 function UnitTests {
@@ -705,10 +784,15 @@ function Invoke-E2EDatabaseProvisioning {
     try {
         Push-Location "$PSScriptRoot/eng/docker-compose"
         $provisionOutput = @()
+        # Provisioning otherwise restores and rebuilds ApiSchemaDownloader and SchemaTools - and
+        # through SchemaTools' project references, Core and Backend.Ddl - inside every E2E job that
+        # just downloaded exactly that output. Left on for a direct local run, which has no artifact
+        # to reuse.
         ./provision-e2e-database.ps1 `
             -EnvironmentFile $E2ETestSettings.EnvironmentFile `
             -DatabaseEngine $E2ETestSettings.DatabaseEngine `
-            -Configuration $Configuration 6>&1 |
+            -Configuration $Configuration `
+            -UsePrebuiltTools:$UsePrebuiltOutput 6>&1 |
             Tee-Object -Variable provisionOutput |
             ForEach-Object { Write-Host ([string]$_) }
 
@@ -1637,6 +1721,14 @@ function RunInstanceE2E {
         "--nologo"
     )
 
+    if ($UsePrebuiltOutput) {
+        # Unlike the other test paths this one builds by default, because it is the only test command
+        # documented as a standalone run: it starts Docker, provisions the route-context databases and
+        # runs the tests, with no prior build expected. CI extracted the shared build artifact first,
+        # so there the build is pure duplication of the project and its whole reference graph.
+        $dotNetTestArguments += @("--no-build", "--no-restore")
+    }
+
     if (-not [string]::IsNullOrWhiteSpace($normalizedTestFilter)) {
         $dotNetTestArguments += @("--filter", $normalizedTestFilter)
     }
@@ -1710,6 +1802,10 @@ function InstanceE2ETests {
             DatabaseEngine          = $instanceSettings.DatabaseEngine
             EnvironmentFile         = $instanceSettings.EnvironmentFile
             ResolvedEnvironmentFile = $instanceSettings.ResolvedEnvironmentFile
+            # The three route-context provisioning calls the setup makes must not rebuild the CLIs
+            # the shared build artifact already provided. Off for a direct local run, which is what
+            # keeps this command self-sufficient.
+            UsePrebuiltTools        = $UsePrebuiltOutput
         }
         if ($SkipDockerBuild) {
             $setupParameters.SkipDockerBuild = $true
@@ -1952,7 +2048,15 @@ function Invoke-TestExecution {
 }
 
 function Invoke-Coverage {
-    dotnet tool run reportgenerator -- -reports:"$coverageOutputFile" -targetdir:"$targetDir" -reporttypes:Html
+    # Whole-token quoting for the same reason as the unit-test merge above, and Invoke-Execute so a
+    # ReportGenerator failure fails the command. Without the exit-code check this reported success
+    # while writing no report at all, which is indistinguishable from a report nobody reads.
+    Invoke-Execute {
+        dotnet tool run reportgenerator -- `
+            "-reports:$coverageOutputFile" `
+            "-targetdir:$targetDir" `
+            "-reporttypes:Html"
+    }
 }
 
 function Invoke-BuildPackage {

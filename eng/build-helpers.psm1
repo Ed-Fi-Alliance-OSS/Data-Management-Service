@@ -171,4 +171,189 @@ function Write-MessageColorOutput
     $host.UI.RawUI.ForegroundColor = $fc
 }
 
+<#
+    .DESCRIPTION
+    Resolve the test projects a unit-test run must cover, failing rather than reporting an empty
+    glob as success - the same rule Get-RequiredTestAssembly applies to assemblies.
+#>
+function Get-RequiredUnitTestProject {
+    param (
+        # Root of the solution whose test projects are being searched
+        [string]
+        $SolutionRoot,
+
+        # Project directory filter, e.g. "*.Tests.Unit"
+        [string]
+        $Filter
+    )
+
+    # The wildcard carries the file pattern rather than a -Filter argument: a -Filter combined with
+    # a wildcard directory path silently matches nothing here, which would read as "no unit tests".
+    $projectPath = "$SolutionRoot/*/$Filter/$Filter.csproj"
+
+    $projects = @(Get-ChildItem -Path $projectPath)
+
+    if ($projects.Count -eq 0) {
+        throw "no test projects found in $projectPath. Nothing matching '$Filter' exists, so this target would run zero tests."
+    }
+
+    return $projects
+}
+
+<#
+    .DESCRIPTION
+    Build the contents of a solution filter (.slnf). SolutionPath is relative to the filter file;
+    each ProjectPath is relative to the solution file, matching how the solution itself records them.
+#>
+function ConvertTo-SolutionFilterContent {
+    param (
+        [string]
+        $SolutionPath,
+
+        [string[]]
+        $ProjectPath
+    )
+
+    return [pscustomobject]@{
+        solution = [pscustomobject]@{
+            path     = $SolutionPath
+            projects = @($ProjectPath)
+        }
+    } | ConvertTo-Json -Depth 4
+}
+
+<#
+    .DESCRIPTION
+    Assert that a collector run produced exactly one coverage.cobertura.xml per test project. A
+    runtime datacollector failure does not fail dotnet test - the project's report just never
+    exists - and the ReportGenerator merge only fails on zero reports, so without this check the
+    threshold gate would be evaluated against a total that silently lost the projects that failed
+    to report. The collector writes each report into a GUID-named directory, so a shortfall cannot
+    be traced to a specific project; the message names the full expected list instead.
+#>
+function Assert-CoverageReportPerProject {
+    param (
+        # Directory the collector wrote its per-project results into
+        [string]
+        $CollectorOutputPath,
+
+        # Names of the test projects the run was expected to produce reports for
+        [string[]]
+        $ExpectedProjectName
+    )
+
+    # The collector writes each report as <results-dir>/<guid>/coverage.cobertura.xml. The trx
+    # logger shares that directory and copies every attachment a second time, deeper, as
+    # <trx name>/In/<machine>/coverage.cobertura.xml - so only reports directly inside first-level
+    # directories are counted here, or a healthy run would fail as double-counted.
+    $reports = @(
+        if (Test-Path -LiteralPath $CollectorOutputPath -PathType Container) {
+            Get-ChildItem -LiteralPath $CollectorOutputPath -Directory |
+                ForEach-Object {
+                    Get-ChildItem -LiteralPath $_.FullName -File -Filter "coverage.cobertura.xml"
+                }
+        }
+    )
+
+    if ($reports.Count -ne $ExpectedProjectName.Count) {
+        throw (
+            "Expected one coverage.cobertura.xml per unit test project " +
+            "($($ExpectedProjectName.Count): $($ExpectedProjectName -join ', ')) " +
+            "but found $($reports.Count) under '$CollectorOutputPath'. " +
+            "Merging that set would evaluate the coverage threshold against a silently shifted total."
+        )
+    }
+}
+
+<#
+    .DESCRIPTION
+    Enforce a total line and branch coverage threshold against a Cobertura report, reproducing
+    coverlet's --threshold-type line --threshold-type branch --threshold-stat total. The rates are
+    read as XML attributes rather than matched out of the file's text, and parsed with the invariant
+    culture: on a comma-decimal machine, culture-sensitive parsing turns 0.61 into 61 and the gate
+    passes no matter what was measured. Returns the measured percentages so a caller can report them.
+#>
+function Assert-CoverageThreshold {
+    param (
+        # Path to a Cobertura coverage report
+        [string]
+        $Path,
+
+        # Minimum acceptable percentage, applied to line and branch totals independently
+        [int]
+        $Threshold
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "Coverage report '$Path' was not produced, so the $Threshold% threshold cannot be enforced. Treating a missing report as a pass would silently disable the coverage gate."
+    }
+
+    try {
+        [xml] $report = Get-Content -LiteralPath $Path -Raw
+    }
+    catch {
+        throw "Coverage report '$Path' is not valid XML, so the $Threshold% threshold cannot be enforced: $($_.Exception.Message)"
+    }
+
+    # Deliberately not $report.coverage: ReportGenerator writes a
+    # <!DOCTYPE coverage SYSTEM ...> declaration ahead of the root element, and the dotted XML
+    # adapter then matches the DocumentType node as well and hands back both. DocumentElement names
+    # the root and only the root.
+    $coverage = $report.DocumentElement
+
+    if ($null -eq $coverage -or $coverage.Name -ne 'coverage') {
+        throw "Coverage report '$Path' has no <coverage> root element, so the $Threshold% threshold cannot be enforced."
+    }
+
+    $measured = [ordered]@{}
+
+    foreach ($rateName in @('line-rate', 'branch-rate')) {
+        $rawRate = $coverage.GetAttribute($rateName)
+
+        if ([string]::IsNullOrWhiteSpace($rawRate)) {
+            throw "Coverage report '$Path' does not declare $rateName, so the $Threshold% threshold cannot be enforced."
+        }
+
+        $parsedRate = 0.0
+        $parsed = [double]::TryParse(
+            $rawRate,
+            [System.Globalization.NumberStyles]::Float,
+            [System.Globalization.CultureInfo]::InvariantCulture,
+            [ref] $parsedRate
+        )
+
+        # TryParse under NumberStyles::Float accepts NaN and the infinities, and NaN fails every
+        # -lt comparison, so without the finiteness check a non-finite rate would pass the gate.
+        if (-not $parsed -or -not [double]::IsFinite($parsedRate)) {
+            throw "Coverage report '$Path' declares $rateName as '$rawRate', which is not a finite number, so the $Threshold% threshold cannot be enforced."
+        }
+
+        # Held as the raw rate, unrounded. Rounding to a display percentage before the comparison
+        # opens a false-pass window just under the gate: 0.57995 is 57.995%, which rounds to 58.00
+        # and would pass a threshold it is below.
+        $measured[$rateName] = $parsedRate
+    }
+
+    # Compared as rates rather than percentages. Scaling to a percentage first makes an
+    # exactly-at-threshold report fail, because 0.58 * 100 is 57.99999999999999 as a double, while
+    # 0.58 and 58 / 100.0 are the same double. Comparing rates is what keeps the boundary exact in
+    # both directions.
+    $thresholdRate = $Threshold / 100.0
+
+    $below = @(
+        $measured.Keys | Where-Object { $measured[$_] -lt $thresholdRate }
+    )
+
+    if ($below.Count -gt 0) {
+        $detail = ($measured.Keys | ForEach-Object { "$_ $([math]::Round($measured[$_] * 100, 2))%" }) -join ', '
+        throw "Coverage is below the $Threshold% threshold for $($below -join ' and '). Measured: $detail."
+    }
+
+    return [pscustomobject]@{
+        LinePercentage   = [math]::Round($measured['line-rate'] * 100, 2)
+        BranchPercentage = [math]::Round($measured['branch-rate'] * 100, 2)
+        Threshold        = $Threshold
+    }
+}
+
 Export-ModuleMember -Function *

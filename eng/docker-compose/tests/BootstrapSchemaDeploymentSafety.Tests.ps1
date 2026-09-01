@@ -332,10 +332,44 @@ exit $ExitCode
             $params | Should -Contain "Configuration"
             $params | Should -Contain "PostgresContainerName"
             $params | Should -Contain "DatabaseEngine"
+            # Opt-in only. The direct local callers (both setup-local-dms.ps1 scripts) build nothing
+            # themselves, so this script has to stay self-sufficient by default; the build path is
+            # the only caller that can promise compiled output.
+            $params | Should -Contain "UsePrebuiltTools"
             $params | Should -Not -Contain "SchemaToolPath"
             $params | Should -Not -Contain "DataStoreId"
             $params | Should -Not -Contain "SchoolYear"
-            $params.Count | Should -Be 5
+            $params.Count | Should -Be 6
+        }
+
+        It "provision-e2e-database.ps1 reuses prebuilt CLI output only when asked" {
+            # Both CLI invocations are dotnet run against a project, which restores and builds by
+            # default - and SchemaTools' project references reach Core and Backend.Ddl, so that is a
+            # large share of a solution build paid inside every E2E job. The workflow's E2E consumers
+            # extract the shared artifact before reaching here, so they must not pay it again; a
+            # developer running this script straight from setup-local-dms.ps1 has no build to reuse
+            # and must.
+            $content = Get-Content -LiteralPath $script:repo.E2EProvisionScript -Raw
+
+            # Guarded by the switch, not unconditional.
+            $content | Should -Match '\$UsePrebuiltTools'
+            # --no-launch-profile is preserved rather than replaced: it is why the downloader call
+            # overrode the helper's --no-build default in the first place.
+            $content | Should -Match '--no-launch-profile'
+
+            # Both flags live on one shared argument set, gated by the switch.
+            $content | Should -Match '\$script:PrebuiltToolDotnetRunArgs\s*=\s*if \(\$UsePrebuiltTools\) \{ @\("--no-build", "--no-restore"\) \} else \{ @\(\) \}'
+
+            # And both CLI invocations - the downloader arguments and the SchemaTools provisioning
+            # arguments - consume that set, so neither can silently fall back to rebuilding.
+            $argSetConsumer = @(
+                ($content -split "\r?\n") | Where-Object {
+                    $_ -notmatch '^\s*#' -and
+                    $_ -match '\$script:PrebuiltToolDotnetRunArgs' -and
+                    $_ -notmatch '\$script:PrebuiltToolDotnetRunArgs\s*='
+                }
+            )
+            $argSetConsumer.Count | Should -Be 2
         }
 
         It "provision-e2e-database.ps1 owns explicit E2E database reset and SchemaTools provisioning" {
