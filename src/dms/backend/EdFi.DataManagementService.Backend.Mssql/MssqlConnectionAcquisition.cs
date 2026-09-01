@@ -50,6 +50,38 @@ internal readonly record struct ConfiguredTargetKey(
     string ConfiguredConnectionString
 );
 
+/// <summary>
+/// Test-only observation seams for the acquisition. Production never constructs one - the public
+/// constructor passes null and every notification site is a null-conditional call - so the seams
+/// cost production nothing and the acquisition keeps no counters of its own.
+/// </summary>
+internal sealed class MssqlAcquisitionObserver
+{
+    /// <summary>
+    /// Invoked each time a connection string is provider-realized. Configuration load and target
+    /// selection must never trigger this: parsing belongs only inside the acquisition boundary -
+    /// acquisition itself, and this class's ownership reconciliation - so that a
+    /// present-but-provider-invalid derivative stays selectable and fails at acquisition.
+    /// </summary>
+    public Action? Realized { get; init; }
+
+    /// <summary>
+    /// Invoked when an acquisition has observed an outstanding clear and is about to wait for it.
+    /// Whether a caller took no lease and waited is otherwise invisible from outside, and a test
+    /// that inferred it from elapsed time would be asserting on the scheduler rather than on the
+    /// exclusion.
+    /// </summary>
+    public Action? WaitingOnOutstandingClear { get; init; }
+
+    /// <summary>
+    /// Receives, at construction, a probe reporting whether the calling thread holds the
+    /// acquisition's state lock. The correctness argument for the acquisition rests on no provider
+    /// or external work running under that lock, and the probe is what lets a substituted seam
+    /// assert it from the inside rather than leaving it a comment.
+    /// </summary>
+    public Action<Func<bool>>? StateLockProbe { get; init; }
+}
+
 /// <inheritdoc />
 /// <remarks>
 /// SQL Server owns no data-source object, so unlike PostgreSQL there is nothing here to dispose. The
@@ -93,13 +125,22 @@ public sealed class MssqlConnectionAcquisition : IMssqlConnectionAcquisition, ID
 
     private long _ownershipVersion;
     private long _clearGeneration;
-    private long _realizationCount;
-    private long _tombstoneWaitCount;
+
+    /// <summary>Null in production; see <see cref="MssqlAcquisitionObserver" />.</summary>
+    private readonly MssqlAcquisitionObserver? _observer;
 
     public MssqlConnectionAcquisition(
         ISqlServerPoolClearing poolClearing,
         ILogger<MssqlConnectionAcquisition> logger,
         Func<string, DbConnection>? createConnection = null
+    )
+        : this(poolClearing, logger, createConnection, observer: null) { }
+
+    internal MssqlConnectionAcquisition(
+        ISqlServerPoolClearing poolClearing,
+        ILogger<MssqlConnectionAcquisition> logger,
+        Func<string, DbConnection>? createConnection,
+        MssqlAcquisitionObserver? observer
     )
     {
         ArgumentNullException.ThrowIfNull(poolClearing);
@@ -109,44 +150,10 @@ public sealed class MssqlConnectionAcquisition : IMssqlConnectionAcquisition, ID
         _logger = logger;
         _createConnection =
             createConnection ?? (effectiveConnectionString => new SqlConnection(effectiveConnectionString));
-    }
+        _observer = observer;
 
-    /// <summary>
-    /// Whether the calling thread currently holds the state lock. The correctness argument for this
-    /// class rests on no provider or external work running under that lock, and this is what lets a
-    /// substituted seam assert it from the inside rather than leaving it a comment.
-    /// </summary>
-    internal bool IsStateLockHeldByCurrentThread => Monitor.IsEntered(_stateLock);
-
-    /// <summary>
-    /// How many times a connection string has been provider-realized. Configuration load and target
-    /// selection must leave this at zero: parsing belongs only inside the acquisition boundary -
-    /// acquisition itself, and this class's ownership reconciliation - so that a
-    /// present-but-provider-invalid derivative stays selectable and fails at acquisition.
-    /// </summary>
-    internal long RealizationCount => Interlocked.Read(ref _realizationCount);
-
-    /// <summary>
-    /// How many acquisitions have observed an outstanding clear and gone on to wait for it. Whether a
-    /// caller took no lease and waited is otherwise invisible from outside, and a test that inferred it
-    /// from elapsed time would be asserting on the scheduler rather than on the exclusion.
-    /// </summary>
-    internal long TombstoneWaitCount => Interlocked.Read(ref _tombstoneWaitCount);
-
-    /// <summary>
-    /// How many effective identities the current snapshot owns. The set is replaced wholesale on every
-    /// reconciliation, and this is what lets a test prove it: a removed target's identity is gone the
-    /// moment the snapshot without it lands, never retained on the side.
-    /// </summary>
-    internal int OwnedIdentityCount
-    {
-        get
-        {
-            lock (_stateLock)
-            {
-                return _ownedEffective.Count;
-            }
-        }
+        // The lock object stays private; a test seam gets a probe of it, never the lock itself.
+        observer?.StateLockProbe?.Invoke(() => Monitor.IsEntered(_stateLock));
     }
 
     /// <summary>What a pool identity currently owes: outstanding leases, ownership, and any clear in flight.</summary>
@@ -184,7 +191,7 @@ public sealed class MssqlConnectionAcquisition : IMssqlConnectionAcquisition, ID
         // throws - inside the acquisition boundary, with no shared state touched, so a failure needs no
         // repair and records no pool.
         string effective = RealizeEffectiveConnectionString(target);
-        Interlocked.Increment(ref _realizationCount);
+        _observer?.Realized?.Invoke();
 
         while (true)
         {
@@ -197,13 +204,14 @@ public sealed class MssqlConnectionAcquisition : IMssqlConnectionAcquisition, ID
                     // A clear is in flight for exactly this identity. Take no lease and open nothing:
                     // the clear would discard the pool this lease was about to be granted against.
                     outstandingClear = existing.Clearing.Completion;
-                    Interlocked.Increment(ref _tombstoneWaitCount);
                 }
                 else
                 {
                     return LeaseLocked(effective);
                 }
             }
+
+            _observer?.WaitingOnOutstandingClear?.Invoke();
 
             // Outside the lock, and cancellable. Each iteration waits on a distinct clear generation
             // whose completion is signalled from a finally, so the loop can neither spin nor strand.
@@ -249,7 +257,7 @@ public sealed class MssqlConnectionAcquisition : IMssqlConnectionAcquisition, ID
                         new EffectiveDataStoreTarget(owner.Kind, owner.ConfiguredConnectionString)
                     )
                 );
-                Interlocked.Increment(ref _realizationCount);
+                _observer?.Realized?.Invoke();
             }
             catch (ArgumentException)
             {

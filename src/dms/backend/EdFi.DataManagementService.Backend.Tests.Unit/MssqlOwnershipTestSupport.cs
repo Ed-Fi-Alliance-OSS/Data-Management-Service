@@ -21,8 +21,11 @@ internal sealed class GatedSqlServerPoolClearing : ISqlServerPoolClearing
     private readonly ConcurrentQueue<string> _cleared = new();
     private readonly ConcurrentBag<string> _lockViolations = [];
 
-    /// <summary>The acquisition under test, so a clear can assert it is not running under the lock.</summary>
-    public MssqlConnectionAcquisition? Acquisition { get; set; }
+    /// <summary>
+    /// Reports whether the calling thread holds the acquisition's state lock, so a clear can assert
+    /// it is not running under it. Received from the acquisition's observer at construction.
+    /// </summary>
+    public Func<bool> IsStateLockHeld { get; set; } = static () => false;
 
     /// <summary>Runs at the top of every clear, before it is recorded.</summary>
     public Action<string>? OnClear { get; set; }
@@ -39,7 +42,7 @@ internal sealed class GatedSqlServerPoolClearing : ISqlServerPoolClearing
 
     public void ClearPool(string effectiveConnectionString)
     {
-        if (Acquisition?.IsStateLockHeldByCurrentThread == true)
+        if (IsStateLockHeld())
         {
             _lockViolations.Add(nameof(ClearPool));
         }

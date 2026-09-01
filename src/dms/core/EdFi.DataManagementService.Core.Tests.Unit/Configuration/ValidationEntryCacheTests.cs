@@ -402,15 +402,15 @@ public class ValidationEntryCacheTests
         /// replacement and install a third.
         /// </summary>
         /// <remarks>
-        /// The gate fires on the fourth clock reading, which is the expiry check of the paused
-        /// reader's first pass - two readings populate the original entry, and the paused reader's own
-        /// pass takes one for the entry timestamp before the one that decides expiry. That holds it
-        /// between deciding and removing, which is the only window where the two removals can collide.
+        /// The gate fires on the third clock reading, which is the paused reader's opportunistic
+        /// scavenge check of the expired entry - two readings populate the original entry. That holds
+        /// the paused reader with the expired entry in hand while the other reader removes it and
+        /// installs the replacement, which is the window where the two removals can collide.
         /// </remarks>
         [Test]
         public async Task It_produces_exactly_one_replacement()
         {
-            GatedTimeProvider time = new(Start, gateOnReading: 4);
+            GatedTimeProvider time = new(Start, gateOnReading: 3);
             ValidationEntryCache<string> cache = new(time, _expiration, (_, _) => false);
 
             await cache.Read(DerivativeKey(), () => Task.FromResult("expired")).Value;
@@ -440,6 +440,123 @@ public class ValidationEntryCacheTests
             string current = await cache.Read(DerivativeKey(), Produce).Value;
             current.Should().Be(byOther, "the replacement must still be the cached entry");
             productions.Should().Be(1, "the expired entry must be replaced exactly once");
+        }
+    }
+
+    /// <summary>
+    /// The retention hazard scavenging exists for: a repointed derivative changes its cache key, so
+    /// nothing ever reads the old key again, and without a sweep the old entry - verdict, completed
+    /// task, and connection-string text - would stay resident for the process lifetime.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Expired_Entry_Whose_Key_Is_Never_Read_Again : ValidationEntryCacheTests
+    {
+        private const string OldConnectionString = "Server=old-snapshot;Database=edfi";
+        private const string NewConnectionString = "Server=new-snapshot;Database=edfi";
+
+        /// <summary>
+        /// Residency has no forward-time behavioral surface - re-reading the old key replaces an
+        /// expired entry whether or not it was swept earlier - so the probe moves the clock back to
+        /// inside the old entry's lifetime after the sweep. An entry that had survived the sweep
+        /// would still be current there and would answer with its cached value; a swept one must
+        /// produce anew.
+        /// </summary>
+        [Test]
+        public async Task It_is_removed_by_a_read_of_a_different_key()
+        {
+            ControlledTimeProvider time = new(Start);
+            var cache = CacheOf(time);
+
+            await cache.Read(DerivativeKey(OldConnectionString), () => Task.FromResult("old")).Value;
+
+            time.Advance(_expiration);
+            await cache.Read(DerivativeKey(NewConnectionString), () => Task.FromResult("new")).Value;
+
+            time.Advance(TimeSpan.FromSeconds(1) - _expiration);
+            string probed = await cache
+                .Read(DerivativeKey(OldConnectionString), () => Task.FromResult("reproduced"))
+                .Value;
+
+            probed.Should().Be("reproduced", "the new key's read must have swept the expired old entry");
+        }
+
+        [Test]
+        public async Task It_is_not_removed_while_it_has_not_yet_expired()
+        {
+            ControlledTimeProvider time = new(Start);
+            var cache = CacheOf(time);
+
+            await cache.Read(DerivativeKey(OldConnectionString), () => Task.FromResult("old")).Value;
+
+            time.Advance(_expiration - TimeSpan.FromSeconds(1));
+            await cache.Read(DerivativeKey(NewConnectionString), () => Task.FromResult("new")).Value;
+
+            string probed = await cache
+                .Read(DerivativeKey(OldConnectionString), () => Task.FromResult("reproduced"))
+                .Value;
+
+            probed.Should().Be("old", "an unexpired derivative entry is not the sweep's to remove");
+        }
+
+        /// <summary>
+        /// Primary verdicts are permanent, so however stale a primary entry looks to the clock, the
+        /// sweep that runs on every read must never touch it.
+        /// </summary>
+        [Test]
+        public async Task It_never_takes_a_primary_entry_with_it()
+        {
+            ControlledTimeProvider time = new(Start);
+            var cache = CacheOf(time);
+
+            await cache.Read(PrimaryKey(), () => Task.FromResult("primary first")).Value;
+
+            time.Advance(10 * _expiration);
+            await cache.Read(DerivativeKey(NewConnectionString), () => Task.FromResult("new")).Value;
+
+            string primary = await cache.Read(PrimaryKey(), () => Task.FromResult("primary second")).Value;
+
+            primary.Should().Be("primary first", "a primary verdict lives for the process lifetime");
+        }
+
+        /// <summary>
+        /// Sweeping an expired entry whose production is still in flight must neither disturb the
+        /// awaiter that is holding it nor the replacement a later read installs.
+        /// </summary>
+        [Test]
+        public async Task It_can_be_swept_in_flight_without_disturbing_its_awaiter_or_the_replacement()
+        {
+            ControlledTimeProvider time = new(Start);
+            var cache = CacheOf(time);
+
+            TaskCompletionSource<string> inFlight = new();
+            ValidationCacheRead<string> slowRead = cache.Read(
+                DerivativeKey(OldConnectionString),
+                () => inFlight.Task
+            );
+
+            time.Advance(_expiration);
+            await cache.Read(DerivativeKey(NewConnectionString), () => Task.FromResult("new")).Value;
+
+            int replacementProductions = 0;
+
+            Task<string> Replacement()
+            {
+                replacementProductions++;
+                return Task.FromResult("replacement");
+            }
+
+            string replaced = await cache.Read(DerivativeKey(OldConnectionString), Replacement).Value;
+            replaced.Should().Be("replacement", "the swept entry must not answer for its key any more");
+
+            inFlight.SetResult("slow done");
+            (await slowRead.Value).Should().Be("slow done", "the awaiter still sees its own production");
+
+            string current = await cache.Read(DerivativeKey(OldConnectionString), Replacement).Value;
+            current.Should().Be("replacement");
+            replacementProductions
+                .Should()
+                .Be(1, "the swept entry's completion must not evict the replacement");
         }
     }
 

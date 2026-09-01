@@ -35,8 +35,11 @@ public class Given_NpgsqlDataSourceCache_Under_Concurrency
     public void Setup()
     {
         _lifetime = new GatedNpgsqlDataSourceLifetime();
-        _cache = new NpgsqlDataSourceCache(new CapturingLogger<NpgsqlDataSourceCache>(), _lifetime);
-        _lifetime.Cache = _cache;
+        _cache = new NpgsqlDataSourceCache(
+            new CapturingLogger<NpgsqlDataSourceCache>(),
+            _lifetime,
+            _lifetime.ReceiveStateLockProbe
+        );
     }
 
     [TearDown]

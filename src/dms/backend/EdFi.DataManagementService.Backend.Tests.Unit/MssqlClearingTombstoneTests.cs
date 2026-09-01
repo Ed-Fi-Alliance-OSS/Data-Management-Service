@@ -31,17 +31,23 @@ public class Given_An_Outstanding_Mssql_Pool_Clear
 
     private GatedSqlServerPoolClearing _poolClearing = null!;
     private MssqlConnectionAcquisition _acquisition = null!;
+    private long _tombstoneWaits;
 
     [SetUp]
     public void Setup()
     {
         _poolClearing = new GatedSqlServerPoolClearing();
+        _tombstoneWaits = 0;
         _acquisition = new MssqlConnectionAcquisition(
             _poolClearing,
             new CapturingLogger<MssqlConnectionAcquisition>(),
-            _ => new OwnershipProbeConnection()
+            _ => new OwnershipProbeConnection(),
+            new MssqlAcquisitionObserver
+            {
+                WaitingOnOutstandingClear = () => Interlocked.Increment(ref _tombstoneWaits),
+                StateLockProbe = probe => _poolClearing.IsStateLockHeld = probe,
+            }
         );
-        _poolClearing.Acquisition = _acquisition;
     }
 
     [TearDown]
@@ -73,16 +79,16 @@ public class Given_An_Outstanding_Mssql_Pool_Clear
         MssqlConnectionAcquisition.RealizeEffectiveConnectionString(target);
 
     /// <summary>
-    /// Waits until the acquisition reports that <paramref name="expected" /> callers have observed the
-    /// tombstone and gone on to wait. Bounded so a defect fails rather than hangs; the condition, not
-    /// the elapsed time, is what any assertion reads.
+    /// Waits until the observer seam reports that <paramref name="expected" /> callers have observed
+    /// the tombstone and gone on to wait. Bounded so a defect fails rather than hangs; the condition,
+    /// not the elapsed time, is what any assertion reads.
     /// </summary>
     private void WaitUntilTombstoneObserved(long expected)
     {
         SpinWait spin = new();
         DateTime deadline = DateTime.UtcNow + GateTimeout;
 
-        while (_acquisition.TombstoneWaitCount < expected)
+        while (Interlocked.Read(ref _tombstoneWaits) < expected)
         {
             DateTime.UtcNow.Should().BeBefore(deadline, "an acquisition must observe the tombstone");
             spin.SpinOnce();

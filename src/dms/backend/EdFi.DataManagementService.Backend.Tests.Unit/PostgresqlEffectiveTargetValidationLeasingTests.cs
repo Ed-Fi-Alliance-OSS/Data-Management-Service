@@ -181,8 +181,11 @@ public class Given_A_Postgresql_Effective_Target_Validation_Read
         };
 
         RedirectingLifetime lifetime = new(inner, requested);
-        NpgsqlDataSourceCache cache = new(NullLogger<NpgsqlDataSourceCache>.Instance, lifetime);
-        inner.Cache = cache;
+        NpgsqlDataSourceCache cache = new(
+            NullLogger<NpgsqlDataSourceCache>.Instance,
+            lifetime,
+            inner.ReceiveStateLockProbe
+        );
 
         Exception? failure = null;
 

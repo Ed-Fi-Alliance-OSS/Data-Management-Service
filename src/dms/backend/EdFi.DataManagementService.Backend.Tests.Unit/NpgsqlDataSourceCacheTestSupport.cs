@@ -31,10 +31,13 @@ internal sealed class GatedNpgsqlDataSourceLifetime : INpgsqlDataSourceLifetime,
     private readonly ConcurrentBag<string> _lockViolations = [];
 
     /// <summary>
-    /// The cache under test, so provider work can assert it is not running under the state lock.
-    /// Assigned after construction because the cache needs this lifetime to be built first.
+    /// Reports whether the calling thread holds the cache's state lock, so provider work can assert
+    /// it is not running under it. Received from the cache's test constructor, which is why
+    /// construction passes <see cref="ReceiveStateLockProbe" /> as the probe receiver.
     /// </summary>
-    public NpgsqlDataSourceCache? Cache { get; set; }
+    private Func<bool> _isStateLockHeld = static () => false;
+
+    public void ReceiveStateLockProbe(Func<bool> probe) => _isStateLockHeld = probe;
 
     /// <summary>Runs at the top of every build, before the data source is created.</summary>
     public Action<string>? OnBuild { get; set; }
@@ -158,7 +161,7 @@ internal sealed class GatedNpgsqlDataSourceLifetime : INpgsqlDataSourceLifetime,
 
     private void RecordLockState(string operation)
     {
-        if (Cache?.IsStateLockHeldByCurrentThread == true)
+        if (_isStateLockHeld())
         {
             _lockViolations.Add(operation);
         }

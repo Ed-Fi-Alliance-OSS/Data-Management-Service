@@ -32,10 +32,23 @@ public sealed class NpgsqlDataSourceCache : IDataStoreOwnershipReconciler, IDisp
     public NpgsqlDataSourceCache(ILogger<NpgsqlDataSourceCache> logger)
         : this(logger, NpgsqlDataSourceLifetime.Instance) { }
 
-    internal NpgsqlDataSourceCache(ILogger<NpgsqlDataSourceCache> logger, INpgsqlDataSourceLifetime lifetime)
+    /// <param name="stateLockProbe">
+    /// Test-only: receives, at construction, a probe reporting whether the calling thread holds this
+    /// cache's state lock. The correctness argument for this cache rests on no provider work running
+    /// under that lock, and the probe is what lets a substituted lifetime assert it from inside a
+    /// build, an open, or a disposal rather than leaving it a comment. The lock object stays private;
+    /// production passes nothing and pays nothing.
+    /// </param>
+    internal NpgsqlDataSourceCache(
+        ILogger<NpgsqlDataSourceCache> logger,
+        INpgsqlDataSourceLifetime lifetime,
+        Action<Func<bool>>? stateLockProbe = null
+    )
     {
         _logger = logger;
         _lifetime = lifetime;
+
+        stateLockProbe?.Invoke(() => Monitor.IsEntered(_stateLock));
     }
 
     /// <summary>
@@ -50,13 +63,6 @@ public sealed class NpgsqlDataSourceCache : IDataStoreOwnershipReconciler, IDisp
     /// database stall every other database's acquisitions.
     /// </remarks>
     private readonly object _stateLock = new();
-
-    /// <summary>
-    /// Whether the calling thread currently holds the state lock. The correctness argument for this
-    /// cache rests on no provider work running under that lock, and this is what lets a substituted
-    /// lifetime assert it from inside a build, an open, or a disposal rather than leaving it a comment.
-    /// </summary>
-    internal bool IsStateLockHeldByCurrentThread => Monitor.IsEntered(_stateLock);
 
     private readonly Dictionary<string, ReadyEntry> _entries = new(StringComparer.Ordinal);
     private HashSet<string> _configuredOwners = new(StringComparer.Ordinal);

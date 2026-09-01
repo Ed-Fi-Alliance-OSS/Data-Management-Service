@@ -27,19 +27,27 @@ public class Given_Mssql_Ownership_Reconciliation
     private GatedSqlServerPoolClearing _poolClearing = null!;
     private CapturingLogger<MssqlConnectionAcquisition> _logger = null!;
     private MssqlConnectionAcquisition _acquisition = null!;
+    private long _realizations;
 
     [SetUp]
     public void Setup()
     {
         _poolClearing = new GatedSqlServerPoolClearing();
         _logger = new CapturingLogger<MssqlConnectionAcquisition>();
+        _realizations = 0;
         _acquisition = new MssqlConnectionAcquisition(
             _poolClearing,
             _logger,
-            _ => new OwnershipProbeConnection()
+            _ => new OwnershipProbeConnection(),
+            new MssqlAcquisitionObserver
+            {
+                Realized = () => Interlocked.Increment(ref _realizations),
+                StateLockProbe = probe => _poolClearing.IsStateLockHeld = probe,
+            }
         );
-        _poolClearing.Acquisition = _acquisition;
     }
+
+    private long Realizations => Interlocked.Read(ref _realizations);
 
     [TearDown]
     public void TearDown() =>
@@ -90,18 +98,27 @@ public class Given_Mssql_Ownership_Reconciliation
     /// <summary>
     /// Ownership state is replaced wholesale by each snapshot, never merged, so a removed owner -
     /// acquired or not - retains no identity on the side. Retention here would be retention of
-    /// connection-string material for configuration that no longer exists.
+    /// connection-string material for configuration that no longer exists, and it would also be
+    /// observable: a retained identity would count as owned, so a stale acquisition of it would
+    /// never earn the retirement clear asserted below.
     /// </summary>
     [Test]
-    public void It_should_retain_no_identity_for_a_removed_owner_that_was_never_acquired()
+    public async Task It_should_retain_no_identity_for_a_removed_owner_that_was_never_acquired()
     {
-        _acquisition.Reconcile(Owning(1, Replica(ReplicaText), Snapshot(SnapshotText)));
-        _acquisition.OwnedIdentityCount.Should().Be(2);
+        EffectiveDataStoreTarget snapshot = Snapshot(SnapshotText);
+        _acquisition.Reconcile(Owning(1, Replica(ReplicaText), snapshot));
 
         _acquisition.Reconcile(Owning(2, Replica(ReplicaText)));
-
-        _acquisition.OwnedIdentityCount.Should().Be(1);
         _poolClearing.Cleared.Should().BeEmpty("a never-acquired owner has no pool to clear");
+
+        MssqlConnectionLease stale = await _acquisition.AcquireLeaseAsync(snapshot);
+        await stale.DisposeAsync();
+
+        _poolClearing
+            .ClearCountOf(Effective(snapshot))
+            .Should()
+            .Be(1, "the removed owner's identity must be gone, so the stale lease retires on release");
+        _poolClearing.ClearCountOf(Effective(Replica(ReplicaText))).Should().Be(0);
     }
 
     [Test]
@@ -130,8 +147,8 @@ public class Given_Mssql_Ownership_Reconciliation
         _acquisition.Reconcile(Owning(2));
 
         _poolClearing.Cleared.Should().BeEmpty();
-        _acquisition
-            .RealizationCount.Should()
+        Realizations
+            .Should()
             .Be(
                 1,
                 "reconciliation realizes each configured owner once per publication, and acquires nothing"
@@ -369,13 +386,13 @@ public class Given_Mssql_Ownership_Reconciliation
 
         _poolClearing.Cleared.Should().BeEmpty("the owner is configured again");
 
-        long realizationsBefore = _acquisition.RealizationCount;
+        long realizationsBefore = Realizations;
         MssqlConnectionLease next = await _acquisition.AcquireLeaseAsync(replica);
         await next.DisposeAsync();
 
         _poolClearing.Cleared.Should().BeEmpty();
-        _acquisition
-            .RealizationCount.Should()
+        Realizations
+            .Should()
             .Be(realizationsBefore + 1, "only the new acquisition realized; reactivation reused the memo");
     }
 
@@ -463,9 +480,9 @@ public class Given_Mssql_Ownership_Reconciliation
         MssqlConnectionAcquisition acquisition = new(
             _poolClearing,
             _logger,
-            _ => throw new InvalidOperationException("Simulated connection construction failure.")
+            _ => throw new InvalidOperationException("Simulated connection construction failure."),
+            new MssqlAcquisitionObserver { StateLockProbe = probe => _poolClearing.IsStateLockHeld = probe }
         );
-        _poolClearing.Acquisition = acquisition;
 
         acquisition.Reconcile(Owning(1, replica));
 
@@ -489,7 +506,7 @@ public class Given_Mssql_Ownership_Reconciliation
         Func<Task> acquire = () => _acquisition.AcquireLeaseAsync(Replica(ReplicaText), cancellation.Token);
 
         await acquire.Should().ThrowAsync<OperationCanceledException>();
-        _acquisition.RealizationCount.Should().Be(0, "nothing was realized for a cancelled request");
+        Realizations.Should().Be(0, "nothing was realized for a cancelled request");
     }
 
     /// <summary>

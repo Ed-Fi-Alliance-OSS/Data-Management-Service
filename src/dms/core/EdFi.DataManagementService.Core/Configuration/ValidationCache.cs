@@ -138,6 +138,8 @@ internal sealed class ValidationEntryCache<TValue>(
     {
         ArgumentNullException.ThrowIfNull(produce);
 
+        ScavengeExpiredDerivatives();
+
         while (true)
         {
             CacheEntry entry = _cache.GetOrAdd(
@@ -162,6 +164,26 @@ internal sealed class ValidationEntryCache<TValue>(
     private bool IsExpired(ValidationCacheKey key, CacheEntry entry) =>
         key.PolicyClass == ValidationCachePolicyClass.Derivative
         && timeProvider.GetUtcNow() - entry.CreatedAt >= derivativeExpiration;
+
+    /// <summary>
+    /// Removes every expired derivative entry, whatever key the current read names. Without this
+    /// sweep an expired entry is removed only when its exact key is read again, so a derivative
+    /// repointed to a new connection string would keep its old key's verdict, completed task, and
+    /// connection-string text resident for the process lifetime. Primary entries never expire and
+    /// are never touched. Each removal names the exact entry observed, so a replacement another
+    /// reader has just installed under the same key cannot be swept.
+    /// </summary>
+    private void ScavengeExpiredDerivatives()
+    {
+        foreach (
+            KeyValuePair<ValidationCacheKey, CacheEntry> expired in _cache.Where(pair =>
+                IsExpired(pair.Key, pair.Value)
+            )
+        )
+        {
+            _cache.TryRemove(expired);
+        }
+    }
 
     private IValidationCacheEntryToken TokenFor(ValidationCacheKey key, CacheEntry entry) =>
         key.PolicyClass == ValidationCachePolicyClass.Primary

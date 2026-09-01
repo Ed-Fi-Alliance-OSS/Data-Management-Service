@@ -35,8 +35,7 @@ public class Given_NpgsqlDataSourceCache
     {
         _lifetime = new GatedNpgsqlDataSourceLifetime();
         _logger = new CapturingLogger<NpgsqlDataSourceCache>();
-        _cache = new NpgsqlDataSourceCache(_logger, _lifetime);
-        _lifetime.Cache = _cache;
+        _cache = new NpgsqlDataSourceCache(_logger, _lifetime, _lifetime.ReceiveStateLockProbe);
     }
 
     [TearDown]
