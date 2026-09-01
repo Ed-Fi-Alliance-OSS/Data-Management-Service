@@ -89,7 +89,7 @@ worktree of that commit — only new files, never edits:
    set to the harness-source commit. The run manifest records both commits and the dirty
    overlay paths.
 
-## Artifact layout (schema 1.3.0)
+## Artifact layout (schema 1.4.0)
 
 | File | Content |
 | --- | --- |

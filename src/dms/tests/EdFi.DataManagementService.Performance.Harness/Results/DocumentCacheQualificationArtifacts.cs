@@ -24,6 +24,9 @@ public sealed record DocumentCacheQualificationRunManifest(
     string RunnerCommit,
     string SubjectCommit,
     IReadOnlyList<string> DirtyPathAllowlist,
+    IReadOnlyList<string> WorktreeDirtyPaths,
+    IReadOnlyList<DocumentCacheQualificationProviderIdentity> ProviderIdentities,
+    string? OperatorNote,
     IReadOnlyList<DocumentCacheQualificationArtifact> Artifacts
 )
 {
@@ -34,7 +37,10 @@ public sealed record DocumentCacheQualificationRunManifest(
         string storageNote,
         string runnerCommit,
         string subjectCommit,
-        IReadOnlyList<string> dirtyPathAllowlist
+        IReadOnlyList<string> dirtyPathAllowlist,
+        IReadOnlyList<string> worktreeDirtyPaths,
+        IReadOnlyList<DocumentCacheQualificationProviderIdentity> providerIdentities,
+        string? operatorNote
     ) =>
         new(
             PerfArtifactSchema.Version,
@@ -48,8 +54,53 @@ public sealed record DocumentCacheQualificationRunManifest(
             runnerCommit,
             subjectCommit,
             dirtyPathAllowlist,
+            worktreeDirtyPaths,
+            providerIdentities,
+            operatorNote,
             DocumentCacheQualificationArtifact.RequiredRepresentativeArtifacts()
         );
+}
+
+/// <summary>
+/// Row counts captured after the fixture loader verifies the source data and before any
+/// DocumentCache lifecycle measurement mutates cache or work state.
+/// </summary>
+public sealed record DocumentCacheInitialTableCounts(
+    string Provider,
+    long SourceDocumentRows,
+    long DmsDocumentRows,
+    long DocumentCacheRows,
+    long DocumentProjectionWorkRows
+);
+
+/// <summary>
+/// Provider-specific database identity and clean starting state recorded in the
+/// DocumentCache run manifest.
+/// </summary>
+public sealed record DocumentCacheQualificationProviderIdentity(
+    string Provider,
+    PerfEnvironmentIdentity DatabaseIdentity,
+    DocumentCacheInitialTableCounts InitialCounts
+);
+
+/// <summary>
+/// Phase-metrics artifact written immediately after source fixture setup, before later
+/// lifecycle phases begin.
+/// </summary>
+public sealed record DocumentCacheFixtureSetupMetrics(
+    string SchemaVersion,
+    string Provider,
+    string CapturedAtUtc,
+    PerfFixtureManifest Fixture,
+    DocumentCacheInitialTableCounts InitialCounts
+)
+{
+    public static DocumentCacheFixtureSetupMetrics Create(
+        string provider,
+        string capturedAtUtc,
+        PerfFixtureManifest fixture,
+        DocumentCacheInitialTableCounts initialCounts
+    ) => new(PerfArtifactSchema.Version, provider, capturedAtUtc, fixture, initialCounts);
 }
 
 /// <summary>

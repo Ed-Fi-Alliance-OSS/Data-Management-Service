@@ -16,7 +16,7 @@ namespace EdFi.DataManagementService.Performance.Harness.Measurement;
 /// </summary>
 public static class DocumentCacheQualificationRunPipeline
 {
-    public static Task<string> RunAsync(
+    public static async Task<string> RunAsync(
         ApiIntegrationHarness harness,
         PerfProvider provider,
         Func<Task<DbConnection>> openReplayConnectionAsync,
@@ -37,8 +37,19 @@ public static class DocumentCacheQualificationRunPipeline
             );
         }
 
+        DocumentCacheQualificationFixtureSetupResult setup =
+            await DocumentCacheQualificationFixtureSetup.PrepareAsync(
+                harness,
+                provider,
+                openReplayConnectionAsync,
+                leasedConnectionString,
+                configuration
+            );
+
         throw new PerfObservationException(
-            "DocumentCache representative run entry points are wired, but the lifecycle/outage/status/write-overhead/contended-writer pipeline is implemented by plan step 5."
+            "DocumentCache representative fixture setup completed at "
+                + $"'{setup.RunDirectory}', but the lifecycle/outage/status/write-overhead/contended-writer "
+                + "pipeline is implemented by plan step 5."
         );
     }
 }

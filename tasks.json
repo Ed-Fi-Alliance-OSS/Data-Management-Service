@@ -335,24 +335,6 @@
   },
   {
     "category": "Review Remediation",
-    "description": "[Review finding] Representative-scale DocumentCache qualification is not actually evidenced. The DMS-1317 story requires qualifying interrupted baseline/rebuild restart from the beginning at representative scale against predefined completion-time, database-load, and repeated queue-DML/write-amplification limits, and requires creating a durable-baseline-cursor Jira ticket if a limit fails. The branch currently defines thresholds and result artifact expectations in `reference/document-cache/performance-qualification.md`, but `eng/performance/invoke-documentcache-qualification.ps1` only runs bounded unit/query-plan guards and optional explicit writer evidence, then writes a summary listing required follow-up artifacts. No checked-in measured qualification artifacts such as `threshold-results.json`, outage drain evidence, or provider metrics are present. Simplest responsible solution: add validation for a committed `threshold-results.json` plus required evidence artifact paths, then add the representative-run result artifacts for PostgreSQL and SQL Server. DMS-1317 should not be marked complete without those measured results.",
-    "acceptance-criteria": [
-      "`eng/performance/invoke-documentcache-qualification.ps1` validates the committed representative-run `threshold-results.json` against the provider threshold rows documented in `reference/document-cache/performance-qualification.md`.",
-      "The validation checks that every required result artifact path exists, including `qualification-summary.md`, `threshold-results.json`, query-plan guard output, outage-drain evidence, PostgreSQL WAL/vacuum/bloat evidence, and SQL Server log/ghost/index evidence.",
-      "The representative-run artifacts include measured PostgreSQL and SQL Server results for baseline/rebuild completion time, interrupted restart-from-beginning completion time, database CPU/IO/log pressure, repeated queue DML or write amplification, status/oldest-work latency, canonical write overhead, queue growth and drain after outage, and same-document enqueue/ack lock waits.",
-      "`threshold-results.json` records one row per provider threshold with measured value, pass/fail, evidence path, and reviewer note.",
-      "If any interrupted baseline/rebuild restart-from-beginning limit fails, the results record the durable-baseline-cursor Jira ticket and the branch does not claim production qualification without that prerequisite.",
-      "`reference/document-cache/cdc-inv-evidence.md`, `reference/document-cache/performance-qualification.md`, and this task list no longer imply that DMS-1317 representative-scale qualification is complete based only on threshold documentation or bounded CI guards."
-    ],
-    "steps-to-verify": [
-      "Run the new qualification validation mode against the committed representative-run artifact directory.",
-      "Run: `rg -n \"threshold-results|qualification-summary|outage-drain|provider-metrics|durable-baseline-cursor\" reference/document-cache eng/performance tasks.json`",
-      "Manually confirm the PostgreSQL and SQL Server measured-result rows match the thresholds in `reference/document-cache/performance-qualification.md` and that every evidence path resolves."
-    ],
-    "completed": false
-  },
-  {
-    "category": "Review Remediation",
     "description": "[Review finding] The completed-projection update tests can pass through read-time direct fill instead of proving the background projector update path. Both provider wrappers enable read acceleration and set `DocumentCacheReadAccelerationDirectFillTimeout` to `00:00:05`. The shared scenario performs a stale-cache GET before `DrainProjectionUntilIdleAsync`, and the read coordinator direct-fills stale rows by materializing and writing through `DocumentCacheWriterPurpose.DirectFill`. The later assertion explicitly allows \"projection or direct fill\" to acknowledge the update work row, so a broken ordinary projector update path could still pass. Simplest responsible solution: move the stale-cache GET until after `DrainProjectionUntilIdleAsync` in the completed-projection scenario, so the test proves the background projector updated and acknowledged the work row before any read can direct-fill it.",
     "acceptance-criteria": [
       "In the ordinary-resource completed-projection scenario, after API PUT the test asserts the work row exists and the cache row is stale, then calls `DrainProjectionUntilIdleAsync` before any GET-by-id or query path that can trigger direct fill.",
@@ -485,7 +467,7 @@
       "Temporarily configure a non-representative fixture for a representative run and confirm the benchmark rejects it.",
       "Run: `dotnet csharpier format src/dms/tests/EdFi.DataManagementService.Performance.Harness`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Performance Qualification",
