@@ -17,6 +17,10 @@
 $script:FreshBuildExactPath = @(
     'src/Directory.Packages.props'
     'src/nuget.config'
+    # Copied into both Docker build contexts on the same COPY line as the two files above, and its
+    # severity settings are build-affecting under TreatWarningsAsErrors, so it is classified
+    # exactly like them.
+    'src/.editorconfig'
     'src/dms/Dockerfile'
     'src/config/Dockerfile'
 )
@@ -37,6 +41,7 @@ $script:DmsRelevantExactPath = @(
     '.config/dotnet-tools.json'
     'src/Directory.Packages.props'
     'src/nuget.config'
+    'src/.editorconfig'
 )
 
 $script:DmsRelevantPathPrefix = @(
@@ -69,6 +74,8 @@ $script:AllCategoryExactPath = @(
     '.config/dotnet-tools.json'
     'src/Directory.Packages.props'
     'src/nuget.config'
+    # Every project under src compiles against its analyzer severities.
+    'src/.editorconfig'
     'src/dms/Directory.Build.props'
     'src/dms/Directory.Build.targets'
     'src/dms/EdFi.DataManagementService.sln'

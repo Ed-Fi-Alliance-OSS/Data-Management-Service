@@ -115,6 +115,10 @@ Describe "DMS pull request change classifier" {
                 @{ Path = "eng/build-helpers.psm1" }
                 @{ Path = ".github/workflows/on-dms-pullrequest.yml" }
                 @{ Path = "src/Directory.Packages.props" }
+                # Copied into both Docker build contexts beside Directory.Packages.props, and its
+                # severity settings are build-affecting under TreatWarningsAsErrors, so it is
+                # classified exactly like that file.
+                @{ Path = "src/.editorconfig" }
                 @{ Path = "src/dms/Directory.Build.props" }
                 @{ Path = "src/dms/EdFi.DataManagementService.sln" }
             ) {
@@ -373,6 +377,7 @@ Describe "DMS pull request change classifier" {
             @{ Path = "src/config/backend/Something.cs" }
             @{ Path = "src/Directory.Packages.props" }
             @{ Path = "src/nuget.config" }
+            @{ Path = "src/.editorconfig" }
         ) {
             (Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @($Path)).dms_relevant |
                 Should -BeTrue
@@ -397,6 +402,7 @@ Describe "DMS pull request change classifier" {
         It "requires a fresh rebuild for <Path>" -ForEach @(
             @{ Path = "src/Directory.Packages.props" }
             @{ Path = "src/nuget.config" }
+            @{ Path = "src/.editorconfig" }
             @{ Path = "src/dms/Dockerfile" }
             @{ Path = "src/config/Dockerfile" }
             @{ Path = "eng/docker-compose/postgresql.yml" }

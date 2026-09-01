@@ -593,7 +593,11 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
 
             $compiling = @(
                 $chunks | Where-Object {
-                    $_ -match 'dotnet (test|build|run|publish)\b' -and $_ -notmatch '--no-build'
+                    # Judged on non-comment lines only: a step whose explanatory comment names
+                    # --no-build would otherwise satisfy the guard with the real argument deleted.
+                    $code = (($_ -split "\r?\n") | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
+
+                    $code -match 'dotnet (test|build|run|publish)\b' -and $code -notmatch '--no-build'
                 }
             )
 
