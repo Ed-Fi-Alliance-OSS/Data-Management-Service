@@ -1,4 +1,4 @@
-# DMS Performance Harness — Traditional Paging Baseline
+# DMS Performance Harness — Traditional Baseline and Final Gate
 
 Reproducible cross-provider measurement of traditional `limit`/`offset` GET-many paging,
 capturing the pre-change baseline that the performance final gate compares against. The
@@ -121,6 +121,71 @@ auto-prepare enabled — the effective `npgsql_auto_prepare_min_usages` /
 measured requests may therefore execute server-prepared (possibly generic) plans the replay
 does not reproduce: the replay evidences plan shape and work volume, not the measured
 requests' exact plan-caching regime.
+
+## Final gate (partitioned cursor paging)
+
+The final gate is **manual and off-CI**, like the baseline capture: its fixtures are
+`[Explicit]`, the harness project is never discovered by CI, and the in-pipeline guardrails
+refuse CI databases. It measures the epic's closed 36-cell matrix and evaluates every
+acceptance gate against the retained DMS-1391 baseline.
+
+Entry points under `Runs/`, configured through the same `PERF_*` conventions:
+
+- `Given_<Provider>_FinalGatePrimaryRun` — one `primary-500k` load measured across three
+  ordered phase tests over one shared leased database: pristine (the traditional rerun,
+  unfiltered cursor cells, and partitions 1/10/200, with authorization bypassed exactly
+  like the baseline capture), authorized (after the set-based association seeding, under
+  the relationship claim), and filtered (after the birth-date overlay). The filtered phase
+  writes the run directory.
+- `Given_<Provider>_FinalGateDescriptorRun` — the separate `descriptors-25k` fixture under
+  the real namespace principal (`PERF_DESCRIPTOR_FIXTURE` selects `descriptors-25k` or
+  `descriptors-smoke-2k`; default `descriptors-25k`).
+- `Given_FinalGateReportRun` — the report step: no database, artifacts in, report out. It
+  reads `PERF_REPORT_DIR` plus per-provider directory triplets
+  (`PERF_BASELINE_DIR_<PROVIDER>`, `PERF_FINAL_PRIMARY_DIR_<PROVIDER>`,
+  `PERF_FINAL_DESCRIPTORS_DIR_<PROVIDER>`, provider `POSTGRESQL` or `MSSQL`), loads and
+  revalidates each run (including that every referenced plan-evidence file exists),
+  evaluates the gates, and writes `final-report.md` and `final-report.json`.
+
+The wrapper `eng/performance/invoke-final-gate.ps1` sequences everything: it requires the
+harness and wrapper sources to be committed clean (HEAD is both runner and subject commit),
+validates the running containers against the pinned digests, rewrites the connection-string
+endpoints to the validated containers' published ports, runs both evidence fixtures per
+provider, and finishes with the report step against the retained baseline directories.
+
+```powershell
+./eng/performance/invoke-final-gate.ps1 -Provider postgresql,mssql `
+    -ResultsDirectory C:\perf\final-gate
+```
+
+`-ReportOnly` regenerates the report from existing artifact directories without rerunning
+any measurement (baselines still default to the retained DMS-1391 runs):
+
+```powershell
+./eng/performance/invoke-final-gate.ps1 -ReportOnly `
+    -ReportDirectory C:\perf\final-gate\final-report `
+    -PostgresqlPrimaryDirectory C:\perf\final-gate\postgresql-final-primary-... `
+    -PostgresqlDescriptorsDirectory C:\perf\final-gate\postgresql-final-descriptors-...
+```
+
+Final-gate artifacts use schema `2.0.0` (the baseline stays at its frozen `1.3.0`). Each
+provider produces two run directories — `<provider>-final-primary-<fixture>-<timestamp>`
+and `<provider>-final-descriptors-<fixture>-<timestamp>` — with the same file shapes as
+the baseline plus: rows carry family/variant/phase, cursor range and start anchor, and
+partition request/return counts; the run manifest records the run kind and the phase log
+(the association seeding and the overlay, with their analytic facts); `sql/` holds
+per-cell selection text, hydration batch text where it is a separate statement, and a
+`parameters.json` naming whether the replay values came from the hydration keyset or the
+recorded relational command.
+
+The report marks each gate **PASS**, **FAIL**, or **INCONCLUSIVE**. Latency gates are
+app-level p50/p95 ratios (1.20x/1.30x; partition 200-vs-1 at 1.25x p50, unfiltered
+primary only). Cross-run gates — the traditional shallow regression and the first-cursor
+entry cost — additionally require the same fixture identity and a comparable environment
+(machine fingerprint, image digest, server version) as the baseline; otherwise they report
+INCONCLUSIVE rather than judging numbers measured on different ground. Deep-offset results
+are recorded as an observation and are never a gate. FAIL or INCONCLUSIVE in the report is
+the finding itself; the report step's test only fails when the report cannot be produced.
 
 Notes for comparison work: app-level p50/p95 can be dominated by hydration work that is
 invariant across page offsets, so a page-selection improvement can be diluted to noise in

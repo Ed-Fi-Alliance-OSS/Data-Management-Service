@@ -21,4 +21,12 @@ public static class PerfEnvironmentVariables
     public const string StorageNote = "PERF_STORAGE_NOTE";
     public const string AllowCi = "PERF_ALLOW_CI";
     public const string AllowedDirtyPrefixes = "PERF_ALLOW_DIRTY_PREFIXES";
+    public const string DescriptorFixture = "PERF_DESCRIPTOR_FIXTURE";
+    public const string ReportDirectory = "PERF_REPORT_DIR";
+    public const string BaselineDirectoryPostgresql = "PERF_BASELINE_DIR_POSTGRESQL";
+    public const string BaselineDirectoryMssql = "PERF_BASELINE_DIR_MSSQL";
+    public const string FinalPrimaryDirectoryPostgresql = "PERF_FINAL_PRIMARY_DIR_POSTGRESQL";
+    public const string FinalPrimaryDirectoryMssql = "PERF_FINAL_PRIMARY_DIR_MSSQL";
+    public const string FinalDescriptorsDirectoryPostgresql = "PERF_FINAL_DESCRIPTORS_DIR_POSTGRESQL";
+    public const string FinalDescriptorsDirectoryMssql = "PERF_FINAL_DESCRIPTORS_DIR_MSSQL";
 }
