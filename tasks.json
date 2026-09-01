@@ -465,7 +465,7 @@
       "Run: `dotnet test src/dms/tests/EdFi.DataManagementService.Performance.Harness/EdFi.DataManagementService.Performance.Harness.csproj -c Release --filter FullyQualifiedName~DocumentCacheRepresentativeRun --list-tests`",
       "Run: `dotnet csharpier format src/dms/tests/EdFi.DataManagementService.Performance.Harness`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Performance Qualification",

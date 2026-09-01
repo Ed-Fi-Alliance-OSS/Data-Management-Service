@@ -21,4 +21,13 @@ public static class PerfEnvironmentVariables
     public const string StorageNote = "PERF_STORAGE_NOTE";
     public const string AllowCi = "PERF_ALLOW_CI";
     public const string AllowedDirtyPrefixes = "PERF_ALLOW_DIRTY_PREFIXES";
+    public const string DocumentCacheProvider = "PERF_DOCUMENTCACHE_PROVIDER";
+    public const string DocumentCachePageSize = "PERF_DOCUMENTCACHE_PAGE_SIZE";
+    public const string DocumentCacheHighWaterMark = "PERF_DOCUMENTCACHE_HIGH_WATER_MARK";
+    public const string DocumentCacheProjectorConcurrency = "PERF_DOCUMENTCACHE_PROJECTOR_CONCURRENCY";
+    public const string DocumentCacheWarmupStatusSamples = "PERF_DOCUMENTCACHE_WARMUP_STATUS_SAMPLES";
+    public const string DocumentCacheMeasuredStatusSamples = "PERF_DOCUMENTCACHE_MEASURED_STATUS_SAMPLES";
+    public const string DocumentCacheOutageWrites = "PERF_DOCUMENTCACHE_OUTAGE_WRITES";
+    public const string DocumentCacheSameDocumentContenders = "PERF_DOCUMENTCACHE_SAME_DOCUMENT_CONTENDERS";
+    public const string OperatorNote = "PERF_OPERATOR_NOTE";
 }

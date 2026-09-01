@@ -191,17 +191,28 @@ foreach ($providerName in $Provider) {
 
 if ($RunRepresentative) {
     $previousPerfResultsDirectory = [Environment]::GetEnvironmentVariable('PERF_RESULTS_DIR')
+    $previousDocumentCacheProvider = [Environment]::GetEnvironmentVariable('PERF_DOCUMENTCACHE_PROVIDER')
     try {
         [Environment]::SetEnvironmentVariable('PERF_RESULTS_DIR', $runDirectory)
-        Invoke-DotnetTest `
-            -Label 'document-cache-representative-qualification' `
-            -Project 'src/dms/tests/EdFi.DataManagementService.Performance.Harness/EdFi.DataManagementService.Performance.Harness.csproj' `
-            -Filter 'Category=DocumentCacheRepresentativeQualification' `
-            -OutputDirectory $runDirectory `
-            -Explicit
+        foreach ($providerName in $Provider) {
+            [Environment]::SetEnvironmentVariable('PERF_DOCUMENTCACHE_PROVIDER', $providerName)
+
+            $providerCategory = switch ($providerName) {
+                'postgresql' { 'PostgresqlIntegration' }
+                'mssql' { 'MssqlIntegration' }
+            }
+
+            Invoke-DotnetTest `
+                -Label "$providerName-document-cache-representative-qualification" `
+                -Project 'src/dms/tests/EdFi.DataManagementService.Performance.Harness/EdFi.DataManagementService.Performance.Harness.csproj' `
+                -Filter "Category=DocumentCacheRepresentativeQualification&Category=$providerCategory" `
+                -OutputDirectory $runDirectory `
+                -Explicit
+        }
     }
     finally {
         [Environment]::SetEnvironmentVariable('PERF_RESULTS_DIR', $previousPerfResultsDirectory)
+        [Environment]::SetEnvironmentVariable('PERF_DOCUMENTCACHE_PROVIDER', $previousDocumentCacheProvider)
     }
 }
 
