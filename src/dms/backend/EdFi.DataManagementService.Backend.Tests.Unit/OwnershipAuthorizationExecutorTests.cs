@@ -419,6 +419,109 @@ public class Given_OwnershipAuthorizationProviderFailureMapper
     }
 }
 
+[TestFixture]
+[Parallelizable]
+public class Given_OwnershipAuthorizationCommandParameterBuilder
+{
+    private static readonly QuerySqlParameter _arrayParameter = new(
+        QuerySqlParameterRole.Filter,
+        "ownershipTokenIds",
+        QuerySqlParameterBinding.PgsqlArray
+    );
+
+    /// <summary>
+    /// The PostgreSQL array parameter is materialized as a short[] from any short list, not only from an
+    /// array, so the element type rather than the container is what the guard is about.
+    /// </summary>
+    [Test]
+    public void It_materializes_a_short_list_into_a_short_array()
+    {
+        var parameter = OwnershipAuthorizationCommandParameterBuilder.BuildParameter(
+            _arrayParameter,
+            new List<short> { 3, 5 }
+        );
+
+        parameter.Name.Should().Be("@ownershipTokenIds");
+        parameter.Value.Should().BeOfType<short[]>().Which.Should().Equal((short)3, (short)5);
+    }
+
+    /// <summary>
+    /// A wider or unrelated element type is refused rather than converted. Every one of these would still
+    /// return correct rows once bound, which is exactly why the guard has to be explicit: a long or int list
+    /// would widen the comparison against the smallint ownership column and quietly cost the index on it.
+    /// </summary>
+    [Test]
+    public void It_rejects_a_pgsql_array_value_that_is_not_a_short_list()
+    {
+        object?[] rejectedValues =
+        [
+            new long[] { 3, 5 },
+            new int[] { 3, 5 },
+            new string[] { "3", "5" },
+            new List<int> { 3, 5 },
+            (short)3,
+            null,
+        ];
+
+        foreach (var rejectedValue in rejectedValues)
+        {
+            Action act = () =>
+                OwnershipAuthorizationCommandParameterBuilder.BuildParameter(_arrayParameter, rejectedValue);
+
+            act.Should()
+                .Throw<InvalidOperationException>(
+                    $"'{rejectedValue?.GetType().Name ?? "null"}' is not an IReadOnlyList<short>"
+                )
+                .WithMessage("*ownershipTokenIds*IReadOnlyList<short>*");
+        }
+    }
+
+    /// <summary>
+    /// A scalar passes its value through untouched: the document id is a long and the SQL Server token
+    /// scalars are shorts, and neither is reshaped here.
+    /// </summary>
+    [Test]
+    public void It_passes_a_scalar_value_through_untouched()
+    {
+        OwnershipAuthorizationCommandParameterBuilder
+            .BuildParameter(new QuerySqlParameter(QuerySqlParameterRole.Filter, "documentId"), 345L)
+            .Value.Should()
+            .Be(345L);
+        OwnershipAuthorizationCommandParameterBuilder
+            .BuildParameter(
+                new QuerySqlParameter(QuerySqlParameterRole.Filter, "ownershipTokenIds_0"),
+                (short)3
+            )
+            .Value.Should()
+            .BeOfType<short>()
+            .And.Be((short)3);
+    }
+
+    [Test]
+    public void It_rejects_an_unsupported_binding_kind()
+    {
+        Action act = () =>
+            OwnershipAuthorizationCommandParameterBuilder.BuildParameter(
+                new QuerySqlParameter(
+                    QuerySqlParameterRole.Filter,
+                    "ownershipTokenIds",
+                    QuerySqlParameterBinding.CreateMssqlStructured("dms.OwnershipTokenIdList", "Id")
+                ),
+                new List<short> { 3 }
+            );
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Test]
+    public void It_rejects_a_null_parameter()
+    {
+        Action act = () => OwnershipAuthorizationCommandParameterBuilder.BuildParameter(null!, null);
+
+        act.Should().Throw<ArgumentNullException>();
+    }
+}
+
 internal static class OwnershipAuthTestDoubles
 {
     public static string EncodePayload(
