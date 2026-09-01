@@ -50,9 +50,16 @@ public sealed record DataStoreOwnershipSnapshot(long Version, ImmutableArray<Con
 /// owner set, and the safe direction is always to leak a pool rather than dispose or clear one that is
 /// still owned or still in use.
 ///
-/// Implementations must not parse or validate a connection string here, and must not assume they are
-/// called on any particular thread; the provider invokes them in registration order while holding its
-/// publication lock, so an implementation that blocks holds up every other tenant's publication.
+/// Implementations must never reject a snapshot or fail publication over a connection string no
+/// provider can parse - such a value must still be publishable, participate in ownership or in
+/// nothing, and fail only at the acquisition boundary of the request that selects it. A reconciler
+/// that is itself a connection-acquisition boundary may realize configured strings tolerantly when
+/// its provider defines pool ownership by the effective (canonicalized) string, because configured
+/// text alone cannot see two spellings of one pool; realization is pure string work, and no
+/// implementation may open a connection, create a pooled resource, or perform any I/O here.
+/// Implementations must not assume they are called on any particular thread; the provider invokes
+/// them in registration order while holding its publication lock, so an implementation that blocks
+/// holds up every other tenant's publication.
 ///
 /// The provider guarantees a reconciler is not invoked at all for a failed load. It cannot guarantee
 /// what an implementation did once invoked, which is why failure atomicity is the implementation's

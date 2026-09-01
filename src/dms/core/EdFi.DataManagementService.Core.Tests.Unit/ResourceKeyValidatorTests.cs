@@ -658,13 +658,17 @@ public class ResourceKeyValidatorTests
         public async Task Setup()
         {
             var reader = A.Fake<IResourceKeyRowReader>();
+
+            // The row read goes through connection acquisition, and a provider exception raised
+            // there can quote connection-string values back - which is exactly what must never
+            // reach the failure report, because the report is later written to the log.
             A.CallTo(() =>
                     reader.ReadResourceKeyRowsAsync(
                         EffectiveDataStoreTarget.Primary("conn1"),
                         A<CancellationToken>._
                     )
                 )
-                .ThrowsAsync(new InvalidOperationException("relation \"dms.ResourceKey\" does not exist"));
+                .ThrowsAsync(new InvalidOperationException("login failed for Password=hunter2"));
 
             var validator = new ResourceKeyValidator(reader, NullLogger<ResourceKeyValidator>.Instance);
 
@@ -695,6 +699,25 @@ public class ResourceKeyValidatorTests
         {
             var failure = _result.Should().BeOfType<ResourceKeyValidationResult.ValidationFailure>().Subject;
             failure.DiffReport.Should().Contain("slow-path dms.ResourceKey read failed");
+        }
+
+        [Test]
+        public void It_reports_the_exception_type()
+        {
+            var failure = _result.Should().BeOfType<ResourceKeyValidationResult.ValidationFailure>().Subject;
+            failure.DiffReport.Should().Contain(nameof(InvalidOperationException));
+        }
+
+        [Test]
+        public void It_never_copies_the_provider_message_into_the_report()
+        {
+            var failure = _result.Should().BeOfType<ResourceKeyValidationResult.ValidationFailure>().Subject;
+            failure
+                .DiffReport.Should()
+                .NotContain(
+                    "Password=hunter2",
+                    "the report is logged downstream, and a provider exception can quote connection-string values back"
+                );
         }
     }
 }

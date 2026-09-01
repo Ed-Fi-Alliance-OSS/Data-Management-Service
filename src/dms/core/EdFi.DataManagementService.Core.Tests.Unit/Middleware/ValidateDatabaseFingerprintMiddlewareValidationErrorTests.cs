@@ -102,7 +102,7 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
 
     private sealed class CapturingLogger<T> : ILogger<T>
     {
-        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+        public List<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = [];
 
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull => null;
@@ -117,7 +117,7 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
             Func<TState, Exception?, string> formatter
         )
         {
-            Entries.Add((logLevel, formatter(state, exception)));
+            Entries.Add((logLevel, formatter(state, exception), exception));
         }
     }
 
@@ -637,11 +637,15 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         private RequestInfo _requestInfo = No.RequestInfo();
         private JsonNode _body = default!;
         private CapturingLogger _exceptionLogger = null!;
+        private CapturingLogger<ValidateDatabaseFingerprintMiddleware> _middlewareLogger = null!;
 
         [SetUp]
         public async Task Setup()
         {
-            var (middleware, fingerprintReader, dataStoreSelection, _, serviceProvider) = CreateMiddleware();
+            var (middleware, fingerprintReader, dataStoreSelection, middlewareLogger, serviceProvider) =
+                CreateMiddleware();
+
+            _middlewareLogger = middlewareLogger;
 
             A.CallTo(() => dataStoreSelection.IsSet).Returns(true);
             A.CallTo(() => dataStoreSelection.GetSelectedDataStore())
@@ -657,8 +661,10 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
             A.CallTo(() => dataStoreSelection.GetEffectiveTarget())
                 .Returns(EffectiveDataStoreTarget.Primary("Host=localhost;Database=transient"));
 
+            // A provider exception raised inside connection acquisition can quote connection-string
+            // values back, which is exactly what must never reach the log.
             A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<EffectiveDataStoreTarget>._))
-                .ThrowsAsync(new TimeoutException("connection timed out"));
+                .ThrowsAsync(new TimeoutException("connection timed out for Password=hunter2"));
 
             _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
             _exceptionLogger = new CapturingLogger();
@@ -689,6 +695,37 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         public void It_returns_a_problem_response_body()
         {
             _body["title"]?.GetValue<string>().Should().NotBeNullOrEmpty();
+        }
+
+        [Test]
+        public void It_logs_the_exception_type_for_the_transient_failure()
+        {
+            _middlewareLogger
+                .Entries.Should()
+                .Contain(entry =>
+                    entry.Level == LogLevel.Error
+                    && entry.Message.Contains("Database fingerprint read failed")
+                    && entry.Message.Contains(nameof(TimeoutException))
+                );
+        }
+
+        [Test]
+        public void It_never_hands_the_provider_exception_to_the_logger()
+        {
+            _middlewareLogger
+                .Entries.Should()
+                .OnlyContain(
+                    entry => entry.Exception == null,
+                    "a provider exception can quote connection-string values back"
+                );
+        }
+
+        [Test]
+        public void It_never_logs_connection_material()
+        {
+            _middlewareLogger
+                .Entries.Should()
+                .NotContain(entry => entry.Message.Contains("Password=hunter2"));
         }
     }
 }

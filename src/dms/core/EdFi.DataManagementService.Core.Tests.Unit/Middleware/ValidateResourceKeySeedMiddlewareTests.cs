@@ -24,6 +24,27 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [Parallelizable]
 public class ValidateResourceKeySeedMiddlewareTests
 {
+    private sealed class CapturingLogger : ILogger<ValidateResourceKeySeedMiddleware>
+    {
+        public List<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            Entries.Add((logLevel, formatter(state, exception), exception));
+        }
+    }
+
     internal static (
         ValidateResourceKeySeedMiddleware middleware,
         IResourceKeyValidator validator,
@@ -31,13 +52,13 @@ public class ValidateResourceKeySeedMiddlewareTests
         IEffectiveSchemaSetProvider schemaSetProvider,
         IDataStoreSelection dataStoreSelection,
         IServiceProvider serviceProvider
-    ) CreateMiddleware()
+    ) CreateMiddleware(ILogger<ValidateResourceKeySeedMiddleware>? logger = null)
     {
         var validator = A.Fake<IResourceKeyValidator>();
         var cacheProvider = new ResourceKeyValidationCacheProvider(TimeProvider.System, new CacheSettings());
         var schemaSetProvider = A.Fake<IEffectiveSchemaSetProvider>();
         var dataStoreSelection = A.Fake<IDataStoreSelection>();
-        var logger = A.Fake<ILogger<ValidateResourceKeySeedMiddleware>>();
+        logger ??= A.Fake<ILogger<ValidateResourceKeySeedMiddleware>>();
 
         var serviceProvider = A.Fake<IServiceProvider>();
         A.CallTo(() => serviceProvider.GetService(typeof(IDataStoreSelection))).Returns(dataStoreSelection);
@@ -601,16 +622,20 @@ public class ValidateResourceKeySeedMiddlewareTests
     {
         private RequestInfo _requestInfo = No.RequestInfo();
         private bool _nextCalled;
+        private CapturingLogger _logger = null!;
 
         [SetUp]
         public async Task Setup()
         {
+            _logger = new CapturingLogger();
             var (middleware, validator, _, schemaSetProvider, dataStoreSelection, serviceProvider) =
-                CreateMiddleware();
+                CreateMiddleware(_logger);
 
             SetupDataStoreSelection(dataStoreSelection);
             A.CallTo(() => schemaSetProvider.EffectiveSchemaSet).Returns(CreateMinimalEffectiveSchemaSet());
 
+            // A provider exception raised inside connection acquisition can quote connection-string
+            // values back, which is exactly what must never reach the log.
             A.CallTo(() =>
                     validator.ValidateAsync(
                         A<DatabaseFingerprint>._,
@@ -621,7 +646,7 @@ public class ValidateResourceKeySeedMiddlewareTests
                         A<CancellationToken>._
                     )
                 )
-                .ThrowsAsync(new TimeoutException("connection timed out"));
+                .ThrowsAsync(new TimeoutException("connection timed out for Password=hunter2"));
 
             _requestInfo = CreateRequestInfoWithFingerprint(
                 serviceProvider,
@@ -669,6 +694,35 @@ public class ValidateResourceKeySeedMiddlewareTests
                 .FrontendResponse.Body!.ToString()
                 .Should()
                 .Contain("urn:ed-fi:api:resource-key-seed-validation-error");
+        }
+
+        [Test]
+        public void It_logs_the_exception_type_for_the_unexpected_failure()
+        {
+            _logger
+                .Entries.Should()
+                .Contain(entry =>
+                    entry.Level == LogLevel.Error
+                    && entry.Message.Contains("Resource key seed validation failed")
+                    && entry.Message.Contains(nameof(TimeoutException))
+                );
+        }
+
+        [Test]
+        public void It_never_hands_the_provider_exception_to_the_logger()
+        {
+            _logger
+                .Entries.Should()
+                .OnlyContain(
+                    entry => entry.Exception == null,
+                    "a provider exception can quote connection-string values back"
+                );
+        }
+
+        [Test]
+        public void It_never_logs_connection_material()
+        {
+            _logger.Entries.Should().NotContain(entry => entry.Message.Contains("Password=hunter2"));
         }
     }
 }

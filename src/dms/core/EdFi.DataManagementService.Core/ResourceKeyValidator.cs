@@ -57,13 +57,22 @@ internal sealed class ResourceKeyValidator(
         }
         catch (Exception ex)
         {
+            // Only the exception's type reaches the log and the failure report, never the exception
+            // itself and never its message: the read goes through connection acquisition, and a
+            // provider exception from parsing or opening a connection string can quote its values
+            // back. The report is also logged downstream by the middleware and the startup task, so
+            // the discipline has to hold here, where the text is composed.
+            // S6667 asks for the caught exception to be passed to the logger. That is the right
+            // default and the wrong thing here, for the reason above.
+#pragma warning disable S6667
             logger.LogError(
-                ex,
-                "Failed to read dms.ResourceKey rows for slow-path diff (table may be missing or malformed)"
+                "Failed to read dms.ResourceKey rows for slow-path diff with {ExceptionType} (table may be missing or malformed)",
+                ex.GetType().Name
             );
+#pragma warning restore S6667
             return new ResourceKeyValidationResult.ValidationFailure(
-                "Resource key fingerprint mismatch detected, but slow-path dms.ResourceKey read failed: "
-                    + LoggingSanitizer.SanitizeForLogging(ex.Message)
+                "Resource key fingerprint mismatch detected, but slow-path dms.ResourceKey read failed with "
+                    + ex.GetType().Name
                     + ". The database must be reprovisioned with 'ddl provision' against a fresh database."
             );
         }

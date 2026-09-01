@@ -273,7 +273,8 @@ any lease on it is outstanding.
 **Architecture:**
 
 - **Singleton Cache:** Shared across all requests, keyed by connection string
-- **Scoped Provider:** Per-request access with instance-level caching
+- **Scoped Provider:** Per-request access holding one lazily taken lease for the request's
+  write-once effective target
 
 **Cache Operations:**
 

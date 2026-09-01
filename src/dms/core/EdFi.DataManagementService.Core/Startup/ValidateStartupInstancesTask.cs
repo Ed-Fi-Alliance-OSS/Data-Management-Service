@@ -242,16 +242,22 @@ internal sealed class ValidateStartupInstancesTask(
         {
             // Transient errors are evicted from caches so the middleware will
             // retry on first request. Log but don't fail startup.
+            // Only the exception's type, never the exception itself and never its message: this is
+            // the catch that sees the instance's database connection fail, and a provider exception
+            // from parsing or opening a connection string can quote its values back.
+            // S6667 asks for the caught exception to be passed to the logger. That is the right
+            // default and the wrong thing here, for the reason above.
+#pragma warning disable S6667
             logger.LogCritical(
-                ex,
-                "Startup validation failed for data store "
-                    + "{DataStoreId} ({Name}) tenant {Tenant}: {ErrorMessage}. "
+                "Startup validation failed with {ExceptionType} for data store "
+                    + "{DataStoreId} ({Name}) tenant {Tenant}. "
                     + "Requests routed to this instance will be retried on first access",
+                ex.GetType().Name,
                 instance.Id,
                 sanitizedName,
-                sanitizedTenant,
-                LoggingSanitizer.SanitizeForLogging(ex.Message)
+                sanitizedTenant
             );
+#pragma warning restore S6667
             return false;
         }
 

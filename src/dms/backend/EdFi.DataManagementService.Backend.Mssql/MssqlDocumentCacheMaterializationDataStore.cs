@@ -8,27 +8,29 @@ using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
-using Microsoft.Data.SqlClient;
+using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend.Mssql;
 
 internal sealed class MssqlDocumentCacheMaterializationDataStore : IDocumentCacheMaterializationDataStore
 {
-    private readonly Func<string, DbConnection> _createConnection;
+    private readonly Func<string, CancellationToken, Task<MssqlLeasedConnection>> _openConnectionAsync;
     private readonly ILogger<MssqlDocumentCacheMaterializationDataStore> _logger;
 
     public MssqlDocumentCacheMaterializationDataStore(
+        IMssqlConnectionAcquisition acquisition,
         ILogger<MssqlDocumentCacheMaterializationDataStore> logger
     )
-        : this(connectionString => new SqlConnection(connectionString), logger) { }
+        : this(OpenConnectionFromAcquisitionAsync(acquisition), logger) { }
 
     internal MssqlDocumentCacheMaterializationDataStore(
-        Func<string, DbConnection> createConnection,
+        Func<string, CancellationToken, Task<MssqlLeasedConnection>> openConnectionAsync,
         ILogger<MssqlDocumentCacheMaterializationDataStore> logger
     )
     {
-        _createConnection = createConnection ?? throw new ArgumentNullException(nameof(createConnection));
+        _openConnectionAsync =
+            openConnectionAsync ?? throw new ArgumentNullException(nameof(openConnectionAsync));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -59,9 +61,8 @@ internal sealed class MssqlDocumentCacheMaterializationDataStore : IDocumentCach
             command.Parameters.Count
         );
 
-        await using var connection = await OpenConnectionAsync(request, cancellationToken)
-            .ConfigureAwait(false);
-        await using var dbCommand = connection.CreateCommand();
+        await using var leased = await OpenConnectionAsync(request, cancellationToken).ConfigureAwait(false);
+        await using var dbCommand = leased.Connection.CreateCommand();
         dbCommand.CommandText = command.CommandText;
 
         AddParameters(dbCommand, command.Parameters);
@@ -83,12 +84,11 @@ internal sealed class MssqlDocumentCacheMaterializationDataStore : IDocumentCach
     {
         DocumentCacheMaterializationDataStoreGuards.RequireValidatedTargetContext(request, Dialect);
 
-        await using var connection = await OpenConnectionAsync(request, cancellationToken)
-            .ConfigureAwait(false);
+        await using var leased = await OpenConnectionAsync(request, cancellationToken).ConfigureAwait(false);
 
         return await HydrationExecutor
             .ExecuteAsync(
-                connection,
+                leased.Connection,
                 plan,
                 keyset,
                 SqlDialect.Mssql,
@@ -99,7 +99,11 @@ internal sealed class MssqlDocumentCacheMaterializationDataStore : IDocumentCach
             .ConfigureAwait(false);
     }
 
-    private async Task<DbConnection> OpenConnectionAsync(
+    /// <summary>
+    /// Opens a connection whose pool lease travels with it, so the caller releases both together and
+    /// the pool identity cannot be cleared mid-materialization.
+    /// </summary>
+    private async Task<MssqlLeasedConnection> OpenConnectionAsync(
         DocumentCacheMaterializationRequest request,
         CancellationToken cancellationToken
     )
@@ -108,11 +112,28 @@ internal sealed class MssqlDocumentCacheMaterializationDataStore : IDocumentCach
             request,
             Dialect
         );
-        var connection = _createConnection(dataStore.ConnectionString);
 
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        return await _openConnectionAsync(dataStore.ConnectionString, cancellationToken)
+            .ConfigureAwait(false);
+    }
 
-        return connection;
+    private static Func<
+        string,
+        CancellationToken,
+        Task<MssqlLeasedConnection>
+    > OpenConnectionFromAcquisitionAsync(IMssqlConnectionAcquisition acquisition)
+    {
+        ArgumentNullException.ThrowIfNull(acquisition);
+
+        // Materialization always writes from the parent data store's own database, so the lease is
+        // taken against the Primary pool identity - the very pool the request path uses - and the
+        // clearing protocol counts this materialization among that pool's in-flight users.
+        return (connectionString, cancellationToken) =>
+            MssqlLeasedConnection.OpenAsync(
+                acquisition,
+                EffectiveDataStoreTarget.Primary(connectionString),
+                cancellationToken
+            );
     }
 
     private static void AddParameters(DbCommand dbCommand, IReadOnlyList<RelationalParameter> parameters)

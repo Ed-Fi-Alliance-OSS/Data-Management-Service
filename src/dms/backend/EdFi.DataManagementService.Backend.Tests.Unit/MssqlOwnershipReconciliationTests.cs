@@ -102,8 +102,9 @@ public class Given_Mssql_Ownership_Reconciliation
     }
 
     /// <summary>
-    /// A configured owner that no request ever acquired has no memo entry and no pool, so its removal
-    /// has nothing to clear. Clearing anyway would discard a pool it never created.
+    /// A configured owner that no request ever acquired has no pool, so its removal has nothing to
+    /// clear. Clearing anyway would discard a pool it never created. Reconciliation realizes the
+    /// owner's string - ownership is by effective string - but realization creates no pool.
     /// </summary>
     [Test]
     public void It_should_clear_nothing_for_an_owner_that_was_never_acquired()
@@ -112,12 +113,18 @@ public class Given_Mssql_Ownership_Reconciliation
         _acquisition.Reconcile(Owning(2));
 
         _poolClearing.Cleared.Should().BeEmpty();
-        _acquisition.RealizationCount.Should().Be(0, "reconciliation never realizes a string");
+        _acquisition
+            .RealizationCount.Should()
+            .Be(
+                1,
+                "reconciliation realizes each configured owner once per publication, and acquires nothing"
+            );
     }
 
     /// <summary>
-    /// A derivative whose configured text no provider can parse never realizes, so it contributes
-    /// neither a memo entry nor a pool and cannot disturb reconciliation.
+    /// A derivative whose configured text no provider can parse realizes to nothing - reconciliation
+    /// tolerates the parse failure - so it contributes neither a memo entry nor a pool and cannot
+    /// disturb publication.
     /// </summary>
     [Test]
     public async Task It_should_clear_nothing_for_a_provider_invalid_owner()
@@ -163,13 +170,12 @@ public class Given_Mssql_Ownership_Reconciliation
 
     /// <summary>
     /// The inverse of the case above: only one of two owners sharing a configured string was ever
-    /// acquired, and it is the other one that remains. The remaining owner has no memo entry, but
-    /// every derivative kind realizes one configured string the same way, so it is guaranteed to map
-    /// to the acquired owner's identity - and removing the acquired owner must therefore clear
-    /// nothing.
+    /// acquired, and it is the other one that remains. Reconciliation realized the remaining owner at
+    /// publication, so its memo entry proves it maps to the acquired owner's identity - and removing
+    /// the acquired owner must therefore clear nothing.
     /// </summary>
     [Test]
-    public async Task It_should_not_clear_a_shared_identity_while_an_unrealized_owner_remains()
+    public async Task It_should_not_clear_a_shared_identity_while_an_unacquired_owner_remains()
     {
         EffectiveDataStoreTarget replica = Replica(ReplicaText);
         EffectiveDataStoreTarget snapshot = Snapshot(ReplicaText);
@@ -183,7 +189,66 @@ public class Given_Mssql_Ownership_Reconciliation
         _acquisition.Reconcile(Owning(2, snapshot));
 
         _poolClearing.Cleared.Should().BeEmpty("the remaining owner realizes to this identity");
-        _acquisition.RealizationCount.Should().Be(1, "reconciliation never realizes a string");
+
+        _acquisition.Reconcile(Owning(3));
+        _poolClearing.ClearCountOf(Effective(replica)).Should().Be(1);
+    }
+
+    /// <summary>
+    /// SqlClient canonicalizes keyword synonyms and ordering, so two different configured texts can
+    /// realize to one effective string - one physical pool. Ownership is by effective string, so
+    /// removing one spelling while the other remains configured - even never acquired - must clear
+    /// nothing: a clear would discard the pool the equivalent owner still holds.
+    /// </summary>
+    [Test]
+    public async Task It_should_not_clear_a_pool_while_a_text_different_equivalent_owner_remains()
+    {
+        EffectiveDataStoreTarget replica = Replica(ReplicaText);
+        EffectiveDataStoreTarget equivalent = Replica(
+            "Data Source=replica;Initial Catalog=dms;User ID=u;Password=p"
+        );
+
+        equivalent
+            .ConnectionString.Should()
+            .NotBe(replica.ConnectionString, "the whole point is two spellings of one pool");
+        Effective(equivalent)
+            .Should()
+            .Be(Effective(replica), "SqlClient canonicalizes keyword synonyms to one effective string");
+
+        _acquisition.Reconcile(Owning(1, replica, equivalent));
+
+        MssqlConnectionLease lease = await _acquisition.AcquireLeaseAsync(replica);
+        await lease.DisposeAsync();
+
+        // The acquired spelling is removed; the never-acquired equivalent spelling remains.
+        _acquisition.Reconcile(Owning(2, equivalent));
+        _poolClearing.Cleared.Should().BeEmpty("an equivalent configured owner still holds this pool");
+
+        _acquisition.Reconcile(Owning(3));
+        _poolClearing.ClearCountOf(Effective(replica)).Should().Be(1);
+    }
+
+    /// <summary>
+    /// A primary passes through byte for byte, so a primary whose configured text happens to equal a
+    /// derivative's realized form names the same physical pool. Ownership is by effective string, so
+    /// removing the derivative while that primary remains must clear nothing.
+    /// </summary>
+    [Test]
+    public async Task It_should_not_clear_a_pool_a_primary_with_the_derivative_effective_text_still_owns()
+    {
+        EffectiveDataStoreTarget replica = Replica(ReplicaText);
+        EffectiveDataStoreTarget primary = Primary(Effective(replica));
+
+        Effective(primary).Should().Be(Effective(replica), "a primary passes through byte for byte");
+
+        _acquisition.Reconcile(Owning(1, primary, replica));
+
+        MssqlConnectionLease lease = await _acquisition.AcquireLeaseAsync(replica);
+        await lease.DisposeAsync();
+
+        // The derivative is removed; the never-acquired primary still names the same effective pool.
+        _acquisition.Reconcile(Owning(2, primary));
+        _poolClearing.Cleared.Should().BeEmpty("the primary still owns this effective string");
 
         _acquisition.Reconcile(Owning(3));
         _poolClearing.ClearCountOf(Effective(replica)).Should().Be(1);

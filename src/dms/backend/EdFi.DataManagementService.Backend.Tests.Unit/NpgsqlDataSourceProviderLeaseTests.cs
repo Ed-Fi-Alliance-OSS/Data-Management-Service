@@ -24,7 +24,6 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_NpgsqlDataSourceProvider_Holding_Leases
 {
     private const string PrimaryConnectionString = "Host=primary;Database=dms;Username=u;Password=p";
-    private const string SnapshotConnectionString = "Host=snapshot;Database=dms;Username=u;Password=p";
 
     private GatedNpgsqlDataSourceLifetime _lifetime = null!;
     private NpgsqlDataSourceCache _cache = null!;
@@ -88,29 +87,35 @@ public class Given_NpgsqlDataSourceProvider_Holding_Leases
         _lifetime.DisposeCountOf(first).Should().Be(1);
     }
 
+    /// <summary>
+    /// Effective-target assignment is write-once per request, so a scope can only ever need one
+    /// lease. Once it is held, the provider does not re-read the selection: a second read could only
+    /// name the same database again.
+    /// </summary>
     [Test]
-    public async Task It_should_release_every_lease_it_took_when_the_scope_is_disposed()
+    public async Task It_should_not_reread_the_selection_once_its_lease_is_held()
     {
-        _cache.Reconcile(OwnershipSnapshots.Of(1, PrimaryConnectionString, SnapshotConnectionString));
+        _cache.Reconcile(OwnershipSnapshots.Of(1, PrimaryConnectionString));
 
-        NpgsqlDataSourceProvider provider = ProviderFor(
-            EffectiveDataStoreTarget.Primary(PrimaryConnectionString),
-            new EffectiveDataStoreTarget(EffectiveTargetKind.Snapshot, SnapshotConnectionString)
+        IDataStoreSelection selection = SelectionOf(
+            EffectiveDataStoreTarget.Primary(PrimaryConnectionString)
+        );
+        NpgsqlDataSourceProvider provider = new(
+            selection,
+            _cache,
+            A.Fake<ILogger<NpgsqlDataSourceProvider>>()
         );
 
-        NpgsqlDataSource primary = provider.DataSource;
-        NpgsqlDataSource snapshot = provider.DataSource;
+        NpgsqlDataSource first = provider.DataSource;
+        NpgsqlDataSource second = provider.DataSource;
 
-        snapshot.Should().NotBeSameAs(primary);
-
-        _cache.Reconcile(OwnershipSnapshots.Empty(2));
-        _lifetime.DisposeCountOf(primary).Should().Be(0);
-        _lifetime.DisposeCountOf(snapshot).Should().Be(0);
+        second.Should().BeSameAs(first);
+        A.CallTo(() => selection.GetEffectiveTarget()).MustHaveHappenedOnceExactly();
+        _lifetime.BuildCount.Should().Be(1);
 
         await provider.DisposeAsync();
-
-        _lifetime.DisposeCountOf(primary).Should().Be(1);
-        _lifetime.DisposeCountOf(snapshot).Should().Be(1);
+        _cache.Reconcile(OwnershipSnapshots.Empty(2));
+        _lifetime.DisposeCountOf(first).Should().Be(1);
     }
 
     [Test]

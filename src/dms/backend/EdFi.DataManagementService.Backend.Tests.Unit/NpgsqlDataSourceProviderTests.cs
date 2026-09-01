@@ -79,8 +79,8 @@ public class Given_NpgsqlDataSourceProvider
 
         // Assert - data source should be cached and reused
         dataSource1.Should().BeSameAs(dataSource2);
-        // The target is read on each access for defensive validation
-        A.CallTo(() => _dataStoreSelection.GetEffectiveTarget()).MustHaveHappenedTwiceExactly();
+        // The target is write-once per request, so a held lease makes re-reading it pointless
+        A.CallTo(() => _dataStoreSelection.GetEffectiveTarget()).MustHaveHappenedOnceExactly();
     }
 
     [Test]

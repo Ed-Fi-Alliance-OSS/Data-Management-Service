@@ -100,13 +100,23 @@ internal class ValidateResourceKeySeedMiddleware(
         }
         catch (Exception ex)
         {
+            // Only the exception's type, never the exception itself and never its message, data, or
+            // inner exceptions. This catch can see a selected target fail inside connection
+            // acquisition, and a provider exception from parsing or opening a connection string can
+            // quote its values back.
+            // S6667 asks for the caught exception to be passed to the logger. That is the right
+            // default and the wrong thing here, for the reason above: the exception carries the
+            // untrusted value. Its type is logged instead, which is the part that helps an operator
+            // without carrying anything the provider put in it.
+#pragma warning disable S6667
             logger.LogError(
-                ex,
-                "Resource key seed validation failed with an unexpected error for data store {DataStoreId} ({Name}). TraceId: {TraceId}",
+                "Resource key seed validation failed with an unexpected {ExceptionType} for data store {DataStoreId} ({Name}). TraceId: {TraceId}",
+                ex.GetType().Name,
                 selectedInstance.Id,
                 LoggingSanitizer.SanitizeForLogging(selectedInstance.Name),
                 LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
             );
+#pragma warning restore S6667
 
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 503,
