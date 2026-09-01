@@ -3771,10 +3771,7 @@ public sealed class RelationalDocumentStoreRepository(
 
         if (authorizationPreflight is GetByIdAuthorizationPreflightResult.Stop preflightStop)
         {
-            await ValidateSingleRecordCustomViewsAsync(mappingSet, preflightStop.CustomViewChecksToValidate)
-                .ConfigureAwait(false);
-
-            return preflightStop.Result;
+            return await CompleteGetByIdPreflightStopAsync(mappingSet, preflightStop).ConfigureAwait(false);
         }
 
         for (var attemptIndex = 0; attemptIndex < GetByIdReadBoundaryAttemptCount; attemptIndex++)
@@ -4017,7 +4014,9 @@ public sealed class RelationalDocumentStoreRepository(
 
         if (authorizationPreflight is GetByIdAuthorizationPreflightResult.Stop preflightStop)
         {
-            return new DocumentCacheReadAccelerationGetByIdSelectionResult.Complete(preflightStop.Result);
+            return new DocumentCacheReadAccelerationGetByIdSelectionResult.Complete(
+                await CompleteGetByIdPreflightStopAsync(mappingSet, preflightStop).ConfigureAwait(false)
+            );
         }
 
         short resourceKeyId;
@@ -4328,6 +4327,29 @@ public sealed class RelationalDocumentStoreRepository(
     /// Validates the views a GET-by-id terminal carries. Empty is a no-op, so every terminal can route
     /// through this unconditionally.
     /// </summary>
+    /// <summary>
+    /// Completes a GET-by-id preflight terminal: validates the custom views configured ahead of it, then
+    /// yields the terminal's result.
+    /// </summary>
+    /// <remarks>
+    /// Shared by both GET-by-id entry points. A terminal added on one of them would otherwise be able to
+    /// skip view validation on the other — the accelerated path did exactly that — and the views ahead of a
+    /// terminal are AND filters that execute before it, so a missing or non-conforming view must keep its
+    /// own 500 rather than be hidden behind the terminal's response. It matters most for the terminals that
+    /// carry every configured view, such as the ownership token cap, since <c>OwnershipBased</c> executes
+    /// last among the AND strategies and so follows all of them.
+    /// </remarks>
+    private async Task<GetResult> CompleteGetByIdPreflightStopAsync(
+        MappingSet mappingSet,
+        GetByIdAuthorizationPreflightResult.Stop preflightStop
+    )
+    {
+        await ValidateSingleRecordCustomViewsAsync(mappingSet, preflightStop.CustomViewChecksToValidate)
+            .ConfigureAwait(false);
+
+        return preflightStop.Result;
+    }
+
     private Task ValidateSingleRecordCustomViewsAsync(
         MappingSet mappingSet,
         IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checks
@@ -4472,6 +4494,41 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
+        RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization = null;
+
+        if (plan.NamespaceChecks.Count > 0)
+        {
+            if (
+                !NamespacePrefixParameterizationPreflight.TryCreate(
+                    mappingSet.Key.Dialect,
+                    authorizationContext.NamespacePrefixes,
+                    out var namespacePrefixParameterization,
+                    out var securityConfigurationMessage,
+                    out var securityConfigurationDiagnostics
+                )
+            )
+            {
+                return GetByIdTerminal(
+                    mappingSet,
+                    resource,
+                    new GetResult.GetFailureSecurityConfiguration(
+                        [securityConfigurationMessage],
+                        securityConfigurationDiagnostics
+                    ),
+                    plan.CustomViewStrategies,
+                    plan.NamespaceChecks[0].RawConfiguredIndex
+                );
+            }
+
+            storedNamespaceAuthorization = new RelationalWriteNamespaceAuthorization(
+                plan.NamespaceChecks,
+                namespacePrefixParameterization
+            );
+        }
+
+        // Built after the namespace parameterization, deliberately. Both are setup failures reported as the
+        // same security-configuration 500, so whichever is attempted first is the one reported when a request
+        // would fail both. NamespaceBased executes ahead of OwnershipBased, so its failure must win.
         if (
             !TryPlanGetByIdOwnershipAuthorization(
                 mappingSet,
@@ -4496,46 +4553,6 @@ public sealed class RelationalDocumentStoreRepository(
                 int.MaxValue
             );
         }
-
-        if (plan.NamespaceChecks.Count == 0)
-        {
-            return AuthorizeGetByIdRelationshipPreflight(
-                mappingSet,
-                resource,
-                null,
-                storedCustomViewAuthorization,
-                storedOwnershipAuthorization,
-                plan.NonNamespaceConfiguredStrategies,
-                authorizationContext
-            );
-        }
-
-        if (
-            !NamespacePrefixParameterizationPreflight.TryCreate(
-                mappingSet.Key.Dialect,
-                authorizationContext.NamespacePrefixes,
-                out var namespacePrefixParameterization,
-                out var securityConfigurationMessage,
-                out var securityConfigurationDiagnostics
-            )
-        )
-        {
-            return GetByIdTerminal(
-                mappingSet,
-                resource,
-                new GetResult.GetFailureSecurityConfiguration(
-                    [securityConfigurationMessage],
-                    securityConfigurationDiagnostics
-                ),
-                plan.CustomViewStrategies,
-                plan.NamespaceChecks[0].RawConfiguredIndex
-            );
-        }
-
-        var storedNamespaceAuthorization = new RelationalWriteNamespaceAuthorization(
-            plan.NamespaceChecks,
-            namespacePrefixParameterization
-        );
 
         return AuthorizeGetByIdRelationshipPreflight(
             mappingSet,

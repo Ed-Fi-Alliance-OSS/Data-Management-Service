@@ -1810,6 +1810,40 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_validates_a_read_acceleration_get_by_id_custom_view_configured_before_a_namespace_no_prefixes_terminal()
+    {
+        // The same terminal as the plain-path sibling above, reached through the read-acceleration entry
+        // point instead. That path used to return the terminal's result without probing the views ahead of
+        // it, so a missing or non-conforming view lost its own 500 depending on nothing but which entry
+        // point served the read. It matters most for the terminals carrying every configured view, such as
+        // the ownership token cap.
+        var readAccelerationCoordinator = new RecordingReadAccelerationCoordinator();
+        UseReadAccelerationCoordinator(readAccelerationCoordinator);
+        var capturedValidationSql = GivenCustomViewValidationIsRecorded();
+        var getRequest = CreateGetRequest(
+            new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-aaaaaaaaaa0a")),
+            CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo),
+            _schoolResourceInfo,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(CustomViewStrategyName),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+            ],
+            namespacePrefixes: []
+        );
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        readAccelerationCoordinator.GetByIdAttempts.Should().Be(1);
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureNamespaceNotAuthorized>()
+            .Which.NamespaceFailure.FailureKind.Should()
+            .Be(NamespaceAuthorizationFailureKind.NoPrefixesConfigured);
+        capturedValidationSql.Should().ContainSingle().Which.Should().Contain(CustomViewStrategyName);
+    }
+
+    [Test]
     public async Task It_does_not_validate_a_get_by_id_custom_view_configured_after_a_namespace_no_prefixes_terminal()
     {
         // The run would have aborted at the namespace position, so a view configured after it never executes
