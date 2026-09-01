@@ -724,9 +724,13 @@ function RunUnitTestsWithCoverage {
     # puts PowerShell's parser into a mode where `-name:"value"` is emitted as two arguments,
     # `-name:` and the value, and ReportGenerator then reports "No report files specified" for an
     # invocation that looks correct. Quoting the whole `-name:value` token is what keeps it together.
+    #
+    # The reports glob is single-level for the same reason Assert-CoverageReportPerProject only
+    # counts first-level directories: the trx logger copies every report a second time, deeper,
+    # under <trx name>/In/<machine>/, and a recursive ** would merge each report twice.
     Invoke-Execute {
         dotnet tool run reportgenerator -- `
-            "-reports:$collectorOutput/**/coverage.cobertura.xml" `
+            "-reports:$collectorOutput/*/coverage.cobertura.xml" `
             "-targetdir:$mergedOutput" `
             "-reporttypes:Cobertura"
     }

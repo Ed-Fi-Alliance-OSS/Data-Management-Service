@@ -113,6 +113,45 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
             return ''
         }
 
+        function Get-GateDependency {
+            # The dash-list entries under dms-ci-gate's needs:.
+            $gateLines = (Get-JobBlock 'dms-ci-gate') -split "`n"
+            $needs = @()
+            $inNeeds = $false
+
+            foreach ($line in $gateLines) {
+                if ($line -match '^    needs:\s*$') {
+                    $inNeeds = $true
+                    continue
+                }
+                if (-not $inNeeds) {
+                    continue
+                }
+                if ($line -match '^      - (\S+)\s*$') {
+                    $needs += $Matches[1]
+                    continue
+                }
+                break
+            }
+
+            return $needs
+        }
+
+        function Get-DefinedJob {
+            # Every top-level job key. Scanning starts after the jobs: key because the trigger
+            # types under on: sit at the same two-space indent and would otherwise count as jobs.
+            $jobsIndex = [array]::FindIndex($script:lines, [Predicate[string]] { $args[0] -match '^jobs:\s*$' })
+            if ($jobsIndex -lt 0) {
+                throw "Could not locate the jobs: key in $script:workflowPath."
+            }
+
+            return @(
+                $script:lines[($jobsIndex + 1)..($script:lines.Count - 1)] |
+                    Where-Object { $_ -match '^  ([A-Za-z0-9_-]+):\s*$' } |
+                    ForEach-Object { ($_ -replace '^\s+', '') -replace ':\s*$', '' }
+            )
+        }
+
         function Get-TriggerBlock {
             # Everything from the `on:` key to the `jobs:` key.
             $startIndex = [array]::FindIndex($script:lines, [Predicate[string]] { $args[0] -match '^on:\s*$' })
@@ -451,35 +490,36 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
             # A dependency naming a job that is not defined makes the whole workflow invalid, and a
             # renamed job silently dropping out of the gate would make the gate green while its
             # lane never ran.
-            $gateLines = (Get-JobBlock 'dms-ci-gate') -split "`n"
-            $needs = @()
-            $inNeeds = $false
-
-            foreach ($line in $gateLines) {
-                if ($line -match '^    needs:\s*$') {
-                    $inNeeds = $true
-                    continue
-                }
-                if (-not $inNeeds) {
-                    continue
-                }
-                if ($line -match '^      - (\S+)\s*$') {
-                    $needs += $Matches[1]
-                    continue
-                }
-                break
-            }
-
+            $needs = Get-GateDependency
             $needs.Count | Should -BeGreaterThan 0
 
-            $definedJob = @(
-                $script:lines |
-                    Where-Object { $_ -match '^  ([A-Za-z0-9_-]+):\s*$' } |
-                    ForEach-Object { ($_ -replace '^\s+', '') -replace ':\s*$', '' }
-            )
+            $definedJob = Get-DefinedJob
 
             foreach ($dependency in $needs) {
                 $definedJob | Should -Contain $dependency
+            }
+        }
+
+        It "depends on every job that is not deliberately non-blocking" {
+            # The inverse of the subset check above, which cannot catch a lane dropped from needs:
+            # the gate would stay green while that lane failed. Every defined job must be a gate
+            # dependency unless it is on this deliberate exclusion list.
+            $nonBlockingJob = @(
+                # Qualification lane: runs only on workflow_dispatch, never on a pull request or in
+                # the merge queue.
+                'run-backend-cdc-connector-template-smoke-tests'
+                # Informational reporting; the workflow deliberately omits these so they can never
+                # block a merge.
+                'test-timing-summary'
+                'event_file'
+                # The gate cannot depend on itself.
+                'dms-ci-gate'
+            )
+
+            $needs = Get-GateDependency
+
+            foreach ($job in (Get-DefinedJob | Where-Object { $_ -notin $nonBlockingJob })) {
+                $needs | Should -Contain $job -Because "job '$job' must fail the gate when it fails"
             }
         }
     }

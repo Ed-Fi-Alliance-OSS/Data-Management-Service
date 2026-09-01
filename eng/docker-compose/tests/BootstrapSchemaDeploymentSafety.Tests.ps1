@@ -357,13 +357,19 @@ exit $ExitCode
             # overrode the helper's --no-build default in the first place.
             $content | Should -Match '--no-launch-profile'
 
-            $noBuildLine = @(
-                ($content -split "\r?\n") | Where-Object { $_ -match '--no-build' }
-            )
+            # Both flags live on one shared argument set, gated by the switch.
+            $content | Should -Match '\$script:PrebuiltToolDotnetRunArgs\s*=\s*if \(\$UsePrebuiltTools\) \{ @\("--no-build", "--no-restore"\) \} else \{ @\(\) \}'
 
-            # One for the downloader arguments, one for the SchemaTools provisioning arguments.
-            $noBuildLine.Count | Should -BeGreaterOrEqual 2
-            $content | Should -Match '--no-restore'
+            # And both CLI invocations - the downloader arguments and the SchemaTools provisioning
+            # arguments - consume that set, so neither can silently fall back to rebuilding.
+            $argSetConsumer = @(
+                ($content -split "\r?\n") | Where-Object {
+                    $_ -notmatch '^\s*#' -and
+                    $_ -match '\$script:PrebuiltToolDotnetRunArgs' -and
+                    $_ -notmatch '\$script:PrebuiltToolDotnetRunArgs\s*='
+                }
+            )
+            $argSetConsumer.Count | Should -Be 2
         }
 
         It "provision-e2e-database.ps1 owns explicit E2E database reset and SchemaTools provisioning" {

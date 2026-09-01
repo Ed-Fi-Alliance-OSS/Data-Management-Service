@@ -107,6 +107,11 @@ Describe "DMS pull request change classifier" {
                 # The SQL Server provider backs every MSSQL lane, and CDC is SQL-Server-only.
                 @{ Path = "src/dms/backend/EdFi.DataManagementService.Backend.Mssql/Something.cs" }
                 @{ Path = "build-dms.ps1" }
+                # Imported by build-dms.ps1, so it is classified exactly like build-dms.ps1.
+                @{ Path = "package-helpers.psm1" }
+                # Pins the dotnet local tools build-dms.ps1 runs, the coverage merge's
+                # reportgenerator among them.
+                @{ Path = ".config/dotnet-tools.json" }
                 @{ Path = "eng/build-helpers.psm1" }
                 @{ Path = ".github/workflows/on-dms-pullrequest.yml" }
                 @{ Path = "src/Directory.Packages.props" }
@@ -168,6 +173,9 @@ Describe "DMS pull request change classifier" {
                 # project must not promote anything either - but it is a known path, so it must not
                 # fail open.
                 @{ Path = "src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/Something.cs" }
+                # Only the always-on unit-test job runs Backend.Tests.Unit, so it must not fail
+                # open into every promoted lane.
+                @{ Path = "src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/Something.cs" }
                 @{ Path = "src/dms/clis/EdFi.DataManagementService.OpenApiGenerator/Something.cs" }
                 @{ Path = "src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/Something.cs" }
                 @{ Path = "src/dms/tests/EdFi.DataManagementService.Tests.E2E/Something.cs" }
@@ -355,6 +363,8 @@ Describe "DMS pull request change classifier" {
 
         It "treats <Path> as DMS-relevant" -ForEach @(
             @{ Path = "build-dms.ps1" }
+            @{ Path = "package-helpers.psm1" }
+            @{ Path = ".config/dotnet-tools.json" }
             @{ Path = ".github/actions/pull-ci-images/action.yml" }
             @{ Path = ".github/workflows/on-dms-pullrequest.yml" }
             @{ Path = "eng/build-helpers.psm1" }

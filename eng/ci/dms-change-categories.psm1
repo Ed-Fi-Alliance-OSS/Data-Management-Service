@@ -30,6 +30,11 @@ $script:FreshBuildPathPrefix = @(
 # DMS validation. Note that only .github/actions and .github/workflows qualify, not all of .github.
 $script:DmsRelevantExactPath = @(
     'build-dms.ps1'
+    # Imported by build-dms.ps1, so a change to it changes what every lane's build step runs.
+    'package-helpers.psm1'
+    # Pins the dotnet local tools the build path runs via `dotnet tool run` - the coverage merge's
+    # reportgenerator among them - so a pin change must not skip the jobs that consume the tool.
+    '.config/dotnet-tools.json'
     'src/Directory.Packages.props'
     'src/nuget.config'
 )
@@ -59,6 +64,9 @@ $script:CategoryName = @(
 # the broad '.github/' prefix here cannot promote a file the relevance rules already rejected.
 $script:AllCategoryExactPath = @(
     'build-dms.ps1'
+    # Classified exactly like build-dms.ps1: one is imported by it, the other pins the tools it runs.
+    'package-helpers.psm1'
+    '.config/dotnet-tools.json'
     'src/Directory.Packages.props'
     'src/nuget.config'
     'src/dms/Directory.Build.props'
@@ -94,6 +102,9 @@ $script:AllCategoryPathPrefix = @(
 $script:NarrowPathCategory = @(
     @{ Prefix = 'src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/'; Category = @('backend_mssql_relevant') }
     @{ Prefix = 'src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/'; Category = @() }
+    # The always-on unit-test job is the only suite that runs Backend.Tests.Unit; no promoted lane
+    # builds or runs it.
+    @{ Prefix = 'src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/'; Category = @() }
     @{ Prefix = 'src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/'; Category = @('dms_api_relevant', 'schematools_relevant') }
     # Also reaches the backend MSSQL lane. The MSSQL integration project references
     # Backend.Cdc and holds the only DB-backed CDC tests in the suite, because the CDC lane
