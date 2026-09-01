@@ -52,8 +52,11 @@ when producing committed evidence in the follow-up performance ticket.
 
 Before the representative run, prepare a strict operator metrics JSON file and pass it
 through `-OperatorMetricsFile` or `PERF_DOCUMENTCACHE_OPERATOR_METRICS_FILE`. The harness
-copies the validated file to `provider-metrics/operator-cpu-io.json`; CPU and IO
-threshold rows must reference that file rather than synthetic provider DMV values.
+copies the validated file to `provider-metrics/operator-cpu-io.json`. CPU threshold rows
+must reference that file rather than synthetic provider DMV values. Operator IO utilization
+is required contextual evidence for the run window; database IO threshold rows use provider
+read-cost evidence: PostgreSQL shared read blocks and SQL Server logical reads per projected
+document.
 
 Minimum representative workload:
 
@@ -136,12 +139,15 @@ Each follow-up release-validation run directory must contain:
 | `provider-metrics/postgresql-wal-vacuum-bloat.md` | PostgreSQL WAL, vacuum, bloat, dead tuple, and relevant index observations |
 | `provider-metrics/mssql-log-ghost-index.md` | SQL Server log, ghost row, fragmentation, and relevant index observations |
 
-`threshold-results.json` should use lower-camel property names and include at least:
+`threshold-results.json` must use lower-camel property names and include these required
+properties:
 
 ```json
 {
   "provider": "postgresql",
   "thresholdId": "postgresql-status-oldest-work-p95-ms",
+  "area": "statusOldestWorkLatency",
+  "measurement": "p95 status/oldest-work observation latency at representative cardinality.",
   "measuredValue": 42.5,
   "maximum": 250,
   "unit": "milliseconds",

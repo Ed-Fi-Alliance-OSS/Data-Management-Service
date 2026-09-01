@@ -1612,7 +1612,7 @@ bounded reset duration/crash recovery; and shared/exclusive singleton-state lock
 
 It also measures PostgreSQL WAL/vacuum/bloat and SQL Server transaction-log/ghost/index
 behavior. Operational-health, caught-up, and oldest-work queries are plan-qualified with a
-100-million-document source and empty, small, and large work inventories. Their cost must
+500,000-document representative source and empty, small, and large work inventories. Their cost must
 not scale with total `dms.Document` cardinality. If baseline restart exceeds its agreed
 completion-time, database-load, or repeated queue-DML limits, a durable baseline-cursor
 story becomes a production prerequisite.
