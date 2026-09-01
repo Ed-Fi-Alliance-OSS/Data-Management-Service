@@ -146,7 +146,9 @@ public abstract record RelationalAuthorizationPlanOutcome
 /// namespace terminals, because Namespace-based and custom view-based execute ahead of Ownership-based among the
 /// AND strategies; and ahead of every relationship terminal, because the relationship OR group executes after all
 /// AND strategies. That last part needs no index comparison, unlike the namespace-versus-relationship case: an
-/// ownership terminal outranks a relationship one whatever position CMS gave either.</item>
+/// ownership terminal outranks a relationship one whatever position CMS gave either. It does <em>not</em> outrank a
+/// custom-view configuration failure, which the classifier reports in the same bucket as relationship failures —
+/// see <c>OwnershipCapOutranksClassifierFailure</c>.</item>
 /// <item><see cref="RelationalAuthorizationPlanOutcome.StillUnsupported"/> — the relationship classifier reports a
 /// known-but-not-enabled strategy in the non-namespace bucket (501 NotImplemented, fail closed).</item>
 /// <item><see cref="RelationalAuthorizationPlanOutcome.Plan"/> — everything else.</item>
@@ -214,15 +216,22 @@ public static class RelationalAuthorizationPlanner
 
         var enforcesCustomViewChecks = EnforcesCustomViewChecks(operation);
 
-        // Evaluated here so both the relationship security-configuration arms below can yield to it.
-        // Ownership executes before the entire relationship OR group, so an ownership terminal outranks
-        // every relationship terminal regardless of configured position — no index comparison, unlike the
-        // namespace-versus-relationship case, where both are AND strategies ordered among themselves.
         var ownershipCapExceeded =
             ownershipStrategies.Count > 0
             && context.OwnershipTokenIds.Count >= OwnershipTokenLimitExceededException.OwnershipTokenLimit;
 
-        if (hasSecurityConfigurationError && !enforcesCustomViewChecks && !ownershipCapExceeded)
+        // Whether the ownership terminal may displace the classifier's security-configuration failure.
+        // Evaluated once here so both relationship security-configuration arms below consult one answer.
+        var ownershipCapOutranksClassifierFailure = OwnershipCapOutranksClassifierFailure(
+            ownershipCapExceeded,
+            relationshipClassification?.SecurityConfigurationFailures ?? []
+        );
+
+        if (
+            hasSecurityConfigurationError
+            && !enforcesCustomViewChecks
+            && !ownershipCapOutranksClassifierFailure
+        )
         {
             return new RelationalAuthorizationPlanOutcome.SecurityConfigurationError(
                 nonNamespaceStrategies,
@@ -252,9 +261,10 @@ public static class RelationalAuthorizationPlanner
                         relationshipClassification!.SecurityConfigurationFailures
                     );
 
-            // The ownership terminal also outranks this failure, and unconditionally: ownership executes
-            // before the whole relationship OR group whatever position CMS gave it.
-            if (!namespaceTerminalPrecedesFailure && !ownershipCapExceeded)
+            // The ownership terminal may also outrank this failure — but only when the failure is a
+            // relationship one. A custom-view configuration failure keeps its own response, because every
+            // custom view executes ahead of ownership among the AND strategies.
+            if (!namespaceTerminalPrecedesFailure && !ownershipCapOutranksClassifierFailure)
             {
                 return new RelationalAuthorizationPlanOutcome.SecurityConfigurationError(
                     nonNamespaceStrategies,
@@ -443,6 +453,59 @@ public static class RelationalAuthorizationPlanner
     /// </para>
     /// </remarks>
     private static readonly HashSet<NamespaceAuthorizationOperation> _ownershipEnforcedOperations = [];
+
+    /// <summary>
+    /// Whether the ownership token-cap terminal may displace the relationship classifier's
+    /// security-configuration failure.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The classifier's <c>SecurityConfigurationError</c> bucket is not purely relationship failures: it also
+    /// carries custom view-based strategy-resolution failures, such as a
+    /// <c>{BasisResource}With…</c> strategy whose basis resource does not exist
+    /// (<see cref="RelationshipAuthorizationFailureKind.UnknownCustomViewBasisResource"/>). Those are
+    /// AND-strategy failures. Every custom view executes ahead of Ownership-based among the AND strategies,
+    /// whatever position CMS gave either, so a custom-view configuration failure keeps its own response and
+    /// the ownership cap must yield to it — with no index comparison needed.
+    /// </para>
+    /// <para>
+    /// A purely relationship or otherwise generic failure does yield to the cap, because the relationship OR
+    /// group executes after every AND strategy. Both outcomes are a 500 with the same status and title, so
+    /// this choice decides which diagnostic an operator sees rather than whether the request is refused.
+    /// </para>
+    /// <para>
+    /// These are the classifier-level failures, which never become
+    /// <c>SupportedCustomViewAuthorizationStrategy</c> entries and so are never validated through the
+    /// resolved-custom-view path. That path is unaffected: a resolved view that turns out to be missing or
+    /// non-conforming is still probed and still keeps its own 500, because the terminals carry their
+    /// resolved views for validation.
+    /// </para>
+    /// <para>
+    /// Internal so the rule can be pinned directly while the enablement gate withholds every operation and
+    /// makes it unobservable through a plan outcome. The behavioral assertion belongs to the first gate-flip
+    /// commit, where it becomes reachable.
+    /// </para>
+    /// </remarks>
+    internal static bool OwnershipCapOutranksClassifierFailure(
+        bool ownershipCapExceeded,
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> securityConfigurationFailures
+    )
+    {
+        ArgumentNullException.ThrowIfNull(securityConfigurationFailures);
+
+        return ownershipCapExceeded && !securityConfigurationFailures.Any(IsCustomViewConfigurationFailure);
+    }
+
+    /// <summary>
+    /// Whether a classifier security-configuration failure is about a custom view rather than a relationship
+    /// strategy. Kept as a list of kinds rather than a name-convention test so a kind added later is a
+    /// compile-time decision here instead of silently defaulting to relationship precedence.
+    /// </summary>
+    private static bool IsCustomViewConfigurationFailure(RelationshipAuthorizationFailureMetadata failure) =>
+        failure.FailureKind
+            is RelationshipAuthorizationFailureKind.UnknownCustomViewBasisResource
+                or RelationshipAuthorizationFailureKind.NoCustomViewJoinPath
+                or RelationshipAuthorizationFailureKind.MissingProposedCustomViewRootBinding;
 
     /// <summary>
     /// Whether the caller for this operation executes the custom-view checks this planner hands back. When it

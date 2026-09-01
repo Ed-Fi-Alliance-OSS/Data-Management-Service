@@ -931,4 +931,106 @@ public class Given_RelationalAuthorizationPlanner
                     .Select(static value => (short)value),
             ]
         );
+
+    // ── Ownership cap versus classifier security-configuration failures ─
+    //
+    // The classifier's SecurityConfigurationError bucket is not purely relationship failures: it also
+    // carries custom view-based strategy-resolution failures. Those are AND-strategy failures that
+    // execute ahead of Ownership-based, so the cap must not displace them. Asserted on the predicate
+    // because the enablement gate makes it unobservable through a plan outcome; the behavioral
+    // assertion belongs to the first gate-flip commit.
+
+    private static RelationshipAuthorizationFailureMetadata Failure(
+        RelationshipAuthorizationFailureKind failureKind
+    ) => new(failureKind, new QualifiedResourceName("Ed-Fi", "PlainResource"));
+
+    /// <summary>
+    /// The regression this pins: a custom-view configuration failure must keep its own 500 rather than
+    /// being replaced by the ownership token-cap terminal. Every custom view executes ahead of
+    /// Ownership-based among the AND strategies, whatever position CMS gave either.
+    /// </summary>
+    [TestCase(RelationshipAuthorizationFailureKind.UnknownCustomViewBasisResource)]
+    [TestCase(RelationshipAuthorizationFailureKind.NoCustomViewJoinPath)]
+    [TestCase(RelationshipAuthorizationFailureKind.MissingProposedCustomViewRootBinding)]
+    public void It_does_not_let_the_ownership_cap_displace_a_custom_view_configuration_failure(
+        RelationshipAuthorizationFailureKind failureKind
+    )
+    {
+        RelationalAuthorizationPlanner
+            .OwnershipCapOutranksClassifierFailure(ownershipCapExceeded: true, [Failure(failureKind)])
+            .Should()
+            .BeFalse();
+    }
+
+    /// <summary>
+    /// A relationship or otherwise generic failure does yield to the cap: the relationship OR group
+    /// executes after every AND strategy.
+    /// </summary>
+    [TestCase(RelationshipAuthorizationFailureKind.InvalidAuthorizationStrategy)]
+    [TestCase(RelationshipAuthorizationFailureKind.UnresolvedSecurableElement)]
+    [TestCase(RelationshipAuthorizationFailureKind.NoApplicableRootSubject)]
+    [TestCase(RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations)]
+    public void It_lets_the_ownership_cap_displace_a_relationship_configuration_failure(
+        RelationshipAuthorizationFailureKind failureKind
+    )
+    {
+        RelationalAuthorizationPlanner
+            .OwnershipCapOutranksClassifierFailure(ownershipCapExceeded: true, [Failure(failureKind)])
+            .Should()
+            .BeTrue();
+    }
+
+    /// <summary>
+    /// A single custom-view failure is enough to hold the cap back, even alongside relationship failures:
+    /// the earliest-executing failure is the one reported.
+    /// </summary>
+    [Test]
+    public void It_holds_the_cap_back_when_a_custom_view_failure_accompanies_relationship_failures()
+    {
+        RelationalAuthorizationPlanner
+            .OwnershipCapOutranksClassifierFailure(
+                ownershipCapExceeded: true,
+                [
+                    Failure(RelationshipAuthorizationFailureKind.InvalidAuthorizationStrategy),
+                    Failure(RelationshipAuthorizationFailureKind.UnknownCustomViewBasisResource),
+                ]
+            )
+            .Should()
+            .BeFalse();
+    }
+
+    /// <summary>
+    /// With no cap breach there is nothing to displace anything, whatever the failures say.
+    /// </summary>
+    [Test]
+    public void It_never_outranks_anything_when_the_cap_is_not_exceeded()
+    {
+        RelationalAuthorizationPlanner
+            .OwnershipCapOutranksClassifierFailure(
+                ownershipCapExceeded: false,
+                [Failure(RelationshipAuthorizationFailureKind.InvalidAuthorizationStrategy)]
+            )
+            .Should()
+            .BeFalse();
+    }
+
+    /// <summary>
+    /// An over-cap breach with no classifier failure at all leaves the cap free to be the terminal.
+    /// </summary>
+    [Test]
+    public void It_outranks_an_empty_failure_list_when_the_cap_is_exceeded()
+    {
+        RelationalAuthorizationPlanner
+            .OwnershipCapOutranksClassifierFailure(ownershipCapExceeded: true, [])
+            .Should()
+            .BeTrue();
+    }
+
+    [Test]
+    public void It_rejects_a_null_failure_list()
+    {
+        Action act = () => RelationalAuthorizationPlanner.OwnershipCapOutranksClassifierFailure(true, null!);
+
+        act.Should().Throw<ArgumentNullException>();
+    }
 }
