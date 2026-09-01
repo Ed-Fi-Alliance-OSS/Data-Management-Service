@@ -85,6 +85,31 @@ ticket.
   result validation schema are present, and no DMS-1317 documentation claims completed
   representative-scale qualification without committed result artifacts.
 
+## Implementation Note: Config MSSQL E2E Startup Hardening
+
+The PR's GitHub Actions failure was in the Configuration Service MSSQL E2E
+startup path, before any DocumentCache integration test executed. SQL Server
+2025 failed during container startup on the newer GitHub-hosted runner image,
+leaving `dms-mssql` unhealthy and preventing `ed-fi-api-config-service` from
+starting. The failing lane used `eng/docker-compose/start-local-config.ps1`
+with `eng/docker-compose/mssql.yml`; it did not use the DMS workflow's
+hardened `.github/actions/start-mssql-test-container/action.yml`.
+
+The durable low-scope fix hardens only the config MSSQL E2E compose path:
+
+- `eng/docker-compose/mssql-tmpfs.yml` mirrors the DMS MSSQL action's CI
+  resource shape with `MSSQL_AGENT_ENABLED=true`, `MSSQL_MEMORY_LIMIT_MB=4096`,
+  `MSSQL_CONTAINER_MEMORY=10g`, `MSSQL_TMPFS_SIZE=4g`, and tmpfs-backed
+  `/var/opt/mssql`.
+- `.env.config.mssql.e2e` and `.env.config.mssql.multitenant.e2e` opt into
+  that override with `MSSQL_USE_TMPFS=true`, so ordinary local MSSQL compose
+  starts keep their persistent `dms-mssql-2025` volume.
+- `start-local-config.ps1` now starts the MSSQL `db` service first, waits for
+  `sqlcmd` readiness, and only then starts `keycloak` and `config`, avoiding a
+  full-stack compose abort when SQL Server needs an early restart window.
+- `eng/docker-compose/tests/ConfigMssqlComposeStartup.Tests.ps1` guards this
+  contract and is registered in both relevant PR Pester lanes.
+
 ## Not Assigned to This Story
 
 - Kafka infrastructure, connector, and consumer operation are assigned to E19.

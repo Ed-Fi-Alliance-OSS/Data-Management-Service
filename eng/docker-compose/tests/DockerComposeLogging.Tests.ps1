@@ -101,6 +101,7 @@ Describe "Docker Compose logging defaults (DMS-1407)" {
         $excludedOverrideFiles = @(
             "eng/docker-compose/bootstrap-dms.yml",
             "eng/docker-compose/local-dms-diagnostics.yml",
+            "eng/docker-compose/mssql-tmpfs.yml",
             "eng/docker-compose/postgresql-tmpfs.yml"
         )
 
