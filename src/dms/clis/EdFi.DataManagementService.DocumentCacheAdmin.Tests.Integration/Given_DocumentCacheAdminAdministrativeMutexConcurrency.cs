@@ -244,29 +244,13 @@ public sealed class Given_DocumentCacheAdminPostgresqlRetryableIncompleteWorkflo
             );
 
             await WaitForLifecycleStateAsync(target, timedOutProcess, "Resetting");
-            await Task.Delay(TimeSpan.FromMilliseconds(10500));
-            await cacheLock.DisposeAsync();
-            cacheLock = null;
-
-            DocumentCacheAdminCliProcessResult timedOutResult = await timedOutProcess.WaitForExitAsync(
+            await WaitForRetryableIncompleteRebuildTimeoutAsync(
+                timedOutProcess,
+                target,
                 TimeSpan.FromSeconds(60)
             );
-            JsonObject incompleteResult = DocumentCacheAdminCliCommandResultAssertions.AssertCommandResult(
-                timedOutResult,
-                target,
-                DocumentCacheAdminExitCodes.IncompleteRetryable
-            );
-            incompleteResult["command"]!.GetValue<string>().Should().Be("onlineCacheRebuild");
-            incompleteResult["status"]!.GetValue<string>().Should().Be("incompleteRetryable");
-            incompleteResult["classification"]!.GetValue<string>().Should().Be("providerCommandTimeout");
-            incompleteResult["mutated"]!.GetValue<bool>().Should().BeTrue();
-            incompleteResult["lifecycle"]!.GetValue<string>().Should().Be("resetting");
-            AssertPhaseDiagnostic(
-                incompleteResult,
-                expectedCategory: "providerCommandTimeout",
-                expectedPhase: "clearCache",
-                expectedRetryable: true
-            );
+            await cacheLock.DisposeAsync();
+            cacheLock = null;
 
             DocumentCacheAdminCliLifecycleState interruptedLifecycle =
                 await target.State.ReadLifecycleAsync();
@@ -351,32 +335,13 @@ public sealed class Given_DocumentCacheAdminMssqlRetryableIncompleteWorkflows
                     );
 
                     await WaitForLifecycleStateAsync(target, timedOutProcess, "Resetting");
-                    await Task.Delay(TimeSpan.FromMilliseconds(10500));
+                    await WaitForRetryableIncompleteRebuildTimeoutAsync(
+                        timedOutProcess,
+                        target,
+                        TimeSpan.FromSeconds(60)
+                    );
                     await cacheLock.DisposeAsync();
                     cacheLock = null;
-
-                    DocumentCacheAdminCliProcessResult timedOutResult =
-                        await timedOutProcess.WaitForExitAsync(TimeSpan.FromSeconds(60));
-                    JsonObject incompleteResult =
-                        DocumentCacheAdminCliCommandResultAssertions.AssertCommandResult(
-                            timedOutResult,
-                            target,
-                            DocumentCacheAdminExitCodes.IncompleteRetryable
-                        );
-                    incompleteResult["command"]!.GetValue<string>().Should().Be("onlineCacheRebuild");
-                    incompleteResult["status"]!.GetValue<string>().Should().Be("incompleteRetryable");
-                    incompleteResult["classification"]!
-                        .GetValue<string>()
-                        .Should()
-                        .Be("providerCommandTimeout");
-                    incompleteResult["mutated"]!.GetValue<bool>().Should().BeTrue();
-                    incompleteResult["lifecycle"]!.GetValue<string>().Should().Be("resetting");
-                    AssertPhaseDiagnostic(
-                        incompleteResult,
-                        expectedCategory: "providerCommandTimeout",
-                        expectedPhase: "clearCache",
-                        expectedRetryable: true
-                    );
 
                     DocumentCacheAdminCliLifecycleState interruptedLifecycle =
                         await target.State.ReadLifecycleAsync();
@@ -827,6 +792,50 @@ file static class DocumentCacheAdminAdministrativeMutexConcurrencySupport
         }
 
         Assert.Fail($"The CLI process did not move lifecycle to {lifecycleState} within 30 seconds.");
+    }
+
+    public static async Task WaitForRetryableIncompleteRebuildTimeoutAsync(
+        DocumentCacheAdminCliRunningProcess process,
+        DocumentCacheAdminCliTarget target,
+        TimeSpan timeout
+    )
+    {
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        while (stopwatch.Elapsed < timeout)
+        {
+            TimeSpan remaining = timeout - stopwatch.Elapsed;
+            TimeSpan pollTimeout =
+                remaining < TimeSpan.FromMilliseconds(100) ? remaining : TimeSpan.FromMilliseconds(100);
+
+            DocumentCacheAdminCliProcessResult? result = await process.TryWaitForExitAsync(pollTimeout);
+            if (result is null)
+            {
+                continue;
+            }
+
+            JsonObject commandResult = DocumentCacheAdminCliCommandResultAssertions.AssertCommandResult(
+                result,
+                target,
+                DocumentCacheAdminExitCodes.IncompleteRetryable
+            );
+            commandResult["command"]!.GetValue<string>().Should().Be("onlineCacheRebuild");
+            commandResult["status"]!.GetValue<string>().Should().Be("incompleteRetryable");
+            commandResult["classification"]!.GetValue<string>().Should().Be("providerCommandTimeout");
+            commandResult["mutated"]!.GetValue<bool>().Should().BeTrue();
+            commandResult["lifecycle"]!.GetValue<string>().Should().Be("resetting");
+            AssertPhaseDiagnostic(
+                commandResult,
+                expectedCategory: "providerCommandTimeout",
+                expectedPhase: "clearCache",
+                expectedRetryable: true
+            );
+
+            return;
+        }
+
+        Assert.Fail(
+            $"The CLI process did not exit with retryable provider command timeout within {timeout.TotalSeconds.ToString(CultureInfo.InvariantCulture)} seconds."
+        );
     }
 
     public static void AssertPhaseDiagnostic(

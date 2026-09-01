@@ -401,7 +401,7 @@
       "Manually inspect the PostgreSQL and SQL Server retryable-incomplete workflows to confirm process exit is awaited by the polling helper while the lock is still held.",
       "Run: `dotnet csharpier format src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/Given_DocumentCacheAdminAdministrativeMutexConcurrency.cs`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Performance Qualification",
