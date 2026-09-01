@@ -228,7 +228,13 @@ public sealed class RelationalDocumentStoreRepository(
                     },
                 profileWriteContext,
                 writePlan =>
-                    AuthorizePostRelationshipIfRequired(upsertRequest, mappingSet, resource, writePlan)
+                    AuthorizePostRelationshipIfRequired(upsertRequest, mappingSet, resource, writePlan),
+                // Stamped onto dms.Document when this POST resolves to a create, and ignored when it
+                // resolves to an upsert-as-update. Supplied unconditionally: stamping never consults the
+                // resource's configured authorization strategies, which is what lets a claim set later
+                // enforce ownership over data written before it was configured. Null when the API client
+                // has no creator token, which stamps null.
+                creatorOwnershipTokenId: upsertRequest.AuthorizationContext.CreatorOwnershipTokenId
             )
             .ConfigureAwait(false);
 
@@ -406,7 +412,12 @@ public sealed class RelationalDocumentStoreRepository(
                     },
                 profileWriteContext,
                 writePlan =>
-                    AuthorizePutRelationshipIfRequired(updateRequest, mappingSet, resource, writePlan)
+                    AuthorizePutRelationshipIfRequired(updateRequest, mappingSet, resource, writePlan),
+                // Deliberately null, and stated rather than left to the default. A PUT never creates — the
+                // resolved executor request rejects a CreateNew target for any operation other than POST —
+                // so there is no row for a creator token to stamp. Passing the client's token here would
+                // read as though a PUT might stamp one.
+                creatorOwnershipTokenId: null
             )
             .ConfigureAwait(false);
 
@@ -3486,7 +3497,8 @@ public sealed class RelationalDocumentStoreRepository(
         Func<string, TResult> failureFactory,
         Func<RelationalWriteExecutorResult, TResult> executorResultProjector,
         BackendProfileWriteContext? profileWriteContext = null,
-        Func<ResourceWritePlan, WriteGuardRailPreflightResult<TResult>>? preflight = null
+        Func<ResourceWritePlan, WriteGuardRailPreflightResult<TResult>>? preflight = null,
+        short? creatorOwnershipTokenId = null
     )
     {
         ArgumentNullException.ThrowIfNull(requestBody);
@@ -3594,6 +3606,7 @@ public sealed class RelationalDocumentStoreRepository(
                     {
                         PostRelationshipAuthorizationPlans = postRelationshipAuthorizationPlans,
                         CustomViewAuthorization = customViewAuthorization,
+                        CreatorOwnershipTokenId = creatorOwnershipTokenId,
                     }
                 )
                 .ConfigureAwait(false);

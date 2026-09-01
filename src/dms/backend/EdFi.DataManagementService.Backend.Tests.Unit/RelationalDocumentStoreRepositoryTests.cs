@@ -9038,6 +9038,129 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         _capturedExecutorRequest.TraceId.Should().Be(traceId);
     }
 
+    /// <summary>
+    /// A POST forwards the API client's creator ownership token to the executor, which stamps it onto
+    /// <c>dms.Document</c> if the write resolves to a create.
+    /// </summary>
+    [Test]
+    public async Task It_forwards_the_creator_ownership_token_for_a_post()
+    {
+        var upsertRequest = CreateOwnershipStampingUpsertRequest(
+            new RelationalAuthorizationContext([], [], creatorOwnershipTokenId: 42, ownershipTokenIds: [])
+        );
+
+        await _sut.UpsertDocument(upsertRequest);
+
+        _capturedExecutorRequest.CreatorOwnershipTokenId.Should().Be((short)42);
+    }
+
+    /// <summary>
+    /// A client with no creator token stamps null rather than failing: an unstamped document is a valid
+    /// outcome, and one that ownership authorization can never later grant access to.
+    /// </summary>
+    [Test]
+    public async Task It_forwards_a_null_creator_ownership_token_when_the_client_has_none()
+    {
+        var upsertRequest = CreateOwnershipStampingUpsertRequest(
+            new RelationalAuthorizationContext([], [], creatorOwnershipTokenId: null, ownershipTokenIds: [7])
+        );
+
+        await _sut.UpsertDocument(upsertRequest);
+
+        _capturedExecutorRequest.CreatorOwnershipTokenId.Should().BeNull();
+    }
+
+    /// <summary>
+    /// Forwarded regardless of the resource's configured strategies. Stamping is unconditional, which is what
+    /// lets a claim set later enforce ownership over data written before it was configured.
+    /// </summary>
+    [Test]
+    public async Task It_forwards_the_creator_ownership_token_for_a_post_with_no_ownership_strategy_configured()
+    {
+        var upsertRequest = CreateOwnershipStampingUpsertRequest(
+            new RelationalAuthorizationContext([], [], creatorOwnershipTokenId: 9, ownershipTokenIds: []),
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                ),
+            ]
+        );
+
+        await _sut.UpsertDocument(upsertRequest);
+
+        _capturedExecutorRequest.CreatorOwnershipTokenId.Should().Be((short)9);
+    }
+
+    /// <summary>
+    /// A PUT never creates, so it forwards no creator token at all. Combined with the write path emitting no
+    /// statement that mentions the column, this is what makes "a PUT cannot change the stored ownership
+    /// token" true at the source rather than only downstream.
+    /// </summary>
+    [Test]
+    public async Task It_forwards_no_creator_ownership_token_for_a_put()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
+
+        // The shared setup scripts an upsert result, which the PUT projector rejects; script an update one
+        // so the request reaches the executor and its captured input can be inspected.
+        A.CallTo(() => _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorInput>._, A<CancellationToken>._))
+            .Invokes(call =>
+            {
+                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorInput>(0)!;
+                _capturedExecutorRequests.Add(_capturedExecutorRequest);
+            })
+            .Returns(
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    new RelationalWriteExecutorResult.Update(
+                        new UpdateResult.UpdateSuccess(documentUuid, ComposedWriteResultEtag)
+                    )
+                )
+            );
+
+        var updateRequest = A.Fake<IUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet).Returns(mappingSet);
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody("Roosevelt High"));
+        A.CallTo(() => updateRequest.TraceId).Returns(new TraceId("put-ownership-stamp"));
+        A.CallTo(() => updateRequest.AuthorizationContext)
+            .Returns(
+                new RelationalAuthorizationContext([], [], creatorOwnershipTokenId: 42, ownershipTokenIds: [])
+            );
+
+        await _sut.UpdateDocumentById(updateRequest);
+
+        _capturedExecutorRequest.OperationKind.Should().Be(RelationalWriteOperationKind.Put);
+        _capturedExecutorRequest.CreatorOwnershipTokenId.Should().BeNull();
+    }
+
+    private static IUpsertRequest CreateOwnershipStampingUpsertRequest(
+        RelationalAuthorizationContext authorizationContext,
+        AuthorizationStrategyEvaluator[]? authorizationStrategyEvaluators = null
+    )
+    {
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
+        var upsertRequest = A.Fake<IUpsertRequest>();
+
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet).Returns(mappingSet);
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Roosevelt High"));
+        A.CallTo(() => upsertRequest.TraceId).Returns(new TraceId("post-ownership-stamp"));
+        A.CallTo(() => upsertRequest.AuthorizationContext).Returns(authorizationContext);
+
+        if (authorizationStrategyEvaluators is not null)
+        {
+            A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
+                .Returns(authorizationStrategyEvaluators);
+        }
+
+        return upsertRequest;
+    }
+
     [Test]
     public async Task It_returns_post_not_implemented_for_known_but_not_enabled_relationship_authorization_before_target_lookup()
     {
