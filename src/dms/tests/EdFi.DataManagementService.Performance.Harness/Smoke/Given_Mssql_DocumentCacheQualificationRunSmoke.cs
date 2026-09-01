@@ -10,30 +10,17 @@ using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using EdFi.DataManagementService.Tests.Integration.Mssql;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace EdFi.DataManagementService.Performance.Harness.Runs;
+namespace EdFi.DataManagementService.Performance.Harness.Smoke;
 
-/// <summary>
-/// SQL Server entry point for the DMS-1317 representative DocumentCache qualification run.
-/// This fixture is intentionally explicit because it loads the large DS 5.2 performance
-/// fixture and writes release-validation artifacts.
-/// </summary>
 [TestFixture]
-[Explicit("Representative DocumentCache qualification evidence run")]
-[NonParallelizable]
+[Explicit("DocumentCache qualification pipeline against a live database at smoke scale; run manually")]
 [Category("Performance")]
-[Category("DocumentCacheRepresentativeQualification")]
-[Category("MssqlIntegration")]
-public class Given_Mssql_DocumentCacheRepresentativeRun : MssqlApiIntegrationTestBase
+[Category("DocumentCacheQualificationSmoke")]
+public class Given_Mssql_DocumentCacheQualificationRunSmoke : MssqlApiIntegrationTestBase
 {
-    private const int MinimumRepresentativeProductMajorVersion = 17;
+    private const int MinimumSmokeProductMajorVersion = 17;
 
     private string _leasedConnectionString = null!;
-    private DocumentCacheRepresentativeRunConfiguration? _configuration;
-
-    private DocumentCacheRepresentativeRunConfiguration Configuration =>
-        _configuration ??= DocumentCacheRepresentativeRunConfigurationLoader.FromEnvironment(
-            PerfProvider.Mssql
-        );
 
     protected override FixtureKey Fixture => FixtureKey.AuthoritativeDs52;
 
@@ -45,13 +32,12 @@ public class Given_Mssql_DocumentCacheRepresentativeRun : MssqlApiIntegrationTes
 
     protected override bool MatchProductionWriteIsolation => true;
 
-    protected override int? DocumentCacheProjectorPageSizeOverride => Configuration.PageSize;
+    protected override int? DocumentCacheProjectorPageSizeOverride => 1_000;
 
-    protected override int? DocumentCacheProjectorMaxConcurrentTargetsOverride =>
-        Configuration.ProjectorConcurrency;
+    protected override int? DocumentCacheProjectorMaxConcurrentTargetsOverride => 2;
 
     protected override long? DocumentCacheProjectorBaselineHighWaterMarkOverride =>
-        Configuration.HighWaterMark;
+        PerfFixtureKind.Smoke10k.RowCount;
 
     protected override async Task<string> LeaseDatabaseAsync(FixtureContext fixture)
     {
@@ -69,21 +55,18 @@ public class Given_Mssql_DocumentCacheRepresentativeRun : MssqlApiIntegrationTes
     }
 
     [Test]
-    public async Task It_runs_the_representative_document_cache_qualification()
+    public async Task It_writes_every_phase_artifact_end_to_end()
     {
         await GuardSqlServer2025Async();
 
-        string runDirectory = await DocumentCacheQualificationRunPipeline.RunAsync(
+        await DocumentCacheQualificationRunSmoke.RunAsync(
             Harness,
             PerfProvider.Mssql,
             () => OpenAssertionConnectionAsync(_leasedConnectionString),
             _leasedConnectionString,
-            Configuration
-        );
-
-        Assert.That(runDirectory, Is.Not.Empty);
-        await TestContext.Out.WriteLineAsync(
-            $"DocumentCache representative qualification artifacts: {runDirectory}"
+            imageTag: "mcr.microsoft.com/mssql/server:2025-latest",
+            imageDigest: "sha256:86cc6144ef39bb0fbed2329e1ad79b13ee82e7b2e4739213a0db0800e668a74a",
+            storageNote: "local docker volume, not tmpfs"
         );
     }
 
@@ -96,13 +79,11 @@ public class Given_Mssql_DocumentCacheRepresentativeRun : MssqlApiIntegrationTes
 
         if (
             !int.TryParse(rawProductMajorVersion, out int productMajorVersion)
-            || productMajorVersion < MinimumRepresentativeProductMajorVersion
+            || productMajorVersion < MinimumSmokeProductMajorVersion
         )
         {
-            Assert.Fail(
-                "DocumentCache representative qualification requires SQL Server 2025+ "
-                    + $"(SERVERPROPERTY('ProductMajorVersion') >= {MinimumRepresentativeProductMajorVersion}); "
-                    + $"observed ProductMajorVersion='{rawProductMajorVersion ?? "<null>"}'."
+            Assert.Ignore(
+                $"DocumentCache qualification smoke requires SQL Server 2025 or newer; got '{rawProductMajorVersion ?? "<null>"}'."
             );
         }
     }

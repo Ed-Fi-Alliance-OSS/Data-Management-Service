@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Performance.Harness.Configuration;
 using EdFi.DataManagementService.Performance.Harness.Measurement;
+using EdFi.DataManagementService.Performance.Harness.Results;
 using FluentAssertions;
 
 namespace EdFi.DataManagementService.Performance.Harness.Tests.Unit.Measurement;
@@ -142,4 +143,97 @@ public class Given_DocumentCache_Representative_Evidence_Environment_Guards
             allowCi,
             [PerfEvidenceRunSettings.DefaultAllowedDirtyPrefix]
         );
+}
+
+[TestFixture]
+public class Given_DocumentCache_Qualification_Runtime_Phase_Artifacts
+{
+    [Test]
+    public void It_declares_a_metric_and_transcript_path_for_each_runtime_phase()
+    {
+        IReadOnlyList<string> metricPaths = DocumentCacheQualificationRunPipeline.PhaseMetricRelativePaths(
+            "postgresql"
+        );
+        IReadOnlyList<string> transcriptPaths =
+            DocumentCacheQualificationRunPipeline.CommandTranscriptRelativePaths("postgresql");
+
+        metricPaths
+            .Should()
+            .Equal(
+                "phase-metrics/postgresql-preflight-guards.json",
+                "phase-metrics/postgresql-disabled-canonical-write-samples.json",
+                "phase-metrics/postgresql-offline-activation-first-baseline.json",
+                "phase-metrics/postgresql-tracking-canonical-write-overhead.json",
+                "phase-metrics/postgresql-status-empty-work-latency.json",
+                "phase-metrics/postgresql-online-rebuild-clear-reseed-drain.json",
+                "phase-metrics/postgresql-interrupted-rebuild-restart-from-beginning.json",
+                "phase-metrics/postgresql-outage-distinct-document-writes.json",
+                "phase-metrics/postgresql-outage-work-row-growth.json",
+                "phase-metrics/postgresql-status-large-work-inventory-latency.json",
+                "phase-metrics/postgresql-outage-drain.json",
+                "phase-metrics/postgresql-status-small-work-inventory-latency.json",
+                "phase-metrics/postgresql-same-document-enqueue-ack-contention.json",
+                "phase-metrics/postgresql-explicit-integrity-scrub.json",
+                "phase-metrics/postgresql-post-run-final-counts.json"
+            );
+        transcriptPaths.Should().HaveSameCount(metricPaths);
+        transcriptPaths.Should().OnlyHaveUniqueItems();
+        transcriptPaths
+            .Should()
+            .Contain("command-transcripts/postgresql-offline-activation-first-baseline.md");
+        transcriptPaths
+            .Should()
+            .Contain("command-transcripts/postgresql-interrupted-rebuild-restart-from-beginning.md");
+        transcriptPaths
+            .Should()
+            .Contain("command-transcripts/postgresql-same-document-enqueue-ack-contention.md");
+    }
+
+    [Test]
+    public void It_rejects_blank_provider_artifact_names()
+    {
+        FluentActions
+            .Invoking(() => DocumentCacheQualificationRunPipeline.PhaseMetricRelativePaths(" "))
+            .Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*Provider artifact name*");
+    }
+}
+
+[TestFixture]
+public class Given_DocumentCache_Qualification_Phase_Metrics
+{
+    [Test]
+    public void It_serializes_as_camel_case_and_omits_absent_optional_sections()
+    {
+        DocumentCacheQualificationPhaseCounts counts = new(
+            "postgresql",
+            SourceDocumentRows: 500_000,
+            DmsDocumentRows: 500_005,
+            DocumentCacheRows: 500_005,
+            DocumentProjectionWorkRows: 0,
+            "Tracking",
+            CacheAheadRecoveryRequired: false
+        );
+        DocumentCacheQualificationPhaseMetrics artifact = DocumentCacheQualificationPhaseMetrics.Create(
+            "postgresql",
+            "status-empty-work-latency",
+            "2026-08-31T12:00:00Z",
+            TimeSpan.FromMilliseconds(42.5),
+            counts,
+            counts,
+            [new DocumentCacheQualificationPhaseMetricValue("queuePresence", "Empty", "value")],
+            latency: new PerfLatencySummary(1, 2, 1.5, 1, 2, [1, 2])
+        );
+
+        string json = PerfArtifactJson.Serialize(artifact);
+
+        json.Should().Contain("\"schemaVersion\"");
+        json.Should().Contain("\"countsBefore\"");
+        json.Should().Contain("\"projectionLifecycleState\": \"Tracking\"");
+        json.Should().Contain("\"queuePresence\"");
+        json.Should().Contain("\"latency\"");
+        json.Should().NotContain("\"commandResult\"");
+        json.Should().NotContain("\"statusSnapshot\"");
+    }
 }

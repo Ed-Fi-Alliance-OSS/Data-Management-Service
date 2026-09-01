@@ -493,7 +493,7 @@
       "Inspect the interrupted rebuild smoke output and confirm the replacement command starts from `Rebuilding` state and records restart completion.",
       "Run: `dotnet csharpier format src/dms/tests/EdFi.DataManagementService.Performance.Harness`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Performance Qualification",

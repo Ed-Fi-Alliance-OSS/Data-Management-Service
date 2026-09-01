@@ -684,6 +684,7 @@
       "edfi.datamanagementservice.performance.harness": {
         "type": "Project",
         "dependencies": {
+          "EdFi.DataManagementService.Backend": "[1.0.0, )",
           "EdFi.DataManagementService.Tests.Integration": "[1.0.0, )",
           "FluentAssertions": "[6.12.1, )",
           "Microsoft.Data.SqlClient": "[6.1.4, )",

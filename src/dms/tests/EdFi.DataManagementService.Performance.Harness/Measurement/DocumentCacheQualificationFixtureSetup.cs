@@ -34,6 +34,39 @@ public static class DocumentCacheQualificationFixtureSetup
         Func<Task<DbConnection>> openReplayConnectionAsync,
         string leasedConnectionString,
         DocumentCacheRepresentativeRunConfiguration configuration
+    ) =>
+        await PrepareAsync(
+            harness,
+            provider,
+            openReplayConnectionAsync,
+            leasedConnectionString,
+            configuration,
+            requireRepresentativeEvidence: true
+        );
+
+    internal static async Task<DocumentCacheQualificationFixtureSetupResult> PrepareSmokeAsync(
+        ApiIntegrationHarness harness,
+        PerfProvider provider,
+        Func<Task<DbConnection>> openReplayConnectionAsync,
+        string leasedConnectionString,
+        DocumentCacheRepresentativeRunConfiguration configuration
+    ) =>
+        await PrepareAsync(
+            harness,
+            provider,
+            openReplayConnectionAsync,
+            leasedConnectionString,
+            configuration,
+            requireRepresentativeEvidence: false
+        );
+
+    private static async Task<DocumentCacheQualificationFixtureSetupResult> PrepareAsync(
+        ApiIntegrationHarness harness,
+        PerfProvider provider,
+        Func<Task<DbConnection>> openReplayConnectionAsync,
+        string leasedConnectionString,
+        DocumentCacheRepresentativeRunConfiguration configuration,
+        bool requireRepresentativeEvidence
     )
     {
         ArgumentNullException.ThrowIfNull(harness);
@@ -41,10 +74,13 @@ public static class DocumentCacheQualificationFixtureSetup
         ArgumentException.ThrowIfNullOrWhiteSpace(leasedConnectionString);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        GuardRepresentativeEvidenceEnvironment(
-            configuration,
-            Environment.GetEnvironmentVariable("GITHUB_ACTIONS")
-        );
+        if (requireRepresentativeEvidence)
+        {
+            GuardRepresentativeEvidenceEnvironment(
+                configuration,
+                Environment.GetEnvironmentVariable("GITHUB_ACTIONS")
+            );
+        }
 
         string subjectCommit = GitIdentity.HeadCommit(AppContext.BaseDirectory);
         IReadOnlyList<string> dirtyPaths = GitIdentity.DirtyPaths(AppContext.BaseDirectory);
@@ -56,7 +92,9 @@ public static class DocumentCacheQualificationFixtureSetup
             );
         }
 
-        PerfFixtureDefinition definition = new(PerfFixtureKind.Primary500k);
+        PerfFixtureDefinition definition = new(
+            requireRepresentativeEvidence ? PerfFixtureKind.Primary500k : configuration.Fixture
+        );
         await PerfFixtureLoader.LoadAndVerifyAsync(harness.DbConnection, provider, definition);
 
         string providerName = PerfProviders.ArtifactName(provider);
@@ -89,6 +127,9 @@ public static class DocumentCacheQualificationFixtureSetup
             runId,
             capturedAtUtc,
             [provider],
+            checked((int)definition.Kind.RowCount),
+            configuration.OutageDistinctDocumentWrites,
+            configuration.SameDocumentContention,
             configuration.EvidenceSettings.StorageNote,
             configuration.RunnerCommit,
             subjectCommit,

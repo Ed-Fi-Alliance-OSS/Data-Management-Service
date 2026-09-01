@@ -9,28 +9,15 @@ using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using EdFi.DataManagementService.Tests.Integration.Postgresql;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace EdFi.DataManagementService.Performance.Harness.Runs;
+namespace EdFi.DataManagementService.Performance.Harness.Smoke;
 
-/// <summary>
-/// PostgreSQL entry point for the DMS-1317 representative DocumentCache qualification run.
-/// This fixture is intentionally explicit because it loads the large DS 5.2 performance
-/// fixture and writes release-validation artifacts.
-/// </summary>
 [TestFixture]
-[Explicit("Representative DocumentCache qualification evidence run")]
-[NonParallelizable]
+[Explicit("DocumentCache qualification pipeline against a live database at smoke scale; run manually")]
 [Category("Performance")]
-[Category("DocumentCacheRepresentativeQualification")]
-[Category("PostgresqlIntegration")]
-public class Given_Postgresql_DocumentCacheRepresentativeRun : PostgresqlApiIntegrationTestBase
+[Category("DocumentCacheQualificationSmoke")]
+public class Given_Postgresql_DocumentCacheQualificationRunSmoke : PostgresqlApiIntegrationTestBase
 {
     private string _leasedConnectionString = null!;
-    private DocumentCacheRepresentativeRunConfiguration? _configuration;
-
-    private DocumentCacheRepresentativeRunConfiguration Configuration =>
-        _configuration ??= DocumentCacheRepresentativeRunConfigurationLoader.FromEnvironment(
-            PerfProvider.Postgresql
-        );
 
     protected override FixtureKey Fixture => FixtureKey.AuthoritativeDs52;
 
@@ -40,13 +27,12 @@ public class Given_Postgresql_DocumentCacheRepresentativeRun : PostgresqlApiInte
 
     protected override string DocumentCacheReadAccelerationDirectFillTimeout => "00:00:05";
 
-    protected override int? DocumentCacheProjectorPageSizeOverride => Configuration.PageSize;
+    protected override int? DocumentCacheProjectorPageSizeOverride => 1_000;
 
-    protected override int? DocumentCacheProjectorMaxConcurrentTargetsOverride =>
-        Configuration.ProjectorConcurrency;
+    protected override int? DocumentCacheProjectorMaxConcurrentTargetsOverride => 2;
 
     protected override long? DocumentCacheProjectorBaselineHighWaterMarkOverride =>
-        Configuration.HighWaterMark;
+        PerfFixtureKind.Smoke10k.RowCount;
 
     protected override async Task<string> LeaseDatabaseAsync(FixtureContext fixture)
     {
@@ -64,19 +50,16 @@ public class Given_Postgresql_DocumentCacheRepresentativeRun : PostgresqlApiInte
     }
 
     [Test]
-    public async Task It_runs_the_representative_document_cache_qualification()
+    public async Task It_writes_every_phase_artifact_end_to_end()
     {
-        string runDirectory = await DocumentCacheQualificationRunPipeline.RunAsync(
+        await DocumentCacheQualificationRunSmoke.RunAsync(
             Harness,
             PerfProvider.Postgresql,
             () => OpenAssertionConnectionAsync(_leasedConnectionString),
             _leasedConnectionString,
-            Configuration
-        );
-
-        Assert.That(runDirectory, Is.Not.Empty);
-        await TestContext.Out.WriteLineAsync(
-            $"DocumentCache representative qualification artifacts: {runDirectory}"
+            imageTag: "postgres:16.8-alpine",
+            imageDigest: "sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0",
+            storageNote: "local docker volume, not tmpfs"
         );
     }
 }

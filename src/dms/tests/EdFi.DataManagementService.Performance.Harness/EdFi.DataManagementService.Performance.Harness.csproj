@@ -23,6 +23,7 @@
         <PackageReference Include="NUnit3TestAdapter" />
     </ItemGroup>
     <ItemGroup>
+        <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend\EdFi.DataManagementService.Backend.csproj" />
         <ProjectReference Include="..\EdFi.DataManagementService.Tests.Integration\EdFi.DataManagementService.Tests.Integration.csproj" />
     </ItemGroup>
     <ItemGroup>

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Performance.Harness.Configuration;
 
 namespace EdFi.DataManagementService.Performance.Harness.Results;
@@ -34,6 +35,9 @@ public sealed record DocumentCacheQualificationRunManifest(
         string runId,
         string capturedAtUtc,
         IReadOnlyList<PerfProvider> providers,
+        int canonicalDocumentCount,
+        int outageDistinctDocumentWrites,
+        int sameDocumentContention,
         string storageNote,
         string runnerCommit,
         string subjectCommit,
@@ -47,9 +51,9 @@ public sealed record DocumentCacheQualificationRunManifest(
             runId,
             capturedAtUtc,
             [.. providers.Select(PerfProviders.ArtifactName)],
-            DocumentCacheQualification.RepresentativeDocumentCount,
-            DocumentCacheQualification.RepresentativeOutageDistinctDocumentWrites,
-            DocumentCacheQualification.RepresentativeSameDocumentContention,
+            canonicalDocumentCount,
+            outageDistinctDocumentWrites,
+            sameDocumentContention,
             storageNote,
             runnerCommit,
             subjectCommit,
@@ -101,6 +105,121 @@ public sealed record DocumentCacheFixtureSetupMetrics(
         PerfFixtureManifest fixture,
         DocumentCacheInitialTableCounts initialCounts
     ) => new(PerfArtifactSchema.Version, provider, capturedAtUtc, fixture, initialCounts);
+}
+
+/// <summary>
+/// Counts and singleton lifecycle state captured around one DocumentCache qualification phase.
+/// Lifecycle is recorded as text to keep phase metrics provider-agnostic and stable even if
+/// the core lifecycle enum later adds JSON converters.
+/// </summary>
+public sealed record DocumentCacheQualificationPhaseCounts(
+    string Provider,
+    long SourceDocumentRows,
+    long DmsDocumentRows,
+    long DocumentCacheRows,
+    long DocumentProjectionWorkRows,
+    string ProjectionLifecycleState,
+    bool CacheAheadRecoveryRequired
+);
+
+/// <summary>
+/// One scalar measurement inside a phase metrics artifact. Values stay textual so later
+/// threshold assembly can choose decimal/integer/string interpretation explicitly.
+/// </summary>
+public sealed record DocumentCacheQualificationPhaseMetricValue(string Name, string Value, string Unit);
+
+/// <summary>
+/// Failed HTTP write evidence retained without storing every successful request body.
+/// </summary>
+public sealed record DocumentCacheQualificationWriteFailure(
+    long Ordinal,
+    string DocumentUuid,
+    int? StatusCode,
+    string Message
+);
+
+/// <summary>
+/// HTTP write batch evidence. Latency samples include measured successful writes only; failures
+/// are separated so a representative run can fail fast while still leaving diagnostic artifacts.
+/// </summary>
+public sealed record DocumentCacheQualificationWriteBatchMetrics(
+    long FirstOrdinal,
+    long LastOrdinal,
+    int WarmupCount,
+    int MeasuredCount,
+    int SuccessfulMeasuredCount,
+    IReadOnlyList<DocumentCacheQualificationWriteFailure> Failures,
+    PerfLatencySummary? Latency
+);
+
+/// <summary>
+/// One manually invoked projection drain slice used by outage and contention phases.
+/// </summary>
+public sealed record DocumentCacheQualificationDrainSliceMetrics(
+    int SliceNumber,
+    string SchedulerStatus,
+    string? DrainOutcome,
+    int? ProcessedItemCount,
+    int? AcknowledgedOrRemovedItemCount,
+    int? DocumentScopedFailureCount,
+    double ElapsedMilliseconds,
+    string? AdministrativeFailureStatus = null,
+    string? AdministrativeFailureClassification = null,
+    string? AdministrativeFailureDiagnosticCategory = null,
+    string? AdministrativeFailureMessage = null,
+    bool? AdministrativeFailureRetryable = null,
+    IReadOnlyList<long>? AdministrativeFailureAffectedDocumentIds = null
+);
+
+/// <summary>
+/// Structured JSON for one benchmark phase. Threshold rows are intentionally generated later;
+/// these phase artifacts retain the observed operational evidence from the run itself.
+/// </summary>
+public sealed record DocumentCacheQualificationPhaseMetrics(
+    string SchemaVersion,
+    string Provider,
+    string Phase,
+    string CapturedAtUtc,
+    double ElapsedMilliseconds,
+    DocumentCacheQualificationPhaseCounts CountsBefore,
+    DocumentCacheQualificationPhaseCounts CountsAfter,
+    IReadOnlyList<DocumentCacheQualificationPhaseMetricValue> Metrics,
+    PerfLatencySummary? Latency = null,
+    DocumentCacheQualificationWriteBatchMetrics? WriteBatch = null,
+    DocumentCacheAdministrativeCommandResult? CommandResult = null,
+    DocumentCacheStatusResponse? StatusSnapshot = null,
+    IReadOnlyList<DocumentCacheQualificationDrainSliceMetrics>? DrainSlices = null
+)
+{
+    public static DocumentCacheQualificationPhaseMetrics Create(
+        string provider,
+        string phase,
+        string capturedAtUtc,
+        TimeSpan elapsed,
+        DocumentCacheQualificationPhaseCounts countsBefore,
+        DocumentCacheQualificationPhaseCounts countsAfter,
+        IEnumerable<DocumentCacheQualificationPhaseMetricValue> metrics,
+        PerfLatencySummary? latency = null,
+        DocumentCacheQualificationWriteBatchMetrics? writeBatch = null,
+        DocumentCacheAdministrativeCommandResult? commandResult = null,
+        DocumentCacheStatusResponse? statusSnapshot = null,
+        IReadOnlyList<DocumentCacheQualificationDrainSliceMetrics>? drainSlices = null
+    ) =>
+        new(
+            PerfArtifactSchema.Version,
+            provider,
+            phase,
+            capturedAtUtc,
+            elapsed.TotalMilliseconds,
+            countsBefore,
+            countsAfter,
+            [.. metrics],
+            latency,
+            writeBatch,
+            commandResult,
+            statusSnapshot,
+            drainSlices
+        );
 }
 
 /// <summary>
