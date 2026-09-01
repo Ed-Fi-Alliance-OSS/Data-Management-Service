@@ -331,7 +331,7 @@
       "Run: `rg -n \"DocumentCacheRunbookWorkflow|dms-document-cache status|dms-document-cache scrub|rebuild-online|DocumentProjectionWork\" src/dms/tests/EdFi.DataManagementService.Tests.E2E`",
       "Inspect the E2E output and command transcripts to confirm the CLI commands targeted the same E2E database used by the API requests."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Review Remediation",
