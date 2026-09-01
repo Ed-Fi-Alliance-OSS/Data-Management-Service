@@ -312,7 +312,7 @@
       "Run: `rg -n \"DocumentCacheProfileAuthorization|profiled|content type|claimset|authorization\" src/dms/tests/EdFi.DataManagementService.Tests.E2E`",
       "Inspect the E2E output to confirm the scenario uses real E2E authorization/profile setup and not the integration-test bypass authorization path."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "E2E",

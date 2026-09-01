@@ -31,6 +31,7 @@ public sealed partial class DocumentCacheHostedHappyPathTests
     private const string CmsReadOnlyScope = "edfi_admin_api/readonly_access";
     private const string CmsEncryptionKey = "secret!_32_chars_xxxxxxxxxxxxxxx";
     private const string StudentResourcePath = "data/ed-fi/students";
+    private const string SchoolResourcePath = "data/ed-fi/schools";
     private const string DocumentCacheStatusPath = "health/document-cache";
 
     private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web)
@@ -246,16 +247,22 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         response.StatusCode.Should().Be(HttpStatusCode.NoContent, $"CMS data-store update failed: {body}");
     }
 
-    private async Task<ClientCredentials> CreateClientCredentialsForDataStoreAsync(int dataStoreId)
+    private async Task<ClientCredentials> CreateClientCredentialsForDataStoreAsync(
+        int dataStoreId,
+        string claimSetName = AuthorizationClaimSetNames.NoFurtherAuthRequired,
+        long[]? educationOrganizationIds = null,
+        int[]? profileIds = null
+    )
     {
         int vendorId = await CreateVendorAsync();
         var request = new
         {
             vendorId,
             applicationName = $"DocCache E2E {Guid.NewGuid():N}"[..30],
-            claimSetName = AuthorizationClaimSetNames.NoFurtherAuthRequired,
-            educationOrganizationIds = Array.Empty<long>(),
+            claimSetName,
+            educationOrganizationIds = educationOrganizationIds ?? [],
             dataStoreIds = new[] { dataStoreId },
+            profileIds = profileIds ?? [],
         };
 
         using StringContent content = JsonContent(request);
@@ -510,6 +517,7 @@ public sealed partial class DocumentCacheHostedHappyPathTests
                     d.[DocumentId],
                     d.[ContentVersion] AS [DocumentContentVersion],
                     c.[ContentVersion] AS [CacheContentVersion],
+                    c.[StreamEtag],
                     c.[ResourceName],
                     c.[DocumentJson],
                     (SELECT COUNT_BIG(1) FROM [dms].[DocumentProjectionWork] AS w WHERE w.[DocumentId] = d.[DocumentId]) AS [WorkRows]
@@ -522,6 +530,7 @@ public sealed partial class DocumentCacheHostedHappyPathTests
                     d."DocumentId",
                     d."ContentVersion" AS "DocumentContentVersion",
                     c."ContentVersion" AS "CacheContentVersion",
+                    c."StreamEtag",
                     c."ResourceName",
                     c."DocumentJson"::text AS "DocumentJson",
                     (SELECT COUNT(*) FROM "dms"."DocumentProjectionWork" AS w WHERE w."DocumentId" = d."DocumentId") AS "WorkRows"
@@ -541,6 +550,7 @@ public sealed partial class DocumentCacheHostedHappyPathTests
             DocumentId: ReadInt64(reader, "DocumentId"),
             DocumentContentVersion: ReadInt64(reader, "DocumentContentVersion"),
             CacheContentVersion: ReadRequiredInt64(reader, "CacheContentVersion"),
+            StreamEtag: ReadRequiredString(reader, "StreamEtag"),
             ResourceName: ReadRequiredString(reader, "ResourceName"),
             DocumentJson: ReadRequiredString(reader, "DocumentJson"),
             WorkRows: ReadInt64(reader, "WorkRows")
@@ -968,6 +978,7 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         long DocumentId,
         long DocumentContentVersion,
         long CacheContentVersion,
+        string StreamEtag,
         string ResourceName,
         string DocumentJson,
         long WorkRows
