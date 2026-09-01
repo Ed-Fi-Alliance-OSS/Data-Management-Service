@@ -333,7 +333,11 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 if (-not $ReportOnly) {
-    Assert-EnvironmentVariable -Name 'ConnectionStrings__DatabaseConnection'
+    # Connection-string templates are provider-specific preconditions: an mssql-only gate
+    # must not demand the PostgreSQL template, and vice versa.
+    if ($Provider -contains 'postgresql') {
+        Assert-EnvironmentVariable -Name 'ConnectionStrings__DatabaseConnection'
+    }
     if ($Provider -contains 'mssql') {
         Assert-EnvironmentVariable -Name 'ConnectionStrings__MssqlAdmin'
     }
