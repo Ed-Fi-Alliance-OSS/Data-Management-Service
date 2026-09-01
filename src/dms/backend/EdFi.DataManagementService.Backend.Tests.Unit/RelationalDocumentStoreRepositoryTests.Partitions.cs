@@ -472,6 +472,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );

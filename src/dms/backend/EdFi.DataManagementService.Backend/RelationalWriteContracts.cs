@@ -1014,6 +1014,25 @@ public sealed record RelationalWriteNamespaceAuthorization(
 );
 
 /// <summary>
+/// Ownership authorization inputs threaded from a repository preflight into execution.
+/// </summary>
+/// <param name="Check">
+/// The single planned ownership check. A value rather than a list: ownership reads one column against one
+/// token list, so it evaluates once per operation however many times <c>OwnershipBased</c> is configured.
+/// </param>
+/// <param name="OwnershipTokenParameterization">The dialect-specific ownership-token parameterization.</param>
+/// <remarks>
+/// The check's <c>RawConfiguredIndex</c> is the configured position the AUTH1 payload carries, used to
+/// attribute a denial back to this check. It deliberately does not order execution: ownership always runs
+/// last among the AND-combined strategies whatever position it is configured at, so unlike the custom-view
+/// checks it is never partitioned around <c>NamespaceBased</c> by configured index.
+/// </remarks>
+public sealed record RelationalOwnershipAuthorization(
+    OwnershipAuthorizationCheckSpec Check,
+    OwnershipTokenParameterization OwnershipTokenParameterization
+);
+
+/// <summary>
 /// Every custom view-based check planned for one request, across both value sources.
 /// </summary>
 /// <remarks>

@@ -87,6 +87,8 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             scope.ServiceProvider.GetRequiredService<IRelationalReadTargetLookupService>();
         var singleRecordRelationshipAuthorizationExecutor =
             scope.ServiceProvider.GetRequiredService<ISingleRecordRelationshipAuthorizationExecutor>();
+        var ownershipAuthorizationExecutor =
+            scope.ServiceProvider.GetRequiredService<IOwnershipAuthorizationExecutor>();
         var relationshipAuthorizationProviderFailureExtractor =
             scope.ServiceProvider.GetRequiredService<IRelationshipAuthorizationProviderFailureExtractor>();
         var documentCacheReadAccelerationCoordinator =
@@ -127,6 +129,10 @@ public class Given_ReferenceResolver_Service_Collection_Extensions
             .Subject;
 
         commandExecutor.Should().BeOfType<TestRelationalCommandExecutor>();
+        // Registered so the repository's own resolution cannot fail once the ReadSingle gate opens: an
+        // unregistered executor would surface as a container error on the first ownership-configured read
+        // rather than at composition time.
+        ownershipAuthorizationExecutor.Should().BeOfType<OwnershipAuthorizationExecutor>();
         parameterConfigurator.Should().BeOfType<DefaultRelationalParameterConfigurator>();
         writeSessionFactory.Should().BeOfType<TestRelationalWriteSessionFactory>();
         documentHydrator.Should().BeOfType<TestDocumentHydrator>();

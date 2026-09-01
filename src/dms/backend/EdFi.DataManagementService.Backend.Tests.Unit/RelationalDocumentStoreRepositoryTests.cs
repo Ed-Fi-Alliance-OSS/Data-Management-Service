@@ -95,6 +95,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         null!;
     private INamespaceAuthorizationExecutor _namespaceAuthorizationExecutor = null!;
     private ICustomViewAuthorizationExecutor _customViewAuthorizationExecutor = null!;
+    private IOwnershipAuthorizationExecutor _ownershipAuthorizationExecutor = null!;
     private RelationalWriteExecutorInput _capturedExecutorRequest = null!;
     private List<RelationalWriteExecutorInput> _capturedExecutorRequests = null!;
 
@@ -122,6 +123,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             A.Fake<ISingleRecordRelationshipAuthorizationExecutor>();
         _namespaceAuthorizationExecutor = A.Fake<INamespaceAuthorizationExecutor>();
         _customViewAuthorizationExecutor = A.Fake<ICustomViewAuthorizationExecutor>();
+        _ownershipAuthorizationExecutor = A.Fake<IOwnershipAuthorizationExecutor>();
         _capturedExecutorRequests = [];
         A.CallTo(() => _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorInput>._, A<CancellationToken>._))
             .Invokes(call =>
@@ -180,6 +182,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -205,6 +208,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -232,6 +236,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: readAccelerationCoordinator
         );
@@ -729,6 +734,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -1118,6 +1124,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         result.Should().BeOfType<GetResult.GetSuccess>();
         authorizationOrder.Should().Be(1);
         hydrationOrder.Should().Be(2);
+        AssertOwnershipAuthorizationWasNotExecuted();
         capturedAuthorizationRequest.MappingSet.Should().BeSameAs(mappingSet);
         capturedAuthorizationRequest.DocumentId.Should().Be(345L);
         capturedAuthorizationRequest.EmittedAuth1Index.Should().Be(0);
@@ -1359,6 +1366,9 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         var failure = result.Should().BeOfType<GetResult.GetFailureNotImplemented>().Subject;
         failure.FailureMessage.Should().Contain(AuthorizationStrategyNameConstants.OwnershipBased);
         AssertSupportedRelationshipStrategyNames(failure.FailureMessage);
+        // OwnershipBased keeps its known-but-not-enabled 501 while the ReadSingle gate is closed, and the
+        // wired executor is not reached on the way to it.
+        AssertOwnershipAuthorizationWasNotExecuted();
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
                     A<MappingSet>._,
@@ -4665,6 +4675,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -4837,6 +4848,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -4911,6 +4923,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -11313,6 +11326,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -11370,6 +11384,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -11412,6 +11427,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -11469,6 +11485,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -11525,6 +11542,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -11591,6 +11609,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -11692,6 +11711,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -11755,6 +11775,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -11795,6 +11816,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -13306,6 +13328,20 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             return ValueTask.CompletedTask;
         }
     }
+
+    /// <summary>
+    /// Asserts no ownership authorization round trip was made. While the ReadSingle enablement gate is
+    /// closed no operation plans an ownership check, so the wiring must stay inert: an unconditional call
+    /// here would be an extra command per read and, once the gate opens, a check running out of order.
+    /// </summary>
+    private void AssertOwnershipAuthorizationWasNotExecuted() =>
+        A.CallTo(() =>
+                _ownershipAuthorizationExecutor.ExecuteAsync(
+                    A<OwnershipAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
 
     private static void AssertSupportedRelationshipStrategyNames(string message)
     {

@@ -281,6 +281,9 @@ public static class ReferenceResolverServiceCollectionExtensions
             ServiceDescriptor.Scoped<INamespaceAuthorizationExecutor, NamespaceAuthorizationExecutor>()
         );
         services.TryAdd(
+            ServiceDescriptor.Scoped<IOwnershipAuthorizationExecutor, OwnershipAuthorizationExecutor>()
+        );
+        services.TryAdd(
             ServiceDescriptor.Scoped<ICustomViewAuthorizationExecutor>(
                 static serviceProvider => new CustomViewAuthorizationExecutor(
                     serviceProvider.GetRequiredService<IRelationalCommandExecutor>(),

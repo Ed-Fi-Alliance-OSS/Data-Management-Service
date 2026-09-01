@@ -71,6 +71,7 @@ public class Given_No_Profile_Relational_Post
             A.Fake<ISingleRecordRelationshipAuthorizationExecutor>(),
             A.Fake<INamespaceAuthorizationExecutor>(),
             A.Fake<ICustomViewAuthorizationExecutor>(),
+            A.Fake<IOwnershipAuthorizationExecutor>(),
             A.Fake<IRelationalCommandExecutor>(),
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -163,6 +164,7 @@ public class Given_No_Profile_Relational_Put
             A.Fake<ISingleRecordRelationshipAuthorizationExecutor>(),
             A.Fake<INamespaceAuthorizationExecutor>(),
             A.Fake<ICustomViewAuthorizationExecutor>(),
+            A.Fake<IOwnershipAuthorizationExecutor>(),
             A.Fake<IRelationalCommandExecutor>(),
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -255,6 +257,7 @@ public class Given_A_Profiled_Relational_Post
             A.Fake<ISingleRecordRelationshipAuthorizationExecutor>(),
             A.Fake<INamespaceAuthorizationExecutor>(),
             A.Fake<ICustomViewAuthorizationExecutor>(),
+            A.Fake<IOwnershipAuthorizationExecutor>(),
             A.Fake<IRelationalCommandExecutor>(),
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -356,6 +359,7 @@ public class Given_A_Profiled_Relational_Put
             A.Fake<ISingleRecordRelationshipAuthorizationExecutor>(),
             A.Fake<INamespaceAuthorizationExecutor>(),
             A.Fake<ICustomViewAuthorizationExecutor>(),
+            A.Fake<IOwnershipAuthorizationExecutor>(),
             A.Fake<IRelationalCommandExecutor>(),
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
