@@ -72,6 +72,7 @@ services:
       DataManagement__DocumentCache__Targets__0__TenantKey: ${DMS_DOCUMENTCACHE_TARGET_TENANT_KEY:-}
       DataManagement__DocumentCache__Targets__0__DataStoreId: ${DMS_DOCUMENTCACHE_TARGET_DATA_STORE_ID:-1}
       DataManagement__DocumentCache__ReadAcceleration__Enabled: ${DMS_DOCUMENTCACHE_READ_ACCELERATION_ENABLED:-false}
+      DataManagement__DocumentCache__ReadAcceleration__DirectFillTimeout: ${DMS_DOCUMENTCACHE_READ_ACCELERATION_DIRECT_FILL_TIMEOUT:-00:00:00.250}
       DataManagement__DocumentCache__Projector__PollInterval: ${DMS_DOCUMENTCACHE_PROJECTOR_POLL_INTERVAL:-00:00:05}
       DataManagement__DocumentCache__Projector__PageSize: ${DMS_DOCUMENTCACHE_PROJECTOR_PAGE_SIZE:-100}
       DataManagement__DocumentCache__Projector__MaxConcurrentTargets: ${DMS_DOCUMENTCACHE_PROJECTOR_MAX_CONCURRENT_TARGETS:-2}
