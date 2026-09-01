@@ -90,8 +90,9 @@ internal static class OwnershipTokenParameterizationValidator
         switch (ownershipTokenParameterization.Kind)
         {
             case OwnershipTokenParameterizationKind.PgsqlArray:
-                // Exactly the base name, even for an empty token list: the array parameter is still bound,
-                // carrying an empty array.
+                // Exactly the base name, even for an empty token list. The shape is about what the
+                // parameterization declares, not what a given statement binds: an empty list renders a
+                // constant-false predicate and OwnershipTokenSqlHelper then binds no token parameter at all.
                 if (
                     ownershipTokenParameterization.ParameterNamesInOrder.Count is not 1
                     || !string.Equals(
