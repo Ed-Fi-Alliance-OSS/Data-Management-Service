@@ -1033,4 +1033,118 @@ public class Given_RelationalAuthorizationPlanner
 
         act.Should().Throw<ArgumentNullException>();
     }
+
+    // ── Out-of-scope boundaries, asserted rather than inferred from absence ─
+
+    /// <summary>
+    /// Descriptor ownership enforcement is out of scope for DMS-1060, so a descriptor configured with
+    /// OwnershipBased keeps its known-but-not-enabled 501 on every operation.
+    /// </summary>
+    /// <remarks>
+    /// The behavioral counterpart to the gate-predicate assertions above. Before ownership had a bucket of
+    /// its own this held only incidentally, because the descriptor guardrail rejects every non-namespace
+    /// strategy; splitting ownership out could have removed that with no failing test.
+    /// </remarks>
+    [TestCase(NamespaceAuthorizationOperation.ReadSingle)]
+    [TestCase(NamespaceAuthorizationOperation.Update)]
+    [TestCase(NamespaceAuthorizationOperation.Delete)]
+    [TestCase(NamespaceAuthorizationOperation.ReadMany)]
+    public void It_keeps_descriptor_ownership_unsupported_for_every_operation(
+        NamespaceAuthorizationOperation operation
+    )
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(ResourceKey(4, "SchoolTypeDescriptor")),
+            DescriptorResource(),
+            operation,
+            [Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 0)],
+            TwoPrefixContext()
+        );
+
+        var stillUnsupported = outcome
+            .Should()
+            .BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>()
+            .Subject;
+        stillUnsupported
+            .RelationshipClassification.KnownButNotEnabledStrategies.Select(static strategy =>
+                strategy.ConfiguredStrategy.StrategyName
+            )
+            .Should()
+            .Equal(AuthorizationStrategyNameConstants.OwnershipBased);
+    }
+
+    /// <summary>
+    /// The descriptor boundary must not be reachable through the token cap either: an over-cap list on a
+    /// descriptor request keeps the 501 rather than becoming the cap's 500, because ownership is not
+    /// enforced there at all and so there is nothing for the cap to gate.
+    /// </summary>
+    [TestCase(NamespaceAuthorizationOperation.ReadSingle)]
+    [TestCase(NamespaceAuthorizationOperation.Update)]
+    [TestCase(NamespaceAuthorizationOperation.Delete)]
+    [TestCase(NamespaceAuthorizationOperation.ReadMany)]
+    public void It_keeps_descriptor_ownership_unsupported_even_over_the_token_cap(
+        NamespaceAuthorizationOperation operation
+    )
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(ResourceKey(4, "SchoolTypeDescriptor")),
+            DescriptorResource(),
+            operation,
+            [Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 0)],
+            OverCapOwnershipContext()
+        );
+
+        outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>();
+    }
+
+    /// <summary>
+    /// A descriptor 501 for ownership still carries the resolved custom views, so a missing or
+    /// non-conforming view keeps its own 500 instead of being masked by the 501. Ownership executes last
+    /// among the AND strategies whatever its configured position, so every view runs ahead of it.
+    /// </summary>
+    [Test]
+    public void It_carries_resolved_custom_views_on_a_descriptor_ownership_terminal()
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(ResourceKey(4, "SchoolTypeDescriptor"), ResourceKey(3, "Student")),
+            DescriptorResource(),
+            NamespaceAuthorizationOperation.ReadSingle,
+            [
+                Strategy("StudentWithCTECourseEnrollments", 0),
+                Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 1),
+            ],
+            TwoPrefixContext()
+        );
+
+        var stillUnsupported = outcome
+            .Should()
+            .BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>()
+            .Subject;
+        stillUnsupported
+            .RelationshipClassification.SupportedCustomViewStrategies.Should()
+            .ContainSingle()
+            .Which.ConfiguredStrategy.StrategyName.Should()
+            .Be("StudentWithCTECourseEnrollments");
+    }
+
+    /// <summary>
+    /// GET-many ownership filtering belongs to DMS-1410. An over-cap token list must not turn that 501 into
+    /// the cap's 500 — the strategy is not enforced for ReadMany, so the cap has nothing to gate.
+    /// </summary>
+    [Test]
+    public void It_keeps_read_many_ownership_unsupported_even_over_the_token_cap()
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(),
+            ResourceWithoutSecurableElements(),
+            NamespaceAuthorizationOperation.ReadMany,
+            [
+                Strategy(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly, 0),
+                Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 1),
+            ],
+            OverCapOwnershipContext()
+        );
+
+        outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>();
+    }
 }

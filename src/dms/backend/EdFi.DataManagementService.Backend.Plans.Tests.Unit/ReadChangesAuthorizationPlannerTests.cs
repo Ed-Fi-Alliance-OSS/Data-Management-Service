@@ -1050,4 +1050,37 @@ public class ReadChangesAuthorizationPlannerTests
         );
 
     private static JsonPathExpression Path(string canonical) => new(canonical, []);
+
+    /// <summary>
+    /// Change queries are out of scope for DMS-1060, and their planner keeps its own allow-list rather than
+    /// consulting the relational one. An ownership-token list at or over the defensive cap must therefore
+    /// change nothing here: OwnershipBased stays a security-configuration outcome, never the relational
+    /// planner's token-cap terminal.
+    /// </summary>
+    [Test]
+    public void It_keeps_ownership_a_security_configuration_outcome_even_over_the_token_cap()
+    {
+        var outcome = Plan(
+            EdOrgResource(),
+            EdOrgTrackedTable(),
+            new RelationalAuthorizationContext(
+                [1L],
+                [],
+                creatorOwnershipTokenId: null,
+                ownershipTokenIds:
+                [
+                    .. Enumerable
+                        .Range(1, OwnershipTokenLimitExceededException.OwnershipTokenLimit)
+                        .Select(static value => (short)value),
+                ]
+            ),
+            AuthorizationStrategyNameConstants.OwnershipBased
+        );
+
+        outcome
+            .Should()
+            .BeOfType<ReadChangesAuthorizationPlanOutcome.SecurityConfiguration>()
+            .Which.UnavailableStrategyNames.Should()
+            .Contain(AuthorizationStrategyNameConstants.OwnershipBased);
+    }
 }
