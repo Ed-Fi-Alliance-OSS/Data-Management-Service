@@ -813,4 +813,122 @@ public class Given_RelationalAuthorizationPlanner
         var plan = outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.Plan>().Subject;
         plan.NonNamespaceConfiguredStrategies.Should().Equal(rwedoo, rwedooi);
     }
+
+    // ── DMS-1060 ownership enablement gate ──────────────────────────────
+    //
+    // The gate withholds every operation in this step, so no plan outcome can distinguish an enforced
+    // combination from a withheld one. These assert the predicate directly; the behavioral assertions
+    // (a planned OwnershipCheck, and the token-cap terminal's precedence) belong to the commits that
+    // flip each operation on, because only those commits can observe them.
+
+    /// <summary>
+    /// Every operation is withheld at this point in the story. Each enforcement step adds its own operation
+    /// in the same commit that wires that operation's executor, so no commit exists in which a planned
+    /// ownership check has no executor.
+    /// </summary>
+    [TestCase(NamespaceAuthorizationOperation.ReadSingle)]
+    [TestCase(NamespaceAuthorizationOperation.Update)]
+    [TestCase(NamespaceAuthorizationOperation.Delete)]
+    [TestCase(NamespaceAuthorizationOperation.ReadMany)]
+    public void It_withholds_ownership_enforcement_for_every_operation(
+        NamespaceAuthorizationOperation operation
+    )
+    {
+        RelationalAuthorizationPlanner
+            .EnforcesOwnershipChecks(operation, ResourceStorageKind.RelationalTables)
+            .Should()
+            .BeFalse();
+    }
+
+    /// <summary>
+    /// Descriptor storage is withheld permanently for this story. Before ownership had a bucket of its own,
+    /// descriptors were protected only incidentally — by the descriptor guardrail rejecting every
+    /// non-namespace strategy — so splitting ownership out would have removed that protection silently.
+    /// This is the named replacement.
+    /// </summary>
+    [TestCase(NamespaceAuthorizationOperation.ReadSingle)]
+    [TestCase(NamespaceAuthorizationOperation.Update)]
+    [TestCase(NamespaceAuthorizationOperation.Delete)]
+    [TestCase(NamespaceAuthorizationOperation.ReadMany)]
+    public void It_withholds_ownership_enforcement_for_descriptor_storage(
+        NamespaceAuthorizationOperation operation
+    )
+    {
+        RelationalAuthorizationPlanner
+            .EnforcesOwnershipChecks(operation, ResourceStorageKind.SharedDescriptorTable)
+            .Should()
+            .BeFalse();
+    }
+
+    /// <summary>
+    /// The descriptor arm must not depend on the operation set: it has to keep withholding even once every
+    /// single-record operation has been flipped on for relational resources.
+    /// </summary>
+    [Test]
+    public void It_withholds_descriptor_ownership_enforcement_independently_of_the_operation_set()
+    {
+        foreach (var operation in Enum.GetValues<NamespaceAuthorizationOperation>())
+        {
+            RelationalAuthorizationPlanner
+                .EnforcesOwnershipChecks(operation, ResourceStorageKind.SharedDescriptorTable)
+                .Should()
+                .BeFalse($"descriptor storage must never enforce ownership in this story ({operation})");
+        }
+    }
+
+    /// <summary>
+    /// An over-cap ownership-token list must not produce the cap terminal while the operation is withheld:
+    /// the strategy is not enforced, so there is nothing for the cap to gate. It keeps its 501.
+    /// </summary>
+    [TestCase(NamespaceAuthorizationOperation.ReadSingle)]
+    [TestCase(NamespaceAuthorizationOperation.ReadMany)]
+    public void It_does_not_report_the_token_cap_while_the_gate_withholds_the_operation(
+        NamespaceAuthorizationOperation operation
+    )
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(),
+            ResourceWithoutSecurableElements(),
+            operation,
+            [Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 0)],
+            OverCapOwnershipContext()
+        );
+
+        outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>();
+    }
+
+    /// <summary>
+    /// A plan produced for a request with no ownership strategy carries no ownership check — the property
+    /// defaults to null rather than to an empty-but-present plan.
+    /// </summary>
+    [Test]
+    public void It_plans_no_ownership_check_when_ownership_is_not_configured()
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(),
+            RootNamespaceResource(),
+            NamespaceAuthorizationOperation.ReadSingle,
+            [Strategy(AuthorizationStrategyNameConstants.NamespaceBased, 0)],
+            TwoPrefixContext()
+        );
+
+        outcome
+            .Should()
+            .BeOfType<RelationalAuthorizationPlanOutcome.Plan>()
+            .Which.OwnershipCheck.Should()
+            .BeNull();
+    }
+
+    private static RelationalAuthorizationContext OverCapOwnershipContext() =>
+        new(
+            [],
+            ["uri://ed-fi.org/"],
+            creatorOwnershipTokenId: null,
+            ownershipTokenIds:
+            [
+                .. Enumerable
+                    .Range(1, OwnershipTokenLimitExceededException.OwnershipTokenLimit)
+                    .Select(static value => (short)value),
+            ]
+        );
 }
