@@ -67,19 +67,50 @@ public static class PerfFinalGateEvidenceLoader
         return new PerfFinalGateRunArtifacts(manifest, results, runDirectory);
     }
 
+    /// <summary>
+    /// Every row's plan file must exist, and when it is a .plans.json index, every
+    /// per-statement plan file and statistics file the index references must exist too — an
+    /// index without its referents is not evidence, and a malformed index is reported the
+    /// same way rather than letting the load proceed.
+    /// </summary>
     private static void EnsurePlanFilesExist(string runDirectory, IEnumerable<string> planFiles)
     {
-        List<string> missing =
-        [
-            .. planFiles.Where(planFile =>
-                !File.Exists(Path.Combine(runDirectory, planFile.Replace('/', Path.DirectorySeparatorChar)))
-            ),
-        ];
-        if (missing.Count > 0)
+        List<string> errors = [];
+        foreach (string planFile in planFiles)
         {
-            throw new PerfArtifactValidationException([
-                .. missing.Select(planFile => $"plan evidence '{planFile}' is missing from {runDirectory}."),
-            ]);
+            if (!Exists(runDirectory, planFile))
+            {
+                errors.Add($"plan evidence '{planFile}' is missing from {runDirectory}.");
+                continue;
+            }
+
+            if (!planFile.EndsWith(".plans.json", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            string indexJson = File.ReadAllText(FullPath(runDirectory, planFile));
+            foreach (string referent in PerfRunArtifactWriter.PlanIndexReferents(planFile, indexJson, errors))
+            {
+                if (!Exists(runDirectory, referent))
+                {
+                    errors.Add(
+                        $"plan evidence '{referent}', referenced by '{planFile}', is missing from "
+                            + $"{runDirectory}."
+                    );
+                }
+            }
+        }
+
+        if (errors.Count > 0)
+        {
+            throw new PerfArtifactValidationException(errors);
         }
     }
+
+    private static bool Exists(string runDirectory, string relativePath) =>
+        File.Exists(FullPath(runDirectory, relativePath));
+
+    private static string FullPath(string runDirectory, string relativePath) =>
+        Path.Combine(runDirectory, relativePath.Replace('/', Path.DirectorySeparatorChar));
 }

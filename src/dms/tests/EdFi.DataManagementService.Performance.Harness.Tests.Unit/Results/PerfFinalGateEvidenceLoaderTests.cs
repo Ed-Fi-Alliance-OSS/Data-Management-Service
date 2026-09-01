@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Performance.Harness.Configuration;
 using EdFi.DataManagementService.Performance.Harness.Fixtures;
+using EdFi.DataManagementService.Performance.Harness.Measurement;
 using EdFi.DataManagementService.Performance.Harness.Results;
 using FluentAssertions;
 
@@ -88,6 +89,117 @@ public class Given_The_Final_Gate_Evidence_Loader
 
         loaded.Manifest.Fixture.FixtureId.Should().Be("primary-500k");
         loaded.Results.Results.Should().HaveCount(6);
+    }
+
+    private string WriteMssqlFinalGateRun()
+    {
+        string runDirectory = Path.Combine(_rootDirectory, "final-primary-mssql");
+        PerfFinalGateResultsDocument document = FinalGateResultSamples.PrimaryDocument("mssql");
+        PerfFinalGateArtifactWriter.Write(
+            runDirectory,
+            FinalGateResultSamples.PrimaryManifest("mssql"),
+            document,
+            PerfArtifactJson.Serialize(
+                PerfFixtureManifest.Create(new PerfFixtureDefinition(PerfFixtureKind.Smoke10k)) with
+                {
+                    SchemaVersion = PerfFinalGateArtifactSchema.Version,
+                }
+            ),
+            [.. document.Results.SelectMany(row => MssqlPlanFiles(row.PlanFile))]
+        );
+        return runDirectory;
+    }
+
+    private string WriteMssqlBaselineRun()
+    {
+        string runDirectory = Path.Combine(_rootDirectory, "baseline-mssql");
+        PerfResultsDocument document = ResultSamples.MssqlDocument();
+        PerfRunArtifactWriter.Write(
+            runDirectory,
+            ResultSamples.Manifest("mssql"),
+            document,
+            PerfFixtureManifest.Create(new PerfFixtureDefinition(PerfFixtureKind.Primary500k)),
+            [.. document.Results.SelectMany(row => MssqlPlanFiles(row.PlanFile))]
+        );
+        return runDirectory;
+    }
+
+    /// <summary>
+    /// One SQL-Server-style plan set per cell: the .plans.json index plus the .sqlplan and
+    /// statistics files it references, exactly as the capture writes them.
+    /// </summary>
+    private static IEnumerable<PerfArtifactFile> MssqlPlanFiles(string indexPath)
+    {
+        string baseName = indexPath[..^".plans.json".Length];
+        string planFile = $"{baseName}.plan01.sqlplan";
+        string statisticsFile = $"{baseName}.stats.txt";
+        yield return new PerfArtifactFile(
+            indexPath,
+            MssqlPlanCapture.PlanIndexJson([planFile], statisticsFile)
+        );
+        yield return new PerfArtifactFile(planFile, "<plan />");
+        yield return new PerfArtifactFile(statisticsFile, "statistics");
+    }
+
+    [Test]
+    public void It_refuses_a_final_gate_run_missing_a_file_its_plan_index_references()
+    {
+        string runDirectory = WriteMssqlFinalGateRun();
+        string firstSqlPlan = Directory.GetFiles(Path.Combine(runDirectory, "plans"), "*.sqlplan")[0];
+        File.Delete(firstSqlPlan);
+
+        Action act = () => PerfFinalGateEvidenceLoader.LoadFinalGate(runDirectory);
+
+        act.Should().Throw<PerfArtifactValidationException>().WithMessage("*referenced by*");
+    }
+
+    [Test]
+    public void It_refuses_a_final_gate_run_missing_an_indexed_statistics_file()
+    {
+        string runDirectory = WriteMssqlFinalGateRun();
+        string firstStatistics = Directory.GetFiles(Path.Combine(runDirectory, "plans"), "*.stats.txt")[0];
+        File.Delete(firstStatistics);
+
+        Action act = () => PerfFinalGateEvidenceLoader.LoadFinalGate(runDirectory);
+
+        act.Should().Throw<PerfArtifactValidationException>().WithMessage("*referenced by*");
+    }
+
+    [Test]
+    public void It_refuses_a_final_gate_run_with_a_malformed_plan_index()
+    {
+        string runDirectory = WriteMssqlFinalGateRun();
+        string firstIndex = Directory.GetFiles(Path.Combine(runDirectory, "plans"), "*.plans.json")[0];
+        File.WriteAllText(firstIndex, "{}");
+
+        Action act = () => PerfFinalGateEvidenceLoader.LoadFinalGate(runDirectory);
+
+        act.Should().Throw<PerfArtifactValidationException>().WithMessage("*planFiles*");
+    }
+
+    [Test]
+    public void It_refuses_a_baseline_run_missing_a_file_its_plan_index_references()
+    {
+        string runDirectory = WriteMssqlBaselineRun();
+        string firstSqlPlan = Directory.GetFiles(Path.Combine(runDirectory, "plans"), "*.sqlplan")[0];
+        File.Delete(firstSqlPlan);
+
+        Action act = () => PerfFinalGateEvidenceLoader.LoadBaseline(runDirectory);
+
+        act.Should().Throw<PerfArtifactValidationException>().WithMessage("*referenced by*");
+    }
+
+    [Test]
+    public void It_round_trips_complete_mssql_style_evidence()
+    {
+        PerfFinalGateEvidenceLoader
+            .LoadFinalGate(WriteMssqlFinalGateRun())
+            .Results.Results.Should()
+            .HaveCount(PerfFinalGateScenarios.PrimaryCellsInExecutionOrder.Count);
+        PerfFinalGateEvidenceLoader
+            .LoadBaseline(WriteMssqlBaselineRun())
+            .Results.Results.Should()
+            .HaveCount(6);
     }
 
     [Test]
