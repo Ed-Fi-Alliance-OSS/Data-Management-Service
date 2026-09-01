@@ -426,7 +426,10 @@ public sealed partial class DocumentCacheHostedHappyPathTests
             .Be(expectedNameOfInstitution, "the cache-only sentinel must not mutate canonical school data");
     }
 
-    private async Task<JsonObject> RunDocumentCacheAdminAsync(params string[] arguments)
+    private Task<JsonObject> RunDocumentCacheAdminAsync(params string[] arguments) =>
+        RunDocumentCacheAdminAsync(expectedExitCode: 0, arguments);
+
+    private async Task<JsonObject> RunDocumentCacheAdminAsync(int expectedExitCode, params string[] arguments)
     {
         string settingsPath = CreateDocumentCacheAdminSettingsFile();
         using var process = new Process();
@@ -474,7 +477,9 @@ public sealed partial class DocumentCacheHostedHappyPathTests
 
         string output = await standardOutput;
         string error = await standardError;
-        process.ExitCode.Should().Be(0, "DocumentCache admin CLI stderr:\n{0}\nstdout:\n{1}", error, output);
+        process
+            .ExitCode.Should()
+            .Be(expectedExitCode, "DocumentCache admin CLI stderr:\n{0}\nstdout:\n{1}", error, output);
         error.Should().NotContain(AppSettings.DataStoreConnectionString);
 
         JsonNode? parsed = JsonNode.Parse(output);
@@ -493,6 +498,25 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         try
         {
             return await RunDocumentCacheAdminAsync(arguments);
+        }
+        finally
+        {
+            await UpdateCmsDataStoreConnectionStringAsync(dataStore, AppSettings.DataStoreConnectionString);
+        }
+    }
+
+    private async Task<JsonObject> RunDocumentCacheAdminWithHostReachableDataStoreAsync(
+        int dataStoreId,
+        int expectedExitCode,
+        string[] arguments
+    )
+    {
+        CmsDataStore dataStore = await GetCmsDataStoreAsync(dataStoreId);
+        await UpdateCmsDataStoreConnectionStringAsync(dataStore, AppSettings.DataStoreAdminConnectionString);
+
+        try
+        {
+            return await RunDocumentCacheAdminAsync(expectedExitCode, arguments);
         }
         finally
         {
