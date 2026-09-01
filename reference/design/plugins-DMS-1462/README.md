@@ -37,12 +37,12 @@ Drafts 01 through 06 are the foundation stories this spike files; 07 is post-rel
 
 | Draft | Title | Depends on | Status |
 | --- | --- | --- | --- |
-| [01](./01-add-plugin-contract-package.md) | Add the Plugin Contract Package and `src/plugins/` | none | Draft |
-| [02](./02-add-plugin-loader-and-load-isolation.md) | Add the Plugin Loader, Discovery, and Load Isolation | 01 | Draft |
-| [03](./03-add-recording-wrapper-and-cardinality-guard.md) | Add the Recording Service Collection and Cardinality Guard | 02, DMS-1434 | Draft |
-| [04](./04-integrate-plugin-loading-into-dms-startup.md) | Integrate Plugin Loading into DMS Startup | 03, and the merged DMS-1432 contract package | Draft |
-| [05](./05-document-plugins-and-publish-host-manifest.md) | Document Plugins for Operators and Implementers and Publish the Host Assembly Manifest | 04 | Draft |
-| [06](./06-publish-plugin-contract-packages.md) | Publish `EdFi.Api.Plugins` and `EdFi.Api.CustomValidation` | 01-05, DMS-1433, DMS-1435, DMS-1436 | Draft, release-gated |
+| [01](./01-add-plugin-contract-package.md) | Add the Plugin Contract Package and `src/plugins/` | none | [DMS-1496](https://edfi.atlassian.net/browse/DMS-1496) |
+| [02](./02-add-plugin-loader-and-load-isolation.md) | Add the Plugin Loader, Discovery, and Load Isolation | 01 | [DMS-1497](https://edfi.atlassian.net/browse/DMS-1497) |
+| [03](./03-add-recording-wrapper-and-cardinality-guard.md) | Add the Recording Service Collection and Cardinality Guard | 02, DMS-1434 | [DMS-1498](https://edfi.atlassian.net/browse/DMS-1498) |
+| [04](./04-integrate-plugin-loading-into-dms-startup.md) | Integrate Plugin Loading into DMS Startup | 03, and the merged DMS-1432 contract package | [DMS-1499](https://edfi.atlassian.net/browse/DMS-1499) |
+| [05](./05-document-plugins-and-publish-host-manifest.md) | Document Plugins for Operators and Implementers and Publish the Host Assembly Manifest | 04 | [DMS-1500](https://edfi.atlassian.net/browse/DMS-1500) |
+| [06](./06-publish-plugin-contract-packages.md) | Publish `EdFi.Api.Plugins` and `EdFi.Api.CustomValidation` | 01-05, DMS-1433, DMS-1435, DMS-1436 | [DMS-1501](https://edfi.atlassian.net/browse/DMS-1501), release-gated |
 | [07](./07-prove-plugin-loading-against-pulled-stock-image.md) | Prove Plugin Loading Against a Pulled Stock Image | 05, DMS-1436, and the first release carrying **both** 04 and DMS-1433 | Draft, post-release |
 
 **Where the two `src/dms/` build-lane changes sit, and why they are split.**

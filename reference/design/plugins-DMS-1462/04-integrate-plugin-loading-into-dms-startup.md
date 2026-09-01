@@ -1,7 +1,7 @@
 ---
-jira: TBD
-jira_url: TBD
-epic: TBD
+jira: DMS-1499
+jira_url: https://edfi.atlassian.net/browse/DMS-1499
+epic: none
 source_spike: DMS-1462
 ---
 

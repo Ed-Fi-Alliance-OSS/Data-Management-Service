@@ -39,8 +39,8 @@ This spike produced five ticket drafts, listed below in dependency order.
 | [01](./01-add-custom-validator-abstractions-contract.md) | Add the Custom-Validator Abstractions Contract | none | [DMS-1432](https://edfi.atlassian.net/browse/DMS-1432) |
 | [02](./02-add-custom-validator-fan-in-pipeline-step.md) | Add the Custom-Validator Fan-In Pipeline Step and Failure Surfacing | 01 | [DMS-1433](https://edfi.atlassian.net/browse/DMS-1433) |
 | [03](./03-add-custom-validator-composition-seam-and-startup-guard.md) | Add the Custom-Validator Startup Guard (narrowed 2026-08-27; the seam moved to the plugin spine) | 01 | [DMS-1434](https://edfi.atlassian.net/browse/DMS-1434) |
-| [04](./04-document-custom-validator-implementer-guide.md) | Document the Custom-Validator Implementer Guide (re-pointed 2026-08-27 at plugin delivery) | 01, 02, 03, plugin spine 04, plugin spine 05 | [DMS-1435](https://edfi.atlassian.net/browse/DMS-1435) |
-| [05](./05-prove-custom-validation-end-to-end.md) | Prove Custom Validation End-to-End with a Fixture Validator (re-pointed 2026-08-27 at plugin delivery) | 01, 02, 03, plugin spine 04 | [DMS-1436](https://edfi.atlassian.net/browse/DMS-1436) |
+| [04](./04-document-custom-validator-implementer-guide.md) | Document the Custom-Validator Implementer Guide (re-pointed 2026-08-27 at plugin delivery) | 01, 02, 03, plugin spine 04 (DMS-1499), plugin spine 05 (DMS-1500) | [DMS-1435](https://edfi.atlassian.net/browse/DMS-1435) |
+| [05](./05-prove-custom-validation-end-to-end.md) | Prove Custom Validation End-to-End with a Fixture Validator (re-pointed 2026-08-27 at plugin delivery) | 01, 02, 03, plugin spine 04 (DMS-1499) | [DMS-1436](https://edfi.atlassian.net/browse/DMS-1436) |
 
 ## Filing Gate
 
