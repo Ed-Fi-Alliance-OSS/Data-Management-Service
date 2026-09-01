@@ -1,8 +1,11 @@
 @derivative-routing
 Feature: Reads are served by the snapshot or read replica the request selects.
 
-        # This suite creates its own data store in CMS for each client-credential setup, and attaches
-        # both derivatives to it at that moment (AuthorizationDataProvider):
+        # The suite creates a fresh data store in CMS for each client-credential setup, and because
+        # this feature is tagged @derivative-routing, each of this feature's setups also attaches both
+        # derivatives to that data store (AuthorizationDataProvider). The attachment is opt-in by that
+        # tag, so every other feature's data store stays derivative-free and its reads keep exercising
+        # the primary path:
         #   - Snapshot     -> a second database provisioned with the same DDL and left empty.
         #   - ReadReplica  -> the data store's own database.
         #
@@ -10,8 +13,8 @@ Feature: Reads are served by the snapshot or read replica the request selects.
         # never writes to a derivative, so the snapshot stays empty: anything these scenarios write is
         # visible to a plain read and absent from a snapshot-requesting read, which is only possible if
         # the two reads were served by different physical databases. The read replica deliberately
-        # points at the primary database, so every other scenario in this suite keeps reading the data
-        # it wrote while a read replica is genuinely configured - which is what snapshot precedence is
+        # points at the primary database, so these scenarios' plain reads keep seeing the data they
+        # wrote while a read replica is genuinely configured - which is what snapshot precedence is
         # asserted against here.
         #
         # Assertions are on values these scenarios write, never on collection counts, because the E2E

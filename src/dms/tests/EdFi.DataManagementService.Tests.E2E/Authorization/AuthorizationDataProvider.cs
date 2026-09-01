@@ -41,32 +41,17 @@ public static class AuthorizationDataProvider
     };
 
     /// <summary>
-    /// Creates a new vendor and application in the Configuration Management Service with specified
-    /// authorization parameters. This establishes the foundation for OAuth authentication in tests.
-    /// </summary>
-    /// <param name="company">The name of the vendor company to register</param>
-    /// <param name="contactName">The name of the primary contact for the vendor</param>
-    /// <param name="contactEmailAddress">The email address of the primary contact</param>
-    /// <param name="namespacePrefixes">Comma-separated list of namespace prefixes the vendor is authorized to use</param>
-    /// <param name="edOrgIds">Comma-separated list of education organization IDs the vendor has access to</param>
-    /// <param name="systemAdministratorToken">Bearer token with system administrator privileges for CMS API access</param>
-    /// <param name="claimSetName">The name of the claim set to assign to the application (default: "SISVendor")</param>
-    /// <returns>A task representing the asynchronous operation</returns>
-    /// <summary>
     /// Attaches the snapshot/read-replica arrangement the derivative-routing feature reads through, to
-    /// the data store this suite just created.
+    /// the data store this setup just created. Requested only by scenarios tagged
+    /// @derivative-routing; every other setup's data store stays derivative-free, so its plain reads
+    /// keep exercising the primary path.
     /// </summary>
     /// <remarks>
-    /// Every client-credential setup gets the arrangement, not just the routing feature's, because DMS
-    /// resolves the data store per request and the suite creates a fresh one per setup; attaching it
-    /// selectively would leave the routing feature's requests on whichever store happened to be
-    /// resolved.
-    ///
-    /// The read replica deliberately points at the data store's own database. On a suite with a single
-    /// data store, a replica pointing anywhere else would serve every replica-eligible read - that is,
-    /// nearly every read in this suite - from a database the suite never wrote to. Pointing it at the
-    /// primary keeps every existing scenario reading the data it wrote while a read replica is
-    /// genuinely configured, which is what snapshot precedence is asserted against.
+    /// The read replica deliberately points at the data store's own database. Once a replica is
+    /// configured, a routing scenario's plain reads are served by it, and a replica pointing anywhere
+    /// else would serve them from a database the scenario never wrote to. Pointing it at the primary
+    /// keeps those reads seeing the scenario's own writes while a read replica is genuinely
+    /// configured, which is what snapshot precedence is asserted against.
     ///
     /// The snapshot points at a separately provisioned database that is left empty. DMS never writes
     /// to a derivative, so "empty" is what makes a snapshot-routed read distinguishable from a plain
@@ -112,6 +97,19 @@ public static class AuthorizationDataProvider
         }
     }
 
+    /// <summary>
+    /// Creates a new vendor and application in the Configuration Management Service with specified
+    /// authorization parameters. This establishes the foundation for OAuth authentication in tests.
+    /// </summary>
+    /// <param name="company">The name of the vendor company to register</param>
+    /// <param name="contactName">The name of the primary contact for the vendor</param>
+    /// <param name="contactEmailAddress">The email address of the primary contact</param>
+    /// <param name="namespacePrefixes">Comma-separated list of namespace prefixes the vendor is authorized to use</param>
+    /// <param name="edOrgIds">Comma-separated list of education organization IDs the vendor has access to</param>
+    /// <param name="systemAdministratorToken">Bearer token with system administrator privileges for CMS API access</param>
+    /// <param name="claimSetName">The name of the claim set to assign to the application (default: "SISVendor")</param>
+    /// <param name="attachDataStoreDerivatives">Whether to attach the snapshot/read-replica arrangement to the created data store; see <see cref="AttachDataStoreDerivatives" /></param>
+    /// <returns>A task representing the asynchronous operation</returns>
     public static async Task CreateClientCredentials(
         string company,
         string contactName,
@@ -119,7 +117,8 @@ public static class AuthorizationDataProvider
         string namespacePrefixes,
         string edOrgIds,
         string systemAdministratorToken,
-        string claimSetName = AuthorizationClaimSetNames.SisVendor
+        string claimSetName = AuthorizationClaimSetNames.SisVendor,
+        bool attachDataStoreDerivatives = false
     )
     {
         _configurationServiceClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
@@ -155,7 +154,10 @@ public static class AuthorizationDataProvider
 
         int dataStoreId = JsonDocument.Parse(dataStoreBody).RootElement.GetProperty("id").GetInt32();
 
-        await AttachDataStoreDerivatives(dataStoreId);
+        if (attachDataStoreDerivatives)
+        {
+            await AttachDataStoreDerivatives(dataStoreId);
+        }
 
         // Create vendor
         using StringContent vendorContent = new(

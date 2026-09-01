@@ -141,7 +141,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 namespacePrefixes,
                 educationOrganizationIds,
                 systemAdministratorToken,
-                claimSetName
+                claimSetName,
+                // The snapshot/read-replica arrangement is opt-in: only routing scenarios get a data
+                // store with derivatives, so every other scenario's reads stay on the primary path.
+                attachDataStoreDerivatives: _scenarioContext.ScenarioInfo.CombinedTags.Contains(
+                    "derivative-routing"
+                )
             );
         }
 

@@ -162,6 +162,34 @@ public class Given_Mssql_Ownership_Reconciliation
     }
 
     /// <summary>
+    /// The inverse of the case above: only one of two owners sharing a configured string was ever
+    /// acquired, and it is the other one that remains. The remaining owner has no memo entry, but
+    /// every derivative kind realizes one configured string the same way, so it is guaranteed to map
+    /// to the acquired owner's identity - and removing the acquired owner must therefore clear
+    /// nothing.
+    /// </summary>
+    [Test]
+    public async Task It_should_not_clear_a_shared_identity_while_an_unrealized_owner_remains()
+    {
+        EffectiveDataStoreTarget replica = Replica(ReplicaText);
+        EffectiveDataStoreTarget snapshot = Snapshot(ReplicaText);
+
+        _acquisition.Reconcile(Owning(1, replica, snapshot));
+
+        MssqlConnectionLease lease = await _acquisition.AcquireLeaseAsync(replica);
+        await lease.DisposeAsync();
+
+        // The acquired replica is removed; the never-acquired snapshot still names the same text.
+        _acquisition.Reconcile(Owning(2, snapshot));
+
+        _poolClearing.Cleared.Should().BeEmpty("the remaining owner realizes to this identity");
+        _acquisition.RealizationCount.Should().Be(1, "reconciliation never realizes a string");
+
+        _acquisition.Reconcile(Owning(3));
+        _poolClearing.ClearCountOf(Effective(replica)).Should().Be(1);
+    }
+
+    /// <summary>
     /// A request arriving for an owner that has just been removed still gets its connection, and the
     /// identity it names must not be retired while a different configured owner still realizes to it.
     /// Retiring on the key alone would clear a pool another owner is using.

@@ -308,6 +308,19 @@ public sealed class MssqlConnectionAcquisition : IMssqlConnectionAcquisition, ID
     }
 
     /// <summary>
+    /// The realization identity of a configured target: the part of the key that
+    /// <see cref="RealizeEffectiveConnectionString" /> actually distinguishes. A primary passes
+    /// through byte for byte and every derivative kind gets the same rebuild, so two keys with equal
+    /// identities are guaranteed to realize to the same effective string. That guarantee is what lets
+    /// ownership reasoning cover a configured owner that was never itself acquired - it has no memo
+    /// entry, but a realized sibling with the same identity proves where it would land - without
+    /// parsing anything. Must be kept in agreement with that method.
+    /// </summary>
+    private static (string ConfiguredConnectionString, bool IsPrimary) RealizationIdentityOf(
+        ConfiguredTargetKey key
+    ) => (key.ConfiguredConnectionString, key.Kind == EffectiveTargetKind.Primary);
+
+    /// <summary>
     /// Memoizes the realization, counts the lease, and settles retirement. A currently configured key
     /// reactivates its identity; a key that is not configured leaves retirement to the union of every
     /// other owner that realizes to the same string, so a stale request neither resurrects ownership
@@ -333,17 +346,23 @@ public sealed class MssqlConnectionAcquisition : IMssqlConnectionAcquisition, ID
     }
 
     /// <summary>
-    /// Every effective string some configured owner still realizes to. Derived from the memo rather
-    /// than stored, so several owners sharing one identity keep it owned until the last of them is
-    /// gone, and no configured string is ever parsed to work it out.
+    /// Every effective string some configured owner is guaranteed to realize to. Derived from the
+    /// memo rather than stored, and matched by realization identity rather than by exact key, so
+    /// several owners sharing one identity keep it owned until the last of them is gone - including
+    /// an owner that was never itself acquired and so has no memo entry of its own - and no
+    /// configured string is ever parsed to work it out.
     /// </summary>
     private HashSet<string> OwnedEffectiveLocked(HashSet<ConfiguredTargetKey> owners)
     {
+        HashSet<(string ConfiguredConnectionString, bool IsPrimary)> ownerIdentities = owners
+            .Select(RealizationIdentityOf)
+            .ToHashSet();
+
         HashSet<string> owned = new(StringComparer.Ordinal);
 
         foreach ((ConfiguredTargetKey key, string effective) in _realized)
         {
-            if (owners.Contains(key))
+            if (ownerIdentities.Contains(RealizationIdentityOf(key)))
             {
                 owned.Add(effective);
             }

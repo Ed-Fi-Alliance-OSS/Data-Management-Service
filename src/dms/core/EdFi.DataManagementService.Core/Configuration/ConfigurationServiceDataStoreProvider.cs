@@ -216,9 +216,6 @@ public class ConfigurationServiceDataStoreProvider(
             : null;
 
     /// <summary>
-    /// Gets the cache key for a tenant, using empty string for null/empty tenant
-    /// </summary>
-    /// <summary>
     /// Replaces the tenant entry and publishes the resulting global ownership, in one critical
     /// section, so the version, the projected owner union, and the reconciliation that consumes them
     /// describe the same instant.
@@ -342,6 +339,9 @@ public class ConfigurationServiceDataStoreProvider(
         return owners.ToImmutable();
     }
 
+    /// <summary>
+    /// Gets the cache key for a tenant, using empty string for null/empty tenant
+    /// </summary>
     private static string GetTenantKey(string? tenant) => tenant ?? string.Empty;
 
     /// <inheritdoc />
