@@ -64,6 +64,8 @@ public static class DocumentCacheQualification
         "outage-drain-evidence/",
         "provider-metrics/postgresql-wal-vacuum-bloat.md",
         "provider-metrics/mssql-log-ghost-index.md",
+        "command-transcripts/",
+        "phase-metrics/",
     ];
 
     public static readonly IReadOnlyList<DocumentCacheQualificationThreshold> Thresholds =

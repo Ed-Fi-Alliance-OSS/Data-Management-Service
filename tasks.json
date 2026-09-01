@@ -423,7 +423,7 @@
       "Temporarily remove one required threshold row from a local sample artifact and confirm validation fails before restoring it.",
       "Run: `dotnet csharpier format src/dms/tests/EdFi.DataManagementService.Performance.Harness src/dms/tests/EdFi.DataManagementService.Performance.Harness.Tests.Unit`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Performance Qualification",
