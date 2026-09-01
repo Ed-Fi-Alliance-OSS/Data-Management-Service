@@ -12,6 +12,8 @@ consumer runbook.
   E18 CDC invariant contracts.
 - [Performance qualification](performance-qualification.md) defines the bounded CI guards,
   representative-scale thresholds, result artifacts, and provider maintenance evidence.
+- [Representative qualification runbook](representative-qualification-runbook.md) gives the
+  performance engineer release-validation procedure for producing validated result artifacts.
 
 Owning design and implementation references:
 

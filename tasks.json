@@ -562,7 +562,7 @@
       "Run: `rg -n \"representative-qualification-runbook\" reference/document-cache/README.md reference/document-cache/performance-qualification.md`",
       "Manually compare `reference/document-cache/representative-qualification-runbook.md` to `plan.md` section 8 and confirm all operator instructions were preserved."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Performance Qualification",

@@ -10,6 +10,11 @@ topic, offset, ACL, consumer, and downstream publication qualification belongs t
 
 ## Entry Point
 
+Use the
+[representative qualification runbook](representative-qualification-runbook.md)
+for the release-validation operator procedure. This page defines the thresholds,
+artifacts, and provider observations that the runbook executes.
+
 Run the bounded guards and create the qualification summary folder:
 
 ```powershell
@@ -36,7 +41,9 @@ representative production volume in CI.
 
 Run release qualification on dedicated PostgreSQL and SQL Server targets whose storage is
 not tmpfs and whose CPU, IO, WAL/log, and maintenance metrics can be captured for the run
-window.
+window. Follow the step-by-step
+[representative qualification runbook](representative-qualification-runbook.md)
+when producing committed evidence.
 
 Before the representative run, prepare a strict operator metrics JSON file and pass it
 through `-OperatorMetricsFile` or `PERF_DOCUMENTCACHE_OPERATOR_METRICS_FILE`. The harness
