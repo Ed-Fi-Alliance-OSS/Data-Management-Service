@@ -121,7 +121,7 @@ public class Given_AspNetCoreFrontend_Response_Header_Writing
         httpContext
             .Response.Headers.GetCommaSeparatedValues("Vary")
             .Should()
-            .BeEquivalentTo("Accept", "Accept-Encoding");
+            .BeEquivalentTo("Use-Snapshot", "Accept", "Accept-Encoding");
     }
 
     [Test]
@@ -152,7 +152,7 @@ public class Given_AspNetCoreFrontend_Response_Header_Writing
         httpContext
             .Response.Headers.GetCommaSeparatedValues("Vary")
             .Should()
-            .BeEquivalentTo("Accept", "Accept-Encoding");
+            .BeEquivalentTo("Use-Snapshot", "Accept", "Accept-Encoding");
     }
 
     [Test]
@@ -177,6 +177,77 @@ public class Given_AspNetCoreFrontend_Response_Header_Writing
 
         await result.ExecuteAsync(httpContext);
 
-        httpContext.Response.Headers.GetCommaSeparatedValues("Vary").Should().ContainSingle("Accept");
+        httpContext
+            .Response.Headers.GetCommaSeparatedValues("Vary")
+            .Should()
+            .BeEquivalentTo("Use-Snapshot", "Accept");
+    }
+
+    /// <summary>
+    /// Use-Snapshot selects the physical target, so the same GET URI can answer 404 from a missing
+    /// snapshot where the primary answers 200. The selector therefore has to be declared on error
+    /// statuses too, or a cache could serve the snapshot 404 to a no-header request; Accept stays
+    /// confined to the successful statuses it has always described.
+    /// </summary>
+    [Test]
+    public async Task It_varies_a_get_error_response_by_use_snapshot_alone()
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Scheme = "https";
+        httpContext.Request.Method = HttpMethods.Get;
+        httpContext.Request.Host = new HostString("localhost");
+        httpContext.Request.Path = "/data/testproject/widgets/aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
+        httpContext.RequestServices = new ServiceCollection()
+            .AddLogging()
+            .AddSingleton(A.Fake<IResponseCompressionProvider>())
+            .BuildServiceProvider();
+
+        var response = new FrontendResponse(StatusCode: 404, Body: null, Headers: []);
+
+        var toResultMethod =
+            typeof(AspNetCoreFrontend).GetMethod("ToResult", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("Could not locate AspNetCoreFrontend.ToResult.");
+
+        var result =
+            (IResult?)toResultMethod.Invoke(null, [response, httpContext, "/data/testproject/widgets"])
+            ?? throw new InvalidOperationException("AspNetCoreFrontend.ToResult returned null.");
+
+        await result.ExecuteAsync(httpContext);
+
+        httpContext.Response.StatusCode.Should().Be(404);
+        httpContext.Response.Headers.GetCommaSeparatedValues("Vary").Should().BeEquivalentTo("Use-Snapshot");
+    }
+
+    /// <summary>
+    /// Non-GET responses are not cacheable representations, so the boundary declares no selector for
+    /// them at all - varying a mutation response would only mislead a cache into treating it as one.
+    /// </summary>
+    [Test]
+    public async Task It_declares_no_vary_selector_on_a_non_get_response()
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Scheme = "https";
+        httpContext.Request.Method = HttpMethods.Post;
+        httpContext.Request.Host = new HostString("localhost");
+        httpContext.Request.Path = "/data/testproject/widgets";
+        httpContext.RequestServices = new ServiceCollection()
+            .AddLogging()
+            .AddSingleton(A.Fake<IResponseCompressionProvider>())
+            .BuildServiceProvider();
+
+        var response = new FrontendResponse(StatusCode: 201, Body: null, Headers: []);
+
+        var toResultMethod =
+            typeof(AspNetCoreFrontend).GetMethod("ToResult", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("Could not locate AspNetCoreFrontend.ToResult.");
+
+        var result =
+            (IResult?)toResultMethod.Invoke(null, [response, httpContext, "/data/testproject/widgets"])
+            ?? throw new InvalidOperationException("AspNetCoreFrontend.ToResult returned null.");
+
+        await result.ExecuteAsync(httpContext);
+
+        httpContext.Response.StatusCode.Should().Be(201);
+        httpContext.Response.Headers.GetCommaSeparatedValues("Vary").Should().BeEmpty();
     }
 }
