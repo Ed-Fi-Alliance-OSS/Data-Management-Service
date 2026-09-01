@@ -24,6 +24,9 @@ public sealed partial class DocumentCacheHostedHappyPathTests
     private const string EducationOrganizationCategoryDescriptor =
         "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School";
     private const string GradeLevelDescriptor = "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade";
+    private const string CacheOnlySchoolNameSentinel = "cache-only hosted school sentinel";
+    private const string CacheOnlyBellScheduleClassPeriodNameSentinel =
+        "cache-only hosted bell schedule sentinel";
     private const string BellScheduleName = "Cache Profile Bell Schedule";
     private const string ClassPeriodName = "Document Cache Profile Period";
 
@@ -110,9 +113,56 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         projection.DocumentJson.Should().Contain("shortNameOfInstitution");
         projection.DocumentJson.Should().Contain("educationOrganizationCategories");
         projection.DocumentJson.Should().Contain("gradeLevels");
+        projection.DocumentJson.Should().NotContain(CacheOnlySchoolNameSentinel);
 
-        await AssertProfiledSchoolGetByIdAsync(authorizedProfileToken, schoolUuid, schoolId, projection);
-        await AssertProfiledSchoolGetManyAsync(authorizedProfileToken, schoolId, projection);
+        await AssertProfiledSchoolGetByIdAsync(
+            authorizedProfileToken,
+            schoolUuid,
+            schoolId,
+            projection,
+            expectedNameOfInstitution: "Cache Profile School"
+        );
+        await AssertProfiledSchoolGetManyAsync(
+            authorizedProfileToken,
+            schoolId,
+            projection,
+            expectedNameOfInstitution: "Cache Profile School"
+        );
+        await AssertCanonicalSchoolNameAsync(schoolUuid, expectedNameOfInstitution: "Cache Profile School");
+
+        DocumentCacheSentinel sentinel = await ApplyDocumentCacheSentinelAsync(
+            schoolUuid,
+            documentJson => documentJson["nameOfInstitution"] = CacheOnlySchoolNameSentinel
+        );
+        try
+        {
+            DocumentCacheProjection sentinelProjection = await ReadDocumentCacheProjectionAsync(schoolUuid);
+            await AssertCanonicalSchoolNameAsync(
+                schoolUuid,
+                expectedNameOfInstitution: "Cache Profile School"
+            );
+            await AssertProfiledSchoolGetByIdAsync(
+                authorizedProfileToken,
+                schoolUuid,
+                schoolId,
+                sentinelProjection,
+                expectedNameOfInstitution: CacheOnlySchoolNameSentinel
+            );
+            await AssertProfiledSchoolGetManyAsync(
+                authorizedProfileToken,
+                schoolId,
+                sentinelProjection,
+                expectedNameOfInstitution: CacheOnlySchoolNameSentinel
+            );
+            await AssertCanonicalSchoolNameAsync(
+                schoolUuid,
+                expectedNameOfInstitution: "Cache Profile School"
+            );
+        }
+        finally
+        {
+            await RestoreDocumentCacheSentinelAsync(sentinel);
+        }
 
         DocumentCacheProjection bellScheduleProjection = await ReadDocumentCacheProjectionAsync(
             bellScheduleUuid
@@ -127,9 +177,36 @@ public sealed partial class DocumentCacheHostedHappyPathTests
             authorizedProfileToken,
             bellScheduleUuid,
             schoolId,
-            bellScheduleProjection
+            bellScheduleProjection,
+            expectedClassPeriodName: ClassPeriodName
         );
-        await AssertProfiledBellScheduleReadDeniedAsync(deniedProfileToken, bellScheduleUuid);
+
+        DocumentCacheSentinel bellScheduleSentinel = await ApplyDocumentCacheSentinelAsync(
+            bellScheduleUuid,
+            ApplyBellScheduleClassPeriodNameSentinel
+        );
+        try
+        {
+            DocumentCacheProjection bellScheduleSentinelProjection = await ReadDocumentCacheProjectionAsync(
+                bellScheduleUuid
+            );
+            await AssertProfiledBellScheduleGetByIdAsync(
+                authorizedProfileToken,
+                bellScheduleUuid,
+                schoolId,
+                bellScheduleSentinelProjection,
+                expectedClassPeriodName: CacheOnlyBellScheduleClassPeriodNameSentinel
+            );
+            await AssertProfiledBellScheduleReadDeniedAsync(
+                deniedProfileToken,
+                bellScheduleUuid,
+                CacheOnlyBellScheduleClassPeriodNameSentinel
+            );
+        }
+        finally
+        {
+            await RestoreDocumentCacheSentinelAsync(bellScheduleSentinel);
+        }
     }
 
     private async Task<int> CreateOrFindProfileAsync(string profileName, string profileXml)
@@ -361,7 +438,8 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         string bearerToken,
         Guid schoolUuid,
         long schoolId,
-        DocumentCacheProjection projection
+        DocumentCacheProjection projection,
+        string expectedNameOfInstitution
     )
     {
         using HttpResponseMessage response = await SendProfiledSchoolGetAsync(
@@ -376,14 +454,15 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         JsonObject school =
             JsonNode.Parse(body)?.AsObject()
             ?? throw new AssertionException($"GET profiled school by id returned non-object JSON: {body}");
-        AssertProfiledSchoolShape(school, schoolUuid, schoolId);
+        AssertProfiledSchoolShape(school, schoolUuid, schoolId, expectedNameOfInstitution);
         AssertProfiledEtag(response, school, projection);
     }
 
     private async Task AssertProfiledSchoolGetManyAsync(
         string bearerToken,
         long schoolId,
-        DocumentCacheProjection projection
+        DocumentCacheProjection projection,
+        string expectedNameOfInstitution
     )
     {
         using HttpResponseMessage response = await SendProfiledSchoolGetAsync(
@@ -401,7 +480,7 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         schools.Should().ContainSingle();
         JsonObject school =
             schools[0]?.AsObject() ?? throw new AssertionException("School query row was null.");
-        AssertProfiledSchoolShape(school, null, schoolId);
+        AssertProfiledSchoolShape(school, null, schoolId, expectedNameOfInstitution);
         AssertProfiledBodyEtag(school, projection);
     }
 
@@ -409,7 +488,8 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         string bearerToken,
         Guid bellScheduleUuid,
         long schoolId,
-        DocumentCacheProjection projection
+        DocumentCacheProjection projection,
+        string expectedClassPeriodName
     )
     {
         using HttpResponseMessage response = await SendProfiledBellScheduleGetAsync(
@@ -428,11 +508,15 @@ public sealed partial class DocumentCacheHostedHappyPathTests
             ?? throw new AssertionException(
                 $"GET profiled bell schedule by id returned non-object JSON: {body}"
             );
-        AssertProfiledBellScheduleShape(bellSchedule, bellScheduleUuid, schoolId);
+        AssertProfiledBellScheduleShape(bellSchedule, bellScheduleUuid, schoolId, expectedClassPeriodName);
         AssertProfiledEtag(response, bellSchedule, projection);
     }
 
-    private async Task AssertProfiledBellScheduleReadDeniedAsync(string bearerToken, Guid bellScheduleUuid)
+    private async Task AssertProfiledBellScheduleReadDeniedAsync(
+        string bearerToken,
+        Guid bellScheduleUuid,
+        string forbiddenSentinel
+    )
     {
         using HttpResponseMessage response = await SendProfiledBellScheduleGetAsync(
             bearerToken,
@@ -451,6 +535,7 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         body.Should().NotContain(BellScheduleName);
         body.Should().NotContain("totalInstructionalTime");
         body.Should().NotContain("classPeriods");
+        body.Should().NotContain(forbiddenSentinel);
     }
 
     private async Task<HttpResponseMessage> SendProfiledSchoolGetAsync(
@@ -497,7 +582,12 @@ public sealed partial class DocumentCacheHostedHappyPathTests
             .Be(ReadableBellScheduleProfileContentType(BellScheduleProfileName));
     }
 
-    private static void AssertProfiledSchoolShape(JsonObject school, Guid? schoolUuid, long schoolId)
+    private static void AssertProfiledSchoolShape(
+        JsonObject school,
+        Guid? schoolUuid,
+        long schoolId,
+        string expectedNameOfInstitution
+    )
     {
         school
             .Select(field => field.Key)
@@ -510,14 +600,15 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         }
 
         school["schoolId"]!.GetValue<long>().Should().Be(schoolId);
-        school["nameOfInstitution"]!.GetValue<string>().Should().Be("Cache Profile School");
+        school["nameOfInstitution"]!.GetValue<string>().Should().Be(expectedNameOfInstitution);
         school["webSite"]!.GetValue<string>().Should().Be("https://document-cache-profile.example.com");
     }
 
     private static void AssertProfiledBellScheduleShape(
         JsonObject bellSchedule,
         Guid bellScheduleUuid,
-        long schoolId
+        long schoolId,
+        string expectedClassPeriodName
     )
     {
         bellSchedule["id"]!.GetValue<string>().Should().Be(bellScheduleUuid.ToString());
@@ -537,7 +628,21 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         classPeriod["classPeriodReference"]!["classPeriodName"]!
             .GetValue<string>()
             .Should()
-            .Be(ClassPeriodName);
+            .Be(expectedClassPeriodName);
+    }
+
+    private static void ApplyBellScheduleClassPeriodNameSentinel(JsonObject documentJson)
+    {
+        JsonArray classPeriods =
+            documentJson["classPeriods"]?.AsArray()
+            ?? throw new AssertionException("Cached bell schedule omitted classPeriods.");
+        classPeriods.Should().ContainSingle();
+        JsonObject classPeriod =
+            classPeriods[0]?.AsObject() ?? throw new AssertionException("Cached class period row was null.");
+        JsonObject classPeriodReference =
+            classPeriod["classPeriodReference"]?.AsObject()
+            ?? throw new AssertionException("Cached class period row omitted classPeriodReference.");
+        classPeriodReference["classPeriodName"] = CacheOnlyBellScheduleClassPeriodNameSentinel;
     }
 
     private static void AssertProfiledEtag(

@@ -33,6 +33,7 @@ public sealed partial class DocumentCacheHostedHappyPathTests
     private const string StudentResourcePath = "data/ed-fi/students";
     private const string SchoolResourcePath = "data/ed-fi/schools";
     private const string DocumentCacheStatusPath = "health/document-cache";
+    private const string CacheOnlyStudentFirstNameSentinel = "cache-only hosted student sentinel";
 
     private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -165,6 +166,31 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         projection.ResourceName.Should().Be("Student");
         projection.DocumentJson.Should().Contain(studentUniqueId);
         projection.DocumentJson.Should().Contain("Hosted Update");
+        projection.DocumentJson.Should().NotContain(CacheOnlyStudentFirstNameSentinel);
+
+        await AssertGetByIdAsync(studentId, studentUniqueId, expectedFirstName: "Hosted Update");
+        await AssertGetManyAsync(studentUniqueId, expectedFirstName: "Hosted Update");
+        await AssertCanonicalStudentFirstNameAsync(studentId, expectedFirstName: "Hosted Update");
+
+        DocumentCacheSentinel sentinel = await ApplyDocumentCacheSentinelAsync(
+            studentId,
+            documentJson => documentJson["firstName"] = CacheOnlyStudentFirstNameSentinel
+        );
+        try
+        {
+            await AssertCanonicalStudentFirstNameAsync(studentId, expectedFirstName: "Hosted Update");
+            await AssertGetByIdAsync(
+                studentId,
+                studentUniqueId,
+                expectedFirstName: CacheOnlyStudentFirstNameSentinel
+            );
+            await AssertGetManyAsync(studentUniqueId, expectedFirstName: CacheOnlyStudentFirstNameSentinel);
+            await AssertCanonicalStudentFirstNameAsync(studentId, expectedFirstName: "Hosted Update");
+        }
+        finally
+        {
+            await RestoreDocumentCacheSentinelAsync(sentinel);
+        }
 
         await AssertGetByIdAsync(studentId, studentUniqueId, expectedFirstName: "Hosted Update");
         await AssertGetManyAsync(studentUniqueId, expectedFirstName: "Hosted Update");
@@ -384,6 +410,22 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         student.GetProperty("firstName").GetString().Should().Be(expectedFirstName);
     }
 
+    private static async Task AssertCanonicalStudentFirstNameAsync(Guid studentId, string expectedFirstName)
+    {
+        string firstName = await ReadCanonicalStudentFirstNameAsync(studentId);
+        firstName
+            .Should()
+            .Be(expectedFirstName, "the cache-only sentinel must not mutate canonical student data");
+    }
+
+    private static async Task AssertCanonicalSchoolNameAsync(Guid schoolId, string expectedNameOfInstitution)
+    {
+        string nameOfInstitution = await ReadCanonicalSchoolNameAsync(schoolId);
+        nameOfInstitution
+            .Should()
+            .Be(expectedNameOfInstitution, "the cache-only sentinel must not mutate canonical school data");
+    }
+
     private async Task<JsonObject> RunDocumentCacheAdminAsync(params string[] arguments)
     {
         string settingsPath = CreateDocumentCacheAdminSettingsFile();
@@ -557,6 +599,147 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         );
     }
 
+    private static async Task<DocumentCacheSentinel> ApplyDocumentCacheSentinelAsync(
+        Guid documentUuid,
+        Action<JsonObject> mutateDocumentJson
+    )
+    {
+        DocumentCacheProjection originalProjection = await ReadDocumentCacheProjectionAsync(documentUuid);
+        originalProjection
+            .CacheContentVersion.Should()
+            .Be(originalProjection.DocumentContentVersion, "cache sentinel setup requires a fresh cache row");
+
+        JsonObject documentJson = ParseDocumentJsonObject(originalProjection.DocumentJson);
+        documentJson.ContainsKey("_etag").Should().BeFalse("DocumentJson stores fixed stream content");
+
+        mutateDocumentJson(documentJson);
+        documentJson.ContainsKey("_etag").Should().BeFalse("cache sentinel must not add _etag");
+
+        await UpdateDocumentCacheJsonAsync(originalProjection.DocumentId, documentJson.ToJsonString());
+
+        DocumentCacheProjection sentinelProjection = await ReadDocumentCacheProjectionAsync(documentUuid);
+        sentinelProjection
+            .DocumentContentVersion.Should()
+            .Be(originalProjection.DocumentContentVersion, "the cache-only sentinel must not restamp source");
+        sentinelProjection
+            .CacheContentVersion.Should()
+            .Be(
+                originalProjection.CacheContentVersion,
+                "the cache-only sentinel must preserve cache freshness"
+            );
+        ParseDocumentJsonObject(sentinelProjection.DocumentJson)
+            .ContainsKey("_etag")
+            .Should()
+            .BeFalse("DocumentJson stores fixed stream content");
+
+        return new DocumentCacheSentinel(documentUuid, originalProjection.DocumentId, originalProjection);
+    }
+
+    private static async Task RestoreDocumentCacheSentinelAsync(DocumentCacheSentinel sentinel)
+    {
+        await UpdateDocumentCacheJsonAsync(sentinel.DocumentId, sentinel.OriginalProjection.DocumentJson);
+
+        DocumentCacheProjection restoredProjection = await ReadDocumentCacheProjectionAsync(
+            sentinel.DocumentUuid
+        );
+        restoredProjection
+            .DocumentContentVersion.Should()
+            .Be(
+                sentinel.OriginalProjection.DocumentContentVersion,
+                "sentinel restore must not restamp source"
+            );
+        restoredProjection
+            .CacheContentVersion.Should()
+            .Be(
+                sentinel.OriginalProjection.CacheContentVersion,
+                "sentinel restore must preserve cache freshness"
+            );
+        JsonNode
+            .DeepEquals(
+                ParseDocumentJsonObject(restoredProjection.DocumentJson),
+                ParseDocumentJsonObject(sentinel.OriginalProjection.DocumentJson)
+            )
+            .Should()
+            .BeTrue("the cache sentinel helper must restore the original DocumentJson");
+    }
+
+    private static async Task UpdateDocumentCacheJsonAsync(long documentId, string documentJson)
+    {
+        await using DbConnection connection = CreateDataStoreConnection();
+        await connection.OpenAsync();
+        await using DbCommand command = connection.CreateCommand();
+        command.CommandText = IsMssql()
+            ? """
+                UPDATE [dms].[DocumentCache]
+                SET [DocumentJson] = @documentJson
+                WHERE [DocumentId] = @documentId;
+                """
+            : """
+                UPDATE "dms"."DocumentCache"
+                SET "DocumentJson" = CAST(@documentJson AS jsonb)
+                WHERE "DocumentId" = @documentId;
+                """;
+        AddParameter(command, "@documentId", documentId);
+        AddParameter(command, "@documentJson", documentJson);
+
+        int updatedRows = await command.ExecuteNonQueryAsync();
+        updatedRows.Should().Be(1, "cache sentinel update should affect exactly one cache row");
+    }
+
+    private static async Task<string> ReadCanonicalStudentFirstNameAsync(Guid documentUuid)
+    {
+        await using DbConnection connection = CreateDataStoreConnection();
+        await connection.OpenAsync();
+        await using DbCommand command = connection.CreateCommand();
+        command.CommandText = IsMssql()
+            ? """
+                SELECT s.[FirstName]
+                FROM [edfi].[Student] AS s
+                INNER JOIN [dms].[Document] AS d ON d.[DocumentId] = s.[DocumentId]
+                WHERE d.[DocumentUuid] = @documentUuid;
+                """
+            : """
+                SELECT s."FirstName"
+                FROM "edfi"."Student" AS s
+                INNER JOIN "dms"."Document" AS d ON d."DocumentId" = s."DocumentId"
+                WHERE d."DocumentUuid" = @documentUuid;
+                """;
+        AddParameter(command, "@documentUuid", documentUuid);
+
+        object? firstName = await command.ExecuteScalarAsync();
+        firstName.Should().NotBeNull("canonical student row must exist");
+        return Convert.ToString(firstName, CultureInfo.InvariantCulture) ?? string.Empty;
+    }
+
+    private static async Task<string> ReadCanonicalSchoolNameAsync(Guid documentUuid)
+    {
+        await using DbConnection connection = CreateDataStoreConnection();
+        await connection.OpenAsync();
+        await using DbCommand command = connection.CreateCommand();
+        command.CommandText = IsMssql()
+            ? """
+                SELECT s.[NameOfInstitution]
+                FROM [edfi].[School] AS s
+                INNER JOIN [dms].[Document] AS d ON d.[DocumentId] = s.[DocumentId]
+                WHERE d.[DocumentUuid] = @documentUuid;
+                """
+            : """
+                SELECT s."NameOfInstitution"
+                FROM "edfi"."School" AS s
+                INNER JOIN "dms"."Document" AS d ON d."DocumentId" = s."DocumentId"
+                WHERE d."DocumentUuid" = @documentUuid;
+                """;
+        AddParameter(command, "@documentUuid", documentUuid);
+
+        object? nameOfInstitution = await command.ExecuteScalarAsync();
+        nameOfInstitution.Should().NotBeNull("canonical school row must exist");
+        return Convert.ToString(nameOfInstitution, CultureInfo.InvariantCulture) ?? string.Empty;
+    }
+
+    private static JsonObject ParseDocumentJsonObject(string documentJson) =>
+        JsonNode.Parse(documentJson)?.AsObject()
+        ?? throw new AssertionException($"DocumentJson was not a JSON object: {documentJson}");
+
     private static async Task AssertDocumentCacheRowsDeletedAsync(Guid documentUuid)
     {
         await using DbConnection connection = CreateDataStoreConnection();
@@ -717,8 +900,8 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         process.StartInfo.ArgumentList.Add(environmentFile);
 
         process.Start().Should().BeTrue("prepare-dms-schema.ps1 must start");
-        string output = process.StandardOutput.ReadToEnd();
-        string error = process.StandardError.ReadToEnd();
+        Task<string> outputTask = process.StandardOutput.ReadToEndAsync();
+        Task<string> errorTask = process.StandardError.ReadToEndAsync();
 
         if (!process.WaitForExit(TimeSpan.FromMinutes(5)))
         {
@@ -726,6 +909,8 @@ public sealed partial class DocumentCacheHostedHappyPathTests
             Assert.Fail("prepare-dms-schema.ps1 timed out before staging the ApiSchema workspace.");
         }
 
+        string output = outputTask.GetAwaiter().GetResult();
+        string error = errorTask.GetAwaiter().GetResult();
         process.ExitCode.Should().Be(0, "prepare-dms-schema.ps1 stderr:\n{0}\nstdout:\n{1}", error, output);
     }
 
@@ -982,5 +1167,11 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         string ResourceName,
         string DocumentJson,
         long WorkRows
+    );
+
+    private sealed record DocumentCacheSentinel(
+        Guid DocumentUuid,
+        long DocumentId,
+        DocumentCacheProjection OriginalProjection
     );
 }
