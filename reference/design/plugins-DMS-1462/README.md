@@ -43,7 +43,7 @@ Drafts 01 through 06 are the foundation stories this spike files; 07 is post-rel
 | [04](./04-integrate-plugin-loading-into-dms-startup.md) | Integrate Plugin Loading into DMS Startup | 03, and the merged DMS-1432 contract package | [DMS-1499](https://edfi.atlassian.net/browse/DMS-1499) |
 | [05](./05-document-plugins-and-publish-host-manifest.md) | Document Plugins for Operators and Implementers and Publish the Host Assembly Manifest | 04 | [DMS-1500](https://edfi.atlassian.net/browse/DMS-1500) |
 | [06](./06-publish-plugin-contract-packages.md) | Publish `EdFi.Api.Plugins` and `EdFi.Api.CustomValidation` | 01-05, DMS-1433, DMS-1435, DMS-1436 | [DMS-1501](https://edfi.atlassian.net/browse/DMS-1501), release-gated |
-| [07](./07-prove-plugin-loading-against-pulled-stock-image.md) | Prove Plugin Loading Against a Pulled Stock Image | 05, DMS-1436, and the first release carrying **both** 04 and DMS-1433 | Draft, post-release |
+| [07](./07-prove-plugin-loading-against-pulled-stock-image.md) | Prove Plugin Loading Against a Pulled Stock Image | 05, DMS-1436, and the first release carrying **both** 04 and DMS-1433 | [DMS-1502](https://edfi.atlassian.net/browse/DMS-1502), post-release |
 
 **Where the two `src/dms/` build-lane changes sit, and why they are split.**
 The frontend does not reference `EdFi.Api.Plugins.Hosting` today, and `src/dms/Dockerfile`'s build stage cannot reach `src/plugins/`.

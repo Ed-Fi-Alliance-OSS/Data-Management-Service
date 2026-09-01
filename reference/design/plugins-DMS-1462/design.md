@@ -784,7 +784,7 @@ Both phases run inside `Program.cs` before `builder.Build()`, so **one load serv
 
 **Phase A is decided here and built with the secrets foundations, not with this spike's stories.**
 Nothing on this spike's table consumes it: custom validation and identity are Phase B.
-The reason it is designed now is that the secrets spike must build on a mechanism that is *decided*, and a design that settled only Phase B would have to be amended, along with its in-flight stories, the moment secrets needed configuration.
+The reason it is designed now is that the secrets spike (DMS-1503) must build on a mechanism that is *decided*, and a design that settled only Phase B would have to be amended, along with its in-flight stories, the moment secrets needed configuration.
 That argument needs the design to exist; it does not need the code to exist.
 And the base class was chosen precisely so that a phase added later is binary-compatible with every plugin already published, so shipping Phase A code ahead of its first consumer would spend the property the class shape buys for no consumer.
 Concretely: the first published `EdFi.Api.Plugins` carries `Name` and `ContributeServices` only.
