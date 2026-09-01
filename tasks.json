@@ -383,7 +383,7 @@
       "Temporarily change one cited method name in `reference/document-cache/cdc-inv-evidence.md`, confirm the matrix validation fails, and restore the correct citation.",
       "Run: `dotnet csharpier format src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DocumentCacheEvidenceMatrixTests.cs`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Review Remediation",

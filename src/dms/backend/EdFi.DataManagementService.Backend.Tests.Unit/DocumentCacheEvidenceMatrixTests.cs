@@ -29,9 +29,17 @@ public sealed class Given_The_DocumentCacheEvidenceMatrix
         @"`(?<path>(?:src|docs|reference)/[^`\r\n]+\.(?:cs|csproj|json|md|ps1))`",
         RegexOptions.Compiled
     );
+    private static readonly Regex CSharpRepositoryPathPattern = new(
+        @"`(?<path>src/[^`\r\n]+\.cs)`",
+        RegexOptions.Compiled
+    );
+    private static readonly Regex CSharpMemberAnchorPrefixPattern = new(
+        @"^\s*:\s*`(?<member>[A-Za-z_][A-Za-z0-9_]*)`",
+        RegexOptions.Compiled
+    );
     private static readonly Regex CodeSpanPattern = new(@"`(?<value>[^`\r\n]+)`", RegexOptions.Compiled);
-    private static readonly Regex TestMethodNamePattern = new(
-        @"^(?:It_|[A-Za-z][A-Za-z0-9]*_it_)[A-Za-z0-9_]*$",
+    private static readonly Regex CSharpMemberNamePattern = new(
+        @"^[A-Za-z_][A-Za-z0-9_]*$",
         RegexOptions.Compiled
     );
 
@@ -90,29 +98,42 @@ public sealed class Given_The_DocumentCacheEvidenceMatrix
     }
 
     [Test]
-    public void It_resolves_named_test_evidence_to_declared_methods()
+    public void It_uses_member_anchored_csharp_evidence_citations()
+    {
+        List<string> unanchoredCitations = MatrixRows()
+            .SelectMany(UnanchoredCSharpPathCitations)
+            .Order()
+            .ToList();
+
+        unanchoredCitations
+            .Should()
+            .BeEmpty("each cited .cs evidence path should use the `path`: `member` format");
+    }
+
+    [Test]
+    public void It_resolves_named_test_evidence_to_declared_members()
     {
         string repositoryRoot = RepositoryRoot();
 
-        List<string> unresolvedReferences = ReferencedTestMethodEvidence()
+        List<string> unresolvedReferences = ReferencedTestMemberEvidence()
             .Where(reference =>
                 reference.RepositoryPath.Length == 0
-                || !TestMethodExists(
+                || !DeclaredMemberExists(
                     Path.Combine(repositoryRoot, reference.RepositoryPath),
-                    reference.MethodName
+                    reference.MemberName
                 )
             )
             .Select(reference =>
                 reference.RepositoryPath.Length == 0
-                    ? $"{reference.ContractId}: {reference.MethodName} is not tied to a repository .cs path"
-                    : $"{reference.RepositoryPath}: {reference.MethodName}"
+                    ? $"{reference.ContractId}: {reference.MemberName} is not tied to a repository .cs path"
+                    : $"{reference.RepositoryPath}: {reference.MemberName}"
             )
             .Order()
             .ToList();
 
         unresolvedReferences
             .Should()
-            .BeEmpty("named test evidence should stay anchored to declared test methods");
+            .BeEmpty("named test evidence should stay anchored to declared source members");
     }
 
     private static string MatrixPath() =>
@@ -159,7 +180,7 @@ public sealed class Given_The_DocumentCacheEvidenceMatrix
             .Select(match => match.Groups["path"].Value)
             .Distinct(StringComparer.Ordinal);
 
-    private IEnumerable<TestMethodReference> ReferencedTestMethodEvidence()
+    private IEnumerable<TestMemberReference> ReferencedTestMemberEvidence()
     {
         foreach (string row in MatrixRows())
         {
@@ -171,45 +192,56 @@ public sealed class Given_The_DocumentCacheEvidenceMatrix
                 continue;
             }
 
-            List<string> currentCSharpRepositoryPaths = [];
-
-            foreach (string evidenceClause in cells[5].Split(';', StringSplitOptions.TrimEntries))
+            foreach (string evidenceCell in cells.Skip(2))
             {
-                string[] codeSpanValues = CodeSpanPattern
-                    .Matches(evidenceClause)
-                    .Select(match => match.Groups["value"].Value)
-                    .ToArray();
+                string currentCSharpRepositoryPath = "";
 
-                string[] repositoryPaths = codeSpanValues.Where(IsRepositoryPath).ToArray();
-                if (repositoryPaths.Length > 0)
+                foreach (Match codeSpan in CodeSpanPattern.Matches(evidenceCell))
                 {
-                    currentCSharpRepositoryPaths = repositoryPaths
-                        .Where(path => path.EndsWith(".cs", StringComparison.Ordinal))
-                        .ToList();
-                }
+                    string codeSpanValue = codeSpan.Groups["value"].Value;
 
-                foreach (
-                    string testMethodName in codeSpanValues.Where(value =>
-                        TestMethodNamePattern.IsMatch(value)
-                    )
-                )
-                {
-                    if (currentCSharpRepositoryPaths.Count == 0)
+                    if (IsCSharpRepositoryPath(codeSpanValue))
                     {
-                        yield return new TestMethodReference(contractId, "", testMethodName);
+                        currentCSharpRepositoryPath = codeSpanValue;
                         continue;
                     }
 
-                    foreach (string repositoryPath in currentCSharpRepositoryPaths)
+                    if (IsRepositoryPath(codeSpanValue))
                     {
-                        yield return new TestMethodReference(contractId, repositoryPath, testMethodName);
+                        currentCSharpRepositoryPath = "";
+                        continue;
                     }
+
+                    if (!CSharpMemberNamePattern.IsMatch(codeSpanValue))
+                    {
+                        continue;
+                    }
+
+                    yield return new TestMemberReference(
+                        contractId,
+                        currentCSharpRepositoryPath,
+                        codeSpanValue
+                    );
                 }
             }
         }
     }
 
-    private static bool TestMethodExists(string fullPath, string methodName)
+    private static IEnumerable<string> UnanchoredCSharpPathCitations(string row)
+    {
+        string contractId = ContractIdFromRow(row);
+
+        foreach (Match match in CSharpRepositoryPathPattern.Matches(row))
+        {
+            string suffix = row[(match.Index + match.Length)..];
+            if (!CSharpMemberAnchorPrefixPattern.IsMatch(suffix))
+            {
+                yield return $"{contractId}: {match.Groups["path"].Value}";
+            }
+        }
+    }
+
+    private static bool DeclaredMemberExists(string fullPath, string memberName)
     {
         if (!File.Exists(fullPath))
         {
@@ -218,12 +250,22 @@ public sealed class Given_The_DocumentCacheEvidenceMatrix
 
         string source = File.ReadAllText(fullPath);
 
-        return Regex.IsMatch(
+        return DeclaredTypeExists(source, memberName) || DeclaredTestMethodExists(source, memberName);
+    }
+
+    private static bool DeclaredTypeExists(string source, string memberName) =>
+        Regex.IsMatch(
             source,
-            $@"\b(?:public|internal|private|protected)\s+(?:static\s+)?(?:async\s+)?(?:Task|ValueTask|void)\s+{Regex.Escape(methodName)}\s*\(",
+            $@"\b(?:class|record|struct)\s+{Regex.Escape(memberName)}\b",
             RegexOptions.CultureInvariant
         );
-    }
+
+    private static bool DeclaredTestMethodExists(string source, string memberName) =>
+        Regex.IsMatch(
+            source,
+            $@"\b(?:public|internal|private|protected)\s+(?:static\s+)?(?:async\s+)?(?:Task|ValueTask|void)\s+{Regex.Escape(memberName)}\s*\(",
+            RegexOptions.CultureInvariant
+        );
 
     private static string[] MarkdownCells(string row) =>
         row.Trim().Trim('|').Split('|').Select(cell => cell.Trim()).ToArray();
@@ -238,5 +280,8 @@ public sealed class Given_The_DocumentCacheEvidenceMatrix
         || value.StartsWith("docs/", StringComparison.Ordinal)
         || value.StartsWith("reference/", StringComparison.Ordinal);
 
-    private sealed record TestMethodReference(string ContractId, string RepositoryPath, string MethodName);
+    private static bool IsCSharpRepositoryPath(string value) =>
+        value.StartsWith("src/", StringComparison.Ordinal) && value.EndsWith(".cs", StringComparison.Ordinal);
+
+    private sealed record TestMemberReference(string ContractId, string RepositoryPath, string MemberName);
 }
