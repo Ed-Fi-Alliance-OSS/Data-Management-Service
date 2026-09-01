@@ -88,6 +88,126 @@ public class Given_RelationalAuthorizationAuth1Dispatcher
     }
 
     [Test]
+    public void It_routes_a_postgresql_ownership_payload_to_the_ownership_codec()
+    {
+        var dispatched = RelationalAuthorizationAuth1Dispatcher.TryDispatch(
+            SqlDialect.Pgsql,
+            providerErrorCode: "AUTH1",
+            providerMessage: "own1|1|m",
+            out var result
+        );
+
+        dispatched.Should().BeTrue();
+        result.Should().BeOfType<RelationalAuthorizationAuth1DispatchResult.Ownership>();
+        var ownership = (RelationalAuthorizationAuth1DispatchResult.Ownership)result!;
+        ownership.Payload.ConfiguredStrategyIndex.Should().Be(1);
+        ownership
+            .Payload.FailureKind.Should()
+            .Be(OwnershipAuthorizationAuth1FailureKind.OwnershipTokenMismatch);
+    }
+
+    [Test]
+    public void It_routes_a_sql_server_ownership_payload_via_the_AUTH1_dash_marker()
+    {
+        var sqlServerMessage =
+            "Conversion failed when converting the varchar value 'AUTH1 - own1|3|u' to data type int.";
+
+        var dispatched = RelationalAuthorizationAuth1Dispatcher.TryDispatch(
+            SqlDialect.Mssql,
+            providerErrorCode: null,
+            providerMessage: sqlServerMessage,
+            out var result
+        );
+
+        dispatched.Should().BeTrue();
+        var ownership = result
+            .Should()
+            .BeOfType<RelationalAuthorizationAuth1DispatchResult.Ownership>()
+            .Subject;
+        ownership.Payload.ConfiguredStrategyIndex.Should().Be(3);
+        ownership
+            .Payload.FailureKind.Should()
+            .Be(OwnershipAuthorizationAuth1FailureKind.StoredOwnershipTokenUninitialized);
+    }
+
+    [Test]
+    public void It_routes_an_ownership_stale_target_payload_to_the_ownership_codec()
+    {
+        var dispatched = RelationalAuthorizationAuth1Dispatcher.TryDispatch(
+            SqlDialect.Pgsql,
+            providerErrorCode: "AUTH1",
+            providerMessage: "own1|0|s",
+            out var result
+        );
+
+        dispatched.Should().BeTrue();
+        result
+            .Should()
+            .BeOfType<RelationalAuthorizationAuth1DispatchResult.Ownership>()
+            .Which.Payload.FailureKind.Should()
+            .Be(OwnershipAuthorizationAuth1FailureKind.StoredTargetMissing);
+    }
+
+    /// <summary>
+    /// The relationship family's discriminator is <c>1|</c>, and <c>own1|…</c> contains it. A prefix match is
+    /// anchored, so ownership must not be claimed by the relationship codec regardless of arm order.
+    /// </summary>
+    [Test]
+    public void It_does_not_let_the_relationship_family_claim_an_ownership_payload()
+    {
+        RelationalAuthorizationAuth1Dispatcher.TryDispatch(
+            SqlDialect.Pgsql,
+            providerErrorCode: "AUTH1",
+            providerMessage: "own1|1|m",
+            out var result
+        );
+
+        result.Should().NotBeOfType<RelationalAuthorizationAuth1DispatchResult.Relationship>();
+    }
+
+    /// <summary>
+    /// Adding the ownership family must not change how the three existing families are routed.
+    /// </summary>
+    [TestCase("1|7|2|0:0:s,1:0:n", typeof(RelationalAuthorizationAuth1DispatchResult.Relationship))]
+    [TestCase("ns1|2|m", typeof(RelationalAuthorizationAuth1DispatchResult.Namespace))]
+    [TestCase("own1|2|m", typeof(RelationalAuthorizationAuth1DispatchResult.Ownership))]
+    public void It_keeps_each_family_isolated_by_discriminator(string payloadText, Type expectedResultType)
+    {
+        RelationalAuthorizationAuth1Dispatcher.TryDispatch(
+            SqlDialect.Pgsql,
+            providerErrorCode: "AUTH1",
+            providerMessage: payloadText,
+            out var result
+        );
+
+        result.Should().BeOfType(expectedResultType);
+    }
+
+    /// <summary>
+    /// An <c>own1</c> payload the codec cannot parse must still reach the caller as an invalid payload — a
+    /// security-configuration outcome — rather than being silently dropped.
+    /// </summary>
+    [TestCase("own1|0")]
+    [TestCase("own1|0|x")]
+    [TestCase("own1|-1|m")]
+    public void It_returns_invalid_payload_for_a_malformed_ownership_payload(string payloadText)
+    {
+        var dispatched = RelationalAuthorizationAuth1Dispatcher.TryDispatch(
+            SqlDialect.Pgsql,
+            providerErrorCode: "AUTH1",
+            providerMessage: payloadText,
+            out var result
+        );
+
+        dispatched.Should().BeTrue();
+        result
+            .Should()
+            .BeOfType<RelationalAuthorizationAuth1DispatchResult.InvalidPayload>()
+            .Which.RawPayload.Should()
+            .Be(payloadText);
+    }
+
+    [Test]
     public void It_returns_invalid_payload_for_an_unknown_discriminator()
     {
         var dispatched = RelationalAuthorizationAuth1Dispatcher.TryDispatch(

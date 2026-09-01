@@ -124,6 +124,7 @@ internal static class NamespaceAuthorizationProviderFailureMapper
             // it does not recognize.
             RelationalAuthorizationAuth1DispatchResult.Relationship => string.Empty,
             RelationalAuthorizationAuth1DispatchResult.CustomView => string.Empty,
+            RelationalAuthorizationAuth1DispatchResult.Ownership => string.Empty,
             _ => AuthorizationSecurityConfigurationDiagnostics.NamespaceInvalidAuthorizationMetadata,
         };
 

@@ -23,16 +23,25 @@ public abstract record RelationalAuthorizationAuth1DispatchResult
     public sealed record CustomView(CustomViewAuthorizationAuth1FailurePayload Payload)
         : RelationalAuthorizationAuth1DispatchResult;
 
+    public sealed record Ownership(OwnershipAuthorizationAuth1FailurePayload Payload)
+        : RelationalAuthorizationAuth1DispatchResult;
+
     public sealed record InvalidPayload(string RawPayload) : RelationalAuthorizationAuth1DispatchResult;
 }
 
 /// <summary>
-/// Routes an AUTH1 provider failure to the relationship, namespace, or custom-view payload codec based on
-/// the payload's leading discriminator. Relationship payloads start with <c>1|</c>; namespace payloads start
-/// with <c>ns1|</c>; custom view-based payloads start with <c>cv1|</c>. Any other payload returns
+/// Routes an AUTH1 provider failure to the relationship, namespace, custom-view, or ownership payload codec
+/// based on the payload's leading discriminator. Relationship payloads start with <c>1|</c>; namespace
+/// payloads start with <c>ns1|</c>; custom view-based payloads start with <c>cv1|</c>; ownership payloads
+/// start with <c>own1|</c>. Any other payload returns
 /// <see cref="RelationalAuthorizationAuth1DispatchResult.InvalidPayload"/> so the caller can log and fall
 /// through to a generic security failure.
 /// </summary>
+/// <remarks>
+/// The discriminators are mutually exclusive as anchored prefixes, so arm order carries no meaning: notably
+/// <c>own1|…</c> does not start with the relationship family's <c>1|</c>, because a prefix match is anchored
+/// at the start of the payload.
+/// </remarks>
 public static class RelationalAuthorizationAuth1Dispatcher
 {
     private const string RelationshipDiscriminatorPrefix =
@@ -41,6 +50,8 @@ public static class RelationalAuthorizationAuth1Dispatcher
         NamespaceAuthorizationAuth1FailurePayloadCodec.PayloadDiscriminator + "|";
     private const string CustomViewDiscriminatorPrefix =
         CustomViewAuthorizationAuth1FailurePayloadCodec.PayloadDiscriminator + "|";
+    private const string OwnershipDiscriminatorPrefix =
+        OwnershipAuthorizationAuth1FailurePayloadCodec.PayloadDiscriminator + "|";
 
     /// <summary>
     /// Attempts to extract and dispatch an AUTH1 payload from a provider exception.
@@ -105,6 +116,19 @@ public static class RelationalAuthorizationAuth1Dispatcher
             return true;
         }
 
+        if (
+            payloadText.StartsWith(OwnershipDiscriminatorPrefix, StringComparison.Ordinal)
+            && OwnershipAuthorizationAuth1FailurePayloadCodec.TryParsePayload(
+                payloadText,
+                out var ownershipPayload
+            )
+            && ownershipPayload is not null
+        )
+        {
+            result = new RelationalAuthorizationAuth1DispatchResult.Ownership(ownershipPayload);
+            return true;
+        }
+
         result = new RelationalAuthorizationAuth1DispatchResult.InvalidPayload(payloadText);
         return true;
     }
@@ -116,9 +140,9 @@ public static class RelationalAuthorizationAuth1Dispatcher
         out string payloadText
     )
     {
-        // Both codecs share the same transport extraction logic (PG SqlState == "AUTH1", or MSSQL
+        // Every codec shares the same transport extraction logic (PG SqlState == "AUTH1", or MSSQL
         // message containing "AUTH1 - "). Use the relationship codec's extractor as the single source
-        // of truth so a future change to either codec cannot silently diverge from the other.
+        // of truth so a future change to any one codec cannot silently diverge from the others.
         return RelationshipAuthorizationAuth1FailurePayloadCodec.TryExtractProviderPayload(
             dialect,
             providerErrorCode,

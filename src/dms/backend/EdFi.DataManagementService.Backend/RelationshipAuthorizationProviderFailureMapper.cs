@@ -167,9 +167,14 @@ internal static class RelationshipAuthorizationProviderFailureMapper
 
     /// <summary>
     /// Whether <paramref name="payloadText"/> carries the discriminator of an AUTH1 family other than
-    /// relationship. Namespace payloads lead with <c>ns1|</c> and custom view-based payloads with
-    /// <c>cv1|</c>; the relationship family leads with its own payload version.
+    /// relationship. Namespace payloads lead with <c>ns1|</c>, custom view-based payloads with <c>cv1|</c>,
+    /// and ownership payloads with <c>own1|</c>; the relationship family leads with its own payload version.
     /// </summary>
+    /// <remarks>
+    /// Every new AUTH1 family must be added here. The relationship mapper reports an undecodable payload as
+    /// its own parse-failure diagnostic, which callers turn into a 500, so a family missing from this list
+    /// has its 403 converted into a relationship 500 as soon as one command carries both statements.
+    /// </remarks>
     private static bool IsForeignAuthorizationPayload(string payloadText) =>
         payloadText.StartsWith(
             NamespaceAuthorizationAuth1FailurePayloadCodec.PayloadDiscriminator + "|",
@@ -177,6 +182,10 @@ internal static class RelationshipAuthorizationProviderFailureMapper
         )
         || payloadText.StartsWith(
             CustomViewAuthorizationAuth1FailurePayloadCodec.PayloadDiscriminator + "|",
+            StringComparison.Ordinal
+        )
+        || payloadText.StartsWith(
+            OwnershipAuthorizationAuth1FailurePayloadCodec.PayloadDiscriminator + "|",
             StringComparison.Ordinal
         );
 

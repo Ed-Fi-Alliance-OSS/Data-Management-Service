@@ -38,6 +38,9 @@ public class Given_AnAuth1PayloadFromAnotherFamily
     [TestCase("cv1|0|u")]
     [TestCase("cv1|1|r")]
     [TestCase("cv1|0|s")]
+    [TestCase("own1|0|m")]
+    [TestCase("own1|1|u")]
+    [TestCase("own1|0|s")]
     public void It_should_not_be_claimed_as_a_namespace_authorization_failure(string payloadText)
     {
         var mapped = NamespaceAuthorizationProviderFailureMapper.TryMapNamespaceAuthorizationFailure(
@@ -56,27 +59,35 @@ public class Given_AnAuth1PayloadFromAnotherFamily
     [Test]
     public void It_should_not_be_claimed_as_a_namespace_stale_stored_target()
     {
-        // The custom-view stale code is also 's'. Reading it as a namespace stale target would turn a
-        // custom-view retry signal into a namespace one, silently retrying against the wrong plan.
-        NamespaceAuthorizationProviderFailureMapper
-            .IsStaleStoredTargetFailure(
-                SqlDialect.Pgsql,
-                new FakeDbException("cv1|0|s", "AUTH1"),
-                new StubProviderFailureExtractor("AUTH1", "cv1|0|s"),
-                NamespaceValueSources
-            )
-            .Should()
-            .BeFalse();
+        // Every family's stale code is 's'. Reading another family's as a namespace stale target would turn
+        // its retry signal into a namespace one, silently retrying against the wrong plan.
+        foreach (var payloadText in new[] { "cv1|0|s", "own1|0|s" })
+        {
+            NamespaceAuthorizationProviderFailureMapper
+                .IsStaleStoredTargetFailure(
+                    SqlDialect.Pgsql,
+                    new FakeDbException(payloadText, "AUTH1"),
+                    new StubProviderFailureExtractor("AUTH1", payloadText),
+                    NamespaceValueSources
+                )
+                .Should()
+                .BeFalse(payloadText);
+        }
     }
 
     [TestCase("cv1|0|n")]
     [TestCase("cv1|0|u")]
     [TestCase("cv1|0|s")]
+    [TestCase("own1|0|m")]
+    [TestCase("own1|1|u")]
+    [TestCase("own1|0|s")]
     public void It_should_not_be_reported_as_namespace_invalid_authorization_metadata(string payloadText)
     {
         // The regression this pins: the diagnostics switch used to route every unrecognized dispatch result
         // through a catch-all that claimed it as namespace invalid-authorization metadata, which would have
-        // turned a custom-view 403 into a namespace 500 as soon as one command carried both.
+        // turned a custom-view 403 into a namespace 500 as soon as one command carried both. The ownership
+        // cases pin the same thing for the family added by DMS-1060, whose statements co-batch with the
+        // namespace statement on every write and delete path.
         var built =
             NamespaceAuthorizationProviderFailureMapper.TryBuildInvalidAuthorizationFailureDiagnostics(
                 SqlDialect.Pgsql,
@@ -94,6 +105,8 @@ public class Given_AnAuth1PayloadFromAnotherFamily
     [TestCase("cv1|0|n")]
     [TestCase("cv1|0|u")]
     [TestCase("ns1|0|m")]
+    [TestCase("own1|0|m")]
+    [TestCase("own1|1|u")]
     public void It_should_not_be_claimed_as_a_relationship_authorization_failure_or_diagnostic(
         string payloadText
     )
@@ -114,6 +127,38 @@ public class Given_AnAuth1PayloadFromAnotherFamily
         // No diagnostic either: a diagnostic makes callers report their own invalid-payload 500, which is
         // exactly the misclassification being prevented.
         invalidFailureDiagnostic.Should().BeNull();
+    }
+
+    /// <summary>
+    /// The custom-view mapper is safe by construction — it only claims a <c>CustomView</c> dispatch result —
+    /// but the contract is pinned so a future refactor toward a catch-all cannot reintroduce the
+    /// cross-family misclassification the rest of this fixture exists to prevent.
+    /// </summary>
+    [TestCase("own1|0|m")]
+    [TestCase("own1|1|u")]
+    [TestCase("own1|0|s")]
+    public void It_should_not_be_claimed_as_a_custom_view_authorization_problem(string payloadText)
+    {
+        CustomViewAuthorizationProviderFailureMapper
+            .IsUnmappableCustomViewPayload(
+                SqlDialect.Pgsql,
+                new FakeDbException(payloadText, "AUTH1"),
+                new StubProviderFailureExtractor("AUTH1", payloadText),
+                []
+            )
+            .Should()
+            .BeFalse(payloadText);
+
+        // Recognized by the dispatcher, so it is not an unrecognized provider failure the custom-view mapper
+        // would attribute to a missing or revoked auth view.
+        CustomViewAuthorizationProviderFailureMapper
+            .IsUnrecognizedProviderFailure(
+                SqlDialect.Pgsql,
+                new FakeDbException(payloadText, "AUTH1"),
+                new StubProviderFailureExtractor("AUTH1", payloadText)
+            )
+            .Should()
+            .BeFalse(payloadText);
     }
 
     [TestCase("garbage-with-no-discriminator")]
