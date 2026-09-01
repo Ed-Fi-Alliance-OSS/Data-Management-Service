@@ -41,6 +41,63 @@ public static class AuthorizationDataProvider
     };
 
     /// <summary>
+    /// Attaches the snapshot/read-replica arrangement the derivative-routing feature reads through, to
+    /// the data store this setup just created. Requested only by scenarios tagged
+    /// @derivative-routing; every other setup's data store stays derivative-free, so its plain reads
+    /// keep exercising the primary path.
+    /// </summary>
+    /// <remarks>
+    /// The read replica deliberately points at the data store's own database. Once a replica is
+    /// configured, a routing scenario's plain reads are served by it, and a replica pointing anywhere
+    /// else would serve them from a database the scenario never wrote to. Pointing it at the primary
+    /// keeps those reads seeing the scenario's own writes while a read replica is genuinely
+    /// configured, which is what snapshot precedence is asserted against.
+    ///
+    /// The snapshot points at a separately provisioned database that is left empty. DMS never writes
+    /// to a derivative, so "empty" is what makes a snapshot-routed read distinguishable from a plain
+    /// one without seeding a database the API cannot reach.
+    /// </remarks>
+    private static async Task AttachDataStoreDerivatives(int dataStoreId)
+    {
+        (string DerivativeType, string ConnectionString)[] derivatives =
+        [
+            ("ReadReplica", DataStoreConnectionStringProvider.Create()),
+            ("Snapshot", AppSettings.DataStoreSnapshotConnectionString),
+        ];
+
+        foreach ((string derivativeType, string connectionString) in derivatives)
+        {
+            using StringContent content = new(
+                JsonSerializer.Serialize(
+                    new
+                    {
+                        dataStoreId,
+                        derivativeType,
+                        connectionString,
+                    }
+                ),
+                Encoding.UTF8,
+                "application/json"
+            );
+
+            using HttpResponseMessage response = await _configurationServiceClient.PostAsync(
+                "v3/dataStoreDerivatives",
+                content
+            );
+
+            if (!response.IsSuccessStatusCode)
+            {
+                // Fail loudly rather than leaving the routing scenarios to report a confusing
+                // "Snapshot not found". The body can carry the connection string, so it is not logged.
+                throw new InvalidOperationException(
+                    $"Failed to register the {derivativeType} derivative for data store {dataStoreId}: "
+                        + $"{(int)response.StatusCode} {response.StatusCode}."
+                );
+            }
+        }
+    }
+
+    /// <summary>
     /// Creates a new vendor and application in the Configuration Management Service with specified
     /// authorization parameters. This establishes the foundation for OAuth authentication in tests.
     /// </summary>
@@ -51,6 +108,7 @@ public static class AuthorizationDataProvider
     /// <param name="edOrgIds">Comma-separated list of education organization IDs the vendor has access to</param>
     /// <param name="systemAdministratorToken">Bearer token with system administrator privileges for CMS API access</param>
     /// <param name="claimSetName">The name of the claim set to assign to the application (default: "SISVendor")</param>
+    /// <param name="attachDataStoreDerivatives">Whether to attach the snapshot/read-replica arrangement to the created data store; see <see cref="AttachDataStoreDerivatives" /></param>
     /// <returns>A task representing the asynchronous operation</returns>
     public static async Task CreateClientCredentials(
         string company,
@@ -59,7 +117,8 @@ public static class AuthorizationDataProvider
         string namespacePrefixes,
         string edOrgIds,
         string systemAdministratorToken,
-        string claimSetName = AuthorizationClaimSetNames.SisVendor
+        string claimSetName = AuthorizationClaimSetNames.SisVendor,
+        bool attachDataStoreDerivatives = false
     )
     {
         _configurationServiceClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
@@ -94,6 +153,11 @@ public static class AuthorizationDataProvider
         string dataStoreBody = await dataStoreGetResponse.Content.ReadAsStringAsync();
 
         int dataStoreId = JsonDocument.Parse(dataStoreBody).RootElement.GetProperty("id").GetInt32();
+
+        if (attachDataStoreDerivatives)
+        {
+            await AttachDataStoreDerivatives(dataStoreId);
+        }
 
         // Create vendor
         using StringContent vendorContent = new(

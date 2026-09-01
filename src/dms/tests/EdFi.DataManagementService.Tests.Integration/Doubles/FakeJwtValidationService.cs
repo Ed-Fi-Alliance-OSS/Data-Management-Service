@@ -58,3 +58,65 @@ internal static class FakeJwtValidationService
         return fake;
     }
 }
+
+/// <summary>
+/// The same stub with the caller's namespace prefixes held behind a volatile reference a test can
+/// replace between requests.
+/// </summary>
+/// <remarks>
+/// A namespace-authorized fixture cannot create a row the caller may not read, because the write is
+/// authorized too. Widening the caller for the seed and narrowing it for the assertions is what makes
+/// an unauthorized row exist at all - and without one, a filtered read returning nothing proves
+/// nothing, since an ordinary query filter would return nothing either.
+/// </remarks>
+public sealed class MutableNamespacePrefixJwtValidationService : IJwtValidationService
+{
+    private readonly string _tokenId;
+    private readonly string _clientId;
+    private readonly IReadOnlyList<long> _educationOrganizationIds;
+    private IReadOnlyList<string> _namespacePrefixes;
+
+    public MutableNamespacePrefixJwtValidationService(
+        string tokenId,
+        string clientId,
+        IReadOnlyList<long> educationOrganizationIds,
+        IReadOnlyList<string> namespacePrefixes
+    )
+    {
+        _tokenId = tokenId;
+        _clientId = clientId;
+        _educationOrganizationIds = educationOrganizationIds;
+        _namespacePrefixes = namespacePrefixes;
+    }
+
+    /// <summary>Replaces the prefixes every later request's authorization is built from.</summary>
+    public void SetNamespacePrefixes(IReadOnlyList<string> namespacePrefixes) =>
+        Volatile.Write(ref _namespacePrefixes, namespacePrefixes);
+
+    public Task<(ClaimsPrincipal?, ClientAuthorizations?)> ValidateAndExtractClientAuthorizationsAsync(
+        string token,
+        CancellationToken cancellationToken
+    ) => Task.FromResult(Current());
+
+    public Task<(ClaimsPrincipal?, ClientAuthorizations?)> ValidateAndExtractClientAuthorizationsAsync(
+        string authorizationHeader,
+        int tokenStartIndex,
+        CancellationToken cancellationToken
+    ) => Task.FromResult(Current());
+
+    private (ClaimsPrincipal?, ClientAuthorizations?) Current()
+    {
+        ClaimsPrincipal principal = new(new ClaimsIdentity([new Claim("client_id", _clientId)], "test"));
+
+        ClientAuthorizations authorizations = new(
+            _tokenId,
+            _clientId,
+            ExternalDoublesConstants.SmokeClaimSetName,
+            [.. _educationOrganizationIds.Select(static id => new EducationOrganizationId(id))],
+            [.. Volatile.Read(ref _namespacePrefixes).Select(static prefix => new NamespacePrefix(prefix))],
+            [new DataStoreId(ExternalDoublesConstants.StableDataStoreId)]
+        );
+
+        return (principal, authorizations);
+    }
+}

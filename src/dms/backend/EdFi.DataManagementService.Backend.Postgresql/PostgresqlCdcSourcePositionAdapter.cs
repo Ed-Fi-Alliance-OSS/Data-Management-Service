@@ -54,9 +54,12 @@ internal sealed class PostgresqlCdcSourcePositionAdapter(
 
         try
         {
-            NpgsqlDataSource dataSource = _dataSourceCache.GetOrCreate(request.ConnectionString);
-            await using NpgsqlConnection connection = await dataSource
-                .OpenConnectionAsync(cancellationToken)
+            // Declared before the connection so the connection is disposed first: releasing the
+            // lease while a connection is still returning to its pool could dispose the data
+            // source out from under it.
+            await using NpgsqlDataSourceLease lease = _dataSourceCache.AcquireLease(request.ConnectionString);
+            await using NpgsqlConnection connection = await lease
+                .DataSource.OpenConnectionAsync(cancellationToken)
                 .ConfigureAwait(false);
             await using NpgsqlCommand command = connection.CreateCommand();
 

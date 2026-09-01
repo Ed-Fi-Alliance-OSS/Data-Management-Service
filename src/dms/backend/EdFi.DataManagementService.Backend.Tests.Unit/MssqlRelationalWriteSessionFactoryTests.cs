@@ -8,8 +8,10 @@ using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
@@ -36,15 +38,22 @@ public class Given_MssqlRelationalWriteSessionFactory
             new RecordingDbCommand(new DataTable().CreateDataReader())
         );
 
-        A.CallTo(() => dataStoreSelection.GetSelectedDataStore()).Returns(dataStore);
+        A.CallTo(() => dataStoreSelection.GetEffectiveTarget())
+            .Returns(EffectiveDataStoreTarget.Primary(dataStore.ConnectionString!));
 
         var sut = new MssqlRelationalWriteSessionFactory(
             dataStoreSelection,
-            selectedConnectionString =>
-            {
-                selectedConnectionString.Should().Be(connectionString);
-                return connection;
-            },
+            new MssqlConnectionAcquisition(
+                new SqlClientPoolClearing(),
+                NullLogger<MssqlConnectionAcquisition>.Instance,
+                effectiveConnectionString =>
+                {
+                    // A Primary target realizes byte-for-byte, so the effective string the acquisition
+                    // boundary opens is the configured one.
+                    effectiveConnectionString.Should().Be(connectionString);
+                    return connection;
+                }
+            ),
             Options.Create(new DatabaseOptions { IsolationLevel = IsolationLevel.Snapshot })
         );
 
@@ -57,7 +66,7 @@ public class Given_MssqlRelationalWriteSessionFactory
         );
         var rowsAffected = await command.ExecuteNonQueryAsync();
 
-        A.CallTo(() => dataStoreSelection.GetSelectedDataStore()).MustHaveHappenedOnceExactly();
+        A.CallTo(() => dataStoreSelection.GetEffectiveTarget()).MustHaveHappenedOnceExactly();
         connection.OpenAsyncCallCount.Should().Be(1);
         connection.LastOpenAsyncCancellationToken.Should().Be(CancellationToken.None);
         connection.BeginTransactionCallCount.Should().Be(1);

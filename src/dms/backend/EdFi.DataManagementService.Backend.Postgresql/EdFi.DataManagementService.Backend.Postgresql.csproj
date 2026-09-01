@@ -19,5 +19,6 @@
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Tests.Unit" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Postgresql.Tests.Integration" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit" />
+        <InternalsVisibleTo Include="EdFi.DataManagementService.Tests.Integration" />
     </ItemGroup>
 </Project>

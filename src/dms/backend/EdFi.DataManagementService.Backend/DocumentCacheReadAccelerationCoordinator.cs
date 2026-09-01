@@ -27,7 +27,9 @@ internal enum DocumentCacheReadAccelerationFallbackReason
     ReadAccelerationDisabled,
     InvalidTargetKey,
     SelectedDataStoreUnavailable,
+    EffectiveTargetNotSelected,
     UnresolvedTarget,
+    DerivativeTargetSelected,
     CacheLookupMiss,
     CacheLookupStale,
     CacheLookupSourceDrift,
@@ -969,7 +971,12 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
             return false;
         }
 
-        if (!TargetMatchesSelectedDataStore(selectedDataStore, resolvedTargetContext))
+        // The database this request will actually read. Reaching here means a Primary effective
+        // target: the guards above turned away every derivative and every request that never
+        // selected a target at all.
+        string? readConnectionString = _dataStoreSelection.GetEffectiveTarget().ConnectionString;
+
+        if (!TargetMatchesSelectedDataStore(selectedDataStore, readConnectionString, resolvedTargetContext))
         {
             _logger.LogDebug(
                 "DocumentCache read acceleration bypassed for target {TargetKey} because the resolved target signature does not match the selected data store.",
@@ -999,6 +1006,21 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         targetKey = null!;
         directFillSkipOutcome = null;
 
+        // First, before the registry is consulted or a target key is built. The DocumentCache is
+        // materialized from, and keyed by, the parent database: a snapshot or replica is a different
+        // database whose rows the parent's cache does not describe, and it carries its own
+        // dms.DocumentCache that this request must not read, compare against, or fill. Reading the
+        // parent's cache for a derivative request would serve one database's documents for another's.
+        if (
+            _dataStoreSelection.IsEffectiveTargetSet
+            && _dataStoreSelection.GetEffectiveTarget().Kind != EffectiveTargetKind.Primary
+        )
+        {
+            fallbackReason = DocumentCacheReadAccelerationFallbackReason.DerivativeTargetSelected;
+            directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedDerivativeTarget;
+            return false;
+        }
+
         if (!_dataStoreSelection.IsSet)
         {
             fallbackReason = DocumentCacheReadAccelerationFallbackReason.SelectedDataStoreUnavailable;
@@ -1014,6 +1036,17 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         {
             fallbackReason = DocumentCacheReadAccelerationFallbackReason.SelectedDataStoreUnavailable;
             directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedSelectedDataStoreUnavailable;
+            return false;
+        }
+
+        // Selection is fail-fast by design: every pipeline that resolves a data store also selects an
+        // effective target before any database work, and the relational path refuses to read without
+        // one. Serving the parent's cache here anyway could hide that missing selection behind a
+        // cache hit, so the cache is bypassed and the relational read surfaces the defect instead.
+        if (!_dataStoreSelection.IsEffectiveTargetSet)
+        {
+            fallbackReason = DocumentCacheReadAccelerationFallbackReason.EffectiveTargetNotSelected;
+            directFillSkipOutcome = DocumentCacheReadTelemetryLabel.SkippedEffectiveTargetNotSelected;
             return false;
         }
 
@@ -1036,17 +1069,23 @@ internal sealed class DocumentCacheReadAccelerationCoordinator(
         return true;
     }
 
+    /// <summary>
+    /// Whether the registry's resolved target is the database this request will actually read.
+    /// </summary>
+    /// <remarks>
+    /// Compared against the connection string the request will read rather than the parent's, because
+    /// those differ for a derivative and the parent's would match a cache describing a database this
+    /// request is not reading. The guard in <see cref="TryGetSelectedTargetKey" /> makes a derivative
+    /// unreachable here, so this is the second statement of the same rule rather than the only one.
+    /// </remarks>
     private static bool TargetMatchesSelectedDataStore(
         DataStore selectedDataStore,
+        string? readConnectionString,
         DocumentCacheTargetExecutionContext targetContext
     ) =>
         selectedDataStore.RelationalProviderToken is not null
         && selectedDataStore.RelationalProviderToken.Equals(targetContext.ProviderToken)
-        && string.Equals(
-            selectedDataStore.ConnectionString,
-            targetContext.ConnectionInput.Value,
-            StringComparison.Ordinal
-        );
+        && string.Equals(readConnectionString, targetContext.ConnectionInput.Value, StringComparison.Ordinal);
 
     private async Task TryDirectFillAsync(
         DocumentCacheReadAccelerationGetByIdRequest request,

@@ -415,6 +415,17 @@ function Get-E2ETestEnvironmentContext {
         throw "E2E_DATABASE_NAME must be set in '$environmentFilePath' or the process environment so the DMS E2E database can be reset and provisioned before tests run."
     }
 
+    # The Snapshot derivative's database, provisioned with the same DDL as the primary and left empty.
+    $e2eSnapshotDatabaseName = Get-ComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name "E2E_SNAPSHOT_DATABASE_NAME"
+
+    if ([string]::IsNullOrWhiteSpace($e2eSnapshotDatabaseName)) {
+        throw "E2E_SNAPSHOT_DATABASE_NAME must be set in '$environmentFilePath' or the process environment so the DMS E2E snapshot derivative has a provisioned database."
+    }
+
+    if ($e2eSnapshotDatabaseName -eq $e2eDatabaseName) {
+        throw "E2E_SNAPSHOT_DATABASE_NAME must differ from E2E_DATABASE_NAME; a snapshot pointing at the primary database cannot be told apart from it."
+    }
+
     # Build the two opaque connection strings once from the resolved environment: host-side
     # admin/reset access and the Docker-network Configuration Service registration string. Both carry
     # the same custom credentials/ports/database from the resolved env. They contain secrets and are
@@ -424,13 +435,23 @@ function Get-E2ETestEnvironmentContext {
         -EnvironmentValues $environmentValues `
         -DatabaseName $e2eDatabaseName
 
+    # The same Docker-network registration form for the snapshot database. The test harness registers
+    # it as the Snapshot derivative of the data store it creates, so the string has to be reachable
+    # from the DMS container exactly like the primary one.
+    $snapshotConnectionStrings = New-E2EDataStoreConnectionStrings `
+        -DatabaseEngine $resolvedDatabaseEngine `
+        -EnvironmentValues $environmentValues `
+        -DatabaseName $e2eSnapshotDatabaseName
+
     return [pscustomobject]@{
         EnvironmentFile = $environmentFilePath
         ShouldProvisionE2EDatabase = $true
         DataStoreDatabaseName = $e2eDatabaseName
+        SnapshotDatabaseName = $e2eSnapshotDatabaseName
         DatabaseEngine = $resolvedDatabaseEngine
         DataStoreAdminConnectionString = $connectionStrings.AdminConnectionString
         DataStoreConnectionString = $connectionStrings.RegistrationConnectionString
+        DataStoreSnapshotConnectionString = $snapshotConnectionStrings.RegistrationConnectionString
         TestResultSuffix = Get-E2ETestResultSuffix -TestFilter $TestFilter
     }
 }
@@ -456,6 +477,8 @@ function Invoke-WithE2ETestProcessContext {
     $previousDataStoreAdminConnectionString = $env:AppSettings__DataStoreAdminConnectionString
     $previousDataStoreConnectionStringExists = Test-Path Env:AppSettings__DataStoreConnectionString
     $previousDataStoreConnectionString = $env:AppSettings__DataStoreConnectionString
+    $previousDataStoreSnapshotConnectionStringExists = Test-Path Env:AppSettings__DataStoreSnapshotConnectionString
+    $previousDataStoreSnapshotConnectionString = $env:AppSettings__DataStoreSnapshotConnectionString
     $previousNodeOptionsExists = Test-Path Env:NODE_OPTIONS
     $previousNodeOptions = $env:NODE_OPTIONS
 
@@ -471,6 +494,7 @@ function Invoke-WithE2ETestProcessContext {
         $env:AppSettings__DatabaseEngine = $E2ETestSettings.DatabaseEngine
         $env:AppSettings__DataStoreAdminConnectionString = $E2ETestSettings.DataStoreAdminConnectionString
         $env:AppSettings__DataStoreConnectionString = $E2ETestSettings.DataStoreConnectionString
+        $env:AppSettings__DataStoreSnapshotConnectionString = $E2ETestSettings.DataStoreSnapshotConnectionString
         Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
         & $Action
     }
@@ -498,6 +522,12 @@ function Invoke-WithE2ETestProcessContext {
             Remove-Item Env:AppSettings__DataStoreAdminConnectionString -ErrorAction SilentlyContinue
         }
 
+        if ($previousDataStoreSnapshotConnectionStringExists) {
+            $env:AppSettings__DataStoreSnapshotConnectionString = $previousDataStoreSnapshotConnectionString
+        }
+        else {
+            Remove-Item Env:AppSettings__DataStoreSnapshotConnectionString -ErrorAction SilentlyContinue
+        }
         if ($previousDataStoreConnectionStringExists) {
             $env:AppSettings__DataStoreConnectionString = $previousDataStoreConnectionString
         }
@@ -800,6 +830,25 @@ function Invoke-E2EDatabaseProvisioning {
 
         if ([string]::IsNullOrWhiteSpace($provisionedEffectiveSchemaHash)) {
             throw "E2E database provisioning completed without reporting an effective schema hash."
+        }
+
+        # The Snapshot derivative's database gets the same generated DDL and is then left empty, so a
+        # snapshot-routed read is distinguishable from a plain read. Its effective schema hash must
+        # match the primary's, otherwise a snapshot request would fail fingerprint validation instead
+        # of returning the empty result the scenarios assert.
+        $snapshotProvisionOutput = @()
+        ./provision-e2e-database.ps1 `
+            -EnvironmentFile $E2ETestSettings.EnvironmentFile `
+            -DatabaseEngine $E2ETestSettings.DatabaseEngine `
+            -DatabaseName $E2ETestSettings.SnapshotDatabaseName `
+            -Configuration $Configuration 6>&1 |
+            Tee-Object -Variable snapshotProvisionOutput |
+            ForEach-Object { Write-Host ([string]$_) }
+
+        $snapshotEffectiveSchemaHash = Get-EffectiveSchemaHashFromOutput -Output $snapshotProvisionOutput
+
+        if ($snapshotEffectiveSchemaHash -ne $provisionedEffectiveSchemaHash) {
+            throw "E2E snapshot database provisioning reported effective schema hash '$snapshotEffectiveSchemaHash', which differs from the primary E2E database's '$provisionedEffectiveSchemaHash'."
         }
 
         return $provisionedEffectiveSchemaHash

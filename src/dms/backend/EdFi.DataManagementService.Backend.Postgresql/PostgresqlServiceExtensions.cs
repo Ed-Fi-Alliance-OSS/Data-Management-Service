@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Configuration;
@@ -30,9 +31,35 @@ public static class PostgresqlServiceExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.AddRelationalMappingSetServices(configuration, SqlDialect.Pgsql, new PgsqlDialectRules());
-
-        services.TryAddSingleton<NpgsqlDataSourceCache>();
+        services.AddNpgsqlDataSourceCache();
         services.TryAddScoped<NpgsqlDataSourceProvider>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// The leased-only data-source cache and its ownership-reconciler registration.
+    /// </summary>
+    /// <remarks>
+    /// Expressed once because two composition roots need it: <see cref="AddPostgresqlDatastore" />,
+    /// and the standalone CDC control plane. One shared registration is what keeps the two roots from
+    /// drifting to different lifetimes or implementation types.
+    /// </remarks>
+    internal static IServiceCollection AddNpgsqlDataSourceCache(this IServiceCollection services)
+    {
+        services.TryAddSingleton<NpgsqlDataSourceCache>();
+
+        // The very same singleton is registered as the ownership reconciler. Registering the type
+        // again would create a second cache holding its own data sources, which would then be
+        // reconciled while the one the request path uses was not.
+        // Both type arguments are supplied deliberately: TryAddEnumerable identifies a factory
+        // registration by the factory's own return type, so a factory typed to the interface is
+        // indistinguishable from every other reconciler and is rejected outright.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IDataStoreOwnershipReconciler, NpgsqlDataSourceCache>(provider =>
+                provider.GetRequiredService<NpgsqlDataSourceCache>()
+            )
+        );
 
         return services;
     }

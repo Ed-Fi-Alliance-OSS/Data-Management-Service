@@ -8,19 +8,20 @@ using EdFi.DataManagementService.Backend.Etag;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
-using Microsoft.Data.SqlClient;
+using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend.Mssql;
 
 internal sealed class MssqlDocumentCacheReadLookupAdapter : DocumentCacheReadLookupAdapterBase
 {
-    private readonly Func<string, DbConnection> _createConnection;
+    private readonly Func<string, CancellationToken, Task<MssqlLeasedConnection>> _openConnectionAsync;
     private readonly IRelationalWriteExceptionClassifier _writeExceptionClassifier;
     private readonly IDocumentCacheProviderCommandTimeoutClassifier _providerCommandTimeoutClassifier;
     private readonly ILogger<MssqlDocumentCacheReadLookupAdapter> _logger;
 
     public MssqlDocumentCacheReadLookupAdapter(
+        IMssqlConnectionAcquisition acquisition,
         IRelationalWriteExceptionClassifier writeExceptionClassifier,
         IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
         ILogger<MssqlDocumentCacheReadLookupAdapter> logger,
@@ -29,7 +30,7 @@ internal sealed class MssqlDocumentCacheReadLookupAdapter : DocumentCacheReadLoo
     )
         : base(servedEtagComposer, responseShaper)
     {
-        _createConnection = connectionString => new SqlConnection(connectionString);
+        _openConnectionAsync = OpenConnectionFromAcquisitionAsync(acquisition);
         _writeExceptionClassifier =
             writeExceptionClassifier ?? throw new ArgumentNullException(nameof(writeExceptionClassifier));
         _providerCommandTimeoutClassifier =
@@ -39,7 +40,7 @@ internal sealed class MssqlDocumentCacheReadLookupAdapter : DocumentCacheReadLoo
     }
 
     internal MssqlDocumentCacheReadLookupAdapter(
-        Func<string, DbConnection> createConnection,
+        Func<string, CancellationToken, Task<MssqlLeasedConnection>> openConnectionAsync,
         IRelationalWriteExceptionClassifier writeExceptionClassifier,
         IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
         ILogger<MssqlDocumentCacheReadLookupAdapter> logger,
@@ -48,7 +49,8 @@ internal sealed class MssqlDocumentCacheReadLookupAdapter : DocumentCacheReadLoo
     )
         : base(servedEtagComposer, responseShaper)
     {
-        _createConnection = createConnection ?? throw new ArgumentNullException(nameof(createConnection));
+        _openConnectionAsync =
+            openConnectionAsync ?? throw new ArgumentNullException(nameof(openConnectionAsync));
         _writeExceptionClassifier =
             writeExceptionClassifier ?? throw new ArgumentNullException(nameof(writeExceptionClassifier));
         _providerCommandTimeoutClassifier =
@@ -78,9 +80,14 @@ internal sealed class MssqlDocumentCacheReadLookupAdapter : DocumentCacheReadLoo
             command.Parameters.Count
         );
 
-        await using DbConnection connection = CreateTargetConnection(targetContext.ConnectionInput.Value);
-        await OpenTargetConnectionAsync(connection, cancellationToken).ConfigureAwait(false);
-        await using DbCommand dbCommand = connection.CreateCommand();
+        // The lease travels with the connection and is released with it, so the pool identity this
+        // lookup reads from cannot be cleared while it is still reading.
+        await using MssqlLeasedConnection leased = await OpenTargetConnectionAsync(
+                targetContext.ConnectionInput.Value,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        await using DbCommand dbCommand = leased.Connection.CreateCommand();
         dbCommand.CommandText = command.CommandText;
 
         AddParameters(dbCommand, command.Parameters);
@@ -101,33 +108,14 @@ internal sealed class MssqlDocumentCacheReadLookupAdapter : DocumentCacheReadLoo
                 && _writeExceptionClassifier.IsTransientFailure(dbException);
     }
 
-    private DbConnection CreateTargetConnection(string connectionString)
-    {
-        try
-        {
-            return _createConnection(connectionString);
-        }
-        catch (ObjectDisposedException)
-        {
-            throw;
-        }
-        catch (Exception exception) when (IsExpectedConnectionAcquisitionFailure(exception))
-        {
-            throw new DocumentCacheReadAcquisitionUnavailableException(
-                "SQL Server DocumentCache read lookup connection construction failed.",
-                exception
-            );
-        }
-    }
-
-    private static async Task OpenTargetConnectionAsync(
-        DbConnection connection,
+    private async Task<MssqlLeasedConnection> OpenTargetConnectionAsync(
+        string connectionString,
         CancellationToken cancellationToken
     )
     {
         try
         {
-            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            return await _openConnectionAsync(connectionString, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -140,10 +128,30 @@ internal sealed class MssqlDocumentCacheReadLookupAdapter : DocumentCacheReadLoo
         catch (Exception exception) when (IsExpectedConnectionAcquisitionFailure(exception))
         {
             throw new DocumentCacheReadAcquisitionUnavailableException(
-                "SQL Server DocumentCache read lookup connection open failed.",
+                "SQL Server DocumentCache read lookup connection acquisition failed.",
                 exception
             );
         }
+    }
+
+    private static Func<
+        string,
+        CancellationToken,
+        Task<MssqlLeasedConnection>
+    > OpenConnectionFromAcquisitionAsync(IMssqlConnectionAcquisition acquisition)
+    {
+        ArgumentNullException.ThrowIfNull(acquisition);
+
+        // Cache lookups always read the parent data store's own database - the coordinator bypasses
+        // cache acceleration for derivative targets - so the lease is taken against the Primary pool
+        // identity, the very pool the request path uses, and the clearing protocol counts this
+        // lookup among that pool's in-flight users.
+        return (connectionString, cancellationToken) =>
+            MssqlLeasedConnection.OpenAsync(
+                acquisition,
+                EffectiveDataStoreTarget.Primary(connectionString),
+                cancellationToken
+            );
     }
 
     private static bool IsExpectedConnectionAcquisitionFailure(Exception exception) =>

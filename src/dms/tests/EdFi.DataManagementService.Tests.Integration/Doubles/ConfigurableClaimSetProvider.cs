@@ -11,16 +11,32 @@ namespace EdFi.DataManagementService.Tests.Integration.Doubles;
 
 internal sealed class ConfigurableClaimSetProvider(
     FixtureContext fixture,
-    Func<QualifiedResourceName, string, IReadOnlyList<string>> resolveStrategyNames
+    Func<QualifiedResourceName, string, IReadOnlyList<string>> resolveStrategyNames,
+    bool grantReadChanges = false
 ) : IClaimSetProvider
 {
-    private static readonly string[] _actions = ["Create", "Read", "Update", "Delete"];
+    private static readonly string[] _crudActions = ["Create", "Read", "Update", "Delete"];
+
+    /// <summary>
+    /// The change-query surfaces are gated on their own action, which the CRUD actions do not imply.
+    /// It is opt-in rather than always granted so that no existing fixture's authorization changes.
+    /// </summary>
+    private static readonly string[] _crudAndReadChangesActions =
+    [
+        "Create",
+        "Read",
+        "Update",
+        "Delete",
+        "ReadChanges",
+    ];
+
+    private string[] Actions => grantReadChanges ? _crudAndReadChangesActions : _crudActions;
 
     public Task<IList<ClaimSet>> GetAllClaimSets(string? tenant = null)
     {
         var resourceClaims = fixture
             .Resources.SelectMany(resource =>
-                _actions.Select(action => new ResourceClaim(
+                Actions.Select(action => new ResourceClaim(
                     Name: $"{Conventions.EdFiOdsResourceClaimBaseUri}/{resource.ProjectName.ToLowerInvariant()}/{resource.ResourceName.ToLowerInvariant()}",
                     Action: action,
                     AuthorizationStrategies:

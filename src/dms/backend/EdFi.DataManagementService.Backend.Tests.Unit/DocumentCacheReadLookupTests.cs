@@ -909,7 +909,7 @@ public class Given_DocumentCacheReadLookup
     public async Task It_returns_cache_unavailable_for_postgresql_connection_construction_failures()
     {
         var adapter = new PostgresqlDocumentCacheReadLookupAdapter(
-            (_, _) => Task.FromException<NpgsqlConnection>(new ArgumentException("bad target")),
+            (_, _) => Task.FromException<LeasedNpgsqlConnection>(new ArgumentException("bad target")),
             new PostgresqlRelationalWriteExceptionClassifier(),
             new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<PostgresqlDocumentCacheReadLookupAdapter>.Instance,
@@ -931,7 +931,7 @@ public class Given_DocumentCacheReadLookup
     public async Task It_returns_cache_unavailable_for_postgresql_connection_open_failures()
     {
         var adapter = new PostgresqlDocumentCacheReadLookupAdapter(
-            (_, _) => Task.FromException<NpgsqlConnection>(new NpgsqlException("open failed")),
+            (_, _) => Task.FromException<LeasedNpgsqlConnection>(new NpgsqlException("open failed")),
             new PostgresqlRelationalWriteExceptionClassifier(),
             new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<PostgresqlDocumentCacheReadLookupAdapter>.Instance,
@@ -953,7 +953,8 @@ public class Given_DocumentCacheReadLookup
     public async Task It_propagates_postgresql_connection_acquisition_programming_exceptions()
     {
         var adapter = new PostgresqlDocumentCacheReadLookupAdapter(
-            (_, _) => Task.FromException<NpgsqlConnection>(new InvalidOperationException("programming")),
+            (_, _) =>
+                Task.FromException<LeasedNpgsqlConnection>(new InvalidOperationException("programming")),
             new PostgresqlRelationalWriteExceptionClassifier(),
             new PostgresqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<PostgresqlDocumentCacheReadLookupAdapter>.Instance,
@@ -974,6 +975,10 @@ public class Given_DocumentCacheReadLookup
     public async Task It_returns_cache_unavailable_for_mssql_connection_string_parse_failures()
     {
         var adapter = new MssqlDocumentCacheReadLookupAdapter(
+            new MssqlConnectionAcquisition(
+                new GatedSqlServerPoolClearing(),
+                NullLogger<MssqlConnectionAcquisition>.Instance
+            ),
             new MssqlRelationalWriteExceptionClassifier(),
             new MssqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<MssqlDocumentCacheReadLookupAdapter>.Instance,
@@ -999,7 +1004,7 @@ public class Given_DocumentCacheReadLookup
     public async Task It_returns_cache_unavailable_for_mssql_connection_construction_failures()
     {
         var adapter = new MssqlDocumentCacheReadLookupAdapter(
-            _ => throw new ArgumentException("bad target"),
+            (_, _) => throw new ArgumentException("bad target"),
             new MssqlRelationalWriteExceptionClassifier(),
             new MssqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<MssqlDocumentCacheReadLookupAdapter>.Instance,
@@ -1023,8 +1028,16 @@ public class Given_DocumentCacheReadLookup
     [Test]
     public async Task It_returns_cache_unavailable_for_mssql_connection_open_failures()
     {
+        // A real acquisition boundary over a connection that fails to open, so this also proves the
+        // lookup takes its connection through the pool-lease protocol and gives the lease back on
+        // failure: the released, unowned identity is cleared exactly once.
+        var poolClearing = new GatedSqlServerPoolClearing();
         var adapter = new MssqlDocumentCacheReadLookupAdapter(
-            _ => new ThrowingOpenDbConnection(new TestDbException("open failed")),
+            new MssqlConnectionAcquisition(
+                poolClearing,
+                NullLogger<MssqlConnectionAcquisition>.Instance,
+                _ => new ThrowingOpenDbConnection(new TestDbException("open failed"))
+            ),
             new MssqlRelationalWriteExceptionClassifier(),
             new MssqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<MssqlDocumentCacheReadLookupAdapter>.Instance,
@@ -1043,13 +1056,16 @@ public class Given_DocumentCacheReadLookup
         result.Outcome.Should().Be(DocumentCacheReadLookupOutcome.CacheUnavailable);
         result.IsAdapterAcquisitionFailure.Should().BeTrue();
         result.Documents.Should().ContainSingle().Which.Outcome.Should().Be(result.Outcome);
+        poolClearing
+            .Cleared.Should()
+            .ContainSingle("the lookup's lease was taken through the boundary and released on failure");
     }
 
     [Test]
     public async Task It_propagates_mssql_connection_acquisition_programming_exceptions()
     {
         var adapter = new MssqlDocumentCacheReadLookupAdapter(
-            _ => throw new InvalidOperationException("programming"),
+            (_, _) => throw new InvalidOperationException("programming"),
             new MssqlRelationalWriteExceptionClassifier(),
             new MssqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<MssqlDocumentCacheReadLookupAdapter>.Instance,

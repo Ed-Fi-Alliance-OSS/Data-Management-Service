@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using FluentAssertions;
 using NUnit.Framework;
@@ -13,6 +14,23 @@ namespace EdFi.DataManagementService.Core.Tests.Unit;
 [Parallelizable]
 public class ResourceKeyValidationCacheProviderTests
 {
+    /// <summary>
+    /// The provider under its production defaults. These fixtures exercise Primary keys, whose results
+    /// never expire, so the real clock is the honest arrangement; derivative fixtures supply their own.
+    /// </summary>
+    private static ResourceKeyValidationCacheProvider CreateProvider() =>
+        new(TimeProvider.System, new CacheSettings());
+
+    /// <summary>The Primary key for a connection string, read through the synchronous handle.</summary>
+    private static Task<ResourceKeyValidationResult> ReadAsync(
+        ResourceKeyValidationCacheProvider provider,
+        string connectionString,
+        Func<Task<ResourceKeyValidationResult>> factory
+    ) =>
+        provider
+            .Read(new ValidationCacheKey(ValidationCachePolicyClass.Primary, connectionString), factory)
+            .Value;
+
     private static readonly ResourceKeyValidationResult _successResult =
         new ResourceKeyValidationResult.ValidationSuccess();
 
@@ -31,9 +49,10 @@ public class ResourceKeyValidationCacheProviderTests
         public async Task Setup()
         {
             _factoryCallCount = 0;
-            var provider = new ResourceKeyValidationCacheProvider();
+            var provider = CreateProvider();
 
-            _result1 = await provider.GetOrValidateAsync(
+            _result1 = await ReadAsync(
+                provider,
                 "conn1",
                 () =>
                 {
@@ -42,7 +61,8 @@ public class ResourceKeyValidationCacheProviderTests
                 }
             );
 
-            _result2 = await provider.GetOrValidateAsync(
+            _result2 = await ReadAsync(
+                provider,
                 "conn1",
                 () =>
                 {
@@ -83,9 +103,10 @@ public class ResourceKeyValidationCacheProviderTests
         public async Task Setup()
         {
             _factoryCallCount = 0;
-            var provider = new ResourceKeyValidationCacheProvider();
+            var provider = CreateProvider();
 
-            _result1 = await provider.GetOrValidateAsync(
+            _result1 = await ReadAsync(
+                provider,
                 "conn1",
                 () =>
                 {
@@ -94,7 +115,8 @@ public class ResourceKeyValidationCacheProviderTests
                 }
             );
 
-            _result2 = await provider.GetOrValidateAsync(
+            _result2 = await ReadAsync(
+                provider,
                 "conn2",
                 () =>
                 {
@@ -151,10 +173,11 @@ public class ResourceKeyValidationCacheProviderTests
         public async Task Setup()
         {
             _factoryCallCount = 0;
-            var provider = new ResourceKeyValidationCacheProvider();
+            var provider = CreateProvider();
 
             _firstException = await CatchExceptionAsync(
-                provider.GetOrValidateAsync(
+                ReadAsync(
+                    provider,
                     "conn1",
                     () =>
                     {
@@ -164,7 +187,8 @@ public class ResourceKeyValidationCacheProviderTests
                 )
             );
 
-            _secondResult = await provider.GetOrValidateAsync(
+            _secondResult = await ReadAsync(
+                provider,
                 "conn1",
                 () =>
                 {
@@ -206,9 +230,10 @@ public class ResourceKeyValidationCacheProviderTests
         public async Task Setup()
         {
             _factoryCallCount = 0;
-            var provider = new ResourceKeyValidationCacheProvider();
+            var provider = CreateProvider();
 
-            _result1 = await provider.GetOrValidateAsync(
+            _result1 = await ReadAsync(
+                provider,
                 "conn1",
                 () =>
                 {
@@ -217,7 +242,8 @@ public class ResourceKeyValidationCacheProviderTests
                 }
             );
 
-            _result2 = await provider.GetOrValidateAsync(
+            _result2 = await ReadAsync(
+                provider,
                 "conn1",
                 () =>
                 {

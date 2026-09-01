@@ -59,9 +59,17 @@ public class Given_A_Mssql_Database_Provisioned_With_Generated_DDL_For_Effective
 
         _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(combinedSql);
 
-        var reader = new MssqlDatabaseFingerprintReader(NullLogger<MssqlDatabaseFingerprintReader>.Instance);
+        var reader = new MssqlDatabaseFingerprintReader(
+            new MssqlConnectionAcquisition(
+                new SqlClientPoolClearing(),
+                NullLogger<MssqlConnectionAcquisition>.Instance
+            ),
+            NullLogger<MssqlDatabaseFingerprintReader>.Instance
+        );
 
-        _fingerprint = await reader.ReadFingerprintAsync(_database.ConnectionString);
+        _fingerprint = await reader.ReadFingerprintAsync(
+            EffectiveDataStoreTarget.Primary(_database.ConnectionString)
+        );
     }
 
     [OneTimeTearDown]

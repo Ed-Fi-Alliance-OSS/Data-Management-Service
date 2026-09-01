@@ -7,6 +7,7 @@ using System.Data;
 using System.Data.Common;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FakeItEasy;
 using FluentAssertions;
@@ -52,15 +53,22 @@ public class Given_MssqlRelationalCommandExecutor
             )
         );
 
-        A.CallTo(() => dataStoreSelection.GetSelectedDataStore()).Returns(dataStore);
+        A.CallTo(() => dataStoreSelection.GetEffectiveTarget())
+            .Returns(EffectiveDataStoreTarget.Primary(dataStore.ConnectionString!));
 
         var sut = new MssqlRelationalCommandExecutor(
             dataStoreSelection,
-            selectedConnectionString =>
-            {
-                selectedConnectionString.Should().Be(connectionString);
-                return connection;
-            },
+            new MssqlConnectionAcquisition(
+                new SqlClientPoolClearing(),
+                NullLogger<MssqlConnectionAcquisition>.Instance,
+                effectiveConnectionString =>
+                {
+                    // A Primary target realizes byte-for-byte, so the effective string the acquisition
+                    // boundary opens is the configured one.
+                    effectiveConnectionString.Should().Be(connectionString);
+                    return connection;
+                }
+            ),
             NullLogger<MssqlRelationalCommandExecutor>.Instance
         );
 
@@ -75,7 +83,7 @@ public class Given_MssqlRelationalCommandExecutor
             ReferenceLookupResultReader.ReadAsync
         );
 
-        A.CallTo(() => dataStoreSelection.GetSelectedDataStore()).MustHaveHappenedOnceExactly();
+        A.CallTo(() => dataStoreSelection.GetEffectiveTarget()).MustHaveHappenedOnceExactly();
         connection.OpenAsyncCallCount.Should().Be(1);
         connection.LastOpenAsyncCancellationToken.Should().Be(CancellationToken.None);
         connection.CreateCommandCallCount.Should().Be(1);

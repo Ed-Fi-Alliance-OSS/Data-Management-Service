@@ -440,7 +440,7 @@ public class Given_A_Host_Using_The_Relational_Backend
                             A<short>._,
                             A<ImmutableArray<byte>>._,
                             A<IReadOnlyList<ResourceKeyRow>>._,
-                            A<string>._,
+                            A<EffectiveDataStoreTarget>._,
                             A<CancellationToken>._
                         )
                     )
@@ -500,7 +500,7 @@ public class Given_A_Host_Using_The_Relational_Backend
         IEffectiveSchemaSetProvider effectiveSchemaSetProvider
     ) : IDatabaseFingerprintReader
     {
-        public Task<DatabaseFingerprint?> ReadFingerprintAsync(string connectionString)
+        public Task<DatabaseFingerprint?> ReadFingerprintAsync(EffectiveDataStoreTarget target)
         {
             var effectiveSchema = effectiveSchemaSetProvider.EffectiveSchemaSet.EffectiveSchema;
 

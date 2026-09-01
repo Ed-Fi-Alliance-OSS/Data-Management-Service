@@ -62,7 +62,9 @@ internal static class ExternalDoublesRegistration
         DocumentCacheDirectFillTimeoutRecorder? documentCacheDirectFillTimeoutRecorder = null,
         DocumentCacheReadTelemetryRecorder? documentCacheReadTelemetryRecorder = null,
         IReadOnlyList<string>? assignedProfileNames = null,
-        IConfigurationServiceApplicationProvider? applicationContextConfigurationProvider = null
+        IConfigurationServiceApplicationProvider? applicationContextConfigurationProvider = null,
+        IDataStoreProvider? dataStoreProviderOverride = null,
+        IJwtValidationService? jwtValidationServiceOverride = null
     )
     {
         if (
@@ -93,13 +95,14 @@ internal static class ExternalDoublesRegistration
         services.RemoveAll<IProfileCmsProvider>();
         services.RemoveAll<IStartupProcessExit>();
 
-        services.AddSingleton<IJwtValidationService>(
-            FakeJwtValidationService.Allowing(
-                ExternalDoublesConstants.SmokeToken,
-                ExternalDoublesConstants.SmokeClientId,
-                clientEducationOrganizationIds,
-                clientNamespacePrefixes
-            )
+        services.AddSingleton(
+            jwtValidationServiceOverride
+                ?? FakeJwtValidationService.Allowing(
+                    ExternalDoublesConstants.SmokeToken,
+                    ExternalDoublesConstants.SmokeClientId,
+                    clientEducationOrganizationIds,
+                    clientNamespacePrefixes
+                )
         );
 
         if (providerFailureTransform is not null && providerFailureRecorder is not null)
@@ -122,12 +125,15 @@ internal static class ExternalDoublesRegistration
         {
             services.AddSingleton<IApplicationContextProvider>(FakeApplicationContextProvider.Stable());
         }
-        services.AddSingleton<IDataStoreProvider>(
-            FakeDataStoreProvider.WithSingleInstance(
-                id: ExternalDoublesConstants.StableDataStoreId,
-                connectionString: leasedConnectionString,
-                relationalProviderToken
-            )
+        // A fixture that needs derivatives, or configuration it can change between requests, supplies its
+        // own provider. Everything else keeps the single-instance stub it has always had.
+        services.AddSingleton(
+            dataStoreProviderOverride
+                ?? FakeDataStoreProvider.WithSingleInstance(
+                    id: ExternalDoublesConstants.StableDataStoreId,
+                    connectionString: leasedConnectionString,
+                    relationalProviderToken
+                )
         );
         if (relationalProviderToken is not null)
         {

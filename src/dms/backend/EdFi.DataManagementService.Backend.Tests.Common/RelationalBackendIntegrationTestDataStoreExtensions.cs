@@ -17,7 +17,13 @@ public static class RelationalBackendIntegrationTestDataStoreExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.TryAddScoped<IDataStoreSelection, DataStoreSelection>();
+        // Replaced rather than TryAdd-ed, because backend integration fixtures build their own service
+        // collection and register the production selection before calling this seam. A TryAdd would
+        // lose to theirs, leaving them with a selection that assigns no effective target and a request
+        // path that fails on the first database access. Removing every prior descriptor first makes
+        // this the sole registration, so which one resolves does not depend on ordering.
+        services.RemoveAll<IDataStoreSelection>();
+        services.AddScoped<IDataStoreSelection, PrimarySelectingTestDataStoreSelection>();
         services.TryAddScoped<IDataStoreProvider, SelectedDataStoreProvider>();
         services.TryAddScoped<IConnectionStringProvider, DmsConnectionStringProvider>();
 

@@ -86,9 +86,10 @@ internal sealed class PostgresqlDocumentProjectionWorkPager(
             request.Cursor.HasValue
         );
 
-        NpgsqlDataSource dataSource = _dataSourceCache.GetOrCreate(connectionString);
-        await using NpgsqlConnection connection = await dataSource
-            .OpenConnectionAsync(cancellationToken)
+        // Declared before the connection so the connection is disposed first.
+        await using NpgsqlDataSourceLease lease = _dataSourceCache.AcquireLease(connectionString);
+        await using NpgsqlConnection connection = await lease
+            .DataSource.OpenConnectionAsync(cancellationToken)
             .ConfigureAwait(false);
         await using NpgsqlCommand command = connection.CreateCommand();
 

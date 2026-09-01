@@ -141,6 +141,13 @@ internal sealed class DocumentCacheRefreshNotifyingDataStoreProvider : IDataStor
         return true;
     }
 
+    /// <summary>
+    /// Derivatives are deliberately not compared. DocumentCache is materialized from, keyed by, and
+    /// projected over parent primary databases only - the read coordinator bypasses derivative targets
+    /// before any registry lookup, and derivative pool lifecycle is reconciled from the configuration
+    /// provider's own ownership publication, not from this signal - so a derivative-only change has
+    /// nothing for the projection supervisor to do.
+    /// </summary>
     private static bool DataStoreEquals(DataStore left, DataStore right) =>
         left.Id == right.Id
         && string.Equals(left.DataStoreType, right.DataStoreType, StringComparison.Ordinal)

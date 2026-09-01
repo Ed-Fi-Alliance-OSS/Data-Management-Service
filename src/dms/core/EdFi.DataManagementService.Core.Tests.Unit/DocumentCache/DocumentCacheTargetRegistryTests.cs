@@ -1075,9 +1075,9 @@ public class DocumentCacheTargetRegistryTests
     {
         public List<string> ConnectionInputs { get; } = [];
 
-        public Task<DatabaseFingerprint?> ReadFingerprintAsync(string connectionString)
+        public Task<DatabaseFingerprint?> ReadFingerprintAsync(EffectiveDataStoreTarget target)
         {
-            ConnectionInputs.Add(connectionString);
+            ConnectionInputs.Add(target.ConnectionString);
             return Task.FromResult<DatabaseFingerprint?>(_databaseFingerprint);
         }
     }
@@ -1091,11 +1091,11 @@ public class DocumentCacheTargetRegistryTests
             short expectedResourceKeyCount,
             ImmutableArray<byte> expectedResourceKeySeedHash,
             IReadOnlyList<ResourceKeyRow> expectedResourceKeysInIdOrder,
-            string connectionString,
+            EffectiveDataStoreTarget target,
             CancellationToken cancellationToken = default
         )
         {
-            ConnectionInputs.Add(connectionString);
+            ConnectionInputs.Add(target.ConnectionString);
             return Task.FromResult<ResourceKeyValidationResult>(
                 new ResourceKeyValidationResult.ValidationSuccess()
             );

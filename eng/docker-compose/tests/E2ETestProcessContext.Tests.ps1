@@ -679,6 +679,9 @@ Describe "Both E2E setup wrappers run every Docker phase inside the schema-setti
             "./start-local-dms.ps1",
             "./configure-local-data-store.ps1",
             "./provision-e2e-database.ps1",
+            # The snapshot derivative's database is provisioned in its own guarded phase, right after
+            # the primary and still before DMS starts.
+            "./provision-e2e-database.ps1",
             "./start-local-dms.ps1"
         )
         @($invocations | Where-Object { -not $_.InsideGuard }) | Should -BeNullOrEmpty

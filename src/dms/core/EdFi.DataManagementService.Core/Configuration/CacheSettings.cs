@@ -28,6 +28,21 @@ public class CacheSettings
     /// Set to 0 or a negative value to keep the cached configuration until the next explicit reload.
     /// </summary>
     public int DataStoreCacheExpirationSeconds { get; set; } = 600; // 10 minutes
+
+    /// <summary>
+    /// How long a validation verdict for a derivative database stays cached, in seconds.
+    /// Default 600, accepted range 1 to 3600. The two out-of-range cases behave differently and both
+    /// are logged: a value above 3600 is clamped to 3600, while a non-positive value falls back to the
+    /// default 600 rather than to the minimum.
+    /// </summary>
+    /// <remarks>
+    /// <b>A non-positive value means use the default, not "never expire."</b> That deliberately
+    /// inverts <see cref="DataStoreCacheExpirationSeconds"/>, where 0 or a negative value means keep
+    /// the cached value until an explicit reload. A derivative is a database an operator can rebuild
+    /// or repoint without telling DMS, so a verdict about one that never expires would outlive the
+    /// database it describes; there is no way to ask for that here.
+    /// </remarks>
+    public int DerivativeValidationCacheExpirationSeconds { get; set; } = 600; // 10 minutes
 }
 
 public sealed class CacheSettingsValidator : IValidateOptions<CacheSettings>

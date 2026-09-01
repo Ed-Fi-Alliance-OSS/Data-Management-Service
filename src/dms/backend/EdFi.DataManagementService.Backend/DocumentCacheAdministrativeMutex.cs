@@ -73,7 +73,8 @@ internal static class DocumentCacheAdministrativeMutexGuards
 
 internal abstract class DocumentCacheAdministrativeMutexLease(
     RelationalProviderToken providerToken,
-    DbConnection connection
+    DbConnection connection,
+    IAsyncDisposable? ownedResource = null
 ) : IDocumentCacheAdministrativeMutexLease
 {
     private bool _disposed;
@@ -157,7 +158,20 @@ internal abstract class DocumentCacheAdministrativeMutexLease(
         }
         finally
         {
-            await Connection.DisposeAsync().ConfigureAwait(false);
+            try
+            {
+                await Connection.DisposeAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                // Whatever keeps this connection's source alive is released after the connection, and
+                // released even when the connection's own disposal throws. A provider that owns
+                // nothing beyond the connection supplies nothing here.
+                if (ownedResource is not null)
+                {
+                    await ownedResource.DisposeAsync().ConfigureAwait(false);
+                }
+            }
         }
     }
 

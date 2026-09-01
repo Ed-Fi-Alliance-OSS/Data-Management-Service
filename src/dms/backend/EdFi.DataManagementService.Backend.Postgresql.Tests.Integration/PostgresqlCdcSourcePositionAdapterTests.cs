@@ -138,9 +138,13 @@ public class Given_PostgresqlCdcSourcePositionAdapterTests
         CoreCdc.CdcArtifactInventory inventory = BuildInventory();
         string connectionString = BuildSingleConnectionPoolConnectionString();
 
-        await using NpgsqlConnection heldConnection = await _dataSourceCache
-            .GetOrCreate(connectionString)
-            .OpenConnectionAsync();
+        // The lease is held for as long as the connection is, because releasing it at the end of this
+        // statement could dispose the single-connection pool the rest of the test depends on.
+        // Released at the exact point below where the WAL query must be unblocked, so it is not scoped
+        // to this method. The fixture's cache disposal is the backstop if the test fails first.
+        LeasedNpgsqlConnection heldConnection = await _dataSourceCache.OpenLeasedConnectionAsync(
+            connectionString
+        );
 
         DateTimeOffset captureStartedAt = ProjectionCaughtUpObservedAt.AddMilliseconds(100);
         DateTimeOffset projectionCaughtUpDuringCapture = captureStartedAt.AddSeconds(1);

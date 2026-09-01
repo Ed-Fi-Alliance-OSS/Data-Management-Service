@@ -4,13 +4,24 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.External.Backend;
-using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Backend.Mssql;
 
-public class MssqlResourceKeyRowReader(ILogger<MssqlResourceKeyRowReader> logger) : IResourceKeyRowReader
+public class MssqlResourceKeyRowReader : IResourceKeyRowReader
 {
+    private readonly IMssqlConnectionAcquisition _acquisition;
+    private readonly ILogger<MssqlResourceKeyRowReader> _logger;
+
+    public MssqlResourceKeyRowReader(
+        IMssqlConnectionAcquisition acquisition,
+        ILogger<MssqlResourceKeyRowReader> logger
+    )
+    {
+        _acquisition = acquisition ?? throw new ArgumentNullException(nameof(acquisition));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
     private const string ResourceKeySelectSql = """
         SELECT [ResourceKeyId], [ProjectName], [ResourceName], [ResourceVersion]
         FROM [dms].[ResourceKey]
@@ -18,14 +29,17 @@ public class MssqlResourceKeyRowReader(ILogger<MssqlResourceKeyRowReader> logger
         """;
 
     public async Task<IReadOnlyList<ResourceKeyRow>> ReadResourceKeyRowsAsync(
-        string connectionString,
+        EffectiveDataStoreTarget target,
         CancellationToken cancellationToken = default
     )
     {
-        logger.LogDebug("Reading resource key rows from dms.ResourceKey");
+        _logger.LogDebug("Reading resource key rows from dms.ResourceKey");
 
-        await using var connection = new SqlConnection(connectionString);
-        await connection.OpenAsync(cancellationToken);
+        await using MssqlConnectionLease lease = await _acquisition.AcquireLeaseAsync(
+            target,
+            cancellationToken
+        );
+        await using var connection = await lease.OpenAsync(cancellationToken);
 
         await using var command = connection.CreateCommand();
         command.CommandText = ResourceKeySelectSql;
@@ -46,7 +60,7 @@ public class MssqlResourceKeyRowReader(ILogger<MssqlResourceKeyRowReader> logger
             );
         }
 
-        logger.LogDebug("Read {Count} resource key rows", rows.Count);
+        _logger.LogDebug("Read {Count} resource key rows", rows.Count);
 
         return rows;
     }

@@ -47,6 +47,7 @@ DMS_DATASTORE=postgresql
 DMS_CONFIG_DATASTORE=postgresql
 DATA_STANDARD_MARKER=ds61
 E2E_DATABASE_NAME=edfi_datamanagementservice_e2e
+E2E_SNAPSHOT_DATABASE_NAME=edfi_datamanagementservice_e2e_snapshot
 POSTGRES_DB_NAME=edfi_datamanagementservice
 "@
 
@@ -194,7 +195,10 @@ Describe "Get-E2ETestEnvironmentContext resolves the E2E database name with Comp
     }
 
     BeforeEach {
-        $script:contextEnvValues = @{ "E2E_DATABASE_NAME" = "edfi_datamanagementservice_e2e" }
+        $script:contextEnvValues = @{
+            "E2E_DATABASE_NAME"          = "edfi_datamanagementservice_e2e"
+            "E2E_SNAPSHOT_DATABASE_NAME" = "edfi_datamanagementservice_e2e_snapshot"
+        }
 
         Mock Import-Module { }
         Mock Resolve-DataStandardEnvironmentFile { $BaseEnvironmentFile }

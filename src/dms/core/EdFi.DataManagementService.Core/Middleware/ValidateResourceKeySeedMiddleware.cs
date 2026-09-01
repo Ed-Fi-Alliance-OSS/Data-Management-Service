@@ -32,10 +32,26 @@ internal class ValidateResourceKeySeedMiddleware(
 ) : IPipelineStep
 {
     private const string ResourceKeySeedMismatchTitle = "Resource Key Seed Mismatch";
+
+    /// <summary>
+    /// The primary wording, unchanged. A primary mismatch is cached for the life of the process,
+    /// so reprovisioning on its own genuinely is not enough.
+    /// </summary>
     private const string ResourceKeySeedMismatchDetail =
         "The database resource key seed does not match the expected schema. "
         + "The database must be reprovisioned with 'ddl provision' against a fresh database "
         + "and the Ed-Fi API service restarted to clear the cached validation state.";
+
+    /// <summary>
+    /// The same remediation without the restart. This request has already dropped the derivative
+    /// verdict, so the next one revalidates; sending the operator after a cached result that no
+    /// longer exists would be false guidance.
+    /// </summary>
+    private const string ResourceKeySeedMismatchDerivativeDetail =
+        "The database resource key seed does not match the expected schema. "
+        + "The database must be reprovisioned with 'ddl provision' against a fresh database. "
+        + "No restart is required: this result was not retained, and the next request will "
+        + "revalidate the database.";
 
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
@@ -49,44 +65,58 @@ internal class ValidateResourceKeySeedMiddleware(
             return;
         }
 
-        var selectedInstance = requestInfo
-            .ScopedServiceProvider.GetRequiredService<IDataStoreSelection>()
-            .GetSelectedDataStore();
-        // ConnectionString is guaranteed non-null by ValidateDatabaseFingerprintMiddleware,
-        // which runs before this step and short-circuits with 503 if the connection string is missing.
-        var connectionString = selectedInstance.ConnectionString!;
+        // Validated against the database this request is served from, not the parent, so a request
+        // routed to a derivative is checked against that database's own resource keys. The parent is
+        // still read, for the identity that names the instance in logs.
+        var dataStoreSelection = requestInfo.ScopedServiceProvider.GetRequiredService<IDataStoreSelection>();
+        var selectedInstance = dataStoreSelection.GetSelectedDataStore();
+        var target = dataStoreSelection.GetEffectiveTarget();
 
         var effectiveSchema = effectiveSchemaSetProvider.EffectiveSchemaSet.EffectiveSchema;
+
+        // Read synchronously so the token exists before the value is awaited, on the fault path as
+        // well as the success path.
+        ValidationCacheRead<ResourceKeyValidationResult> read = cacheProvider.Read(
+            ValidationCacheKey.For(target),
+            () =>
+            {
+                // The validation task is shared through ResourceKeyValidationCacheProvider.
+                // Do not tie first validation for a connection string to one client abort.
+                return resourceKeyValidator.ValidateAsync(
+                    fingerprint,
+                    effectiveSchema.ResourceKeyCount,
+                    [.. effectiveSchema.ResourceKeySeedHash],
+                    effectiveSchema.ResourceKeysInIdOrder.ToResourceKeyRows(),
+                    target
+                );
+            }
+        );
 
         ResourceKeyValidationResult result;
 
         try
         {
-            result = await cacheProvider.GetOrValidateAsync(
-                connectionString,
-                () =>
-                {
-                    // The validation task is shared through ResourceKeyValidationCacheProvider.
-                    // Do not tie first validation for a connection string to one client abort.
-                    return resourceKeyValidator.ValidateAsync(
-                        fingerprint,
-                        effectiveSchema.ResourceKeyCount,
-                        [.. effectiveSchema.ResourceKeySeedHash],
-                        effectiveSchema.ResourceKeysInIdOrder.ToResourceKeyRows(),
-                        connectionString
-                    );
-                }
-            );
+            result = await read.Value;
         }
         catch (Exception ex)
         {
+            // Only the exception's type, never the exception itself and never its message, data, or
+            // inner exceptions. This catch can see a selected target fail inside connection
+            // acquisition, and a provider exception from parsing or opening a connection string can
+            // quote its values back.
+            // S6667 asks for the caught exception to be passed to the logger. That is the right
+            // default and the wrong thing here, for the reason above: the exception carries the
+            // untrusted value. Its type is logged instead, which is the part that helps an operator
+            // without carrying anything the provider put in it.
+#pragma warning disable S6667
             logger.LogError(
-                ex,
-                "Resource key seed validation failed with an unexpected error for data store {DataStoreId} ({Name}). TraceId: {TraceId}",
+                "Resource key seed validation failed with an unexpected {ExceptionType} for data store {DataStoreId} ({Name}). TraceId: {TraceId}",
+                ex.GetType().Name,
                 selectedInstance.Id,
                 LoggingSanitizer.SanitizeForLogging(selectedInstance.Name),
                 LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
             );
+#pragma warning restore S6667
 
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 503,
@@ -109,6 +139,18 @@ internal class ValidateResourceKeySeedMiddleware(
                 return;
 
             case ResourceKeyValidationResult.ValidationFailure failure:
+                // A mismatch is returned rather than thrown, so the provider never sees it. Dropping
+                // the entry here is what lets a derivative reseeded after this request be served
+                // without a restart; for a primary the token is a no-op and the verdict stands.
+                read.Token.Invalidate();
+
+                // The recovery instruction differs by policy class: the primary verdict just
+                // read is retained, the derivative one is not.
+                string mismatchDetail =
+                    target.Kind == EffectiveTargetKind.Primary
+                        ? ResourceKeySeedMismatchDetail
+                        : ResourceKeySeedMismatchDerivativeDetail;
+
                 // Use SanitizeForConsole for the diff report to preserve tuple
                 // punctuation (parentheses, commas, brackets) needed for readability.
                 logger.LogError(
@@ -124,8 +166,8 @@ internal class ValidateResourceKeySeedMiddleware(
                     StatusCode: 503,
                     Body: FailureResponse.ForResourceKeySeedValidationError(
                         ResourceKeySeedMismatchTitle,
-                        ResourceKeySeedMismatchDetail,
-                        [ResourceKeySeedMismatchDetail],
+                        mismatchDetail,
+                        [mismatchDetail],
                         requestInfo.FrontendRequest.TraceId
                     ),
                     Headers: []

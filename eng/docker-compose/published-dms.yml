@@ -60,6 +60,7 @@ services:
       CacheSettings__ProfileCacheExpirationSeconds: ${DMS_PROFILE_CACHE_EXPIRATION_SECONDS:-1800}
       CacheSettings__DataStoreCacheExpirationSeconds: ${DMS_DATASTORE_CACHE_EXPIRATION_SECONDS:-600}
       CacheSettings__DataStoreCacheRefreshEnabled: ${DMS_DATASTORE_CACHE_REFRESH_ENABLED:-true}
+      CacheSettings__DerivativeValidationCacheExpirationSeconds: ${DMS_DERIVATIVE_VALIDATION_CACHE_EXPIRATION_SECONDS:-600}
       AppSettings__DomainsExcludedFromOpenApi: ${DOMAINS_EXCLUDED_FROM_OPEN_API:-}
       AppSettings__RouteQualifierSegments: ${ROUTE_QUALIFIER_SEGMENTS:-}
       SCHEMA_PACKAGES: ${SCHEMA_PACKAGES:-}
