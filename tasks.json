@@ -402,5 +402,207 @@
       "Run: `dotnet csharpier format src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration/Given_DocumentCacheAdminAdministrativeMutexConcurrency.cs`"
     ],
     "completed": false
+  },
+  {
+    "category": "Performance Qualification",
+    "description": "[Plan step 1] Add DocumentCache representative qualification result models and artifact validation. Simplest responsible solution: implement strongly typed `System.Text.Json` result records and a validator in `src/dms/tests/EdFi.DataManagementService.Performance.Harness` that enforces the threshold and artifact contract from `plan.md` and the incomplete review-remediation task.",
+    "acceptance-criteria": [
+      "The performance harness contains DocumentCache-specific result records for the run manifest, threshold result rows, artifact references, and validation failures.",
+      "The implementation uses `System.Text.Json` serialization with lower-camel JSON property names and does not add or use Newtonsoft.Json.",
+      "The validator loads the expected threshold ids, provider names, areas, maximum values, units, and evidence expectations from `DocumentCacheQualification.Thresholds`.",
+      "The validator requires one and only one `threshold-results.json` row for every provider threshold defined in `DocumentCacheQualification.Thresholds`.",
+      "The validator requires every threshold row to include `provider`, `thresholdId`, `area`, `measurement`, `measuredValue`, `maximum`, `unit`, `passed`, `evidencePath`, and `reviewerNote`.",
+      "The validator rejects threshold rows whose `area`, `maximum`, or `unit` differs from the catalog entry.",
+      "The validator rejects absolute evidence paths, parent-directory traversal, missing evidence files, duplicate threshold rows, unknown threshold ids, and result directories missing required top-level artifacts.",
+      "The validator requires `durableBaselineCursorTicket` on failed interrupted restart-from-beginning rows and any failed interrupted-restart database-load, log-pressure, or queue-DML threshold row.",
+      "Unit tests cover successful validation, missing required artifacts, duplicate rows, missing rows, catalog mismatches, invalid paths, missing evidence paths, and required durable-baseline-cursor ticket failures."
+    ],
+    "steps-to-verify": [
+      "Run: `dotnet test src/dms/tests/EdFi.DataManagementService.Performance.Harness.Tests.Unit/EdFi.DataManagementService.Performance.Harness.Tests.Unit.csproj --filter FullyQualifiedName~DocumentCacheQualification`",
+      "Run: `rg -n \"DocumentCacheQualificationArtifactValidator|DocumentCacheQualificationRunManifest|threshold-results|durableBaselineCursorTicket\" src/dms/tests/EdFi.DataManagementService.Performance.Harness src/dms/tests/EdFi.DataManagementService.Performance.Harness.Tests.Unit plan.md`",
+      "Temporarily remove one required threshold row from a local sample artifact and confirm validation fails before restoring it.",
+      "Run: `dotnet csharpier format src/dms/tests/EdFi.DataManagementService.Performance.Harness src/dms/tests/EdFi.DataManagementService.Performance.Harness.Tests.Unit`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Performance Qualification",
+    "description": "[Plan step 2] Extend `eng/performance/invoke-documentcache-qualification.ps1` into the single supported DocumentCache qualification entrypoint. Simplest responsible solution: add explicit bounded-guard, representative-run, explicit-writer-evidence, and validation-only modes while preserving the current bounded guard behavior.",
+    "acceptance-criteria": [
+      "`eng/performance/invoke-documentcache-qualification.ps1` supports `-RunRepresentative` to run the long-running DocumentCache representative benchmark.",
+      "`eng/performance/invoke-documentcache-qualification.ps1` supports `-ValidateResults <path>` to validate an existing result directory without running tests or benchmarks.",
+      "The default invocation still runs the bounded `DocumentCacheQualification` unit checks and provider `DocumentCacheQueryPlan` integration guards.",
+      "`-RunExplicitWriterEvidence` still runs the existing explicit `DocumentCacheWriterPerformanceEvidence` tests for PostgreSQL and SQL Server when the matching provider is selected.",
+      "The script places bounded query-plan guard output under `query-plan-guards/` in the result directory.",
+      "The script places explicit writer evidence output under `writer-contention-evidence/` in the result directory.",
+      "The script fails with a nonzero exit code when any benchmark command fails or when result validation fails.",
+      "The script writes a qualification summary that distinguishes bounded guard output from representative-scale measured evidence.",
+      "The script documentation and examples match the run instructions in `plan.md` section 8."
+    ],
+    "steps-to-verify": [
+      "Run: `pwsh ./eng/performance/invoke-documentcache-qualification.ps1 -Provider postgresql,mssql -ResultsDirectory /tmp/document-cache-qualification -RunExplicitWriterEvidence`",
+      "Run: `pwsh ./eng/performance/invoke-documentcache-qualification.ps1 -ValidateResults ./reference/document-cache/qualification-results/<run-id>` after a valid result directory exists.",
+      "Run: `rg -n \"RunRepresentative|ValidateResults|query-plan-guards|writer-contention-evidence|DocumentCacheRepresentativeQualification\" eng/performance/invoke-documentcache-qualification.ps1 plan.md`",
+      "Inspect the generated summary and confirm it does not claim representative-scale qualification for bounded guard output."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Performance Qualification",
+    "description": "[Plan step 3] Add explicit provider entry points for the representative benchmark. Simplest responsible solution: create PostgreSQL and SQL Server explicit NUnit fixtures under the existing performance harness `Runs/` folder that delegate to the shared DocumentCache qualification pipeline.",
+    "acceptance-criteria": [
+      "`src/dms/tests/EdFi.DataManagementService.Performance.Harness/Runs/Given_Postgresql_DocumentCacheRepresentativeRun.cs` exists and derives from the PostgreSQL API integration test base.",
+      "`src/dms/tests/EdFi.DataManagementService.Performance.Harness/Runs/Given_Mssql_DocumentCacheRepresentativeRun.cs` exists and derives from the SQL Server API integration test base.",
+      "Both fixtures are marked `[Explicit]`, `[NonParallelizable]`, `[Category(\"Performance\")]`, and `[Category(\"DocumentCacheRepresentativeQualification\")]`.",
+      "Both fixtures load DocumentCache representative benchmark configuration from environment variables following the existing `PERF_*` harness style.",
+      "Both fixtures lease isolated DS 5.2 databases through the existing integration harness and pass provider-specific replay or assertion connections to the shared pipeline.",
+      "The SQL Server fixture verifies the configured SQL Server 2025 integration prerequisites before running the representative benchmark.",
+      "The fixtures print the final result directory path to NUnit output.",
+      "The fixtures are excluded from ordinary CI execution because they are explicit and only run when `NUnit.Explicit=true` is supplied."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"Given_Postgresql_DocumentCacheRepresentativeRun|Given_Mssql_DocumentCacheRepresentativeRun|DocumentCacheRepresentativeQualification|NUnit.Explicit\" src/dms/tests/EdFi.DataManagementService.Performance.Harness eng/performance`",
+      "Run: `dotnet test src/dms/tests/EdFi.DataManagementService.Performance.Harness/EdFi.DataManagementService.Performance.Harness.csproj -c Release --filter FullyQualifiedName~DocumentCacheRepresentativeRun --list-tests`",
+      "Run: `dotnet csharpier format src/dms/tests/EdFi.DataManagementService.Performance.Harness`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Performance Qualification",
+    "description": "[Plan step 4] Reuse the existing 500k fixture loader for DocumentCache source cardinality. Simplest responsible solution: add DocumentCache-specific fixture setup that calls `PerfFixtureLoader` with `PerfFixtureKind.Primary500k` and records the database, fixture, source row count, cache row count, work row count, storage, and git identity evidence before benchmark phases start.",
+    "acceptance-criteria": [
+      "The DocumentCache representative pipeline uses `PerfFixtureLoader.LoadAndVerifyAsync` with `PerfFixtureKind.Primary500k` for the required 500,000 canonical documents.",
+      "The benchmark records a fixture manifest showing the configured fixture id, expected row count, descriptor catalog, and loader verification result.",
+      "The benchmark records initial counts for `dms.Document`, `dms.DocumentCache`, and `dms.DocumentProjectionWork` before lifecycle measurement begins.",
+      "The benchmark records provider identity, database identity, storage note, runner commit, subject commit, and dirty-path state in the DocumentCache run manifest.",
+      "The benchmark rejects fixture kinds smaller than `primary-500k` for representative qualification runs.",
+      "The benchmark rejects CI and tmpfs evidence environments for representative qualification runs.",
+      "The benchmark does not send 500,000 public API POST requests to create the source fixture."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"PerfFixtureLoader.LoadAndVerifyAsync|PerfFixtureKind.Primary500k|DocumentCacheQualificationRunManifest|DocumentProjectionWork|DocumentCache\" src/dms/tests/EdFi.DataManagementService.Performance.Harness plan.md`",
+      "Run the PostgreSQL representative fixture against a smoke-only local configuration during development and confirm the manifest records fixture and database identity fields.",
+      "Temporarily configure a non-representative fixture for a representative run and confirm the benchmark rejects it.",
+      "Run: `dotnet csharpier format src/dms/tests/EdFi.DataManagementService.Performance.Harness`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Performance Qualification",
+    "description": "[Plan step 5] Implement the shared `DocumentCacheQualificationRunPipeline`. Simplest responsible solution: build one provider-agnostic orchestration pipeline that executes the required lifecycle, outage, status, write-overhead, contention, scrub, and final-count phases against the seeded 500k database.",
+    "acceptance-criteria": [
+      "`DocumentCacheQualificationRunPipeline` exists in the performance harness and is called by both provider representative run fixtures.",
+      "The pipeline guards CI, tmpfs storage, dirty worktree state, fixture size, provider prerequisites, and connection identity before measurement begins.",
+      "The pipeline measures disabled canonical write samples before DocumentCache activation.",
+      "The pipeline runs offline activation or first baseline and records elapsed time until the target reaches `Tracking` and caught-up status.",
+      "The pipeline measures caught-up `Tracking` canonical write samples and computes the p95 write-overhead ratio versus `Disabled`.",
+      "The pipeline samples status and oldest-work latency while the work queue is empty, small, and large.",
+      "The pipeline runs online rebuild and records elapsed time for clear, reseed, drain, and return to `Tracking`.",
+      "The pipeline deterministically interrupts a `Rebuilding` command after partial progress is observed, reruns the replacement command, and records restart-from-beginning completion time.",
+      "The pipeline creates 50,000 distinct-document outage writes while projection is not draining, records distinct touched documents, records work-row growth, and computes the backlog growth ratio.",
+      "The pipeline drains the 50,000-row outage backlog and records elapsed drain time and final caught-up status.",
+      "The pipeline runs same-document enqueue/ack contention with 32 contenders and records p95 lock wait, retry count, and deadlock count.",
+      "The pipeline runs explicit scrub, records admission and elapsed time, and records final lifecycle, cache, work, and source counts.",
+      "Every pipeline phase writes a command transcript and a structured phase-metrics JSON artifact."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"DocumentCacheQualificationRunPipeline|offline activation|restart-from-beginning|outage|same-document|phase-metrics|command-transcripts\" src/dms/tests/EdFi.DataManagementService.Performance.Harness plan.md`",
+      "Run a reduced local smoke version of the pipeline and confirm every required phase writes a transcript and phase-metrics JSON file.",
+      "Inspect the interrupted rebuild smoke output and confirm the replacement command starts from `Rebuilding` state and records restart completion.",
+      "Run: `dotnet csharpier format src/dms/tests/EdFi.DataManagementService.Performance.Harness`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Performance Qualification",
+    "description": "[Plan step 6] Implement PostgreSQL and SQL Server metric capture for DocumentCache representative qualification. Simplest responsible solution: add provider-specific capture services that snapshot WAL/log, plan/IO, status-query, maintenance, CPU, and IO evidence around the benchmark phases and write the required provider-metrics artifacts.",
+    "acceptance-criteria": [
+      "PostgreSQL capture records WAL LSN before and after baseline, online rebuild, interrupted restart, and outage drain phases.",
+      "PostgreSQL capture computes WAL bytes per projected document with `pg_wal_lsn_diff`.",
+      "PostgreSQL capture writes `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` samples for projection, status, and oldest-work queries.",
+      "PostgreSQL capture records `pg_stat_user_tables` before the run, after the run, and after `VACUUM` for `dms.DocumentCache` and `dms.DocumentProjectionWork`.",
+      "PostgreSQL capture writes `provider-metrics/postgresql-wal-vacuum-bloat.md` and records the approved bloat-estimation output or the approved reason no bloat estimator was available.",
+      "SQL Server capture records `sys.dm_db_log_stats(DB_ID())` before and after baseline, online rebuild, interrupted restart, and outage drain phases.",
+      "SQL Server capture computes transaction log bytes per projected document.",
+      "SQL Server capture writes `SET STATISTICS IO` and actual plan XML samples for projection, status, and oldest-work queries.",
+      "SQL Server capture records `sys.dm_db_index_physical_stats` after the run and after cleanup or index maintenance for `dms.DocumentCache` and `dms.DocumentProjectionWork`.",
+      "SQL Server capture writes `provider-metrics/mssql-log-ghost-index.md` with ghost row ratio and fragmentation observations.",
+      "CPU and IO threshold evidence is read from a strict operator-supplied metrics file when the database provider does not expose reliable per-database CPU or IO directly.",
+      "The validator requires the CPU and IO metrics evidence file referenced by each CPU or IO threshold row."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"pg_wal_lsn_diff|pg_stat_user_tables|VACUUM|sys.dm_db_log_stats|SET STATISTICS IO|sys.dm_db_index_physical_stats|postgresql-wal-vacuum-bloat|mssql-log-ghost-index\" src/dms/tests/EdFi.DataManagementService.Performance.Harness reference/document-cache plan.md`",
+      "Run provider metric capture against small local PostgreSQL and SQL Server fixtures and confirm both provider-metrics markdown files are written.",
+      "Remove the operator CPU metrics file from a local sample result and confirm validation fails.",
+      "Run: `dotnet csharpier format src/dms/tests/EdFi.DataManagementService.Performance.Harness`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Performance Qualification",
+    "description": "[Plan step 7] Generate deterministic `threshold-results.json` from measured DocumentCache benchmark phases. Simplest responsible solution: map phase metrics and provider metric captures into one sorted JSON row per `DocumentCacheQualification.Thresholds` entry and validate the file before writing the final result directory.",
+    "acceptance-criteria": [
+      "The representative benchmark writes `threshold-results.json` with one row per provider threshold id in `DocumentCacheQualification.Thresholds`.",
+      "Rows are sorted deterministically by provider and threshold id.",
+      "Rows use lower-camel property names and invariant-culture numeric values.",
+      "Rows include measured values and pass/fail results for baseline completion, online rebuild completion, interrupted restart-from-beginning completion, average database CPU, database IO, WAL or log growth, queue DML amplification, status/oldest-work p95 latency, canonical write-overhead p95 ratio, outage backlog growth ratio, outage drain completion, same-document enqueue/ack p95 lock wait, and provider maintenance ratio.",
+      "Every row's `maximum`, `unit`, `area`, and `measurement` come from the threshold catalog rather than duplicated literals.",
+      "Every row's `evidencePath` points to an existing phase transcript, phase metrics file, query-plan guard file, writer-contention evidence file, outage-drain evidence file, or provider-metrics file.",
+      "Failed interrupted restart-from-beginning rows and related failed interrupted-restart load/log/queue-DML rows include a non-empty `durableBaselineCursorTicket`.",
+      "The artifact writer validates the in-memory threshold rows, writes the JSON file, reloads the written file, and validates the file from disk."
+    ],
+    "steps-to-verify": [
+      "Run: `rg -n \"threshold-results.json|DocumentCacheQualification.Thresholds|durableBaselineCursorTicket|measuredValue|evidencePath\" src/dms/tests/EdFi.DataManagementService.Performance.Harness plan.md`",
+      "Run a reduced local smoke benchmark and confirm `threshold-results.json` is sorted and reload-validates from disk.",
+      "Temporarily point a generated threshold row to a missing evidence path and confirm validation fails.",
+      "Run: `dotnet csharpier format src/dms/tests/EdFi.DataManagementService.Performance.Harness`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Performance Runbook",
+    "description": "[Plan step 8] Create a separate performance engineer runbook from `plan.md` section 8. Simplest responsible solution: move the release-validation operator instructions into `reference/document-cache/representative-qualification-runbook.md` and link it from the DocumentCache qualification documentation.",
+    "acceptance-criteria": [
+      "`reference/document-cache/representative-qualification-runbook.md` exists and is written as instructions for the performance engineer running the release-validation benchmark.",
+      "The runbook states that representative qualification must run only on dedicated PostgreSQL and SQL Server targets whose storage is not tmpfs and whose provider metrics can be captured for the full run window.",
+      "The runbook tells the engineer to record database host identity, image tag and digest or managed-service version, storage note, runner commit, subject commit, and dirty-path allowlist before starting.",
+      "The runbook includes the bounded guard and explicit writer evidence command from `plan.md` section 8.",
+      "The runbook includes the representative `-RunRepresentative -RunExplicitWriterEvidence` command from `plan.md` section 8.",
+      "The runbook lists the required result directory contents: `qualification-summary.md`, `threshold-results.json`, `query-plan-guards/`, `writer-contention-evidence/`, `outage-drain-evidence/`, both provider-metrics files, `command-transcripts/`, and `phase-metrics/`.",
+      "The runbook includes validation instructions for the produced result directory and the committed `reference/document-cache/qualification-results/<run-id>/` directory.",
+      "The runbook states the durable-baseline-cursor Jira ticket requirement for failed interrupted restart-from-beginning or related database-load, log-pressure, or queue-DML thresholds.",
+      "The runbook states that placeholder values, synthetic pass/fail rows, and non-representative local Docker measurements must not be committed as qualification evidence.",
+      "`reference/document-cache/performance-qualification.md` and `reference/document-cache/README.md` link to the new runbook."
+    ],
+    "steps-to-verify": [
+      "Run: `test -f reference/document-cache/representative-qualification-runbook.md`",
+      "Run: `rg -n \"RunRepresentative|ValidateResults|threshold-results|qualification-summary|outage-drain|provider-metrics|durable-baseline-cursor|tmpfs|placeholder\" reference/document-cache/representative-qualification-runbook.md`",
+      "Run: `rg -n \"representative-qualification-runbook\" reference/document-cache/README.md reference/document-cache/performance-qualification.md`",
+      "Manually compare `reference/document-cache/representative-qualification-runbook.md` to `plan.md` section 8 and confirm all operator instructions were preserved."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Performance Qualification",
+    "description": "[Representative evidence] Run the new benchmark and commit real PostgreSQL and SQL Server DocumentCache qualification artifacts. Simplest responsible solution: execute the performance engineer runbook, validate the produced artifacts, commit the validated result directory, and update evidence claims so DMS-1317 is not marked qualified without measured representative results.",
+    "acceptance-criteria": [
+      "A validated result directory exists under `reference/document-cache/qualification-results/<run-id>/`.",
+      "The committed result directory contains `qualification-summary.md`, `threshold-results.json`, `query-plan-guards/`, `writer-contention-evidence/`, `outage-drain-evidence/`, `provider-metrics/postgresql-wal-vacuum-bloat.md`, `provider-metrics/mssql-log-ghost-index.md`, `command-transcripts/`, and `phase-metrics/`.",
+      "`threshold-results.json` contains measured PostgreSQL and SQL Server rows for every threshold in `DocumentCacheQualification.Thresholds`.",
+      "The measured rows cover baseline/rebuild completion time, interrupted restart-from-beginning completion time, database CPU/IO/log pressure, repeated queue DML or write amplification, status/oldest-work latency, canonical write overhead, queue growth and drain after outage, same-document enqueue/ack lock waits, and provider maintenance observations.",
+      "Every `evidencePath` referenced by `threshold-results.json` resolves inside the committed result directory.",
+      "The committed artifacts identify the representative workload as 500,000 canonical documents, 50,000 distinct-document outage writes, and 32 same-document enqueue/ack contenders.",
+      "When a required threshold fails, `threshold-results.json` records the durable-baseline-cursor Jira ticket and `qualification-summary.md` states that production qualification is not complete.",
+      "`reference/document-cache/performance-qualification.md`, `reference/document-cache/cdc-inv-evidence.md`, `reference/document-cache/README.md`, and `tasks.json` describe the committed evidence accurately and do not claim representative-scale qualification based only on bounded guards.",
+      "The original incomplete review-remediation task for representative-scale DocumentCache qualification can be marked complete only after the validated result directory and accurate documentation are committed."
+    ],
+    "steps-to-verify": [
+      "Run: `pwsh ./eng/performance/invoke-documentcache-qualification.ps1 -ValidateResults ./reference/document-cache/qualification-results/<run-id>`",
+      "Run: `rg -n \"threshold-results|qualification-summary|outage-drain|provider-metrics|durable-baseline-cursor|representative-qualification-runbook\" reference/document-cache eng/performance tasks.json`",
+      "Run: `jq 'length' reference/document-cache/qualification-results/<run-id>/threshold-results.json` and manually confirm the count matches `DocumentCacheQualification.Thresholds`.",
+      "Manually inspect `qualification-summary.md` and the provider-metrics files to confirm the run used valid non-tmpfs PostgreSQL and SQL Server performance targets.",
+      "Run: `dotnet csharpier format src/dms/tests/EdFi.DataManagementService.Performance.Harness src/dms/tests/EdFi.DataManagementService.Performance.Harness.Tests.Unit`"
+    ],
+    "completed": false
   }
 ]
