@@ -1544,6 +1544,7 @@ public class Given_A_Mssql_DocumentCacheWriter
                 .BeSubsetOf([
                     DocumentCacheWriterOutcome.CandidateWrittenAcknowledged,
                     DocumentCacheWriterOutcome.AlreadyCurrentAcknowledged,
+                    DocumentCacheWriterOutcome.AlreadyCurrentNoWork,
                     DocumentCacheWriterOutcome.RacingWriterLost,
                 ]);
         }

@@ -1480,6 +1480,7 @@ public class Given_A_Postgresql_DocumentCacheWriter
                 .BeSubsetOf([
                     DocumentCacheWriterOutcome.CandidateWrittenAcknowledged,
                     DocumentCacheWriterOutcome.AlreadyCurrentAcknowledged,
+                    DocumentCacheWriterOutcome.AlreadyCurrentNoWork,
                     DocumentCacheWriterOutcome.RacingWriterLost,
                 ]);
         }
