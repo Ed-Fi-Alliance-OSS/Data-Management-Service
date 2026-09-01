@@ -88,6 +88,9 @@ public class Given_The_DocumentCacheQualification_Catalog
             );
         DocumentCacheQualification
             .RequiredRepresentativeArtifacts.Should()
+            .Contain("provider-metrics/operator-cpu-io.json");
+        DocumentCacheQualification
+            .RequiredRepresentativeArtifacts.Should()
             .Contain("provider-metrics/postgresql-wal-vacuum-bloat.md");
         DocumentCacheQualification
             .RequiredRepresentativeArtifacts.Should()

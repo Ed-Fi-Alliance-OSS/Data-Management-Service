@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
+using EdFi.DataManagementService.Performance.Harness.Results;
 
 namespace EdFi.DataManagementService.Performance.Harness.Configuration;
 
@@ -24,6 +25,7 @@ public sealed record DocumentCacheRepresentativeRunConfiguration(
     int MeasuredStatusSamples,
     int OutageDistinctDocumentWrites,
     int SameDocumentContention,
+    string OperatorMetricsFile,
     string? OperatorNote,
     PerfEvidenceRunSettings EvidenceSettings
 );
@@ -160,6 +162,35 @@ public static class DocumentCacheRepresentativeRunConfigurationLoader
             Read,
             errors
         );
+        string? operatorMetricsFile = Read(PerfEnvironmentVariables.DocumentCacheOperatorMetricsFile);
+        if (operatorMetricsFile is null)
+        {
+            errors.Add($"{PerfEnvironmentVariables.DocumentCacheOperatorMetricsFile} is required.");
+        }
+        else if (!Path.IsPathFullyQualified(operatorMetricsFile))
+        {
+            errors.Add(
+                $"{PerfEnvironmentVariables.DocumentCacheOperatorMetricsFile} must be a fully qualified absolute path; got '{operatorMetricsFile}'."
+            );
+        }
+        else if (!File.Exists(operatorMetricsFile))
+        {
+            errors.Add(
+                $"{PerfEnvironmentVariables.DocumentCacheOperatorMetricsFile} file does not exist: '{operatorMetricsFile}'."
+            );
+        }
+        else
+        {
+            IReadOnlyList<string> metricsFailures = DocumentCacheOperatorMetricsEvidence.ValidateFile(
+                operatorMetricsFile,
+                PerfProviders.ArtifactName(provider)
+            );
+            errors.AddRange(
+                metricsFailures.Select(failure =>
+                    $"{PerfEnvironmentVariables.DocumentCacheOperatorMetricsFile}: {failure}"
+                )
+            );
+        }
 
         if (highWaterMark > fixture.RowCount)
         {
@@ -202,6 +233,7 @@ public static class DocumentCacheRepresentativeRunConfigurationLoader
             measuredStatusSamples,
             outageDistinctDocumentWrites,
             sameDocumentContention,
+            operatorMetricsFile!,
             Read(PerfEnvironmentVariables.OperatorNote),
             evidenceSettings!
         );

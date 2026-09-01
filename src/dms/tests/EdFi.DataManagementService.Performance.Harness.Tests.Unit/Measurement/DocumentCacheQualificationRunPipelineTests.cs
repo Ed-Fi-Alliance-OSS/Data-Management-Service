@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.Performance.Harness.Configuration;
 using EdFi.DataManagementService.Performance.Harness.Measurement;
 using EdFi.DataManagementService.Performance.Harness.Results;
+using EdFi.DataManagementService.Performance.Harness.Tests.Unit.Configuration;
 using FluentAssertions;
 
 namespace EdFi.DataManagementService.Performance.Harness.Tests.Unit.Measurement;
@@ -131,6 +132,9 @@ public class Given_DocumentCache_Representative_Evidence_Environment_Guards
             DocumentCacheRepresentativeRunConfigurationLoader.DefaultMeasuredStatusSamples,
             DocumentCacheQualification.RepresentativeOutageDistinctDocumentWrites,
             DocumentCacheQualification.RepresentativeSameDocumentContention,
+            DocumentCacheRepresentativeRunTestValues.OperatorMetricsFile(
+                PerfProviders.ArtifactName(PerfProvider.Postgresql)
+            ),
             OperatorNote: null,
             settings ?? EvidenceSettings(allowCi: false, storageNote: "local docker volume, not tmpfs")
         );

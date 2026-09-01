@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Performance.Harness.Configuration;
+using EdFi.DataManagementService.Performance.Harness.Results;
 using FluentAssertions;
 
 namespace EdFi.DataManagementService.Performance.Harness.Tests.Unit.Configuration;
@@ -53,6 +54,7 @@ public class Given_A_Valid_DocumentCacheRepresentativeRun_Configuration
     {
         _configuration.EvidenceSettings.StorageNote.Should().Be("local docker volume, not tmpfs");
         _configuration.EvidenceSettings.ImageDigest.Should().Be(EvidenceSettingsTestValues.Digest);
+        _configuration.OperatorMetricsFile.Should().NotBeNullOrWhiteSpace();
     }
 
     [Test]
@@ -69,6 +71,8 @@ public class Given_A_Valid_DocumentCacheRepresentativeRun_Configuration
             "document-cache-results"
         );
         values[PerfEnvironmentVariables.RunnerCommit] = "ABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCD";
+        values[PerfEnvironmentVariables.DocumentCacheOperatorMetricsFile] =
+            DocumentCacheRepresentativeRunTestValues.OperatorMetricsFile();
         return values;
     }
 }
@@ -115,6 +119,8 @@ public class Given_DocumentCacheRepresentativeRun_Provider_Guards
             "document-cache-results"
         );
         values[PerfEnvironmentVariables.RunnerCommit] = "abcdefabcdefabcdefabcdefabcdefabcdefabcd";
+        values[PerfEnvironmentVariables.DocumentCacheOperatorMetricsFile] =
+            DocumentCacheRepresentativeRunTestValues.OperatorMetricsFile();
         return values;
     }
 }
@@ -172,6 +178,46 @@ public class Given_DocumentCacheRepresentativeRun_Environment_Overrides
         exception.Errors.Should().Contain(error => error.Contains("OUTAGE_WRITES"));
     }
 
+    [Test]
+    public void It_rejects_a_missing_operator_metrics_file()
+    {
+        Dictionary<string, string?> values = ValidValues();
+        values[PerfEnvironmentVariables.DocumentCacheOperatorMetricsFile] = Path.Combine(
+            Path.GetTempPath(),
+            "missing-document-cache-operator-metrics.json"
+        );
+
+        PerfConfigurationException exception = Assert.Throws<PerfConfigurationException>(() =>
+            DocumentCacheRepresentativeRunConfigurationLoader.Load(
+                PerfProvider.Postgresql,
+                EvidenceSettingsTestValues.ReaderFor(values)
+            )
+        );
+
+        exception.Errors.Should().Contain(error => error.Contains("file does not exist"));
+    }
+
+    [Test]
+    public void It_rejects_operator_metrics_without_the_fixture_provider()
+    {
+        Dictionary<string, string?> values = ValidValues();
+        values[PerfEnvironmentVariables.DocumentCacheOperatorMetricsFile] =
+            DocumentCacheRepresentativeRunTestValues.OperatorMetricsFile(
+                PerfProviders.ArtifactName(PerfProvider.Mssql)
+            );
+
+        PerfConfigurationException exception = Assert.Throws<PerfConfigurationException>(() =>
+            DocumentCacheRepresentativeRunConfigurationLoader.Load(
+                PerfProvider.Postgresql,
+                EvidenceSettingsTestValues.ReaderFor(values)
+            )
+        );
+
+        exception
+            .Errors.Should()
+            .Contain(error => error.Contains("providerMetrics must include provider 'postgresql'"));
+    }
+
     private static Dictionary<string, string?> ValidValues()
     {
         Dictionary<string, string?> values = EvidenceSettingsTestValues.Valid();
@@ -180,6 +226,8 @@ public class Given_DocumentCacheRepresentativeRun_Environment_Overrides
             "document-cache-results"
         );
         values[PerfEnvironmentVariables.RunnerCommit] = "abcdefabcdefabcdefabcdefabcdefabcdefabcd";
+        values[PerfEnvironmentVariables.DocumentCacheOperatorMetricsFile] =
+            DocumentCacheRepresentativeRunTestValues.OperatorMetricsFile();
         return values;
     }
 }
@@ -199,5 +247,34 @@ public class Given_Missing_DocumentCacheRepresentativeRun_Configuration
         exception.Errors.Should().Contain($"{PerfEnvironmentVariables.ImageTag} is required.");
         exception.Errors.Should().Contain($"{PerfEnvironmentVariables.ImageDigest} is required.");
         exception.Errors.Should().Contain($"{PerfEnvironmentVariables.StorageNote} is required.");
+        exception
+            .Errors.Should()
+            .Contain($"{PerfEnvironmentVariables.DocumentCacheOperatorMetricsFile} is required.");
+    }
+}
+
+internal static class DocumentCacheRepresentativeRunTestValues
+{
+    public static string OperatorMetricsFile(params string[] providers)
+    {
+        string[] selectedProviders =
+            providers.Length == 0
+                ?
+                [
+                    PerfProviders.ArtifactName(PerfProvider.Postgresql),
+                    PerfProviders.ArtifactName(PerfProvider.Mssql),
+                ]
+                : providers;
+        string path = Path.Combine(
+            Path.GetTempPath(),
+            "document-cache-operator-metrics",
+            Guid.NewGuid().ToString("N") + ".json"
+        );
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(
+            path,
+            PerfArtifactJson.Serialize(DocumentCacheOperatorMetricsEvidence.CreateSample(selectedProviders))
+        );
+        return path;
     }
 }

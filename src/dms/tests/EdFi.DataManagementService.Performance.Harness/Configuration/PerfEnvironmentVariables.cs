@@ -29,5 +29,6 @@ public static class PerfEnvironmentVariables
     public const string DocumentCacheMeasuredStatusSamples = "PERF_DOCUMENTCACHE_MEASURED_STATUS_SAMPLES";
     public const string DocumentCacheOutageWrites = "PERF_DOCUMENTCACHE_OUTAGE_WRITES";
     public const string DocumentCacheSameDocumentContenders = "PERF_DOCUMENTCACHE_SAME_DOCUMENT_CONTENDERS";
+    public const string DocumentCacheOperatorMetricsFile = "PERF_DOCUMENTCACHE_OPERATOR_METRICS_FILE";
     public const string OperatorNote = "PERF_OPERATOR_NOTE";
 }

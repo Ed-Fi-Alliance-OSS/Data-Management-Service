@@ -28,7 +28,8 @@
 
 .EXAMPLE
     ./eng/performance/invoke-documentcache-qualification.ps1 -Provider postgresql,mssql `
-        -ResultsDirectory C:\perf\document-cache -RunRepresentative -RunExplicitWriterEvidence
+        -ResultsDirectory C:\perf\document-cache -RunRepresentative -RunExplicitWriterEvidence `
+        -OperatorMetricsFile C:\perf\document-cache\operator-cpu-io.json
 
 .EXAMPLE
     ./eng/performance/invoke-documentcache-qualification.ps1 `
@@ -53,7 +54,10 @@ param(
     [switch] $RunRepresentative,
 
     [Parameter(ParameterSetName = 'Run')]
-    [switch] $RunExplicitWriterEvidence
+    [switch] $RunExplicitWriterEvidence,
+
+    [Parameter(ParameterSetName = 'Run')]
+    [string] $OperatorMetricsFile
 )
 
 Set-StrictMode -Version Latest
@@ -137,6 +141,19 @@ if ($PSCmdlet.ParameterSetName -eq 'Validate') {
     return
 }
 
+if ($RunRepresentative) {
+    $effectiveOperatorMetricsFile = $OperatorMetricsFile
+    if ([string]::IsNullOrWhiteSpace($effectiveOperatorMetricsFile)) {
+        $effectiveOperatorMetricsFile = [Environment]::GetEnvironmentVariable('PERF_DOCUMENTCACHE_OPERATOR_METRICS_FILE')
+    }
+
+    if ([string]::IsNullOrWhiteSpace($effectiveOperatorMetricsFile)) {
+        throw 'Representative DocumentCache qualification requires -OperatorMetricsFile or PERF_DOCUMENTCACHE_OPERATOR_METRICS_FILE with strict CPU/IO evidence.'
+    }
+
+    $OperatorMetricsFile = (Resolve-Path -Path $effectiveOperatorMetricsFile).Path
+}
+
 $runId = 'document-cache-qualification-{0:yyyyMMdd-HHmmss}' -f (Get-Date)
 $runDirectory = Join-Path -Path $ResultsDirectory -ChildPath $runId
 $queryPlanGuardsDirectory = Join-Path -Path $runDirectory -ChildPath 'query-plan-guards'
@@ -192,8 +209,10 @@ foreach ($providerName in $Provider) {
 if ($RunRepresentative) {
     $previousPerfResultsDirectory = [Environment]::GetEnvironmentVariable('PERF_RESULTS_DIR')
     $previousDocumentCacheProvider = [Environment]::GetEnvironmentVariable('PERF_DOCUMENTCACHE_PROVIDER')
+    $previousOperatorMetricsFile = [Environment]::GetEnvironmentVariable('PERF_DOCUMENTCACHE_OPERATOR_METRICS_FILE')
     try {
         [Environment]::SetEnvironmentVariable('PERF_RESULTS_DIR', $runDirectory)
+        [Environment]::SetEnvironmentVariable('PERF_DOCUMENTCACHE_OPERATOR_METRICS_FILE', $OperatorMetricsFile)
         foreach ($providerName in $Provider) {
             [Environment]::SetEnvironmentVariable('PERF_DOCUMENTCACHE_PROVIDER', $providerName)
 
@@ -213,6 +232,7 @@ if ($RunRepresentative) {
     finally {
         [Environment]::SetEnvironmentVariable('PERF_RESULTS_DIR', $previousPerfResultsDirectory)
         [Environment]::SetEnvironmentVariable('PERF_DOCUMENTCACHE_PROVIDER', $previousDocumentCacheProvider)
+        [Environment]::SetEnvironmentVariable('PERF_DOCUMENTCACHE_OPERATOR_METRICS_FILE', $previousOperatorMetricsFile)
     }
 }
 
@@ -225,6 +245,7 @@ $summaryPath = Join-Path -Path $runDirectory -ChildPath 'qualification-summary.m
     "Providers: $($Provider -join ', ')",
     "Representative benchmark: $RunRepresentative",
     "Explicit writer evidence: $RunExplicitWriterEvidence",
+    "Operator metrics file: $OperatorMetricsFile",
     '',
     '## Evidence Status',
     '',
@@ -249,6 +270,7 @@ $summaryPath = Join-Path -Path $runDirectory -ChildPath 'qualification-summary.m
     '- outage-drain-evidence/',
     '- provider-metrics/postgresql-wal-vacuum-bloat.md',
     '- provider-metrics/mssql-log-ghost-index.md',
+    '- provider-metrics/operator-cpu-io.json',
     '',
     'Record representative-scale measured values against reference/document-cache/performance-qualification.md before release qualification.'
 ) | Set-Content -Path $summaryPath -Encoding UTF8

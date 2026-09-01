@@ -268,6 +268,8 @@ public sealed record DocumentCacheQualificationArtifact(
             "query-plan-guards/" => "Bounded query-plan guard output.",
             "writer-contention-evidence/" => "Explicit writer contention evidence.",
             "outage-drain-evidence/" => "Outage replay, backlog growth, drain, and final status evidence.",
+            "provider-metrics/operator-cpu-io.json" =>
+                "Strict operator-supplied database CPU and I/O metrics evidence.",
             "provider-metrics/postgresql-wal-vacuum-bloat.md" =>
                 "PostgreSQL WAL, vacuum, bloat, and dead-tuple observations.",
             "provider-metrics/mssql-log-ghost-index.md" =>

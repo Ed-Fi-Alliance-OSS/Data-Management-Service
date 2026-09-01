@@ -62,6 +62,7 @@ public static class DocumentCacheQualification
         "query-plan-guards/",
         "writer-contention-evidence/",
         "outage-drain-evidence/",
+        "provider-metrics/operator-cpu-io.json",
         "provider-metrics/postgresql-wal-vacuum-bloat.md",
         "provider-metrics/mssql-log-ghost-index.md",
         "command-transcripts/",

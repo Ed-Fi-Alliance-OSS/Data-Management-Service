@@ -38,6 +38,11 @@ Run release qualification on dedicated PostgreSQL and SQL Server targets whose s
 not tmpfs and whose CPU, IO, WAL/log, and maintenance metrics can be captured for the run
 window.
 
+Before the representative run, prepare a strict operator metrics JSON file and pass it
+through `-OperatorMetricsFile` or `PERF_DOCUMENTCACHE_OPERATOR_METRICS_FILE`. The harness
+copies the validated file to `provider-metrics/operator-cpu-io.json`; CPU and IO
+threshold rows must reference that file rather than synthetic provider DMV values.
+
 Minimum representative workload:
 
 | Workload item | Value |
@@ -115,6 +120,7 @@ Each release-validation run directory must contain:
 | `query-plan-guards/` | test result files and plans from the bounded `DocumentCacheQueryPlan` guards |
 | `writer-contention-evidence/` | explicit writer performance evidence attachments when `-RunExplicitWriterEvidence` is used |
 | `outage-drain-evidence/` | outage write replay counts, queue growth, drain transcript, and final status JSON |
+| `provider-metrics/operator-cpu-io.json` | strict operator-supplied CPU and IO metrics for the full benchmark window |
 | `provider-metrics/postgresql-wal-vacuum-bloat.md` | PostgreSQL WAL, vacuum, bloat, dead tuple, and relevant index observations |
 | `provider-metrics/mssql-log-ghost-index.md` | SQL Server log, ghost row, fragmentation, and relevant index observations |
 
@@ -176,3 +182,28 @@ WHERE object_name(object_id) IN ('DocumentCache', 'DocumentProjectionWork');
 
 Attach `SET STATISTICS IO` or actual-plan evidence for sampled projection, status, and
 oldest-work statements so logical reads per projected document can be reviewed.
+
+## Operator CPU/IO Metrics File
+
+The operator metrics file must use lower-camel JSON with this strict shape:
+
+```json
+{
+  "schemaVersion": "1.4.0",
+  "capturedAtUtc": "2026-09-01T00:00:00Z",
+  "runWindowStartedAtUtc": "2026-09-01T00:00:00Z",
+  "runWindowEndedAtUtc": "2026-09-01T00:10:00Z",
+  "source": "managed database metrics export",
+  "providerMetrics": [
+    {
+      "provider": "postgresql",
+      "sampleCount": 120,
+      "averageDatabaseCpuPercent": 42.5,
+      "averageDatabaseIoUtilizationPercent": 37.25,
+      "reviewerNote": "CPU and IO averaged across the full representative run window."
+    }
+  ]
+}
+```
+
+Include one `providerMetrics` row for each provider in the representative run.

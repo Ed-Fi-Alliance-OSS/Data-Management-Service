@@ -7,6 +7,7 @@ using System.Data.Common;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Performance.Harness.Configuration;
 using EdFi.DataManagementService.Performance.Harness.Measurement;
+using EdFi.DataManagementService.Performance.Harness.Results;
 using EdFi.DataManagementService.Tests.Integration;
 using FluentAssertions;
 
@@ -43,6 +44,17 @@ internal static class DocumentCacheQualificationRunSmoke
             "dms-document-cache-qualification-smoke",
             Guid.NewGuid().ToString("N")
         );
+        string operatorMetricsFile = Path.Combine(resultsDirectoryBase, "operator-cpu-io.json");
+        Directory.CreateDirectory(resultsDirectoryBase);
+        await File.WriteAllTextAsync(
+            operatorMetricsFile,
+            PerfArtifactJson.Serialize(
+                DocumentCacheOperatorMetricsEvidence.CreateSample(
+                    PerfProviders.ArtifactName(PerfProvider.Postgresql),
+                    PerfProviders.ArtifactName(PerfProvider.Mssql)
+                )
+            )
+        );
         DocumentCacheRepresentativeRunConfiguration configuration = new(
             provider,
             resultsDirectoryBase,
@@ -55,6 +67,7 @@ internal static class DocumentCacheQualificationRunSmoke
             SmokeMeasuredSamples,
             SmokeOutageWrites,
             SmokeSameDocumentContenders,
+            operatorMetricsFile,
             OperatorNote: "Smoke-scale DocumentCache qualification pipeline run.",
             new PerfEvidenceRunSettings(
                 imageTag,
@@ -79,6 +92,15 @@ internal static class DocumentCacheQualificationRunSmoke
         File.Exists(Path.Combine(runDirectory, "run-manifest.json")).Should().BeTrue();
         File.Exists(Path.Combine(runDirectory, "fixture-manifest.json")).Should().BeTrue();
         File.Exists(Path.Combine(runDirectory, "qualification-summary.md")).Should().BeTrue();
+        File.Exists(Path.Combine(runDirectory, DocumentCacheOperatorMetricsEvidence.RelativePath))
+            .Should()
+            .BeTrue();
+        File.Exists(Path.Combine(runDirectory, "provider-metrics", "postgresql-wal-vacuum-bloat.md"))
+            .Should()
+            .Be(provider == PerfProvider.Postgresql);
+        File.Exists(Path.Combine(runDirectory, "provider-metrics", "mssql-log-ghost-index.md"))
+            .Should()
+            .Be(provider == PerfProvider.Mssql);
 
         await TestContext.Out.WriteLineAsync(
             $"DocumentCache qualification smoke artifacts written to {runDirectory}"

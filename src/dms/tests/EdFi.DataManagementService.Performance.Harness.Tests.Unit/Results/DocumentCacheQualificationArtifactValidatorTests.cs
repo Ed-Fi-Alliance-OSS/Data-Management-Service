@@ -93,7 +93,9 @@ internal sealed class DocumentCacheQualificationArtifactSample : IDisposable
     }
 
     private static string EvidencePathFor(DocumentCacheQualificationThreshold threshold) =>
-        $"phase-metrics/{threshold.Id}.json";
+        threshold.Area is "databaseCpu" or "databaseIo"
+            ? DocumentCacheOperatorMetricsEvidence.RelativePath
+            : $"phase-metrics/{threshold.Id}.json";
 
     private void WriteRequiredArtifacts()
     {
@@ -103,6 +105,18 @@ internal sealed class DocumentCacheQualificationArtifactSample : IDisposable
             {
                 Directory.CreateDirectory(FullPath(artifact.TrimEnd('/')));
             }
+            else if (artifact == DocumentCacheOperatorMetricsEvidence.RelativePath)
+            {
+                WriteText(
+                    artifact,
+                    PerfArtifactJson.Serialize(
+                        DocumentCacheOperatorMetricsEvidence.CreateSample(
+                            PerfProviders.ArtifactName(PerfProvider.Postgresql),
+                            PerfProviders.ArtifactName(PerfProvider.Mssql)
+                        )
+                    )
+                );
+            }
             else if (artifact != "threshold-results.json")
             {
                 WriteText(artifact, $"# {artifact}");
@@ -111,7 +125,11 @@ internal sealed class DocumentCacheQualificationArtifactSample : IDisposable
 
         foreach (DocumentCacheQualificationThreshold threshold in DocumentCacheQualification.Thresholds)
         {
-            WriteText(EvidencePathFor(threshold), """{"measured":true}""");
+            string evidencePath = EvidencePathFor(threshold);
+            if (evidencePath != DocumentCacheOperatorMetricsEvidence.RelativePath)
+            {
+                WriteText(evidencePath, """{"measured":true}""");
+            }
         }
     }
 
@@ -319,6 +337,71 @@ public class Given_A_DocumentCacheQualification_Result_Directory_With_Invalid_Ev
             .ValidateDirectory(sample.ResultDirectory)
             .Should()
             .Contain(failure => failure.Code == "thresholdRow.evidencePathMissing");
+    }
+}
+
+[TestFixture]
+public class Given_A_DocumentCacheQualification_Result_Directory_With_Invalid_Operator_Metrics
+{
+    [Test]
+    public void It_rejects_cpu_and_io_rows_that_do_not_reference_the_operator_metrics_file()
+    {
+        using DocumentCacheQualificationArtifactSample sample =
+            DocumentCacheQualificationArtifactSample.Create();
+        string thresholdId = DocumentCacheQualification
+            .Thresholds.Single(threshold =>
+                threshold.Provider == PerfProvider.Postgresql && threshold.Area == "databaseCpu"
+            )
+            .Id;
+        sample.RewriteRow(
+            thresholdId,
+            row => row with { EvidencePath = "phase-metrics/postgresql-average-db-cpu-percent.json" }
+        );
+        File.WriteAllText(
+            Path.Combine(sample.ResultDirectory, "phase-metrics", "postgresql-average-db-cpu-percent.json"),
+            """{"measured":true}"""
+        );
+
+        DocumentCacheQualificationArtifactValidator
+            .ValidateDirectory(sample.ResultDirectory)
+            .Should()
+            .Contain(failure => failure.Code == "thresholdRow.operatorMetricsEvidencePath");
+    }
+
+    [Test]
+    public void It_rejects_a_missing_operator_metrics_file_for_cpu_and_io_rows()
+    {
+        using DocumentCacheQualificationArtifactSample sample =
+            DocumentCacheQualificationArtifactSample.Create();
+        sample.RemoveArtifact(DocumentCacheOperatorMetricsEvidence.RelativePath);
+
+        DocumentCacheQualificationArtifactValidator
+            .ValidateDirectory(sample.ResultDirectory)
+            .Should()
+            .Contain(failure => failure.Code == "thresholdRow.operatorMetricsInvalid");
+    }
+
+    [Test]
+    public void It_rejects_operator_metrics_without_the_threshold_provider()
+    {
+        using DocumentCacheQualificationArtifactSample sample =
+            DocumentCacheQualificationArtifactSample.Create();
+        File.WriteAllText(
+            Path.Combine(sample.ResultDirectory, DocumentCacheOperatorMetricsEvidence.RelativePath),
+            PerfArtifactJson.Serialize(
+                DocumentCacheOperatorMetricsEvidence.CreateSample(
+                    PerfProviders.ArtifactName(PerfProvider.Postgresql)
+                )
+            )
+        );
+
+        DocumentCacheQualificationArtifactValidator
+            .ValidateDirectory(sample.ResultDirectory)
+            .Should()
+            .Contain(failure =>
+                failure.Code == "thresholdRow.operatorMetricsInvalid"
+                && failure.Message.Contains("provider 'mssql'", StringComparison.Ordinal)
+            );
     }
 }
 

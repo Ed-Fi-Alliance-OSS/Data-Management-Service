@@ -518,7 +518,7 @@
       "Remove the operator CPU metrics file from a local sample result and confirm validation fails.",
       "Run: `dotnet csharpier format src/dms/tests/EdFi.DataManagementService.Performance.Harness`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Performance Qualification",

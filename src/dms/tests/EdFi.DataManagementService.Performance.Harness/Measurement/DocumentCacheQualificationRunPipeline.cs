@@ -144,6 +144,7 @@ public static class DocumentCacheQualificationRunPipeline
         DocumentCacheQualificationRunner runner = new(
             harness,
             provider,
+            openReplayConnectionAsync,
             leasedConnectionString,
             configuration,
             setup
@@ -175,6 +176,7 @@ public static class DocumentCacheQualificationRunPipeline
     private sealed class DocumentCacheQualificationRunner(
         ApiIntegrationHarness harness,
         PerfProvider provider,
+        Func<Task<DbConnection>> openReplayConnectionAsync,
         string leasedConnectionString,
         DocumentCacheRepresentativeRunConfiguration configuration,
         DocumentCacheQualificationFixtureSetupResult setup
@@ -186,6 +188,7 @@ public static class DocumentCacheQualificationRunPipeline
         private readonly string _leasedConnectionString = leasedConnectionString;
         private readonly DocumentCacheRepresentativeRunConfiguration _configuration = configuration;
         private readonly DocumentCacheQualificationFixtureSetupResult _setup = setup;
+        private readonly Func<Task<DbConnection>> _openReplayConnectionAsync = openReplayConnectionAsync;
         private readonly List<string> _completedPhaseStems = [];
 
         private IDocumentCacheProjectionSupervisor Supervisor =>
@@ -212,23 +215,34 @@ public static class DocumentCacheQualificationRunPipeline
         public async Task ExecuteAsync()
         {
             await EnsureConnectionOpenAsync();
+            await using DbConnection metricsConnection = await _openReplayConnectionAsync();
+            IDocumentCacheProviderMetricCapture providerMetricCapture =
+                DocumentCacheProviderMetricCapture.Create(
+                    metricsConnection,
+                    _provider,
+                    _setup.RunDirectory,
+                    _configuration
+                );
+            await providerMetricCapture.InitializeAsync();
 
             await RunPreflightGuardsAsync();
             DocumentCacheQualificationWriteBatchMetrics disabledWrites =
                 await MeasureDisabledCanonicalWritesAsync();
-            await RunOfflineActivationAsync();
+            await RunOfflineActivationAsync(providerMetricCapture);
             await MeasureTrackingCanonicalWriteOverheadAsync(disabledWrites);
             await SampleStatusEmptyWorkLatencyAsync();
-            await RunOnlineRebuildAsync();
-            await RunInterruptedRebuildRestartFromBeginningAsync();
+            await RunOnlineRebuildAsync(providerMetricCapture);
+            await RunInterruptedRebuildRestartFromBeginningAsync(providerMetricCapture);
             DocumentCacheQualificationWriteBatchMetrics outageWrites = await RunOutageWritesAsync();
             await MeasureOutageWorkRowGrowthAsync(outageWrites);
             await SampleStatusLargeWorkInventoryLatencyAsync();
-            await DrainOutageBacklogAsync();
+            await providerMetricCapture.CaptureQuerySamplesAsync();
+            await DrainOutageBacklogAsync(providerMetricCapture);
             await SampleStatusSmallWorkInventoryLatencyAsync();
             await RunSameDocumentEnqueueAckContentionAsync();
             await RunExplicitIntegrityScrubAsync();
             await WritePostRunFinalCountsAsync();
+            await providerMetricCapture.CompleteAsync();
             WriteQualificationSummary();
         }
 
@@ -354,12 +368,17 @@ public static class DocumentCacheQualificationRunPipeline
             return batch;
         }
 
-        private async Task RunOfflineActivationAsync()
+        private async Task RunOfflineActivationAsync(
+            IDocumentCacheProviderMetricCapture providerMetricCapture
+        )
         {
             const string phase = "offline-activation-first-baseline";
             DocumentCacheQualificationPhaseCounts countsBefore = await CaptureCountsAsync();
             DocumentCacheProjectionTargetRuntimeContext targetContext =
                 await RefreshSingleTargetContextAsync();
+            DocumentCacheProviderMetricPhaseScope metricScope = await providerMetricCapture.BeginPhaseAsync(
+                phase
+            );
             Stopwatch stopwatch = Stopwatch.StartNew();
 
             DocumentCacheAdministrativeCommandResult result = await OfflineActivationCommand.ExecuteAsync(
@@ -379,6 +398,7 @@ public static class DocumentCacheQualificationRunPipeline
             stopwatch.Stop();
             await RefreshSingleTargetContextAsync();
             DocumentCacheQualificationPhaseCounts countsAfter = await CaptureCountsAsync();
+            await providerMetricCapture.EndPhaseAsync(metricScope, countsAfter.DocumentCacheRows);
             DocumentCacheStatusResponse status = await StatusService.GetStatusAsync(
                 evaluationMode: DocumentCacheStatusEvaluationMode.StandaloneDirectObservation
             );
@@ -506,12 +526,15 @@ public static class DocumentCacheQualificationRunPipeline
             AssertTrackingCaughtUp(phase, target);
         }
 
-        private async Task RunOnlineRebuildAsync()
+        private async Task RunOnlineRebuildAsync(IDocumentCacheProviderMetricCapture providerMetricCapture)
         {
             const string phase = "online-rebuild-clear-reseed-drain";
             DocumentCacheQualificationPhaseCounts countsBefore = await CaptureCountsAsync();
             DocumentCacheProjectionTargetRuntimeContext targetContext =
                 await RefreshSingleTargetContextAsync();
+            DocumentCacheProviderMetricPhaseScope metricScope = await providerMetricCapture.BeginPhaseAsync(
+                phase
+            );
             Stopwatch stopwatch = Stopwatch.StartNew();
 
             DocumentCacheAdministrativeCommandResult result = await OnlineCacheRebuildCommand.ExecuteAsync(
@@ -527,6 +550,7 @@ public static class DocumentCacheQualificationRunPipeline
             stopwatch.Stop();
             await RefreshSingleTargetContextAsync();
             DocumentCacheQualificationPhaseCounts countsAfter = await CaptureCountsAsync();
+            await providerMetricCapture.EndPhaseAsync(metricScope, countsAfter.DocumentCacheRows);
             DocumentCacheStatusResponse status = await StatusService.GetStatusAsync(
                 evaluationMode: DocumentCacheStatusEvaluationMode.StandaloneDirectObservation
             );
@@ -564,12 +588,17 @@ public static class DocumentCacheQualificationRunPipeline
             AssertTrackingCaughtUp(phase, RequireSingleStatusTarget(status));
         }
 
-        private async Task RunInterruptedRebuildRestartFromBeginningAsync()
+        private async Task RunInterruptedRebuildRestartFromBeginningAsync(
+            IDocumentCacheProviderMetricCapture providerMetricCapture
+        )
         {
             const string phase = "interrupted-rebuild-restart-from-beginning";
             DocumentCacheQualificationPhaseCounts countsBefore = await CaptureCountsAsync();
             DocumentCacheProjectionTargetRuntimeContext targetContext =
                 await RefreshSingleTargetContextAsync();
+            DocumentCacheProviderMetricPhaseScope metricScope = await providerMetricCapture.BeginPhaseAsync(
+                phase
+            );
 
             Stopwatch stopwatch = Stopwatch.StartNew();
             DocumentCacheAdministrativeCommandResult? interruptedResult =
@@ -603,6 +632,7 @@ public static class DocumentCacheQualificationRunPipeline
 
             await RefreshSingleTargetContextAsync();
             DocumentCacheQualificationPhaseCounts countsAfter = await CaptureCountsAsync();
+            await providerMetricCapture.EndPhaseAsync(metricScope, countsAfter.DocumentCacheRows);
             DocumentCacheStatusResponse status = await StatusService.GetStatusAsync(
                 evaluationMode: DocumentCacheStatusEvaluationMode.StandaloneDirectObservation
             );
@@ -785,15 +815,19 @@ public static class DocumentCacheQualificationRunPipeline
             AssertTrackingNotCaughtUp(phase, target);
         }
 
-        private async Task DrainOutageBacklogAsync()
+        private async Task DrainOutageBacklogAsync(IDocumentCacheProviderMetricCapture providerMetricCapture)
         {
             const string phase = "outage-drain";
             DocumentCacheQualificationPhaseCounts countsBefore = await CaptureCountsAsync();
+            DocumentCacheProviderMetricPhaseScope metricScope = await providerMetricCapture.BeginPhaseAsync(
+                phase
+            );
             Stopwatch stopwatch = Stopwatch.StartNew();
             IReadOnlyList<DocumentCacheQualificationDrainSliceMetrics> slices = await DrainUntilEmptyAsync();
             stopwatch.Stop();
             await RefreshSingleTargetContextAsync();
             DocumentCacheQualificationPhaseCounts countsAfter = await CaptureCountsAsync();
+            await providerMetricCapture.EndPhaseAsync(metricScope, countsBefore.DocumentProjectionWorkRows);
             DocumentCacheStatusResponse status = await StatusService.GetStatusAsync(
                 evaluationMode: DocumentCacheStatusEvaluationMode.StandaloneDirectObservation
             );
@@ -2124,7 +2158,7 @@ public static class DocumentCacheQualificationRunPipeline
                 .Append(string.Join("`, `", _completedPhaseStems))
                 .Append("`.\n");
             builder.Append(
-                "- Threshold results and provider maintenance artifacts are produced by subsequent qualification steps.\n"
+                "- Provider metrics artifacts were written under `provider-metrics/`; threshold results are produced by subsequent qualification steps.\n"
             );
 
             WriteText("qualification-summary.md", builder.ToString());

@@ -339,6 +339,7 @@ public static class DocumentCacheQualificationArtifactValidator
         }
 
         ValidateEvidencePath(root, row.EvidencePath, rowPath, row.ThresholdId, failures);
+        ValidateOperatorMetricsEvidencePath(root, row, threshold, rowPath, failures);
         ValidateDurableBaselineCursorTicket(row, threshold, rowPath, failures);
     }
 
@@ -487,6 +488,49 @@ public static class DocumentCacheQualificationArtifactValidator
             failures.Add(
                 new("thresholdRow.evidencePathMissing", "Evidence file does not exist.", rowPath, thresholdId)
             );
+        }
+    }
+
+    private static void ValidateOperatorMetricsEvidencePath(
+        string root,
+        DocumentCacheQualificationResult row,
+        DocumentCacheQualificationThreshold threshold,
+        string rowPath,
+        List<DocumentCacheQualificationValidationFailure> failures
+    )
+    {
+        if (
+            threshold.Area is not ("databaseCpu" or "databaseIo")
+            || string.IsNullOrWhiteSpace(row.EvidencePath)
+        )
+        {
+            return;
+        }
+
+        if (row.EvidencePath != DocumentCacheOperatorMetricsEvidence.RelativePath)
+        {
+            failures.Add(
+                new(
+                    "thresholdRow.operatorMetricsEvidencePath",
+                    $"CPU and I/O threshold rows must reference '{DocumentCacheOperatorMetricsEvidence.RelativePath}'.",
+                    rowPath,
+                    threshold.Id
+                )
+            );
+            return;
+        }
+
+        string fullPath = Path.GetFullPath(
+            Path.Combine(root, row.EvidencePath.Replace('/', Path.DirectorySeparatorChar))
+        );
+        foreach (
+            string failure in DocumentCacheOperatorMetricsEvidence.ValidateFile(
+                fullPath,
+                row.Provider ?? string.Empty
+            )
+        )
+        {
+            failures.Add(new("thresholdRow.operatorMetricsInvalid", failure, rowPath, threshold.Id));
         }
     }
 
