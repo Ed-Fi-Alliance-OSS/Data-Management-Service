@@ -1,8 +1,8 @@
 # DocumentCache Operations Runbook
 
-This runbook covers DMS-1317 operational workflows for the E18 DocumentCache projection
-inside a single DMS relational data store. It uses the shipped `dms-document-cache` CLI
-from DMS-1428 and links to the design sections that own the behavioral contracts.
+This runbook covers operational workflows for the durable DocumentCache projection inside a
+single DMS relational data store. It uses the shipped `dms-document-cache` CLI and links to
+the design sections that own the behavioral contracts.
 
 For command syntax and package installation, see the
 [DocumentCacheAdmin README](../../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md).
@@ -12,7 +12,7 @@ For relational provisioning context, see
 
 ## Scope
 
-DMS-1317 owns these DocumentCache operations:
+This runbook covers these DocumentCache operations:
 
 - status interpretation for one configured `(tenantKey, dataStoreId)` target;
 - projection failure, poison, queue, lifecycle, and cache-ahead remediation;
@@ -22,15 +22,15 @@ DMS-1317 owns these DocumentCache operations:
 - the required explicit scrub after suspected restore or unsupported direct mutation.
 
 Kafka connector setup, connector status, topic operations, binding retirement, source
-replacement, downstream publication containment, and consumer-state recovery are E19
+replacement, downstream publication containment, and consumer-state recovery are Kafka/CDC
 runbook concerns. Use this runbook only up to the DMS projection boundary, then follow
-[E19 CDC operations](../design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md)
+[Kafka/CDC operations](../design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md)
 when connector or downstream state may be affected.
 
-Representation restamp is owned by
-[DMS-1318](../design/backend-redesign/epics/18-document-cache/08-representation-restamp-utility.md).
-Until that implementation lands, this runbook does not claim restamp coverage and does
-not replace it with manual SQL.
+Representation restamp is outside this runbook. It requires the dedicated offline
+byte-changing representation correction workflow; until that utility and its runbook are
+present, this runbook does not claim restamp coverage and does not replace it with manual
+SQL.
 
 Owning design sections:
 
@@ -128,7 +128,7 @@ Status reasons to triage first:
 | `targetBackoff`, `runtimeCancelled`, `runtimeNotObserved` | Projection process is not currently draining normally. | Restart or correct the projector host, then recheck status. |
 | `inventoryInvalid`, `enqueueTriggerUnavailable`, non-empty `enqueueFailures` | Enqueue or fixed inventory is broken. | Treat canonical writes as at risk of rollback until corrected. Fix inventory/prerequisites; do not clear work manually. |
 | `lifecycleDisabled`, `lifecycleResetting`, `lifecycleRebuilding` | Durable lifecycle fences projection success. | Use the lifecycle workflow for the intended operation. |
-| `cacheAheadRecoveryRequired` | A current cache row was observed ahead of canonical source. | Stop cache use; follow cache-ahead recovery or E19 containment. |
+| `cacheAheadRecoveryRequired` | A current cache row was observed ahead of canonical source. | Stop cache use; follow cache-ahead recovery or Kafka/CDC containment. |
 | `sqlServerPrerequisiteFailed` | SQL Server RCSI or `nested triggers` is disabled while lifecycle is `Disabled`. | Correct prerequisites during maintenance, restart the target context, then retry activation. |
 | `unsupportedPrerequisiteIncident` | SQL Server prerequisite failure was observed outside supported initialization scope. | Preserve evidence and escalate; v1 defines no recovery or renewed readiness guarantee. |
 
@@ -187,8 +187,8 @@ dms-document-cache rebuild-online --data-store-id 1 --confirm onlineCacheRebuild
 The workflow enters `Resetting`, clears cache while preserving transactional work
 recording, enters `Rebuilding`, seeds baseline work, drains, and returns to `Tracking`.
 A set cache-ahead latch rejects online rebuild before mutation; use cache-ahead recovery
-only when internal-only proof exists, or follow E19 containment if publication is possible
-or unknown.
+only when internal-only proof exists, or follow Kafka/CDC containment if publication is
+possible or unknown.
 
 If the command returns `incompleteRetryable`, rerun the same `rebuild-online` command
 with the same target and fingerprint guard. A crash in `Resetting` or `Rebuilding` is
@@ -250,7 +250,7 @@ return.
 
 If the higher cache value may have been published, or downstream observation is uncertain,
 do not run internal-only recovery. Stop publication, preserve cache/work/latch evidence,
-and follow the E19 containment and new downstream namespace path. V1 never publishes a
+and follow the Kafka/CDC containment and new downstream namespace path. V1 never publishes a
 lower canonical version as an in-place correction to the old namespace.
 
 ## Persistent Projection Failure and Poison Remediation
@@ -295,7 +295,7 @@ clear the latch, clear cache, or clear work.
 `Rebuilding` after interruption restarts baseline from the beginning because v1 has no
 durable baseline cursor. The
 [DocumentCache Performance Qualification](performance-qualification.md) defines the
-DMS-1317 scale limits for that behavior and links back to the owning
+representative scale limits for that behavior and links back to the owning
 [Projection Performance Qualification](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-performance-qualification)
 design section.
 
@@ -341,35 +341,37 @@ not rely on queue-empty caught-up status. Run an admitted explicit integrity scr
 dms-document-cache scrub --data-store-id 1 --confirm integrityScrub --settings ./appsettings.Production.json --environment Production --datastore postgresql --json
 ```
 
-If scrub sets the cache-ahead latch, follow cache-ahead recovery or E19 containment. If
+If scrub sets the cache-ahead latch, follow cache-ahead recovery or Kafka/CDC containment. If
 scrub repairs work, let projection drain and verify status again. If scrub is rejected
 because lifecycle is not `Tracking` or the latch is already set, resolve that lifecycle or
 latch condition through the supported workflow before claiming caught-up.
 
 ## Restamp Disposition
 
-Representation restamp is deferred to
-[DMS-1318](../design/backend-redesign/epics/18-document-cache/08-representation-restamp-utility.md)
-unless that story has landed in the branch being operated. Current DMS-1317 branch
-disposition: DMS-1318 has not landed, so DMS-1317 does not provide restamp tests,
-commands, or operational recovery. Until then:
+Representation restamp is not included in these DocumentCache projection workflows.
+Restamp requires the dedicated offline byte-changing representation correction utility and
+runbook described by
+[Offline byte-changing representation correction](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#offline-byte-changing-representation-correction).
+The current branch does not contain a DocumentCache restamp runtime or CLI implementation
+under `src/dms`, so these docs do not provide restamp tests, commands, or operational
+recovery. Until the dedicated workflow is present:
 
-- do not claim restamp test or operational coverage from DMS-1317;
+- do not claim restamp test or operational coverage from these docs;
 - do not update `ContentVersion`, resource mirrors, cache rows, or tracked-change tables
   with manual SQL;
 - do not use rebuild or scrub as a byte-changing representation correction; and
-- link operator guidance to the DMS-1318 restamp implementation or to
+- link operator guidance to the dedicated restamp implementation or to
   [Offline byte-changing representation correction](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#offline-byte-changing-representation-correction).
 
-When DMS-1318 is present, use its own offline utility and runbook. Its preflight decides
-between projection/publication mode and canonical-only mode; neither mode certifies a new
-exact CDC baseline.
+When a restamp workflow is present, use its own offline utility and runbook. Its preflight
+decides between projection/publication mode and canonical-only mode; neither mode certifies
+a new exact CDC baseline.
 
-## E19 Boundary
+## Kafka/CDC Boundary
 
-Stop at this runbook when the issue is limited to DMS projection status, cache rows, work
-rows, lifecycle, latch, and provider prerequisites. Move to E19 procedures when an incident
-involves connector registration, Connect offsets, PostgreSQL slots/publications, SQL
-Server CDC capture artifacts, public or progress topics, source binding history, consumer
-state, possibly published cache-ahead values, sensitive-data containment, or destructive
-topic/binding cleanup.
+Stop at this runbook when the incident is limited to DMS projection status, cache rows,
+work rows, lifecycle, latch, and provider prerequisites. Move to Kafka/CDC procedures when
+an incident involves connector registration, Connect offsets, PostgreSQL
+slots/publications, SQL Server CDC capture artifacts, public or progress topics, source
+binding history, consumer state, possibly published cache-ahead values, sensitive-data
+containment, or destructive topic/binding cleanup.

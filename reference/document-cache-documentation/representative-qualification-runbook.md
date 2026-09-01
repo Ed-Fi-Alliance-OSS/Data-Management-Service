@@ -1,14 +1,14 @@
 # DocumentCache Representative Qualification Runbook
 
-This is the release-validation procedure delivered by DMS-1317 for the DocumentCache
-representative benchmark. Use it with the threshold contract in
-[performance-qualification.md](performance-qualification.md). DMS-1317 does not include
-running this benchmark or committing
-`reference/document-cache/qualification-results/<run-id>/` artifacts; that measured
-evidence belongs to a follow-up performance ticket.
+This is the release-validation procedure for the DocumentCache representative benchmark.
+Use it with the threshold contract in
+[performance-qualification.md](performance-qualification.md). This reference defines how
+to run and validate the benchmark; it does not assume representative result artifacts
+already exist under `reference/document-cache/qualification-results/<run-id>/`.
 
-DMS-1317 evidence stops at the DocumentCache projection boundary. Kafka connector,
-topic, offset, consumer, and downstream publication qualification belongs to E19.
+DocumentCache evidence stops at the projection boundary. Kafka connector, topic, offset,
+consumer, and downstream publication qualification belongs to the Kafka/CDC validation
+scope.
 
 ## Environment Requirements
 
@@ -112,8 +112,8 @@ rg -n "threshold-results|qualification-summary|outage-drain|provider-metrics|dur
   reference/document-cache eng/performance tasks.json
 ```
 
-In the follow-up performance ticket, if validation passes and every threshold result is
-acceptable, copy or move the validated directory under:
+After validation passes and every threshold result is acceptable, copy or move the
+validated directory under:
 
 ```text
 reference/document-cache/qualification-results/<run-id>/
@@ -126,17 +126,18 @@ pwsh ./eng/performance/invoke-documentcache-qualification.ps1 \
   -ValidateResults ./reference/document-cache/qualification-results/<run-id>
 ```
 
-Commit the complete result directory in that follow-up ticket only after validation
-succeeds from the committed location.
+Commit the complete result directory only after validation succeeds from the committed
+location.
 
 ## Failure Handling
 
 If interrupted restart-from-beginning, database-load, log-pressure, or queue-DML thresholds
-fail, create a durable-baseline-cursor Jira ticket before claiming production qualification.
-Record that ticket in `threshold-results.json`, and update `qualification-summary.md` to
-state that production qualification is not complete.
+fail, record a durable-baseline-cursor remediation as a production prerequisite before
+claiming production qualification. Capture the remediation reference or decision record in
+`threshold-results.json`, and update `qualification-summary.md` to state that production
+qualification is not complete.
 
-Do not mark the representative evidence task complete until the failed threshold is resolved
+Do not declare representative evidence complete until the failed threshold is resolved
 or the release scope is explicitly changed. Bounded query-plan guards and explicit writer
 evidence are useful diagnostics, but they are not representative-scale qualification.
 

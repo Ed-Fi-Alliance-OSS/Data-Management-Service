@@ -1,17 +1,17 @@
 # DocumentCache Performance Qualification
 
-This is the DMS-1317 harness and runbook contract for E18 DocumentCache scale behavior. It
-turns the design-level
+This is the harness and runbook contract for durable DocumentCache scale behavior. It turns
+the design-level
 [Projection Performance Qualification](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-performance-qualification)
 requirements into executable guard commands, representative-run thresholds, and result
 artifact expectations.
 
-DMS-1317 qualification stops at the DocumentCache projection boundary. Kafka connector,
-topic, offset, ACL, consumer, and downstream publication qualification belongs to E19.
-DMS-1317 delivers the harness, threshold catalog, validator, and operator procedure; the
-actual PostgreSQL and SQL Server representative performance runs and committed
-`reference/document-cache/qualification-results/<run-id>/` artifacts belong to a follow-up
-performance ticket.
+Qualification stops at the DocumentCache projection boundary. Kafka connector, topic,
+offset, ACL, consumer, and downstream publication qualification belongs to the Kafka/CDC
+validation scope. This reference set delivers the harness, threshold catalog, validator,
+and operator procedure; actual PostgreSQL and SQL Server representative performance runs
+and committed `reference/document-cache/qualification-results/<run-id>/` artifacts are
+separate release-validation deliverables.
 
 ## Entry Point
 
@@ -48,7 +48,7 @@ Run release qualification on dedicated PostgreSQL and SQL Server targets whose s
 not tmpfs and whose CPU, IO, WAL/log, and maintenance metrics can be captured for the run
 window. Follow the step-by-step
 [representative qualification runbook](representative-qualification-runbook.md)
-when producing committed evidence in the follow-up performance ticket.
+when producing committed release-validation evidence.
 
 Before the representative run, prepare a strict operator metrics JSON file and pass it
 through `-OperatorMetricsFile` or `PERF_DOCUMENTCACHE_OPERATOR_METRICS_FILE`. The harness
@@ -120,13 +120,13 @@ before the thresholds.
 | SQL Server | Ghost row ratio after cleanup | 1 percent | `sys.dm_db_index_physical_stats` and cleanup observation |
 
 If interrupted baseline or rebuild restart-from-beginning exceeds the provider completion
-time, database-load, log-pressure, or repeated queue-DML thresholds above, create a
-durable-baseline-cursor Jira ticket and make it a production prerequisite. Do not qualify
-v1 production use by accepting repeated full restart cost without that ticket.
+time, database-load, log-pressure, or repeated queue-DML thresholds above, record a
+durable-baseline-cursor remediation and make it a production prerequisite. Do not qualify
+v1 production use by accepting repeated full restart cost without that remediation.
 
 ## Result Artifacts
 
-Each follow-up release-validation run directory must contain:
+Each representative release-validation run directory must contain:
 
 | Artifact | Contents |
 | --- | --- |
