@@ -186,95 +186,17 @@ internal static class PerfFinalGateExecutorSmokeScenario
         AssertPartitionCell(partition, PerfFinalGateScenarios.ScopedPartitionNumber);
     }
 
-    /// <summary>
-    /// Builds a student cursor cell from the variant candidate math: the analytic start
-    /// anchor, the exact expected page membership, and the exact expected next-token bound.
-    /// </summary>
     private static PerfCursorCellRequest StudentCursorCell(
         PerfFinalGateVariant variant,
         PerfCursorRange range,
         PerfFixtureDefinition definition,
         string? filter
-    )
-    {
-        long candidateCount = PerfVariantCandidates.CandidateCount(variant, definition.RowCount);
-        long startCandidate = PerfVariantCandidates.StartCandidateIndex(range, candidateCount, PageSize);
-
-        IReadOnlyList<Guid> expected =
-        [
-            .. Enumerable
-                .Range(0, PageSize)
-                .Select(offset =>
-                    PerfFixtureDefinition.DocumentUuidFor(
-                        PerfVariantCandidates.RowOrdinalOfCandidate(variant, startCandidate + offset)
-                    )
-                ),
-        ];
-
-        long startAnchor = PerfFixtureDefinition.DocumentIdFor(
-            PerfVariantCandidates.RowOrdinalOfCandidate(variant, startCandidate)
-        );
-        long lastAnchor = PerfFixtureDefinition.DocumentIdFor(
-            PerfVariantCandidates.RowOrdinalOfCandidate(variant, startCandidate + PageSize - 1)
-        );
-
-        return new PerfCursorCellRequest(
-            PerfFinalGateScenarios.CursorScenarioId(variant, range),
-            PerfFixtureDefinition.ResourceEndpoint,
-            PageSize,
-            startAnchor,
-            lastAnchor + 1,
-            expected,
-            filter
-        );
-    }
+    ) => PerfFinalGateCellBuilders.StudentCursorCell(variant, range, definition, PageSize, filter);
 
     private static PerfCursorCellRequest DescriptorCursorCell(
         PerfCursorRange range,
         PerfDescriptorFixtureDefinition definition
-    )
-    {
-        long candidateCount = PerfVariantCandidates.CandidateCount(
-            PerfFinalGateVariant.Descriptor,
-            definition.RowCount
-        );
-        long startCandidate = PerfVariantCandidates.StartCandidateIndex(range, candidateCount, PageSize);
-
-        IReadOnlyList<Guid> expected =
-        [
-            .. Enumerable
-                .Range(0, PageSize)
-                .Select(offset =>
-                    PerfDescriptorFixtureDefinition.DocumentUuidFor(
-                        PerfVariantCandidates.RowOrdinalOfCandidate(
-                            PerfFinalGateVariant.Descriptor,
-                            startCandidate + offset
-                        )
-                    )
-                ),
-        ];
-
-        long startAnchor = PerfDescriptorFixtureDefinition.DocumentIdFor(
-            PerfVariantCandidates.RowOrdinalOfCandidate(PerfFinalGateVariant.Descriptor, startCandidate)
-        );
-        long lastAnchor = PerfDescriptorFixtureDefinition.DocumentIdFor(
-            PerfVariantCandidates.RowOrdinalOfCandidate(
-                PerfFinalGateVariant.Descriptor,
-                startCandidate + PageSize - 1
-            )
-        );
-
-        return new PerfCursorCellRequest(
-            PerfFinalGateScenarios.CursorScenarioId(PerfFinalGateVariant.Descriptor, range),
-            PerfDescriptorFixtureDefinition.ResourceEndpoint,
-            PageSize,
-            startAnchor,
-            lastAnchor + 1,
-            expected,
-            FilterQueryString: null,
-            PerfCursorCaptureChannel.RelationalCommand
-        );
-    }
+    ) => PerfFinalGateCellBuilders.DescriptorCursorCell(range, definition, PageSize);
 
     private static void AssertCursorCell(
         PerfCursorMeasuredCell cell,

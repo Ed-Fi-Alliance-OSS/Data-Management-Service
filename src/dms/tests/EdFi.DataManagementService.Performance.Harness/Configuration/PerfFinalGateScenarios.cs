@@ -91,6 +91,30 @@ public static class PerfFinalGateScenarios
         $"partition-{VariantName(variant)}-{partitionNumber}";
 
     /// <summary>
+    /// The canonical lowercase family name used in result artifacts.
+    /// </summary>
+    public static string FamilyName(PerfScenarioFamily family) =>
+        family switch
+        {
+            PerfScenarioFamily.Traditional => "traditional",
+            PerfScenarioFamily.Cursor => "cursor",
+            PerfScenarioFamily.Partition => "partition",
+            _ => throw new ArgumentOutOfRangeException(nameof(family), family, null),
+        };
+
+    /// <summary>
+    /// The canonical lowercase phase name used in result artifacts.
+    /// </summary>
+    public static string PhaseName(PerfPrimaryPhase phase) =>
+        phase switch
+        {
+            PerfPrimaryPhase.Pristine => "pristine",
+            PerfPrimaryPhase.AuthorizedSeeded => "authorized-seeded",
+            PerfPrimaryPhase.FilteredOverlay => "filtered-overlay",
+            _ => throw new ArgumentOutOfRangeException(nameof(phase), phase, null),
+        };
+
+    /// <summary>
     /// The canonical lowercase variant name used in scenario ids and result artifacts.
     /// </summary>
     public static string VariantName(PerfFinalGateVariant variant) =>

@@ -68,7 +68,7 @@ public static partial class PerfArtifactValidator
         ValidateEnvironment(manifest.Environment, errors);
     }
 
-    private static void ValidateRunIdentity(PerfRunIdentity? run, List<string> errors)
+    internal static void ValidateRunIdentity(PerfRunIdentity? run, List<string> errors)
     {
         if (run is null)
         {
@@ -102,7 +102,7 @@ public static partial class PerfArtifactValidator
         }
     }
 
-    private static void ValidateCommits(PerfCommitIdentity? commits, List<string> errors)
+    internal static void ValidateCommits(PerfCommitIdentity? commits, List<string> errors)
     {
         if (commits is null)
         {
@@ -226,7 +226,7 @@ public static partial class PerfArtifactValidator
         }
     }
 
-    private static void ValidateEnvironment(PerfEnvironmentIdentity? environment, List<string> errors)
+    internal static void ValidateEnvironment(PerfEnvironmentIdentity? environment, List<string> errors)
     {
         if (environment is null)
         {
@@ -492,7 +492,7 @@ public static partial class PerfArtifactValidator
         ValidateDatabaseMetrics(at, row, errors);
     }
 
-    private static void ValidateLatency(
+    internal static void ValidateLatency(
         string at,
         string layer,
         PerfLatencySummary? latency,
@@ -556,7 +556,7 @@ public static partial class PerfArtifactValidator
         }
     }
 
-    private static void ValidateCommit(
+    internal static void ValidateCommit(
         string at,
         string role,
         string value,
@@ -574,9 +574,16 @@ public static partial class PerfArtifactValidator
         }
     }
 
-    private static void ValidateDatabaseMetrics(string at, PerfScenarioResult row, List<string> errors)
+    private static void ValidateDatabaseMetrics(string at, PerfScenarioResult row, List<string> errors) =>
+        ValidateDatabaseMetricsSide(at, row.Provider, row.Database, errors);
+
+    internal static void ValidateDatabaseMetricsSide(
+        string at,
+        string provider,
+        PerfDatabaseMetrics? metrics,
+        List<string> errors
+    )
     {
-        PerfDatabaseMetrics? metrics = row.Database;
         if (metrics is null)
         {
             errors.Add($"{at}: database metrics are required.");
@@ -602,7 +609,7 @@ public static partial class PerfArtifactValidator
             || metrics.BuffersRead is not null
             || metrics.DbExecutionMs is not null;
 
-        if (row.Provider == PerfProviders.ArtifactName(PerfProvider.Postgresql))
+        if (provider == PerfProviders.ArtifactName(PerfProvider.Postgresql))
         {
             if (!postgresqlSide)
             {
@@ -616,7 +623,7 @@ public static partial class PerfArtifactValidator
                 errors.Add($"{at}: sql server metrics must be absent on a postgresql row.");
             }
         }
-        else if (row.Provider == PerfProviders.ArtifactName(PerfProvider.Mssql))
+        else if (provider == PerfProviders.ArtifactName(PerfProvider.Mssql))
         {
             if (!sqlServerSide)
             {
@@ -684,7 +691,7 @@ public static partial class PerfArtifactValidator
     // Canonical lowercase artifact names are required rather than anything PerfProviders.Parse
     // accepts, because the metric-side rules and cross-artifact comparisons match on exact
     // strings; a mixed-case name would sail past both without an error.
-    private static bool IsCanonicalProvider(string? providerName) =>
+    internal static bool IsCanonicalProvider(string? providerName) =>
         providerName is not null && _canonicalProviders.Contains(providerName);
 
     private static bool HasUnredactedSecret(string connectionStringShape) =>
@@ -692,7 +699,7 @@ public static partial class PerfArtifactValidator
             .Matches(connectionStringShape)
             .Any(match => match.Groups[2].Value.Trim() != "REDACTED");
 
-    private static bool IsLowercaseHex(string? value, int length) =>
+    internal static bool IsLowercaseHex(string? value, int length) =>
         value is not null && value.Length == length && value.All(IsLowercaseHexDigit);
 
     private static bool IsLowercaseHexDigit(char c) => c is (>= '0' and <= '9') or (>= 'a' and <= 'f');

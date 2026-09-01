@@ -5,6 +5,7 @@
 
 using System.Net;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Performance.Harness.Configuration;
 using EdFi.DataManagementService.Performance.Harness.Results;
@@ -210,8 +211,9 @@ public static class PerfCursorScenarioExecutor
     /// <summary>
     /// Captures and shape-checks the page selection on the cell's recorder channel. The
     /// hydration-keyset channel carries the compiled SQL and bound parameter values per
-    /// request; the relational-command channel (descriptor reads) records execution counts
-    /// only, so its capture is the observed command text and the shape gate is textual.
+    /// request; the relational-command channel (descriptor reads) records the executed
+    /// commands with their real bound parameters, so both channels get the parameter-aware
+    /// shape gate and a replayable capture.
     /// </summary>
     private static PageSelectionQueryCapture ExtractPageSelection(
         PerfCursorCellRequest cell,
@@ -224,7 +226,11 @@ public static class PerfCursorScenarioExecutor
     )
     {
         List<PageKeysetSpec> keysets = [.. recorder.HydrationKeysets.Skip(recorderBaseline)];
-        int relationalExecutions = recorder.RelationalCommandExecutions - relationalBaseline;
+        IReadOnlyList<RelationalCommand> relationalCommands =
+        [
+            .. recorder.RelationalCommands.Skip(relationalBaseline),
+        ];
+        int relationalExecutions = relationalCommands.Count;
 
         if (cell.CaptureChannel == PerfCursorCaptureChannel.HydrationKeyset)
         {
@@ -243,13 +249,13 @@ public static class PerfCursorScenarioExecutor
                 );
             }
 
-            PageSelectionQueryCapture capture = PageSelectionCapture.ExtractSingleQuery([keysets[0]]);
+            PageSelectionQueryCapture keysetCapture = PageSelectionCapture.ExtractSingleQuery([keysets[0]]);
             foreach (PageKeysetSpec keyset in keysets)
             {
                 PageSelectionQueryCapture iterationCapture = PageSelectionCapture.ExtractSingleQuery([
                     keyset,
                 ]);
-                if (iterationCapture.PageDocumentIdSql != capture.PageDocumentIdSql)
+                if (iterationCapture.PageDocumentIdSql != keysetCapture.PageDocumentIdSql)
                 {
                     throw new PerfObservationException(
                         $"{at}: page-selection SQL text changed within the cell."
@@ -264,7 +270,7 @@ public static class PerfCursorScenarioExecutor
                 );
             }
 
-            return capture;
+            return keysetCapture;
         }
 
         if (keysets.Count != 0)
@@ -283,12 +289,34 @@ public static class PerfCursorScenarioExecutor
             );
         }
 
-        PerfCursorSqlShape.EnsureCursorShapedText(observedCommandSql, at);
-        return new PageSelectionQueryCapture(
-            observedCommandSql,
-            new Dictionary<string, object?>(),
-            PageSelectionCapture.Sha256Lowercase(observedCommandSql)
+        PageSelectionQueryCapture capture = RelationalCommandCapture.ToPageSelectionCapture(
+            relationalCommands[0]
         );
+        foreach (RelationalCommand command in relationalCommands)
+        {
+            if (command.CommandText != capture.PageDocumentIdSql)
+            {
+                throw new PerfObservationException(
+                    $"{at}: relational-channel command text changed within the cell."
+                );
+            }
+
+            PerfCursorSqlShape.EnsureCursorShaped(
+                RelationalCommandCapture.ToPageSelectionCapture(command),
+                cell.StartAnchorDocumentId,
+                cell.PageSize,
+                at
+            );
+        }
+
+        if (capture.PageDocumentIdSql != observedCommandSql)
+        {
+            throw new PerfObservationException(
+                $"{at}: the relational-channel command text must match the driver-observed command."
+            );
+        }
+
+        return capture;
     }
 
     /// <summary>

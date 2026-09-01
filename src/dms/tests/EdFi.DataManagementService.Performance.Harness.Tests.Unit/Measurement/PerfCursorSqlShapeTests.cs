@@ -96,37 +96,6 @@ public class Given_The_Cursor_Sql_Shape_Gate
     }
 
     [Test]
-    public void It_accepts_cursor_shaped_text_on_the_relational_channel()
-    {
-        Action act = () =>
-            PerfCursorSqlShape.EnsureCursorShapedText(
-                CursorSql.Replace("FETCH FIRST @pageSize ROWS ONLY", "LIMIT @pageSize"),
-                "cell"
-            );
-
-        act.Should().NotThrow();
-    }
-
-    [Test]
-    public void It_rejects_text_with_forbidden_fragments_or_traditional_placeholders()
-    {
-        foreach (
-            string sql in (string[])
-                [
-                    CursorSql + " OFFSET @x ROWS",
-                    CursorSql + " -- @limit",
-                    CursorSql.Replace("@cursorMin", "@lowBound"),
-                    CursorSql.Replace("@pageSize", "@rowCap"),
-                ]
-        )
-        {
-            Action act = () => PerfCursorSqlShape.EnsureCursorShapedText(sql, "cell");
-
-            act.Should().Throw<PerfObservationException>(sql);
-        }
-    }
-
-    [Test]
     public void It_rejects_missing_cursor_parameters()
     {
         PageSelectionQueryCapture withoutMinimum = Capture(

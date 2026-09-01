@@ -23,50 +23,6 @@ public static class PerfCursorSqlShape
     /// </summary>
     public static readonly IReadOnlyList<string> ForbiddenFragments = ["offset", "row_number", "count("];
 
-    /// <summary>
-    /// The text-only form of the gate, for reads that execute through the relational command
-    /// channel (descriptors), where no keyset parameter capture exists: the statement must
-    /// carry the cursor parameter placeholders and none of the forbidden fragments. The
-    /// forbidden 'offset' fragment also catches an '@offset' placeholder; a '@limit'
-    /// placeholder is checked explicitly because 'LIMIT @pageSize' is legitimate cursor text.
-    /// </summary>
-    public static void EnsureCursorShapedText(string sql, string at)
-    {
-        foreach (string fragment in ForbiddenFragments)
-        {
-            if (sql.Contains(fragment, StringComparison.OrdinalIgnoreCase))
-            {
-                throw new PerfObservationException(
-                    $"{at}: cursor page-selection SQL must not contain '{fragment}'."
-                );
-            }
-        }
-
-        if (sql.Contains("@" + PageCandidateParameterNames.Limit, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new PerfObservationException(
-                $"{at}: cursor page selection must not bind the traditional 'limit' parameter."
-            );
-        }
-
-        foreach (
-            string requiredParameter in (string[])
-                [
-                    PageCandidateParameterNames.CursorInclusiveMinimum,
-                    PageCandidateParameterNames.CursorInclusiveMaximum,
-                    PageCandidateParameterNames.PageSize,
-                ]
-        )
-        {
-            if (!sql.Contains("@" + requiredParameter, StringComparison.Ordinal))
-            {
-                throw new PerfObservationException(
-                    $"{at}: cursor page selection must bind the '{requiredParameter}' parameter."
-                );
-            }
-        }
-    }
-
     public static void EnsureCursorShaped(
         PageSelectionQueryCapture capture,
         long expectedInclusiveMinimum,

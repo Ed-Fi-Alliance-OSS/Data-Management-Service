@@ -5,6 +5,7 @@
 
 using System.Net;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Performance.Harness.Configuration;
 using EdFi.DataManagementService.Performance.Harness.Results;
 using EdFi.DataManagementService.Tests.Integration;
@@ -36,7 +37,8 @@ public sealed record PerfPartitionMeasuredCell(
     PerfLatencySummary LatencyMs,
     PerfLatencySummary DriverExecuteMs,
     string BoundarySql,
-    string BoundarySqlSha256
+    string BoundarySqlSha256,
+    IReadOnlyDictionary<string, object?> BoundaryParameterValues
 );
 
 /// <summary>
@@ -207,19 +209,29 @@ public static class PerfPartitionScenarioExecutor
             );
         }
 
-        // Boundary selection is the relational command channel's one command per request.
-        int relationalExecutions = recorder.RelationalCommandExecutions - relationalBaseline;
+        // Boundary selection is the relational command channel's one command per request; the
+        // recorded commands carry the real bound values the later plan replay binds.
+        IReadOnlyList<RelationalCommand> relationalCommands =
+        [
+            .. recorder.RelationalCommands.Skip(relationalBaseline),
+        ];
         int expectedRequests = warmupIterations + measuredIterations;
-        if (relationalExecutions != expectedRequests)
+        if (relationalCommands.Count != expectedRequests)
         {
             throw new PerfObservationException(
                 $"{at}: expected {expectedRequests} relational-channel boundary commands; observed "
-                    + $"{relationalExecutions}."
+                    + $"{relationalCommands.Count}."
             );
         }
 
         string boundaryText =
             boundarySql ?? throw new PerfObservationException($"{at}: no boundary SQL was observed.");
+        if (relationalCommands.Any(command => command.CommandText != boundaryText))
+        {
+            throw new PerfObservationException(
+                $"{at}: the relational-channel boundary text must match the driver-observed command."
+            );
+        }
 
         return new PerfPartitionMeasuredCell(
             cell.ScenarioId,
@@ -231,7 +243,8 @@ public static class PerfPartitionScenarioExecutor
             latency,
             PerfLatencyMeasurement.Summarize(driverExecuteSamplesMs),
             boundaryText,
-            PageSelectionCapture.Sha256Lowercase(boundaryText)
+            PageSelectionCapture.Sha256Lowercase(boundaryText),
+            RelationalCommandCapture.ParameterValues(relationalCommands[0])
         );
     }
 }
