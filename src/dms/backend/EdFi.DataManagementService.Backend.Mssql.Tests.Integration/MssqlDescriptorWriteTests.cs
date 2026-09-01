@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
+using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
@@ -458,6 +459,134 @@ public class Given_MssqlDescriptorWriteHandler
         probe.Parameters.Add(new SqlParameter("@documentUuid", documentUuid.Value));
         var stillThere = await probe.ExecuteScalarAsync();
         stillThere.Should().NotBeNull("mismatched If-Match must not delete the descriptor row");
+    }
+
+    /// <summary>
+    /// Descriptor creates use their own inline insert SQL rather than the shared document-row builder, so the
+    /// stamp needs live-provider coverage of its own. Unit tests inspect the emitted statement; only a real
+    /// engine proves the column round-trips.
+    /// </summary>
+    [Test]
+    public async Task It_stamps_the_creator_ownership_token_on_a_descriptor_create()
+    {
+        var handler = ResolveHandler();
+        var request = CreatePostRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "OwnershipStamped",
+                "shortDescription": "Ownership Stamped"
+            }
+            """
+        ) with
+        {
+            RelationalAuthorizationContext = new RelationalAuthorizationContext(
+                [],
+                [],
+                creatorOwnershipTokenId: 42,
+                ownershipTokenIds: []
+            ),
+        };
+
+        var result = await handler.HandlePostAsync(request);
+
+        result.Should().BeOfType<UpsertResult.InsertSuccess>();
+        (await ReadStoredOwnershipTokenAsync(request.DocumentUuid)).Should().Be((short)42);
+    }
+
+    [Test]
+    public async Task It_stamps_null_on_a_descriptor_create_when_the_client_has_no_creator_token()
+    {
+        var handler = ResolveHandler();
+        var request = CreatePostRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "OwnershipUnstamped",
+                "shortDescription": "Ownership Unstamped"
+            }
+            """
+        ) with
+        {
+            RelationalAuthorizationContext = new RelationalAuthorizationContext(
+                [],
+                [],
+                creatorOwnershipTokenId: null,
+                ownershipTokenIds: [7]
+            ),
+        };
+
+        var result = await handler.HandlePostAsync(request);
+
+        result.Should().BeOfType<UpsertResult.InsertSuccess>();
+        (await ReadStoredOwnershipTokenAsync(request.DocumentUuid)).Should().BeNull();
+    }
+
+    /// <summary>
+    /// A descriptor upsert-as-update must leave the stored token alone, even though its request carries a
+    /// different creator token that a create would have stamped.
+    /// </summary>
+    [Test]
+    public async Task It_leaves_the_stored_token_unchanged_on_a_descriptor_post_as_update()
+    {
+        var handler = ResolveHandler();
+        var resource = _database.Fixture.SchoolTypeDescriptorResource;
+        const string CreateBody = """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "OwnershipUpsert",
+                "shortDescription": "Ownership Upsert"
+            }
+            """;
+        const string UpsertBody = """
+            {
+                "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                "codeValue": "OwnershipUpsert",
+                "shortDescription": "Ownership Upsert Changed"
+            }
+            """;
+
+        var createRequest = CreatePostRequest(resource, CreateBody) with
+        {
+            RelationalAuthorizationContext = new RelationalAuthorizationContext(
+                [],
+                [],
+                creatorOwnershipTokenId: 42,
+                ownershipTokenIds: []
+            ),
+        };
+        (await handler.HandlePostAsync(createRequest)).Should().BeOfType<UpsertResult.InsertSuccess>();
+
+        var upsertRequest = CreatePostRequest(resource, UpsertBody) with
+        {
+            RelationalAuthorizationContext = new RelationalAuthorizationContext(
+                [],
+                [],
+                creatorOwnershipTokenId: 7,
+                ownershipTokenIds: []
+            ),
+        };
+        (await handler.HandlePostAsync(upsertRequest)).Should().BeOfType<UpsertResult.UpdateSuccess>();
+
+        (await ReadStoredOwnershipTokenAsync(createRequest.DocumentUuid)).Should().Be((short)42);
+    }
+
+    private async Task<short?> ReadStoredOwnershipTokenAsync(DocumentUuid documentUuid)
+    {
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT [CreatedByOwnershipTokenId]
+            FROM [dms].[Document]
+            WHERE [DocumentUuid] = @documentUuid;
+            """;
+        command.Parameters.AddWithValue("@documentUuid", documentUuid.Value);
+
+        var value = await command.ExecuteScalarAsync();
+        return value is null or DBNull ? null : Convert.ToInt16(value, CultureInfo.InvariantCulture);
     }
 
     // ── Helper methods ──────────────────────────────────────────────────
