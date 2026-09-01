@@ -70,6 +70,7 @@ public class DataStoreTests : DatabaseTest
             {
                 DataStoreType = "Production",
                 Name = "Test Instance",
+                Provider = "postgresql",
                 ConnectionString = "Server=localhost;Database=TestDb;User Id=user;Password=pass;",
             };
 
@@ -88,6 +89,7 @@ public class DataStoreTests : DatabaseTest
             var instanceFromDb = ((DataStoreQueryResult.Success)getResult).DataStoreResponses.First();
             instanceFromDb.DataStoreType.Should().Be("Production");
             instanceFromDb.Name.Should().Be("Test Instance");
+            instanceFromDb.Provider.Should().Be("postgresql");
             AssertIsValidEncryptedBase64(
                 instanceFromDb.ConnectionString,
                 "Server=localhost;Database=TestDb;User Id=user;Password=pass;"
@@ -103,6 +105,7 @@ public class DataStoreTests : DatabaseTest
             var instanceFromDb = ((DataStoreGetResult.Success)getByIdResult).DataStoreResponse;
             instanceFromDb.DataStoreType.Should().Be("Production");
             instanceFromDb.Name.Should().Be("Test Instance");
+            instanceFromDb.Provider.Should().Be("postgresql");
             AssertIsValidEncryptedBase64(
                 instanceFromDb.ConnectionString,
                 "Server=localhost;Database=TestDb;User Id=user;Password=pass;"
@@ -140,6 +143,7 @@ public class DataStoreTests : DatabaseTest
             var instanceFromDb = ((DataStoreGetResult.Success)getByIdResult).DataStoreResponse;
             instanceFromDb.DataStoreType.Should().Be("Development");
             instanceFromDb.Name.Should().Be("Test Instance Without Connection");
+            instanceFromDb.Provider.Should().BeNull();
             instanceFromDb.ConnectionString.Should().BeNull();
         }
     }
@@ -157,6 +161,7 @@ public class DataStoreTests : DatabaseTest
             {
                 DataStoreType = "Staging",
                 Name = "Original Instance",
+                Provider = "postgresql",
                 ConnectionString = "Server=original;Database=OriginalDb;",
             };
 
@@ -164,6 +169,7 @@ public class DataStoreTests : DatabaseTest
             {
                 DataStoreType = "Production",
                 Name = "Updated Instance",
+                Provider = "sqlserver",
                 ConnectionString = "Server=updated;Database=UpdatedDb;",
             };
 
@@ -185,6 +191,7 @@ public class DataStoreTests : DatabaseTest
             var instanceFromDb = ((DataStoreQueryResult.Success)getResult).DataStoreResponses.First();
             instanceFromDb.DataStoreType.Should().Be("Production");
             instanceFromDb.Name.Should().Be("Updated Instance");
+            instanceFromDb.Provider.Should().Be("sqlserver");
             AssertIsValidEncryptedBase64(
                 instanceFromDb.ConnectionString,
                 "Server=updated;Database=UpdatedDb;"
@@ -200,6 +207,7 @@ public class DataStoreTests : DatabaseTest
             var instanceFromDb = ((DataStoreGetResult.Success)getByIdResult).DataStoreResponse;
             instanceFromDb.DataStoreType.Should().Be("Production");
             instanceFromDb.Name.Should().Be("Updated Instance");
+            instanceFromDb.Provider.Should().Be("sqlserver");
             AssertIsValidEncryptedBase64(
                 instanceFromDb.ConnectionString,
                 "Server=updated;Database=UpdatedDb;"

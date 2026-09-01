@@ -194,6 +194,67 @@ public class DataStoreUpdateCommandTests
         }
     }
 
+    [TestFixture]
+    public class Given_update_command_with_supported_provider : DataStoreUpdateCommandTests
+    {
+        [TestCase("postgresql")]
+        [TestCase("sqlserver")]
+        [TestCase(null)]
+        public void It_should_be_valid(string? provider)
+        {
+            var command = new DataStoreUpdateCommand
+            {
+                Id = 1,
+                DataStoreType = "Production",
+                Name = "Test Instance",
+                ConnectionString = "Server=localhost;Database=TestDb;",
+                Provider = provider,
+            };
+
+            _validator.TestValidate(command).ShouldNotHaveValidationErrorFor(x => x.Provider);
+        }
+    }
+
+    [TestFixture]
+    public class Given_update_command_with_invalid_provider : DataStoreUpdateCommandTests
+    {
+        [Test]
+        public void It_reports_the_documented_message_for_an_unknown_provider()
+        {
+            var command = new DataStoreUpdateCommand
+            {
+                Id = 1,
+                DataStoreType = "Production",
+                Name = "Test Instance",
+                ConnectionString = "Server=localhost;Database=TestDb;",
+                Provider = "sqlite",
+            };
+
+            _validator
+                .TestValidate(command)
+                .ShouldHaveValidationErrorFor(x => x.Provider)
+                .WithErrorMessage("Provider must be 'postgresql' or 'sqlserver'.");
+        }
+
+        [Test]
+        public void It_reports_the_documented_message_for_an_over_length_provider()
+        {
+            var command = new DataStoreUpdateCommand
+            {
+                Id = 1,
+                DataStoreType = "Production",
+                Name = "Test Instance",
+                ConnectionString = "Server=localhost;Database=TestDb;",
+                Provider = new string('p', 51),
+            };
+
+            _validator
+                .TestValidate(command)
+                .ShouldHaveValidationErrorFor(x => x.Provider)
+                .WithErrorMessage("Provider must be 50 characters or fewer.");
+        }
+    }
+
     /// <summary>
     /// Whatever the configured engine rejected reaches the response as a ConnectionString failure.
     /// </summary>

@@ -23,7 +23,9 @@ public class DataStoreInsertCommand
             RuleFor(x => x.Name).NotEmpty().MaximumLength(256);
             RuleFor(x => x.ConnectionString).ApplyDataStoreConnectionStringRules(connectionStringValidator);
             RuleFor(x => x.Provider)
+                .Cascade(CascadeMode.Stop)
                 .MaximumLength(50)
+                .WithMessage("Provider must be 50 characters or fewer.")
                 .Must(IsSupportedProvider)
                 .WithMessage("Provider must be 'postgresql' or 'sqlserver'.");
         }
