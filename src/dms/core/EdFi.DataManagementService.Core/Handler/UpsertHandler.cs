@@ -182,6 +182,15 @@ internal class UpsertHandler(ILogger _logger, ResiliencePipeline _resiliencePipe
                 Headers: [],
                 ContentType: "application/problem+json"
             ),
+            UpsertFailureOwnershipNotAuthorized notAuthorized => new(
+                StatusCode: 403,
+                Body: OwnershipAuthorizationFailureResponse.ForFailure(
+                    notAuthorized.OwnershipFailure,
+                    requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: [],
+                ContentType: "application/problem+json"
+            ),
             UpsertFailureNotImplemented failure => new(
                 StatusCode: 501,
                 Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),

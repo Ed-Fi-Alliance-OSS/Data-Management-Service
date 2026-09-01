@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -498,6 +499,72 @@ public class DeleteByIdHandlerTests
                     expected: {expected}
 
                     actual: {_customViewRequestInfo.FrontendResponse.Body}
+                    """
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_That_Returns_Ownership_Not_Authorized : DeleteByIdHandlerTests
+    {
+        internal static readonly OwnershipAuthorizationFailure OwnershipFailure = new(
+            OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized,
+            ConfiguredStrategyIndex: 2,
+            StrategyName: AuthorizationStrategyNameConstants.OwnershipBased
+        );
+
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
+            {
+                return Task.FromResult<DeleteResult>(
+                    new DeleteFailureOwnershipNotAuthorized(OwnershipFailure)
+                );
+            }
+        }
+
+        private static readonly string _ownershipTraceId = "ownership-delete-403";
+        private readonly RequestInfo _ownershipRequestInfo = RequestInfoWithRelationalMappingSet(
+            _ownershipTraceId
+        );
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var projectSchemaNode = new JsonObject
+            {
+                ["educationOrganizationTypes"] = new JsonArray { "Type1", "Type2" },
+            };
+            _ownershipRequestInfo.ProjectSchema = new ProjectSchema(projectSchemaNode, NullLogger.Instance);
+            _ownershipRequestInfo.ResourceSchema = GetResourceSchema();
+
+            var (deleteHandler, serviceProvider) = Handler(new Repository());
+            _ownershipRequestInfo.ScopedServiceProvider = serviceProvider;
+
+            await deleteHandler.Execute(_ownershipRequestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_maps_the_ownership_denial_to_the_canonical_problem_details_403()
+        {
+            _ownershipRequestInfo.FrontendResponse.StatusCode.Should().Be(403);
+            _ownershipRequestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+
+            var expected = OwnershipAuthorizationFailureResponse.ForFailure(
+                OwnershipFailure,
+                new TraceId(_ownershipTraceId)
+            );
+
+            _ownershipRequestInfo.FrontendResponse.Body.Should().NotBeNull();
+            JsonNode
+                .DeepEquals(_ownershipRequestInfo.FrontendResponse.Body, expected)
+                .Should()
+                .BeTrue(
+                    $"""
+                    expected: {expected}
+
+                    actual: {_ownershipRequestInfo.FrontendResponse.Body}
                     """
                 );
         }
