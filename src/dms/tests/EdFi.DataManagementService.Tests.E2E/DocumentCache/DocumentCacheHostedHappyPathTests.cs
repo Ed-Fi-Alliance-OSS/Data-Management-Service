@@ -1038,6 +1038,14 @@ public sealed partial class DocumentCacheHostedHappyPathTests
 
     private static JsonObject TargetByDataStoreId(JsonObject status, long dataStoreId)
     {
+        return FindTargetByDataStoreId(status, dataStoreId)
+            ?? throw new AssertionException(
+                $"DocumentCache status did not include dataStoreId {dataStoreId}."
+            );
+    }
+
+    private static JsonObject? FindTargetByDataStoreId(JsonObject status, long dataStoreId)
+    {
         JsonArray targets =
             status["targets"]?.AsArray()
             ?? throw new InvalidOperationException("DocumentCache status response omitted targets.");
@@ -1055,7 +1063,7 @@ public sealed partial class DocumentCacheHostedHappyPathTests
             }
         }
 
-        throw new AssertionException($"DocumentCache status did not include dataStoreId {dataStoreId}.");
+        return null;
     }
 
     private static string ReadString(JsonObject root, params string[] path) =>

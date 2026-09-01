@@ -148,7 +148,32 @@ public sealed partial class DocumentCacheHostedHappyPathTests
 
     private async Task RestartDmsWithProjectorPollIntervalAsync(string pollInterval)
     {
-        string environmentFile = CreateDmsEnvironmentFileWithProjectorPollInterval(pollInterval);
+        await RestartDmsWithDocumentCacheEnvironmentAsync(
+            new Dictionary<string, string> { ["DMS_DOCUMENTCACHE_PROJECTOR_POLL_INTERVAL"] = pollInterval },
+            $"restart DMS with DocumentCache projector poll interval {pollInterval}"
+        );
+    }
+
+    private async Task RestartDmsWithDocumentCacheTargetDataStoreIdAsync(int targetDataStoreId)
+    {
+        await RestartDmsWithDocumentCacheEnvironmentAsync(
+            new Dictionary<string, string>
+            {
+                ["DMS_DOCUMENTCACHE_TARGET_DATA_STORE_ID"] = targetDataStoreId.ToString(
+                    CultureInfo.InvariantCulture
+                ),
+                ["DMS_DOCUMENTCACHE_PROJECTOR_POLL_INTERVAL"] = HostedProjectorDefaultPollInterval,
+            },
+            $"restart DMS with DocumentCache target data store id {targetDataStoreId}"
+        );
+    }
+
+    private async Task RestartDmsWithDocumentCacheEnvironmentAsync(
+        IReadOnlyDictionary<string, string> environmentOverrides,
+        string description
+    )
+    {
+        string environmentFile = CreateDmsEnvironmentFile(environmentOverrides);
         string dockerComposeDirectory = Path.Combine(_repositoryRoot, "eng", "docker-compose");
 
         using var process = new Process();
@@ -164,13 +189,13 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         {
             process.StartInfo.ArgumentList.Add(argument);
         }
-        process.StartInfo.Environment["DMS_DOCUMENTCACHE_PROJECTOR_POLL_INTERVAL"] = pollInterval;
 
-        await RunProcessAndAssertSuccessAsync(
-            process,
-            TimeSpan.FromSeconds(180),
-            $"restart DMS with DocumentCache projector poll interval {pollInterval}"
-        );
+        foreach ((string key, string value) in environmentOverrides)
+        {
+            process.StartInfo.Environment[key] = value;
+        }
+
+        await RunProcessAndAssertSuccessAsync(process, TimeSpan.FromSeconds(180), description);
         RecreateDmsClient();
         await WaitForDmsHealthAsync();
     }
@@ -210,7 +235,7 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         return arguments;
     }
 
-    private string CreateDmsEnvironmentFileWithProjectorPollInterval(string pollInterval)
+    private string CreateDmsEnvironmentFile(IReadOnlyDictionary<string, string> environmentOverrides)
     {
         string tempDirectory = Path.Combine(
             Path.GetTempPath(),
@@ -223,11 +248,10 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         string baseEnvironmentFile = Path.Combine(_repositoryRoot, "eng", "docker-compose", ".env.e2e");
         string[] environmentLines = File.ReadAllLines(baseEnvironmentFile);
         List<string> updatedEnvironmentLines = [.. environmentLines];
-        UpsertEnvironmentValue(
-            updatedEnvironmentLines,
-            "DMS_DOCUMENTCACHE_PROJECTOR_POLL_INTERVAL",
-            pollInterval
-        );
+        foreach ((string key, string value) in environmentOverrides)
+        {
+            UpsertEnvironmentValue(updatedEnvironmentLines, key, value);
+        }
 
         string environmentFile = Path.Combine(tempDirectory, ".env.e2e");
         File.WriteAllLines(environmentFile, updatedEnvironmentLines);
