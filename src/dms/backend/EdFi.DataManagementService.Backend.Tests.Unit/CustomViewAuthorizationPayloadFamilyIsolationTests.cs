@@ -186,6 +186,101 @@ public class Given_AnAuth1PayloadFromAnotherFamily
         invalidFailureDiagnostic.Should().NotBeNull();
     }
 
+    /// <summary>
+    /// The full co-batch matrix for the ownership family. A single command carries namespace, custom-view,
+    /// relationship and ownership statements, and only one of them can raise the abort — so no other family
+    /// may convert an ownership payload into a denial of its own, whatever the payload says.
+    /// </summary>
+    /// <remarks>
+    /// Covers every variant an ownership statement can produce: the two denials (§2.13 and §2.14), the
+    /// stale-target retry signal, a configured-strategy index that matches no planned check, and two
+    /// malformed payload shapes. None of these mappers is given an ownership plan, so this is also the
+    /// "no planned ownership check" case.
+    /// <para>
+    /// These assertions are about the <em>403</em> paths, which is where a misattribution would be a
+    /// security-relevant wrong answer. Which family reports the 500 <em>diagnostic</em> for a malformed
+    /// ownership payload is settled separately, when the ownership provider-failure mapper joins the
+    /// composite classifier.
+    /// </para>
+    /// </remarks>
+    [TestCase("own1|0|m")]
+    [TestCase("own1|0|u")]
+    [TestCase("own1|0|s")]
+    [TestCase("own1|9|m")]
+    [TestCase("own1|0|x")]
+    [TestCase("own1|0")]
+    public void It_should_never_be_turned_into_another_familys_authorization_denial(string payloadText)
+    {
+        NamespaceAuthorizationProviderFailureMapper
+            .TryMapNamespaceAuthorizationFailure(
+                SqlDialect.Pgsql,
+                new FakeDbException(payloadText, "AUTH1"),
+                new StubProviderFailureExtractor("AUTH1", payloadText),
+                NamespaceValueSources,
+                ["uri://ed-fi.org"],
+                out var namespaceFailure
+            )
+            .Should()
+            .BeFalse(payloadText);
+        namespaceFailure.Should().BeNull(payloadText);
+
+        RelationshipAuthorizationProviderFailureMapper
+            .TryMapRelationshipAuthorizationFailure(
+                SqlDialect.Pgsql,
+                new FakeDbException(payloadText, "AUTH1"),
+                new StubProviderFailureExtractor("AUTH1", payloadText),
+                expectedEmittedAuth1Index: 0,
+                [],
+                [],
+                out var relationshipFailure,
+                out _
+            )
+            .Should()
+            .BeFalse(payloadText);
+        relationshipFailure.Should().BeNull(payloadText);
+
+        CustomViewAuthorizationProviderFailureMapper
+            .IsUnmappableCustomViewPayload(
+                SqlDialect.Pgsql,
+                new FakeDbException(payloadText, "AUTH1"),
+                new StubProviderFailureExtractor("AUTH1", payloadText),
+                []
+            )
+            .Should()
+            .BeFalse(payloadText);
+    }
+
+    /// <summary>
+    /// A well-formed ownership payload must not be read as any other family's stale-target retry signal:
+    /// every family encodes stale as <c>s</c>, and retrying against the wrong plan would re-run a check the
+    /// abort never came from.
+    /// </summary>
+    [Test]
+    public void It_should_never_be_read_as_another_familys_stale_stored_target()
+    {
+        const string OwnershipStalePayload = "own1|0|s";
+
+        NamespaceAuthorizationProviderFailureMapper
+            .IsStaleStoredTargetFailure(
+                SqlDialect.Pgsql,
+                new FakeDbException(OwnershipStalePayload, "AUTH1"),
+                new StubProviderFailureExtractor("AUTH1", OwnershipStalePayload),
+                NamespaceValueSources
+            )
+            .Should()
+            .BeFalse();
+
+        CustomViewAuthorizationProviderFailureMapper
+            .IsStaleStoredTargetFailure(
+                SqlDialect.Pgsql,
+                new FakeDbException(OwnershipStalePayload, "AUTH1"),
+                new StubProviderFailureExtractor("AUTH1", OwnershipStalePayload),
+                []
+            )
+            .Should()
+            .BeFalse();
+    }
+
     [Test]
     public void It_should_still_let_the_namespace_mapper_claim_its_own_payload()
     {
