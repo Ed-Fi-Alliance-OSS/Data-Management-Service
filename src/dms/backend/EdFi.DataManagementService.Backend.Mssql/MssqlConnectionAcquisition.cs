@@ -42,8 +42,8 @@ public interface IMssqlConnectionAcquisition
 
 /// <summary>
 /// One configured target as the Configuration Service states it: a kind plus the connection string
-/// exactly as configured. Realization is a pure function of this pair, which is why a recorded
-/// mapping never goes stale.
+/// exactly as configured. Realization is a pure function of this pair, which is why reconciliation
+/// can realize each distinct pair exactly once.
 /// </summary>
 internal readonly record struct ConfiguredTargetKey(
     EffectiveTargetKind Kind,
@@ -65,10 +65,10 @@ public sealed class MssqlConnectionAcquisition : IMssqlConnectionAcquisition, ID
     private readonly ILogger<MssqlConnectionAcquisition> _logger;
 
     /// <summary>
-    /// Guards the configured owner keys, the realization memo, every pool's lease/retirement/clearing
-    /// state, the ownership version, and the clear-generation counter - together, because a decision
-    /// about any one of them that did not see the others could clear a pool a concurrent acquisition
-    /// is about to lease, or lease one whose clear is already under way.
+    /// Guards the owned effective identities, every pool's lease/retirement/clearing state, the
+    /// ownership version, and the clear-generation counter - together, because a decision about any
+    /// one of them that did not see the others could clear a pool a concurrent acquisition is about
+    /// to lease, or lease one whose clear is already under way.
     /// </summary>
     /// <remarks>
     /// Nothing realizes, parses, opens, clears, waits, or signals a completion while this is held.
@@ -77,17 +77,16 @@ public sealed class MssqlConnectionAcquisition : IMssqlConnectionAcquisition, ID
     /// </remarks>
     private readonly object _stateLock = new();
 
-    /// <summary>The latest snapshot's configured targets. Ownership is expressed only in these terms.</summary>
-    private HashSet<ConfiguredTargetKey> _configuredOwners = [];
-
     /// <summary>
-    /// What each configured target realizes to. A memo, not an ownership record: realization is a pure
-    /// function of the key, so a recorded mapping never goes stale and is not deleted when ownership
-    /// changes. Every acquisition records its key here, and reconciliation seeds an entry for every
-    /// realizable configured owner, so a currently configured owner is missing only when no provider
-    /// can parse its string - and such an owner can never hold a pool.
+    /// Every effective string some currently configured owner realizes to, rebuilt wholesale by each
+    /// reconciliation from that snapshot's owners alone. Several owners realizing to one effective
+    /// string - through SqlClient keyword and ordering canonicalization, or a primary whose configured
+    /// text equals a derivative's realized form - keep it owned until the last of them is gone. An
+    /// owner absent here is exactly one no provider can parse, which can never hold a pool. Because
+    /// the set is replaced rather than merged, a removed target retains no identity here, whether or
+    /// not it was ever acquired.
     /// </summary>
-    private readonly Dictionary<ConfiguredTargetKey, string> _realized = [];
+    private HashSet<string> _ownedEffective = new(StringComparer.Ordinal);
 
     /// <summary>Per pool identity - that is, per realized effective connection string.</summary>
     private readonly Dictionary<string, PoolState> _pools = new(StringComparer.Ordinal);
@@ -134,6 +133,22 @@ public sealed class MssqlConnectionAcquisition : IMssqlConnectionAcquisition, ID
     /// </summary>
     internal long TombstoneWaitCount => Interlocked.Read(ref _tombstoneWaitCount);
 
+    /// <summary>
+    /// How many effective identities the current snapshot owns. The set is replaced wholesale on every
+    /// reconciliation, and this is what lets a test prove it: a removed target's identity is gone the
+    /// moment the snapshot without it lands, never retained on the side.
+    /// </summary>
+    internal int OwnedIdentityCount
+    {
+        get
+        {
+            lock (_stateLock)
+            {
+                return _ownedEffective.Count;
+            }
+        }
+    }
+
     /// <summary>What a pool identity currently owes: outstanding leases, ownership, and any clear in flight.</summary>
     private sealed class PoolState
     {
@@ -165,11 +180,9 @@ public sealed class MssqlConnectionAcquisition : IMssqlConnectionAcquisition, ID
         ArgumentNullException.ThrowIfNull(target);
         cancellationToken.ThrowIfCancellationRequested();
 
-        ConfiguredTargetKey key = new(target.Kind, target.ConnectionString);
-
         // Outside the lock. This is where SqlClient parses, and where a provider-invalid derivative
         // throws - inside the acquisition boundary, with no shared state touched, so a failure needs no
-        // repair and records neither a memo entry nor a pool.
+        // repair and records no pool.
         string effective = RealizeEffectiveConnectionString(target);
         Interlocked.Increment(ref _realizationCount);
 
@@ -188,7 +201,7 @@ public sealed class MssqlConnectionAcquisition : IMssqlConnectionAcquisition, ID
                 }
                 else
                 {
-                    return LeaseLocked(key, effective);
+                    return LeaseLocked(effective);
                 }
             }
 
@@ -225,14 +238,16 @@ public sealed class MssqlConnectionAcquisition : IMssqlConnectionAcquisition, ID
         // entry. A primary passes through without a builder, and a derivative no provider can parse
         // realizes to nothing: it can never take a lease, so it owns no pool, and it stays selectable
         // and fails at acquisition exactly as an unrealizable string always has.
-        Dictionary<ConfiguredTargetKey, string> ownerRealizations = [];
+        HashSet<string> newOwnedEffective = new(StringComparer.Ordinal);
 
         foreach (ConfiguredTargetKey owner in newConfiguredOwners)
         {
             try
             {
-                ownerRealizations[owner] = RealizeEffectiveConnectionString(
-                    new EffectiveDataStoreTarget(owner.Kind, owner.ConfiguredConnectionString)
+                newOwnedEffective.Add(
+                    RealizeEffectiveConnectionString(
+                        new EffectiveDataStoreTarget(owner.Kind, owner.ConfiguredConnectionString)
+                    )
                 );
                 Interlocked.Increment(ref _realizationCount);
             }
@@ -260,21 +275,13 @@ public sealed class MssqlConnectionAcquisition : IMssqlConnectionAcquisition, ID
             }
 
             // From here down it is assignments and dictionary operations, none of which can throw.
+            // Replaced wholesale, never merged, so identities of removed targets are not retained.
             _ownershipVersion = snapshot.Version;
-            _configuredOwners = newConfiguredOwners;
-
-            // Merging into the memo is safe even against a concurrent acquisition of the same key:
-            // realization is a pure function, so both writers carry the same value.
-            foreach ((ConfiguredTargetKey owner, string effective) in ownerRealizations)
-            {
-                _realized[owner] = effective;
-            }
-
-            HashSet<string> ownedEffective = OwnedEffectiveLocked(newConfiguredOwners);
+            _ownedEffective = newOwnedEffective;
 
             foreach ((string effective, PoolState state) in _pools)
             {
-                state.IsRetired = !ownedEffective.Contains(effective);
+                state.IsRetired = !newOwnedEffective.Contains(effective);
             }
 
             foreach ((string effective, PoolState state) in _pools)
@@ -348,51 +355,26 @@ public sealed class MssqlConnectionAcquisition : IMssqlConnectionAcquisition, ID
     }
 
     /// <summary>
-    /// Memoizes the realization, counts the lease, and settles retirement. A currently configured key
-    /// reactivates its identity; a key that is not configured leaves retirement to the union of every
-    /// other owner that realizes to the same string, so a stale request neither resurrects ownership
-    /// nor retires an identity another owner still holds.
+    /// Counts the lease and settles retirement with one lookup against the owned identities.
+    /// Reconciliation realizes every configured owner tolerantly and realization is pure, so a
+    /// currently configured target's effective string is always present and reactivates its identity,
+    /// while a stale request's is present exactly when some other current owner realizes to the same
+    /// string - a stale request neither resurrects ownership nor retires an identity another owner
+    /// still holds.
     /// </summary>
-    private MssqlConnectionLease LeaseLocked(ConfiguredTargetKey key, string effectiveConnectionString)
+    private MssqlConnectionLease LeaseLocked(string effectiveConnectionString)
     {
-        _realized[key] = effectiveConnectionString;
-
         if (!_pools.TryGetValue(effectiveConnectionString, out PoolState? state))
         {
             state = new PoolState();
             _pools[effectiveConnectionString] = state;
         }
 
-        state.IsRetired =
-            !_configuredOwners.Contains(key)
-            && !OwnedEffectiveLocked(_configuredOwners).Contains(effectiveConnectionString);
+        state.IsRetired = !_ownedEffective.Contains(effectiveConnectionString);
 
         state.Leases++;
 
         return new MssqlConnectionLease(effectiveConnectionString, _createConnection, this);
-    }
-
-    /// <summary>
-    /// Every effective string some configured owner realizes to. Derived from the memo rather than
-    /// stored, so several owners realizing to one effective string - through SqlClient keyword and
-    /// ordering canonicalization, or a primary whose configured text equals a derivative's realized
-    /// form - keep it owned until the last of them is gone. Reconciliation seeds the memo for every
-    /// realizable configured owner, so an owner absent here is exactly one no provider can parse,
-    /// which can never hold a pool.
-    /// </summary>
-    private HashSet<string> OwnedEffectiveLocked(HashSet<ConfiguredTargetKey> owners)
-    {
-        HashSet<string> owned = new(StringComparer.Ordinal);
-
-        foreach (ConfiguredTargetKey owner in owners)
-        {
-            if (_realized.TryGetValue(owner, out string? effective))
-            {
-                owned.Add(effective);
-            }
-        }
-
-        return owned;
     }
 
     /// <summary>
@@ -453,8 +435,7 @@ public sealed class MssqlConnectionAcquisition : IMssqlConnectionAcquisition, ID
 
     /// <summary>
     /// Retires the tombstone this generation owns, removes that pool's state so a future acquisition
-    /// starts fresh, prunes the memo entries that named it and are no longer configured, and then
-    /// releases the waiters outside the lock.
+    /// starts fresh, and then releases the waiters outside the lock.
     /// </summary>
     private void CompleteClear(string effectiveConnectionString, long generation)
     {
@@ -469,17 +450,6 @@ public sealed class MssqlConnectionAcquisition : IMssqlConnectionAcquisition, ID
             {
                 completion = state.Clearing.Completion;
                 _pools.Remove(effectiveConnectionString);
-
-                foreach (ConfiguredTargetKey key in _realized.Keys.ToArray())
-                {
-                    if (
-                        string.Equals(_realized[key], effectiveConnectionString, StringComparison.Ordinal)
-                        && !_configuredOwners.Contains(key)
-                    )
-                    {
-                        _realized.Remove(key);
-                    }
-                }
             }
         }
 

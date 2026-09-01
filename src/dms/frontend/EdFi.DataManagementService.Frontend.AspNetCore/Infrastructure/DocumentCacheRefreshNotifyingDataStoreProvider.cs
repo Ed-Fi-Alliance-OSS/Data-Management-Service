@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Collections.Immutable;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Model;
@@ -142,6 +141,13 @@ internal sealed class DocumentCacheRefreshNotifyingDataStoreProvider : IDataStor
         return true;
     }
 
+    /// <summary>
+    /// Derivatives are deliberately not compared. DocumentCache is materialized from, keyed by, and
+    /// projected over parent primary databases only - the read coordinator bypasses derivative targets
+    /// before any registry lookup, and derivative pool lifecycle is reconciled from the configuration
+    /// provider's own ownership publication, not from this signal - so a derivative-only change has
+    /// nothing for the projection supervisor to do.
+    /// </summary>
     private static bool DataStoreEquals(DataStore left, DataStore right) =>
         left.Id == right.Id
         && string.Equals(left.DataStoreType, right.DataStoreType, StringComparison.Ordinal)
@@ -152,39 +158,7 @@ internal sealed class DocumentCacheRefreshNotifyingDataStoreProvider : IDataStor
             right.RelationalProviderToken
         )
         && left.RelationalProviderMetadataStatus == right.RelationalProviderMetadataStatus
-        && RouteContextEquals(left.RouteContext, right.RouteContext)
-        && DerivativesEqual(left.Derivatives, right.Derivatives);
-
-    /// <summary>
-    /// Compares configured derivative connection strings by content. A change confined to a derivative
-    /// is a data store metadata change like any other, so leaving it out of this comparison would let a
-    /// refresh that only replaced or removed a derivative pass unnoticed. This is an in-memory ordinal
-    /// comparison of already-loaded configuration: it opens no database connection, and connection
-    /// strings are compared but never logged.
-    /// </summary>
-    private static bool DerivativesEqual(
-        ImmutableDictionary<DataStoreDerivativeType, string> left,
-        ImmutableDictionary<DataStoreDerivativeType, string> right
-    )
-    {
-        if (left.Count != right.Count)
-        {
-            return false;
-        }
-
-        foreach ((DataStoreDerivativeType type, string leftConnectionString) in left)
-        {
-            if (
-                !right.TryGetValue(type, out string? rightConnectionString)
-                || !string.Equals(leftConnectionString, rightConnectionString, StringComparison.Ordinal)
-            )
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
+        && RouteContextEquals(left.RouteContext, right.RouteContext);
 
     private static bool RouteContextEquals(
         Dictionary<RouteQualifierName, RouteQualifierValue> left,

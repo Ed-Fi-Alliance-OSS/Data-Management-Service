@@ -87,6 +87,23 @@ public class Given_Mssql_Ownership_Reconciliation
         _poolClearing.Cleared.Should().ContainSingle().Which.Should().Be(Effective(replica));
     }
 
+    /// <summary>
+    /// Ownership state is replaced wholesale by each snapshot, never merged, so a removed owner -
+    /// acquired or not - retains no identity on the side. Retention here would be retention of
+    /// connection-string material for configuration that no longer exists.
+    /// </summary>
+    [Test]
+    public void It_should_retain_no_identity_for_a_removed_owner_that_was_never_acquired()
+    {
+        _acquisition.Reconcile(Owning(1, Replica(ReplicaText), Snapshot(SnapshotText)));
+        _acquisition.OwnedIdentityCount.Should().Be(2);
+
+        _acquisition.Reconcile(Owning(2, Replica(ReplicaText)));
+
+        _acquisition.OwnedIdentityCount.Should().Be(1);
+        _poolClearing.Cleared.Should().BeEmpty("a never-acquired owner has no pool to clear");
+    }
+
     [Test]
     public async Task It_should_clear_nothing_while_the_owner_is_still_configured()
     {

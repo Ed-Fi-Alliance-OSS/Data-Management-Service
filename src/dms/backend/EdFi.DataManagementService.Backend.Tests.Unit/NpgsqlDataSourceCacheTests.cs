@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Reflection;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.Configuration;
@@ -552,7 +553,9 @@ public class Given_NpgsqlDataSourceCache
 
     /// <summary>
     /// Ownership is derived from connection strings, so every log statement on these paths is one
-    /// mistake away from publishing a password.
+    /// mistake away from publishing a password. The provider exception is made to quote the
+    /// connection string itself, as a real Npgsql failure may, and a hash derived from the string is
+    /// as unwelcome as the string: nothing but the exception's type may reach the log.
     /// </summary>
     [Test]
     public void It_should_never_log_connection_material()
@@ -560,12 +563,18 @@ public class Given_NpgsqlDataSourceCache
         _cache.Reconcile(OwnershipSnapshots.Of(1, PrimaryConnectionString));
 
         NpgsqlDataSourceLease lease = _cache.AcquireLease(PrimaryConnectionString);
-        NpgsqlDataSource dataSource = lease.DataSource;
-        _lifetime.FailDisposeFor.Add(dataSource);
+        _lifetime.OnDispose = _ =>
+            throw new InvalidOperationException(
+                $"Simulated provider disposal failure quoting {PrimaryConnectionString}"
+            );
         lease.Dispose();
 
         _cache.Reconcile(OwnershipSnapshots.Empty(2));
         _cache.Dispose();
+
+        string ordinalHash = PrimaryConnectionString
+            .GetHashCode(StringComparison.Ordinal)
+            .ToString(CultureInfo.InvariantCulture);
 
         _logger
             .Messages.Should()
@@ -573,6 +582,7 @@ public class Given_NpgsqlDataSourceCache
                 message.Contains("Password=", StringComparison.OrdinalIgnoreCase)
                 || message.Contains("Host=primary", StringComparison.Ordinal)
                 || message.Contains(PrimaryConnectionString, StringComparison.Ordinal)
+                || message.Contains(ordinalHash, StringComparison.Ordinal)
             );
     }
 

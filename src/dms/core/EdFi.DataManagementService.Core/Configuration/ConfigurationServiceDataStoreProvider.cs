@@ -658,12 +658,6 @@ public class ConfigurationServiceDataStoreProvider(
             : (null, RelationalProviderMetadataStatus.Unknown);
     }
 
-    /// <summary>
-    /// Sets the Tenant header for multi-tenant API calls
-    /// </summary>
-    /// <param name="tenant">The tenant identifier, or null to remove the header</param>
-    // SetTenantHeader is no longer needed; per-request headers are now used for thread safety.
-
     private SemaphoreSlim GetTenantLock(string tenantKey) =>
         _tenantLocks.GetOrAdd(tenantKey, _ => new SemaphoreSlim(1, 1));
 

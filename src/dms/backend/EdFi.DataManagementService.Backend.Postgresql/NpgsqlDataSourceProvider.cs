@@ -32,6 +32,14 @@ public sealed class NpgsqlDataSourceProvider(
     ILogger<NpgsqlDataSourceProvider> logger
 ) : IDisposable, IAsyncDisposable
 {
+    /// <summary>
+    /// Guards the lease and the disposed flag together, so concurrent seams reading the source
+    /// through one scope cannot both observe no lease and each take one - the loser's lease would
+    /// never be released, pinning a retired data source forever. Holding it across AcquireLease is
+    /// safe: the cache synchronizes internally and never calls back into this provider.
+    /// </summary>
+    private readonly Lock _sync = new();
+
     private NpgsqlDataSourceLease? _lease;
     private bool _disposed;
 
@@ -48,23 +56,26 @@ public sealed class NpgsqlDataSourceProvider(
     {
         get
         {
-            ObjectDisposedException.ThrowIf(_disposed, typeof(NpgsqlDataSourceProvider));
-
-            if (_lease is not null)
+            lock (_sync)
             {
+                ObjectDisposedException.ThrowIf(_disposed, typeof(NpgsqlDataSourceProvider));
+
+                if (_lease is not null)
+                {
+                    return _lease.DataSource;
+                }
+
+                var target = dataStoreSelection.GetEffectiveTarget();
+
+                logger.LogDebug(
+                    "NpgsqlDataSourceProvider leasing a data source for a {TargetKind} target",
+                    target.Kind
+                );
+
+                _lease = dataSourceCache.AcquireLease(target.ConnectionString);
+
                 return _lease.DataSource;
             }
-
-            var target = dataStoreSelection.GetEffectiveTarget();
-
-            logger.LogDebug(
-                "NpgsqlDataSourceProvider leasing a data source for a {TargetKind} target",
-                target.Kind
-            );
-
-            _lease = dataSourceCache.AcquireLease(target.ConnectionString);
-
-            return _lease.DataSource;
         }
     }
 
@@ -86,14 +97,17 @@ public sealed class NpgsqlDataSourceProvider(
     /// </summary>
     private void ReleaseLease()
     {
-        if (_disposed)
+        lock (_sync)
         {
-            return;
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+
+            _lease?.Dispose();
+            _lease = null;
         }
-
-        _disposed = true;
-
-        _lease?.Dispose();
-        _lease = null;
     }
 }

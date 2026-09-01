@@ -312,10 +312,9 @@ public sealed class NpgsqlDataSourceCache : IDataStoreOwnershipReconciler, IDisp
 
     private NpgsqlDataSource Build(string connectionString)
     {
-        _logger.LogDebug(
-            "Creating new NpgsqlDataSource for connection string hash: {Hash}",
-            connectionString.GetHashCode(StringComparison.Ordinal)
-        );
+        // Deliberately anonymous: the only value that could identify which source is being built is
+        // the connection string, and even a hash derived from it has no place in the log.
+        _logger.LogDebug("Creating new NpgsqlDataSource");
 
         return _lifetime.Build(connectionString);
     }
@@ -338,10 +337,20 @@ public sealed class NpgsqlDataSourceCache : IDataStoreOwnershipReconciler, IDisp
         }
         catch (Exception exception)
         {
-            // The exception is logged in full here, unlike the reconciler warning in Core: this one
-            // comes from Npgsql rather than from arbitrary caller code. Nothing names the connection
-            // string.
-            _logger.LogWarning(exception, "Error disposing an NpgsqlDataSource; leaving it to the process");
+            // Only the exception's type, never the exception itself and never its message, data, or
+            // inner exceptions. The data source was built from a connection string, and a provider
+            // failure during its disposal can quote connection values back - which for this class is
+            // a secret.
+            // S6667 asks for the caught exception to be passed to the logger. That is the right
+            // default and the wrong thing here, for the reason above: the exception carries the
+            // untrusted value. Its type is logged instead, which is the part that helps an operator
+            // without carrying anything the provider put in it.
+#pragma warning disable S6667
+            _logger.LogWarning(
+                "Error disposing an NpgsqlDataSource ({ExceptionType}); leaving it to the process",
+                exception.GetType().Name
+            );
+#pragma warning restore S6667
         }
     }
 }

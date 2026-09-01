@@ -88,6 +88,45 @@ public class Given_NpgsqlDataSourceProvider_Holding_Leases
     }
 
     /// <summary>
+    /// The scope's one lease must survive concurrent first access. Several seams read the source
+    /// through one scope, and two of them racing the first read must not each take a lease: the
+    /// loser's would never be released, and a retired data source could then never dispose.
+    /// </summary>
+    [Test]
+    public async Task It_should_take_exactly_one_lease_under_concurrent_first_access()
+    {
+        const int Readers = 8;
+
+        _cache.Reconcile(OwnershipSnapshots.Of(1, PrimaryConnectionString));
+
+        EffectiveDataStoreTarget target = EffectiveDataStoreTarget.Primary(PrimaryConnectionString);
+        NpgsqlDataSourceProvider provider = ProviderFor(target);
+
+        using Barrier gate = new(Readers);
+        NpgsqlDataSource[] observed = new NpgsqlDataSource[Readers];
+
+        await Task.WhenAll(
+            Enumerable
+                .Range(0, Readers)
+                .Select(index =>
+                    Task.Run(() =>
+                    {
+                        gate.SignalAndWait();
+                        observed[index] = provider.DataSource;
+                    })
+                )
+        );
+
+        observed.Should().AllSatisfy(source => source.Should().BeSameAs(observed[0]));
+
+        // Exactly one lease means retiring the string and disposing the scope must dispose the
+        // source; a duplicate lease lost to the race would hold the count at zero forever.
+        _cache.Reconcile(OwnershipSnapshots.Empty(2));
+        await provider.DisposeAsync();
+        _lifetime.DisposeCountOf(observed[0]).Should().Be(1);
+    }
+
+    /// <summary>
     /// Effective-target assignment is write-once per request, so a scope can only ever need one
     /// lease. Once it is held, the provider does not re-read the selection: a second read could only
     /// name the same database again.

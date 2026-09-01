@@ -398,9 +398,11 @@ public class DocumentCacheRefreshNotifyingDataStoreProviderTests
     }
 
     /// <summary>
-    /// A change confined to a derivative is a data store metadata change like any other. Leaving
-    /// derivatives out of the comparison would let a refresh that only added, replaced, or removed one
-    /// pass unnoticed, so each of those three shapes must signal.
+    /// A change confined to a derivative is invisible to DocumentCache: the cache is projected over
+    /// parent primary databases only, the read coordinator bypasses derivative targets, and derivative
+    /// pool lifecycle is reconciled from the configuration provider's own ownership publication. None
+    /// of the three derivative-only shapes - added, replaced, or removed - may wake the projection
+    /// supervisor.
     /// </summary>
     [TestFixture]
     [Parallelizable]
@@ -427,9 +429,9 @@ public class DocumentCacheRefreshNotifyingDataStoreProviderTests
         }
 
         [Test]
-        public void It_signals_the_projection_supervisor()
+        public void It_does_not_notify_the_projection_supervisor()
         {
-            _projectionSupervisor.SignalCount.Should().Be(1);
+            _projectionSupervisor.SignalCount.Should().Be(0);
         }
     }
 
@@ -460,9 +462,9 @@ public class DocumentCacheRefreshNotifyingDataStoreProviderTests
         }
 
         [Test]
-        public void It_signals_the_projection_supervisor()
+        public void It_does_not_notify_the_projection_supervisor()
         {
-            _projectionSupervisor.SignalCount.Should().Be(1);
+            _projectionSupervisor.SignalCount.Should().Be(0);
         }
     }
 
@@ -498,16 +500,16 @@ public class DocumentCacheRefreshNotifyingDataStoreProviderTests
         }
 
         [Test]
-        public void It_signals_the_projection_supervisor()
+        public void It_does_not_notify_the_projection_supervisor()
         {
-            _projectionSupervisor.SignalCount.Should().Be(1);
+            _projectionSupervisor.SignalCount.Should().Be(0);
         }
     }
 
     /// <summary>
-    /// The comparison is by content, not by map identity, so a reload that produces an equal derivative
-    /// map is not a change. It reads only already-loaded configuration and emits no log of its own,
-    /// which is what keeps connection strings out of the log on this path.
+    /// The unchanged case stays quiet for the same reason the changed cases above do - and the
+    /// comparison reads only already-loaded configuration and emits no log of its own, which is what
+    /// keeps connection strings out of the log on this path.
     /// </summary>
     [TestFixture]
     [Parallelizable]
