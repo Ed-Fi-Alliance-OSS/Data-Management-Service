@@ -78,6 +78,21 @@ internal static class OwnershipAuthorizationIntegrationScenario
     ];
 
     /// <summary>
+    /// Every property <c>FailureResponse.CreateBaseJsonObject</c> emits, and nothing else. Pinned so the
+    /// no-disclosure scan cannot be outflanked by a field it does not know to look at.
+    /// </summary>
+    private static readonly string[] _problemDetailsProperties =
+    [
+        "detail",
+        "type",
+        "title",
+        "status",
+        "correlationId",
+        "validationErrors",
+        "errors",
+    ];
+
+    /// <summary>
     /// <c>OwnershipBased</c> on every resource and action, which exercises the whole surface at once: a create
     /// is stamped and never denied, every single-record read and write is enforced, and GET-many and descriptor
     /// storage stay withheld. Seeding still works precisely because a create cannot be denied by ownership.
@@ -240,9 +255,10 @@ internal static class OwnershipAuthorizationIntegrationScenario
 
     /// <summary>
     /// No ownership denial may disclose a token value - not the caller's and not the stored one. Ownership
-    /// tokens are numeric, so the property asserted is that no served string carries a digit at all: it holds
-    /// for both denial shapes and cannot be satisfied by a body that leaked one. The correlation id is excluded
-    /// because it is the request's own trace id.
+    /// tokens are numeric, so the property asserted is that no served value carries a digit at all, JSON
+    /// numbers as well as strings, because a leaked token would most naturally arrive as a number. The body's
+    /// property set is pinned alongside the scan, so a field cannot be added to a denial and skipped. Only the
+    /// correlation id, which is the request's own trace id, and the 403 status itself are excused.
     /// </summary>
     public static async Task It_never_discloses_an_ownership_token_value(ApiIntegrationHarness harness)
     {
@@ -512,14 +528,24 @@ internal static class OwnershipAuthorizationIntegrationScenario
 
         JsonObject problem = JsonNode.Parse(body)!.AsObject();
 
+        // Pinning the property set is what makes the scan below complete rather than best-effort: a field
+        // added to a denial body in future has to be accounted for here before it can be excluded from the
+        // scan, so it cannot arrive already exempt.
+        problem.Select(static property => property.Key).Should().BeEquivalentTo(_problemDetailsProperties);
+
         foreach ((string propertyName, JsonNode? value) in problem)
         {
-            if (string.Equals(propertyName, "correlationId", StringComparison.Ordinal))
+            // The correlation id is the request's own trace id, and the status is the 403 itself. Everything
+            // else in the body is client-facing prose that has no reason to carry a number.
+            if (
+                string.Equals(propertyName, "correlationId", StringComparison.Ordinal)
+                || string.Equals(propertyName, "status", StringComparison.Ordinal)
+            )
             {
                 continue;
             }
 
-            foreach (string text in CollectStrings(value))
+            foreach (string text in CollectScalarText(value))
             {
                 text.Any(char.IsDigit)
                     .Should()
@@ -530,7 +556,12 @@ internal static class OwnershipAuthorizationIntegrationScenario
         }
     }
 
-    private static IEnumerable<string> CollectStrings(JsonNode? node)
+    /// <summary>
+    /// Every scalar under <paramref name="node"/> rendered as text, non-strings included. An ownership token
+    /// leaked into a body would most naturally arrive as a JSON number, which a string-only walk would step
+    /// straight over.
+    /// </summary>
+    private static IEnumerable<string> CollectScalarText(JsonNode? node)
     {
         switch (node)
         {
@@ -538,15 +569,19 @@ internal static class OwnershipAuthorizationIntegrationScenario
                 yield return text;
                 break;
 
+            case JsonValue value:
+                yield return value.ToJsonString();
+                break;
+
             case JsonArray array:
-                foreach (string text in array.SelectMany(CollectStrings))
+                foreach (string text in array.SelectMany(CollectScalarText))
                 {
                     yield return text;
                 }
                 break;
 
             case JsonObject jsonObject:
-                foreach (string text in jsonObject.SelectMany(property => CollectStrings(property.Value)))
+                foreach (string text in jsonObject.SelectMany(property => CollectScalarText(property.Value)))
                 {
                     yield return text;
                 }
