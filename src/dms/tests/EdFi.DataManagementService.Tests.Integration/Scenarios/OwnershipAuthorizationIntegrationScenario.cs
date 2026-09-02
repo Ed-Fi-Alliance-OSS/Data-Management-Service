@@ -245,6 +245,21 @@ internal static class OwnershipAuthorizationIntegrationScenario
         );
         await AssertOwnershipDenialAsync(putResponse, StoredUninitializedType, _storedUninitializedErrors);
 
+        // The same identity, so this POST resolves to an upsert-as-update against the stored row rather than
+        // to a create - and only the update branch can produce 2.14 from a POST, because a create stamps NULL
+        // without ever being denied for it.
+        using HttpResponseMessage postAsUpdateResponse = await PostAsync(
+            harness,
+            ForeignTenant,
+            1301,
+            "ownership-uninitialized-post-as-update"
+        );
+        await AssertOwnershipDenialAsync(
+            postAsUpdateResponse,
+            StoredUninitializedType,
+            _storedUninitializedErrors
+        );
+
         using HttpResponseMessage deleteResponse = await harness.HttpClient.DeleteAsync(
             ResourcePath(ForeignTenant, documentId)
         );
