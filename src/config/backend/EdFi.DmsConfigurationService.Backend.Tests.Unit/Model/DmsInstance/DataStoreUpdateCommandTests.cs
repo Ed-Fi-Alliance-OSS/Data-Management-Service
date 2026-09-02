@@ -218,8 +218,12 @@ public class DataStoreUpdateCommandTests
     [TestFixture]
     public class Given_update_command_with_invalid_provider : DataStoreUpdateCommandTests
     {
-        [Test]
-        public void It_reports_the_documented_message_for_an_unknown_provider()
+        [TestCase("")]
+        [TestCase(" ")]
+        [TestCase("PostgreSQL")]
+        [TestCase("SQLSERVER")]
+        [TestCase("sqlite")]
+        public void It_reports_the_documented_message_for_a_noncanonical_provider(string provider)
         {
             var command = new DataStoreUpdateCommand
             {
@@ -227,7 +231,7 @@ public class DataStoreUpdateCommandTests
                 DataStoreType = "Production",
                 Name = "Test Instance",
                 ConnectionString = "Server=localhost;Database=TestDb;",
-                Provider = "sqlite",
+                Provider = provider,
             };
 
             _validator

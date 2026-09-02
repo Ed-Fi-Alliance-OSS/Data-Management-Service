@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
-using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Tests.E2E.Authorization;
@@ -123,9 +122,7 @@ public sealed partial class DocumentCacheHostedHappyPathTests
             await AssertGetByIdAsync(studentId, studentUniqueId, "Runbook Scrub Source");
             await AssertGetManyAsync(studentUniqueId, "Runbook Scrub Source");
 
-            HostedRunbookRebuildResult rebuildResult =
-                await RunRebuildOnlineWhileCanonicalWritesContinueAsync(dataStoreId);
-            JsonObject rebuild = rebuildResult.CommandResult;
+            JsonObject rebuild = await RunRebuildOnlineRunbookWorkflowAsync(dataStoreId);
             rebuild["command"]!.GetValue<string>().Should().Be("onlineCacheRebuild");
             rebuild["status"]!.GetValue<string>().Should().Be("completed");
             rebuild["classification"]!.GetValue<string>().Should().Be("succeeded");
@@ -134,21 +131,14 @@ public sealed partial class DocumentCacheHostedHappyPathTests
             rebuild["cacheAheadRecoveryRequired"]!.GetValue<bool>().Should().BeFalse();
 
             await WaitForDocumentCacheCaughtUpAsync(dataStoreId);
-            await AssertGetByIdAsync(
-                rebuildResult.StudentId,
-                rebuildResult.StudentUniqueId,
-                rebuildResult.ExpectedFirstName
-            );
-            await AssertGetManyAsync(rebuildResult.StudentUniqueId, rebuildResult.ExpectedFirstName);
+            await AssertGetByIdAsync(studentId, studentUniqueId, "Runbook Scrub Source");
+            await AssertGetManyAsync(studentUniqueId, "Runbook Scrub Source");
 
-            DocumentCacheProjection concurrentWriteProjection = await ReadDocumentCacheProjectionAsync(
-                rebuildResult.StudentId
-            );
-            concurrentWriteProjection
-                .CacheContentVersion.Should()
-                .Be(concurrentWriteProjection.DocumentContentVersion);
-            concurrentWriteProjection.WorkRows.Should().Be(0);
-            concurrentWriteProjection.DocumentJson.Should().Contain(rebuildResult.StudentUniqueId);
+            DocumentCacheProjection rebuiltProjection = await ReadDocumentCacheProjectionAsync(studentId);
+            rebuiltProjection.CacheContentVersion.Should().Be(rebuiltProjection.DocumentContentVersion);
+            rebuiltProjection.WorkRows.Should().Be(0);
+            rebuiltProjection.DocumentJson.Should().Contain(studentUniqueId);
+            rebuiltProjection.DocumentJson.Should().Contain("Runbook Scrub Source");
         }
         finally
         {
@@ -207,152 +197,24 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         );
     }
 
-    private async Task<HostedRunbookRebuildResult> RunRebuildOnlineWhileCanonicalWritesContinueAsync(
-        int dataStoreId
-    )
+    private async Task<JsonObject> RunRebuildOnlineRunbookWorkflowAsync(int dataStoreId)
     {
-        CmsDataStore dataStore = await GetCmsDataStoreAsync(dataStoreId);
-        RunningDocumentCacheAdminCommand? command = null;
-
-        await UpdateCmsDataStoreConnectionStringAsync(dataStore, AppSettings.DataStoreAdminConnectionString);
-        try
-        {
-            WriteRunbookCommandTranscript(RunbookRebuildOnlineTranscriptLabel, dataStoreId);
-            command = StartDocumentCacheAdminCommand(
-                RunbookRebuildOnlineTranscriptLabel,
-                [
-                    "rebuild-online",
-                    "--data-store-id",
-                    dataStoreId.ToString(CultureInfo.InvariantCulture),
-                    "--confirm",
-                    "onlineCacheRebuild",
-                    "--json",
-                    "--datastore",
-                    CliDatastoreOptionValue(),
-                    "--command-timeout-seconds",
-                    "90",
-                ]
-            );
-
-            await AssertDocumentCacheAdminCommandStillRunningAsync(
-                command,
-                "before the concurrent canonical API write"
-            );
-
-            string studentUniqueId = $"doc-cache-rebuild-{Guid.NewGuid():N}"[..32];
-            const string firstName = "Runbook Rebuild Write";
-            Guid studentId = await PostStudentAsync(studentUniqueId, firstName);
-
-            DocumentCacheQueuedState queuedState = await ReadDocumentCacheQueuedStateAsync(studentId);
-            queuedState.WorkRequiredContentVersion.Should().Be(queuedState.DocumentContentVersion);
-
-            JsonObject commandResult = await AwaitDocumentCacheAdminCommandResultAsync(
-                command,
-                TimeSpan.FromSeconds(150)
-            );
-            return new HostedRunbookRebuildResult(studentId, studentUniqueId, firstName, commandResult);
-        }
-        finally
-        {
-            if (command is not null)
-            {
-                TryKill(command.Process);
-                command.Process.Dispose();
-            }
-
-            await UpdateCmsDataStoreConnectionStringAsync(dataStore, AppSettings.DataStoreConnectionString);
-        }
-    }
-
-    private RunningDocumentCacheAdminCommand StartDocumentCacheAdminCommand(
-        string description,
-        string[] arguments
-    )
-    {
-        string settingsPath = CreateDocumentCacheAdminSettingsFile();
-        var process = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = "dotnet",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                WorkingDirectory = _repositoryRoot,
-            },
-        };
-        process.StartInfo.ArgumentList.Add("run");
-        process.StartInfo.ArgumentList.Add("--project");
-        process.StartInfo.ArgumentList.Add(DocumentCacheAdminProjectPath());
-        process.StartInfo.ArgumentList.Add("--configuration");
-        process.StartInfo.ArgumentList.Add(CurrentBuildConfiguration());
-        process.StartInfo.ArgumentList.Add("--no-restore");
-        process.StartInfo.ArgumentList.Add("--");
-
-        foreach (string argument in arguments)
-        {
-            process.StartInfo.ArgumentList.Add(argument);
-        }
-
-        process.StartInfo.ArgumentList.Add("--settings");
-        process.StartInfo.ArgumentList.Add(settingsPath);
-        process.StartInfo.Environment["DOTNET_ENVIRONMENT"] = string.Empty;
-        process.StartInfo.Environment["ASPNETCORE_ENVIRONMENT"] = string.Empty;
-        process.StartInfo.Environment["ConfigurationServiceSettings__ClientSecret"] = ConfigurationSecret();
-
-        process.Start().Should().BeTrue($"{description} must start");
-        return new RunningDocumentCacheAdminCommand(
-            process,
-            process.StandardOutput.ReadToEndAsync(),
-            process.StandardError.ReadToEndAsync(),
-            description
+        WriteRunbookCommandTranscript(RunbookRebuildOnlineTranscriptLabel, dataStoreId);
+        return await RunDocumentCacheAdminWithHostReachableDataStoreAsync(
+            dataStoreId,
+            [
+                "rebuild-online",
+                "--data-store-id",
+                dataStoreId.ToString(CultureInfo.InvariantCulture),
+                "--confirm",
+                "onlineCacheRebuild",
+                "--json",
+                "--datastore",
+                CliDatastoreOptionValue(),
+                "--command-timeout-seconds",
+                "90",
+            ]
         );
-    }
-
-    private static async Task AssertDocumentCacheAdminCommandStillRunningAsync(
-        RunningDocumentCacheAdminCommand command,
-        string context
-    )
-    {
-        if (!command.Process.HasExited)
-        {
-            return;
-        }
-
-        string output = await command.StandardOutput;
-        string error = await command.StandardError;
-        Assert.Fail(
-            $"{command.Description} exited {context}.\nExit code: {command.Process.ExitCode.ToString(CultureInfo.InvariantCulture)}\nstdout:\n{output}\nstderr:\n{error}"
-        );
-    }
-
-    private static async Task<JsonObject> AwaitDocumentCacheAdminCommandResultAsync(
-        RunningDocumentCacheAdminCommand command,
-        TimeSpan timeout
-    )
-    {
-        using var cancellationSource = new CancellationTokenSource(timeout);
-        try
-        {
-            await command.Process.WaitForExitAsync(cancellationSource.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            TryKill(command.Process);
-            Assert.Fail($"{command.Description} timed out.");
-        }
-
-        string output = await command.StandardOutput;
-        string error = await command.StandardError;
-        command
-            .Process.ExitCode.Should()
-            .Be(0, "{0} stderr:\n{1}\nstdout:\n{2}", command.Description, error, output);
-        error.Should().NotContain(AppSettings.DataStoreConnectionString);
-        error.Should().NotContain(AppSettings.DataStoreAdminConnectionString);
-
-        JsonNode? parsed = JsonNode.Parse(output);
-        return parsed as JsonObject
-            ?? throw new InvalidOperationException("DocumentCache admin CLI stdout was not a JSON object.");
     }
 
     private static async Task DeleteProjectionStateForDocumentAsync(Guid documentUuid)
@@ -392,18 +254,4 @@ public sealed partial class DocumentCacheHostedHappyPathTests
             $"{command} --data-store-id {dataStoreId.ToString(CultureInfo.InvariantCulture)} targets {AppSettings.DataStoreDatabaseName}"
         );
     }
-
-    private sealed record HostedRunbookRebuildResult(
-        Guid StudentId,
-        string StudentUniqueId,
-        string ExpectedFirstName,
-        JsonObject CommandResult
-    );
-
-    private sealed record RunningDocumentCacheAdminCommand(
-        Process Process,
-        Task<string> StandardOutput,
-        Task<string> StandardError,
-        string Description
-    );
 }

@@ -82,6 +82,31 @@ performance ticket.
   qualification, representative thresholds, executable harness output, result validation
   schema, or committed qualification artifacts.
 
+## Implementation Note: CMS Relational Provider Metadata
+
+Hosted integration through the real Configuration Service exposed a prerequisite gap in the
+completed 18-01 target-selection path. The 18-01 design requires resolved data-store metadata
+to carry an explicit normalized `postgresql` or `sqlserver` provider token and states that real
+CMS provider-mismatch integration is not taskable until CMS exposes that metadata. CMS did not
+yet persist or return the token, so DMS-1317 could not validate the production target-resolution
+path required by its cross-provider integration scope.
+
+This story therefore retains the narrow CMS contract needed to make that integration path real:
+
+- Add nullable `Provider` metadata to the CMS data-store schema, commands, responses, and both
+  provider repositories.
+- Preserve `null` for backward compatibility and as the update meaning of "not supplied"; an
+  existing provider remains unchanged when an update omits the property.
+- When supplied, require the already-normalized token `postgresql` or `sqlserver`. Reject empty,
+  whitespace, differently-cased, and unknown values so CMS cannot persist ambiguous metadata
+  that silently makes a DocumentCache target ineligible.
+- Limit the change to carrying and validating provider identity. Provider compatibility,
+  target eligibility, and mismatch diagnostics remain owned by the existing 18-01 DMS logic.
+
+Although this is production integration code rather than test-only code, it directly closes the
+explicit 18-01 prerequisite discovered by DMS-1317's hosted coverage. Splitting it would leave
+this story unable to exercise the shipped CMS-to-DMS path it is required to validate.
+
 ## Implementation Note: Config MSSQL E2E Startup Hardening
 
 The PR's GitHub Actions failure was in the Configuration Service MSSQL E2E

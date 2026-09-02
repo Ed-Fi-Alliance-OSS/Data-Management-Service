@@ -33,8 +33,6 @@ public class DataStoreUpdateCommand
         }
 
         private static bool IsSupportedProvider(string? provider) =>
-            string.IsNullOrWhiteSpace(provider)
-            || string.Equals(provider, "postgresql", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(provider, "sqlserver", StringComparison.OrdinalIgnoreCase);
+            provider is null or "postgresql" or "sqlserver";
     }
 }

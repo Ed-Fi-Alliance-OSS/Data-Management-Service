@@ -27,8 +27,9 @@ runbook concerns. Use this runbook only up to the DMS projection boundary, then 
 [Kafka/CDC operations](../design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md)
 when connector or downstream state may be affected.
 
-Representation restamp is owned independently by DMS-1318 / story 18-08 and is outside
-this runbook. This runbook does not replace that workflow with manual SQL.
+Representation restamp belongs to the independently owned offline byte-changing
+representation correction workflow and is outside this runbook. This runbook does not
+replace that workflow with manual SQL.
 
 Owning design sections:
 
@@ -349,8 +350,9 @@ Representation restamp is not included in these DocumentCache projection workflo
 Restamp requires the dedicated offline byte-changing representation correction utility and
 runbook described by
 [Offline byte-changing representation correction](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#offline-byte-changing-representation-correction).
-These docs do not provide restamp tests, commands, or operational recovery. DMS-1317 does
-not depend on delivery of the independently owned DMS-1318 workflow:
+These DocumentCache projection docs do not provide restamp tests, commands, or operational
+recovery because representation restamp belongs to the independently owned offline
+byte-changing representation correction workflow:
 
 - do not claim restamp test or operational coverage from these docs;
 - do not update `ContentVersion`, resource mirrors, cache rows, or tracked-change tables
@@ -359,9 +361,9 @@ not depend on delivery of the independently owned DMS-1318 workflow:
 - link operator guidance to the dedicated restamp implementation or to
   [Offline byte-changing representation correction](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#offline-byte-changing-representation-correction).
 
-When available, use the DMS-1318 offline utility and runbook for representation restamp.
-Its preflight decides between projection/publication mode and canonical-only mode; neither
-mode certifies a new exact CDC baseline.
+Use the dedicated offline utility and runbook for representation restamp. Its preflight
+decides between projection/publication mode and canonical-only mode; neither mode certifies
+a new exact CDC baseline.
 
 ## Kafka/CDC Boundary
 
