@@ -546,12 +546,6 @@ internal sealed class CompositeRelationalDeleteCommand(
     }
 
     /// <summary>
-    /// Runs the custom-view checks configured after <c>NamespaceBased</c> as their own ordered segment, which
-    /// is what lets their views be validated only once that check has passed. Authorization therefore still
-    /// executes in configured order and strictly precedes the relationship check and any deletion, at the cost
-    /// of one more command on that path.
-    /// </summary>
-    /// <summary>
     /// Runs the ownership check as its own ordered segment, which happens when it did not fit the opening
     /// command or when a check configured ahead of it took a segment first.
     /// </summary>
@@ -609,6 +603,12 @@ internal sealed class CompositeRelationalDeleteCommand(
         };
     }
 
+    /// <summary>
+    /// Runs the custom-view checks configured after <c>NamespaceBased</c> as their own ordered segment, which
+    /// is what lets their views be validated only once that check has passed. Authorization therefore still
+    /// executes in configured order and strictly precedes the relationship check and any deletion, at the cost
+    /// of one more command on that path.
+    /// </summary>
     private async Task<DeleteResult?> ExecuteSegmentedCustomViewAsync(
         RelationalDeleteCommandRequest request,
         IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> segmentChecks,

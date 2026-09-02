@@ -114,7 +114,7 @@ public class Given_The_Composite_Relational_Delete_Command
     {
         var session = CreateSession(
             dialect,
-            DeleteReader(rootDeleteOrdinal: 2, deleted: true, namespaceCheckCount: 1)
+            DeleteReader(rootDeleteOrdinal: 2, deleted: true, authorizationResultSetCount: 1)
         );
         var request = CreateRequest(dialect) with
         {
@@ -144,7 +144,7 @@ public class Given_The_Composite_Relational_Delete_Command
             DeleteReader(
                 rootDeleteOrdinal: 3,
                 deleted: true,
-                namespaceCheckCount: 1,
+                authorizationResultSetCount: 1,
                 includeRelationshipRow: true
             )
         );
@@ -219,7 +219,7 @@ public class Given_The_Composite_Relational_Delete_Command
     {
         var session = CreateSession(
             dialect,
-            DeleteReader(rootDeleteOrdinal: 2, deleted: true, namespaceCheckCount: 1)
+            DeleteReader(rootDeleteOrdinal: 2, deleted: true, authorizationResultSetCount: 1)
         );
         var request = CreateRequest(dialect) with
         {
@@ -296,7 +296,7 @@ public class Given_The_Composite_Relational_Delete_Command
     {
         var session = CreateSession(
             SqlDialect.Pgsql,
-            DeleteReader(rootDeleteOrdinal: 3, deleted: true, namespaceCheckCount: 2)
+            DeleteReader(rootDeleteOrdinal: 3, deleted: true, authorizationResultSetCount: 2)
         );
         var request = CreateRequest(SqlDialect.Pgsql) with
         {
@@ -322,7 +322,7 @@ public class Given_The_Composite_Relational_Delete_Command
         // its view may be validated only once that check has passed, and the deletes wait for both.
         var session = CreateSession(
             SqlDialect.Pgsql,
-            CaptureOnlyReader(captured: true, namespaceCheckCount: 1),
+            CaptureOnlyReader(captured: true, authorizationResultSetCount: 1),
             NamespaceCheckReader(checkCount: 1),
             SegmentDeleteReader(deleted: true)
         );
@@ -379,7 +379,7 @@ public class Given_The_Composite_Relational_Delete_Command
         // after follows as a segment, and the deletes wait for that segment.
         var session = CreateSession(
             SqlDialect.Pgsql,
-            CaptureOnlyReader(captured: true, namespaceCheckCount: 2),
+            CaptureOnlyReader(captured: true, authorizationResultSetCount: 2),
             NamespaceCheckReader(checkCount: 1),
             SegmentDeleteReader(deleted: true)
         );
@@ -484,7 +484,7 @@ public class Given_The_Composite_Relational_Delete_Command
         // never be enforced on this delete.
         var session = CreateSession(
             SqlDialect.Pgsql,
-            CaptureOnlyReader(captured: true, namespaceCheckCount: 1),
+            CaptureOnlyReader(captured: true, authorizationResultSetCount: 1),
             NamespaceCheckReader(checkCount: 1),
             new FakeDbException("AUTH1", "AUTH1")
         );
@@ -532,7 +532,7 @@ public class Given_The_Composite_Relational_Delete_Command
         // the relationship check is never issued at all.
         var session = CreateSession(
             SqlDialect.Pgsql,
-            CaptureOnlyReader(captured: true, namespaceCheckCount: 1),
+            CaptureOnlyReader(captured: true, authorizationResultSetCount: 1),
             new FakeDbException("AUTH1", "AUTH1")
         );
         var request = CreateRequest(SqlDialect.Pgsql) with
@@ -636,7 +636,7 @@ public class Given_The_Composite_Relational_Delete_Command
         // One result set for the namespace check and one for the ownership check, then the two deletes.
         var session = CreateSession(
             dialect,
-            DeleteReader(rootDeleteOrdinal: 3, deleted: true, namespaceCheckCount: 2)
+            DeleteReader(rootDeleteOrdinal: 3, deleted: true, authorizationResultSetCount: 2)
         );
         var request = CreateRequest(dialect) with
         {
@@ -750,7 +750,7 @@ public class Given_The_Composite_Relational_Delete_Command
     {
         var session = CreateSession(
             SqlDialect.Pgsql,
-            CaptureOnlyReader(captured: true, namespaceCheckCount: 1),
+            CaptureOnlyReader(captured: true, authorizationResultSetCount: 1),
             // The custom-view segment, then the ownership segment, then the withheld deletes.
             NamespaceCheckReader(checkCount: 1),
             NamespaceCheckReader(checkCount: 1),
@@ -1074,7 +1074,7 @@ public class Given_The_Composite_Relational_Delete_Command
     {
         var session = CreateSession(
             SqlDialect.Mssql,
-            CaptureOnlyReader(captured: true, namespaceCheckCount: 1),
+            CaptureOnlyReader(captured: true, authorizationResultSetCount: 1),
             RelationshipRowReader(),
             SegmentDeleteReader(deleted: true)
         );
@@ -1509,7 +1509,7 @@ public class Given_The_Composite_Relational_Delete_Command
     /// </summary>
     private static ScriptedDbDataReader CaptureOnlyReader(
         bool captured,
-        int namespaceCheckCount = 0,
+        int authorizationResultSetCount = 0,
         bool includeRelationshipRow = false
     )
     {
@@ -1530,7 +1530,7 @@ public class Given_The_Composite_Relational_Delete_Command
             ["DocumentId", "ContentVersion", "DocumentUuid", "CapturedToken"],
         ];
 
-        for (var check = 0; check < namespaceCheckCount; check++)
+        for (var resultSet = 0; resultSet < authorizationResultSetCount; resultSet++)
         {
             resultSets.Add([
                 [1],
@@ -1598,15 +1598,20 @@ public class Given_The_Composite_Relational_Delete_Command
         );
 
     /// <summary>
-    /// The composite command's declared result-set stream: the capture row, one row set per namespace check,
-    /// the relationship row when one is co-batched, the root delete's sentinel echoing its own ordinal, and
-    /// the <c>dms.Document</c> delete's returned id.
+    /// The composite command's declared result-set stream: the capture row, one row set per co-batched
+    /// authorization statement, the relationship row when one is co-batched, the root delete's sentinel
+    /// echoing its own ordinal, and the <c>dms.Document</c> delete's returned id.
     /// </summary>
+    /// <param name="authorizationResultSetCount">
+    /// How many single-row authorization statements the command carries. Namespace and ownership checks emit
+    /// the same shape, so one counter serves both — a command with a namespace check and an ownership check
+    /// declares two.
+    /// </param>
     private static ScriptedDbDataReader DeleteReader(
         int rootDeleteOrdinal,
         bool deleted,
         bool captured = true,
-        int namespaceCheckCount = 0,
+        int authorizationResultSetCount = 0,
         bool includeRelationshipRow = false
     )
     {
@@ -1628,7 +1633,7 @@ public class Given_The_Composite_Relational_Delete_Command
             ["DocumentId", "ContentVersion", "DocumentUuid", "CapturedToken"],
         ];
 
-        for (var check = 0; check < namespaceCheckCount; check++)
+        for (var resultSet = 0; resultSet < authorizationResultSetCount; resultSet++)
         {
             resultSets.Add([
                 [1],

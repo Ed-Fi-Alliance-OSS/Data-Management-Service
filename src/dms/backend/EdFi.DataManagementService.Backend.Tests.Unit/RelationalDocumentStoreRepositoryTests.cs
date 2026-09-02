@@ -12809,10 +12809,23 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_returns_not_implemented_before_delete_target_lookup_when_authorization_includes_a_still_unsupported_strategy()
+    public async Task It_denies_a_delete_on_an_ownership_token_mismatch_and_rolls_back()
     {
+        // OwnershipBased is the only strategy in the relationship classifier's known-but-not-enabled set, so
+        // once Delete is enforced this composition plans instead of returning a 501. Ownership is an AND
+        // filter running before the relationship OR group, so its denial ends the delete — and the deletes
+        // rode the same aborted command, so the row survives the rollback.
         var documentUuid = new DocumentUuid(Guid.NewGuid());
-        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var mappingSet = AsMssql(CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+        ConfigureResolvedDocument(documentId: 345L, documentUuid);
+        ConfigureDeleteAuth1Failure(
+            OwnershipAuthorizationAuth1FailurePayloadCodec.Encode(
+                new OwnershipAuthorizationAuth1FailurePayload(
+                    1,
+                    OwnershipAuthorizationAuth1FailureKind.OwnershipTokenMismatch
+                )
+            )
+        );
 
         var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet, documentUuid: documentUuid);
         A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
@@ -12823,19 +12836,118 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
             ]);
         A.CallTo(() => deleteRequest.AuthorizationContext)
-            .Returns(new RelationalAuthorizationContext([255901L]));
+            .Returns(new RelationalAuthorizationContext([255901L], [], null, [11]));
 
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
-        result.Should().BeOfType<DeleteResult.DeleteFailureNotImplemented>();
-        var failure = result.As<DeleteResult.DeleteFailureNotImplemented>();
-        failure.FailureMessage.Should().Contain(AuthorizationStrategyNameConstants.OwnershipBased);
-        AssertSupportedRelationshipStrategyNames(failure.FailureMessage);
+        var failure = result.Should().BeOfType<DeleteResult.DeleteFailureOwnershipNotAuthorized>().Subject;
+        failure
+            .OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch);
+        failure.OwnershipFailure.ConfiguredStrategyIndex.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    /// <summary>
+    /// An uninitialized stored token is auth.md 2.14 and reaches the caller as its own failure kind.
+    /// </summary>
+    [Test]
+    public async Task It_denies_a_delete_whose_stored_ownership_token_was_never_assigned()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var mappingSet = AsMssql(CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+        ConfigureResolvedDocument(documentId: 345L, documentUuid);
+        ConfigureDeleteAuth1Failure(
+            OwnershipAuthorizationAuth1FailurePayloadCodec.Encode(
+                new OwnershipAuthorizationAuth1FailurePayload(
+                    0,
+                    OwnershipAuthorizationAuth1FailureKind.StoredOwnershipTokenUninitialized
+                )
+            )
+        );
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet, documentUuid: documentUuid);
+        A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ]);
+        A.CallTo(() => deleteRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([], [], null, [11]));
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    /// <summary>
+    /// The ownership denial outranks a specific-tag If-Match mismatch. The check rides the opening command,
+    /// which the precondition comparison follows, so a caller who does not own the row learns that rather
+    /// than being told its etag is stale — which would disclose that the row changed.
+    /// </summary>
+    [Test]
+    public async Task It_reports_an_ownership_denial_over_an_if_match_mismatch()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var mappingSet = AsMssql(CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+        ConfigureResolvedDocument(documentId: 345L, documentUuid);
+        ConfigureDeleteAuth1Failure(
+            OwnershipAuthorizationAuth1FailurePayloadCodec.Encode(
+                new OwnershipAuthorizationAuth1FailurePayload(
+                    0,
+                    OwnershipAuthorizationAuth1FailureKind.OwnershipTokenMismatch
+                )
+            )
+        );
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet, documentUuid: documentUuid);
+        A.CallTo(() => deleteRequest.WritePrecondition)
+            .Returns(new WritePrecondition.IfMatch("\"stale-ownership-etag\""));
+        A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ]);
+        A.CallTo(() => deleteRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([], [], null, [11]));
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureOwnershipNotAuthorized>();
+    }
+
+    /// <summary>
+    /// The ownership token cap is a planner terminal, so it is reported before the write session opens and
+    /// the target is never locked.
+    /// </summary>
+    [Test]
+    public async Task It_fails_closed_for_a_delete_with_an_over_cap_ownership_token_list()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet, documentUuid: documentUuid);
+        A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ]);
+        A.CallTo(() => deleteRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([], [], null, OverCapOwnershipTokenIds()));
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureSecurityConfiguration>()
+            .Which.Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("2,000");
         _writeSessionFactory.CreateAsyncCallCount.Should().Be(0);
-        _currentEtagPreconditionChecker.CallCount.Should().Be(0);
-        A.CallTo(_commandExecutor)
-            .WithReturnType<Task<SingleRecordRelationshipAuthorizationExecutionResult>>()
-            .MustNotHaveHappened();
     }
 
     [Test]

@@ -237,15 +237,18 @@ public class Given_RelationalAuthorizationPlanner
     /// OwnershipBased alone is a complete plan for ReadSingle. It needs neither a securable element nor a
     /// root namespace column, because its subject is the same document column for every resource.
     /// </summary>
-    [Test]
-    public void It_plans_ownership_configured_alone_for_read_single()
+    [TestCase(NamespaceAuthorizationOperation.ReadSingle)]
+    [TestCase(NamespaceAuthorizationOperation.Delete)]
+    public void It_plans_ownership_configured_alone_for_an_enforced_operation(
+        NamespaceAuthorizationOperation operation
+    )
     {
         var resource = ResourceWithoutSecurableElements();
 
         var outcome = RelationalAuthorizationPlanner.Plan(
             EmptyMappingSet(),
             resource,
-            NamespaceAuthorizationOperation.ReadSingle,
+            operation,
             [Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 0)],
             TwoPrefixContext()
         );
@@ -382,12 +385,11 @@ public class Given_RelationalAuthorizationPlanner
     }
 
     /// <summary>
-    /// Update and Delete keep the known-but-not-enabled 501 until their own executors exist. This is the
-    /// fail-closed half of the ReadSingle flip: enabling one operation must not enable the others.
+    /// Update keeps the known-but-not-enabled 501 until Phase 6 wires the write path. This is the fail-closed
+    /// half of each flip: enabling one operation must not enable the others.
     /// </summary>
     [TestCase(NamespaceAuthorizationOperation.Update)]
-    [TestCase(NamespaceAuthorizationOperation.Delete)]
-    public void It_returns_still_unsupported_for_write_operations(NamespaceAuthorizationOperation operation)
+    public void It_returns_still_unsupported_for_update(NamespaceAuthorizationOperation operation)
     {
         var outcome = RelationalAuthorizationPlanner.Plan(
             EmptyMappingSet(),
@@ -844,26 +846,23 @@ public class Given_RelationalAuthorizationPlanner
     // withheld it or the classifier never saw it, and only the predicate separates those.
 
     /// <summary>
-    /// ReadSingle is enforced from this commit on, and only ReadSingle. Each enforcement step adds its own
-    /// operation in the same commit that wires that operation's executor, so no commit exists in which a
-    /// planned ownership check has no executor.
+    /// The operations enforced so far, and only those. Each enforcement step adds its own operation in the
+    /// same commit that wires that operation's executor, so no commit exists in which a planned ownership
+    /// check has no executor.
     /// </summary>
-    [Test]
-    public void It_enforces_ownership_for_read_single()
+    [TestCase(NamespaceAuthorizationOperation.ReadSingle)]
+    [TestCase(NamespaceAuthorizationOperation.Delete)]
+    public void It_enforces_ownership_for_the_enabled_operations(NamespaceAuthorizationOperation operation)
     {
         RelationalAuthorizationPlanner
-            .EnforcesOwnershipChecks(
-                NamespaceAuthorizationOperation.ReadSingle,
-                ResourceStorageKind.RelationalTables
-            )
+            .EnforcesOwnershipChecks(operation, ResourceStorageKind.RelationalTables)
             .Should()
             .BeTrue();
     }
 
     [TestCase(NamespaceAuthorizationOperation.Update)]
-    [TestCase(NamespaceAuthorizationOperation.Delete)]
     [TestCase(NamespaceAuthorizationOperation.ReadMany)]
-    public void It_withholds_ownership_enforcement_for_every_operation_but_read_single(
+    public void It_withholds_ownership_enforcement_for_the_operations_still_out_of_scope(
         NamespaceAuthorizationOperation operation
     )
     {
@@ -914,7 +913,6 @@ public class Given_RelationalAuthorizationPlanner
     /// the strategy is not enforced, so there is nothing for the cap to gate. It keeps its 501.
     /// </summary>
     [TestCase(NamespaceAuthorizationOperation.Update)]
-    [TestCase(NamespaceAuthorizationOperation.Delete)]
     [TestCase(NamespaceAuthorizationOperation.ReadMany)]
     public void It_does_not_report_the_token_cap_while_the_gate_withholds_the_operation(
         NamespaceAuthorizationOperation operation
@@ -932,16 +930,17 @@ public class Given_RelationalAuthorizationPlanner
     }
 
     /// <summary>
-    /// Now that ReadSingle is enforced, the cap terminal is reachable: it reports the configured token count
-    /// so an operator can see what to reduce, and never a token value.
+    /// The cap terminal is reachable for every enforced operation: it reports the configured token count so
+    /// an operator can see what to reduce, and never a token value.
     /// </summary>
-    [Test]
-    public void It_reports_the_token_cap_for_read_single()
+    [TestCase(NamespaceAuthorizationOperation.ReadSingle)]
+    [TestCase(NamespaceAuthorizationOperation.Delete)]
+    public void It_reports_the_token_cap_for_an_enforced_operation(NamespaceAuthorizationOperation operation)
     {
         var outcome = RelationalAuthorizationPlanner.Plan(
             EmptyMappingSet(),
             ResourceWithoutSecurableElements(),
-            NamespaceAuthorizationOperation.ReadSingle,
+            operation,
             [Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 0)],
             OverCapOwnershipContext()
         );

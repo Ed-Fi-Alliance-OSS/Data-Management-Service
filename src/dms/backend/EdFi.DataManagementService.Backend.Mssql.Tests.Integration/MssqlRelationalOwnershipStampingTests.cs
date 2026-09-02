@@ -285,6 +285,125 @@ public class Given_A_Mssql_Relational_Write_With_Ownership_Stamping
             .Contain("2,000");
     }
 
+    // ----- Delete enforcement ----------------------------------------------
+
+    /// <summary>
+    /// An owner may delete. Proves the co-batched ownership statement authorizes and the deletes in the same
+    /// command still run, rather than the check aborting a batch that carried them.
+    /// </summary>
+    [Test]
+    public async Task It_deletes_a_document_whose_stored_token_the_reader_holds()
+    {
+        await ExecuteCreateAsync(CreatorToken);
+
+        var result = await ExecuteOwnershipDeleteAsync([OtherToken, CreatorToken]);
+
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        (await CountStoredDocumentsAsync()).Should().Be(0);
+    }
+
+    /// <summary>
+    /// A non-owner may not, and the row survives. The deletes rode the same command the ownership statement
+    /// aborted, so the abort rolled them back — this is the assertion that a denial cannot destroy data.
+    /// </summary>
+    [Test]
+    public async Task It_denies_a_delete_whose_stored_token_the_reader_does_not_hold_and_leaves_the_row()
+    {
+        await ExecuteCreateAsync(CreatorToken);
+
+        var result = await ExecuteOwnershipDeleteAsync([OtherToken]);
+
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch);
+        (await CountStoredDocumentsAsync()).Should().Be(1);
+        (await ReadStoredOwnershipTokenAsync()).Should().Be(CreatorToken);
+    }
+
+    /// <summary>
+    /// A document created without a token can be deleted by nobody: auth.md 2.14, and the row stays.
+    /// </summary>
+    [Test]
+    public async Task It_denies_a_delete_whose_stored_ownership_token_was_never_assigned()
+    {
+        await ExecuteCreateAsync(creatorOwnershipTokenId: null);
+
+        var result = await ExecuteOwnershipDeleteAsync([CreatorToken]);
+
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized);
+        (await CountStoredDocumentsAsync()).Should().Be(1);
+    }
+
+    /// <summary>
+    /// The denial outranks a stale If-Match. Telling a non-owner its etag is stale would disclose that the
+    /// row changed, so the ownership decision is the one reported.
+    /// </summary>
+    [Test]
+    public async Task It_reports_an_ownership_delete_denial_over_a_stale_if_match()
+    {
+        await ExecuteCreateAsync(CreatorToken);
+
+        var result = await ExecuteOwnershipDeleteAsync([OtherToken], ifMatch: "\"stale-etag\"");
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureOwnershipNotAuthorized>();
+        (await CountStoredDocumentsAsync()).Should().Be(1);
+    }
+
+    private async Task<DeleteResult> ExecuteOwnershipDeleteAsync(
+        IReadOnlyList<short> ownershipTokenIds,
+        string? ifMatch = null
+    )
+    {
+        using var scope = CreateScopeForDatabase();
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return await repository.DeleteDocumentById(
+            new DeleteRequest(
+                DocumentUuid: SchoolDocumentUuid,
+                ResourceInfo: SchoolResourceInfo,
+                TraceId: new TraceId("ownership-enforcement-delete"),
+                Headers: ifMatch is null ? [] : new Dictionary<string, string> { ["If-Match"] = ifMatch },
+                MappingSet: _mappingSet
+            )
+            {
+                AuthorizationContext = new RelationalAuthorizationContext(
+                    [],
+                    [],
+                    creatorOwnershipTokenId: null,
+                    ownershipTokenIds
+                ),
+                AuthorizationStrategyEvaluators =
+                [
+                    new AuthorizationStrategyEvaluator(
+                        AuthorizationStrategyNameConstants.OwnershipBased,
+                        [],
+                        FilterOperator.And
+                    ),
+                ],
+            }
+        );
+    }
+
+    private async Task<int> CountStoredDocumentsAsync()
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT COUNT(*) AS [DocumentCount]
+            FROM [dms].[Document]
+            WHERE [DocumentUuid] = @documentUuid;
+            """,
+            new SqlParameter("documentUuid", SchoolDocumentUuid.Value)
+        );
+
+        return Convert.ToInt32(rows[0]["DocumentCount"], CultureInfo.InvariantCulture);
+    }
+
     private async Task<GetResult> ExecuteOwnershipGetByIdAsync(
         IReadOnlyList<short> ownershipTokenIds,
         IReadOnlyList<string>? strategyNames = null
