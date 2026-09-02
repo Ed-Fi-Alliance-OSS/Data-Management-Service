@@ -276,6 +276,19 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         await ExtractIdFromHeader(_apiResponse);
     }
 
+    /// <summary>
+    /// POSTs <paramref name="body"/> exactly as supplied. Unlike
+    /// <see cref="WhenSendingAPOSTRequestToWithBody"/> this applies no placeholder substitution, so a
+    /// scenario can prove a body received from an earlier response is accepted without modification.
+    /// </summary>
+    public async Task PostVerbatimBodyAsync(string url, string body)
+    {
+        _apiResponse = await playwrightContext.ApiRequestContext?.PostAsync(
+            url,
+            new() { Headers = _authHeaders, Data = body }
+        )!;
+    }
+
     [When("an unauthenticated POST request is made to {string} with header {string} value {string} and")]
     public async Task WhenAnUnauthenticatedPostRequestIsMadeToWithHeaderAnd(
         string url,

@@ -76,9 +76,15 @@ Tests invalid claims upload:
 - Sends malformed claims
 - Verifies 400 response with validation errors
 
+### Scenario 6: Round-Trip Upload
+Tests that a downloaded claims document can be uploaded unmodified:
+- Captures the `GET /management/current-claims` response body verbatim, with its reload ID
+- Posts those exact bytes to `POST /management/upload-claims`
+- Verifies HTTP 200 with a new reload ID, and that the claim sets and hierarchy are unchanged afterward
+
 ## Authorization Coverage
 
-This feature's `Background` obtains a **full-access** CMS token (`Given valid credentials` / `And token received`) and sends it on every request, so scenarios 01–05 exercise only the **authenticated happy path** (including the 400 validation case in scenario 05). The feature does **not** contain a negative-authorization scenario.
+This feature's `Background` obtains a **full-access** CMS token (`Given valid credentials` / `And token received`) and sends it on every request, so scenarios 01–06 exercise only the **authenticated happy path** (including the 400 validation case in scenario 05). The feature does **not** contain a negative-authorization scenario.
 
 The negative authorization behavior of the `/management/*` claims endpoints is covered by the focused in-process unit tests in `ClaimsManagementModuleTests` (project `EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit`), not by this E2E feature:
 

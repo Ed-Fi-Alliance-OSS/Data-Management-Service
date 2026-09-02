@@ -1078,13 +1078,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             string claimsJson = new JsonObject
             {
-                ["claims"] = new JsonObject
-                {
-                    ["claimSets"] = new JsonArray(
-                        new JsonObject { ["claimSetName"] = claimSetName, ["isSystemReserved"] = false }
-                    ),
-                    ["claimsHierarchy"] = new JsonArray(claimsHierarchyNode),
-                },
+                ["claimSets"] = new JsonArray(
+                    new JsonObject { ["claimSetName"] = claimSetName, ["isSystemReserved"] = false }
+                ),
+                ["claimsHierarchy"] = new JsonArray(claimsHierarchyNode),
             }.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
 
             // Call the CMS endpoint to upload the claim set
