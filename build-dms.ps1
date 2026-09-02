@@ -2133,10 +2133,13 @@ function Invoke-TestExecution {
         $TestFilter,
 
         [string]
+        $EnvironmentOverlayFile,
+
+        [string]
         $DatabaseEngine = "postgresql"
     )
     switch ($Filter) {
-        E2ETests { Invoke-Step { E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider -TestFilter $TestFilter -DatabaseEngine $DatabaseEngine } }
+        E2ETests { Invoke-Step { E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider -TestFilter $TestFilter -EnvironmentOverlayFile $EnvironmentOverlayFile -DatabaseEngine $DatabaseEngine } }
         UnitTests { Invoke-Step { UnitTests } }
         IntegrationTests { Invoke-Step { IntegrationTests } }
         Default { "Unknown Test Type" }
