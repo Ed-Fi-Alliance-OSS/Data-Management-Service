@@ -29,7 +29,7 @@ public class Given_Results_Collected_Out_Of_Order
     [Test]
     public void It_stamps_the_schema_version()
     {
-        _document.SchemaVersion.Should().Be(PerfArtifactSchema.Version);
+        _document.SchemaVersion.Should().Be("1.3.0");
     }
 
     [Test]

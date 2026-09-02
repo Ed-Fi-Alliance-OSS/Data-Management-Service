@@ -18,10 +18,9 @@ cross-feature evidence and implementation-specific guidance without restating th
 
 ## Outcome
 
-Validate the completed E18 capability across providers, publish DocumentCache operator
-guidance, and deliver the performance-qualification harness/runbook contract. Actual
-representative performance runs and committed result artifacts are assigned to a follow-up
-ticket.
+Validate the completed E18 capability across providers and publish DocumentCache operator
+guidance. Representative DocumentCache performance qualification is deferred to a follow-up
+performance ticket.
 
 ## Dependencies
 
@@ -49,13 +48,9 @@ ticket.
   for active/historical downstream state, clear-latch `Tracking` admission and fail-closed
   rejection for the explicit O(N) scrub, concurrent baseline deletes, and poison failures
   exhausting seeding capacity.
-- Add the performance-qualification harness, threshold catalog, validator, and runbooks
-  for interrupted baseline/rebuild restart, provider load/log/queue-DML limits,
-  no-source-scan status observations, and durable-baseline-cursor escalation.
-- Use bounded provider guards and documented representative-run requirements to prevent
-  unreviewed scale regressions in this story. Actual PostgreSQL and SQL Server
-  representative performance runs, pass/fail decisions, and committed
-  `reference/document-cache/qualification-results/<run-id>/` artifacts are not part of
+- Keep bounded provider guards that are integration checks, including no-source-scan status
+  and oldest-work observations; do not include the executable representative performance
+  harness, threshold catalog, result validator, or qualification artifact contract in
   DMS-1317.
 - Prove projection failure/backlog never gates canonical API routing.
 - Publish operation and troubleshooting guidance for the shipped commands, configuration,
@@ -69,9 +64,8 @@ ticket.
 - Runbook steps are exercised against the implemented commands and status output.
 - Runbooks explain persistent failure remediation, enqueue-vs-processing availability,
   lifecycle mismatch, activation/deactivation, rebuild, set-latch routing to cache-ahead
-  recovery or containment, scrub admission and rejection, reset recovery, and how
-  provider-specific performance/maintenance evidence is produced and validated by the
-  follow-up performance ticket.
+  recovery or containment, scrub admission and rejection, reset recovery, and where
+  production-scale performance qualification remains deferred.
 - Runbooks require an explicit scrub after suspected restore or unsupported direct
   mutation before operators rely on queue-empty caught-up status.
 - Runbooks limit correction and restart after SQL Server prerequisite initialization
@@ -81,9 +75,9 @@ ticket.
   successful validation is outside the supported v1 contract.
 - Runbooks link to the owning design sections for contracts, recovery constraints, and
   deferrals instead of copying them.
-- Performance-qualification documentation, script entry points, threshold catalog, and
-  result validation schema are present, and no DMS-1317 documentation claims completed
-  representative-scale qualification without committed result artifacts.
+- DMS-1317 documentation must not claim completed production-scale performance
+  qualification, representative thresholds, executable harness output, result validation
+  schema, or committed qualification artifacts.
 
 ## Implementation Note: Config MSSQL E2E Startup Hardening
 
@@ -113,6 +107,7 @@ The durable low-scope fix hardens only the config MSSQL E2E compose path:
 ## Not Assigned to This Story
 
 - Kafka infrastructure, connector, and consumer operation are assigned to E19.
-- Running the representative PostgreSQL and SQL Server performance qualification and
-  committing validated `reference/document-cache/qualification-results/<run-id>/`
-  artifacts are assigned to a follow-up performance ticket.
+- The executable representative DocumentCache performance harness, threshold catalog,
+  result validation schema, representative runbook, production performance runs,
+  pass/fail decisions, durable-baseline-cursor performance escalation evidence, and
+  committed qualification artifacts are assigned to follow-up performance work.

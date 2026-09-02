@@ -1,21 +1,19 @@
 # DocumentCache References
 
 This folder contains the standalone reference set for the durable DocumentCache
-implementation, operations, evidence, and qualification work. It is the index for
-the implemented projection-boundary guidance inside a DMS relational data store,
-not a Kafka connector or downstream consumer runbook.
+implementation, operations, and evidence work. It is the index for the implemented
+projection-boundary guidance inside a DMS relational data store, not a Kafka connector
+or downstream consumer runbook.
 
 - [Operations runbook](operations-runbook.md) documents status interpretation, activation,
   deactivation, rebuild, scrub, cache-ahead recovery, SQL Server prerequisite correction,
   and restore/direct-mutation response.
 - [CDC-INV evidence matrix](cdc-inv-evidence.md) maps implemented evidence to the
   in-scope DocumentCache CDC invariant contracts.
-- [Performance qualification](performance-qualification.md) defines the bounded CI guards,
-  representative-run harness, thresholds, result artifact schema, and provider maintenance
-  evidence contract for deferred representative release-validation evidence.
-- [Representative qualification runbook](representative-qualification-runbook.md) gives the
-  performance engineer release-validation procedure for producing validated result
-  artifacts after representative performance execution.
+
+Production-scale DocumentCache performance qualification is deferred to follow-up work.
+This DMS-1317 reference set does not define the executable representative harness,
+threshold catalog, result schema, or committed qualification artifacts.
 
 Design and implementation references:
 
