@@ -256,6 +256,16 @@ Describe "DMS-1323 bootstrap CDC phase" {
     }
 
     Context "opt-in shapes the wrapper refuses" {
+        It "rejects -EnableKafkaCdc on the published start path, which does not declare it" {
+            # The wrapper is shared between both start scripts but the opt-in is local-only, so
+            # without this the switch would be forwarded to a start script that has no such
+            # parameter and fail parameter binding inside the infrastructure phase - after Docker
+            # and CMS state exist, rather than before anything starts.
+            {
+                Invoke-BootstrapWrapper -StartScriptName "start-published-dms.ps1" -EnableKafkaCdc
+            } | Should -Throw "*-EnableKafkaCdc is supported on the local start path only*"
+        }
+
         It "rejects -EnableKafkaCdc with -InfraOnly" {
             {
                 Invoke-BootstrapWrapper -StartScriptName "start-local-dms.ps1" -EnableKafkaCdc -InfraOnly

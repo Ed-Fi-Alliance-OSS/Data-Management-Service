@@ -64,11 +64,14 @@ services:
       AppSettings__DomainsExcludedFromOpenApi: ${DOMAINS_EXCLUDED_FROM_OPEN_API:-}
       AppSettings__RouteQualifierSegments: ${ROUTE_QUALIFIER_SEGMENTS:-}
       SCHEMA_PACKAGES: ${SCHEMA_PACKAGES:-}
-      # Deployment-owned CDC. Present here as well as in local-dms.yml because the bootstrap
-      # wrapper is shared between the local and published start scripts, so the published path
-      # would otherwise accept -EnableKafkaCdc and silently be unable to honor it. All three are
-      # blank unless the CDC opt-in wrote them, and blank leaves projection unconfigured and the
-      # DocumentCache status endpoint unmapped.
+      # Deployment-owned CDC. These are settings of the DMS image itself, so the published stack
+      # reads them from the environment file the same way local-dms.yml does. The bootstrap
+      # -EnableKafkaCdc opt-in is NOT what writes them here: that switch is local-only and
+      # start-published-dms.ps1 does not declare it, so a published deployment that wants
+      # projection sets these three variables in its own environment file. All three are blank by
+      # default, and blank binds to no projection target and leaves the DocumentCache status
+      # endpoint unmapped. Targets binds through indexed keys and this wiring carries exactly one,
+      # matching the design's one connector per instance database - it is not multi-target support.
       DataManagement__DocumentCache__Targets__0__TenantKey: ${DMS_CDC_TARGET_TENANT_KEY:-}
       DataManagement__DocumentCache__Targets__0__DataStoreId: ${DMS_CDC_TARGET_DATA_STORE_ID:-}
       DataManagement__DocumentCache__Status__RequiredRole: ${DMS_DOCUMENT_CACHE_STATUS_REQUIRED_ROLE:-}

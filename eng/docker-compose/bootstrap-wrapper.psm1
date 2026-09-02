@@ -1088,6 +1088,14 @@ function Invoke-BootstrapWrapper {
     # a shape the CDC phase could not complete, and each fails now rather than after Docker and CMS
     # state exist.
     if ($EnableKafkaCdc) {
+        # The opt-in is local-only (D5: the same rule that keeps the IDE shapes off the published
+        # path). start-published-dms.ps1 declares neither -EnableKafkaCdc nor -CdcBindingStatePath,
+        # so forwarding either would fail parameter binding from inside the infrastructure phase,
+        # after Docker and CMS state exist. Reject the shape here instead.
+        if ($StartScriptName -eq "start-published-dms.ps1") {
+            throw "-EnableKafkaCdc is supported on the local start path only. start-published-dms.ps1 does not expose the CDC infrastructure opt-in."
+        }
+
         if ($InfraOnly) {
             throw "-EnableKafkaCdc is not valid with -InfraOnly. The CDC phase runs against the DMS this wrapper starts; the pre-DMS shape starts none."
         }
