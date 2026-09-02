@@ -1378,7 +1378,12 @@ function Add-DmsSchoolYearInstances {
         throw "StartYear ($StartYear) cannot be greater than EndYear ($EndYear)"
     }
 
-    if ([string]::IsNullOrWhiteSpace($ConnectionString) -and $DatabaseEngine -eq "mssql") {
+    $hasPrebuiltConnectionString = -not [string]::IsNullOrWhiteSpace($ConnectionString)
+    if ($hasPrebuiltConnectionString -and -not $PSBoundParameters.ContainsKey("DatabaseEngine")) {
+        throw "-DatabaseEngine is required when -ConnectionString is supplied."
+    }
+
+    if (-not $hasPrebuiltConnectionString -and $DatabaseEngine -eq "mssql") {
         throw "-ConnectionString is required when -DatabaseEngine is 'mssql'."
     }
 

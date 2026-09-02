@@ -2326,6 +2326,19 @@ __CAPTURE_FUNCTION__ @{ RelativeUrl = $RelativeUrl; Body = $Body }
             Should -Invoke Invoke-Api -ModuleName Dms-Management -Times 0 -Exactly
         }
 
+        It "rejects a prebuilt school-year connection string when database engine is omitted" {
+            $emptyCredential = ConvertTo-PostgresCredential -UserName 'postgres' -Secret ''
+            $prebuilt = 'Server=ambiguous;Database=edfi_datamanagementservice'
+
+            {
+                Add-DmsSchoolYearInstances -CmsUrl 'http://localhost:8081' -AccessToken 'token' `
+                    -PostgresCredential $emptyCredential -StartYear 2024 -EndYear 2024 `
+                    -ConnectionString $prebuilt
+            } | Should -Throw '*-DatabaseEngine is required when -ConnectionString is supplied*'
+
+            Should -Invoke Invoke-Api -ModuleName Dms-Management -Times 0 -Exactly
+        }
+
         It "rejects MSSQL when no prebuilt connection string is supplied" {
             $emptyCredential = ConvertTo-PostgresCredential -UserName 'postgres' -Secret ''
 
