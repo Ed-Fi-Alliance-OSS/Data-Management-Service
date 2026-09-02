@@ -40,6 +40,13 @@ Describe "Config MSSQL Compose startup hardening" {
         $scriptContent | Should -Match 'if\s*\(\$useMssqlTmpfs\s+-and\s+\$datastore\s+-eq\s+"mssql"\)\s*\{\s*\$files\s*\+=\s*@\("-f",\s*\$mssqlTmpfsComposeFile\)\s*\}'
     }
 
+    It "imports the log-safe formatter used by the MSSQL readiness timeout" {
+        $scriptContent = Get-Content -LiteralPath (Join-Path $script:dockerComposeRoot "start-local-config.ps1") -Raw
+
+        $scriptContent | Should -Match 'Import-Module\s+\(Join-Path\s+\$PSScriptRoot\s+"bootstrap-manifest\.psm1"\)\s+-Force'
+        $scriptContent | Should -Match 'Format-LogSafeText\s+\$ContainerName'
+    }
+
     It "starts SQL Server and waits for sqlcmd readiness before starting the config services" {
         $scriptContent = Get-Content -LiteralPath (Join-Path $script:dockerComposeRoot "start-local-config.ps1") -Raw
 

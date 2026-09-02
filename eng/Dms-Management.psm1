@@ -1056,9 +1056,10 @@ function Add-DataStore {
 
         [int]$PostgresPort = 5432,
 
-        # Pre-built connection string. When provided it is used verbatim (any engine, e.g. an
-        # MSSQL connection string from New-DataStoreConnectionString); otherwise a PostgreSQL
-        # connection string is built from the credential and Postgres* parameters.
+        # Pre-built connection string. When provided it is used verbatim and -DatabaseEngine
+        # must also be supplied so the registered provider metadata matches the target engine.
+        # Otherwise a PostgreSQL connection string is built from the credential and Postgres*
+        # parameters.
         [string]$ConnectionString = "",
 
         [ValidateSet("postgresql", "mssql")]
@@ -1086,6 +1087,10 @@ function Add-DataStore {
     # compares the provider-parsed value, never the parameter text, and follows that exception instead
     # of missing it.
     $hasPrebuiltConnectionString = -not [string]::IsNullOrWhiteSpace($ConnectionString)
+    if ($hasPrebuiltConnectionString -and -not $PSBoundParameters.ContainsKey("DatabaseEngine")) {
+        throw "-DatabaseEngine is required when -ConnectionString is supplied."
+    }
+
     if (-not $hasPrebuiltConnectionString) {
         if ($DatabaseEngine -eq "mssql") {
             throw "-ConnectionString is required when -DatabaseEngine is 'mssql'."

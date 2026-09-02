@@ -27,7 +27,8 @@ param (
     $IdentityProvider="self-contained"
 )
 
-Import-Module ./env-utility.psm1 -Force
+Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force
+Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
 $datastore = if ($envValues["DMS_CONFIG_DATASTORE"]) { $envValues["DMS_CONFIG_DATASTORE"] } else { "postgresql" }
 $databaseComposeFile = if ($datastore -eq "mssql") { "mssql.yml" } else { "postgresql.yml" }

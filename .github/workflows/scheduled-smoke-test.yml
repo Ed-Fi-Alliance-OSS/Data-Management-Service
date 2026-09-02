@@ -400,7 +400,7 @@ jobs:
 
           Add-CmsClient -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd" -DisplayName "Data Store Setup Administrator"
           $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
-          $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresCredential $postgresCredential -PostgresDbName $env:SMOKE_DATABASE_NAME -ConnectionString $dataStoreConnectionString -Name "Smoke Test Data Store" -DataStoreType "SmokeTest"
+          $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresCredential $postgresCredential -PostgresDbName $env:SMOKE_DATABASE_NAME -ConnectionString $dataStoreConnectionString -DatabaseEngine "${{ matrix.database_engine }}" -Name "Smoke Test Data Store" -DataStoreType "SmokeTest"
           if (-not $dataStoreId) {
             throw "Failed to register the smoke test data store."
           }
