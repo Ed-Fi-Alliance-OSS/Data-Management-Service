@@ -121,6 +121,13 @@ function Get-CdcRetireArgument {
         Carries no provisioning evidence. The evidence flags attest that a database was created for
         an initial CDC provisioning and has admitted no write, which is a claim about enablement;
         retirement neither needs nor may assert it.
+
+        It does carry the connector principal, which every cdc verb requires: the provider-setup
+        input factory refuses without it, because the validate-only pass retirement runs reports the
+        grants that principal holds. It carries no connector source-connection properties - a
+        retirement registers no connector and reads none, and the connector's database name is a
+        per-run value this module has no authority over, so supplying a guess would put a wrong
+        value where nothing reads a right one.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns the argument list for one invocation; the plural noun reflects the return shape.')]
     [CmdletBinding()]
@@ -144,12 +151,22 @@ function Get-CdcRetireArgument {
 
         [Parameter(Mandatory)]
         [string]
-        $DmsBearerToken
+        $DmsBearerToken,
+
+        [hashtable]
+        $ConnectorPrincipal
     )
+
+    Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
+    Import-Module (Join-Path $PSScriptRoot "bootstrap-wrapper.psm1") -Force
 
     # The database principal the provider teardown runs as - the server's own administrative login,
     # which is the account the compose file creates, matching the enable phase's setup principal.
     $setupPrincipal = if ($DatabaseEngine -eq "mssql") { "sa" } else { "postgres" }
+
+    if ($null -eq $ConnectorPrincipal) {
+        $ConnectorPrincipal = Get-CdcConnectorPrincipalConfiguration -EnvValues @{}
+    }
 
     $composeArguments = @(
         "compose",
@@ -161,7 +178,10 @@ function Get-CdcRetireArgument {
         # Retirement reads no projection status, but the control plane's options are validated as a
         # whole, so the operator credential travels with it - by environment, never on the command
         # line - exactly as it does for the enable invocation.
-        "-e", "DataManagement__DocumentCache__Cdc__DmsBearerToken=$DmsBearerToken",
+        "-e", "DataManagement__DocumentCache__Cdc__DmsBearerToken=$DmsBearerToken"
+    )
+    $composeArguments += Get-WrapperCdcConnectorPrincipalEnvArgument -ConnectorPrincipal $ConnectorPrincipal
+    $composeArguments += @(
         "cdc-setup",
         "cdc", "retire",
         "--confirm", $script:BindingRetirementConfirmation,
@@ -236,6 +256,7 @@ function Invoke-CdcDestructiveTeardown {
     $envValues = ReadValuesFromEnvFile $EnvironmentFile
     $dmsUrl = (Resolve-DockerLocalDmsBaseUrl -EnvValues $envValues).TrimEnd('/')
     $identityClientSecrets = Resolve-IdentityClientSecretConfiguration -EnvValues $envValues
+    $connectorPrincipal = Get-CdcConnectorPrincipalConfiguration -EnvValues $envValues
 
     # Minted through the DMS token proxy, as the enable phase does, so the issuer matches the
     # authority DMS validates against. An unreachable DMS is not a reason to skip the retirement's
@@ -273,7 +294,8 @@ function Invoke-CdcDestructiveTeardown {
                 -EnvironmentFile $EnvironmentFile `
                 -BindingRecord $binding `
                 -DatabaseEngine $DatabaseEngine `
-                -DmsBearerToken $operatorToken
+                -DmsBearerToken $operatorToken `
+                -ConnectorPrincipal $connectorPrincipal
 
             $global:LASTEXITCODE = 0
             & docker @composeArguments

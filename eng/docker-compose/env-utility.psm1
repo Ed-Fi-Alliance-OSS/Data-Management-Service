@@ -608,6 +608,46 @@ function Get-DocumentCacheStatusOperatorRole {
     return "dms-document-cache-operator"
 }
 
+function Get-CdcConnectorPrincipalConfiguration {
+    <#
+    .SYNOPSIS
+        The database principal the Debezium connector authenticates as, and the secret seam its
+        password travels through.
+
+    .DESCRIPTION
+        Three places must agree on this and they are in three different files, so it is resolved
+        here rather than restated in each: provision-cdc-principal.ps1 creates the principal in the
+        instance database, the bootstrap CDC phase passes the name as
+        DataManagement:DocumentCache:Cdc:ConnectorPrincipal and as the connector's own
+        database.user, and kafka.yml exposes the password to the Kafka Connect worker under
+        PasswordEnvVariable.
+
+        The password is NEVER rendered into the connector configuration. The configuration carries
+        the indirect reference '${env:<PasswordEnvVariable>}', which the worker resolves through its
+        EnvVarConfigProvider at connector start, so the registered configuration a read-back
+        validation compares holds the reference rather than the secret.
+
+        PasswordEnvVariable is fixed rather than configurable: it is the name the connector
+        configuration references and the name kafka.yml declares on the worker, and a deployment
+        that changed one without the other would leave the connector unable to resolve its own
+        password. PasswordReference is the '${env:...}' form itself, composed here by
+        concatenation rather than interpolation because that is also PowerShell's own
+        environment-variable syntax and a double-quoted string would expand it on the host.
+    #>
+    param(
+        [hashtable]$EnvValues
+    )
+
+    $passwordEnvVariable = "CDC_DATABASE_PASSWORD"
+
+    return @{
+        PrincipalName       = Get-EnvValue -EnvValues $EnvValues -Name "DMS_CDC_CONNECTOR_PRINCIPAL" -DefaultValue "dms_connector"
+        Password            = Get-EnvValue -EnvValues $EnvValues -Name "DMS_CDC_CONNECTOR_PASSWORD" -DefaultValue "EdFi_Dms1!"
+        PasswordEnvVariable = $passwordEnvVariable
+        PasswordReference   = '${env:' + $passwordEnvVariable + '}'
+    }
+}
+
 function Resolve-CmsBaseUrl {
     <#
     .SYNOPSIS

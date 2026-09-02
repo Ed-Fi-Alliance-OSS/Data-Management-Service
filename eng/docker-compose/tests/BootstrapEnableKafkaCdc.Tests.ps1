@@ -365,7 +365,8 @@ Describe "DMS-1323 bootstrap CDC phase" {
                 -DataStoreId 1 `
                 -DatabaseEngine "postgresql" `
                 -DatabaseCreatedByThisRun $true `
-                -DmsBearerToken "token-value"
+                -DmsBearerToken "token-value" `
+                -SourceDatabaseName "edfi_datamanagementservice"
         }
 
         It "runs the tool as a one-shot container on the dms network" {
@@ -404,7 +405,8 @@ Describe "DMS-1323 bootstrap CDC phase" {
                 -DataStoreId 2 `
                 -DatabaseEngine "postgresql" `
                 -DatabaseCreatedByThisRun $true `
-                -DmsBearerToken "token-value"
+                -DmsBearerToken "token-value" `
+                -SourceDatabaseName "edfi_datamanagementservice"
 
             ($arguments -join " ") | Should -BeLike "*--tenant-key district-a*"
         }
@@ -421,7 +423,8 @@ Describe "DMS-1323 bootstrap CDC phase" {
                 -DataStoreId 1 `
                 -DatabaseEngine "postgresql" `
                 -DatabaseCreatedByThisRun $false `
-                -DmsBearerToken "token-value"
+                -DmsBearerToken "token-value" `
+                -SourceDatabaseName "edfi_datamanagementservice"
 
             $reusedArguments | Should -Not -Contain "--database-creation-mode"
             $reusedArguments | Should -Not -Contain "--write-admission"
@@ -438,10 +441,94 @@ Describe "DMS-1323 bootstrap CDC phase" {
                 -DataStoreId 1 `
                 -DatabaseEngine "mssql" `
                 -DatabaseCreatedByThisRun $true `
-                -DmsBearerToken "token-value"
+                -DmsBearerToken "token-value" `
+                -SourceDatabaseName "edfi_datamanagementservice"
 
             ($mssqlArguments -join " ") |
                 Should -BeLike "*DataManagement__DocumentCache__Cdc__SetupPrincipal=sa*"
+        }
+
+        It "supplies the connector principal every cdc verb requires" {
+            # The provider-setup input factory refuses any verb without it, because both the create
+            # pass and the validate-only pass report the grants this principal holds. It is required
+            # whether or not a broker authorizer is enabled.
+            ($script:createdRunArguments -join " ") |
+                Should -BeLike "*DataManagement__DocumentCache__Cdc__ConnectorPrincipal=dms_connector*"
+        }
+
+        It "supplies every provider connection property the connector template requires" {
+            # The connector reaches the source directly rather than through the DMS connection
+            # string, so these are container-internal names, and the template rejects a rendered
+            # configuration that is missing any of them.
+            $joined = $script:createdRunArguments -join " "
+
+            $joined | Should -BeLike "*ProviderConnectionProperties__database.hostname=dms-postgresql*"
+            $joined | Should -BeLike "*ProviderConnectionProperties__database.port=5432*"
+            $joined | Should -BeLike "*ProviderConnectionProperties__database.user=dms_connector*"
+            $joined | Should -BeLike "*ProviderConnectionProperties__database.dbname=edfi_datamanagementservice*"
+        }
+
+        It "names the SQL Server catalog property and host for the mssql engine" {
+            $mssqlArguments = Get-WrapperCdcEnableArgument `
+                -ComposeProjectName "dms-local" `
+                -EnvironmentFile "/tmp/.env.derived" `
+                -TenantKey "" `
+                -DataStoreId 1 `
+                -DatabaseEngine "mssql" `
+                -DatabaseCreatedByThisRun $true `
+                -DmsBearerToken "token-value" `
+                -SourceDatabaseName "edfi_datamanagementservice"
+
+            $joined = $mssqlArguments -join " "
+
+            $joined | Should -BeLike "*ProviderConnectionProperties__database.hostname=dms-mssql*"
+            $joined | Should -BeLike "*ProviderConnectionProperties__database.port=1433*"
+            $joined | Should -BeLike "*ProviderConnectionProperties__database.names=edfi_datamanagementservice*"
+            # PostgreSQL's catalog property is not the SQL Server one, and the template allows only
+            # the property belonging to the provider.
+            $joined | Should -Not -BeLike "*database.dbname*"
+        }
+
+        It "references the connector password rather than rendering it" {
+            # The registered configuration is read back and compared during validation, so a
+            # rendered password would be a secret in the worker's own config topic.
+            $joined = $script:createdRunArguments -join " "
+
+            $joined | Should -BeLike '*ProviderConnectionProperties__database.password=${env:CDC_DATABASE_PASSWORD}*'
+            $joined | Should -Not -BeLike "*EdFi_Dms1!*"
+        }
+
+        It "creates the connector database principal before the enable" {
+            # Provider setup grants this principal its capture access but never creates it: the SQL
+            # Server pass throws outright when it is absent.
+            $phaseText = Get-WrapperFunctionText -FunctionName "Invoke-WrapperCdcEnablePhase"
+
+            $principalIndex = $phaseText.IndexOf('provision-cdc-principal.ps1')
+            $enableIndex = $phaseText.IndexOf('Get-WrapperCdcEnableArgument `')
+
+            $principalIndex | Should -BeGreaterThan -1
+            $enableIndex | Should -BeGreaterThan $principalIndex
+        }
+
+        It "resolves the captured database from the caller, else the engine's configured datastore name" {
+            # An explicit name wins because the E2E wrapper provisions its own database; otherwise
+            # it must be the database a plain bootstrap run registered in CMS.
+            Resolve-WrapperCdcSourceDatabaseName `
+                -EnvValues @{ POSTGRES_DB_NAME = "from_env" } `
+                -DatabaseEngine "postgresql" `
+                -SourceDatabaseName "explicit" | Should -Be "explicit"
+
+            Resolve-WrapperCdcSourceDatabaseName `
+                -EnvValues @{ POSTGRES_DB_NAME = "from_env" } `
+                -DatabaseEngine "postgresql" | Should -Be "from_env"
+
+            Resolve-WrapperCdcSourceDatabaseName `
+                -EnvValues @{ MSSQL_DB_NAME = "from_mssql_env" } `
+                -DatabaseEngine "mssql" | Should -Be "from_mssql_env"
+
+            Resolve-WrapperCdcSourceDatabaseName `
+                -EnvValues @{} `
+                -DatabaseEngine "postgresql" | Should -Be "edfi_datamanagementservice"
         }
 
         It "hands the operator token to the tool through the environment, not the command line" {
@@ -463,7 +550,12 @@ Describe "DMS-1323 bootstrap CDC phase" {
             }
         }
 
-        It "leaves every CDC variable blank in the tracked environment sample" {
+        It "leaves every per-run CDC variable blank in the tracked environment sample" {
+            # These three are written by the CDC opt-in for the run that enables it. Blank is what
+            # binds to no projection target and leaves the status endpoint unmapped, which is what a
+            # run without the opt-in must get. The static deployment defaults - the connector
+            # principal and its password - are values rather than per-run decisions and are asserted
+            # against the shared resolver instead.
             $envExample = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot ".env.example") -Raw
 
             $envExample | Should -Match '(?m)^DMS_CDC_TARGET_TENANT_KEY=\s*$'
@@ -479,9 +571,13 @@ Describe "DMS-1323 bootstrap CDC phase" {
             $cdcSetupText | Should -Match 'dockerfile: DocumentCacheAdmin\.Dockerfile'
             $cdcSetupText | Should -Match '\$\{DMS_CDC_BINDING_STATE_PATH:-\./\.cdc-state\}:/state'
             $cdcSetupText | Should -Match 'DataManagement__DocumentCache__Cdc__DmsBaseUrl'
-            # The per-run decisions belong to the phase, not to the file.
+            # The per-run decisions belong to the phase, not to the file. The connector principal
+            # and its connection properties join them: the captured database is a per-run value, and
+            # a compose default for it would silently capture the wrong database.
             $cdcSetupText | Should -Not -Match 'DmsBearerToken'
             $cdcSetupText | Should -Not -Match 'SetupPrincipal'
+            $cdcSetupText | Should -Not -Match 'ConnectorPrincipal'
+            $cdcSetupText | Should -Not -Match 'ProviderConnectionProperties'
         }
     }
 
@@ -513,6 +609,9 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
         $script:teardownModuleText = Get-Content -LiteralPath $script:teardownModulePath -Raw
 
         Import-Module $script:teardownModulePath -Force
+        # The connector-principal resolver is the shared authority the Connect worker's declared
+        # secret and the enable phase's emitted reference are both asserted against.
+        Import-Module (Join-Path $script:sourceDockerComposeRoot "env-utility.psm1") -Force
 
         function script:Get-StartScriptFunctionText {
             param(
@@ -671,6 +770,60 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
         }
     }
 
+    Context "connector source credential" {
+        It "activates the env config provider on the Connect worker" {
+            # Without it the worker cannot resolve the ${env:...} reference the connector
+            # configuration carries in place of the password.
+            $script:kafkaComposeText | Should -Match '(?m)^\s+CONNECT_CONFIG_PROVIDERS: env\s*$'
+            $script:kafkaComposeText |
+                Should -Match 'CONNECT_CONFIG_PROVIDERS_ENV_CLASS: org\.apache\.kafka\.common\.config\.provider\.EnvVarConfigProvider'
+        }
+
+        It "exposes the referenced secret under the name the connector configuration references" {
+            # The reference the enable phase emits and the variable the worker declares are one
+            # name; a drift between them leaves the connector unable to authenticate.
+            $connectorPrincipal = Get-CdcConnectorPrincipalConfiguration -EnvValues @{}
+
+            $connectorPrincipal.PasswordReference | Should -Be '${env:CDC_DATABASE_PASSWORD}'
+            $script:kafkaComposeText |
+                Should -Match "(?m)^\s+$($connectorPrincipal.PasswordEnvVariable): "
+        }
+
+        It "keeps the worker's password default and the principal's password default in step" {
+            # The worker starts in the infrastructure phase, before the CDC phase writes any derived
+            # env value, so its default is what a run that set nothing actually gets. If these two
+            # disagree, the principal is created with one password and the connector authenticates
+            # with another.
+            $connectorPrincipal = Get-CdcConnectorPrincipalConfiguration -EnvValues @{}
+
+            $script:kafkaComposeText |
+                Should -Match "CDC_DATABASE_PASSWORD: \`$\{DMS_CDC_CONNECTOR_PASSWORD:-$([regex]::Escape($connectorPrincipal.Password))\}"
+            $script:envExampleText |
+                Should -Match "(?m)^DMS_CDC_CONNECTOR_PASSWORD=$([regex]::Escape($connectorPrincipal.Password))\s*$"
+            $script:envExampleText |
+                Should -Match "(?m)^DMS_CDC_CONNECTOR_PRINCIPAL=$([regex]::Escape($connectorPrincipal.PrincipalName))\s*$"
+        }
+
+        It "creates the principal as a dedicated login rather than the administrative one" {
+            # Debezium would otherwise read the source as a superuser, and on SQL Server `sa`
+            # resolves to `dbo`, which cannot be added to the gating role provider setup grants.
+            $principalScriptText = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "provision-cdc-principal.ps1"
+            ) -Raw
+
+            $principalScriptText | Should -Match 'CREATE ROLE %I WITH LOGIN REPLICATION NOSUPERUSER'
+            $principalScriptText | Should -Match 'CREATE LOGIN'
+            $principalScriptText | Should -Match 'CREATE USER'
+            # Idempotent: an existing principal keeps its password, because rotating it here would
+            # break a connector already registered against it.
+            $principalScriptText | Should -Match 'IF NOT EXISTS \(SELECT 1 FROM pg_catalog\.pg_roles'
+            $principalScriptText | Should -Match 'IF SUSER_ID'
+            $principalScriptText | Should -Match 'IF USER_ID'
+            $principalScriptText | Should -Not -Match 'ALTER ROLE'
+            $principalScriptText | Should -Not -Match 'ALTER LOGIN'
+        }
+    }
+
     Context "destructive teardown ordering" {
         It "retires the bindings before the compose down removes the volumes" {
             $retireIndex = $script:startScriptText.IndexOf('Invoke-CdcDestructiveTeardown `')
@@ -820,6 +973,20 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
 
         It "carries the exact retirement confirmation token" {
             ($script:retireArguments -join " ") | Should -BeLike "*--confirm cdcBindingRetirement*"
+        }
+
+        It "carries the connector principal, which every cdc verb requires" {
+            # Retirement runs the validate-only provider pass, which reports the grants this
+            # principal holds, so the input factory refuses the verb without it.
+            ($script:retireArguments -join " ") |
+                Should -BeLike "*DataManagement__DocumentCache__Cdc__ConnectorPrincipal=dms_connector*"
+        }
+
+        It "carries no connector source-connection properties" {
+            # A retirement registers no connector and reads none, and the captured database name is
+            # a per-run value this module has no authority over: supplying a guess would put a wrong
+            # value where nothing reads a right one.
+            ($script:retireArguments -join " ") | Should -Not -BeLike "*ProviderConnectionProperties*"
         }
 
         It "names the generation and artifact keys the record carries" {

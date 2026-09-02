@@ -521,6 +521,118 @@ function Get-WrapperCdcRuntimeEnvOverride {
     }
 }
 
+function Resolve-WrapperCdcSourceDatabaseName {
+    <#
+    .SYNOPSIS
+    The instance database the binding captures from.
+
+    .DESCRIPTION
+    An explicit -SourceDatabaseName wins: a caller that provisioned its own database - the DMS E2E
+    setup wrapper does - knows the name and must not have it re-derived. Otherwise it resolves the
+    same way configure-local-data-store.ps1 resolves the datastore database name for the engine,
+    because that is the database a plain bootstrap run registered in CMS. Deriving it any other way
+    would point the connector at a database the run never configured.
+    #>
+    param(
+        [hashtable]
+        $EnvValues,
+
+        [Parameter(Mandatory)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]
+        $DatabaseEngine,
+
+        [AllowEmptyString()]
+        [string]
+        $SourceDatabaseName = ""
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($SourceDatabaseName)) {
+        return $SourceDatabaseName
+    }
+
+    $settingName = if ($DatabaseEngine -eq "mssql") { "MSSQL_DB_NAME" } else { "POSTGRES_DB_NAME" }
+
+    return Get-EnvValue -EnvValues $EnvValues -Name $settingName -DefaultValue "edfi_datamanagementservice"
+}
+
+function Get-WrapperCdcConnectorPrincipalEnvArgument {
+    <#
+    .SYNOPSIS
+    The `-e` pair naming the database principal the Debezium connector authenticates as.
+
+    .DESCRIPTION
+    Every cdc verb needs it, not only the ones that register a connector: the provider-setup input
+    factory refuses any verb without it, because both the create pass and the validate-only pass
+    report the grants this principal holds. Emitted from one place so the enable phase and the
+    destructive teardown cannot name two different principals.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns an argument list fragment; the plural noun reflects the return shape.')]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]
+        $ConnectorPrincipal
+    )
+
+    return @(
+        "-e",
+        "DataManagement__DocumentCache__Cdc__ConnectorPrincipal=$($ConnectorPrincipal.PrincipalName)"
+    )
+}
+
+function Get-WrapperCdcConnectorEnvArgument {
+    <#
+    .SYNOPSIS
+    The `-e` pairs carrying the connector principal and the connector's own source-connection
+    properties.
+
+    .DESCRIPTION
+    The connector connects to the instance database itself rather than through the DMS connection
+    string the tool resolves from CMS, so its host and port are the container-internal names Kafka
+    Connect resolves - the connector runs inside the dms network, where PostgreSQL answers on 5432
+    and SQL Server on 1433 regardless of the host ports the compose files publish.
+
+    The password is emitted as the worker's config-provider reference, never as the secret: the
+    registered connector configuration is read back and compared during validation, and a rendered
+    password would then be a secret sitting in Kafka Connect's own config topic.
+
+    SQL Server names the captured catalog `database.names` and PostgreSQL names it
+    `database.dbname`; the control plane's template requires whichever belongs to the provider.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns an argument list fragment; the plural noun reflects the return shape.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'No password is emitted: only the ${env:...} reference the Kafka Connect worker resolves.')]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]
+        $DatabaseEngine,
+
+        [Parameter(Mandatory)]
+        [string]
+        $SourceDatabaseName,
+
+        [Parameter(Mandatory)]
+        [hashtable]
+        $ConnectorPrincipal
+    )
+
+    $sourceHost = if ($DatabaseEngine -eq "mssql") { "dms-mssql" } else { "dms-postgresql" }
+    $sourcePort = if ($DatabaseEngine -eq "mssql") { "1433" } else { "5432" }
+    $catalogPropertyName = if ($DatabaseEngine -eq "mssql") { "database.names" } else { "database.dbname" }
+    $propertyPrefix = "DataManagement__DocumentCache__Cdc__ProviderConnectionProperties__"
+
+    $arguments = @(Get-WrapperCdcConnectorPrincipalEnvArgument -ConnectorPrincipal $ConnectorPrincipal)
+    $arguments += @(
+        "-e", "$($propertyPrefix)database.hostname=$sourceHost",
+        "-e", "$($propertyPrefix)database.port=$sourcePort",
+        "-e", "$($propertyPrefix)database.user=$($ConnectorPrincipal.PrincipalName)",
+        "-e", "$($propertyPrefix)database.password=$($ConnectorPrincipal.PasswordReference)",
+        "-e", "$propertyPrefix$catalogPropertyName=$SourceDatabaseName"
+    )
+
+    return $arguments
+}
+
 function Get-WrapperCdcEnableArgument {
     <#
     .SYNOPSIS
@@ -535,8 +647,16 @@ function Get-WrapperCdcEnableArgument {
     database. Bootstrap has no standing to assert either fact about a data store it merely found,
     and the control plane refuses the enable without them - which is the correct outcome, reached
     here without an assertion this caller cannot support.
+
+    The connector principal and the connector's own database connection properties travel by
+    environment rather than on the command line, alongside the setup principal: they are deployment
+    facts the control plane requires but has no command-line surface for, and the password among
+    them is a secret. The connector reaches the source DIRECTLY - not through the DMS connection
+    string the tool resolves from CMS - so its host, port and database are named here in the
+    container-internal terms Kafka Connect resolves them in.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns the argument list for one invocation; the plural noun reflects the return shape.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'No password is passed: the connector password reaches the worker only as the ${env:...} reference this function emits.')]
     param(
         [Parameter(Mandatory)]
         [string]
@@ -566,12 +686,28 @@ function Get-WrapperCdcEnableArgument {
 
         [Parameter(Mandatory)]
         [string]
-        $DmsBearerToken
+        $DmsBearerToken,
+
+        # The instance database the binding captures from, as Kafka Connect must name it. Required
+        # because it is a per-run value: the connector's own database property cannot be a compose
+        # default without silently capturing the wrong database on a run that named another.
+        [Parameter(Mandatory)]
+        [string]
+        $SourceDatabaseName,
+
+        [hashtable]
+        $ConnectorPrincipal
     )
+
+    Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
 
     # The database principal the provider-setup pass runs as. Both local stacks run their setup as
     # the server's own administrative login, which is the account the compose file creates.
     $setupPrincipal = if ($DatabaseEngine -eq "mssql") { "sa" } else { "postgres" }
+
+    if ($null -eq $ConnectorPrincipal) {
+        $ConnectorPrincipal = Get-CdcConnectorPrincipalConfiguration -EnvValues @{}
+    }
 
     $composeArguments = @(
         "compose",
@@ -580,7 +716,13 @@ function Get-WrapperCdcEnableArgument {
         "-p", $ComposeProjectName,
         "run", "--rm", "--build",
         "-e", "DataManagement__DocumentCache__Cdc__SetupPrincipal=$setupPrincipal",
-        "-e", "DataManagement__DocumentCache__Cdc__DmsBearerToken=$DmsBearerToken",
+        "-e", "DataManagement__DocumentCache__Cdc__DmsBearerToken=$DmsBearerToken"
+    )
+    $composeArguments += Get-WrapperCdcConnectorEnvArgument `
+        -DatabaseEngine $DatabaseEngine `
+        -SourceDatabaseName $SourceDatabaseName `
+        -ConnectorPrincipal $ConnectorPrincipal
+    $composeArguments += @(
         "cdc-setup",
         "cdc", "enable",
         "--data-store-id", "$DataStoreId"
@@ -629,6 +771,11 @@ function Invoke-WrapperCdcEnablePhase {
     Write admission is still closed when this runs: no seed or API write has been issued yet. DMS
     being up is not write admission, and DMS never enables tracking itself - this external
     administrative command does.
+
+    The connector's database principal is created immediately before the enable. Provider setup
+    grants that principal its capture access but never creates it - the SQL Server pass refuses
+    outright when it is absent - so its creation is a deployment step, and it belongs to this phase
+    because this is the phase that knows which instance database the binding will capture.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Bootstrap phase helper, consistent with the other phase invocations; no -WhatIf surface.')]
     param(
@@ -658,6 +805,12 @@ function Invoke-WrapperCdcEnablePhase {
         [bool]
         $DatabaseCreatedByThisRun,
 
+        # The instance database the binding captures from. A caller that provisioned its own
+        # database names it; an omitted value resolves the same way the configure phase resolves
+        # the datastore database name, which is what a plain bootstrap run registered.
+        [string]
+        $SourceDatabaseName = "",
+
         [int]
         $HealthTimeoutSeconds = 300
     )
@@ -668,6 +821,11 @@ function Invoke-WrapperCdcEnablePhase {
     $envValues = ReadValuesFromEnvFile $EnvironmentFile
     $dmsUrl = (Resolve-DockerLocalDmsBaseUrl -EnvValues $envValues).TrimEnd('/')
     $identityClientSecrets = Resolve-IdentityClientSecretConfiguration -EnvValues $envValues
+    $connectorPrincipal = Get-CdcConnectorPrincipalConfiguration -EnvValues $envValues
+    $resolvedSourceDatabaseName = Resolve-WrapperCdcSourceDatabaseName `
+        -EnvValues $envValues `
+        -DatabaseEngine $DatabaseEngine `
+        -SourceDatabaseName $SourceDatabaseName
 
     Write-Information "CDC phase: waiting for DMS at $dmsUrl to become healthy." -InformationAction Continue
     Wait-WrapperHttpEndpoint -Url "$dmsUrl/health" -Name "DMS" -TimeoutSeconds $HealthTimeoutSeconds
@@ -689,6 +847,13 @@ function Invoke-WrapperCdcEnablePhase {
         -AccessToken $operatorToken `
         -TimeoutSeconds $HealthTimeoutSeconds
 
+    # Before the enable, and after the database exists: provider setup grants this principal its
+    # capture access and refuses when it is missing.
+    & "$PSScriptRoot/provision-cdc-principal.ps1" `
+        -EnvironmentFile $EnvironmentFile `
+        -DatabaseName $resolvedSourceDatabaseName `
+        -DatabaseEngine $DatabaseEngine
+
     $composeArguments = Get-WrapperCdcEnableArgument `
         -ComposeProjectName $ComposeProjectName `
         -EnvironmentFile $EnvironmentFile `
@@ -696,7 +861,9 @@ function Invoke-WrapperCdcEnablePhase {
         -DataStoreId $DataStoreId `
         -DatabaseEngine $DatabaseEngine `
         -DatabaseCreatedByThisRun $DatabaseCreatedByThisRun `
-        -DmsBearerToken $operatorToken
+        -DmsBearerToken $operatorToken `
+        -SourceDatabaseName $resolvedSourceDatabaseName `
+        -ConnectorPrincipal $connectorPrincipal
 
     Write-Information "CDC phase: enabling CDC for data store $DataStoreId." -InformationAction Continue
     $global:LASTEXITCODE = 0
@@ -1545,4 +1712,4 @@ function Invoke-BootstrapWrapper {
 # the database it provisions. That wrapper is the non-bootstrap path and builds its own phase
 # sequence, but the CDC enable is one workflow - DMS health, operator token, status-endpoint
 # preflight, then the enable - and a second copy of it would be the copy that misses the next fix.
-Export-ModuleMember -Function Invoke-BootstrapWrapper, Resolve-WrapperSelectedDataStoreIds, Get-WrapperCdcRuntimeEnvOverride, Get-WrapperCdcEnableArgument, Invoke-WrapperCdcEnablePhase
+Export-ModuleMember -Function Invoke-BootstrapWrapper, Resolve-WrapperSelectedDataStoreIds, Get-WrapperCdcRuntimeEnvOverride, Get-WrapperCdcEnableArgument, Invoke-WrapperCdcEnablePhase, Resolve-WrapperCdcSourceDatabaseName, Get-WrapperCdcConnectorPrincipalEnvArgument, Get-WrapperCdcConnectorEnvArgument

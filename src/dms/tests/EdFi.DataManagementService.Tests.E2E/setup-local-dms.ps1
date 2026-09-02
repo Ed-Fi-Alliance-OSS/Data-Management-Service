@@ -355,13 +355,17 @@ try {
         # and before the suite issues any write: write admission is still closed, which is the only
         # state initial CDC enablement is admitted in. dms-local is the compose project both start
         # phases above used.
+        # -SourceDatabaseName is the database the provision phase created, named explicitly rather
+        # than re-derived: this run provisioned E2E_DATABASE_NAME, not the datastore database name a
+        # plain bootstrap run registers, and the connector connects to the source directly.
         Invoke-WrapperCdcEnablePhase `
             -ComposeProjectName "dms-local" `
             -EnvironmentFile $resolvedEnvironmentFile `
             -TenantKey $cdcTargetTenantKey `
             -DataStoreId $cdcTargetDataStoreId `
             -DatabaseEngine $DatabaseEngine `
-            -DatabaseCreatedByThisRun $true
+            -DatabaseCreatedByThisRun $true `
+            -SourceDatabaseName $e2eDatabaseName
     }
 
     # Pass the fully resolved environment file (data-standard then engine overlay) so teardown uses the
