@@ -408,9 +408,9 @@ public static class RelationalAuthorizationPlanner
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Returns <see langword="false"/> for every operation at present. Each of the enforcement steps flips
-    /// exactly one operation on in the same commit that adds its execution, so no commit can exist in which
-    /// a planned ownership check has no executor.
+    /// Returns <see langword="true"/> for <see cref="NamespaceAuthorizationOperation.ReadSingle"/> only.
+    /// Each enforcement step flips exactly one operation on in the same commit that adds its execution, so
+    /// no commit can exist in which a planned ownership check has no executor.
     /// </para>
     /// <para>
     /// <see cref="ResourceStorageKind.SharedDescriptorTable"/> is withheld permanently for this story.

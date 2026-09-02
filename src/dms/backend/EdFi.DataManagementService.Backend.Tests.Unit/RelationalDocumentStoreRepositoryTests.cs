@@ -3233,6 +3233,184 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     /// <summary>
+    /// The authorized path, which the denial tests cannot reach: ownership authorizes, and only then does
+    /// the relationship OR group run. Ownership is an AND filter and the relationship group follows every
+    /// AND filter, so a reorder that moved the relationship group ahead of ownership would let a document
+    /// the caller does not own reach the relationship boundary — and, if that boundary authorized it, be
+    /// served.
+    /// </summary>
+    [Test]
+    public async Task It_runs_the_relationship_group_after_ownership_authorizes_a_get_by_id()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-cccccccccc19"));
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            _schoolResourceInfo,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ],
+            claimEducationOrganizationIds: [255901L],
+            ownershipTokenIds: [11]
+        );
+        var hydratedPage = CreateHydratedPage(
+            readPlan,
+            CreateDocumentMetadataRow(documentUuid, 345L, 91L),
+            (345L, "Lincoln High")
+        );
+        var order = 0;
+        var ownershipOrder = 0;
+        var relationshipOrder = 0;
+        var hydrationOrder = 0;
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
+        A.CallTo(() =>
+                _ownershipAuthorizationExecutor.ExecuteAsync(
+                    A<OwnershipAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(() => ownershipOrder = ++order)
+            .Returns(
+                Task.FromResult<OwnershipAuthorizationExecutionResult>(
+                    new OwnershipAuthorizationExecutionResult.Authorized()
+                )
+            );
+        A.CallTo(() =>
+                _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
+                    A<SingleRecordRelationshipAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(() => relationshipOrder = ++order)
+            .Returns(
+                Task.FromResult<SingleRecordRelationshipAuthorizationExecutionResult>(
+                    new SingleRecordRelationshipAuthorizationExecutionResult.Authorized(91L)
+                )
+            );
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    new PageKeysetSpec.Single(345L),
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(() => hydrationOrder = ++order)
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .Returns(JsonNode.Parse("""{"id":"authorized"}""")!);
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result.Should().BeOfType<GetResult.GetSuccess>();
+        ownershipOrder.Should().Be(1);
+        relationshipOrder.Should().Be(2);
+        hydrationOrder.Should().Be(3);
+    }
+
+    /// <summary>
+    /// Ownership joins the stored AND-filter read boundary. It reads the stored row and reports no content
+    /// version, so its decision is only valid for the version that drove the attempt; when the relationship
+    /// boundary then observes a different version, a mutation interleaved and the whole authorization
+    /// sequence must re-run rather than serve a representation ownership never validated.
+    /// </summary>
+    /// <remarks>
+    /// Ownership is deliberately the only stored AND filter configured here. With no namespace or custom
+    /// view check present, the anchoring step runs only because ownership is counted among them, so this
+    /// test fails if ownership is ever dropped from that condition.
+    /// </remarks>
+    [Test]
+    public async Task It_retries_when_ownership_authorized_a_version_the_relationship_boundary_did_not_observe()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-cccccccccc20"));
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            _schoolResourceInfo,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ],
+            claimEducationOrganizationIds: [255901L],
+            ownershipTokenIds: [11]
+        );
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsNextFromSequence(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                ),
+                new RelationalReadTargetLookupResult.NotFound()
+            );
+        GivenOwnershipAuthorizationReturns(new OwnershipAuthorizationExecutionResult.Authorized());
+        // The relationship boundary observed content version 92 while the ownership check authorized the
+        // row at 91, so the two decisions describe different rows.
+        A.CallTo(() =>
+                _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
+                    A<SingleRecordRelationshipAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(
+                Task.FromResult<SingleRecordRelationshipAuthorizationExecutionResult>(
+                    new SingleRecordRelationshipAuthorizationExecutionResult.Authorized(92L)
+                )
+            );
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        // The retry re-resolves the target, which is gone, so the read ends as a 404 rather than serving a
+        // representation no check validated.
+        result.Should().BeOfType<GetResult.GetFailureNotExists>();
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedTwiceExactly();
+        AssertGetByIdHydrationWasNotAttempted();
+    }
+
+    /// <summary>
     /// The same denial through the read-acceleration entry point. Both GET-by-id paths run their own
     /// preflight and their own per-attempt authorization, so a check wired into one is not wired into the
     /// other by construction.
@@ -6800,8 +6978,9 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     public async Task It_fails_closed_when_a_custom_view_is_composed_with_OwnershipBased()
     {
         // DMS-1410 owns GET-many OwnershipBased support. Even alongside a resolved custom view and a
-        // relationship strategy, GET-many must fail closed rather than emit an ownership filter:
-        // DMS-1060 has not stamped CreatedByOwnershipTokenId yet, so a filter would silently drop every row.
+        // relationship strategy, GET-many must fail closed rather than emit an ownership filter: DMS-1060
+        // ships the stamping and the single-record check, not the page filter, which is a different shape of
+        // query and not this ticket's to emit.
         var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
         var queryRequest = CreateQueryRequest(
             mappingSet,
