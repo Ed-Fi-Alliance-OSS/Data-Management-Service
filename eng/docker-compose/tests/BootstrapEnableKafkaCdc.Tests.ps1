@@ -817,6 +817,61 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
         }
     }
 
+    Context "shared Connect offset store provisioned before the worker" {
+        It "declares the provisioning step" {
+            (Get-StartScriptFunctionText -FunctionName "Initialize-CdcConnectOffsetStore") |
+                Should -Not -BeNullOrEmpty
+        }
+
+        It "provisions the store before every up that starts the Connect worker" {
+            # cdc-streaming.md: bootstrap pre-creates and validates the configured shared offset
+            # topic BEFORE it starts local Kafka Connect, and never relies on Connect topic
+            # auto-creation or broker defaults. A worker that gets there first sets only
+            # cleanup.policy and leaves min.insync.replicas to the broker default, which the control
+            # plane refuses and does not repair.
+            $script:startScriptText |
+                Should -Match '(?s)Initialize-CdcConnectOffsetStore.*?up \$upArgs kafka kafka-postgresql-source'
+
+            # Both start paths: the infrastructure-only one names the two services, and the
+            # full-stack up starts the worker along with everything else.
+            ([regex]::Matches($script:startScriptText, 'Initialize-CdcConnectOffsetStore `')).Count |
+                Should -Be 2
+        }
+
+        It "starts Kafka on its own first and provisions the store against it" {
+            $provisioning = Get-StartScriptFunctionText -FunctionName "Initialize-CdcConnectOffsetStore"
+
+            $provisioning | Should -Match 'up --detach kafka'
+            $provisioning | Should -Not -Match 'kafka-postgresql-source'
+        }
+
+        It "sets the explicit topic-level policy the control plane validates" {
+            $provisioning = Get-StartScriptFunctionText -FunctionName "Initialize-CdcConnectOffsetStore"
+            $policy = Get-LocalCdcDeploymentPolicy
+
+            # Created with the values, and then set on the topic whether or not the create found it
+            # present: a stack stopped without -v keeps a store an earlier non-CDC run let the worker
+            # create.
+            $provisioning | Should -Match 'kafka-topics\.sh'
+            $provisioning | Should -Match '--config cleanup\.policy=compact'
+            $provisioning | Should -Match 'min\.insync\.replicas=\$minInSyncReplicas'
+            $provisioning | Should -Match 'kafka-configs\.sh'
+            $provisioning | Should -Match '--add-config'
+
+            $policy.OffsetStoreReplicationFactor | Should -Be 1
+            $policy.OffsetStoreMinInSyncReplicas | Should -Be 1
+            $policy.OffsetStorePartitionCount | Should -Be 25
+            $policy.OffsetStoreTopicDefault | Should -Be "debezium_source_offset"
+        }
+
+        It "names the same topic the worker and the control plane name" {
+            # One variable, one default: the store the script provisions has to be the store the
+            # worker uses and the store the cdc verbs validate.
+            $script:startScriptText | Should -Match 'DMS_CDC_CONNECT_OFFSET_STORAGE_TOPIC'
+            $script:startScriptText | Should -Match 'OffsetStoreTopicDefault'
+        }
+    }
+
     Context "connector source credential" {
         It "activates the env config provider on the Connect worker" {
             # Without it the worker cannot resolve the ${env:...} reference the connector
@@ -967,7 +1022,8 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
             # An omitted -CdcBindingStatePath is permitted on a teardown run, so a stack started
             # with a custom root would otherwise be retired from the empty default silently.
             $script:startScriptText |
-                Should -Match '(?s)if \(\[string\]::IsNullOrWhiteSpace\(\$CdcBindingStatePath\)\) \{(?:(?!?
+                Should -Match '(?s)if \(\[string\]::IsNullOrWhiteSpace\(\$CdcBindingStatePath\)\) \{(?:(?!
+?
         \}).)*default binding state store at'
         }
 

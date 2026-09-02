@@ -47,8 +47,18 @@ internal static class CdcControlTemplateTestData
 
     private const string SourceIdentity = "f81d4fae-7dec-11d0-a765-00a0c91e6bf6";
 
+    /// <summary>
+    /// The identity of an independently provisioned database: the source a generation being replaced
+    /// was bound to, which is never the identity the replacing source carries.
+    /// </summary>
+    private const string ReplacedSourceIdentity = "0f8fad5b-d9cb-469f-a165-70867728950e";
+
     public static CdcSourceFingerprint SourceFingerprint(CdcProvider provider) =>
         CdcSourceFingerprintMetadata.Compute(provider, SourceIdentity);
+
+    /// <summary>The fingerprint of the physical source a source replacement replaces.</summary>
+    public static CdcSourceFingerprint ReplacedSourceFingerprint(CdcProvider provider) =>
+        CdcSourceFingerprintMetadata.Compute(provider, ReplacedSourceIdentity);
 
     public static CoreCdc.CdcBinding BuildBinding(CdcProvider provider)
     {

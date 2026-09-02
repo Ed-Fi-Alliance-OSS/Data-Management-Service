@@ -613,6 +613,14 @@ else {
             Write-Warning "Kafka CDC infrastructure is starting under the keycloak identity provider, which does not register the DocumentCache CDC operator client. The CDC enable workflow is supported on the self-contained identity provider."
         }
 
+        # The shared Connect offset store's topic name, resolved the way Compose resolves it so this
+        # script, the worker (kafka.yml OFFSET_STORAGE_TOPIC), and the control plane's own
+        # ConnectOffsetStorageTopic setting all name one topic.
+        $cdcConnectOffsetStorageTopic = Get-ComposeResolvedEnvValue `
+            -EnvironmentValues $envValues `
+            -Name "DMS_CDC_CONNECT_OFFSET_STORAGE_TOPIC" `
+            -DefaultValue (Get-LocalCdcDeploymentPolicy).OffsetStoreTopicDefault
+
         # The store root is created here, before any CDC work, so every later phase and any teardown
         # name one existing absolute path. Creating it is not an enablement decision: this run
         # configures no DocumentCache projection target and enables tracking on no data store, and
@@ -904,6 +912,117 @@ else {
         throw "PostgreSQL ($(Format-LogSafeText $ContainerName)) did not become ready within $TimeoutSeconds seconds."
     }
 
+    function Initialize-CdcConnectOffsetStore {
+        <#
+        .SYNOPSIS
+        Provisions the shared Kafka Connect offset store before the Connect worker can create it.
+
+        .DESCRIPTION
+        cdc-streaming.md requires bootstrap to pre-create and validate the configured shared offset
+        topic before it starts local Kafka Connect, and never to rely on Connect topic auto-creation
+        or broker defaults. A worker that reaches the broker first creates the topic itself and sets
+        only cleanup.policy on it, leaving min.insync.replicas to the broker default. The control
+        plane validates an existing store rather than repairing it, and a broker-default value is not
+        a topic-level override, so a worker-created store is permanently nonconforming and every cdc
+        verb refuses against it - which is exactly what the checked-in broker-backed test proves.
+
+        Kafka is therefore started on its own first, the store is provisioned, and only then does the
+        caller start the worker.
+
+        The add-config runs whether or not the create found the topic present. A stack stopped
+        without -v keeps the broker volume, so a run that opted into Kafka before it opted into CDC
+        has already left a worker-created store behind, and setting the explicit topic-level values
+        on it is the deployment obligation that makes the opt-in usable on that broker. The values
+        are the local profile's own, read from Get-LocalCdcDeploymentPolicy so this script and the
+        cdc verbs cannot name different ones. The control plane still validates the store for itself
+        on every verb; this provisions it and confirms what the broker reports back.
+        #>
+        param(
+            [Parameter(Mandatory)]
+            [string[]]
+            $ComposeFiles,
+
+            [Parameter(Mandatory)]
+            [string]
+            $EnvironmentFile,
+
+            [Parameter(Mandatory)]
+            [string]
+            $TopicName,
+
+            [int]
+            $TimeoutSeconds = 120
+        )
+
+        $policy = Get-LocalCdcDeploymentPolicy
+        $partitionCount = [string]$policy.OffsetStorePartitionCount
+        $replicationFactor = [string]$policy.OffsetStoreReplicationFactor
+        $minInSyncReplicas = [string]$policy.OffsetStoreMinInSyncReplicas
+
+        Write-Output "Starting Kafka before Kafka Connect, so the shared Connect offset store is provisioned before the worker can create it..."
+        docker compose $ComposeFiles --env-file $EnvironmentFile -p dms-local up --detach kafka
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to start Kafka. Exit code $LASTEXITCODE"
+        }
+
+        $deadline = [datetime]::UtcNow.AddSeconds($TimeoutSeconds)
+        $brokerReady = $false
+        while ([datetime]::UtcNow -lt $deadline) {
+            $remainingSeconds = [math]::Max(1, [math]::Ceiling(($deadline - [datetime]::UtcNow).TotalSeconds))
+            $probeArguments = @(
+                "exec", "dms-kafka1",
+                "/opt/kafka/bin/kafka-cluster.sh", "cluster-id", "--bootstrap-server", "dms-kafka1:9092"
+            )
+            if (Test-NativeCommandWithTimeout -FilePath "docker" -ArgumentList $probeArguments -TimeoutSeconds ([math]::Min(10, $remainingSeconds))) {
+                $brokerReady = $true
+                break
+            }
+
+            if ([datetime]::UtcNow -lt $deadline) {
+                Start-Sleep -Seconds 2
+            }
+        }
+
+        if (-not $brokerReady) {
+            throw "Kafka (dms-kafka1) did not become reachable within $TimeoutSeconds seconds, so the shared Connect offset store could not be provisioned before the Connect worker starts."
+        }
+
+        Write-Output "Provisioning the shared Connect offset store '$(Format-LogSafeText $TopicName)'..."
+        docker exec dms-kafka1 /opt/kafka/bin/kafka-topics.sh `
+            --bootstrap-server dms-kafka1:9092 `
+            --create --if-not-exists `
+            --topic $TopicName `
+            --partitions $partitionCount `
+            --replication-factor $replicationFactor `
+            --config cleanup.policy=compact `
+            --config "min.insync.replicas=$minInSyncReplicas"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to create the shared Connect offset store. Exit code $LASTEXITCODE"
+        }
+
+        docker exec dms-kafka1 /opt/kafka/bin/kafka-configs.sh `
+            --bootstrap-server dms-kafka1:9092 `
+            --alter --entity-type topics --entity-name $TopicName `
+            --add-config "cleanup.policy=compact,min.insync.replicas=$minInSyncReplicas"
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to set the shared Connect offset store's explicit topic-level policy. Exit code $LASTEXITCODE"
+        }
+
+        $described = (docker exec dms-kafka1 /opt/kafka/bin/kafka-configs.sh `
+            --bootstrap-server dms-kafka1:9092 `
+            --describe --entity-type topics --entity-name $TopicName 2>&1) | Out-String
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to read the shared Connect offset store's policy back. Exit code $LASTEXITCODE"
+        }
+
+        if ($described -notmatch [regex]::Escape("min.insync.replicas=$minInSyncReplicas") -or
+            $described -notmatch [regex]::Escape("cleanup.policy=compact")) {
+            throw "The shared Connect offset store does not report the explicit topic-level policy the CDC control plane requires (cleanup.policy=compact and min.insync.replicas=$minInSyncReplicas)."
+        }
+
+        Write-Output "Shared Connect offset store is compacted with an explicit topic-level min.insync.replicas=$minInSyncReplicas."
+    }
+
     if ($DmsOnly) {
         Write-Output "Starting DMS service only..."
         $dmsServices = @("dms")
@@ -1072,6 +1191,15 @@ else {
         }
 
         if ($enableKafkaInfrastructure) {
+            # The Connect worker starts in the same `up` as the broker, so on the CDC opt-in the
+            # shared offset store is provisioned first rather than left to the worker to create.
+            if ($EnableKafkaCdc) {
+                Initialize-CdcConnectOffsetStore `
+                    -ComposeFiles $files `
+                    -EnvironmentFile $EnvironmentFile `
+                    -TopicName $cdcConnectOffsetStorageTopic
+            }
+
             Write-Output "Starting Kafka infrastructure..."
             # kafka-postgresql-source is the Kafka Connect service. The name predates the
             # engine-neutral CDC workflow and is kept: renaming it would break existing local
@@ -1134,6 +1262,15 @@ else {
     {
         Write-Output "Init db public and private keys for OpenIddict..."
         ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile @identityDbParams
+    }
+
+    # The full-stack `up` starts the Connect worker alongside everything else, so the shared offset
+    # store is provisioned before it rather than left to the worker's own auto-creation.
+    if ($EnableKafkaCdc) {
+        Initialize-CdcConnectOffsetStore `
+            -ComposeFiles $files `
+            -EnvironmentFile $EnvironmentFile `
+            -TopicName $cdcConnectOffsetStorageTopic
     }
 
     if ($bootstrapManifestPresent) {

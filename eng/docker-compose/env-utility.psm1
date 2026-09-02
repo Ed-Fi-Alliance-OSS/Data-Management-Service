@@ -668,13 +668,25 @@ function Get-LocalCdcDeploymentPolicy {
         The endpoints are container-internal names: both invocations run as one-shot containers on
         the dms network, where the broker advertises PLAINTEXT://dms-kafka1:9092 and Connect answers
         as kafka-postgresql-source, regardless of the host ports the compose files publish.
+
+        The three OffsetStore* values are the shared Connect offset store the start script
+        pre-creates before it starts the worker. They restate, for the local single-broker profile,
+        exactly what the control plane validates the store against - CdcKafkaDurabilityPolicy.For
+        resolves the 'local' DurabilityProfile above to replication factor one with
+        min.insync.replicas one, and the adapter creates the store with 25 partitions - so a
+        pre-created store and a control-plane-created one are the same topic. They belong here with
+        DurabilityProfile rather than in the start script, because they are that profile's values.
     #>
     return @{
-        KafkaBootstrapServers = 'dms-kafka1:9092'
-        ConnectBaseUrl        = 'http://kafka-postgresql-source:8083'
-        MaxRecordBytes        = '1048576'
-        DurabilityProfile     = 'local'
-        BindingStatePath      = '/state'
+        KafkaBootstrapServers        = 'dms-kafka1:9092'
+        ConnectBaseUrl               = 'http://kafka-postgresql-source:8083'
+        MaxRecordBytes               = '1048576'
+        DurabilityProfile            = 'local'
+        BindingStatePath             = '/state'
+        OffsetStoreTopicDefault      = 'debezium_source_offset'
+        OffsetStorePartitionCount    = 25
+        OffsetStoreReplicationFactor = 1
+        OffsetStoreMinInSyncReplicas = 1
     }
 }
 

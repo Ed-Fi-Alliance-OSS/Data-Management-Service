@@ -315,6 +315,36 @@ public class Given_CdcSetupControllerReplaceSource
             .MustNotHaveHappened();
     }
 
+    /// <summary>
+    /// A restore, rollback, or copied backup carries the replaced database's own
+    /// <c>dms.DataStoreIdentity</c> row, so its fingerprint is the replaced source's until the identity
+    /// is rotated. Binding a new generation to it would publish one physical source under two
+    /// generations, so the replacement is refused - and refused before the fence, because nothing about
+    /// the outgoing generation has to change for the answer to be known.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_a_replacing_source_whose_identity_was_never_rotated()
+    {
+        CdcSetupControllerHarness harness = new()
+        {
+            PreviousGenerationRead = CdcSetupControllerHarness.Present(
+                CdcSetupControllerHarness.PreviousGenerationBinding(
+                    physicalSourceFingerprint: CdcSetupControllerHarness.Fingerprint()
+                )
+            ),
+        };
+
+        CdcAdmission admission = await harness.ReplaceSourceAsync();
+
+        using var _ = new AssertionScope();
+        AssertRefusedBeforeFencing(harness, admission);
+        Refusal(admission).Category.Should().Be(CdcDiagnosticCategory.SourceMismatch);
+        Refusal(admission).Component.Should().Be(CdcDiagnosticComponent.ProviderSetup);
+        Refusal(admission).Observed.Should().Be("retained");
+        A.CallTo(() => harness.Bindings.CreateBindingIfAbsentAsync(A<CdcBinding>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+    }
+
     private static CdcSetupControllerHarness ReplaceableTarget() =>
         new()
         {

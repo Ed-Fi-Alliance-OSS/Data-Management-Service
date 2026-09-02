@@ -5,7 +5,9 @@
 
 using EdFi.DataManagementService.Core.Configuration;
 using FluentAssertions;
+using FluentAssertions.Execution;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
@@ -73,6 +75,42 @@ public class DocumentCacheOptionsBindingTests
         configuration.GetSection(DocumentCacheOptions.SectionName).Bind(options);
 
         options.Administration.WorkflowTimeout.Should().Be(TimeSpan.FromHours(24));
+    }
+
+    /// <summary>
+    /// The deployment-owned CDC settings the compose stacks always emit. Their variables are blank on
+    /// every run that did not opt into CDC, so the DMS image is started with the indexed target keys
+    /// present and empty. That shape must resolve to no projection target at all and leave the status
+    /// endpoint unmapped: a stack running without CDC has to start exactly as it did before the keys
+    /// were added, and a target the deployment never configured must never be projected.
+    /// </summary>
+    [Test]
+    public void It_binds_blank_indexed_target_keys_to_no_projection_target()
+    {
+        IConfigurationRoot configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["DataManagement:DocumentCache:Targets:0:TenantKey"] = "",
+                    ["DataManagement:DocumentCache:Targets:0:DataStoreId"] = "",
+                    ["DataManagement:DocumentCache:Status:RequiredRole"] = "",
+                }
+            )
+            .Build();
+
+        DocumentCacheOptions options = new();
+        configuration.GetSection(DocumentCacheOptions.SectionName).Bind(options);
+
+        using AssertionScope assertions = new();
+        options.Targets.Should().BeEmpty();
+        options.Status.TryGetRequiredRoleForEndpointMapping(out _).Should().BeFalse();
+
+        // The blank pair also has to survive options validation, because the DMS host validates on
+        // start: a failure here would refuse to start every non-CDC stack.
+        new DocumentCacheOptionsValidator(configuration)
+            .Validate(Options.DefaultName, options)
+            .Failed.Should()
+            .BeFalse();
     }
 
     [Test]

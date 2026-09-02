@@ -571,8 +571,29 @@ internal sealed class CdcSetupController(
 
         // Step 5: provider artifacts first, then the shared Connect offset store, then the binding's
         // own topics and ACLs.
-        await using DbConnection connection = connectionFactory.Create(provider, request.ConnectionString);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        (DbConnection? openedConnection, string? connectionRefusal) =
+            await OpenProviderConnectionWithinBudgetAsync(
+                    provider,
+                    request.ConnectionString,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        if (openedConnection is null)
+        {
+            return Blocked(
+                Step(
+                    "enableProviderConnectionUnavailable",
+                    CdcDiagnosticCategory.ProviderSetupInvalid,
+                    CdcDiagnosticComponent.ProviderSetup,
+                    "CDC enablement could not reach the instance database its provider setup runs against.",
+                    connectionRefusal ?? "unavailable",
+                    timeProvider.GetUtcNow()
+                ),
+                []
+            );
+        }
+
+        await using DbConnection connection = openedConnection;
 
         CdcProviderSetupResult created = await SetupProviderWithinBudgetAsync(
                 ProviderSetupRequest(
@@ -631,18 +652,50 @@ internal sealed class CdcSetupController(
             physicalSourceFingerprint
         );
 
-        evaluation = evaluation with
+        // Both Kafka observations are gated here rather than only carried into the admission. The
+        // shared offset store and the binding's topics, grants, and record-size budget are what a
+        // registered connector immediately publishes through, so a nonconforming one must end the
+        // sequence before registration: an admission that reported the nonconformance afterwards would
+        // report it about a connector that was already running against it.
+        CdcConnectOffsetStorePolicyObservation connectOffsetStore = await kafkaAdmin
+            .EnsureConnectOffsetStoreAsync(context, cancellationToken)
+            .ConfigureAwait(false);
+        evaluation = evaluation with { ConnectOffsetStore = connectOffsetStore };
+        if (!CdcTargetStatusEvaluator.IsConnectOffsetStorePolicySatisfied(connectOffsetStore))
         {
-            ConnectOffsetStore = await kafkaAdmin
-                .EnsureConnectOffsetStoreAsync(context, cancellationToken)
-                .ConfigureAwait(false),
-        };
-        evaluation = evaluation with
+            return Blocked(
+                Step(
+                    "enableConnectOffsetStoreNotSatisfied",
+                    CdcDiagnosticCategory.ConnectOffsetStoreInvalid,
+                    CdcDiagnosticComponent.ConnectOffsetStore,
+                    "CDC enablement requires a conforming shared Connect offset store before it registers "
+                        + "a connector.",
+                    $"{connectOffsetStore.PolicyState} / {connectOffsetStore.AclState}",
+                    timeProvider.GetUtcNow()
+                ),
+                connectOffsetStore.Diagnostics
+            );
+        }
+
+        CdcKafkaPolicyObservation kafkaPolicy = await kafkaAdmin
+            .EnsureBindingKafkaPolicyAsync(context, inventory, cancellationToken)
+            .ConfigureAwait(false);
+        evaluation = evaluation with { KafkaPolicy = kafkaPolicy };
+        if (!CdcTargetStatusEvaluator.IsKafkaPolicySatisfied(kafkaPolicy))
         {
-            KafkaPolicy = await kafkaAdmin
-                .EnsureBindingKafkaPolicyAsync(context, inventory, cancellationToken)
-                .ConfigureAwait(false),
-        };
+            return Blocked(
+                Step(
+                    "enableKafkaPolicyNotSatisfied",
+                    CdcDiagnosticCategory.KafkaPolicyInvalid,
+                    CdcDiagnosticComponent.KafkaPolicy,
+                    "CDC enablement requires the binding's governed Kafka topics, grants, and record-size "
+                        + "budget to be conforming before it registers a connector.",
+                    kafkaPolicy.PolicyState.ToString(),
+                    timeProvider.GetUtcNow()
+                ),
+                kafkaPolicy.Diagnostics
+            );
+        }
 
         logger.LogDebug("CDC enablement provisioned the provider and Kafka artifacts for the binding.");
 
@@ -1212,6 +1265,13 @@ internal sealed class CdcSetupController(
 
             // The proof records whose assertion this is, because the worker made none. A reason that
             // spoke for the worker here would read as evidence in a proof that outlives the record.
+            //
+            // Neither case the switch is documented for can leave committed offsets behind. A
+            // connector that was never registered committed none, and a retirement that removed a
+            // connector deleted its offsets first - step (2) runs while the connector is stopped and
+            // still exists, and step (3) only then removes the configuration - so an absence this
+            // control plane produced is an absence of offsets too. What is left is a connector
+            // deleted outside this control plane, which is exactly the judgement the switch names.
             governedArtifacts.Add(
                 new CdcGovernedArtifact(
                     CdcGovernedArtifactKind.ConnectSourceOffsets,
@@ -1699,6 +1759,32 @@ internal sealed class CdcSetupController(
             );
         }
 
+        // The replacing source must be a different physical source than the one it replaces. A restore,
+        // rollback, or copied backup carries the replaced database's own dms.DataStoreIdentity row, so
+        // its fingerprint is that of the source being replaced until the identity is rotated. Binding a
+        // new generation to an unrotated identity would publish one physical source under two
+        // generations, and the replacement would report the same source it was supposed to replace.
+        if (
+            eligibility.PhysicalSourceFingerprint is { } replacingFingerprint
+            && string.Equals(
+                replacingFingerprint,
+                previousBinding.PhysicalSourceFingerprint,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return Refused(
+                request.OperationId,
+                targetIdentity,
+                CdcDiagnosticCategory.SourceMismatch,
+                CdcDiagnosticComponent.ProviderSetup,
+                "CDC source replacement requires the replacing source's identity to have been rotated "
+                    + "away from the generation it replaces.",
+                "retained",
+                eligibility.Diagnostics
+            );
+        }
+
         // The rest of what makes a source bindable, asked of the classifier that owns the rule rather
         // than restated here: a lifecycle already tracking, resetting or rebuilding, and pre-capture
         // rows the replacing generation would capture over. The enablement sequence runs this same
@@ -1936,8 +2022,28 @@ internal sealed class CdcSetupController(
             refusals.Add(VerificationRefused(kind, observed, timeProvider.GetUtcNow()));
         }
 
-        await using DbConnection connection = connectionFactory.Create(provider, request.ConnectionString);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        (DbConnection? openedConnection, string? connectionRefusal) =
+            await OpenProviderConnectionWithinBudgetAsync(
+                    provider,
+                    request.ConnectionString,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        if (openedConnection is null)
+        {
+            return CdcContractReadResult<CdcAdoptionProof>.Failure([
+                AdoptionRefused(
+                    CdcDiagnosticCategory.ProviderSetupInvalid,
+                    CdcDiagnosticComponent.ProviderSetup,
+                    "CDC adoption could not reach the instance database it verifies the binding against.",
+                    "$.binding",
+                    connectionRefusal ?? "unavailable",
+                    timeProvider.GetUtcNow()
+                ),
+            ]);
+        }
+
+        await using DbConnection connection = openedConnection;
 
         CdcProviderSetupResult validated = await SetupProviderWithinBudgetAsync(
                 ProviderSetupRequest(
@@ -2410,8 +2516,29 @@ internal sealed class CdcSetupController(
         // fingerprint of the source that actually answered. The binding is compared against that
         // observed source rather than against itself, so a database swapped underneath the binding is
         // reported as a source mismatch.
-        await using DbConnection connection = connectionFactory.Create(provider, request.ConnectionString);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        (DbConnection? openedConnection, string? connectionRefusal) =
+            await OpenProviderConnectionWithinBudgetAsync(
+                    provider,
+                    request.ConnectionString,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        if (openedConnection is null)
+        {
+            return Blocked(
+                StatusStep(
+                    "statusProviderConnectionUnavailable",
+                    CdcDiagnosticCategory.ProviderSetupInvalid,
+                    CdcDiagnosticComponent.ProviderSetup,
+                    "CDC status could not reach the instance database its provider inspection runs against.",
+                    connectionRefusal ?? "unavailable",
+                    timeProvider.GetUtcNow()
+                ),
+                []
+            );
+        }
+
+        await using DbConnection connection = openedConnection;
 
         CdcProviderSetupResult validated = await SetupProviderWithinBudgetAsync(
                 ProviderSetupRequest(
@@ -2972,6 +3099,63 @@ internal sealed class CdcSetupController(
     /// The budget is linked to the caller's token, so a cancellation the caller asked for still
     /// propagates as one instead of being reported as a provider failure.
     /// </remarks>
+    /// <summary>
+    /// Opens the instance-database connection every provider pass runs over, under the same step budget
+    /// the passes themselves run under.
+    /// </summary>
+    /// <remarks>
+    /// Establishing the connection is provider work, so it is budgeted as provider work: the CLI adds no
+    /// wall clock of its own, and an unreachable database would otherwise hold a verb open past every
+    /// budget the deployment configured. A provider that refuses or never answers is reported as the
+    /// failed step it is rather than thrown, so the verb still produces the CDC contract it owes — the
+    /// same handling the retirement's own provider teardown already has.
+    /// </remarks>
+    /// <returns>
+    /// The open connection, or the bounded token naming why it could not be opened. Provider messages
+    /// quote connection settings, so only the rejection's type is reported.
+    /// </returns>
+    private async Task<(DbConnection? Connection, string? Refusal)> OpenProviderConnectionWithinBudgetAsync(
+        CoreCdc.CdcProvider provider,
+        string connectionString,
+        CancellationToken cancellationToken
+    )
+    {
+        TimeSpan budget = options.Value.Timeouts.ProviderSetup;
+        using CancellationTokenSource budgetSource = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken
+        );
+        budgetSource.CancelAfter(budget);
+
+        DbConnection? connection = null;
+        try
+        {
+            connection = connectionFactory.Create(provider, connectionString);
+            await connection.OpenAsync(budgetSource.Token).ConfigureAwait(false);
+
+            return (connection, null);
+        }
+        catch (Exception exception)
+            when (exception is DbException or InvalidOperationException or ArgumentException
+                || (exception is OperationCanceledException && !cancellationToken.IsCancellationRequested)
+            )
+        {
+            if (connection is not null)
+            {
+                await connection.DisposeAsync().ConfigureAwait(false);
+            }
+
+            string refusal = exception is OperationCanceledException ? "timedOut" : exception.GetType().Name;
+            logger.LogDebug(
+                exception,
+                "CDC could not open the instance-database connection within its {Budget} budget: {Refusal}.",
+                budget,
+                refusal
+            );
+
+            return (null, refusal);
+        }
+    }
+
     private async Task<CdcProviderSetupResult> SetupProviderWithinBudgetAsync(
         CdcProviderSetupRequest setupRequest,
         CancellationToken cancellationToken

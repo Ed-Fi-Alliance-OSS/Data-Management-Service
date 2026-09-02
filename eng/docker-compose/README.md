@@ -974,8 +974,12 @@ Prerequisites:
 
 The bootstrap wrapper's CDC phase runs in this order:
 
-1. the infrastructure phase starts Kafka and Kafka Connect and registers the DocumentCache
-   CDC operator client;
+1. the infrastructure phase starts Kafka, pre-creates the shared Kafka Connect offset store
+   with `cleanup.policy=compact` and an explicit topic-level `min.insync.replicas`, then
+   starts Kafka Connect and registers the DocumentCache CDC operator client. The order
+   matters: a Connect worker that reaches the broker first creates that topic itself and
+   leaves `min.insync.replicas` to the broker default, and the control plane validates the
+   store rather than repairing it, so every `cdc` verb would refuse against it;
 2. the DocumentCache projection target for the configured data store and the status
    endpoint's required role are written into this run's environment — before DMS starts,
    because DMS reads both at startup;

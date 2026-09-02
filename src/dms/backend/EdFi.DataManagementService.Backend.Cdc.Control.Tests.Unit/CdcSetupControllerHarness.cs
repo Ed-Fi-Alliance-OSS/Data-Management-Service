@@ -169,14 +169,14 @@ internal sealed class CdcSetupControllerHarness
             )
             .ReturnsLazily(
                 (CdcObservationContext context, CancellationToken _) =>
-                    Task.FromResult(OffsetStorePolicy ?? SatisfiedOffsetStore(context, _clock.GetUtcNow()))
+                    Task.FromResult(OffsetStorePolicy ?? ObservedOffsetStore(context, _clock.GetUtcNow()))
             );
         A.CallTo(() =>
                 Kafka.DescribeConnectOffsetStoreAsync(A<CdcObservationContext>._, A<CancellationToken>._)
             )
             .ReturnsLazily(
                 (CdcObservationContext context, CancellationToken _) =>
-                    Task.FromResult(OffsetStorePolicy ?? SatisfiedOffsetStore(context, _clock.GetUtcNow()))
+                    Task.FromResult(OffsetStorePolicy ?? ObservedOffsetStore(context, _clock.GetUtcNow()))
             );
         A.CallTo(() =>
                 Kafka.EnsureBindingKafkaPolicyAsync(
@@ -191,7 +191,7 @@ internal sealed class CdcSetupControllerHarness
                     ProvisionedInventory = inventory;
 
                     return Task.FromResult(
-                        KafkaPolicy ?? SatisfiedKafkaPolicy(context, inventory, _clock.GetUtcNow())
+                        KafkaPolicy ?? ObservedKafkaPolicy(context, inventory, _clock.GetUtcNow())
                     );
                 }
             );
@@ -205,7 +205,7 @@ internal sealed class CdcSetupControllerHarness
             .ReturnsLazily(
                 (CdcObservationContext context, CdcArtifactInventory inventory, CancellationToken _) =>
                     Task.FromResult(
-                        KafkaPolicy ?? SatisfiedKafkaPolicy(context, inventory, _clock.GetUtcNow())
+                        KafkaPolicy ?? ObservedKafkaPolicy(context, inventory, _clock.GetUtcNow())
                     )
             );
         A.CallTo(() =>
@@ -438,8 +438,25 @@ internal sealed class CdcSetupControllerHarness
     /// <summary>Overrides the shared Connect offset-store evidence.</summary>
     public CdcConnectOffsetStorePolicyObservation? OffsetStorePolicy { get; set; }
 
+    /// <summary>The state the shared Connect offset store's own policy is observed in.</summary>
+    public CdcConnectOffsetStorePolicyState OffsetStoreState { get; set; } =
+        CdcConnectOffsetStorePolicyState.Satisfied;
+
+    /// <summary>The state the shared Connect offset store's worker-only grants are observed in.</summary>
+    public CdcConnectOffsetStoreItemState OffsetStoreAclState { get; set; } =
+        CdcConnectOffsetStoreItemState.Satisfied;
+
     /// <summary>Overrides the binding's Kafka topic, ACL, and record-size evidence.</summary>
     public CdcKafkaPolicyObservation? KafkaPolicy { get; set; }
+
+    /// <summary>The state the binding's composed Kafka policy is observed in.</summary>
+    public CdcKafkaPolicyState KafkaPolicyState { get; set; } = CdcKafkaPolicyState.Satisfied;
+
+    /// <summary>
+    /// The state the binding's record-size budget is observed in: one item of the composed policy, so
+    /// it is what proves an item-level nonconformance is gated as the composed state is.
+    /// </summary>
+    public CdcKafkaPolicyItemState KafkaRecordSizeState { get; set; } = CdcKafkaPolicyItemState.Satisfied;
 
     public CdcConnectResult<CdcConnectConfigValidation> PluginValidation { get; set; } =
         new(CdcConnectOutcome.Succeeded, new(0, []), null);
@@ -662,11 +679,17 @@ internal sealed class CdcSetupControllerHarness
 
     /// <summary>
     /// The binding record of an earlier generation of the same target: the one a source replacement
-    /// replaces. Its governed names are that generation's own, so none of them is the current one's.
+    /// replaces. Its governed names are that generation's own, so none of them is the current one's,
+    /// and it is bound to the physical source being replaced rather than to the replacing one.
     /// </summary>
+    /// <param name="physicalSourceFingerprint">
+    /// The source the outgoing generation is bound to. It defaults to the replaced source, because a
+    /// replacement that still reported the outgoing generation's own source replaced nothing.
+    /// </param>
     public static CdcBinding PreviousGenerationBinding(
         long generation = CdcControlTemplateTestData.BindingGeneration - 1,
-        CoreCdc.CdcProvider provider = CoreCdc.CdcProvider.Postgresql
+        CoreCdc.CdcProvider provider = CoreCdc.CdcProvider.Postgresql,
+        string? physicalSourceFingerprint = null
     )
     {
         CdcArtifactInventory inventory = InventoryFor(generation, provider);
@@ -676,11 +699,16 @@ internal sealed class CdcSetupControllerHarness
             Generation = generation,
             ConnectorName = inventory.ConnectorName,
             TopicName = inventory.TopicName,
+            PhysicalSourceFingerprint = physicalSourceFingerprint ?? ReplacedFingerprint(provider),
         };
     }
 
     public static string Fingerprint(CoreCdc.CdcProvider provider = CoreCdc.CdcProvider.Postgresql) =>
         CdcControlTemplateTestData.SourceFingerprint(ToDdlProvider(provider)).Value;
+
+    /// <summary>The fingerprint of the physical source a source replacement replaces.</summary>
+    public static string ReplacedFingerprint(CoreCdc.CdcProvider provider = CoreCdc.CdcProvider.Postgresql) =>
+        CdcControlTemplateTestData.ReplacedSourceFingerprint(ToDdlProvider(provider)).Value;
 
     private static Ddl.CdcProvider ToDdlProvider(CoreCdc.CdcProvider provider) =>
         provider == CoreCdc.CdcProvider.Postgresql ? Ddl.CdcProvider.Postgresql : Ddl.CdcProvider.SqlServer;
@@ -1129,6 +1157,33 @@ internal sealed class CdcSetupControllerHarness
         );
 
         return SourceHistoryClassification;
+    }
+
+    /// <summary>The shared offset store as this harness's deployment holds it.</summary>
+    private CdcConnectOffsetStorePolicyObservation ObservedOffsetStore(
+        CdcObservationContext context,
+        DateTimeOffset observedAt
+    ) =>
+        SatisfiedOffsetStore(context, observedAt) with
+        {
+            PolicyState = OffsetStoreState,
+            AclState = OffsetStoreAclState,
+        };
+
+    /// <summary>The binding's Kafka artifacts as this harness's deployment holds them.</summary>
+    private CdcKafkaPolicyObservation ObservedKafkaPolicy(
+        CdcObservationContext context,
+        CdcArtifactInventory inventory,
+        DateTimeOffset observedAt
+    )
+    {
+        CdcKafkaPolicyObservation satisfied = SatisfiedKafkaPolicy(context, inventory, observedAt);
+
+        return satisfied with
+        {
+            PolicyState = KafkaPolicyState,
+            RecordSizePolicy = satisfied.RecordSizePolicy with { State = KafkaRecordSizeState },
+        };
     }
 
     private static CdcConnectOffsetStorePolicyObservation SatisfiedOffsetStore(

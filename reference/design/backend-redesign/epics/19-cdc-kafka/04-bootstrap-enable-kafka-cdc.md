@@ -173,6 +173,14 @@ controller, its adapters, and the entry points that invoke them.
   has never enabled CDC for any target cannot admit the offline commands; that is the
   fail-closed side of the trade, and it matches the rule that no operator assertion may stand
   in for durable evidence.
+- The bootstrap lifecycle pays that cost in full: it configures exactly one target, so the
+  store is empty before enablement and after retirement and holds only this target's own
+  binding in between. `internalOnly` is therefore unreachable there, and the E18 offline
+  commands stay rejected for the whole of it. That is the trade taken deliberately, not an
+  oversight - `internalOnly` is reachable for a target of a deployment that has bound some
+  other target, which is the only shape in which an absent binding is evidence rather than an
+  empty store. Making it reachable for a single-target deployment would require durable
+  store-initialization evidence the binding state store does not carry.
 - Every observation carries the currently resolved physical-source fingerprint, including the
   rejecting ones. The E18 evaluator checks the fingerprint before the status, so withholding
   it would classify each rejection as a source mismatch that was never observed.
@@ -224,7 +232,11 @@ controller, its adapters, and the entry points that invoke them.
   is how a generation whose connector was never registered, or whose earlier retirement
   removed the connector before being interrupted, is still retirable. The retirement then
   proceeds and its proof records the offsets as the operator's assertion rather than the
-  worker's observation, because the worker was never in a position to make one.
+  worker's observation, because the worker was never in a position to make one. Neither named
+  case can leave committed offsets behind: a connector that was never registered committed
+  none, and a retirement that removed a connector had already deleted its offsets first, in
+  the order above. What the switch actually covers is a connector deleted outside this control
+  plane, which is the judgement it puts on the operator by name.
 - After the connector, retirement removes the binding's public, progress, and SQL Server
   schema-history topics and their ACLs, then the provider capture artifacts, then the
   terminal incident state and the binding record last, and only against a validated cleanup
@@ -258,8 +270,22 @@ controller, its adapters, and the entry points that invoke them.
 - The control-plane verbs run as a one-shot container on the local compose network rather
   than on the host. The instance database is registered in the Configuration Service under
   its container alias and the broker advertises a container-internal listener, so a
-  host-side process resolves neither. The container is independent of the DMS image, so the
-  published-image stack can honour the same opt-in.
+  host-side process resolves neither. The container is independent of the DMS image, so
+  nothing in the control plane ties it to the local stack.
+- The `-EnableKafkaCdc` opt-in itself is local-only. `start-published-dms.ps1` declares
+  neither it nor the binding-state root, and the wrapper refuses the switch on the published
+  path rather than half-running it. A published deployment that wants projection sets the
+  three DocumentCache variables in its own environment file - which is why
+  `published-dms.yml` reads them the same way `local-dms.yml` does - and drives the
+  control-plane verbs itself. Blank is the default on both stacks and binds to no target.
+- Before local Kafka Connect starts, the start script pre-creates the configured shared
+  offset topic with `cleanup.policy=compact` and an explicit topic-level
+  `min.insync.replicas`, and sets those values on a topic that already exists. A worker that
+  reaches the broker first creates the topic itself and leaves `min.insync.replicas` to the
+  broker default; the control plane validates an existing store rather than repairing it, and
+  a broker default is not a topic-level override, so a Connect-first store would leave every
+  verb refusing. The local values are the `local` durability profile's own and are read from
+  the same shared resolver the verbs' arguments come from.
 - The durable binding state store is a persistent root outside the bootstrap manifest. The
   manifest is prepared-input handoff, while a binding record outlives any one bootstrap run
   and lives at least as long as every artifact it governs.
