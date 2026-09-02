@@ -110,13 +110,17 @@ internal static class NamespaceAuthorizationProviderFailureMapper
 
         string providerOrPlannerFailureKind = dispatchResult switch
         {
-            // An undecodable payload that announces itself as another family's is not ours to report, even
+            // An undecodable payload the dispatcher recognized as ownership's is not ours to report, even
             // though nothing in it can be decoded. Only ownership emits own1, so its malformed payloads are
             // its own to diagnose; without this, consulting namespace first on a command carrying both
-            // would file an ownership defect under NamespaceBased. Anything with no recognizable
-            // discriminator is still claimed below, which keeps the diagnostic for a payload no family owns.
-            RelationalAuthorizationAuth1DispatchResult.InvalidPayload { RawPayload: var rawPayload }
-                when IsForeignInvalidPayload(rawPayload) => string.Empty,
+            // would file an ownership defect under NamespaceBased. Anything else — no recognizable
+            // discriminator, or a malformed relationship or custom-view payload whose own mapper has
+            // already declined it by the time this one is consulted — is still claimed below, which keeps
+            // the diagnostic for a payload no family owns.
+            RelationalAuthorizationAuth1DispatchResult.InvalidPayload
+            {
+                RecognizedFamily: RelationalAuthorizationAuth1PayloadFamily.Ownership
+            } => string.Empty,
             RelationalAuthorizationAuth1DispatchResult.InvalidPayload =>
                 AuthorizationSecurityConfigurationDiagnostics.NamespaceInvalidAuth1Payload,
             RelationalAuthorizationAuth1DispatchResult.Namespace { Payload: var payload }
@@ -177,20 +181,6 @@ internal static class NamespaceAuthorizationProviderFailureMapper
 
         return false;
     }
-
-    /// <remarks>
-    /// Every AUTH1 family that owns a discriminator has to be listed here, exactly as
-    /// <c>RelationshipAuthorizationProviderFailureMapper.IsForeignAuthorizationPayload</c> lists them: an
-    /// omission does not fail a build, it silently misattributes the omitted family's malformed payloads.
-    /// The relationship and custom view-based families are absent on purpose — this mapper is consulted
-    /// after theirs, so an undecodable payload of theirs has already been declined by the codec that owns
-    /// it, and claiming it here is the existing behavior for a payload nobody owns.
-    /// </remarks>
-    private static bool IsForeignInvalidPayload(string rawPayload) =>
-        rawPayload.StartsWith(
-            OwnershipAuthorizationAuth1FailurePayloadCodec.PayloadDiscriminator + "|",
-            StringComparison.Ordinal
-        );
 
     private static bool IsInvalidStaleStoredTargetPayload(
         NamespaceAuthorizationAuth1FailurePayload payload,

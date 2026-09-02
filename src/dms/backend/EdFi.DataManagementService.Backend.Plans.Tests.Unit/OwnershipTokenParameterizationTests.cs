@@ -227,46 +227,6 @@ public class Given_OwnershipTokenParameterizationFactory
 
         act.Should().Throw<ArgumentNullException>();
     }
-
-    // ── in-memory mirror of the emitted predicate ──────────────────────
-
-    [Test]
-    public void It_matches_a_stored_token_that_is_in_the_list()
-    {
-        var parameterization = OwnershipTokenParameterizationFactory.Create(
-            SqlDialect.Pgsql,
-            [3, 7],
-            BaseParameterName
-        );
-
-        parameterization.MatchesStoredToken(7).Should().BeTrue();
-    }
-
-    [TestCase((short)11)]
-    [TestCase(null)]
-    public void It_does_not_match_a_nonmatching_or_null_stored_token(short? storedOwnershipTokenId)
-    {
-        var parameterization = OwnershipTokenParameterizationFactory.Create(
-            SqlDialect.Pgsql,
-            [3, 7],
-            BaseParameterName
-        );
-
-        parameterization.MatchesStoredToken(storedOwnershipTokenId).Should().BeFalse();
-    }
-
-    [Test]
-    public void It_matches_nothing_when_the_token_list_is_empty()
-    {
-        var parameterization = OwnershipTokenParameterizationFactory.Create(
-            SqlDialect.Pgsql,
-            [],
-            BaseParameterName
-        );
-
-        parameterization.MatchesStoredToken(3).Should().BeFalse();
-        parameterization.MatchesStoredToken(null).Should().BeFalse();
-    }
 }
 
 [TestFixture]

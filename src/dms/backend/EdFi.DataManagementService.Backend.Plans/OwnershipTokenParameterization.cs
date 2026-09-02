@@ -57,14 +57,6 @@ public sealed record OwnershipTokenParameterization(
     /// untyped empty array.
     /// </summary>
     public bool MatchesNoToken => TokensInOrder.Count == 0;
-
-    /// <summary>
-    /// Evaluates in memory whether <paramref name="storedOwnershipTokenId"/> is one of the caller's tokens,
-    /// mirroring the emitted SQL membership predicate. A null stored token never matches, which is the
-    /// §2.14 case.
-    /// </summary>
-    public bool MatchesStoredToken(short? storedOwnershipTokenId) =>
-        storedOwnershipTokenId is { } storedToken && TokensInOrder.Contains(storedToken);
 }
 
 /// <summary>

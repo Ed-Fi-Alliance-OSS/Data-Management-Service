@@ -200,11 +200,12 @@ public class Given_RelationalAuthorizationAuth1Dispatcher
         );
 
         dispatched.Should().BeTrue();
-        result
+        var invalid = result
             .Should()
             .BeOfType<RelationalAuthorizationAuth1DispatchResult.InvalidPayload>()
-            .Which.RawPayload.Should()
-            .Be(payloadText);
+            .Subject;
+        invalid.RawPayload.Should().Be(payloadText);
+        invalid.RecognizedFamily.Should().Be(RelationalAuthorizationAuth1PayloadFamily.Ownership);
     }
 
     [Test]
@@ -221,6 +222,8 @@ public class Given_RelationalAuthorizationAuth1Dispatcher
         result.Should().BeOfType<RelationalAuthorizationAuth1DispatchResult.InvalidPayload>();
         var invalid = (RelationalAuthorizationAuth1DispatchResult.InvalidPayload)result!;
         invalid.RawPayload.Should().Be("v2|0|x");
+        // No known discriminator, so no family owns it and every mapper's catch-all is free to claim it.
+        invalid.RecognizedFamily.Should().BeNull();
     }
 
     [Test]
@@ -249,5 +252,102 @@ public class Given_RelationalAuthorizationAuth1Dispatcher
 
         dispatched.Should().BeFalse();
         result.Should().BeNull();
+    }
+
+    // ── dispatcher-owned family recognition ────────────────────────────
+
+    /// <summary>
+    /// A malformed payload still announces which family emitted it, so the mapper that owns the
+    /// discriminator can claim it and every other mapper can decline it without re-testing the raw prefix.
+    /// </summary>
+    /// <remarks>
+    /// The prefix tests used to be copied into each provider failure mapper, where a family added to one
+    /// copy and missed in another silently misattributed that family's malformed payloads. The dispatcher
+    /// is now the only place that decides, and this is what pins it for every family at once.
+    /// </remarks>
+    [TestCase("1|x|2|0:0:s", RelationalAuthorizationAuth1PayloadFamily.Relationship)]
+    [TestCase("1|7", RelationalAuthorizationAuth1PayloadFamily.Relationship)]
+    [TestCase("ns1|0", RelationalAuthorizationAuth1PayloadFamily.Namespace)]
+    [TestCase("ns1|0|x", RelationalAuthorizationAuth1PayloadFamily.Namespace)]
+    [TestCase("cv1|0", RelationalAuthorizationAuth1PayloadFamily.CustomView)]
+    [TestCase("cv1|0|x", RelationalAuthorizationAuth1PayloadFamily.CustomView)]
+    [TestCase("own1|0", RelationalAuthorizationAuth1PayloadFamily.Ownership)]
+    [TestCase("own1|0|x", RelationalAuthorizationAuth1PayloadFamily.Ownership)]
+    public void It_reports_the_recognized_family_of_a_malformed_known_family_payload(
+        string payloadText,
+        RelationalAuthorizationAuth1PayloadFamily expectedFamily
+    )
+    {
+        var dispatched = RelationalAuthorizationAuth1Dispatcher.TryDispatch(
+            SqlDialect.Pgsql,
+            providerErrorCode: "AUTH1",
+            providerMessage: payloadText,
+            out var result
+        );
+
+        dispatched.Should().BeTrue();
+        var invalid = result
+            .Should()
+            .BeOfType<RelationalAuthorizationAuth1DispatchResult.InvalidPayload>()
+            .Subject;
+        invalid.RawPayload.Should().Be(payloadText);
+        invalid.RecognizedFamily.Should().Be(expectedFamily);
+    }
+
+    /// <summary>
+    /// A payload leading with no known discriminator is invalid with no family, which is what keeps the
+    /// mappers' catch-all diagnostics reachable for a payload nobody owns.
+    /// </summary>
+    [TestCase("v2|0|x")]
+    [TestCase("garbage")]
+    [TestCase("nsx1|0|m")]
+    [TestCase("own|0|m")]
+    public void It_reports_no_recognized_family_for_an_unknown_discriminator(string payloadText)
+    {
+        var dispatched = RelationalAuthorizationAuth1Dispatcher.TryDispatch(
+            SqlDialect.Pgsql,
+            providerErrorCode: "AUTH1",
+            providerMessage: payloadText,
+            out var result
+        );
+
+        dispatched.Should().BeTrue();
+        result
+            .Should()
+            .BeOfType<RelationalAuthorizationAuth1DispatchResult.InvalidPayload>()
+            .Which.RecognizedFamily.Should()
+            .BeNull();
+    }
+
+    /// <summary>
+    /// The recognizer is exposed for the one caller that already holds an extracted payload, so it is pinned
+    /// directly too — including the anchored-prefix case that keeps <c>own1|</c> out of the relationship
+    /// family despite containing <c>1|</c>.
+    /// </summary>
+    [TestCase("1|7|2|0:0:s", RelationalAuthorizationAuth1PayloadFamily.Relationship)]
+    [TestCase("ns1|2|m", RelationalAuthorizationAuth1PayloadFamily.Namespace)]
+    [TestCase("cv1|2|m", RelationalAuthorizationAuth1PayloadFamily.CustomView)]
+    [TestCase("own1|2|m", RelationalAuthorizationAuth1PayloadFamily.Ownership)]
+    public void It_recognizes_each_family_from_a_raw_payload(
+        string payloadText,
+        RelationalAuthorizationAuth1PayloadFamily expectedFamily
+    )
+    {
+        RelationalAuthorizationAuth1Dispatcher.RecognizeFamily(payloadText).Should().Be(expectedFamily);
+    }
+
+    [TestCase("v2|0|x")]
+    [TestCase("garbage")]
+    public void It_recognizes_no_family_for_an_unknown_raw_payload(string payloadText)
+    {
+        RelationalAuthorizationAuth1Dispatcher.RecognizeFamily(payloadText).Should().BeNull();
+    }
+
+    [Test]
+    public void It_rejects_a_null_raw_payload()
+    {
+        Action act = () => RelationalAuthorizationAuth1Dispatcher.RecognizeFamily(null!);
+
+        act.Should().Throw<ArgumentNullException>();
     }
 }

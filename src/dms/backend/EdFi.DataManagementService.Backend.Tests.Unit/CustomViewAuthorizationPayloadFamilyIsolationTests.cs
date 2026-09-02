@@ -102,6 +102,98 @@ public class Given_AnAuth1PayloadFromAnotherFamily
         diagnostics.Should().BeNull();
     }
 
+    /// <summary>
+    /// The same yield has to hold for an <c>own1|</c> payload the ownership codec cannot parse. Nothing in
+    /// it can be decoded, so only its discriminator says whose it is — and it is the ownership mapper, not
+    /// this one, that owns the diagnostic for it.
+    /// </summary>
+    /// <remarks>
+    /// The mappers used to re-test the raw prefix themselves to decide this. They now read the family the
+    /// dispatcher recognized, so this pins the malformed case that distinguishes the two: a raw-prefix test
+    /// and a recognized-family test agree on well-formed payloads and can only diverge here.
+    /// </remarks>
+    [TestCase("own1|0")]
+    [TestCase("own1|0|x")]
+    [TestCase("own1|-1|m")]
+    public void It_should_not_be_reported_as_namespace_invalid_metadata_when_malformed_but_ownership_prefixed(
+        string payloadText
+    )
+    {
+        var built =
+            NamespaceAuthorizationProviderFailureMapper.TryBuildInvalidAuthorizationFailureDiagnostics(
+                SqlDialect.Pgsql,
+                new FakeDbException(payloadText, "AUTH1"),
+                new StubProviderFailureExtractor("AUTH1", payloadText),
+                NamespaceValueSources,
+                NamespaceChecks,
+                out var diagnostics
+            );
+
+        built.Should().BeFalse(payloadText);
+        diagnostics.Should().BeNull(payloadText);
+    }
+
+    /// <summary>
+    /// The yield must stay narrow in the other direction too. A payload the dispatcher recognizes no family
+    /// for belongs to nobody, so the namespace mapper keeps claiming it — that is what stops an undecodable
+    /// payload from falling through every mapper into generic database-failure handling.
+    /// </summary>
+    [TestCase("garbage-with-no-discriminator")]
+    [TestCase("v2|0|x")]
+    public void It_should_still_report_namespace_invalid_payload_for_an_unknown_discriminator(
+        string payloadText
+    )
+    {
+        var built =
+            NamespaceAuthorizationProviderFailureMapper.TryBuildInvalidAuthorizationFailureDiagnostics(
+                SqlDialect.Pgsql,
+                new FakeDbException(payloadText, "AUTH1"),
+                new StubProviderFailureExtractor("AUTH1", payloadText),
+                NamespaceValueSources,
+                NamespaceChecks,
+                out var diagnostics
+            );
+
+        built.Should().BeTrue(payloadText);
+        diagnostics
+            .Should()
+            .NotBeNull()
+            .And.Contain(diagnostic =>
+                diagnostic.ProviderOrPlannerFailureKind
+                == AuthorizationSecurityConfigurationDiagnostics.NamespaceInvalidAuth1Payload
+            );
+    }
+
+    /// <summary>
+    /// A malformed payload of a family the relationship mapper is consulted ahead of still yields with no
+    /// diagnostic, exactly as its well-formed payload does. The relationship mapper reports an undecodable
+    /// payload as its own parse failure, so claiming another family's malformed payload here would convert
+    /// that family's 403 into a relationship 500.
+    /// </summary>
+    [TestCase("ns1|0")]
+    [TestCase("ns1|0|x")]
+    [TestCase("cv1|0")]
+    [TestCase("cv1|0|x")]
+    [TestCase("own1|0")]
+    [TestCase("own1|0|x")]
+    public void It_should_not_be_claimed_as_a_relationship_diagnostic_when_malformed(string payloadText)
+    {
+        var mapped = RelationshipAuthorizationProviderFailureMapper.TryMapRelationshipAuthorizationFailure(
+            SqlDialect.Pgsql,
+            new FakeDbException(payloadText, "AUTH1"),
+            new StubProviderFailureExtractor("AUTH1", payloadText),
+            expectedEmittedAuth1Index: 0,
+            [],
+            [],
+            out var relationshipFailure,
+            out var invalidFailureDiagnostic
+        );
+
+        mapped.Should().BeFalse(payloadText);
+        relationshipFailure.Should().BeNull(payloadText);
+        invalidFailureDiagnostic.Should().BeNull(payloadText);
+    }
+
     [TestCase("cv1|0|n")]
     [TestCase("cv1|0|u")]
     [TestCase("ns1|0|m")]

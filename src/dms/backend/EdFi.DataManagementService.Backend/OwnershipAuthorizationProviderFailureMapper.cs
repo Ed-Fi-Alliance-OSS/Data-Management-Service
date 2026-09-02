@@ -18,10 +18,12 @@ namespace EdFi.DataManagementService.Backend;
 /// <remarks>
 /// <para>
 /// This mapper claims an AUTH1 failure only when the payload belongs to the <c>own1</c> family, including
-/// the case where an <c>own1|</c>-prefixed payload is malformed and so cannot be decoded at all. Deciding
-/// that by the payload's own discriminator, rather than by which statements the command happened to carry,
-/// is what makes the mapper safe to consult from a co-batched path: it can never claim another family's
-/// malformed payload, and another family can never legitimately claim ours.
+/// the case where an <c>own1|</c>-prefixed payload is malformed and so cannot be decoded at all — the
+/// dispatcher reports that as <see cref="RelationalAuthorizationAuth1DispatchResult.InvalidPayload"/>
+/// carrying <see cref="RelationalAuthorizationAuth1PayloadFamily.Ownership"/>. Deciding that by the
+/// payload's own discriminator, rather than by which statements the command happened to carry, is what
+/// makes the mapper safe to consult from a co-batched path: it can never claim another family's malformed
+/// payload, and another family can never legitimately claim ours.
 /// </para>
 /// <para>
 /// The reverse direction is closed too, and independently: <c>NamespaceAuthorizationProviderFailureMapper</c>
@@ -81,9 +83,12 @@ internal static class OwnershipAuthorizationProviderFailureMapper
                 return true;
 
             // An undecodable payload that still announces itself as ours. The check emitted it, so no other
-            // family may answer for it, but nothing in it can be trusted to attribute a denial.
-            case RelationalAuthorizationAuth1DispatchResult.InvalidPayload { RawPayload: var rawPayload }
-                when IsOwnershipFamilyPayload(rawPayload):
+            // family may answer for it, but nothing in it can be trusted to attribute a denial. The
+            // dispatcher decides whose it is; this mapper never re-tests the discriminator itself.
+            case RelationalAuthorizationAuth1DispatchResult.InvalidPayload
+            {
+                RecognizedFamily: RelationalAuthorizationAuth1PayloadFamily.Ownership
+            }:
                 result = BuildInvalidAuthorizationFailure(
                     AuthorizationSecurityConfigurationDiagnostics.OwnershipAuth1PayloadMappingFailed,
                     plannedConfiguredStrategyIndex
@@ -148,11 +153,5 @@ internal static class OwnershipAuthorizationProviderFailureMapper
                 providerOrPlannerFailureKind,
                 plannedConfiguredStrategyIndex
             )
-        );
-
-    private static bool IsOwnershipFamilyPayload(string rawPayload) =>
-        rawPayload.StartsWith(
-            OwnershipAuthorizationAuth1FailurePayloadCodec.PayloadDiscriminator + "|",
-            StringComparison.Ordinal
         );
 }
