@@ -645,8 +645,10 @@ function Get-WrapperCdcEnableArgument {
 
     The two exact-token evidence flags are emitted ONLY when this run created the physical
     database. Bootstrap has no standing to assert either fact about a data store it merely found,
-    and the control plane refuses the enable without them - which is the correct outcome, reached
-    here without an assertion this caller cannot support.
+    and the command surface refuses an enable that omits them - which is the correct outcome,
+    reached here without an assertion this caller cannot support. That refusal is a command-line
+    parse failure, not a control-plane result: the executor is never entered, so the exit code is
+    the parser's and no admission contract reaches stdout.
 
     The connector principal and the connector's own database connection properties travel by
     environment rather than on the command line, alongside the setup principal: they are deployment

@@ -52,6 +52,10 @@ public interface ICdcKafkaAdmin
     /// Broker defaults are never relied on: every governed override must be an explicit topic-level
     /// value. A topic whose evidence cannot be obtained reports
     /// <see cref="CdcKafkaPolicyItemState.Unknown"/>, never <see cref="CdcKafkaPolicyItemState.Satisfied"/>.
+    ///
+    /// Exposed for broker-backed verification of topic policy on its own. No control-plane path calls
+    /// it: enablement reaches the same work through <see cref="EnsureBindingKafkaPolicyAsync"/>, which
+    /// composes topics, ACLs, and the record-size budget into one validated observation.
     /// </remarks>
     Task<CdcKafkaBindingTopicPolicies> EnsureBindingTopicsAsync(
         CdcArtifactInventory inventory,
@@ -1110,6 +1114,12 @@ internal sealed class CdcKafkaAdminAdapter(
     /// grants its consumers require, repairing a missing required grant and failing closed on any grant
     /// broader than the binding owns.
     /// </summary>
+    /// <remarks>
+    /// Exposed for verification of ACL policy on its own. No control-plane path calls it: every
+    /// production pass reaches <see cref="BindingAclsAsync"/> through
+    /// <see cref="EnsureBindingKafkaPolicyAsync"/> or <see cref="DescribeBindingKafkaPolicyAsync"/>,
+    /// which supply the provisioning mode this wrapper fixes to create-or-validate.
+    /// </remarks>
     internal Task<CdcKafkaBindingAclPolicies> EnsureBindingAclsAsync(
         CdcArtifactInventory inventory,
         CancellationToken cancellationToken
