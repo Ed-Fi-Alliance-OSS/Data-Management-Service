@@ -41,10 +41,19 @@
     caught there and not here. Both sides of this comparison are read from the environment file,
     never with Docker Compose precedence.
 
+    -EnableKafkaCdc adds the deployment-owned CDC workflow to the same phase sequence: Kafka and
+    Kafka Connect join the infrastructure phase, the DocumentCache projection target and status role
+    are configured before DMS starts, and capture is registered against the E2E database this setup
+    just provisioned - before the suite issues any write, which is the only state initial CDC
+    enablement is admitted in. It is off by default; a standard E2E run starts no Kafka. The opt-in
+    also requires DMS_CDC_CONNECT_IMAGE to name the Ed-Fi Kafka Connect image by immutable digest;
+    start-local-dms.ps1 fails closed on a tag or an unset value before anything starts.
+
     On completion the script prints a copyable teardown command carrying the same -DatabaseEngine and
     the resolved -EnvironmentFile, so a custom or MSSQL run is torn down against its own compose
     definition/environment rather than the teardown wrapper's postgresql/.env.e2e defaults:
     ./teardown-local-dms.ps1 -DatabaseEngine <engine> -EnvironmentFile '<resolved env file>'.
+    That teardown is destructive (-d -v), so it also retires any CDC binding this run created.
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Setup script is intentionally host-oriented and uses console progress output.')]
@@ -57,7 +66,11 @@ param(
 
     # Database engine backing the stack. "postgresql" (default) or "mssql".
     [ValidateSet("postgresql", "mssql")]
-    [string] $DatabaseEngine = "postgresql"
+    [string] $DatabaseEngine = "postgresql",
+
+    # Start Kafka and Kafka Connect and register CDC capture against the E2E database this setup
+    # provisions. Off by default - a standard E2E run needs neither. See .DESCRIPTION.
+    [switch] $EnableKafkaCdc
 )
 
 function Get-DirectSetupTeardownCommand {
@@ -110,6 +123,11 @@ Write-Host ""
 $originalLocation = Get-Location
 $dockerComposeDir = Join-Path $PSScriptRoot "../../../../eng/docker-compose"
 
+# Prior process values of the DMS runtime settings the CDC opt-in delivers ambiently, so the finally
+# block can put this shell back the way it found it. $null distinguishes absent from present-and-empty,
+# which is the distinction the restore has to reproduce.
+$cdcRuntimeEnvironmentSnapshot = @{}
+
 try {
     Set-Location $dockerComposeDir
     Import-Module ./env-utility.psm1 -Force
@@ -127,6 +145,13 @@ try {
     # instance. build-dms.ps1 loads this same module for its own guarded call sites before invoking a
     # setup wrapper in-process, so reusing that instance keeps one module serving both.
     Import-Module ./dms-schema-environment.psm1
+    if ($EnableKafkaCdc) {
+        # The CDC enable phase, the data-store-id reader, and the runtime-settings key set are the
+        # bootstrap wrapper's own rather than copies: this wrapper builds a different phase sequence,
+        # but the enable itself is one workflow (DMS health -> operator token -> status-endpoint
+        # preflight -> enable) and a second copy would be the copy that misses the next fix.
+        Import-Module ./bootstrap-wrapper.psm1 -Force
+    }
 
     $baseEnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path $EnvironmentFile -DockerComposeRoot $dockerComposeDir
     # Compose the data-standard overlay first, then the database-engine overlay (same order as
@@ -159,6 +184,20 @@ try {
         throw "E2E_DATABASE_NAME must be set in '$resolvedEnvironmentFile' or the process environment so direct DMS E2E setup creates a CMS data store against the provisioned E2E database."
     }
 
+    if ($EnableKafkaCdc -and (Resolve-IdentityProvider -EnvValues $envValues) -eq "keycloak") {
+        # Said here rather than discovered as a 403 from the status endpoint after the whole stack is
+        # up: only the self-contained identity setup registers the DocumentCache operator client, and
+        # the enable workflow authenticates as that client.
+        throw "-EnableKafkaCdc is supported on the self-contained identity provider only. The keycloak setup in '$resolvedEnvironmentFile' does not register a client whose token carries the DocumentCache status role."
+    }
+
+    # The CDC opt-in is the only thing that adds Kafka to an E2E run. With the switch absent this
+    # splat is empty and both start phases below receive exactly the arguments they always have.
+    $cdcStartArgs = @{}
+    if ($EnableKafkaCdc) {
+        $cdcStartArgs.EnableKafkaCdc = $true
+    }
+
     $bootstrapDir = Join-Path $dockerComposeDir ".bootstrap"
     if (Test-Path -LiteralPath $bootstrapDir) {
         Write-Output "Removing stale .bootstrap workspace before file-based schema package E2E startup..."
@@ -178,6 +217,7 @@ try {
     Write-Host "  - Database Engine: $DatabaseEngine" -ForegroundColor Gray
     Write-Host "  - E2E Database: $e2eDatabaseName" -ForegroundColor Gray
     Write-Host "  - E2E Snapshot Database: $e2eSnapshotDatabaseName" -ForegroundColor Gray
+    Write-Host "  - Kafka CDC: $(if ($EnableKafkaCdc) { 'Enabled' } else { 'Disabled' })" -ForegroundColor Gray
     Write-Host "  - Force Rebuild: Yes" -ForegroundColor Gray
     Write-Output "  - Extension Security Metadata: Yes"
     Write-Host ""
@@ -193,8 +233,10 @@ try {
 
     # Start only the infrastructure and Configuration Service first. DMS starts after the
     # E2E data store exists and the relational schema has been provisioned.
+    # Under the CDC opt-in this phase also starts Kafka and Kafka Connect and registers the
+    # DocumentCache operator client the enable workflow authenticates as.
     Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
-        ./start-local-dms.ps1 -InfraOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -r -AddExtensionSecurityMetadata
+        ./start-local-dms.ps1 -InfraOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -r -AddExtensionSecurityMetadata @cdcStartArgs
     }
 
     if ($LASTEXITCODE -ne 0) {
@@ -206,7 +248,10 @@ try {
     # creates a data store automatically; instance creation is owned by configure-local-data-store.ps1.
     # Config Service is already healthy at this point because the -InfraOnly phase waits for
     # CMS readiness before returning.
-    Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
+    # The phase's single structured result is captured rather than emitted, because the CDC target
+    # below is the data store this phase selected and must never be inferred from anything else. It
+    # is written back to the console so a run's visible output is unchanged.
+    $dataStoreConfiguration = Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
         ./configure-local-data-store.ps1 -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -DataStoreDatabaseName $e2eDatabaseName
     }
 
@@ -214,6 +259,8 @@ try {
         Write-Error "Failed to configure local data store. Exit code: $LASTEXITCODE"
         exit $LASTEXITCODE
     }
+
+    $dataStoreConfiguration | Out-Host
 
     Write-Host "`nProvisioning E2E database '$e2eDatabaseName'..." -ForegroundColor Cyan
     Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
@@ -237,9 +284,55 @@ try {
         exit $LASTEXITCODE
     }
 
+    if ($EnableKafkaCdc) {
+        # The projection target and the status role are read at DMS startup, so they are configured
+        # here - after provisioning, before the DMS start. Without the target the enable workflow's
+        # first proof fails closed and the projector has nothing to drain; without the role the
+        # status endpoint is never mapped and the caught-up read would see a 404.
+        #
+        # They are delivered through the process environment rather than by editing the selected env
+        # file: Compose gives an ambient value precedence over --env-file, and .env.e2e is a tracked
+        # file this wrapper must leave exactly as it found it. The finally block restores them.
+        # Same structured-result contract the bootstrap wrapper enforces (command-boundaries.md
+        # Section 3.4): the CDC target is read from one result object, never from a stream that also
+        # carried progress text.
+        $dataStoreConfigurationResults = @($dataStoreConfiguration)
+        if ($dataStoreConfigurationResults.Count -ne 1) {
+            throw "configure-local-data-store.ps1 must return exactly one structured result object for -EnableKafkaCdc to name the CDC target. Returned $($dataStoreConfigurationResults.Count)."
+        }
+        $configuredDataStore = $dataStoreConfigurationResults[0]
+
+        $configuredDataStoreIds = [long[]]@(
+            Resolve-WrapperSelectedDataStoreIds -ConfigureResult $configuredDataStore
+        )
+        if ($configuredDataStoreIds.Count -ne 1) {
+            throw "-EnableKafkaCdc requires exactly one configured data store; the configure phase selected $($configuredDataStoreIds.Count). A CDC binding covers exactly one instance database."
+        }
+        if ($configuredDataStore.HasRouteQualifiedDataStores) {
+            throw "-EnableKafkaCdc does not support route-qualified data stores. A CDC binding covers exactly one instance database."
+        }
+
+        $cdcTargetDataStoreId = [long]$configuredDataStoreIds[0]
+        $cdcTargetTenantKey = [string]$configuredDataStore.Tenant
+        # The default durable binding state store, which is also the root the destructive teardown
+        # (-d -v, through teardown-local-dms.ps1) resolves and retires from.
+        $cdcBindingStateRoot = [System.IO.Path]::GetFullPath((Join-Path $dockerComposeDir ".cdc-state"))
+
+        $cdcRuntimeSettings = Get-WrapperCdcRuntimeEnvOverride `
+            -TenantKey $cdcTargetTenantKey `
+            -DataStoreId $cdcTargetDataStoreId `
+            -BindingStateRootPath $cdcBindingStateRoot
+        foreach ($settingName in $cdcRuntimeSettings.Keys) {
+            $cdcRuntimeEnvironmentSnapshot[$settingName] = [System.Environment]::GetEnvironmentVariable($settingName)
+            [System.Environment]::SetEnvironmentVariable($settingName, [string]$cdcRuntimeSettings[$settingName])
+        }
+
+        Write-Host "`nConfigured the DocumentCache projection target (data store $cdcTargetDataStoreId) and status endpoint role for the DMS start." -ForegroundColor Cyan
+    }
+
     Write-Host "`nStarting DMS after E2E database provisioning..." -ForegroundColor Cyan
     Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
-        ./start-local-dms.ps1 -DmsOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -AddExtensionSecurityMetadata
+        ./start-local-dms.ps1 -DmsOnly -EnableConfig -EnvironmentFile $resolvedEnvironmentFile -DatabaseEngine $DatabaseEngine -AddExtensionSecurityMetadata @cdcStartArgs
     }
 
     if ($LASTEXITCODE -ne 0) {
@@ -257,6 +350,20 @@ try {
             -ContainerName "ed-fi-api"
     }
 
+    if ($EnableKafkaCdc) {
+        # Registers capture against the database the provision phase just created, after DMS is up
+        # and before the suite issues any write: write admission is still closed, which is the only
+        # state initial CDC enablement is admitted in. dms-local is the compose project both start
+        # phases above used.
+        Invoke-WrapperCdcEnablePhase `
+            -ComposeProjectName "dms-local" `
+            -EnvironmentFile $resolvedEnvironmentFile `
+            -TenantKey $cdcTargetTenantKey `
+            -DataStoreId $cdcTargetDataStoreId `
+            -DatabaseEngine $DatabaseEngine `
+            -DatabaseCreatedByThisRun $true
+    }
+
     # Pass the fully resolved environment file (data-standard then engine overlay) so teardown uses the
     # same effective environment the setup composed, not the pre-overlay base.
     $teardownCommand = Get-DirectSetupTeardownCommand -DatabaseEngine $DatabaseEngine -EnvironmentFile $resolvedEnvironmentFile
@@ -264,6 +371,20 @@ try {
     Write-Host "To tear down this environment, run: $teardownCommand" -ForegroundColor Cyan
 }
 finally {
+    # Restore each CDC runtime setting to its exact prior state - re-created with the verbatim prior
+    # value when it existed, removed otherwise - on the success path, on a throw, and on exit. The
+    # containers already have the values they were created with, so restoring changes nothing about
+    # the running stack; it only keeps this shell from carrying a projection target into the next
+    # command a developer runs in it.
+    foreach ($settingName in @($cdcRuntimeEnvironmentSnapshot.Keys)) {
+        if ($null -eq $cdcRuntimeEnvironmentSnapshot[$settingName]) {
+            Remove-Item -LiteralPath "Env:$settingName" -ErrorAction SilentlyContinue
+        }
+        else {
+            [System.Environment]::SetEnvironmentVariable($settingName, $cdcRuntimeEnvironmentSnapshot[$settingName])
+        }
+    }
+
     # Return to original location
     Set-Location $originalLocation
 }

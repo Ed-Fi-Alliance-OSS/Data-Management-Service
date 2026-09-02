@@ -481,6 +481,324 @@ function Resolve-WrapperSelectedDataStoreIds {
     throw "configure-local-data-store.ps1 result is missing SelectedDataStoreIds (and the DataStoreIds alias)."
 }
 
+function Get-WrapperCdcRuntimeEnvOverride {
+    <#
+    .SYNOPSIS
+    The DMS runtime settings the CDC phase depends on, as env-file key overrides.
+
+    .DESCRIPTION
+    Both settings are read at DMS startup, so they must be written into the effective env file
+    BEFORE the DMS start and therefore before the CDC phase: the projection target because the
+    enable workflow's first proof is that the target is configured, and the status role because
+    /health/document-cache is not even mapped without it, which the caught-up step would see as a
+    404. The binding state root travels with them so the CDC setup container mounts the same store
+    the start script created.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]
+        $TenantKey,
+
+        [Parameter(Mandatory)]
+        [long]
+        $DataStoreId,
+
+        [Parameter(Mandatory)]
+        [string]
+        $BindingStateRootPath
+    )
+
+    # The role token is owned by env-utility so the identity setup that registers the operator
+    # client and this write cannot name two different roles.
+    Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
+
+    return @{
+        DMS_CDC_TARGET_TENANT_KEY = $TenantKey
+        DMS_CDC_TARGET_DATA_STORE_ID = [string]$DataStoreId
+        DMS_DOCUMENT_CACHE_STATUS_REQUIRED_ROLE = (Get-DocumentCacheStatusOperatorRole)
+        DMS_CDC_BINDING_STATE_PATH = $BindingStateRootPath
+    }
+}
+
+function Get-WrapperCdcEnableArgument {
+    <#
+    .SYNOPSIS
+    The docker compose argument list that runs `dms-document-cache cdc enable` for one target.
+
+    .DESCRIPTION
+    The tool runs as a one-shot container on the dms network rather than on the host: the instance
+    database is registered in CMS under its container alias and the broker advertises
+    PLAINTEXT://dms-kafka1:9092, so a host-side process is redirected to names it cannot resolve.
+
+    The two exact-token evidence flags are emitted ONLY when this run created the physical
+    database. Bootstrap has no standing to assert either fact about a data store it merely found,
+    and the control plane refuses the enable without them - which is the correct outcome, reached
+    here without an assertion this caller cannot support.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns the argument list for one invocation; the plural noun reflects the return shape.')]
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $ComposeProjectName,
+
+        [Parameter(Mandatory)]
+        [string]
+        $EnvironmentFile,
+
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]
+        $TenantKey,
+
+        [Parameter(Mandatory)]
+        [long]
+        $DataStoreId,
+
+        [Parameter(Mandatory)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]
+        $DatabaseEngine,
+
+        [Parameter(Mandatory)]
+        [bool]
+        $DatabaseCreatedByThisRun,
+
+        [Parameter(Mandatory)]
+        [string]
+        $DmsBearerToken
+    )
+
+    # The database principal the provider-setup pass runs as. Both local stacks run their setup as
+    # the server's own administrative login, which is the account the compose file creates.
+    $setupPrincipal = if ($DatabaseEngine -eq "mssql") { "sa" } else { "postgres" }
+
+    $composeArguments = @(
+        "compose",
+        "-f", "cdc-setup.yml",
+        "--env-file", $EnvironmentFile,
+        "-p", $ComposeProjectName,
+        "run", "--rm", "--build",
+        "-e", "DataManagement__DocumentCache__Cdc__SetupPrincipal=$setupPrincipal",
+        "-e", "DataManagement__DocumentCache__Cdc__DmsBearerToken=$DmsBearerToken",
+        "cdc-setup",
+        "cdc", "enable",
+        "--data-store-id", "$DataStoreId"
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($TenantKey)) {
+        $composeArguments += @("--tenant-key", $TenantKey)
+    }
+
+    if ($DatabaseCreatedByThisRun) {
+        $composeArguments += @(
+            "--database-creation-mode", "created-for-initial-cdc-provisioning",
+            "--write-admission", "closed-never-opened"
+        )
+    }
+
+    # Local deployment policy. The keys are opaque and only have to be stable for the binding they
+    # name; the generation is 1 because bootstrap only ever creates a target's first binding.
+    $composeArguments += @(
+        "--deployment-key", "local",
+        "--instance-key", "ds$DataStoreId",
+        "--generation", "1",
+        "--kafka-bootstrap-servers", "dms-kafka1:9092",
+        "--connect-base-url", "http://kafka-postgresql-source:8083",
+        "--max-record-bytes", "1048576",
+        "--durability-profile", "local",
+        "--cdc-binding-state-path", "/state",
+        "--json"
+    )
+
+    return $composeArguments
+}
+
+function Invoke-WrapperCdcEnablePhase {
+    <#
+    .SYNOPSIS
+    Runs the CDC enable workflow against the DMS this wrapper just started.
+
+    .DESCRIPTION
+    Ordered deliberately: DMS health, then the operator token, then a status-endpoint preflight,
+    then the enable itself. The preflight is what separates a configuration mistake from a CDC
+    failure - a 404 means the status role never reached the container and the endpoint was never
+    mapped, and a 403 means the token does not carry the role - so it is answered here, in the
+    phase that owns those settings, rather than surfacing from inside the enable workflow.
+
+    Write admission is still closed when this runs: no seed or API write has been issued yet. DMS
+    being up is not write admission, and DMS never enables tracking itself - this external
+    administrative command does.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Bootstrap phase helper, consistent with the other phase invocations; no -WhatIf surface.')]
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $ComposeProjectName,
+
+        [Parameter(Mandatory)]
+        [string]
+        $EnvironmentFile,
+
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]
+        $TenantKey,
+
+        [Parameter(Mandatory)]
+        [long]
+        $DataStoreId,
+
+        [Parameter(Mandatory)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]
+        $DatabaseEngine,
+
+        [Parameter(Mandatory)]
+        [bool]
+        $DatabaseCreatedByThisRun,
+
+        [int]
+        $HealthTimeoutSeconds = 300
+    )
+
+    Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
+    Import-Module (Join-Path $PSScriptRoot "../Dms-Management.psm1") -Force
+
+    $envValues = ReadValuesFromEnvFile $EnvironmentFile
+    $dmsUrl = (Resolve-DockerLocalDmsBaseUrl -EnvValues $envValues).TrimEnd('/')
+    $identityClientSecrets = Resolve-IdentityClientSecretConfiguration -EnvValues $envValues
+
+    Write-Information "CDC phase: waiting for DMS at $dmsUrl to become healthy." -InformationAction Continue
+    Wait-WrapperHttpEndpoint -Url "$dmsUrl/health" -Name "DMS" -TimeoutSeconds $HealthTimeoutSeconds
+
+    # The token is minted through the DMS token proxy rather than straight from the identity
+    # provider: the proxy calls it from inside the Docker network, so the issuer matches the
+    # authority DMS validates against. A host-side call to the same provider would not.
+    $operatorToken = Get-DmsToken `
+        -DmsUrl $dmsUrl `
+        -Key $identityClientSecrets.DocumentCacheOperatorClientId `
+        -Secret $identityClientSecrets.DocumentCacheOperatorClientSecret
+
+    if ([string]::IsNullOrWhiteSpace($operatorToken)) {
+        throw "CDC phase: the DocumentCache operator client did not return an access token. The client is registered by the self-contained identity setup during the infrastructure phase."
+    }
+
+    Assert-WrapperDocumentCacheStatusEndpoint `
+        -DmsBaseUrl $dmsUrl `
+        -AccessToken $operatorToken `
+        -TimeoutSeconds $HealthTimeoutSeconds
+
+    $composeArguments = Get-WrapperCdcEnableArgument `
+        -ComposeProjectName $ComposeProjectName `
+        -EnvironmentFile $EnvironmentFile `
+        -TenantKey $TenantKey `
+        -DataStoreId $DataStoreId `
+        -DatabaseEngine $DatabaseEngine `
+        -DatabaseCreatedByThisRun $DatabaseCreatedByThisRun `
+        -DmsBearerToken $operatorToken
+
+    Write-Information "CDC phase: enabling CDC for data store $DataStoreId." -InformationAction Continue
+    $global:LASTEXITCODE = 0
+    & docker @composeArguments
+    if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
+        throw "dms-document-cache cdc enable failed with exit code $LASTEXITCODE."
+    }
+}
+
+function Wait-WrapperHttpEndpoint {
+    <#
+    .SYNOPSIS
+    Polls an endpoint until it answers HTTP 200 or the timeout elapses.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $Url,
+
+        [Parameter(Mandatory)]
+        [string]
+        $Name,
+
+        [int]
+        $TimeoutSeconds = 300
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        try {
+            $response = Invoke-WebRequest -Uri $Url -Method Get -TimeoutSec 10 -SkipHttpErrorCheck
+            if ($response.StatusCode -eq 200) {
+                return
+            }
+        }
+        catch {
+            # Connection refused while the container is still starting. Recorded rather than
+            # rethrown: the deadline below is the verdict, and the first transient failure is not.
+            Write-Debug "Waiting for $Name at $Url : $($_.Exception.Message)"
+        }
+
+        Start-Sleep -Seconds 2
+    }
+
+    throw "$Name did not become healthy at $Url within $TimeoutSeconds seconds."
+}
+
+function Assert-WrapperDocumentCacheStatusEndpoint {
+    <#
+    .SYNOPSIS
+    Proves the DocumentCache status endpoint answers 200 for the operator credential before any
+    CDC work begins.
+
+    .DESCRIPTION
+    Both failure shapes are configuration faults with distinct causes, and both would otherwise
+    reach the operator as an opaque CDC failure much later in the enable workflow: a 404 means
+    DataManagement:DocumentCache:Status:RequiredRole never reached the container, so the route was
+    never mapped, and a 403 means the token carries no matching role claim.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $DmsBaseUrl,
+
+        [Parameter(Mandatory)]
+        [string]
+        $AccessToken,
+
+        [int]
+        $TimeoutSeconds = 300
+    )
+
+    $statusUrl = "$($DmsBaseUrl.TrimEnd('/'))/health/document-cache"
+    $headers = @{ Authorization = "Bearer $AccessToken" }
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $lastStatusCode = 0
+
+    while ((Get-Date) -lt $deadline) {
+        $response = Invoke-WebRequest -Uri $statusUrl -Method Get -Headers $headers -TimeoutSec 30 -SkipHttpErrorCheck
+        $lastStatusCode = [int]$response.StatusCode
+
+        if ($lastStatusCode -eq 200) {
+            Write-Information "CDC phase: DocumentCache status endpoint answered 200 for the operator credential." -InformationAction Continue
+            return
+        }
+
+        if ($lastStatusCode -eq 404) {
+            throw "CDC phase: $statusUrl returned 404, so the DocumentCache status endpoint was never mapped. DataManagement__DocumentCache__Status__RequiredRole did not reach the DMS container; it must be set before the DMS start."
+        }
+
+        if ($lastStatusCode -eq 403) {
+            throw "CDC phase: $statusUrl returned 403, so the operator token carries no $(Get-DocumentCacheStatusOperatorRole) role claim under the configured role claim type."
+        }
+
+        # 401 and 5xx are the shapes a just-started DMS answers with while its authority metadata
+        # or projection runtime is still warming, so they are retried rather than judged.
+        Start-Sleep -Seconds 2
+    }
+
+    throw "CDC phase: $statusUrl did not answer 200 within $TimeoutSeconds seconds; the last status was $lastStatusCode."
+}
+
 function Invoke-BootstrapWrapper {
     <#
     .SYNOPSIS
@@ -508,6 +826,17 @@ function Invoke-BootstrapWrapper {
         [string]$IdentityProvider,
 
         [Switch]$EnableKafkaUI,
+
+        # Deployment-owned CDC opt-in. Forwarded to the start script (which starts Kafka and Kafka
+        # Connect and registers the operator identity client) and, after the DMS start, drives this
+        # wrapper's own CDC phase. Starting the infrastructure is not the opt-in: the projection
+        # target and the guarded enable are separate explicit steps, and this switch is what asks
+        # for them.
+        [Switch]$EnableKafkaCdc,
+
+        # Root path of the durable CDC binding state store. Forwarded to the start script, which
+        # resolves a relative path against the caller's working directory and creates the root.
+        [string]$CdcBindingStatePath = "",
 
         [Switch]$EnableSwaggerUI,
 
@@ -583,6 +912,33 @@ function Invoke-BootstrapWrapper {
     # endpoint and there is none when the workflow stops before DMS startup.
     if ($LoadSeedData -and $InfraOnly -and -not $dmsBaseUrlSupplied) {
         throw "-LoadSeedData with -InfraOnly requires -DmsBaseUrl. The terminal pre-DMS shape stops before any DMS process is running; seed delivery requires a healthy DMS endpoint. Supply -DmsBaseUrl to enable the health-wait continuation and seed phase."
+    }
+
+    # Fail fast: CDC opt-in shape validation, before any phase invocation. Every rejection here is
+    # a shape the CDC phase could not complete, and each fails now rather than after Docker and CMS
+    # state exist.
+    if ($EnableKafkaCdc) {
+        if ($InfraOnly) {
+            throw "-EnableKafkaCdc is not valid with -InfraOnly. The CDC phase runs against the DMS this wrapper starts; the pre-DMS shape starts none."
+        }
+
+        # Only the self-contained identity setup registers a client whose token carries the
+        # DocumentCache status role, so under keycloak the phase would authenticate as nothing.
+        if ($PSBoundParameters.ContainsKey('IdentityProvider') -and $IdentityProvider -eq "keycloak") {
+            throw "-EnableKafkaCdc is supported on the self-contained identity provider only. The keycloak setup does not register a client whose token carries the DocumentCache status role."
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($SchoolYearRange)) {
+            throw "-EnableKafkaCdc is not valid with -SchoolYearRange. A CDC binding covers exactly one instance database, and a school-year range configures several data stores."
+        }
+
+        if ($NoDataStore) {
+            throw "-EnableKafkaCdc is not valid with -NoDataStore. Initial CDC enablement is admitted only for a database created for this provisioning, and -NoDataStore selects an existing data store this run did not create."
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($CdcBindingStatePath) -and -not $EnableKafkaCdc) {
+        throw "-CdcBindingStatePath requires -EnableKafkaCdc."
     }
 
     # Fail fast: validate -SchoolYearRange before any phase invocation. The format also gets parsed
@@ -667,6 +1023,11 @@ function Invoke-BootstrapWrapper {
         $EnvironmentFile = [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $EnvironmentFile))
     }
 
+    # Captured before Push-Location, for the same reason -EnvironmentFile is normalized above: a
+    # relative -CdcBindingStatePath is the caller's, and (Get-Location).Path becomes
+    # eng/docker-compose once the push below runs.
+    $callerWorkingDirectory = (Get-Location).Path
+
     Push-Location $PSScriptRoot
     try {
         $baseEnvFile = Resolve-WrapperEnvironmentFilePath -BaseEnvironmentFile $EnvironmentFile
@@ -743,6 +1104,14 @@ function Invoke-BootstrapWrapper {
             -ExplicitProvider $IdentityProvider `
             -ExplicitProviderSupplied:($PSBoundParameters.ContainsKey('IdentityProvider')) `
             -EffectiveEnvironmentFile $baseEnvFile
+
+        # The same rejection the fail-fast block makes for an explicit -IdentityProvider keycloak,
+        # now that the env file's own DMS_CONFIG_IDENTITY_PROVIDER has been resolved: only the
+        # self-contained identity setup registers a client whose token carries the DocumentCache
+        # status role. Still ahead of every phase, so no Docker or CMS state exists yet.
+        if ($EnableKafkaCdc -and $resolvedIdentityProvider -eq "keycloak") {
+            throw "-EnableKafkaCdc is supported on the self-contained identity provider only. The keycloak setup does not register a client whose token carries the DocumentCache status role."
+        }
 
         # The wrapper's own pre-resolution chain always represents a CMS-participating context (its
         # initial infra-start invocation below always includes CMS), so this story's own
@@ -862,6 +1231,11 @@ function Invoke-BootstrapWrapper {
             EnableConfig = $true
         }
         if ($EnableKafkaUI) { $startArgs.EnableKafkaUI = $true }
+        # The infrastructure phase is where the CDC opt-in starts Kafka and Kafka Connect, creates
+        # the binding state root, and registers the operator identity client - all of which the CDC
+        # phase below depends on and none of which is the enable itself.
+        if ($EnableKafkaCdc) { $startArgs.EnableKafkaCdc = $true }
+        if (-not [string]::IsNullOrWhiteSpace($CdcBindingStatePath)) { $startArgs.CdcBindingStatePath = $CdcBindingStatePath }
         if ($EnableSwaggerUI) { $startArgs.EnableSwaggerUI = $true }
         if ($AddExtensionSecurityMetadata) { $startArgs.AddExtensionSecurityMetadata = $true }
         $startArgs.DatabaseEngine = $DatabaseEngine
@@ -1059,12 +1433,60 @@ function Invoke-BootstrapWrapper {
             return
         }
 
+        # CDC step 2: write the DMS runtime settings the CDC phase depends on. This runs after
+        # provisioning and BEFORE the DMS start below, because both settings are read at startup:
+        # without the target entry the enable workflow's first proof fails closed and the projector
+        # has nothing to drain, and without the status role the status endpoint is never mapped.
+        # The derived env file is this run's own materialization, so writing to it mutates no file
+        # the developer keeps.
+        $cdcTargetDataStoreId = 0L
+        if ($EnableKafkaCdc) {
+            if ($configuredDataStoreIds.Count -ne 1) {
+                throw "-EnableKafkaCdc requires exactly one configured data store; the configure phase selected $($configuredDataStoreIds.Count). A CDC binding covers exactly one instance database."
+            }
+
+            if ($configured.HasRouteQualifiedDataStores) {
+                throw "-EnableKafkaCdc does not support route-qualified data stores. A CDC binding covers exactly one instance database."
+            }
+
+            $cdcTargetDataStoreId = [long]$configuredDataStoreIds[0]
+            $cdcBindingStateRootPath =
+                if ([string]::IsNullOrWhiteSpace($CdcBindingStatePath)) {
+                    [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".cdc-state"))
+                }
+                elseif ([System.IO.Path]::IsPathRooted($CdcBindingStatePath)) {
+                    [System.IO.Path]::GetFullPath($CdcBindingStatePath)
+                }
+                else {
+                    [System.IO.Path]::GetFullPath((Join-Path $callerWorkingDirectory $CdcBindingStatePath))
+                }
+
+            # The settings are written into this run's own derived env file. If derivation did not
+            # happen, the only file to write to would be the caller's own, and this wrapper's
+            # contract is that it leaves that file untouched - so the opt-in fails closed instead.
+            if ([System.IO.Path]::GetFullPath($effectiveEnvFile) -eq [System.IO.Path]::GetFullPath($callerEnvFile)) {
+                throw "-EnableKafkaCdc requires the per-run derived environment file; the run resolved to the caller's own env file, which the wrapper does not modify."
+            }
+
+            Write-DerivedEnvFile `
+                -BaseEnvironmentFile $effectiveEnvFile `
+                -TargetPath $effectiveEnvFile `
+                -KeyOverrides (Get-WrapperCdcRuntimeEnvOverride `
+                    -TenantKey $configured.Tenant `
+                    -DataStoreId $cdcTargetDataStoreId `
+                    -BindingStateRootPath $cdcBindingStateRootPath)
+
+            Write-Information "CDC opt-in: configured DocumentCache projection target (data store $cdcTargetDataStoreId) and the status endpoint role before the DMS start." -InformationAction Continue
+        }
+
         $dmsStartArgs = @{
             IdentityProvider = $resolvedIdentityProvider
             DmsOnly = $true
             EnvironmentFile = $effectiveEnvFile
         }
         if ($EnableKafkaUI) { $dmsStartArgs.EnableKafkaUI = $true }
+        if ($EnableKafkaCdc) { $dmsStartArgs.EnableKafkaCdc = $true }
+        if (-not [string]::IsNullOrWhiteSpace($CdcBindingStatePath)) { $dmsStartArgs.CdcBindingStatePath = $CdcBindingStatePath }
         if ($EnableSwaggerUI) { $dmsStartArgs.EnableSwaggerUI = $true }
         if ($AddExtensionSecurityMetadata) { $dmsStartArgs.AddExtensionSecurityMetadata = $true }
         $dmsStartArgs.DatabaseEngine = $DatabaseEngine
@@ -1073,6 +1495,21 @@ function Invoke-BootstrapWrapper {
         & "$PSScriptRoot/$StartScriptName" @dmsStartArgs
         if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
             throw "$StartScriptName -DmsOnly failed with exit code $LASTEXITCODE."
+        }
+
+        # CDC step 4: the enable workflow, after the DMS start and before any seed or API write.
+        # The order is load-bearing rather than cosmetic: the workflow's caught-up and readiness
+        # steps read the running DMS projector, so running it before the start would dead-end at an
+        # Unknown verdict, and running it after the seed would no longer be a closed-write-admission
+        # enablement.
+        if ($EnableKafkaCdc) {
+            Invoke-WrapperCdcEnablePhase `
+                -ComposeProjectName $(if ($StartScriptName -eq "start-published-dms.ps1") { "dms-published" } else { "dms-local" }) `
+                -EnvironmentFile $effectiveEnvFile `
+                -TenantKey $configured.Tenant `
+                -DataStoreId $cdcTargetDataStoreId `
+                -DatabaseEngine $DatabaseEngine `
+                -DatabaseCreatedByThisRun (-not $NoDataStore)
         }
 
         # Seed phase is wrapper-level opt-in
@@ -1104,4 +1541,8 @@ function Invoke-BootstrapWrapper {
     }
 }
 
-Export-ModuleMember -Function Invoke-BootstrapWrapper, Resolve-WrapperSelectedDataStoreIds
+# Invoke-WrapperCdcEnablePhase is exported because the E2E setup wrapper runs the same phase against
+# the database it provisions. That wrapper is the non-bootstrap path and builds its own phase
+# sequence, but the CDC enable is one workflow - DMS health, operator token, status-endpoint
+# preflight, then the enable - and a second copy of it would be the copy that misses the next fix.
+Export-ModuleMember -Function Invoke-BootstrapWrapper, Resolve-WrapperSelectedDataStoreIds, Get-WrapperCdcRuntimeEnvOverride, Get-WrapperCdcEnableArgument, Invoke-WrapperCdcEnablePhase

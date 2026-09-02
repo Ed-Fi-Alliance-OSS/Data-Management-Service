@@ -584,10 +584,29 @@ function Resolve-IdentityClientSecretConfiguration {
         CmsReadOnlyAccessClientSecret       = Get-EnvValue -EnvValues $EnvValues -Name "CONFIG_SERVICE_CLIENT_SECRET" -DefaultValue "ValidClientSecret1234567890!Abcd"
         ClientSecretMinimumLength           = [int](Get-EnvValue -EnvValues $EnvValues -Name "DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH" -DefaultValue "32")
         ClientSecretMaximumLength           = [int](Get-EnvValue -EnvValues $EnvValues -Name "DMS_CONFIG_IDENTITY_CLIENT_SECRET_MAXIMUM_LENGTH" -DefaultValue "128")
+        # Registered by the CDC opt-in only. Both the registration (start-local-dms.ps1) and the
+        # token request (the bootstrap CDC phase) read them from here, so the client the identity
+        # store holds and the client the phase authenticates as cannot drift apart.
+        DocumentCacheOperatorClientId       = Get-EnvValue -EnvValues $EnvValues -Name "DMS_DOCUMENT_CACHE_OPERATOR_CLIENT_ID" -DefaultValue "DocumentCacheOperator"
+        DocumentCacheOperatorClientSecret   = Get-EnvValue -EnvValues $EnvValues -Name "DMS_DOCUMENT_CACHE_OPERATOR_CLIENT_SECRET" -DefaultValue "ValidClientSecret1234567890!Abcd"
     }
 }
 
 Set-Alias -Name Resolve-IdentityClientSecrets -Value Resolve-IdentityClientSecretConfiguration
+
+function Get-DocumentCacheStatusOperatorRole {
+    <#
+    .SYNOPSIS
+        The single role token the DocumentCache status endpoint authorizes against.
+
+    .DESCRIPTION
+        Two places must agree on it and they are in different files: the local identity setup
+        registers a client carrying this role, and the bootstrap CDC opt-in writes the same token
+        into DataManagement:DocumentCache:Status:RequiredRole. The endpoint compares the role claim
+        exactly, so a drift between the two produces a 403 that reads like a CDC failure.
+    #>
+    return "dms-document-cache-operator"
+}
 
 function Resolve-CmsBaseUrl {
     <#

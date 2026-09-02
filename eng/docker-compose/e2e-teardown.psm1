@@ -29,6 +29,12 @@
     by each primitive's -RemoveBootstrap after its own project. A failed `down` leaves it in place
     for the still-running stack and for the retry.
 
+    Because every teardown is `-d -v`, a run that enabled CDC has its bindings retired by the
+    primitive before that project's volumes are removed: the primitive retires the connector, its
+    committed offsets, the governed topics and ACLs, and the provider capture artifacts, and deletes
+    the binding record last. The durable CDC binding state store is not part of either compose
+    project and is deliberately outside this module's removals - the retirement is what empties it.
+
     Parameters are forwarded to the primitives by name (hashtable splatting), so switches such as
     -d and -v bind as switches rather than positional argument strings.
 #>

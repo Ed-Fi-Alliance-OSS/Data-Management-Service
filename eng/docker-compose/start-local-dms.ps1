@@ -106,6 +106,22 @@ param (
     [Switch]
     $EnableKafkaUI,
 
+    # Enable the Kafka and Kafka Connect infrastructure the deployment-owned CDC workflow runs on,
+    # for either database engine. This switch is an infrastructure opt-in only: it configures no
+    # DocumentCache projection target and enables tracking on no data store. Starting DMS is never
+    # authority to enable tracking - the CDC workflow's own explicit steps do both, and the
+    # bootstrap wrapper owns them.
+    [Switch]
+    $EnableKafkaCdc,
+
+    # Root path of the durable CDC binding state store, which holds the deployment-owned immutable
+    # binding records. Defaults to eng/docker-compose/.cdc-state (Git-ignored). The store is
+    # deliberately separate from the .bootstrap workspace: a binding record outlives any one
+    # bootstrap run and is never part of the bootstrap manifest. A relative path resolves against
+    # the caller's working directory, the same way -EnvironmentFile does.
+    [string]
+    $CdcBindingStatePath = "",
+
     # Enable the DMS Configuration Service.
     # Retained for backward compatibility; Config Service is now always included in the compose set.
     # Per the bootstrap entry-point spec (DMS-1153), every non-teardown run starts Config Service,
@@ -170,8 +186,8 @@ param (
     # Database engine for the whole stack. "postgresql" (default) uses postgresql.yml.
     # "mssql" swaps in mssql.yml: SQL Server hosts the DMS datastore, the Configuration
     # Service (CMS SQL Server backend), and the self-contained OpenIddict identity stores —
-    # no PostgreSQL container runs. The relational backend has no Debezium CDC (Kafka is
-    # PostgreSQL-only and omitted). The .env.mssql overlay (DMS_DATASTORE=mssql,
+    # no PostgreSQL container runs. Kafka and Kafka Connect are engine-neutral and opt-in on
+    # either engine; the engine selects only the database. The .env.mssql overlay (DMS_DATASTORE=mssql,
     # DMS_CONFIG_DATASTORE=mssql, the MSSQL_* keys, and the SQL Server connection strings)
     # is composed automatically onto -EnvironmentFile. See mssql.yml and
     # Resolve-DatabaseEngineEnvironmentFile.
@@ -218,6 +234,78 @@ if ($DbOnly -and $r) {
     throw "Parameter -r/-Rebuild is not valid with -DbOnly. Database-only mode starts and waits for the database without building application images."
 }
 
+# A binding state root named on a run that neither opts into CDC nor tears one down would be
+# silently ignored, which is the failure mode most likely to leave an operator believing a
+# different store was in use than the one that was written.
+if (-not [string]::IsNullOrWhiteSpace($CdcBindingStatePath) -and -not ($EnableKafkaCdc -or $d)) {
+    throw "-CdcBindingStatePath requires -EnableKafkaCdc (or a teardown run). Use: start-local-dms.ps1 -EnableKafkaCdc -CdcBindingStatePath <path>"
+}
+
+function Resolve-CdcBindingStateRoot {
+    <#
+    .SYNOPSIS
+    Resolves the durable CDC binding state store root for this run.
+
+    .DESCRIPTION
+    An omitted -CdcBindingStatePath resolves to eng/docker-compose/.cdc-state, which is Git-ignored;
+    a relative path resolves against the caller's working directory rather than this script's
+    directory, matching how -EnvironmentFile is resolved. The result is always absolute, so every
+    later phase and any teardown name the same store.
+    #>
+    param(
+        [string]
+        $Path,
+
+        [Parameter(Mandatory)]
+        [string]
+        $DockerComposeRoot,
+
+        [Parameter(Mandatory)]
+        [string]
+        $WorkingDirectory
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return [System.IO.Path]::GetFullPath((Join-Path $DockerComposeRoot ".cdc-state"))
+    }
+
+    if ([System.IO.Path]::IsPathRooted($Path)) {
+        return [System.IO.Path]::GetFullPath($Path)
+    }
+
+    return [System.IO.Path]::GetFullPath((Join-Path $WorkingDirectory $Path))
+}
+
+function Assert-CdcConnectImagePinnedByDigest {
+    <#
+    .SYNOPSIS
+    Fails closed unless the Kafka Connect image the CDC workflow runs is named by immutable digest.
+
+    .DESCRIPTION
+    The image is operator-supplied through DMS_CDC_CONNECT_IMAGE and must identify the qualified
+    Ed-Fi Kafka Connect image by digest, exactly as the connector-template integration fixture
+    requires of CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE. A tag is rejected rather than used: a moving
+    tag makes a registered connector's runtime unreproducible and leaves the live read-back
+    validation comparing against an unknown image. There is deliberately no fallback - kafka.yml's
+    :pre default belongs to the non-CDC Kafka/Kafka-UI path, which this opt-in does not relax.
+    #>
+    param(
+        [AllowEmptyString()]
+        [string]
+        $Image
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Image)) {
+        throw "-EnableKafkaCdc requires DMS_CDC_CONNECT_IMAGE to identify the qualified Ed-Fi Kafka Connect image by immutable digest (for example edfialliance/ed-fi-kafka-connect@sha256:<digest>). It is unset, and the CDC workflow never falls back to a tag."
+    }
+
+    if (-not $Image.Contains("@sha256:")) {
+        throw "DMS_CDC_CONNECT_IMAGE must identify the qualified Ed-Fi Kafka Connect image by immutable digest. '$Image' names a tag, which the CDC workflow rejects."
+    }
+
+    return $Image
+}
+
 $databaseOnlyStartup = $DbOnly -and -not $d
 if (-not $databaseOnlyStartup) {
     # Database-only startup must not depend on bootstrap module loading or workspace state.
@@ -242,6 +330,10 @@ else {
     # teardown - work on a clean checkout with no hand-created .env, matching the phase commands.
     $EnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path "" -DockerComposeRoot $PSScriptRoot
 }
+$cdcBindingStateRoot = Resolve-CdcBindingStateRoot `
+    -Path $CdcBindingStatePath `
+    -DockerComposeRoot $PSScriptRoot `
+    -WorkingDirectory $originalLocation.Path
 # The base env file, before any overlay composition below reassigns $EnvironmentFile to a derived path.
 # A continuation that recomposes the environment from its own switches - the fresh wrapper run the
 # -InfraOnly guidance prints - must start from THIS file, not from a derived one it would then compose
@@ -414,11 +506,11 @@ if (-not $databaseOnlyStartup) {
         $files += @("-f", "local-dms-diagnostics.yml")
     }
 
-    # Kafka (and KafkaUI) back the PostgreSQL Debezium CDC path only and are opt-in via
-    # -EnableKafka / -EnableKafkaUI. The relational MSSQL path serves writes and queries directly
-    # from SQL and registers no connector, so Kafka is omitted.
-    $enableKafkaInfrastructure = $EnableKafka -or $EnableKafkaUI
-    if ($enableKafkaInfrastructure -and $DatabaseEngine -eq "postgresql") {
+    # Kafka and Kafka Connect are opt-in via -EnableKafka, -EnableKafkaUI, or -EnableKafkaCdc, and
+    # are engine-neutral: the deployment-owned CDC workflow captures from SQL Server as well as
+    # PostgreSQL, so neither the compose set nor the start sequence branches on -DatabaseEngine.
+    $enableKafkaInfrastructure = $EnableKafka -or $EnableKafkaUI -or $EnableKafkaCdc
+    if ($enableKafkaInfrastructure) {
         $files += @("-f", "kafka.yml")
     }
 
@@ -431,7 +523,9 @@ if (-not $databaseOnlyStartup) {
         $files += @("-f", "keycloak.yml")
     }
 
-    if ($EnableKafkaUI -and $DatabaseEngine -eq "postgresql") {
+    # -EnableKafkaUI adds the UI on top of that infrastructure and nothing else; it is not a CDC
+    # opt-in and never implies one.
+    if ($EnableKafkaUI) {
         $files += @("-f", "kafka-ui.yml")
     }
 
@@ -461,6 +555,19 @@ if ($d) {
     else {
         Write-Output "Shutting down"
     }
+    if ($v) {
+        # Destructive volume removal is the only local workflow allowed to remove a CDC binding
+        # record, and only in the same pass that removes every artifact the record governs. The
+        # retirement therefore runs BEFORE the compose down, while the connector, broker, and
+        # instance database it must reach are still running. A normal stop (-d without -v) retains
+        # the binding, connector, offsets, topics, ACLs, and provider capture artifacts.
+        Import-Module (Join-Path $PSScriptRoot "cdc-teardown.psm1") -Force
+        Invoke-CdcDestructiveTeardown `
+            -BindingStateRoot $cdcBindingStateRoot `
+            -ComposeProjectName "dms-local" `
+            -EnvironmentFile $EnvironmentFile `
+            -DatabaseEngine $DatabaseEngine
+    }
     docker compose $files --env-file $EnvironmentFile -p dms-local down $downArgs
     # Fail before workspace removal: a failed down can leave services running against the
     # bind-mounted .bootstrap schema and claims, so removing the workspace would pull it
@@ -476,6 +583,31 @@ else {
     $existingNetwork = docker network ls --filter name="dms" -q
     if (! $existingNetwork) {
         docker network create dms
+    }
+
+    if ($EnableKafkaCdc) {
+        # Read the way Compose reads it, so an ambient shell value - which wins over the env file
+        # during interpolation - is the value that is validated, not the file's own text.
+        Assert-CdcConnectImagePinnedByDigest -Image (
+            Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "DMS_CDC_CONNECT_IMAGE"
+        ) | Out-Null
+
+        if ($IdentityProvider -eq "keycloak") {
+            # Only the self-contained identity setup registers the DocumentCache operator client, so
+            # under Keycloak the infrastructure still starts but nothing can authenticate to the
+            # status endpoint. Said here rather than discovered later as a 403.
+            Write-Warning "Kafka CDC infrastructure is starting under the keycloak identity provider, which does not register the DocumentCache CDC operator client. The CDC enable workflow is supported on the self-contained identity provider."
+        }
+
+        # The store root is created here, before any CDC work, so every later phase and any teardown
+        # name one existing absolute path. Creating it is not an enablement decision: this run
+        # configures no DocumentCache projection target and enables tracking on no data store, and
+        # an empty store is exactly what a deployment that has bound nothing yet holds.
+        if (-not (Test-Path -LiteralPath $cdcBindingStateRoot -PathType Container)) {
+            New-Item -ItemType Directory -Path $cdcBindingStateRoot -Force | Out-Null
+        }
+        Write-Output "CDC binding state store root: $cdcBindingStateRoot"
+        Write-Output "Kafka CDC infrastructure is opt-in infrastructure only: no projection target is configured and no data store has CDC enabled by this step."
     }
 
     $upArgs = @("--detach")
@@ -908,28 +1040,40 @@ else {
             ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile @identityDbParams
             ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile @identityDbParams
             ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile @identityDbParams
+
+            if ($EnableKafkaCdc) {
+                # The DocumentCache status endpoint authorizes on an exact role claim, and a client
+                # CMS creates carries the configured client role instead, so the operator client is
+                # registered here - in the identity phase that already owns local client
+                # registration - rather than by the CDC phase that consumes its token.
+                #
+                # The resolved role set is not splatted: this is the one client whose DMS role is
+                # deliberately not the configured client role, and splatting it alongside the
+                # override would bind -DmsClientRole twice. ConfigServiceRole still comes from that
+                # same resolved set, so the operator client is registered against the CMS role the
+                # deployment configured rather than the setup script's default.
+                Write-Output "Registering the DocumentCache CDC operator client..."
+                ./setup-openiddict.ps1 -InsertData -ConfigServiceRole $identityRoleParams.ConfigServiceRole -NewClientId $identityClientSecrets.DocumentCacheOperatorClientId -NewClientName "DocumentCache CDC Operator" -DmsClientRole (Get-DocumentCacheStatusOperatorRole) -NewClientSecret $identityClientSecrets.DocumentCacheOperatorClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile @identityDbParams
+            }
         }
 
-        if ($enableKafkaInfrastructure -and $DatabaseEngine -eq "postgresql") {
+        if ($enableKafkaInfrastructure) {
             Write-Output "Starting Kafka infrastructure..."
+            # kafka-postgresql-source is the Kafka Connect service. The name predates the
+            # engine-neutral CDC workflow and is kept: renaming it would break existing local
+            # workflows and any external reference to the container name.
             docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs kafka kafka-postgresql-source
             if ($LASTEXITCODE -ne 0) {
                 throw "Failed to start Kafka infrastructure. Exit code $LASTEXITCODE"
             }
         }
-        elseif ($enableKafkaInfrastructure -and $DatabaseEngine -eq "mssql") {
-            Write-Output "Skipping Kafka infrastructure: the MSSQL relational path does not use Debezium CDC (PostgreSQL-only)."
-        }
 
-        if ($EnableKafkaUI -and $DatabaseEngine -eq "postgresql") {
+        if ($EnableKafkaUI) {
             Write-Output "Starting Kafka UI..."
             docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs kafka-ui
             if ($LASTEXITCODE -ne 0) {
                 throw "Failed to start Kafka UI. Exit code $LASTEXITCODE"
             }
-        }
-        elseif ($EnableKafkaUI -and $DatabaseEngine -eq "mssql") {
-            Write-Output "Skipping Kafka UI: the MSSQL relational path does not use Debezium CDC (PostgreSQL-only)."
         }
 
         # Claims-ready gate: prove CMS has applied the expected claims content before
@@ -1003,6 +1147,13 @@ else {
 
         # Create client with edfi_admin_api/authMetadata_readonly_access scope
         ./setup-openiddict.ps1 -InsertData @identityRoleParams -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile @identityDbParams
+
+        if ($EnableKafkaCdc) {
+            # Same operator client the -InfraOnly shape registers, for a direct full start, and for
+            # the same reason it does not splat the resolved role set.
+            Write-Output "Registering the DocumentCache CDC operator client..."
+            ./setup-openiddict.ps1 -InsertData -ConfigServiceRole $identityRoleParams.ConfigServiceRole -NewClientId $identityClientSecrets.DocumentCacheOperatorClientId -NewClientName "DocumentCache CDC Operator" -DmsClientRole (Get-DocumentCacheStatusOperatorRole) -NewClientSecret $identityClientSecrets.DocumentCacheOperatorClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength -EnvironmentFile $EnvironmentFile @identityDbParams
+        }
     }
     Start-Sleep 20
 }

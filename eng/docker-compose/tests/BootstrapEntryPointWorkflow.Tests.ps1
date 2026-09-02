@@ -388,11 +388,13 @@ param(
     [string] `$EnvironmentFile,
     [string] `$IdentityProvider,
     [switch] `$EnableKafkaUI,
+    [switch] `$EnableKafkaCdc,
+    [string] `$CdcBindingStatePath,
     [switch] `$EnableSwaggerUI,
     [string] `$DatabaseEngine,
     [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
 )
-Add-Content -LiteralPath '$CallLogPath' -Value "teardown d=`$d v=`$v RemoveBootstrap=`$RemoveBootstrap EnvironmentFile=`$EnvironmentFile IdentityProvider=`$IdentityProvider EnableKafkaUI=`$EnableKafkaUI EnableSwaggerUI=`$EnableSwaggerUI DatabaseEngine=`$DatabaseEngine Rest=`$Rest"
+Add-Content -LiteralPath '$CallLogPath' -Value "teardown d=`$d v=`$v RemoveBootstrap=`$RemoveBootstrap EnvironmentFile=`$EnvironmentFile IdentityProvider=`$IdentityProvider EnableKafkaUI=`$EnableKafkaUI EnableKafkaCdc=`$EnableKafkaCdc CdcBindingStatePath=`$CdcBindingStatePath EnableSwaggerUI=`$EnableSwaggerUI DatabaseEngine=`$DatabaseEngine Rest=`$Rest"
 $failureStatement
 "@ | Set-Content -LiteralPath $scriptPath -Encoding utf8
             return $scriptPath
@@ -1549,21 +1551,27 @@ param(
             }
         }
 
-        It "start-local-dms.ps1 gates Kafka on the PostgreSQL engine (no Debezium CDC on the MSSQL path)" {
+        It "start-local-dms.ps1 selects Kafka independently of the database engine" {
+            # The Kafka compose file used to be PostgreSQL-only, on the premise that only the
+            # PostgreSQL path had CDC. The deployment-owned CDC workflow captures from SQL Server
+            # too, so the engine now selects only the database. BootstrapEnableKafkaCdc.Tests.ps1
+            # carries the rest of the opt-in's rules.
             $startScript = Get-Content -LiteralPath (
                 Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
             ) -Raw
 
-            $startScript | Should -Match 'if \(\$enableKafkaInfrastructure -and \$DatabaseEngine -eq "postgresql"\)\s*\{[^}]*\$files \+= @\("-f", "kafka\.yml"\)'
+            $startScript | Should -Match 'if \(\$enableKafkaInfrastructure\)\s*\{[^}]*\$files \+= @\("-f", "kafka\.yml"\)'
+            $startScript | Should -Not -Match '\$enableKafkaInfrastructure -and \$DatabaseEngine'
         }
 
-        It "start-local-dms.ps1 gates the Kafka UI startup on the PostgreSQL engine (no Debezium CDC on the MSSQL path)" {
+        It "start-local-dms.ps1 starts the Kafka UI on -EnableKafkaUI alone, on either engine" {
             $startScript = Get-Content -LiteralPath (
                 Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
             ) -Raw
 
-            $startScript | Should -Match 'if \(\$EnableKafkaUI -and \$DatabaseEngine -eq "postgresql"\)\s*\{[^}]*up \$upArgs kafka-ui'
-            $startScript | Should -Match 'elseif \(\$EnableKafkaUI -and \$DatabaseEngine -eq "mssql"\)\s*\{[^}]*Skipping Kafka UI'
+            $startScript | Should -Match 'if \(\$EnableKafkaUI\)\s*\{[^}]*up \$upArgs kafka-ui'
+            $startScript | Should -Not -Match '\$EnableKafkaUI -and \$DatabaseEngine'
+            $startScript | Should -Not -Match 'Skipping Kafka'
         }
 
         It "start-local-dms.ps1 composes the MSSQL engine overlay after the data-standard overlay and before reading env values" {
@@ -2027,7 +2035,12 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             # Guards the teardown forwarding whitelist. Options that do not change the compose-file set
             # must never reach the delegation; the stub records anything outside the whitelist in Rest=,
             # so an accidental addition to the forwarding loop surfaces here instead of passing silently.
-            $forwarded = @('EnvironmentFile', 'IdentityProvider', 'EnableKafkaUI', 'EnableSwaggerUI', 'DatabaseEngine')
+            # -EnableKafkaCdc also selects kafka.yml, so it shapes the compose set a teardown must
+            # cover; -CdcBindingStatePath travels with it so teardown names the same state store.
+            $forwarded = @(
+                'EnvironmentFile', 'IdentityProvider', 'EnableKafkaUI', 'EnableKafkaCdc',
+                'CdcBindingStatePath', 'EnableSwaggerUI', 'DatabaseEngine'
+            )
             $excluded = @(
                 'LoadSeedData', 'SeedTemplate', 'SeedDataPath', 'AdditionalNamespacePrefix',
                 'SchoolYearRange', 'DataStandardVersion', 'InfraOnly', 'DmsBaseUrl',
@@ -2131,7 +2144,11 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                 "start-local-dms.ps1",
                 "start-published-dms.ps1",
                 "bootstrap-manifest.psm1",
-                "bootstrap-claims-gate.psm1"
+                "bootstrap-claims-gate.psm1",
+                # start-local-dms.ps1 imports this on the -d -v path to retire any CDC binding
+                # before the volumes are removed; with no binding state store staged here it finds
+                # nothing to retire and issues no Docker invocation of its own.
+                "cdc-teardown.psm1"
             )) {
                 Copy-DockerComposeFile -FileName $fileName -Destination $script:repo.DockerComposeRoot
             }

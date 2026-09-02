@@ -26,8 +26,9 @@
     against it) and the failure propagates. Teardown short-circuits to that delegation and
     returns before any staging, configure, provision, DMS-startup, or seed orchestration. Only the
     options that shape the Docker compose set (`-EnvironmentFile`, `-IdentityProvider`,
-    `-EnableKafkaUI`, `-EnableSwaggerUI`, `-DatabaseEngine`) are forwarded to teardown; pass the
-    same infrastructure flags used at start so teardown targets the same compose shape.
+    `-EnableKafkaUI`, `-EnableKafkaCdc`, `-CdcBindingStatePath`, `-EnableSwaggerUI`,
+    `-DatabaseEngine`) are forwarded to teardown; pass the same infrastructure flags used at start
+    so teardown targets the same compose shape.
 
     Seed loading is wrapper-level opt-in: when `-LoadSeedData` is absent the wrapper does
     not invoke `load-dms-seed-data.ps1`. Direct invocation of `load-dms-seed-data.ps1`
@@ -104,6 +105,22 @@
 
 .PARAMETER EnableKafkaUI
     Forwarded to `start-local-dms.ps1`.
+
+.PARAMETER EnableKafkaCdc
+    Deployment-owned CDC opt-in. Forwarded to `start-local-dms.ps1`, which starts Kafka and Kafka
+    Connect, creates the binding state root, and registers the DocumentCache operator identity
+    client. The wrapper then configures one `DataManagement:DocumentCache:Targets` entry and the
+    status endpoint role BEFORE the DMS start, and runs the guarded CDC enable AFTER it and before
+    any seed or API write: the enable reads the running projector for its caught-up evidence, and
+    "write admission closed" means no write has been issued, not that DMS is down.
+
+    Supported on the self-contained identity provider only, and rejected with `-InfraOnly`,
+    `-NoDataStore`, or `-SchoolYearRange`: initial CDC enablement is admitted only for a database
+    this run created, and a binding covers exactly one instance database.
+
+.PARAMETER CdcBindingStatePath
+    Root path of the durable CDC binding state store, defaulting to
+    `eng/docker-compose/.cdc-state`. Requires `-EnableKafkaCdc`.
 
 .PARAMETER EnableSwaggerUI
     Forwarded to `start-local-dms.ps1`.
@@ -220,6 +237,15 @@ param(
 
     [Switch]$EnableKafkaUI,
 
+    # Deployment-owned CDC opt-in: starts Kafka and Kafka Connect, configures one DocumentCache
+    # projection target, and runs the guarded CDC enable after the DMS start and before any seed.
+    # Supported on the self-contained identity provider, and only for a data store this run
+    # creates. See .PARAMETER EnableKafkaCdc.
+    [Switch]$EnableKafkaCdc,
+
+    # Root path of the durable CDC binding state store. Requires -EnableKafkaCdc.
+    [string]$CdcBindingStatePath = "",
+
     [Switch]$EnableSwaggerUI,
 
     [Switch]$EnableConfig,
@@ -298,7 +324,9 @@ if ($d) {
     # start-local-dms.ps1's compose set, so the switch changes which database CMS targets but never
     # which compose files a teardown must cover. (It does shape the set in start-published-dms.ps1,
     # but that script owns its own teardown; this wrapper offers none for the published path.)
-    foreach ($name in 'EnvironmentFile', 'IdentityProvider', 'EnableKafkaUI', 'EnableSwaggerUI', 'DatabaseEngine') {
+    # -EnableKafkaCdc joins that list because it also selects kafka.yml, and -CdcBindingStatePath
+    # travels with it so a teardown names the same binding state store the start run used.
+    foreach ($name in 'EnvironmentFile', 'IdentityProvider', 'EnableKafkaUI', 'EnableKafkaCdc', 'CdcBindingStatePath', 'EnableSwaggerUI', 'DatabaseEngine') {
         if ($PSBoundParameters.ContainsKey($name)) {
             $teardownArgs[$name] = $PSBoundParameters[$name]
         }

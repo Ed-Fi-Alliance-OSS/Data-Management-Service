@@ -41,8 +41,15 @@ services:
         max-size: "${DOCKER_LOG_MAX_SIZE:-50m}"
         max-file: "${DOCKER_LOG_MAX_FILE:-5}"
 
+  # The Kafka Connect worker. Its name predates the engine-neutral CDC workflow and is kept: a
+  # rename would break existing local workflows and any external reference to the container name.
+  # Nothing in the worker is PostgreSQL-specific - it hosts whichever Debezium connector the CDC
+  # control plane registers, PostgreSQL or SQL Server - so the one service serves both engines.
   kafka-postgresql-source:
-    image: edfialliance/ed-fi-kafka-connect:pre
+    # The CDC workflow requires an operator-supplied image identified by immutable digest and
+    # rejects a tag before Compose is invoked (start-local-dms.ps1, -EnableKafkaCdc); the :pre
+    # default is retained for the non-CDC Kafka/Kafka-UI path so current workflows are untouched.
+    image: ${DMS_CDC_CONNECT_IMAGE:-edfialliance/ed-fi-kafka-connect:pre}
     container_name: kafka-postgresql-source
     volumes:
       - kafka-postgresql-source-logs:/kafka/logs
@@ -52,12 +59,21 @@ services:
         condition: service_healthy
     environment:
       BOOTSTRAP_SERVERS: dms-kafka1:9092
-      GROUP_ID: 1
+      # The worker group and its shared offset store are also named by the CDC control plane
+      # (DataManagement__DocumentCache__Cdc__ConnectWorkerKey / __ConnectOffsetStorageTopic in
+      # cdc-setup.yml), so both read the same variables and cannot drift from what it validates.
+      GROUP_ID: ${DMS_CDC_CONNECT_WORKER_KEY:-1}
       CONFIG_STORAGE_TOPIC: debezium_source_config
-      OFFSET_STORAGE_TOPIC: debezium_source_offset
+      OFFSET_STORAGE_TOPIC: ${DMS_CDC_CONNECT_OFFSET_STORAGE_TOPIC:-debezium_source_offset}
       STATUS_STORAGE_TOPIC: debezium_source_status
+      # The JMX-over-HTTP bridge the connector source-lag reading is taken from. The Debezium base
+      # image ships the Jolokia agent and its entrypoint hardcodes port 8778, so the port is a
+      # property of the image rather than a setting. ENABLE_JMX_EXPORTER is not an alternative on
+      # this image: its entrypoint branch targets 9404 but no jmx_prometheus_javaagent jar ships.
+      ENABLE_JOLOKIA: 'true'
     ports:
       - '127.0.0.1:${CONNECT_SOURCE_PORT:-8083}:8083'
+      - '127.0.0.1:${CONNECT_JOLOKIA_PORT:-8778}:8778'
     networks:
       - dms
     hostname: kafka-postgresql-source

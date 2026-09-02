@@ -25,16 +25,20 @@ start up different configurations:
 6. `published-dms.yml` runs the latest DMS `pre` tag as published to Docker Hub.
 7. `keycloak.yml` runs KeyCloak (identity provider).
 8. `swagger-ui.yml` covers SwaggerUI
+9. `cdc-setup.yml` runs the DocumentCache CDC administration tool as a one-shot
+   container on the `dms` network. It sits behind the `cdc` compose profile, so no
+   `up` starts it; the CDC opt-in invokes it with `docker compose run --rm`.
 
 The scripts read local settings from a `.env` file; on first run they seed it
 automatically as a copy of the tracked `.env.example`, so a clean checkout
 needs no manual step. Edit `.env` to customize — `.env.example` itself is
 documentation only and is never consumed at runtime.
 
-Kafka and Kafka UI compose files remain available for local infrastructure
-testing. The relational DMS CDC/Kafka design uses an explicit CDC opt-in for
-connector registration; until that implementation lands, this compose setup does
-not register DMS source connectors.
+Kafka and Kafka UI compose files are available for local infrastructure testing,
+and `kafka.yml` also carries the Kafka Connect worker the deployment-owned CDC
+workflow registers connectors on. Registration is an explicit opt-in: no start
+path registers a DMS source connector unless `-EnableKafkaCdc` is supplied. See
+"Deployment-owned CDC (Kafka Connect)" below.
 
 Convenience PowerShell scripts have been included in the directory, which start
 the appropriate services.
@@ -132,6 +136,10 @@ You can set up the Kafka UI containers for testing by passing the -EnableKafkaUI
 ./start-local-dms.ps1 -EnableKafkaUI
 ```
 
+`-EnableKafkaUI` starts the Kafka infrastructure and the UI; it registers no CDC
+connector. For the deployment-owned CDC workflow, see "Deployment-owned CDC (Kafka
+Connect)" below.
+
 You can launch Swagger UI as part of your local environment to explore DMS
 endpoints from your browser.
 
@@ -219,8 +227,11 @@ A few things are specific to the MSSQL path:
   (`DMS_DATASTORE=mssql`). Schema is provisioned by `provision-dms-schema.ps1`,
   which auto-detects the SQL Server dialect from the data-store connection string and invokes
   `api-schema-tools ddl provision --dialect mssql --create-database`.
-* **No Debezium CDC.** The relational backend serves both writes and queries directly from
-  SQL, so Kafka, OpenSearch, and the Debezium source connector are not started on this path.
+* **No CDC is needed to serve requests.** The relational backend serves both writes and
+  queries directly from SQL, so Kafka, OpenSearch, and the Debezium source connector are not
+  started on the default path. Deployment-owned CDC is a separate opt-in and is
+  engine-neutral: `-EnableKafkaCdc` starts the same Kafka and Kafka Connect services and
+  registers a SQL Server connector on this engine, exactly as it does on PostgreSQL.
 * **Seed data** uses the same API-based `-LoadSeedData` (BulkLoadClient) path as PostgreSQL;
   it is database-engine agnostic.
 * **CI publishes database-template packages for both engines.** `build-minimal-template.yml` and
@@ -574,14 +585,15 @@ Standard 5.2, where TPDM is a separate extension; Data Standard 6.1 folds TPDM
 into core.
 
 Bootstrap mode provisions the relational DMS schema only. Relational DMS
-CDC/Kafka connector registration is pending a separate implementation and should
-be controlled by an explicit CDC opt-in such as `-EnableKafkaCdc`; bootstrap
-startup does not register DMS source connectors today. The planned opt-in keeps
+CDC/Kafka connector registration is a separate, explicit opt-in: `-EnableKafkaCdc`
+on `bootstrap-local-dms.ps1` (or `start-local-dms.ps1`) adds it, and without that
+switch bootstrap startup registers no DMS source connectors. The opt-in keeps
 immutable deployment-owned binding records under a separate persistent `.cdc-state`
 root (or an explicit `-CdcBindingStatePath`) and never stores them in the bootstrap
 manifest. Runtime DMS receives only explicit `DocumentCache:Targets` and exposes
 per-database projection health; deployment automation owns connector registration and
-combined CDC readiness.
+combined CDC readiness. See "Deployment-owned CDC (Kafka Connect)" below for the
+whole workflow.
 
 The DMS E2E setup wrappers stay on the non-bootstrap `SCHEMA_PACKAGES` flow.
 Those env files use `USE_API_SCHEMA_PATH=true` to download and materialize
@@ -766,6 +778,10 @@ where `{schoolYear}` is the four-digit school year (e.g. `2025`). The standard
 
 * The DMS API: [http://localhost:8080](http://localhost:8080)
 * Kafka UI: [http://localhost:8088/](http://localhost:8088/)
+* Kafka Connect REST, with the Kafka infrastructure started:
+  [http://localhost:8083](http://localhost:8083)
+* Kafka Connect JMX-over-HTTP bridge (Jolokia), the source of CDC lag metrics:
+  [http://localhost:8778](http://localhost:8778)
 * Swagger UI: [http://localhost:8082](http://localhost:8082)
 
 ## Multi-Data-Store Testing with Route Qualifiers
@@ -922,6 +938,81 @@ pwsh ./start-local-dms.ps1 -d -v
 ```powershell
 # Open http://localhost:8088
 ```
+
+## Deployment-owned CDC (Kafka Connect)
+
+The relational DMS serves reads and writes directly from SQL. CDC is a separate,
+deployment-owned workflow that captures committed document changes into Kafka for
+consumers, and nothing in a default local stack starts or registers it.
+
+`-EnableKafkaCdc` is the opt-in. `start-local-dms.ps1`, `bootstrap-local-dms.ps1`, and the
+DMS E2E `setup-local-dms.ps1` wrapper all accept it, and it works on either database engine
+(`-DatabaseEngine postgresql`, the default, or `-DatabaseEngine mssql`).
+
+Prerequisites:
+
+* `DMS_CDC_CONNECT_IMAGE` must name the Ed-Fi Kafka Connect image by immutable digest
+  (`edfialliance/ed-fi-kafka-connect@sha256:<digest>`). The run fails before anything starts
+  when it is unset or names a tag; a moving tag would make a registered connector's runtime
+  unreproducible. The non-CDC Kafka/Kafka-UI path keeps `kafka.yml`'s tag default.
+* The self-contained identity provider. Only its setup registers the DocumentCache CDC
+  operator client whose token carries the status-endpoint role.
+* Exactly one data store, created by this run, with no route qualifier — a CDC binding covers
+  exactly one instance database.
+
+```pwsh
+# Turnkey: bootstrap a local stack with CDC enabled end to end
+./bootstrap-local-dms.ps1 -EnableKafkaCdc
+
+# The same on SQL Server
+./bootstrap-local-dms.ps1 -EnableKafkaCdc -DatabaseEngine mssql
+
+# Infrastructure only: starts Kafka and Kafka Connect, configures no projection
+# target, and enables CDC on no data store
+./start-local-dms.ps1 -EnableKafkaCdc
+```
+
+The bootstrap wrapper's CDC phase runs in this order:
+
+1. the infrastructure phase starts Kafka and Kafka Connect and registers the DocumentCache
+   CDC operator client;
+2. the DocumentCache projection target for the configured data store and the status
+   endpoint's required role are written into this run's environment — before DMS starts,
+   because DMS reads both at startup;
+3. DMS starts, and the phase waits for health and proves the status endpoint answers for the
+   operator credential (a 404 means the role never reached the container, a 403 that the
+   token does not carry it);
+4. `dms-document-cache cdc enable` runs as a one-shot container on the `dms` network, which
+   provisions the provider capture artifacts, the governed topics and ACLs, and the
+   connector, and then collects the readiness evidence. It runs on the network rather than on
+   the host because the instance database is registered in the Configuration Service under
+   its container alias and the broker advertises a container-internal listener.
+
+The durable binding state store defaults to `eng/docker-compose/.cdc-state` (Git-ignored) and
+can be moved with `-CdcBindingStatePath`. It holds one immutable binding record per
+generation and is deliberately outside the `.bootstrap/` workspace: a binding record outlives
+any one bootstrap run and lives at least as long as every artifact it governs.
+
+Teardown is where the distinction matters:
+
+* `./start-local-dms.ps1 -d` (or `./bootstrap-local-dms.ps1 -d`) stops the stack and
+  **retains** the binding record, the connector, its committed offsets, the governed topics
+  and ACLs, and the provider capture artifacts.
+* `./start-local-dms.ps1 -d -v` retires the binding first and then removes the volumes: it
+  stops the connector, deletes its committed offsets while it is stopped, deletes the
+  connector, then the governed topics and ACLs and the provider capture artifacts, and
+  deletes the binding record last. Retirement runs against the still-running stack, so tear
+  down before stopping the containers another way. A binding that could not be retired — for
+  example when DMS is already stopped — is reported and left in place, and can be retired
+  later with `dms-document-cache cdc retire`.
+
+For E2E, `setup-local-dms.ps1 -EnableKafkaCdc` registers capture against the fresh E2E
+database that setup provisions, before the suite issues any write, and the matching
+`teardown-local-dms.ps1` retires it.
+
+Connector lag comes from Debezium's `MilliSecondsBehindSource` metrics over the Kafka Connect
+Jolokia bridge on port 8778, published on loopback. `dms-document-cache cdc status` reports
+combined CDC readiness for one binding, and the Kafka UI (`-EnableKafkaUI`) shows the topics.
 
 ## Accessing Swagger UI
 
