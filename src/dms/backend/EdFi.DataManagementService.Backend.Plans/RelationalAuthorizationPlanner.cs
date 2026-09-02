@@ -158,8 +158,8 @@ public abstract record RelationalAuthorizationPlanOutcome
 /// <c>EnforcesOwnershipChecks</c> says the caller executes the check. Everywhere else it stays in the
 /// non-namespace bucket, so the classifier keeps reporting it known-but-not-enabled and the request keeps its
 /// fail-closed 501 — which is what stops an unenforced ownership strategy from being silently dropped. The
-/// gate currently withholds every operation; each enforcement step adds its own operation in the same commit
-/// that wires that operation's executor. <c>ReadMany</c> is withheld for the whole story (DMS-1410 owns
+/// gate enforces <c>ReadSingle</c> and withholds the rest; each enforcement step adds its own operation in
+/// the same commit that wires that operation's executor. <c>ReadMany</c> is withheld for the whole story (DMS-1410 owns
 /// GET-many ownership filtering, which is a page filter rather than a single-record check), and descriptor
 /// storage is withheld because descriptor ownership enforcement is out of this story's scope. A custom view
 /// configured ahead of any of these terminals is still validated first, so an earlier custom-view
@@ -425,10 +425,10 @@ public static class RelationalAuthorizationPlanner
     /// ownership filtering is DMS-1410's, and it is a page filter rather than a single-record check.
     /// </para>
     /// <para>
-    /// Internal rather than private so its matrix can be pinned directly. While every operation is
-    /// withheld, no plan outcome can distinguish an enforced combination from a withheld one, and asserting
-    /// the gate through behavior alone would be impossible without a test-only switch — which would be a
-    /// worse thing to add than a visible predicate.
+    /// Internal rather than private so its matrix can be pinned directly. A withheld operation returns the
+    /// same known-but-not-enabled 501 whether this gate withheld it or the classifier never recognized the
+    /// strategy, so a plan outcome alone cannot say which happened; only the predicate separates them, and
+    /// the alternative was a test-only switch, which would be a worse thing to add.
     /// </para>
     /// </remarks>
     internal static bool EnforcesOwnershipChecks(
@@ -487,9 +487,10 @@ public static class RelationalAuthorizationPlanner
     /// resolved views for validation.
     /// </para>
     /// <para>
-    /// Internal so the rule can be pinned directly while the enablement gate withholds every operation and
-    /// makes it unobservable through a plan outcome. The behavioral assertion belongs to the first gate-flip
-    /// commit, where it becomes reachable.
+    /// Internal so the rule can be pinned directly, which is how it was covered before any operation was
+    /// enforced and no plan outcome could reach it. It is now also asserted behaviorally through
+    /// <see cref="NamespaceAuthorizationOperation.ReadSingle"/>: an unresolved custom-view basis paired with
+    /// an over-cap ownership token list must report the custom-view failure, not the cap terminal.
     /// </para>
     /// </remarks>
     internal static bool OwnershipCapOutranksClassifierFailure(

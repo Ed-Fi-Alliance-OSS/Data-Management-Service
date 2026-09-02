@@ -103,9 +103,9 @@ public static class OwnershipAuthorizationPlanner
             )
         )
         {
-            // Unreachable while the enablement gate withholds every other operation, and kept as a guard
-            // rather than a silent default: GET-many ownership filtering is a different shape of check
-            // (DMS-1410) and must not be served by this single-record plan.
+            // Unreachable through the planner, because the enablement gate never admits ReadMany, and kept
+            // as a guard rather than a silent default: GET-many ownership filtering is a different shape of
+            // check (DMS-1410) and must not be served by this single-record plan.
             throw new ArgumentOutOfRangeException(
                 nameof(operation),
                 operation,
