@@ -306,7 +306,7 @@ Describe "DMS-1323 bootstrap CDC phase" {
 
             $overrides["DMS_CDC_TARGET_TENANT_KEY"] | Should -Be "district-a"
             $overrides["DMS_CDC_TARGET_DATA_STORE_ID"] | Should -Be "7"
-            $overrides["DMS_DOCUMENT_CACHE_STATUS_REQUIRED_ROLE"] | Should -Be "dms-document-cache-operator"
+            $overrides["DMS_DOCUMENTCACHE_STATUS_REQUIRED_ROLE"] | Should -Be "dms-document-cache-operator"
             $overrides["DMS_CDC_BINDING_STATE_PATH"] | Should -Be "C:/state"
         }
 
@@ -556,7 +556,7 @@ Describe "DMS-1323 bootstrap CDC phase" {
 
                 $composeText | Should -Match 'DataManagement__DocumentCache__Targets__0__TenantKey: \$\{DMS_CDC_TARGET_TENANT_KEY:-\}'
                 $composeText | Should -Match 'DataManagement__DocumentCache__Targets__0__DataStoreId: \$\{DMS_CDC_TARGET_DATA_STORE_ID:-\}'
-                $composeText | Should -Match 'DataManagement__DocumentCache__Status__RequiredRole: \$\{DMS_DOCUMENT_CACHE_STATUS_REQUIRED_ROLE:-\}'
+                $composeText | Should -Match 'DataManagement__DocumentCache__Status__RequiredRole: \$\{DMS_DOCUMENTCACHE_STATUS_REQUIRED_ROLE:-\}'
             }
         }
 
@@ -585,7 +585,7 @@ Describe "DMS-1323 bootstrap CDC phase" {
 
             $envExample | Should -Match '(?m)^DMS_CDC_TARGET_TENANT_KEY=\s*$'
             $envExample | Should -Match '(?m)^DMS_CDC_TARGET_DATA_STORE_ID=\s*$'
-            $envExample | Should -Match '(?m)^DMS_DOCUMENT_CACHE_STATUS_REQUIRED_ROLE=\s*$'
+            $envExample | Should -Match '(?m)^DMS_DOCUMENTCACHE_STATUS_REQUIRED_ROLE=\s*$'
         }
 
         It "keeps the CDC setup container out of every compose command but its own" {

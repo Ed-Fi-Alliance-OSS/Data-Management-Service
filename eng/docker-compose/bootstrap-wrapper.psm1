@@ -516,7 +516,7 @@ function Get-WrapperCdcRuntimeEnvOverride {
     return @{
         DMS_CDC_TARGET_TENANT_KEY = $TenantKey
         DMS_CDC_TARGET_DATA_STORE_ID = [string]$DataStoreId
-        DMS_DOCUMENT_CACHE_STATUS_REQUIRED_ROLE = (Get-DocumentCacheStatusOperatorRole)
+        DMS_DOCUMENTCACHE_STATUS_REQUIRED_ROLE = (Get-DocumentCacheStatusOperatorRole)
         DMS_CDC_BINDING_STATE_PATH = $BindingStateRootPath
     }
 }
