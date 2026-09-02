@@ -156,6 +156,15 @@ public abstract class ApiIntegrationTestBase
     /// <summary>Direct-fill timeout used by cache-backed API integration scenarios.</summary>
     protected virtual string DocumentCacheReadAccelerationDirectFillTimeout => "00:00:00.250";
 
+    /// <summary>Overrides the DocumentCache projector page size for cache-backed scenarios.</summary>
+    protected virtual int? DocumentCacheProjectorPageSizeOverride => null;
+
+    /// <summary>Overrides the DocumentCache projector target concurrency for cache-backed scenarios.</summary>
+    protected virtual int? DocumentCacheProjectorMaxConcurrentTargetsOverride => null;
+
+    /// <summary>Overrides the DocumentCache baseline high-water mark for cache-backed scenarios.</summary>
+    protected virtual long? DocumentCacheProjectorBaselineHighWaterMarkOverride => null;
+
     /// <summary>Controls the public ResourceLinks response flag for scenarios that exercise link stripping.</summary>
     protected virtual bool ResourceLinksEnabled => true;
 
@@ -214,6 +223,16 @@ public abstract class ApiIntegrationTestBase
     /// </summary>
     protected virtual IClaimSetProvider CreateClaimSetProvider(FixtureContext fixture) =>
         new AllowAllClaimSetProvider(fixture);
+
+    /// <summary>
+    /// Allows specialized fixtures to replace services after the shared integration doubles
+    /// are registered and before the in-process host is built.
+    /// </summary>
+    protected virtual void CustomizeServices(
+        IServiceCollection services,
+        FixtureContext fixture,
+        string leasedConnectionString
+    ) => ArgumentNullException.ThrowIfNull(services);
 
     /// <summary>
     /// Provisions a fresh per-test database from the dialect's baseline and returns its
@@ -347,6 +366,27 @@ public abstract class ApiIntegrationTestBase
                     DocumentCacheReadAccelerationDirectFillTimeout
                 );
                 builder.UseSetting("DataManagement:DocumentCache:Projector:PollInterval", "01:00:00");
+                if (DocumentCacheProjectorPageSizeOverride is { } pageSize)
+                {
+                    builder.UseSetting(
+                        "DataManagement:DocumentCache:Projector:PageSize",
+                        pageSize.ToString(CultureInfo.InvariantCulture)
+                    );
+                }
+                if (DocumentCacheProjectorMaxConcurrentTargetsOverride is { } maxConcurrentTargets)
+                {
+                    builder.UseSetting(
+                        "DataManagement:DocumentCache:Projector:MaxConcurrentTargets",
+                        maxConcurrentTargets.ToString(CultureInfo.InvariantCulture)
+                    );
+                }
+                if (DocumentCacheProjectorBaselineHighWaterMarkOverride is { } baselineHighWaterMark)
+                {
+                    builder.UseSetting(
+                        "DataManagement:DocumentCache:Projector:BaselineHighWaterMark",
+                        baselineHighWaterMark.ToString(CultureInfo.InvariantCulture)
+                    );
+                }
             }
             builder.UseSetting("ConfigurationServiceSettings:BaseUrl", "http://localhost/test-cms");
             builder.UseSetting("ConfigurationServiceSettings:ClientId", "test-cms-client");
@@ -387,6 +427,7 @@ public abstract class ApiIntegrationTestBase
                 }
 
                 ConfigureAdditionalServices(services);
+                CustomizeServices(services, fixtureContext, leasedConnectionString);
             });
         });
 
@@ -401,6 +442,7 @@ public abstract class ApiIntegrationTestBase
 
         Harness = new ApiIntegrationHarness(
             httpClient,
+            _factory.Services,
             _assertionConnection,
             _fixtureContext,
             _queryRecorder,

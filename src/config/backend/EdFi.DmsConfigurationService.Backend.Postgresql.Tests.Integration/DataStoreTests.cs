@@ -70,6 +70,7 @@ public class DataStoreTests : DatabaseTest
             {
                 DataStoreType = "Production",
                 Name = "Test Instance",
+                Provider = "postgresql",
                 ConnectionString = "Server=localhost;Database=TestDb;User Id=user;Password=pass;",
             };
 
@@ -88,6 +89,7 @@ public class DataStoreTests : DatabaseTest
             var instanceFromDb = ((DataStoreQueryResult.Success)getResult).DataStoreResponses.First();
             instanceFromDb.DataStoreType.Should().Be("Production");
             instanceFromDb.Name.Should().Be("Test Instance");
+            instanceFromDb.Provider.Should().Be("postgresql");
             AssertIsValidEncryptedBase64(
                 instanceFromDb.ConnectionString,
                 "Server=localhost;Database=TestDb;User Id=user;Password=pass;"
@@ -103,6 +105,7 @@ public class DataStoreTests : DatabaseTest
             var instanceFromDb = ((DataStoreGetResult.Success)getByIdResult).DataStoreResponse;
             instanceFromDb.DataStoreType.Should().Be("Production");
             instanceFromDb.Name.Should().Be("Test Instance");
+            instanceFromDb.Provider.Should().Be("postgresql");
             AssertIsValidEncryptedBase64(
                 instanceFromDb.ConnectionString,
                 "Server=localhost;Database=TestDb;User Id=user;Password=pass;"
@@ -140,6 +143,7 @@ public class DataStoreTests : DatabaseTest
             var instanceFromDb = ((DataStoreGetResult.Success)getByIdResult).DataStoreResponse;
             instanceFromDb.DataStoreType.Should().Be("Development");
             instanceFromDb.Name.Should().Be("Test Instance Without Connection");
+            instanceFromDb.Provider.Should().BeNull();
             instanceFromDb.ConnectionString.Should().BeNull();
         }
     }
@@ -157,6 +161,7 @@ public class DataStoreTests : DatabaseTest
             {
                 DataStoreType = "Staging",
                 Name = "Original Instance",
+                Provider = "postgresql",
                 ConnectionString = "Server=original;Database=OriginalDb;",
             };
 
@@ -164,6 +169,7 @@ public class DataStoreTests : DatabaseTest
             {
                 DataStoreType = "Production",
                 Name = "Updated Instance",
+                Provider = "sqlserver",
                 ConnectionString = "Server=updated;Database=UpdatedDb;",
             };
 
@@ -185,6 +191,7 @@ public class DataStoreTests : DatabaseTest
             var instanceFromDb = ((DataStoreQueryResult.Success)getResult).DataStoreResponses.First();
             instanceFromDb.DataStoreType.Should().Be("Production");
             instanceFromDb.Name.Should().Be("Updated Instance");
+            instanceFromDb.Provider.Should().Be("sqlserver");
             AssertIsValidEncryptedBase64(
                 instanceFromDb.ConnectionString,
                 "Server=updated;Database=UpdatedDb;"
@@ -200,10 +207,52 @@ public class DataStoreTests : DatabaseTest
             var instanceFromDb = ((DataStoreGetResult.Success)getByIdResult).DataStoreResponse;
             instanceFromDb.DataStoreType.Should().Be("Production");
             instanceFromDb.Name.Should().Be("Updated Instance");
+            instanceFromDb.Provider.Should().Be("sqlserver");
             AssertIsValidEncryptedBase64(
                 instanceFromDb.ConnectionString,
                 "Server=updated;Database=UpdatedDb;"
             );
+        }
+    }
+
+    [TestFixture]
+    public class Given_update_data_store_without_provider : DataStoreTests
+    {
+        private int _id;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            DataStoreInsertCommand instance = new()
+            {
+                DataStoreType = "Staging",
+                Name = "Original Instance",
+                Provider = "postgresql",
+            };
+
+            var insertResult = await _repository.InsertDataStore(instance);
+            insertResult.Should().BeOfType<DataStoreInsertResult.Success>();
+            _id = ((DataStoreInsertResult.Success)insertResult).Id;
+
+            DataStoreUpdateCommand update = new()
+            {
+                Id = _id,
+                DataStoreType = "Production",
+                Name = "Updated Instance",
+            };
+
+            var updateResult = await _repository.UpdateDataStore(update);
+            updateResult.Should().BeOfType<DataStoreUpdateResult.Success>();
+        }
+
+        [Test]
+        public async Task It_should_preserve_the_existing_provider()
+        {
+            var getResult = await _repository.GetDataStore(_id);
+            getResult.Should().BeOfType<DataStoreGetResult.Success>();
+
+            var instanceFromDb = ((DataStoreGetResult.Success)getResult).DataStoreResponse;
+            instanceFromDb.Provider.Should().Be("postgresql");
         }
     }
 

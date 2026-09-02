@@ -269,6 +269,7 @@ WHERE rk."ResourceName" NOT LIKE '%Descriptor'
         -PostgresCredential $postgresCredential `
         -PostgresDbName $VerificationDatabaseName `
         -ConnectionString $dataStoreConnectionString `
+        -DatabaseEngine $DatabaseEngine `
         -Name "Template Restore Verification" `
         -DataStoreType "Verification"
 

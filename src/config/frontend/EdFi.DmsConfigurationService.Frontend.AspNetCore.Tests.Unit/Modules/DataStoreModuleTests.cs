@@ -118,6 +118,7 @@ public class DataStoreModuleTests
                             Id = 1,
                             DataStoreType = "Production",
                             Name = "Test Instance",
+                            Provider = "postgresql",
                             ConnectionString = FakeEncryptedConnection1,
                             DataStoreDerivatives = [new(1, 1, "ReadReplica", FakeEncryptedReplica1)],
                         },
@@ -132,6 +133,7 @@ public class DataStoreModuleTests
                             Id = 1,
                             DataStoreType = "Production",
                             Name = "Test Instance",
+                            Provider = "sqlserver",
                             ConnectionString = FakeEncryptedConnection1,
                             DataStoreContexts =
                             [
@@ -219,6 +221,24 @@ public class DataStoreModuleTests
             updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
             queryApplicationsByDataStoreResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public async Task Should_return_data_store_provider_property_when_present()
+        {
+            using var client = SetUpClient();
+
+            var queryResponse = await client.GetAsync("/v3/dataStores/?offset=0&limit=25");
+            var getResponse = await client.GetAsync("/v3/dataStores/1");
+
+            queryResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            JsonArray queryBody = JsonNode.Parse(await queryResponse.Content.ReadAsStringAsync())!.AsArray();
+            queryBody[0]!["provider"]!.GetValue<string>().Should().Be("postgresql");
+
+            JsonObject getBody = JsonNode.Parse(await getResponse.Content.ReadAsStringAsync())!.AsObject();
+            getBody["provider"]!.GetValue<string>().Should().Be("sqlserver");
         }
 
         [Test]

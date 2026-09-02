@@ -469,6 +469,7 @@ function Invoke-ConfigureLocalDataStore {
             -PostgresCredential $postgresCredential `
             -PostgresDbName $postgresDbName `
             -ConnectionString $dataStoreConnectionString `
+            -DatabaseEngine $DatabaseEngine `
             -Tenant $tenant
 
         $dataStoreIds = @($dataStores | ForEach-Object { [long]$_.DataStoreId })
@@ -504,6 +505,7 @@ function Invoke-ConfigureLocalDataStore {
         -PostgresCredential $postgresCredential `
         -PostgresDbName $postgresDbName `
         -ConnectionString $dataStoreConnectionString `
+        -DatabaseEngine $DatabaseEngine `
         -Name "Local Development Data Store" `
         -DataStoreType "Development" `
         -Tenant $tenant

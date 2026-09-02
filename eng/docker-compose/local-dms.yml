@@ -69,6 +69,17 @@ services:
       AppSettings__DomainsExcludedFromOpenApi: ${DOMAINS_EXCLUDED_FROM_OPEN_API:-}
       AppSettings__RouteQualifierSegments: ${ROUTE_QUALIFIER_SEGMENTS:-}
       SCHEMA_PACKAGES: ${SCHEMA_PACKAGES:-}
+      DataManagement__DocumentCache__ReadAcceleration__Enabled: ${DMS_DOCUMENTCACHE_READ_ACCELERATION_ENABLED:-false}
+      DataManagement__DocumentCache__ReadAcceleration__DirectFillTimeout: ${DMS_DOCUMENTCACHE_READ_ACCELERATION_DIRECT_FILL_TIMEOUT:-00:00:00.250}
+      DataManagement__DocumentCache__Projector__PollInterval: ${DMS_DOCUMENTCACHE_PROJECTOR_POLL_INTERVAL:-00:00:05}
+      DataManagement__DocumentCache__Projector__PageSize: ${DMS_DOCUMENTCACHE_PROJECTOR_PAGE_SIZE:-100}
+      DataManagement__DocumentCache__Projector__MaxConcurrentTargets: ${DMS_DOCUMENTCACHE_PROJECTOR_MAX_CONCURRENT_TARGETS:-2}
+      DataManagement__DocumentCache__Projector__FailureBackoff: ${DMS_DOCUMENTCACHE_PROJECTOR_FAILURE_BACKOFF:-00:00:30}
+      DataManagement__DocumentCache__Projector__BaselineHighWaterMark: ${DMS_DOCUMENTCACHE_PROJECTOR_BASELINE_HIGH_WATER_MARK:-1000}
+      DataManagement__DocumentCache__Administration__WorkflowTimeout: ${DMS_DOCUMENTCACHE_ADMINISTRATION_WORKFLOW_TIMEOUT:-1.00:00:00}
+      DataManagement__DocumentCache__Status__StatusObservationTimeout: ${DMS_DOCUMENTCACHE_STATUS_OBSERVATION_TIMEOUT:-00:00:05}
+      DataManagement__DocumentCache__Status__EndpointTimeout: ${DMS_DOCUMENTCACHE_STATUS_ENDPOINT_TIMEOUT:-00:00:30}
+      DataManagement__DocumentCache__Status__RequiredRole: ${DMS_DOCUMENTCACHE_STATUS_REQUIRED_ROLE:-}
       # JWT Authentication
       JwtAuthentication__Authority: ${DMS_JWT_AUTHORITY:-http://dms-keycloak:8080/realms/edfi}
       JwtAuthentication__Audience: ${DMS_JWT_AUDIENCE:-account}

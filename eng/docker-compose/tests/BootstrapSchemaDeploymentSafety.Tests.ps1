@@ -1167,6 +1167,8 @@ Export-ModuleMember -Function Get-SmokeTestCredential
                     [string] $AccessToken,
                     [System.Management.Automation.PSCredential] $PostgresCredential,
                     [string] $PostgresDbName,
+                    [string] $ConnectionString,
+                    [string] $DatabaseEngine,
                     [string] $Name,
                     [string] $DataStoreType,
                     [string] $Tenant
@@ -1197,6 +1199,8 @@ Export-ModuleMember -Function Get-SmokeTestCredential
                     [int] $EndYear,
                     [System.Management.Automation.PSCredential] $PostgresCredential,
                     [string] $PostgresDbName,
+                    [string] $ConnectionString,
+                    [string] $DatabaseEngine,
                     [string] $Tenant
                 )
                 $script:capturedPostgresDbName = $PostgresDbName
@@ -2253,10 +2257,11 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 function Get-CmsToken { return "token" }
                 $script:capturedDataStore = $null
                 function Add-DataStore {
-                    param($CmsUrl, $AccessToken, [System.Management.Automation.PSCredential]$PostgresCredential, $PostgresDbName, $ConnectionString, $Name, $DataStoreType, $Tenant)
+                    param($CmsUrl, $AccessToken, [System.Management.Automation.PSCredential]$PostgresCredential, $PostgresDbName, $ConnectionString, $DatabaseEngine, $Name, $DataStoreType, $Tenant)
                     $script:capturedDataStore = [pscustomobject]@{
                         ConnectionString = $ConnectionString
                         PostgresDbName = $PostgresDbName
+                        DatabaseEngine = $DatabaseEngine
                     }
                     return [long]42
                 }
@@ -2268,6 +2273,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 $parsed.set_ConnectionString($script:capturedDataStore.ConnectionString)
                 $parsed["Password"] | Should -Be $ambientPassword
                 $parsed["Database"] | Should -Be "ambient_dms_db"
+                $script:capturedDataStore.DatabaseEngine | Should -Be "mssql"
             }
             finally {
                 Remove-Item Env:MSSQL_SA_PASSWORD -ErrorAction SilentlyContinue
@@ -4116,7 +4122,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
             function Add-DataStore {
-                param($CmsUrl, $AccessToken, $PostgresCredential, $PostgresDbName, $ConnectionString, $Name, $DataStoreType, $Tenant)
+                param($CmsUrl, $AccessToken, $PostgresCredential, $PostgresDbName, $ConnectionString, $DatabaseEngine, $Name, $DataStoreType, $Tenant)
                 $script:guardRegisteredName = $ConnectionString
                 return 606
             }
@@ -4174,7 +4180,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
             function Add-DataStore {
-                param($CmsUrl, $AccessToken, $PostgresCredential, $PostgresDbName, $ConnectionString, $Name, $DataStoreType, $Tenant)
+                param($CmsUrl, $AccessToken, $PostgresCredential, $PostgresDbName, $ConnectionString, $DatabaseEngine, $Name, $DataStoreType, $Tenant)
                 $script:guardRegisteredName = $PostgresDbName
                 return 609
             }
@@ -4210,7 +4216,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
             function Add-DataStore {
-                param($CmsUrl, $AccessToken, $PostgresCredential, $PostgresDbName, $ConnectionString, $Name, $DataStoreType, $Tenant)
+                param($CmsUrl, $AccessToken, $PostgresCredential, $PostgresDbName, $ConnectionString, $DatabaseEngine, $Name, $DataStoreType, $Tenant)
                 $script:guardRegisteredName = $PostgresDbName
                 return 611
             }
@@ -4266,7 +4272,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
             function Add-DmsSchoolYearInstances {
-                param($CmsUrl, $AccessToken, $StartYear, $EndYear, $PostgresCredential, $PostgresDbName, $ConnectionString, $Tenant)
+                param($CmsUrl, $AccessToken, $StartYear, $EndYear, $PostgresCredential, $PostgresDbName, $ConnectionString, $DatabaseEngine, $Tenant)
                 $script:guardRegisteredName = $PostgresDbName
                 return @(
                     @{ DataStoreId = [long]613; Year = 2024 },

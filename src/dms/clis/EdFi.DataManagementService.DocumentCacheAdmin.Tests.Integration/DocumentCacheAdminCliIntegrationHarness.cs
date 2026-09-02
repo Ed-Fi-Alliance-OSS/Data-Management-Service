@@ -880,6 +880,14 @@ internal sealed class DocumentCacheAdminCliStateInspector(
             documentId
         );
 
+    public Task<DocumentCacheAdminCliMssqlDocumentCacheLockTransaction> BeginMssqlDocumentCacheLockTransactionAsync(
+        long documentId
+    ) =>
+        DocumentCacheAdminCliMssqlDocumentCacheLockTransaction.BeginAsync(
+            RequireMssqlDatabase().ConnectionString,
+            documentId
+        );
+
     public Task<DocumentCacheAdminCliMssqlInsertTransaction> BeginMssqlCanonicalInsertTransactionAsync(
         long contentVersion = 10
     ) =>
@@ -1224,6 +1232,85 @@ internal sealed class DocumentCacheAdminCliPostgresqlDocumentCacheLockTransactio
             command.Parameters.Add(
                 new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = documentId }
             );
+
+            object result =
+                await command.ExecuteScalarAsync()
+                ?? throw new InvalidOperationException("Expected a DocumentCache row to lock.");
+            if (result is DBNull)
+            {
+                throw new InvalidOperationException("Expected a DocumentCache row to lock.");
+            }
+
+            return new(connection, transaction);
+        }
+        catch
+        {
+            await transaction.DisposeAsync();
+            await connection.DisposeAsync();
+            throw;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+
+        try
+        {
+            await _transaction.RollbackAsync();
+        }
+        catch (InvalidOperationException)
+        {
+            // Best-effort cleanup for a provider-released transaction.
+        }
+
+        await _transaction.DisposeAsync();
+        await _connection.DisposeAsync();
+    }
+}
+
+internal sealed class DocumentCacheAdminCliMssqlDocumentCacheLockTransaction : IAsyncDisposable
+{
+    private readonly SqlConnection _connection;
+    private readonly SqlTransaction _transaction;
+    private bool _disposed;
+
+    private DocumentCacheAdminCliMssqlDocumentCacheLockTransaction(
+        SqlConnection connection,
+        SqlTransaction transaction
+    )
+    {
+        _connection = connection;
+        _transaction = transaction;
+    }
+
+    public static async Task<DocumentCacheAdminCliMssqlDocumentCacheLockTransaction> BeginAsync(
+        string connectionString,
+        long documentId
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(documentId);
+
+        SqlConnection connection = new(connectionString);
+        await connection.OpenAsync();
+        SqlTransaction transaction = (SqlTransaction)await connection.BeginTransactionAsync();
+
+        try
+        {
+            await using SqlCommand command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                SELECT [DocumentId]
+                FROM [dms].[DocumentCache] WITH (UPDLOCK, HOLDLOCK)
+                WHERE [DocumentId] = @documentId;
+                """;
+            command.Parameters.Add(new SqlParameter("documentId", documentId));
 
             object? result = await command.ExecuteScalarAsync();
             if (result is null || result == DBNull.Value)

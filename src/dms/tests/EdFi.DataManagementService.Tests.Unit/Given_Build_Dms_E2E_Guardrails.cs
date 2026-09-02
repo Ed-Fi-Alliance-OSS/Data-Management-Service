@@ -130,27 +130,24 @@ public class Given_Build_Dms_E2E_Guardrails
     [Test]
     public void It_propagates_the_selected_database_engine_through_the_standard_e2e_chain()
     {
-        // The top-level dispatch and each E2E orchestration function must forward -DatabaseEngine so
-        // the engine selection reaches the engine-aware start/configure/provision leaf scripts.
+        // The top-level dispatch and each E2E orchestration function must forward the engine and
+        // feature overlay selections so they reach the engine-aware start/configure/provision leaf scripts.
         _buildScriptContents
             .Should()
-            .Contain(
-                "E2ETest { Invoke-TestExecution E2ETests"
-                    + " -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild"
-                    + " -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider"
-                    + " -TestFilter $TestFilter -DatabaseEngine $DatabaseEngine }"
-            );
+            .Contain("E2ETest { Invoke-TestExecution E2ETests")
+            .And.Contain("-EnvironmentOverlayFile $EnvironmentOverlayFile -DatabaseEngine $DatabaseEngine }");
 
         ExtractFunctionBody("Invoke-TestExecution")
             .Should()
             .Contain("E2ETests -UsePublishedImage:$UsePublishedImage")
+            .And.Contain("-EnvironmentOverlayFile $EnvironmentOverlayFile")
             .And.Contain("-DatabaseEngine $DatabaseEngine");
 
         ExtractFunctionBody("E2ETests")
             .Should()
-            .Contain(
-                "Get-E2ETestEnvironmentContext -EnvironmentFile $EnvironmentFile -TestFilter $TestFilter -DatabaseEngine $DatabaseEngine"
-            )
+            .Contain("Get-E2ETestEnvironmentContext")
+            .And.Contain("-EnvironmentOverlayFile $EnvironmentOverlayFile")
+            .And.Contain("-DatabaseEngine $DatabaseEngine")
             .And.Contain("-DatabaseEngine $e2eTestSettings.DatabaseEngine");
 
         ExtractFunctionBody("Start-DockerEnvironment")

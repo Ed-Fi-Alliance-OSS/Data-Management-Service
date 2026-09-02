@@ -1005,6 +1005,13 @@ function Get-E2EStartupPhasePlan {
 .PARAMETER PostgresPort
     The PostgreSQL port. Defaults to 5432 for Docker internal port.
 
+.PARAMETER ConnectionString
+    An optional prebuilt connection string. DatabaseEngine must be supplied with this parameter.
+
+.PARAMETER DatabaseEngine
+    The database engine represented by ConnectionString. Defaults to "postgresql" when this function
+    builds the connection string from the Postgres parameters.
+
 .PARAMETER AccessToken
     The bearer token for authorization (mandatory).
 
@@ -1049,10 +1056,14 @@ function Add-DataStore {
 
         [int]$PostgresPort = 5432,
 
-        # Pre-built connection string. When provided it is used verbatim (any engine, e.g. an
-        # MSSQL connection string from New-DataStoreConnectionString); otherwise a PostgreSQL
-        # connection string is built from the credential and Postgres* parameters.
+        # Pre-built connection string. When provided it is used verbatim and -DatabaseEngine
+        # must also be supplied so the registered provider metadata matches the target engine.
+        # Otherwise a PostgreSQL connection string is built from the credential and Postgres*
+        # parameters.
         [string]$ConnectionString = "",
+
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine = "postgresql",
 
         [Parameter(Mandatory = $true)]
         [string]$AccessToken,
@@ -1075,7 +1086,16 @@ function Add-DataStore {
     # such a name reaches the provider as the bare name. The registered-name collision guard therefore
     # compares the provider-parsed value, never the parameter text, and follows that exception instead
     # of missing it.
-    if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
+    $hasPrebuiltConnectionString = -not [string]::IsNullOrWhiteSpace($ConnectionString)
+    if ($hasPrebuiltConnectionString -and -not $PSBoundParameters.ContainsKey("DatabaseEngine")) {
+        throw "-DatabaseEngine is required when -ConnectionString is supplied."
+    }
+
+    if (-not $hasPrebuiltConnectionString) {
+        if ($DatabaseEngine -eq "mssql") {
+            throw "-ConnectionString is required when -DatabaseEngine is 'mssql'."
+        }
+
         # ConvertTo-PostgresCredential deliberately accepts an empty secret, and the serializer
         # accepts one for PostgreSQL: a passwordless (trust-authenticated) server is a real
         # configuration, and the registered string then carries an explicit empty password= value -
@@ -1091,11 +1111,14 @@ function Add-DataStore {
             -DatabaseName $PostgresDbName
     }
 
+    $provider = if ($DatabaseEngine -eq "mssql") { "sqlserver" } else { "postgresql" }
+
     $dataStoreData = @{
         dataStoreType = $DataStoreType
         name          = $Name
         connectionString = $ConnectionString
     }
+    $dataStoreData.provider = $provider
 
     $headers = @{ Authorization = "Bearer $AccessToken" }
     if ($Tenant) {
@@ -1289,6 +1312,14 @@ function Add-DataStoreContext {
 .PARAMETER PostgresPort
     The PostgreSQL port. Defaults to 5432.
 
+.PARAMETER ConnectionString
+    An optional prebuilt connection string forwarded to each data store. DatabaseEngine must be supplied
+    with this parameter.
+
+.PARAMETER DatabaseEngine
+    The database engine represented by ConnectionString. Defaults to "postgresql" when each data store
+    uses the Postgres parameters.
+
 .PARAMETER AccessToken
     The bearer token for authorization (mandatory).
 
@@ -1333,6 +1364,9 @@ function Add-DmsSchoolYearInstances {
         # (e.g. an MSSQL connection string). When empty, Add-DataStore builds the PostgreSQL form.
         [string]$ConnectionString = "",
 
+        [ValidateSet("postgresql", "mssql")]
+        [string]$DatabaseEngine = "postgresql",
+
         [Parameter(Mandatory = $true)]
         [string]$AccessToken,
 
@@ -1342,6 +1376,15 @@ function Add-DmsSchoolYearInstances {
     # Validate year range
     if ($StartYear -gt $EndYear) {
         throw "StartYear ($StartYear) cannot be greater than EndYear ($EndYear)"
+    }
+
+    $hasPrebuiltConnectionString = -not [string]::IsNullOrWhiteSpace($ConnectionString)
+    if ($hasPrebuiltConnectionString -and -not $PSBoundParameters.ContainsKey("DatabaseEngine")) {
+        throw "-DatabaseEngine is required when -ConnectionString is supplied."
+    }
+
+    if (-not $hasPrebuiltConnectionString -and $DatabaseEngine -eq "mssql") {
+        throw "-ConnectionString is required when -DatabaseEngine is 'mssql'."
     }
 
     $createdDataStores = @()
@@ -1361,6 +1404,7 @@ function Add-DmsSchoolYearInstances {
             -PostgresHost $PostgresHost `
             -PostgresPort $PostgresPort `
             -ConnectionString $ConnectionString `
+            -DatabaseEngine $DatabaseEngine `
             -AccessToken $AccessToken `
             -Tenant $Tenant
 

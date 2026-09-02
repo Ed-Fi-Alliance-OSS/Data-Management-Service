@@ -14,6 +14,7 @@ public class DataStoreUpdateCommand
     public string DataStoreType { get; set; } = "";
     public string Name { get; set; } = "";
     public string? ConnectionString { get; set; }
+    public string? Provider { get; set; }
 
     public class Validator : AbstractValidator<DataStoreUpdateCommand>
     {
@@ -23,6 +24,15 @@ public class DataStoreUpdateCommand
             RuleFor(x => x.DataStoreType).NotEmpty().MaximumLength(50);
             RuleFor(x => x.Name).NotEmpty().MaximumLength(256);
             RuleFor(x => x.ConnectionString).ApplyDataStoreConnectionStringRules(connectionStringValidator);
+            RuleFor(x => x.Provider)
+                .Cascade(CascadeMode.Stop)
+                .MaximumLength(50)
+                .WithMessage("Provider must be 50 characters or fewer.")
+                .Must(IsSupportedProvider)
+                .WithMessage("Provider must be 'postgresql' or 'sqlserver'.");
         }
+
+        private static bool IsSupportedProvider(string? provider) =>
+            provider is null or "postgresql" or "sqlserver";
     }
 }

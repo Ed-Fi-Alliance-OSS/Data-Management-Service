@@ -241,9 +241,9 @@ Describe "Register-InstanceE2EFixture registers the canonical suite-owned fixtur
     It "registers exactly three data stores with the engine-correct registration strings" {
         Register-InstanceE2EFixture -InstanceE2ESettings $script:settings | Out-Null
         Should -Invoke Add-DataStore -Times 3 -Exactly
-        Should -Invoke Add-DataStore -Times 1 -Exactly -ParameterFilter { $ConnectionString -eq "reg-1" -and $Tenant -eq "Tenant_255901" }
-        Should -Invoke Add-DataStore -Times 1 -Exactly -ParameterFilter { $ConnectionString -eq "reg-2" -and $Tenant -eq "Tenant_255901" }
-        Should -Invoke Add-DataStore -Times 1 -Exactly -ParameterFilter { $ConnectionString -eq "reg-3" -and $Tenant -eq "Tenant_255902" }
+        Should -Invoke Add-DataStore -Times 1 -Exactly -ParameterFilter { $ConnectionString -eq "reg-1" -and $DatabaseEngine -eq "mssql" -and $Tenant -eq "Tenant_255901" }
+        Should -Invoke Add-DataStore -Times 1 -Exactly -ParameterFilter { $ConnectionString -eq "reg-2" -and $DatabaseEngine -eq "mssql" -and $Tenant -eq "Tenant_255901" }
+        Should -Invoke Add-DataStore -Times 1 -Exactly -ParameterFilter { $ConnectionString -eq "reg-3" -and $DatabaseEngine -eq "mssql" -and $Tenant -eq "Tenant_255902" }
     }
 
     It "registers the districtId and schoolYear route contexts for each store (six total)" {

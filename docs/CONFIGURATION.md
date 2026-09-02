@@ -68,6 +68,8 @@ For the authoritative behavior, see the
 [cache-backed reads and lifecycle](../reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cache-backed-reads-and-domain-lifecycle),
 and
 [configuration and projection target selection](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#configuration-and-projection-target-selection).
+For operational workflows, use the
+[DocumentCache operations runbook](../reference/document-cache-documentation/operations-runbook.md).
 
 | Parameter                               | Description                                                                                                                                                  |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |

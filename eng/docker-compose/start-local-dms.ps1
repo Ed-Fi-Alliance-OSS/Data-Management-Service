@@ -383,6 +383,27 @@ if (-not $databaseOnlyStartup) {
         "local-dms.yml"
     )
 
+    $documentCacheComposeFile = Get-EnvValue `
+        -EnvValues $envValues `
+        -Name "DMS_DOCUMENTCACHE_COMPOSE_FILE" `
+        -DefaultValue ""
+    if (-not [string]::IsNullOrWhiteSpace($documentCacheComposeFile)) {
+        $documentCacheComposeFilePath =
+            if ([System.IO.Path]::IsPathRooted($documentCacheComposeFile)) {
+                $documentCacheComposeFile
+            }
+            else {
+                Join-Path $PSScriptRoot $documentCacheComposeFile
+            }
+
+        if (-not (Test-Path -LiteralPath $documentCacheComposeFilePath -PathType Leaf)) {
+            throw "DMS_DOCUMENTCACHE_COMPOSE_FILE does not identify a compose file: $documentCacheComposeFilePath"
+        }
+
+        Write-Output "Using DocumentCache Docker Compose file '$documentCacheComposeFilePath'."
+        $files += @("-f", $documentCacheComposeFilePath)
+    }
+
     $enableDotnetDiagnostics = [string]::Equals(
         (Get-EnvValue -EnvValues $envValues -Name "DMS_ENABLE_DOTNET_DIAGNOSTICS" -DefaultValue "false"),
         "true",

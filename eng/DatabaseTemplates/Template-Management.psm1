@@ -1193,6 +1193,7 @@ function Add-TemplateDataStore {
         AccessToken         = $AccessToken
         PostgresCredential  = $postgresCredential
         PostgresDbName      = $DatabaseName
+        DatabaseEngine      = $DatabaseEngine
     }
 
     if ($DatabaseEngine -eq "mssql") {

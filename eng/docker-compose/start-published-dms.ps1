@@ -898,6 +898,7 @@ else {
                         -PostgresCredential $postgresCredential `
                         -PostgresDbName $postgresDbName `
                         -ConnectionString $dataStoreConnectionString `
+                        -DatabaseEngine $DatabaseEngine `
                         -Tenant $tenant
 
                     Write-Output "Created $($dataStores.Count) school year data stores successfully"
@@ -911,7 +912,7 @@ else {
                 Write-Output "Creating initial data store..."
 
                 # Create data store using environment variables
-                $dataStoreId = Add-DataStore -CmsUrl $cmsUrl -AccessToken $configToken -PostgresCredential $postgresCredential -PostgresDbName $postgresDbName -ConnectionString $dataStoreConnectionString -Name "Local Development Data Store" -DataStoreType "Development" -Tenant $tenant
+                $dataStoreId = Add-DataStore -CmsUrl $cmsUrl -AccessToken $configToken -PostgresCredential $postgresCredential -PostgresDbName $postgresDbName -ConnectionString $dataStoreConnectionString -DatabaseEngine $DatabaseEngine -Name "Local Development Data Store" -DataStoreType "Development" -Tenant $tenant
 
                 Write-Output "Data store created successfully with ID: $dataStoreId"
             }
