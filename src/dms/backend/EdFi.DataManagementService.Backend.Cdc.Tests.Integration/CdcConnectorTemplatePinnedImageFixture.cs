@@ -24,21 +24,21 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 
 internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
 {
-    private const string ConnectorPasswordEnvironmentVariable = "CDC_DATABASE_PASSWORD";
+    internal const string ConnectorPasswordEnvironmentVariable = "CDC_DATABASE_PASSWORD";
     internal const string ConnectorDatabasePassword = "EdFi_Dms1!";
-    private const string ConnectorDatabaseUser = "dms_connector";
-    private const string EnvConfigProviderName = "env";
-    private const string EnvConfigProviderClass =
+    internal const string ConnectorDatabaseUser = "dms_connector";
+    internal const string EnvConfigProviderName = "env";
+    internal const string EnvConfigProviderClass =
         "org.apache.kafka.common.config.provider.EnvVarConfigProvider";
-    private const string ConnectConfigProvidersEnvironmentVariable =
+    internal const string ConnectConfigProvidersEnvironmentVariable =
         $"CONNECT_CONFIG_PROVIDERS={EnvConfigProviderName}";
-    private const string ConnectConfigProviderEnvClassEnvironmentVariable =
+    internal const string ConnectConfigProviderEnvClassEnvironmentVariable =
         $"CONNECT_CONFIG_PROVIDERS_ENV_CLASS={EnvConfigProviderClass}";
     private const long BindingGeneration = 7;
     private const string DeploymentKey = "dms";
     private const string InstanceKey = "binding";
     private const string TopicPrefix = "edfi.documents";
-    private const string PostgresqlDatabaseName = "edfi_datastore";
+    internal const string PostgresqlDatabaseName = "edfi_datastore";
     private const string SqlServerDatabaseName = "edfi_datastore";
     private const string DocumentStateTransformClass = "org.edfi.kafka.connect.transforms.DocumentState";
     private const string DocumentStateJsonConverterClass =
@@ -879,7 +879,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             databaseExecutor: databaseExecutor
         );
 
-    private static IReadOnlyList<CdcDmsManagedTableInventory> BuildDmsManagedTableInventory(
+    internal static IReadOnlyList<CdcDmsManagedTableInventory> BuildDmsManagedTableInventory(
         CdcProvider provider
     )
     {
@@ -1209,7 +1209,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             )
         );
 
-    private static int ParseMappedPort(string containerName, string dockerPortOutput, string serviceName)
+    internal static int ParseMappedPort(string containerName, string dockerPortOutput, string serviceName)
     {
         string[] mappedPortLines = dockerPortOutput.Split(
             '\n',
@@ -1585,7 +1585,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
         );
     }
 
-    private static string BuildMinimalPostgresqlObjectsSql() =>
+    internal static string BuildMinimalPostgresqlObjectsSql() =>
         $$"""
             CREATE SCHEMA IF NOT EXISTS "dms";
             CREATE TABLE IF NOT EXISTS "dms"."DataStoreIdentity"
@@ -2491,7 +2491,7 @@ internal sealed class CdcConnectorTemplatePinnedImageFixture : IAsyncDisposable
             ),
         };
 
-    private static IReadOnlyList<CdcSourceTableInventory> BuildRequiredSourceTableInventory(
+    internal static IReadOnlyList<CdcSourceTableInventory> BuildRequiredSourceTableInventory(
         CdcProvider provider
     ) =>
         provider == CdcProvider.SqlServer

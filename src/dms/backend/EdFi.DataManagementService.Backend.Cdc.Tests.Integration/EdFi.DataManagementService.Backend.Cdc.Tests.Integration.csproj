@@ -24,4 +24,9 @@
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.Cdc\EdFi.DataManagementService.Backend.Cdc.csproj" />
     </ItemGroup>
+    <ItemGroup>
+        <!-- The CDC control plane's broker-backed fixture reuses this project's Docker CLI, mapped-port,
+             and output-redaction helpers rather than standing up a second copy of them. -->
+        <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Cdc.Control.Tests.Integration" />
+    </ItemGroup>
 </Project>

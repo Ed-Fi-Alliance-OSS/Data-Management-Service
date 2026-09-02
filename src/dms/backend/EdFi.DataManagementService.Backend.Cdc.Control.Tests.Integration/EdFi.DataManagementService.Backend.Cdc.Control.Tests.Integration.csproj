@@ -8,9 +8,13 @@
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     </PropertyGroup>
     <ItemGroup>
+        <PackageReference Include="Confluent.Kafka" />
         <PackageReference Include="FluentAssertions" />
         <PackageReference Include="Microsoft.Data.SqlClient" />
         <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+        <PackageReference Include="Microsoft.Extensions.Http" />
+        <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+        <PackageReference Include="Microsoft.Extensions.Options" />
         <PackageReference Include="Microsoft.NET.Test.Sdk" />
         <PackageReference Include="Npgsql" />
         <PackageReference Include="coverlet.collector">
@@ -23,5 +27,9 @@
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.Cdc.Control\EdFi.DataManagementService.Backend.Cdc.Control.csproj" />
+        <!-- Reused for its Docker CLI, mapped-port, and output-redaction helpers, and for the minimal
+             PostgreSQL source objects the pinned-image lane already defines. Nothing in this project
+             runs that project's tests: the test host only discovers the assembly it is given. -->
+        <ProjectReference Include="..\EdFi.DataManagementService.Backend.Cdc.Tests.Integration\EdFi.DataManagementService.Backend.Cdc.Tests.Integration.csproj" />
     </ItemGroup>
 </Project>
