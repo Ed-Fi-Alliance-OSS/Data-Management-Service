@@ -9,11 +9,11 @@ are regenerated only by rerunning the capture, never edited.
 | Field | Value |
 | --- | --- |
 | Subject-under-test commit | `5656477957eb2f18e827b7969e5079b424596ae0` — the parent of the DMS-1385 shared page-selection compiler change; the measured DMS behavior predates DMS-1385/DMS-1386 |
-| Runner commit | `0d3241bf9` on branch `DMS-1391` — the harness sources overlaid onto the subject worktree; the capture wrapper refuses to run from dirty harness/wrapper sources, so this commit is exactly the code that ran. The wrapper also rewrites the connection-string endpoint to the digest-validated container's published port binding before measuring, so each manifest's `connectionStringShape` endpoint is the pinned container's |
-| Runs | `postgresql-primary-500k-20260821220119`, `mssql-primary-500k-20260821221234` (captured 2026-08-21 UTC) |
+| Runner commit | `0d3241bf9` on branch `DMS-1391` — the harness sources overlaid onto the subject worktree; the capture wrapper refuses to run from dirty harness/wrapper sources, so this commit is exactly the code that ran. The wrapper also rewrites the connection-string endpoint to the digest-validated container's published port binding before measuring, so each manifest's `connectionStringShape` endpoint is the pinned container's. The SQL Server capture ran against a container started from the pinned CU7 digest (`-MssqlContainerName`), not the workstation's default `2025-latest` container, which had moved to CU8 |
+| Runs | `postgresql-primary-500k-20260902150522`, `mssql-primary-500k-20260902152100` (captured 2026-09-02 UTC). These replace the 2026-08-21 capture (`postgresql-primary-500k-20260821220119`, `mssql-primary-500k-20260821221234`, machine fingerprint `92b6869f0fdb8eeb`, 5 + 30 iterations), which was taken on a different physical machine (AMD) from the one that ran the DMS-1392 final gate; the gate's latency checks are same-machine ratios, so the baseline was regenerated on the gate machine with the frozen DMS-1391 wrapper before the final gate ran |
 | Fixture | `primary-500k`: 500,000 DS 5.2 students with deterministic sparse `DocumentId`s (gaps ≥ 10% of the id space), each carrying one row in all four child collection tables (identification documents, other names, personal identification documents, visas) and descriptor-backed values from a fixed five-descriptor catalog, loader-verified — see the harness `PerfFixtureDefinition`. The optional person reference stays null by design (a faithful nonzero shape would double `dms.Document` with one Person per student; a shared person would be unfaithful fan-in), so the batch's person-reference-resolution statement is the one intentionally zero-row statement |
-| Scenarios | Offsets 0 / page-size / 450,000 at page sizes 25 and 500; 5 warmups + 30 measured warm-cache iterations per cell |
-| Environment | Machine fingerprint `92b6869f0fdb8eeb` — a pseudonym of the machine name, meaningful only together with the OS/CPU/core/memory/.NET facts recorded beside it (developer workstation, Windows 11, local docker volumes — not tmpfs); PostgreSQL 16.8 pinned by digest; SQL Server 2025 (RTM-CU7) 17.0.4065.4 pinned by resolved digest; full identity in each `run-manifest.json` |
+| Scenarios | Offsets 0 / page-size / 450,000 at page sizes 25 and 500; 10 warmups + 60 measured warm-cache iterations per cell (the wrapper's defaults since DMS-1392; the harness floors stay at 5 + 30) |
+| Environment | Machine fingerprint `60f293b3b1997ab9` — a pseudonym of the machine name, meaningful only together with the OS/CPU/core/memory/.NET facts recorded beside it (developer workstation: Windows 11 build 26200, Intel64 Family 6 Model 141, 16 logical cores, 34.07 GB, .NET 10.0.11, Docker Desktop local volumes — not tmpfs); PostgreSQL 16.8 pinned by digest `951d0626…`; SQL Server 2025 (RTM-CU7) 17.0.4065.4 pinned by resolved digest `86cc6144…`; full identity in each `run-manifest.json` |
 | Worktree state | Clean at the subject commit apart from the harness overlay directory, as recorded in each manifest's `worktreeDirtyPaths` |
 
 ## Comparison constraints for DMS-1392
@@ -72,8 +72,16 @@ parameter values). Artifact schema `1.3.0`, validated on write and on reload by 
 
 ```powershell
 ./eng/performance/invoke-traditional-baseline.ps1 -Provider postgresql,mssql `
-    -ResultsDirectory <staging> -ReuseWorktree
+    -ResultsDirectory <staging> -ReuseWorktree -MssqlContainerName <pinned-CU7-container>
 ```
+
+Run the wrapper from a checkout of the DMS-1391 harness commit (`0d3241bf9`): the DMS-1392
+branch's copy of the wrapper overlays the DMS-1392 harness, whose final-gate fixtures need
+test-project internals that do not exist at the subject commit, so the overlay build fails
+there. Capture on a quiet host — close IDEs and browsers, keep host available memory above
+roughly 8 GB and the Docker VM's `MemAvailable` above 10 GB, and run a single SQL Server
+container — because host paging shows up as multi-minute latency waves that the ratio gates
+read as regressions.
 
 See `src/dms/tests/EdFi.DataManagementService.Performance.Harness/README.md` for
 prerequisites, environment variables, and the guardrails the capture enforces.

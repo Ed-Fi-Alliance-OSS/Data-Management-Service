@@ -1,0 +1,8 @@
+{
+  "source": "hydration-keyset",
+  "parameters": {
+    "cursorMax": 9223372036854775807,
+    "cursorMin": 555002,
+    "pageSize": 500
+  }
+}

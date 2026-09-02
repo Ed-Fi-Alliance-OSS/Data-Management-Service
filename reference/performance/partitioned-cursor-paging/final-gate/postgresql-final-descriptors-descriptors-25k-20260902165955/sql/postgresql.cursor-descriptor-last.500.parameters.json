@@ -1,0 +1,12 @@
+{
+  "source": "relational-command",
+  "parameters": {
+    "cursorMax": 9223372036854775807,
+    "cursorMin": 24001,
+    "namespacePrefixes": [
+      "uri://perf-accessible.ed-fi.org%"
+    ],
+    "pageSize": 500,
+    "resourceKeyId": 3
+  }
+}

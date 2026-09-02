@@ -1,0 +1,9 @@
+{
+  "source": "hydration-keyset",
+  "parameters": {
+    "birthDate": "2010-06-15",
+    "cursorMax": 9223372036854775807,
+    "cursorMin": 12,
+    "pageSize": 500
+  }
+}

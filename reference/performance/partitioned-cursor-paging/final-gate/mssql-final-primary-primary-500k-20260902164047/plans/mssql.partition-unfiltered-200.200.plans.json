@@ -1,0 +1,7 @@
+{
+  "replay": "full hydration batch under SET STATISTICS XML, IO, TIME ON; one actual XML plan per planned statement, in arrival order",
+  "planFiles": [
+    "plans/mssql.partition-unfiltered-200.200.plan01.sqlplan"
+  ],
+  "statisticsFile": "plans/mssql.partition-unfiltered-200.200.stats.txt"
+}

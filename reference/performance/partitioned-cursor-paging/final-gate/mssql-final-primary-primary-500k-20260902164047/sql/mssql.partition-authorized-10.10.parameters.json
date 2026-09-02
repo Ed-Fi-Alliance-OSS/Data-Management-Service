@@ -1,0 +1,8 @@
+{
+  "source": "relational-command",
+  "parameters": {
+    "ClaimEducationOrganizationIds_0": 8990001,
+    "minimumPartitionSize": 2500,
+    "number": 10
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "replay": "full hydration batch under SET STATISTICS XML, IO, TIME ON; one actual XML plan per planned statement, in arrival order",
+  "planFiles": [
+    "plans/mssql.cursor-unfiltered-middle.25.plan01.sqlplan",
+    "plans/mssql.cursor-unfiltered-middle.25.plan02.sqlplan",
+    "plans/mssql.cursor-unfiltered-middle.25.plan03.sqlplan",
+    "plans/mssql.cursor-unfiltered-middle.25.plan04.sqlplan",
+    "plans/mssql.cursor-unfiltered-middle.25.plan05.sqlplan",
+    "plans/mssql.cursor-unfiltered-middle.25.plan06.sqlplan",
+    "plans/mssql.cursor-unfiltered-middle.25.plan07.sqlplan",
+    "plans/mssql.cursor-unfiltered-middle.25.plan08.sqlplan",
+    "plans/mssql.cursor-unfiltered-middle.25.plan09.sqlplan"
+  ],
+  "statisticsFile": "plans/mssql.cursor-unfiltered-middle.25.stats.txt"
+}

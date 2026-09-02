@@ -1,0 +1,11 @@
+{
+  "source": "relational-command",
+  "parameters": {
+    "minimumPartitionSize": 2500,
+    "namespacePrefixes": [
+      "uri://perf-accessible.ed-fi.org%"
+    ],
+    "number": 10,
+    "resourceKeyId": 3
+  }
+}
