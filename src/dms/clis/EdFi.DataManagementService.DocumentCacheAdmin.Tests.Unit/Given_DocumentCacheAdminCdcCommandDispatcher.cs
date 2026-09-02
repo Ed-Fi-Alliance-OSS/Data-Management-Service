@@ -212,6 +212,21 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
     }
 
     [Test]
+    public async Task It_carries_the_operator_s_connector_already_absent_assertion_to_the_controller()
+    {
+        A.CallTo(() => _controller.RetireAsync(A<CdcTargetOperationRequest>._, A<CancellationToken>._))
+            .Returns(CdcContractReadResult<CdcCleanupProof>.Success(CleanupProof()));
+
+        await ExecuteAsync(
+            Request(DocumentCacheAdminCommandSurface.CdcRetireVerbName, connectorAlreadyAbsent: true)
+        );
+
+        CapturedRequest<CdcTargetOperationRequest>(nameof(ICdcSetupController.RetireAsync))
+            .ConnectorAlreadyAbsent.Should()
+            .BeTrue();
+    }
+
+    [Test]
     public async Task It_reports_a_partial_retirement_as_incomplete_and_retryable()
     {
         A.CallTo(() => _controller.RetireAsync(A<CdcTargetOperationRequest>._, A<CancellationToken>._))
@@ -370,7 +385,8 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
         string? databaseCreationMode = null,
         string? writeAdmission = null,
         long? previousGeneration = null,
-        string? bindingJson = null
+        string? bindingJson = null,
+        bool connectorAlreadyAbsent = false
     ) =>
         new(
             verbName,
@@ -378,7 +394,8 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
             databaseCreationMode,
             writeAdmission,
             previousGeneration,
-            bindingJson
+            bindingJson,
+            connectorAlreadyAbsent
         );
 
     private static CdcControlOptions ControlOptions() =>
@@ -491,6 +508,16 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
             3,
             "murmur2",
             CdcJsonContract.CurrentContractVersion
+        );
+
+    private static CdcCleanupProof CleanupProof() =>
+        new(
+            CdcJsonContract.CurrentContractVersion,
+            "operation-1",
+            DateTimeOffset.UnixEpoch,
+            Binding().ToCompleteBindingIdentity(),
+            CdcCleanupMode.RetireBindingGeneration,
+            []
         );
 
     private static CdcAdoptionProof AdoptionProof() =>

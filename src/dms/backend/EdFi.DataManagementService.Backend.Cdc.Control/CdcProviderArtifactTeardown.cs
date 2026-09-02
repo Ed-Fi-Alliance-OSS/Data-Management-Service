@@ -158,7 +158,7 @@ internal sealed class CdcProviderArtifactTeardown(
             CdcGovernedArtifactKind.SqlServerCdcGatingRole,
             gatingRoleName,
             RenderDatabaseRoleExistenceCommandText(gatingRoleName),
-            $"DROP ROLE {Quote(SqlDialect.Mssql, gatingRoleName)};",
+            RenderDropDatabaseRoleCommandText(gatingRoleName),
             artifacts,
             cancellationToken
         );
@@ -274,6 +274,48 @@ internal sealed class CdcProviderArtifactTeardown(
         "SELECT name\n"
         + "FROM sys.database_principals\n"
         + $"WHERE name = {Literal(roleName)} AND type = 'R';";
+
+    /// <summary>
+    /// Empties the gating role and then drops it. Setup adds the connector database principal to the
+    /// role, and SQL Server refuses to drop a role that still has members, so the removal belongs to the
+    /// same command rather than to a step a caller could omit.
+    /// </summary>
+    /// <remarks>
+    /// Every member is removed rather than one the teardown would have to be told the name of: the role
+    /// name is generation-scoped, so whatever it holds was granted for this binding, and the teardown
+    /// needs no principal of its own to reach it.
+    /// </remarks>
+    internal static string RenderDropDatabaseRoleCommandText(string roleName) =>
+        $"""
+            DECLARE @gating_role_name sysname = N{Literal(roleName)};
+            DECLARE @gating_role_principal_id int = DATABASE_PRINCIPAL_ID(@gating_role_name);
+            DECLARE @member_name sysname;
+            DECLARE @drop_member nvarchar(max);
+
+            WHILE EXISTS (
+                SELECT 1
+                FROM sys.database_role_members role_member
+                WHERE role_member.role_principal_id = @gating_role_principal_id
+            )
+            BEGIN
+                SELECT TOP (1) @member_name = member_info.name
+                FROM sys.database_role_members role_member
+                INNER JOIN sys.database_principals member_info
+                    ON member_info.principal_id = role_member.member_principal_id
+                WHERE role_member.role_principal_id = @gating_role_principal_id
+                ORDER BY member_info.name;
+
+                SET @drop_member =
+                    N'ALTER ROLE '
+                    + QUOTENAME(@gating_role_name)
+                    + N' DROP MEMBER '
+                    + QUOTENAME(@member_name)
+                    + N';';
+                EXEC sys.sp_executesql @drop_member;
+            END;
+
+            DROP ROLE {Quote(SqlDialect.Mssql, roleName)};
+            """;
 
     internal static string RenderDisableCaptureInstanceCommandText(
         DbTableName sourceTable,

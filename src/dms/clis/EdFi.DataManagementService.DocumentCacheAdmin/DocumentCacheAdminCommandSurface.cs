@@ -66,6 +66,7 @@ internal static class DocumentCacheAdminCommandSurface
     public const string DatabaseCreationModeOptionName = "--database-creation-mode";
     public const string WriteAdmissionOptionName = "--write-admission";
     public const string BindingJsonOptionName = "--binding-json";
+    public const string ConnectorAlreadyAbsentOptionName = "--connector-already-absent";
 
     public const string PostgresqlDatastoreOptionValue = "postgresql";
     public const string SqlServerDatastoreOptionValue = "sqlserver";
@@ -578,6 +579,18 @@ internal static class DocumentCacheAdminCommandSurface
                     PreviousGenerationOptionName,
                     "Positive generation being replaced; it is named explicitly and never inferred"
                 )
+            );
+        }
+
+        if (string.Equals(verbName, CdcRetireVerbName, StringComparison.Ordinal))
+        {
+            command.Options.Add(
+                new Option<bool>(ConnectorAlreadyAbsentOptionName)
+                {
+                    Description =
+                        "Assert that the connector is already gone; retirement otherwise refuses, because "
+                        + "a missing connector leaves its committed source offsets unobservable",
+                }
             );
         }
 

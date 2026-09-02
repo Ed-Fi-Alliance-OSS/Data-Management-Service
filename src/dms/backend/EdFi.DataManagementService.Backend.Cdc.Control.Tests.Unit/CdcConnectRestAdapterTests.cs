@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.Json;
 using FakeItEasy;
 using FluentAssertions;
+using FluentAssertions.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
@@ -342,8 +343,8 @@ public class Given_CdcConnectRestAdapter
     [Test]
     public async Task It_fences_the_connector_with_a_stop_rather_than_a_config_delete()
     {
-        (ICdcConnectClient client, StubHttpMessageHandler handler) = Adapter(_ =>
-            Status(HttpStatusCode.NoContent)
+        (ICdcConnectClient client, StubHttpMessageHandler handler) = Adapter(request =>
+            request.Method == HttpMethod.Put ? Status(HttpStatusCode.NoContent) : ConnectorState("STOPPED")
         );
 
         CdcConnectResult result = await client.StopConnectorAsync(ConnectorName, CancellationToken.None);
@@ -352,6 +353,82 @@ public class Given_CdcConnectRestAdapter
         handler.Requests[0].Method.Should().Be(HttpMethod.Put);
         handler.Requests[0].Uri.AbsolutePath.Should().Be($"/connectors/{ConnectorName}/stop");
         handler.Requests.Should().NotContain(request => request.Method == HttpMethod.Delete);
+    }
+
+    /// <summary>
+    /// The worker applies a stop asynchronously, so the fence is not established until it reports the
+    /// connector stopped. An offsets deletion is accepted only in that state.
+    /// </summary>
+    [Test]
+    public async Task It_reports_a_stop_as_succeeded_only_once_the_connector_is_observably_stopped()
+    {
+        int reads = 0;
+        (ICdcConnectClient client, StubHttpMessageHandler handler) = Adapter(
+            request =>
+            {
+                if (request.Method == HttpMethod.Put)
+                {
+                    return Status(HttpStatusCode.NoContent);
+                }
+
+                return ++reads < 3 ? ConnectorState("RUNNING") : ConnectorState("STOPPED");
+            },
+            pollInterval: TimeSpan.FromMilliseconds(1)
+        );
+
+        CdcConnectResult result = await client.StopConnectorAsync(ConnectorName, CancellationToken.None);
+
+        using AssertionScope scope = new();
+        result.Succeeded.Should().BeTrue();
+        reads.Should().Be(3, "the state is read until the worker reports the stop applied");
+        handler
+            .Requests.Should()
+            .Contain(request =>
+                request.Method == HttpMethod.Get
+                && request.Uri.AbsolutePath == $"/connectors/{ConnectorName}/status"
+            );
+    }
+
+    [Test]
+    public async Task It_reports_a_connector_that_never_stops_as_unavailable_and_retryable()
+    {
+        (ICdcConnectClient client, _) = Adapter(
+            request =>
+                request.Method == HttpMethod.Put
+                    ? Status(HttpStatusCode.NoContent)
+                    : ConnectorState("RUNNING"),
+            requestTimeout: TimeSpan.FromMilliseconds(10),
+            pollInterval: TimeSpan.FromMilliseconds(1)
+        );
+
+        CdcConnectResult result = await client.StopConnectorAsync(ConnectorName, CancellationToken.None);
+
+        using AssertionScope scope = new();
+        result.Succeeded.Should().BeFalse();
+        result.Outcome.Should().Be(CdcConnectOutcome.Unavailable);
+        result.Failure!.Retryable.Should().BeTrue();
+        result.Failure.Summary.Should().Contain("STOPPED");
+    }
+
+    /// <summary>
+    /// A state read the worker will not answer ends the wait on that read's own outcome: a stop is never
+    /// reported succeeded on evidence the adapter did not get.
+    /// </summary>
+    [Test]
+    public async Task It_reports_a_stop_whose_state_cannot_be_read_as_the_read_s_own_failure()
+    {
+        (ICdcConnectClient client, _) = Adapter(
+            request =>
+                request.Method == HttpMethod.Put
+                    ? Status(HttpStatusCode.NoContent)
+                    : Status(HttpStatusCode.InternalServerError),
+            pollInterval: TimeSpan.FromMilliseconds(1)
+        );
+
+        CdcConnectResult result = await client.StopConnectorAsync(ConnectorName, CancellationToken.None);
+
+        result.Succeeded.Should().BeFalse();
+        result.Outcome.Should().Be(CdcConnectOutcome.Unavailable);
     }
 
     [Test]
@@ -570,7 +647,8 @@ public class Given_CdcConnectRestAdapter
         Func<RecordedRequest, HttpResponseMessage> respond,
         bool neverAnswers = false,
         TimeSpan? requestTimeout = null,
-        string connectBaseUri = "http://localhost:8083"
+        string connectBaseUri = "http://localhost:8083",
+        TimeSpan? pollInterval = null
     )
     {
         StubHttpMessageHandler handler = new(respond, neverAnswers);
@@ -580,7 +658,7 @@ public class Given_CdcConnectRestAdapter
 
         CdcConnectRestAdapter adapter = new(
             httpClientFactory,
-            Options.Create(ControlOptions(connectBaseUri, requestTimeout)),
+            Options.Create(ControlOptions(connectBaseUri, requestTimeout, pollInterval)),
             NullLogger<CdcConnectRestAdapter>.Instance
         );
 
@@ -592,7 +670,15 @@ public class Given_CdcConnectRestAdapter
 
     private static HttpResponseMessage Status(HttpStatusCode statusCode) => new(statusCode);
 
-    private static CdcControlOptions ControlOptions(string connectBaseUri, TimeSpan? requestTimeout) =>
+    /// <summary>A connector-status body reporting one connector state, with no tasks.</summary>
+    private static HttpResponseMessage ConnectorState(string connectorState) =>
+        Json(HttpStatusCode.OK, $$"""{"connector":{"state":"{{connectorState}}"},"tasks":[]}""");
+
+    private static CdcControlOptions ControlOptions(
+        string connectBaseUri,
+        TimeSpan? requestTimeout,
+        TimeSpan? pollInterval = null
+    ) =>
         new()
         {
             DeploymentKey = "dms-local",
@@ -608,7 +694,11 @@ public class Given_CdcConnectRestAdapter
             MaxRecordBytes = 4_194_304,
             DmsBaseUrl = "http://localhost:8080",
             DmsBearerToken = "token",
-            Timeouts = new() { ConnectRequest = requestTimeout ?? TimeSpan.FromSeconds(30) },
+            Timeouts = new()
+            {
+                ConnectRequest = requestTimeout ?? TimeSpan.FromSeconds(30),
+                PollInterval = pollInterval ?? TimeSpan.FromSeconds(2),
+            },
         };
 
     private sealed record RecordedRequest(HttpMethod Method, Uri Uri, string? Body);

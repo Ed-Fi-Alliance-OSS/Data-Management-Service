@@ -58,7 +58,22 @@ public sealed record CdcTargetOperationRequest(
     long DataStoreId,
     string ConnectionString,
     CdcProviderSetupInputs ProviderSetup
-);
+)
+{
+    /// <summary>
+    /// The operator's assertion that the connector the binding record names is already gone, which
+    /// retirement alone cannot establish.
+    /// </summary>
+    /// <remarks>
+    /// Only retirement reads this. A missing connector leaves the committed source offsets unobservable
+    /// — they outlive the configuration, and Kafka Connect answers the same <c>404</c> for a connector
+    /// that never existed as for one deleted out from under the record — so retirement refuses by
+    /// default. This is how an operator accepts that ambiguity for a generation whose connector was
+    /// never registered, or whose earlier retirement removed the connector before it was interrupted.
+    /// The resulting proof records the assertion as the operator's rather than the worker's.
+    /// </remarks>
+    public bool ConnectorAlreadyAbsent { get; init; }
+}
 
 /// <summary>
 /// One operator request to replace the physical source behind an already enabled target. The generation
@@ -1115,23 +1130,67 @@ internal sealed class CdcSetupController(
         }
 
         // (2) Delete the committed offsets while the connector is stopped and still exists.
-        CdcConnectResult offsets = await connectClient
-            .DeleteConnectorOffsetsAsync(inventory.ConnectorName, cancellationToken)
-            .ConfigureAwait(false);
-        if (ToCleanupState(offsets) is not { } committedOffsets)
+        //
+        // A connector the worker does not have is the one case this cannot answer. Deleting a connector's
+        // configuration leaves its committed offsets in the shared store, and the worker answers 404 for
+        // an offsets delete only because the connector is absent — never because the store holds no
+        // offsets under that name. Reading that 404 as an absence would issue a cleanup proof for offsets
+        // that may still be there and then delete the one record that names them, so retirement refuses
+        // unless the operator has taken that judgement on themselves.
+        if (fence.Outcome == CdcConnectOutcome.NotFound)
         {
-            return RetirementFailed(
-                CdcDiagnosticComponent.ConnectOffsetStore,
-                "CDC retirement could not delete the connector's committed source offsets.",
-                "$.governedArtifacts",
-                offsets.Outcome.ToString(),
-                timeProvider.GetUtcNow()
+            if (!request.ConnectorAlreadyAbsent)
+            {
+                return RetirementRefused(
+                    CdcDiagnosticCategory.ConnectOffsetStoreInvalid,
+                    CdcDiagnosticComponent.ConnectOffsetStore,
+                    "CDC retirement cannot observe the committed source offsets of a connector the worker "
+                        + "does not have, and the shared offset store may still hold them under this name.",
+                    "$.governedArtifacts",
+                    inventory.ConnectorName,
+                    timeProvider.GetUtcNow(),
+                    []
+                );
+            }
+
+            // The proof records whose assertion this is, because the worker made none. A reason that
+            // spoke for the worker here would read as evidence in a proof that outlives the record.
+            governedArtifacts.Add(
+                new CdcGovernedArtifact(
+                    CdcGovernedArtifactKind.ConnectSourceOffsets,
+                    inventory.ConnectorName,
+                    CdcCleanupState.NotFound,
+                    "the operator asserted the connector was already absent, so the Kafka Connect worker "
+                        + "could not report on its committed source offsets"
+                )
             );
         }
+        else
+        {
+            // The fence found the connector and stopped it, so the worker owes a definite answer here: a
+            // 404 now would contradict the connector it reported a moment ago.
+            CdcConnectResult offsets = await connectClient
+                .DeleteConnectorOffsetsAsync(inventory.ConnectorName, cancellationToken)
+                .ConfigureAwait(false);
+            if (!offsets.Succeeded)
+            {
+                return RetirementFailed(
+                    CdcDiagnosticComponent.ConnectOffsetStore,
+                    "CDC retirement could not delete the connector's committed source offsets.",
+                    "$.governedArtifacts",
+                    offsets.Outcome.ToString(),
+                    timeProvider.GetUtcNow()
+                );
+            }
 
-        governedArtifacts.Add(
-            Artifact(CdcGovernedArtifactKind.ConnectSourceOffsets, inventory.ConnectorName, committedOffsets)
-        );
+            governedArtifacts.Add(
+                Artifact(
+                    CdcGovernedArtifactKind.ConnectSourceOffsets,
+                    inventory.ConnectorName,
+                    CdcCleanupState.Deleted
+                )
+            );
+        }
 
         // (3) Delete the connector configuration.
         CdcConnectResult connector = await connectClient
@@ -1266,9 +1325,14 @@ internal sealed class CdcSetupController(
     }
 
     /// <summary>
-    /// The cleanup state one Connect removal reports, or null when the worker's answer is not evidence
-    /// that the artifact is gone.
+    /// The cleanup state a connector-configuration removal reports, or null when the worker's answer is
+    /// not evidence that the configuration is gone.
     /// </summary>
+    /// <remarks>
+    /// A 404 is an absence here because the configuration is the thing being asked about: a connector the
+    /// worker cannot find is a connector it does not have. That reading does not carry to the committed
+    /// offsets, which survive their connector's configuration and live in the cluster-scoped store.
+    /// </remarks>
     private static CdcCleanupState? ToCleanupState(CdcConnectResult result) =>
         result switch
         {

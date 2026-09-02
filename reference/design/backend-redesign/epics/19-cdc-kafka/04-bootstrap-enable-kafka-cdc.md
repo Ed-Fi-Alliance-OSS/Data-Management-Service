@@ -139,8 +139,21 @@ controller, its adapters, and the entry points that invoke them.
   still exists, then deletes the connector. Connect accepts an offsets `DELETE` only for an
   existing stopped connector, and a configuration delete leaves committed offsets in the
   shared store, so deleting the connector first would orphan offsets permanently and break
-  later registrations. Stopping the connector is also how source replacement fences the
-  outgoing generation.
+  later registrations. The worker applies a stop asynchronously, so the control plane reads
+  the connector's state back until it reports `STOPPED` rather than treating the accepted
+  request as the fence; a connector that never settles is reported unavailable and
+  retryable. Stopping the connector is also how source replacement fences the outgoing
+  generation.
+- A connector the worker does not have ends the retirement. Because the offsets outlive the
+  configuration and the worker answers the same `404` whether the connector never existed or
+  was deleted out from under the record, a missing connector is never read as proof that the
+  committed offsets are gone. Retirement refuses, issues no proof, and keeps the binding
+  record naming what an operator must reconcile by hand.
+- An operator may take that judgement on themselves with `--connector-already-absent`, which
+  is how a generation whose connector was never registered, or whose earlier retirement
+  removed the connector before being interrupted, is still retirable. The retirement then
+  proceeds and its proof records the offsets as the operator's assertion rather than the
+  worker's observation, because the worker was never in a position to make one.
 - After the connector, retirement removes the binding's public, progress, and SQL Server
   schema-history topics and their ACLs, then the provider capture artifacts, then the
   terminal incident state and the binding record last, and only against a validated cleanup

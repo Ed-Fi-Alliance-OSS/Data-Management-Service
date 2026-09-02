@@ -112,11 +112,16 @@ public class Given_CdcProviderArtifactTeardown
                 );
         }
 
+        // The role is emptied and dropped by one command: SQL Server refuses to drop a role that still
+        // has members, and setup made the connector principal one of them.
         Executed(executor)
             .Should()
             .ContainSingle(sql =>
-                sql.StartsWith("DROP ROLE", StringComparison.Ordinal)
-                && sql.Contains(inventory.SqlServerCdcGatingRoleName!, StringComparison.Ordinal)
+                sql.Contains("DROP MEMBER", StringComparison.Ordinal)
+                && sql.Contains(
+                    $"DROP ROLE [{inventory.SqlServerCdcGatingRoleName}]",
+                    StringComparison.Ordinal
+                )
             );
     }
 

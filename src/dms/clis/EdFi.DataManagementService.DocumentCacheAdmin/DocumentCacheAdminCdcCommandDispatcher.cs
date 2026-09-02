@@ -23,7 +23,8 @@ internal sealed record DocumentCacheAdminCdcCommandRequest(
     string? DatabaseCreationMode,
     string? WriteAdmission,
     long? PreviousGeneration,
-    string? BindingJson
+    string? BindingJson,
+    bool ConnectorAlreadyAbsent
 );
 
 /// <summary>
@@ -134,7 +135,8 @@ internal static class DocumentCacheAdminCdcCommandRequestBuilder
             OptionValue(parseResult, DocumentCacheAdminCommandSurface.DatabaseCreationModeOptionName),
             OptionValue(parseResult, DocumentCacheAdminCommandSurface.WriteAdmissionOptionName),
             parseResult.GetValue<long?>(DocumentCacheAdminCommandSurface.PreviousGenerationOptionName),
-            bindingJson
+            bindingJson,
+            parseResult.GetValue<bool>(DocumentCacheAdminCommandSurface.ConnectorAlreadyAbsentOptionName)
         );
         return true;
     }
@@ -517,7 +519,10 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
             invocation.Request.TargetKey.DataStoreId,
             invocation.ConnectionString,
             invocation.ProviderSetup
-        );
+        )
+        {
+            ConnectorAlreadyAbsent = invocation.Request.ConnectorAlreadyAbsent,
+        };
 
     /// <summary>
     /// The provisioning evidence is exactly the operator's own tokens. A near-miss token is passed

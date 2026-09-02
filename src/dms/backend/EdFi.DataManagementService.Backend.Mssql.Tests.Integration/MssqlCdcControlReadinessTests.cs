@@ -199,10 +199,11 @@ public class Given_A_SqlServer_CdcControlReadinessSequence
     }
 
     [Test]
-    public async Task It_issues_no_proof_and_keeps_the_binding_record_when_provider_teardown_cannot_complete()
+    public async Task It_retires_the_binding_and_removes_the_provider_artifacts_it_created()
     {
         ICdcSetupController controller = BuildController(BindingGeneration);
         await DriveEnablementThroughProviderStepsAsync(controller);
+        CoreCdc.CdcArtifactInventory inventory = Inventory(BindingGeneration);
 
         CoreCdc.CdcContractReadResult<CoreCdc.CdcCleanupProof> retirement = await controller.RetireAsync(
             TargetRequest(),
@@ -210,20 +211,35 @@ public class Given_A_SqlServer_CdcControlReadinessSequence
         );
 
         using AssertionScope _ = new();
-
-        // Retiring this binding does not remove its SQL Server capture artifacts, so the guarantee this
-        // pins is the fail-closed one: an incomplete teardown issues no cleanup proof and leaves the
-        // binding record exactly where it was, which is what keeps the retry idempotent and keeps an
-        // operator able to see what is still provisioned. Removal itself is asserted for PostgreSQL,
-        // whose teardown does complete.
-        retirement.Succeeded.Should().BeFalse();
-        retirement.Contract.Should().BeNull("an incomplete teardown issues no proof");
         retirement
-            .Diagnostics.Should()
-            .Contain(diagnostic => diagnostic.Severity == CoreCdc.CdcDiagnosticSeverity.Error);
-        BindingRecordPaths()
+            .Succeeded.Should()
+            .BeTrue("retirement reported {0}", DescribeDiagnostics(retirement.Diagnostics));
+
+        // Enablement made the connector principal a member of the gating role, and SQL Server refuses to
+        // drop a role that still has members, so the role's absence is what proves the teardown empties
+        // it rather than merely attempting the drop.
+        (await GatingRoleExistsAsync(inventory.SqlServerCdcGatingRoleName!))
             .Should()
-            .ContainSingle("the binding record is deleted last, and only against a validated proof");
+            .BeFalse();
+        (await CaptureInstanceExistsAsync(inventory.SqlServerCaptureInstanceDocumentName!))
+            .Should()
+            .BeFalse();
+        (await CaptureInstanceExistsAsync(inventory.SqlServerCaptureInstanceDocumentCacheName!))
+            .Should()
+            .BeFalse();
+        (await CaptureInstanceExistsAsync(inventory.SqlServerCaptureInstanceCdcHeartbeatName!))
+            .Should()
+            .BeFalse();
+
+        // The connector principal is the deployment's, not the binding's. Retirement releases its
+        // membership and governs nothing else about it.
+        (await ConnectorPrincipalExistsAsync(_connectorPrincipalName))
+            .Should()
+            .BeTrue("the connector principal outlives the generation that granted it access");
+
+        // The record is deleted last and only against a validated cleanup proof, so its absence is the
+        // evidence that every governed artifact ahead of it was removed first.
+        BindingRecordPaths().Should().BeEmpty();
     }
 
     [Test]
@@ -481,6 +497,16 @@ public class Given_A_SqlServer_CdcControlReadinessSequence
     private static CancellationToken ProviderStepsDeadline() =>
         new CancellationTokenSource(TimeSpan.FromSeconds(90)).Token;
 
+    private static string DescribeDiagnostics(IReadOnlyList<CoreCdc.CdcDiagnostic> diagnostics) =>
+        diagnostics.Count == 0
+            ? "no diagnostics"
+            : string.Join(
+                ", ",
+                diagnostics.Select(diagnostic =>
+                    $"{diagnostic.Component}|{diagnostic.Path}|{diagnostic.Code}|{diagnostic.Message}"
+                )
+            );
+
     private string[] BindingRecordPaths() =>
         Directory.Exists(Path.Combine(_bindingStateRoot, "bindings"))
             ? Directory.GetFiles(
@@ -572,6 +598,16 @@ public class Given_A_SqlServer_CdcControlReadinessSequence
                 SELECT COUNT(*) FROM cdc.change_tables WHERE capture_instance = @captureInstance;
             """,
             new SqlParameter("captureInstance", captureInstanceName)
+        ) > 0;
+
+    private async Task<bool> ConnectorPrincipalExistsAsync(string principalName) =>
+        await _database.ExecuteScalarAsync<int>(
+            """
+            SELECT COUNT(*)
+            FROM sys.database_principals
+            WHERE name = @principalName AND type IN ('S', 'U');
+            """,
+            new SqlParameter("principalName", principalName)
         ) > 0;
 
     private async Task<bool> HeartbeatSingletonExistsAsync() =>

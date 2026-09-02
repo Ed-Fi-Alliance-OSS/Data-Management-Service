@@ -130,14 +130,17 @@ public class Given_CdcSetupControllerRetirement
     }
 
     /// <summary>
-    /// A binding whose artifacts were never created is retired only once every one of them is proved
-    /// absent, which is the same proof any other retirement issues.
+    /// The operator can take the ambiguity on themselves for a generation whose connector was never
+    /// registered, or whose earlier retirement removed it before being interrupted. The retirement then
+    /// completes, and the proof records the offsets as the operator's assertion rather than the worker's
+    /// observation.
     /// </summary>
     [Test]
-    public async Task It_retires_an_unused_binding_only_after_proving_no_governed_artifact_exists()
+    public async Task It_retires_an_acknowledged_absent_connector_on_the_operator_s_own_assertion()
     {
         CdcArtifactInventory inventory = CdcSetupControllerHarness.Inventory();
         CdcSetupControllerHarness harness = EnabledBinding();
+        harness.ConnectorAlreadyAbsent = true;
         harness.Stop = NotFound();
         harness.DeleteOffsets = NotFound();
         harness.DeleteConnector = NotFound();
@@ -157,6 +160,14 @@ public class Given_CdcSetupControllerRetirement
         retirement
             .Contract!.GovernedArtifacts.Should()
             .OnlyContain(artifact => artifact.CleanupState == CdcCleanupState.NotFound);
+
+        // The worker was never asked, so the proof must not claim it answered.
+        Artifact(retirement.Contract!, CdcGovernedArtifactKind.ConnectSourceOffsets)
+            .EvidenceSummary.Should()
+            .Contain("the operator asserted");
+        A.CallTo(() => harness.Connect.DeleteConnectorOffsetsAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+
         A.CallTo(() =>
                 harness.Bindings.DeleteStateAfterVerifiedCleanupAsync(
                     A<CdcCleanupProof>._,
@@ -164,6 +175,39 @@ public class Given_CdcSetupControllerRetirement
                 )
             )
             .MustHaveHappenedOnceExactly();
+    }
+
+    /// <summary>
+    /// A connector the worker does not have says nothing about that connector's committed offsets: the
+    /// offsets survive their connector's configuration and live in the cluster-scoped store, and the
+    /// worker's 404 reports only that the connector is absent. Retirement refuses rather than record an
+    /// absence it cannot observe, so the record that names those offsets survives for an operator to
+    /// reconcile.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_a_retirement_whose_connector_the_worker_no_longer_has()
+    {
+        CdcSetupControllerHarness harness = EnabledBinding();
+        harness.Stop = NotFound();
+        harness.DeleteOffsets = NotFound();
+        harness.DeleteConnector = NotFound();
+
+        CdcContractReadResult<CdcCleanupProof> retirement = await harness.RetireAsync();
+
+        using var _ = new AssertionScope();
+        AssertRecordSurvived(harness, retirement);
+        Refusal(retirement).Category.Should().Be(CdcDiagnosticCategory.ConnectOffsetStoreInvalid);
+        Refusal(retirement).Component.Should().Be(CdcDiagnosticComponent.ConnectOffsetStore);
+        Refusal(retirement).Observed.Should().Be(Connector(), "the refusal names the connector at issue");
+
+        // The offsets are where this ends. Nothing past them is attempted, so no later removal can be
+        // mistaken for progress on a retirement that never established its first artifact.
+        A.CallTo(() => harness.Connect.DeleteConnectorOffsetsAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                harness.Kafka.DeleteBindingArtifactsAsync(A<CdcArtifactInventory>._, A<CancellationToken>._)
+            )
+            .MustNotHaveHappened();
     }
 
     /// <summary>

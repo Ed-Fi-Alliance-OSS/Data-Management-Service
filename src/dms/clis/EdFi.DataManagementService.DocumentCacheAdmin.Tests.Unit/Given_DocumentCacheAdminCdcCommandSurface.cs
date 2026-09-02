@@ -134,6 +134,27 @@ public sealed class Given_DocumentCacheAdminCdcCommandSurface
     }
 
     [Test]
+    public void It_exposes_connector_already_absent_only_for_retire()
+    {
+        foreach (Command verb in CdcCommand().Subcommands)
+        {
+            IEnumerable<string> optionNames = verb.Options.Select(option => option.Name);
+
+            if (verb.Name == DocumentCacheAdminCommandSurface.CdcRetireVerbName)
+            {
+                optionNames
+                    .Should()
+                    .Contain(DocumentCacheAdminCommandSurface.ConnectorAlreadyAbsentOptionName, verb.Name);
+                continue;
+            }
+
+            optionNames
+                .Should()
+                .NotContain(DocumentCacheAdminCommandSurface.ConnectorAlreadyAbsentOptionName, verb.Name);
+        }
+    }
+
+    [Test]
     public void It_does_not_expose_secret_bearing_cdc_options()
     {
         foreach (Command verb in CdcCommand().Subcommands)

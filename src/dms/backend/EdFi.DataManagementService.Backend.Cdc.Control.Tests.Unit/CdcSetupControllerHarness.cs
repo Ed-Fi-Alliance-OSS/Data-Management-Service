@@ -461,6 +461,9 @@ internal sealed class CdcSetupControllerHarness
     /// <summary>How the worker answers a deletion of the connector's committed source offsets.</summary>
     public CdcConnectResult DeleteOffsets { get; set; } = new(CdcConnectOutcome.Succeeded, null);
 
+    /// <summary>The operator's assertion that the connector this retirement names is already gone.</summary>
+    public bool ConnectorAlreadyAbsent { get; set; }
+
     /// <summary>How the worker answers a deletion of the connector configuration.</summary>
     public CdcConnectResult DeleteConnector { get; set; } = new(CdcConnectOutcome.Succeeded, null);
 
@@ -506,7 +509,14 @@ internal sealed class CdcSetupControllerHarness
         Controller().RestartAsync(TargetRequest(_provider), CancellationToken.None);
 
     public Task<CdcContractReadResult<CdcCleanupProof>> RetireAsync() =>
-        Controller().RetireAsync(TargetRequest(_provider), CancellationToken.None);
+        Controller()
+            .RetireAsync(
+                TargetRequest(_provider) with
+                {
+                    ConnectorAlreadyAbsent = ConnectorAlreadyAbsent,
+                },
+                CancellationToken.None
+            );
 
     /// <param name="previousGeneration">The generation being replaced, which precedes this target's own.</param>
     public Task<CdcAdmission> ReplaceSourceAsync(

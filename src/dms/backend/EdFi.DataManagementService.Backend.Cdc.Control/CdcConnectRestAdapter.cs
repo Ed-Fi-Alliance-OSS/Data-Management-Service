@@ -174,6 +174,9 @@ internal sealed class CdcConnectRestAdapter(
 
     private const int MaximumErrorCategoryLength = 128;
 
+    /// <summary>The connector state the worker reports once a stop has been applied.</summary>
+    private const string StoppedConnectorState = "STOPPED";
+
     public async Task<CdcConnectResult<CdcConnectConfigValidation>> ValidateConnectorPluginConfigAsync(
         string connectorClass,
         IReadOnlyDictionary<string, string> config,
@@ -270,6 +273,16 @@ internal sealed class CdcConnectRestAdapter(
         return ToResult(response);
     }
 
+    /// <summary>
+    /// Stops the connector and waits until the worker reports it observably stopped.
+    /// </summary>
+    /// <remarks>
+    /// Connect answers the stop before the herder has finished applying it, and it accepts an offsets
+    /// deletion only for a connector already in <c>STOPPED</c>. Waiting is what turns the fence from a
+    /// request into a fact: without it a retirement that races a rebalance is refused for a state it
+    /// asked for and would have reached moments later. A connector that never settles is reported
+    /// unavailable and retryable — never as stopped, because elapsed time is not the worker's answer.
+    /// </remarks>
     public async Task<CdcConnectResult> StopConnectorAsync(
         string connectorName,
         CancellationToken cancellationToken
@@ -285,7 +298,64 @@ internal sealed class CdcConnectRestAdapter(
             cancellationToken
         );
 
-        return ToResult(response);
+        return response.Outcome == CdcConnectOutcome.Succeeded
+            ? await AwaitStoppedAsync(connectorName, cancellationToken)
+            : ToResult(response);
+    }
+
+    /// <summary>
+    /// Reads the connector's state back until the worker reports it stopped, bounded by the Connect
+    /// request timeout. A read the worker does not answer ends the wait on its own outcome rather than
+    /// being retried into the budget.
+    /// </summary>
+    private async Task<CdcConnectResult> AwaitStoppedAsync(
+        string connectorName,
+        CancellationToken cancellationToken
+    )
+    {
+        CdcControlOptions controlOptions = options.Value;
+        TimeSpan budget = controlOptions.Timeouts.ConnectRequest;
+        TimeSpan pollInterval = controlOptions.Timeouts.PollInterval;
+        int remainingReads = Math.Max(1, (int)Math.Ceiling(budget / pollInterval));
+
+        while (true)
+        {
+            CdcConnectResult<CdcConnectorStatus> status = await GetConnectorStatusAsync(
+                connectorName,
+                cancellationToken
+            );
+            if (!status.Succeeded)
+            {
+                return new(status.Outcome, status.Failure);
+            }
+
+            if (
+                string.Equals(
+                    status.Value!.ConnectorState,
+                    StoppedConnectorState,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            )
+            {
+                return new(CdcConnectOutcome.Succeeded, null);
+            }
+
+            if (--remainingReads <= 0)
+            {
+                return new(
+                    CdcConnectOutcome.Unavailable,
+                    new(
+                        null,
+                        "Kafka Connect accepted the connector stop, but the connector did not reach "
+                            + $"{StoppedConnectorState} within "
+                            + $"{budget.TotalSeconds.ToString(CultureInfo.InvariantCulture)} seconds.",
+                        Retryable: true
+                    )
+                );
+            }
+
+            await Task.Delay(pollInterval, cancellationToken);
+        }
     }
 
     public async Task<CdcConnectResult<CdcConnectorOffsets>> GetConnectorOffsetsAsync(
