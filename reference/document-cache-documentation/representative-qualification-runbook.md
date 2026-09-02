@@ -109,7 +109,7 @@ Also search the repository for the required evidence terms before committing:
 
 ```bash
 rg -n "threshold-results|qualification-summary|outage-drain|provider-metrics|durable-baseline-cursor" \
-  reference/document-cache eng/performance tasks.json
+  reference/document-cache eng/performance
 ```
 
 After validation passes and every threshold result is acceptable, copy or move the
@@ -143,5 +143,5 @@ evidence are useful diagnostics, but they are not representative-scale qualifica
 
 After real artifacts exist, update the evidence claims in
 [performance-qualification.md](performance-qualification.md),
-[cdc-inv-evidence.md](cdc-inv-evidence.md), [README.md](README.md), and `tasks.json` so
+[cdc-inv-evidence.md](cdc-inv-evidence.md), and [README.md](README.md) so
 they describe exactly what evidence was committed.
