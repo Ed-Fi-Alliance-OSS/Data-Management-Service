@@ -388,7 +388,7 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
                 DocumentCacheAdminExitCodes.Success,
                 "completed",
                 "cdcAdopt",
-                invocation.GovernedNames
+                AdoptedGovernedNames(adoptedBinding)
             )
             : DocumentCacheAdminCdcCommandResult.Refused(
                 invocation.Request.VerbName,
@@ -477,6 +477,33 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
                 inventory.ConnectorName,
                 LowerCamel(provider.ToString()),
                 request.TargetKey.DataStoreId.ToString(CultureInfo.InvariantCulture),
+                inventory.InstanceKey,
+                inventory.TopicName,
+                inventory.ProgressTopicName,
+                inventory.SchemaHistoryTopicName
+            );
+    }
+
+    /// <summary>
+    /// The governed names an adoption operated on, recovered from the binding record the operator
+    /// supplied rather than rendered from configuration.
+    /// </summary>
+    /// <remarks>
+    /// Adoption is the one verb whose artifact identity is not the configured one: the record carries
+    /// its own generation and instance key, and the controller recovers the names it verifies against
+    /// from that record. Rendering the configured identity here would print names for artifacts the
+    /// adoption never touched while the JSON contract carried the right ones.
+    /// </remarks>
+    private static DocumentCacheAdminCdcGovernedNames? AdoptedGovernedNames(CdcBinding adoptedBinding)
+    {
+        CdcArtifactNameResult names = CdcArtifactNameGenerator.RecoverFromBinding(adoptedBinding);
+
+        return names.Inventory is not { } inventory
+            ? null
+            : new DocumentCacheAdminCdcGovernedNames(
+                inventory.ConnectorName,
+                LowerCamel(adoptedBinding.Provider.ToString()),
+                adoptedBinding.DataStoreId,
                 inventory.InstanceKey,
                 inventory.TopicName,
                 inventory.ProgressTopicName,

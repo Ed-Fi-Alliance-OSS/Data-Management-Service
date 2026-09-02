@@ -563,8 +563,7 @@ internal sealed class CdcSetupController(
         await using DbConnection connection = connectionFactory.Create(provider, request.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        CdcProviderSetupResult created = await providerSetup
-            .SetupAsync(
+        CdcProviderSetupResult created = await SetupProviderWithinBudgetAsync(
                 ProviderSetupRequest(
                     request.ProviderSetup,
                     provider,
@@ -593,8 +592,7 @@ internal sealed class CdcSetupController(
 
         // The shared observation is composed from validate-only evidence, so the artifacts just created
         // are read back through the same inspection every later status check uses.
-        CdcProviderSetupResult validated = await providerSetup
-            .SetupAsync(
+        CdcProviderSetupResult validated = await SetupProviderWithinBudgetAsync(
                 ProviderSetupRequest(
                     request.ProviderSetup,
                     provider,
@@ -1232,14 +1230,21 @@ internal sealed class CdcSetupController(
             );
         }
 
-        // (5) The provider capture artifacts.
+        // (5) The provider capture artifacts, under the same step budget every provider pass runs
+        // under. A teardown that spends it ends the retirement with no proof and the binding record
+        // intact, which is what any other failed step here does.
+        using CancellationTokenSource providerBudget = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken
+        );
+        providerBudget.CancelAfter(controlOptions.Timeouts.ProviderSetup);
+
         try
         {
             await using DbConnection connection = connectionFactory.Create(
                 provider,
                 request.ConnectionString
             );
-            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await connection.OpenAsync(providerBudget.Token).ConfigureAwait(false);
 
             governedArtifacts.AddRange(
                 await providerArtifactTeardown
@@ -1249,7 +1254,7 @@ internal sealed class CdcSetupController(
                             request.ProviderSetup.ExpectedSourceInventory,
                             new DbConnectionCdcProviderDatabaseExecutor(connection)
                         ),
-                        cancellationToken
+                        providerBudget.Token
                     )
                     .ConfigureAwait(false)
             );
@@ -1272,6 +1277,18 @@ internal sealed class CdcSetupController(
                 "CDC retirement could not remove the binding's provider capture artifacts.",
                 "$.governedArtifacts",
                 exception.GetType().Name,
+                timeProvider.GetUtcNow()
+            );
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // The budget, not the caller: reported as the step failure it is rather than propagating a
+            // cancellation the caller never asked for.
+            return RetirementFailed(
+                CdcDiagnosticComponent.ProviderSetup,
+                "CDC retirement could not remove the binding's provider capture artifacts.",
+                "$.governedArtifacts",
+                "timedOut",
                 timeProvider.GetUtcNow()
             );
         }
@@ -1774,8 +1791,7 @@ internal sealed class CdcSetupController(
         await using DbConnection connection = connectionFactory.Create(provider, request.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        CdcProviderSetupResult validated = await providerSetup
-            .SetupAsync(
+        CdcProviderSetupResult validated = await SetupProviderWithinBudgetAsync(
                 ProviderSetupRequest(
                     request.ProviderSetup,
                     provider,
@@ -2249,8 +2265,7 @@ internal sealed class CdcSetupController(
         await using DbConnection connection = connectionFactory.Create(provider, request.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        CdcProviderSetupResult validated = await providerSetup
-            .SetupAsync(
+        CdcProviderSetupResult validated = await SetupProviderWithinBudgetAsync(
                 ProviderSetupRequest(
                     request.ProviderSetup,
                     provider,
@@ -2765,6 +2780,88 @@ internal sealed class CdcSetupController(
             target.PartitionCount,
             target.PartitionerAlgorithm,
             CdcJsonContract.CurrentContractVersion
+        );
+
+    /// <summary>
+    /// Runs one provider-setup pass under <see cref="CdcControlTimeoutOptions.ProviderSetup"/>.
+    /// </summary>
+    /// <remarks>
+    /// A pass that spends its budget returns a failed result rather than propagating a cancellation.
+    /// That is the fail-closed result the step contract promises, and it needs no branch of its own at
+    /// any call site: an exhausted budget is no evidence about the artifacts either way, which is
+    /// exactly what a refused pass already means to each caller — the enablement refuses, the adoption
+    /// refuses, and a status reports the provider evidence as unavailable.
+    ///
+    /// The budget is linked to the caller's token, so a cancellation the caller asked for still
+    /// propagates as one instead of being reported as a provider failure.
+    /// </remarks>
+    private async Task<CdcProviderSetupResult> SetupProviderWithinBudgetAsync(
+        CdcProviderSetupRequest setupRequest,
+        CancellationToken cancellationToken
+    )
+    {
+        TimeSpan budget = options.Value.Timeouts.ProviderSetup;
+        using CancellationTokenSource budgetSource = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken
+        );
+        budgetSource.CancelAfter(budget);
+
+        try
+        {
+            return await providerSetup.SetupAsync(setupRequest, budgetSource.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogDebug(
+                exception,
+                "CDC provider setup did not complete within its {Budget} budget: {Mode}.",
+                budget,
+                setupRequest.Mode
+            );
+
+            return TimedOutProviderSetup(setupRequest, budget);
+        }
+    }
+
+    /// <summary>
+    /// The failed provider-setup result an exhausted step budget reports. It carries no artifact,
+    /// grant, or history observation: the pass was interrupted, so nothing it had read is evidence.
+    /// </summary>
+    private static CdcProviderSetupResult TimedOutProviderSetup(
+        CdcProviderSetupRequest setupRequest,
+        TimeSpan budget
+    ) =>
+        new(
+            setupRequest.Provider,
+            setupRequest.Mode,
+            DdlCdc.CdcProviderSetupOutcome.Failed,
+            setupRequest.BoundPhysicalSourceFingerprint,
+            ObservedSourceFingerprint: null,
+            ArtifactInventory: [],
+            GrantInventory: [],
+            SourceTableInventory: [],
+            ExpectedMessageKeyColumns: [],
+            HeartbeatActionQuery: null,
+            ProviderHistoryObservations: [],
+            ManifestPayload: null,
+            Diagnostics:
+            [
+                new DdlCdc.CdcProviderDiagnostic(
+                    "providerSetupTimedOut",
+                    DdlCdc.CdcProviderDiagnosticCategory.ValidationMismatch,
+                    DdlCdc.CdcProviderDiagnosticSeverity.Error,
+                    DdlCdc.CdcPrincipalKind.SetupPrincipal,
+                    // Deliberately not a source-history artifact kind: an interrupted pass observed no
+                    // provider history, and a history-kinded diagnostic would be read as evidence about
+                    // continuity rather than about the step.
+                    DdlCdc.CdcProviderArtifactKind.None,
+                    setupRequest.SetupPrincipal.SafePrincipalName,
+                    ExpectedValue: budget.ToString("c", CultureInfo.InvariantCulture),
+                    ObservedValue: "timedOut",
+                    ProviderErrorClass: null,
+                    DdlCdc.CdcProviderRetryContinuityClassification.Retryable
+                ),
+            ]
         );
 
     private static CdcProviderSetupRequest ProviderSetupRequest(

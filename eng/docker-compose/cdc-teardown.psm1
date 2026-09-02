@@ -30,14 +30,10 @@
 
 Set-StrictMode -Version Latest
 
-# The local deployment policy the bootstrap CDC phase enables under. Retirement recovers the
-# governed artifact names from the binding record, but the control plane still resolves its
-# endpoints and record-size policy from options, so the two invocations name them identically.
-$script:LocalKafkaBootstrapServers = 'dms-kafka1:9092'
-$script:LocalConnectBaseUrl = 'http://kafka-postgresql-source:8083'
-$script:LocalMaxRecordBytes = '1048576'
-$script:LocalDurabilityProfile = 'local'
-$script:ContainerBindingStatePath = '/state'
+# The local deployment policy this module retires under comes from env-utility's
+# Get-LocalCdcDeploymentPolicy, which the bootstrap CDC enable phase reads too: retirement recovers
+# the governed artifact names from the binding record, but the control plane still resolves its
+# endpoints and record-size policy from options, so the two invocations must name them identically.
 
 # The exact token `cdc retire` requires; a retirement is never inferred from the absence of one.
 $script:BindingRetirementConfirmation = 'cdcBindingRetirement'
@@ -163,6 +159,7 @@ function Get-CdcRetireArgument {
     # The database principal the provider teardown runs as - the server's own administrative login,
     # which is the account the compose file creates, matching the enable phase's setup principal.
     $setupPrincipal = if ($DatabaseEngine -eq "mssql") { "sa" } else { "postgres" }
+    $localPolicy = Get-LocalCdcDeploymentPolicy
 
     if ($null -eq $ConnectorPrincipal) {
         $ConnectorPrincipal = Get-CdcConnectorPrincipalConfiguration -EnvValues @{}
@@ -198,11 +195,11 @@ function Get-CdcRetireArgument {
         "--deployment-key", [string]$BindingRecord.DeploymentKey,
         "--instance-key", [string]$BindingRecord.InstanceKey,
         "--generation", "$($BindingRecord.Generation)",
-        "--kafka-bootstrap-servers", $script:LocalKafkaBootstrapServers,
-        "--connect-base-url", $script:LocalConnectBaseUrl,
-        "--max-record-bytes", $script:LocalMaxRecordBytes,
-        "--durability-profile", $script:LocalDurabilityProfile,
-        "--cdc-binding-state-path", $script:ContainerBindingStatePath,
+        "--kafka-bootstrap-servers", $localPolicy.KafkaBootstrapServers,
+        "--connect-base-url", $localPolicy.ConnectBaseUrl,
+        "--max-record-bytes", $localPolicy.MaxRecordBytes,
+        "--durability-profile", $localPolicy.DurabilityProfile,
+        "--cdc-binding-state-path", $localPolicy.BindingStatePath,
         "--json"
     )
 

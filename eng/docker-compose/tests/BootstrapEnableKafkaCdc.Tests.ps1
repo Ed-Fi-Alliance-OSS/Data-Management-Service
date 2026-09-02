@@ -609,9 +609,13 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
         $script:teardownModuleText = Get-Content -LiteralPath $script:teardownModulePath -Raw
 
         Import-Module $script:teardownModulePath -Force
-        # The connector-principal resolver is the shared authority the Connect worker's declared
-        # secret and the enable phase's emitted reference are both asserted against.
+        # The connector-principal resolver and the local deployment policy are the shared
+        # authorities the Connect worker's declared secret, the enable phase's emitted reference,
+        # and both invocations' endpoint arguments are asserted against.
         Import-Module (Join-Path $script:sourceDockerComposeRoot "env-utility.psm1") -Force
+        # The enable-phase argument builder is compared against the teardown's, so this Describe
+        # imports it rather than depending on an earlier one having done so.
+        Import-Module (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Force
 
         function script:Get-StartScriptFunctionText {
             param(
@@ -706,7 +710,24 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
 
         It "rejects a tag-qualified image" {
             { Assert-CdcConnectImagePinnedByDigest -Image "edfialliance/ed-fi-kafka-connect:pre" } |
-                Should -Throw "*must identify the qualified Ed-Fi Kafka Connect image by immutable digest*"
+                Should -Throw "*must name the Kafka Connect image by immutable digest*"
+        }
+
+        It "claims only the digest form it actually enforces" {
+            # Both published builds are ed-fi-kafka-connect and only the digest separates the
+            # qualified one, so the gate cannot verify identity. A digest for another image passes
+            # here and fails inside connector validation, and the messages say so rather than
+            # reading as an identity check that was made.
+            $guard = Get-StartScriptFunctionText -FunctionName "Assert-CdcConnectImagePinnedByDigest"
+            $throwMessages = [regex]::Matches($guard, 'throw "(?<message>[^"]+)"') |
+                ForEach-Object { $_.Groups['message'].Value }
+
+            @($throwMessages).Count | Should -Be 2
+            foreach ($message in $throwMessages) {
+                $message | Should -BeLike "*immutable digest*"
+                $message | Should -BeLike "*inside connector validation*"
+                $message | Should -Not -BeLike "*identify the qualified*"
+            }
         }
 
         It "accepts a digest-qualified image" {
@@ -837,6 +858,58 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
             ([regex]::Matches($script:startScriptText, 'Invoke-CdcDestructiveTeardown')).Count | Should -Be 1
             $script:startScriptText |
                 Should -Match '(?s)if \(\$v\) \{(?:(?!\r?\n    \}).)*Invoke-CdcDestructiveTeardown'
+        }
+
+        It "takes the local endpoints and record-size policy from one shared resolver" {
+            # Stated in both callers, the two invocations agreed only by hand: a Connect alias or
+            # port changed in the enable path alone would leave `cdc retire` reaching nothing while
+            # the compose down removed its artifacts anyway.
+            $policy = Get-LocalCdcDeploymentPolicy
+
+            $wrapperArguments = Get-WrapperCdcEnableArgument `
+                -ComposeProjectName "dms-local" `
+                -EnvironmentFile ".env" `
+                -TenantKey "" `
+                -DataStoreId 1 `
+                -DatabaseEngine "postgresql" `
+                -DatabaseCreatedByThisRun $true `
+                -DmsBearerToken "token" `
+                -SourceDatabaseName "edfi_datamanagementservice"
+            $retireArguments = Get-CdcRetireArgument `
+                -ComposeProjectName "dms-local" `
+                -EnvironmentFile ".env" `
+                -BindingRecord ([pscustomobject]@{
+                    DataStoreId   = 1
+                    TenantKey     = ""
+                    DeploymentKey = "local"
+                    InstanceKey   = "ds1"
+                    Generation    = 1
+                }) `
+                -DatabaseEngine "postgresql" `
+                -DmsBearerToken "token"
+
+            foreach ($arguments in @($wrapperArguments, $retireArguments)) {
+                $joined = $arguments -join " "
+                $joined | Should -BeLike "*--kafka-bootstrap-servers $($policy.KafkaBootstrapServers)*"
+                $joined | Should -BeLike "*--connect-base-url $($policy.ConnectBaseUrl)*"
+                $joined | Should -BeLike "*--max-record-bytes $($policy.MaxRecordBytes)*"
+                $joined | Should -BeLike "*--durability-profile $($policy.DurabilityProfile)*"
+                $joined | Should -BeLike "*--cdc-binding-state-path $($policy.BindingStatePath)*"
+            }
+
+            # Neither caller restates them.
+            $script:teardownModuleText | Should -Not -Match "dms-kafka1:9092'"
+            $wrapperModuleText = Get-Content `
+                -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Raw
+            $wrapperModuleText | Should -Not -Match '"--kafka-bootstrap-servers", "dms-kafka1:9092"'
+        }
+
+        It "names the binding state root it retires from when the path was not supplied" {
+            # An omitted -CdcBindingStatePath is permitted on a teardown run, so a stack started
+            # with a custom root would otherwise be retired from the empty default silently.
+            $script:startScriptText |
+                Should -Match '(?s)if \(\[string\]::IsNullOrWhiteSpace\(\$CdcBindingStatePath\)\) \{(?:(?!?
+        \}).)*default binding state store at'
         }
 
         It "hands the retirement the run's resolved state root, engine, and compose project" {

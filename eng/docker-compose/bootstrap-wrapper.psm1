@@ -704,6 +704,9 @@ function Get-WrapperCdcEnableArgument {
     # The database principal the provider-setup pass runs as. Both local stacks run their setup as
     # the server's own administrative login, which is the account the compose file creates.
     $setupPrincipal = if ($DatabaseEngine -eq "mssql") { "sa" } else { "postgres" }
+    # The endpoints and record-size policy, from the same resolver the destructive teardown reads:
+    # a retirement that named a Connect port this phase had moved would reach nothing.
+    $localPolicy = Get-LocalCdcDeploymentPolicy
 
     if ($null -eq $ConnectorPrincipal) {
         $ConnectorPrincipal = Get-CdcConnectorPrincipalConfiguration -EnvValues @{}
@@ -745,11 +748,11 @@ function Get-WrapperCdcEnableArgument {
         "--deployment-key", "local",
         "--instance-key", "ds$DataStoreId",
         "--generation", "1",
-        "--kafka-bootstrap-servers", "dms-kafka1:9092",
-        "--connect-base-url", "http://kafka-postgresql-source:8083",
-        "--max-record-bytes", "1048576",
-        "--durability-profile", "local",
-        "--cdc-binding-state-path", "/state",
+        "--kafka-bootstrap-servers", $localPolicy.KafkaBootstrapServers,
+        "--connect-base-url", $localPolicy.ConnectBaseUrl,
+        "--max-record-bytes", $localPolicy.MaxRecordBytes,
+        "--durability-profile", $localPolicy.DurabilityProfile,
+        "--cdc-binding-state-path", $localPolicy.BindingStatePath,
         "--json"
     )
 

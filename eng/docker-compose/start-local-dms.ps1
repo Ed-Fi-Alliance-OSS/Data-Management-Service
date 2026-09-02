@@ -282,12 +282,18 @@ function Assert-CdcConnectImagePinnedByDigest {
     Fails closed unless the Kafka Connect image the CDC workflow runs is named by immutable digest.
 
     .DESCRIPTION
-    The image is operator-supplied through DMS_CDC_CONNECT_IMAGE and must identify the qualified
-    Ed-Fi Kafka Connect image by digest, exactly as the connector-template integration fixture
+    The image is operator-supplied through DMS_CDC_CONNECT_IMAGE and must be the qualified Ed-Fi
+    Kafka Connect build, named by digest, exactly as the connector-template integration fixture
     requires of CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE. A tag is rejected rather than used: a moving
     tag makes a registered connector's runtime unreproducible and leaves the live read-back
     validation comparing against an unknown image. There is deliberately no fallback - kafka.yml's
     :pre default belongs to the non-CDC Kafka/Kafka-UI path, which this opt-in does not relax.
+
+    Digest-qualification is all this gate enforces, and the messages say so rather than claiming an
+    identity check. The repository name cannot separate the qualified build from the unqualified one
+    - both are published as ed-fi-kafka-connect and only the digest distinguishes them - so a digest
+    naming an image without the Ed-Fi partitioner passes here and fails later inside connector
+    validation, which is where the plugin is actually observed.
     #>
     param(
         [AllowEmptyString()]
@@ -296,11 +302,11 @@ function Assert-CdcConnectImagePinnedByDigest {
     )
 
     if ([string]::IsNullOrWhiteSpace($Image)) {
-        throw "-EnableKafkaCdc requires DMS_CDC_CONNECT_IMAGE to identify the qualified Ed-Fi Kafka Connect image by immutable digest (for example edfialliance/ed-fi-kafka-connect@sha256:<digest>). It is unset, and the CDC workflow never falls back to a tag."
+        throw "-EnableKafkaCdc requires DMS_CDC_CONNECT_IMAGE to name a Kafka Connect image by immutable digest (for example edfialliance/ed-fi-kafka-connect@sha256:<digest>). It is unset, and the CDC workflow never falls back to a tag. Supply the qualified Ed-Fi build: this check enforces the digest form only, so a digest for any other image fails later, inside connector validation."
     }
 
     if (-not $Image.Contains("@sha256:")) {
-        throw "DMS_CDC_CONNECT_IMAGE must identify the qualified Ed-Fi Kafka Connect image by immutable digest. '$Image' names a tag, which the CDC workflow rejects."
+        throw "DMS_CDC_CONNECT_IMAGE must name the Kafka Connect image by immutable digest. '$Image' names a tag, which the CDC workflow rejects. This check enforces the digest form only; supplying a digest for an image other than the qualified Ed-Fi build fails later, inside connector validation."
     }
 
     return $Image
@@ -562,6 +568,14 @@ if ($d) {
         # instance database it must reach are still running. A normal stop (-d without -v) retains
         # the binding, connector, offsets, topics, ACLs, and provider capture artifacts.
         Import-Module (Join-Path $PSScriptRoot "cdc-teardown.psm1") -Force
+        if ([string]::IsNullOrWhiteSpace($CdcBindingStatePath)) {
+            # The path is optional on a teardown run, so an omitted one is drift rather than an
+            # error: a stack started with a custom root would be retired from the empty default,
+            # which reports nothing to retire and then removes every volume anyway. The root this
+            # run resolved is named here so that mismatch is visible before the down, since the
+            # script cannot know what the start run passed.
+            Write-Output "CDC teardown will retire from the default binding state store at '$cdcBindingStateRoot' (no -CdcBindingStatePath was supplied). A stack started with -CdcBindingStatePath must be torn down with the same path."
+        }
         Invoke-CdcDestructiveTeardown `
             -BindingStateRoot $cdcBindingStateRoot `
             -ComposeProjectName "dms-local" `

@@ -160,8 +160,14 @@ controller, its adapters, and the entry points that invoke them.
   the connector's state back until it reports `STOPPED` rather than treating the accepted
   request as the fence; a connector that never settles is reported unavailable and
   retryable. The wait is bounded by the Connect request timeout as elapsed time rather than
-  as a number of reads, because each state read carries that timeout of its own. Stopping the connector is also how source replacement fences the outgoing
-  generation.
+  as a number of reads, because each state read carries that timeout of its own. Stopping
+  the connector is also how source replacement fences the outgoing generation.
+- Every provider pass runs under the configured provider-setup budget - the create pass, the
+  validate-only pass each verb composes its evidence from, and the retirement's own artifact
+  teardown. A pass that spends its budget is reported as a failed step rather than waited on:
+  the CLI adds no wall clock of its own, so an unbounded provider call would hold a verb open
+  indefinitely. A retirement whose provider teardown times out ends with no proof and its
+  binding record intact, exactly as any other failed step there does.
 - A connector the worker does not have ends the retirement. Because the offsets outlive the
   configuration and the worker answers the same `404` whether the connector never existed or
   was deleted out from under the record, a missing connector is never read as proof that the

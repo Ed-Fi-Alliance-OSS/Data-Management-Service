@@ -326,6 +326,36 @@ public class Given_CdcSetupControllerInitialEnable
         KafkaPolicy(harness).MustNotHaveHappened();
     }
 
+    /// <summary>
+    /// The provider-setup step owns a budget, and spending it is a failed step rather than a wait with
+    /// nothing above it: the CLI adds no wall clock of its own, so a provider pass that never answers
+    /// would otherwise hold the enablement open indefinitely.
+    /// </summary>
+    [Test]
+    public async Task It_stops_when_the_provider_capture_artifacts_outlive_the_provider_setup_budget()
+    {
+        CdcSetupControllerHarness harness = new();
+        harness.Timeouts.ProviderSetup = TimeSpan.FromMilliseconds(50);
+        // A pass that never answers on its own: only the step's budget ends this.
+        Func<CdcProviderSetupRequest, CancellationToken, Task<CdcProviderSetupResult>> neverAnswers = async (
+            _,
+            cancellationToken
+        ) =>
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            throw new InvalidOperationException("The provider-setup budget must end this wait.");
+        };
+        ProviderSetup(harness).ReturnsLazily(neverAnswers);
+
+        CdcAdmission admission = await harness.EnableAsync();
+
+        using var _ = new AssertionScope();
+        NotAdmitted(admission);
+        Diagnostic(admission, "enableProviderSetupFailed").Should().NotBeNull();
+        OffsetStore(harness).MustNotHaveHappened();
+        KafkaPolicy(harness).MustNotHaveHappened();
+    }
+
     [Test]
     public async Task It_provisions_the_shared_offset_store_before_the_binding_topics()
     {

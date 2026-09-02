@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using EdFi.DataManagementService.DocumentCacheAdmin;
 using FakeItEasy;
 using FluentAssertions;
+using FluentAssertions.Execution;
 using Microsoft.Extensions.Options;
 using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
 
@@ -156,6 +157,34 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
         );
         adoptRequest.Binding.ConnectorName.Should().Be(Binding().ConnectorName);
         adoptRequest.Binding.InstanceKey.Should().Be(Binding().InstanceKey);
+    }
+
+    /// <summary>
+    /// Adoption operates on the binding record's own artifact identity, not the configured one, so the
+    /// names it reports are recovered from the record. A rendering of the configured identity would
+    /// name artifacts the adoption never touched while the JSON contract carried the right ones.
+    /// </summary>
+    [Test]
+    public async Task It_reports_the_governed_names_of_the_adopted_binding_rather_than_the_configured_identity()
+    {
+        CdcBinding adopted = AdoptedBinding("other-instance", generation: 7);
+        A.CallTo(() => _controller.AdoptAsync(A<CdcAdoptRequest>._, A<CancellationToken>._))
+            .Returns(CdcContractReadResult<CdcAdoptionProof>.Success(AdoptionProof(adopted)));
+
+        DocumentCacheAdminCdcCommandResult result = await ExecuteAsync(
+            Request(
+                DocumentCacheAdminCommandSurface.CdcAdoptVerbName,
+                bindingJson: CdcJsonContract.Serialize(adopted)
+            )
+        );
+
+        using var _ = new AssertionScope();
+        result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.Success);
+        result.GovernedNames.Should().NotBeNull();
+        result.GovernedNames!.InstanceKey.Should().Be(adopted.InstanceKey);
+        result.GovernedNames.ConnectorName.Should().Be(adopted.ConnectorName);
+        result.GovernedNames.TopicName.Should().Be(adopted.TopicName);
+        result.GovernedNames.DataStoreId.Should().Be(adopted.DataStoreId);
     }
 
     [Test]
@@ -520,12 +549,42 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
             []
         );
 
-    private static CdcAdoptionProof AdoptionProof() =>
+    /// <summary>
+    /// A binding whose governed names are the record's own rather than the configured identity's. The
+    /// names come from the shared generator so the record is internally consistent and recoverable.
+    /// </summary>
+    private static CdcBinding AdoptedBinding(string instanceKey, long generation)
+    {
+        CdcArtifactInventory inventory = CdcArtifactNameGenerator
+            .Render(
+                new CdcArtifactNameInput(
+                    "deployment",
+                    "edfi.documents.other",
+                    instanceKey,
+                    generation,
+                    CoreCdc.CdcProvider.Postgresql
+                )
+            )
+            .Inventory!;
+
+        return Binding() with
+        {
+            InstanceKey = inventory.InstanceKey,
+            Generation = inventory.Generation,
+            DataStoreId = "1",
+            ConnectorName = inventory.ConnectorName,
+            TopicName = inventory.TopicName,
+        };
+    }
+
+    private static CdcAdoptionProof AdoptionProof() => AdoptionProof(Binding());
+
+    private static CdcAdoptionProof AdoptionProof(CdcBinding binding) =>
         new(
             CdcJsonContract.CurrentContractVersion,
             "operation-1",
             DateTimeOffset.UnixEpoch,
-            Binding(),
+            binding,
             [
                 .. Enum.GetValues<CdcAdoptionVerificationKind>()
                     .Select(kind => new CdcAdoptionVerificationResult(

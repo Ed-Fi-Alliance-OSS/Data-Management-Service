@@ -284,6 +284,13 @@ internal sealed class CdcProviderArtifactTeardown(
     /// Every member is removed rather than one the teardown would have to be told the name of: the role
     /// name is generation-scoped, so whatever it holds was granted for this binding, and the teardown
     /// needs no principal of its own to reach it.
+    ///
+    /// The loop is bounded by a removal count. Its termination otherwise depends on every
+    /// <c>DROP MEMBER</c> both succeeding and removing the row that selected it, and a member that is
+    /// dropped without the row disappearing would spin inside the provider with no wall clock above it
+    /// to interrupt the wait. Exhausting the bound raises an error, which is the same
+    /// <see cref="System.Data.Common.DbException"/> path the retirement already reports a failed
+    /// provider teardown through.
     /// </remarks>
     internal static string RenderDropDatabaseRoleCommandText(string roleName) =>
         $"""
@@ -291,6 +298,7 @@ internal sealed class CdcProviderArtifactTeardown(
             DECLARE @gating_role_principal_id int = DATABASE_PRINCIPAL_ID(@gating_role_name);
             DECLARE @member_name sysname;
             DECLARE @drop_member nvarchar(max);
+            DECLARE @remaining_removals int = 256;
 
             WHILE EXISTS (
                 SELECT 1
@@ -298,6 +306,13 @@ internal sealed class CdcProviderArtifactTeardown(
                 WHERE role_member.role_principal_id = @gating_role_principal_id
             )
             BEGIN
+                IF @remaining_removals <= 0
+                BEGIN
+                    THROW 50000, N'CDC gating role membership did not empty within the bounded number of removals.', 1;
+                END;
+
+                SET @remaining_removals = @remaining_removals - 1;
+
                 SELECT TOP (1) @member_name = member_info.name
                 FROM sys.database_role_members role_member
                 INNER JOIN sys.database_principals member_info

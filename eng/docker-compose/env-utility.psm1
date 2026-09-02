@@ -648,6 +648,36 @@ function Get-CdcConnectorPrincipalConfiguration {
     }
 }
 
+function Get-LocalCdcDeploymentPolicy {
+    <#
+    .SYNOPSIS
+        The deployment policy every `cdc` verb the local stack runs is invoked under.
+
+    .DESCRIPTION
+        Two callers pass these on the command line - the bootstrap CDC enable phase and the
+        destructive teardown - and three of the five are load-bearing for the second one: the broker
+        and Connect endpoints and the container-internal binding state path are how a retirement
+        reaches the artifacts an enable registered. Stated in both callers they agreed only by hand,
+        so a Connect service alias or port changed in the enable path alone would leave `cdc retire`
+        reporting every binding unavailable while the compose down removed its artifacts anyway.
+
+        MaxRecordBytes and DurabilityProfile are inert for a retirement - they only have to satisfy
+        the control plane's options validation - but they are named here too, so one file holds the
+        local policy rather than one file holding most of it.
+
+        The endpoints are container-internal names: both invocations run as one-shot containers on
+        the dms network, where the broker advertises PLAINTEXT://dms-kafka1:9092 and Connect answers
+        as kafka-postgresql-source, regardless of the host ports the compose files publish.
+    #>
+    return @{
+        KafkaBootstrapServers = 'dms-kafka1:9092'
+        ConnectBaseUrl        = 'http://kafka-postgresql-source:8083'
+        MaxRecordBytes        = '1048576'
+        DurabilityProfile     = 'local'
+        BindingStatePath      = '/state'
+    }
+}
+
 function Resolve-CmsBaseUrl {
     <#
     .SYNOPSIS
