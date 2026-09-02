@@ -716,6 +716,8 @@ public static class DocumentCacheQualificationRunPipeline
                 );
             }
 
+            DocumentProjectionWorkDmlSnapshot queueDmlBefore =
+                await CaptureDocumentProjectionWorkDmlSnapshotAsync();
             Stopwatch stopwatch = Stopwatch.StartNew();
             DocumentCacheQualificationWriteBatchMetrics batch = await WriteStudentBatchAsync(
                 FirstOutageOrdinal(),
@@ -724,6 +726,20 @@ public static class DocumentCacheQualificationRunPipeline
                 phase
             );
             stopwatch.Stop();
+            DocumentProjectionWorkDmlSnapshot queueDmlAfter =
+                await CaptureDocumentProjectionWorkDmlSnapshotAsync();
+            DocumentProjectionWorkDmlSnapshot queueDmlDelta = queueDmlAfter.DeltaFrom(queueDmlBefore, phase);
+            if (queueDmlDelta.Total < batch.SuccessfulMeasuredCount)
+            {
+                throw new PerfObservationException(
+                    $"DocumentCache phase '{phase}' observed {queueDmlDelta.Total} DocumentProjectionWork DML attempts "
+                        + $"for {batch.SuccessfulMeasuredCount} successful outage writes; queue DML evidence is stale "
+                        + "or the enqueue path did not run for every successful write."
+                );
+            }
+
+            decimal queueDmlAmplificationRatio =
+                batch.MeasuredCount == 0 ? 0m : (decimal)queueDmlDelta.Total / batch.MeasuredCount;
             DocumentCacheQualificationPhaseCounts countsAfter = await CaptureCountsAsync();
 
             DocumentCacheQualificationPhaseMetrics metrics = CreatePhaseMetrics(
@@ -736,6 +752,11 @@ public static class DocumentCacheQualificationRunPipeline
                     Metric("distinctTouchedDocuments", batch.MeasuredCount, "documents"),
                     Metric("firstTouchedOrdinal", batch.FirstOrdinal),
                     Metric("lastTouchedOrdinal", batch.LastOrdinal),
+                    Metric("queueDmlInsertCount", queueDmlDelta.Inserted, "attempts"),
+                    Metric("queueDmlUpdateCount", queueDmlDelta.Updated, "attempts"),
+                    Metric("queueDmlDeleteCount", queueDmlDelta.Deleted, "attempts"),
+                    Metric("queueDmlAttemptCount", queueDmlDelta.Total, "attempts"),
+                    Metric("queueDmlAmplificationRatio", queueDmlAmplificationRatio, "ratio"),
                     Metric("writeP95Ms", batch.Latency?.P95Ms, "ms"),
                 ],
                 latency: batch.Latency,
@@ -749,6 +770,7 @@ public static class DocumentCacheQualificationRunPipeline
                     "Created distinct-document outage writes while the background projector target was held idle.",
                     "No manual drain ran during this phase.",
                     $"Touched `{batch.MeasuredCount.ToString(CultureInfo.InvariantCulture)}` distinct documents.",
+                    "Captured DocumentProjectionWork insert/update/delete counter deltas for queue DML amplification.",
                 ]
             );
 
@@ -1948,6 +1970,55 @@ public static class DocumentCacheQualificationRunPipeline
             );
         }
 
+        private async Task<DocumentProjectionWorkDmlSnapshot> CaptureDocumentProjectionWorkDmlSnapshotAsync()
+        {
+            await EnsureConnectionOpenAsync();
+            if (_provider == PerfProvider.Postgresql)
+            {
+                await ExecuteNonQueryAsync("SELECT pg_stat_force_next_flush();");
+            }
+
+            await using DbCommand command = _harness.DbConnection.CreateCommand();
+            command.CommandText =
+                _provider == PerfProvider.Postgresql
+                    ? """
+                        SELECT
+                            COALESCE(n_tup_ins, 0) AS "Inserted",
+                            COALESCE(n_tup_upd, 0) AS "Updated",
+                            COALESCE(n_tup_del, 0) AS "Deleted"
+                        FROM pg_stat_user_tables
+                        WHERE schemaname = 'dms'
+                          AND relname = 'DocumentProjectionWork';
+                        """
+                    : """
+                        SELECT
+                            COALESCE(SUM(leaf_insert_count), 0) AS [Inserted],
+                            COALESCE(SUM(leaf_update_count), 0) AS [Updated],
+                            COALESCE(SUM(leaf_delete_count), 0) AS [Deleted]
+                        FROM sys.dm_db_index_operational_stats(
+                            DB_ID(),
+                            OBJECT_ID(N'dms.DocumentProjectionWork'),
+                            NULL,
+                            NULL
+                        )
+                        WHERE index_id IN (0, 1);
+                        """;
+
+            await using DbDataReader reader = await command.ExecuteReaderAsync();
+            if (!await reader.ReadAsync())
+            {
+                throw new PerfObservationException(
+                    "DocumentProjectionWork DML counter query returned no rows."
+                );
+            }
+
+            return new(
+                RequiredInt64(reader, "Inserted"),
+                RequiredInt64(reader, "Updated"),
+                RequiredInt64(reader, "Deleted")
+            );
+        }
+
         private async Task SetLifecycleAsync(
             DocumentCacheLifecycleState lifecycle,
             bool cacheAheadRecoveryRequired
@@ -2377,6 +2448,30 @@ public static class DocumentCacheQualificationRunPipeline
 
         private static string UtcTimestamp() =>
             DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
+
+        private sealed record DocumentProjectionWorkDmlSnapshot(long Inserted, long Updated, long Deleted)
+        {
+            public long Total => Inserted + Updated + Deleted;
+
+            public DocumentProjectionWorkDmlSnapshot DeltaFrom(
+                DocumentProjectionWorkDmlSnapshot before,
+                string phase
+            )
+            {
+                long insertedDelta = Inserted - before.Inserted;
+                long updatedDelta = Updated - before.Updated;
+                long deletedDelta = Deleted - before.Deleted;
+                if (insertedDelta < 0 || updatedDelta < 0 || deletedDelta < 0)
+                {
+                    throw new PerfObservationException(
+                        $"DocumentCache phase '{phase}' observed a negative DocumentProjectionWork DML counter delta; "
+                            + "database statistics were reset during the measured phase."
+                    );
+                }
+
+                return new(insertedDelta, updatedDelta, deletedDelta);
+            }
+        }
     }
 
     private sealed record DocumentCacheQualificationPhaseDefinition(string ArtifactStem, string Title);

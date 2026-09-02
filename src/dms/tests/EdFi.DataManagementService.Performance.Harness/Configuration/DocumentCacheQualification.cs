@@ -138,7 +138,7 @@ public static class DocumentCacheQualification
             "DocumentProjectionWork insert/update/delete attempts per distinct source document.",
             1.25m,
             "ratio",
-            "Queue DML counters from provider statistics and row-count deltas.",
+            "Queue DML counter deltas captured during outage distinct-document writes.",
             "Investigate repeated queue DML before production qualification."
         ),
         new(
@@ -268,7 +268,7 @@ public static class DocumentCacheQualification
             "DocumentProjectionWork insert/update/delete attempts per distinct source document.",
             1.25m,
             "ratio",
-            "Queue DML counters from provider statistics and row-count deltas.",
+            "Queue DML counter deltas captured during outage distinct-document writes.",
             "Investigate repeated queue DML before production qualification."
         ),
         new(

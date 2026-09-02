@@ -111,7 +111,18 @@ internal sealed class DocumentCacheThresholdGenerationSample : IDisposable
         WriteStatusPhase(providerName, "status-empty-work-latency", p95Ms: 35);
         WritePhase(providerName, "online-rebuild-clear-reseed-drain", 900_000, []);
         RewriteInterruptedRestart(provider, replacementElapsedMs: 1_200_000);
-        WritePhase(providerName, "outage-distinct-document-writes", 80, []);
+        WritePhase(
+            providerName,
+            "outage-distinct-document-writes",
+            80,
+            [
+                Metric("queueDmlInsertCount", 1_000, "attempts"),
+                Metric("queueDmlUpdateCount", 100, "attempts"),
+                Metric("queueDmlDeleteCount", 50, "attempts"),
+                Metric("queueDmlAttemptCount", 1_150, "attempts"),
+                Metric("queueDmlAmplificationRatio", 1.15m, "ratio"),
+            ]
+        );
         WritePhase(providerName, "outage-work-row-growth", 90, [Metric("workRowGrowthRatio", 1.0m, "ratio")]);
         CopyPhaseMetricToEvidence(providerName, "outage-work-row-growth");
         WriteStatusPhase(providerName, "status-large-work-inventory-latency", p95Ms: 210);
@@ -339,9 +350,18 @@ public class Given_DocumentCache_Qualification_Threshold_Result_Generation
         rows.Single(row => row.ThresholdId == "postgresql-shared-read-blocks-per-document")
             .MeasuredValue.Should()
             .Be(8m);
+        rows.Single(row => row.ThresholdId == "postgresql-queue-dml-amplification-ratio")
+            .MeasuredValue.Should()
+            .Be(1.15m);
+        rows.Single(row => row.ThresholdId == "postgresql-queue-dml-amplification-ratio")
+            .EvidencePath.Should()
+            .Be("phase-metrics/postgresql-outage-distinct-document-writes.json");
         rows.Single(row => row.ThresholdId == "mssql-logical-reads-per-document")
             .MeasuredValue.Should()
             .Be(12m);
+        rows.Single(row => row.ThresholdId == "mssql-queue-dml-amplification-ratio")
+            .MeasuredValue.Should()
+            .Be(1.15m);
         rows.Should().OnlyContain(row => row.Passed == true);
     }
 

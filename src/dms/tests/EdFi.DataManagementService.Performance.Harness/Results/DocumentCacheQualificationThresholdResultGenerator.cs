@@ -22,6 +22,7 @@ public static class DocumentCacheQualificationThresholdResultGenerator
     private const string StatusEmptyWorkPhase = "status-empty-work-latency";
     private const string StatusLargeWorkPhase = "status-large-work-inventory-latency";
     private const string StatusSmallWorkPhase = "status-small-work-inventory-latency";
+    private const string OutageDistinctDocumentWritesPhase = "outage-distinct-document-writes";
     private const string OutageWorkRowGrowthPhase = "outage-work-row-growth";
     private const string OutageDrainPhase = "outage-drain";
     private const string SameDocumentContentionPhase = "same-document-enqueue-ack-contention";
@@ -282,13 +283,10 @@ public static class DocumentCacheQualificationThresholdResultGenerator
     private static ThresholdMeasurement QueueDmlAmplification(ProviderThresholdInputs inputs) =>
         PhaseMetric(
             inputs,
-            OutageWorkRowGrowthPhase,
-            "workRowGrowthRatio",
-            "Used outage work-row growth as the deterministic DocumentProjectionWork row-delta evidence."
-        ) with
-        {
-            EvidencePath = OutageWorkRowGrowthPath(inputs.ProviderName),
-        };
+            OutageDistinctDocumentWritesPhase,
+            "queueDmlAmplificationRatio",
+            "Measured DocumentProjectionWork insert/update/delete counter deltas per distinct outage-touched document."
+        );
 
     private static ThresholdMeasurement StatusP95Latency(ProviderThresholdInputs inputs)
     {
@@ -521,9 +519,6 @@ public static class DocumentCacheQualificationThresholdResultGenerator
 
     private static string PhasePath(string providerName, string phase) =>
         $"phase-metrics/{providerName}-{phase}.json";
-
-    private static string OutageWorkRowGrowthPath(string providerName) =>
-        $"outage-drain-evidence/{providerName}-outage-work-row-growth.json";
 
     private sealed record ProviderThresholdInputs(
         string Root,

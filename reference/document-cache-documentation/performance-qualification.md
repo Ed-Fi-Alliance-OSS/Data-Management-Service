@@ -98,7 +98,7 @@ before the thresholds.
 | PostgreSQL | Average database CPU during baseline/rebuild | 70 percent | host or managed database metric |
 | PostgreSQL | Shared read blocks per projected document | 16 blocks/document | `EXPLAIN (ANALYZE, BUFFERS)` samples |
 | PostgreSQL | WAL growth per projected document | 32768 bytes/document | `pg_wal_lsn_diff` before/after |
-| PostgreSQL | Queue DML amplification | 1.25 ratio | queue DML counters and row-count deltas |
+| PostgreSQL | Queue DML amplification | 1.25 ratio | queue DML counter deltas from outage distinct-document writes |
 | PostgreSQL | p95 status/oldest-work latency | 250 ms | repeated `dms-document-cache status` timings |
 | PostgreSQL | p95 canonical write overhead in `Tracking` vs `Disabled` | 1.20 ratio | matched API write samples |
 | PostgreSQL | Outage backlog rows vs distinct touched documents | 1.05 ratio | replay count and work-row count |
@@ -111,7 +111,7 @@ before the thresholds.
 | SQL Server | Average database CPU during baseline/rebuild | 70 percent | host or managed database metric |
 | SQL Server | Logical reads per projected document | 24 pages/document | `SET STATISTICS IO` samples |
 | SQL Server | Transaction log growth per projected document | 49152 bytes/document | `sys.dm_db_log_stats` before/after |
-| SQL Server | Queue DML amplification | 1.25 ratio | queue DML counters and row-count deltas |
+| SQL Server | Queue DML amplification | 1.25 ratio | queue DML counter deltas from outage distinct-document writes |
 | SQL Server | p95 status/oldest-work latency | 250 ms | repeated `dms-document-cache status` timings |
 | SQL Server | p95 canonical write overhead in `Tracking` vs `Disabled` | 1.20 ratio | matched API write samples |
 | SQL Server | Outage backlog rows vs distinct touched documents | 1.05 ratio | replay count and work-row count |
