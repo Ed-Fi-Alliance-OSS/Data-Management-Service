@@ -330,7 +330,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         // After the namespace statement and before the relationship one, matching auth.md: ownership is the
         // last AND filter and the relationship OR group follows every AND filter. A non-fit sends the whole
         // request to the ordered-segments path, as a namespace non-fit already does, rather than degrading
-        // this one check â€” that path executes and validates every check in configured order anyway.
+        // this one check — that path executes and validates every check in configured order anyway.
         if (
             !RelationalCompositeStoredAuthorization.TryAppendOwnership(
                 builder,

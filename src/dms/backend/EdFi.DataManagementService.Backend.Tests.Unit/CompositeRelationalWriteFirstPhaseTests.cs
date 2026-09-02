@@ -1082,30 +1082,64 @@ public class Given_The_Composite_Relational_Write_First_Phase
     /// path, as a namespace non-fit already does. That path executes and validates every check in configured
     /// order, so ownership still runs after the namespace check and before the relationship one.
     /// </summary>
-    [Test]
-    public async Task It_falls_back_to_ordered_segments_when_the_ownership_tokens_do_not_fit()
+    /// <remarks>
+    /// SQL Server-shaped deliberately, and asserted at both token counts against one budget. PostgreSQL
+    /// binds any token count as a single array parameter, so a PostgreSQL fallback could only ever be caused
+    /// by something other than the token list — the capture's own parameters, say — which would make this
+    /// test pass while proving nothing. Here the token count is the only thing that differs between the two
+    /// cases.
+    /// </remarks>
+    [TestCase(2, true)]
+    [TestCase(6, false)]
+    public async Task It_co_batches_ownership_only_while_its_scalar_tokens_fit_the_budget(
+        int ownershipTokenCount,
+        bool expectsCoBatch
+    )
     {
         var target = new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value);
-        var input = CreateInput(RelationalWriteOperationKind.Put) with
+        var input = CreateInput(RelationalWriteOperationKind.Put, dialect: SqlDialect.Mssql) with
         {
-            StoredOwnershipAuthorization = CreateStoredOwnershipAuthorization(ownershipTokenIds: [3, 5, 7]),
+            StoredOwnershipAuthorization = CreateStoredOwnershipAuthorization(
+                dialect: SqlDialect.Mssql,
+                ownershipTokenIds:
+                [
+                    .. Enumerable.Range(1, ownershipTokenCount).Select(static tokenId => (short)tokenId),
+                ]
+            ),
         };
-        var session = new ScriptedWriteSession(
-            CreateCaptureReader(target),
-            // The ownership segment authorizes, then hydration runs.
-            CreateReader(CreateAuthorizationTable()),
-            CreateReader(CreateDocumentMetadataTable(target, 44L), CreateRootTable(target))
-        );
+        var session = expectsCoBatch
+            ? new ScriptedWriteSession(
+                CreateReader(
+                    CreateCaptureTable(target),
+                    CreateAuthorizationTable(),
+                    CreateDocumentMetadataTable(target, 44L),
+                    CreateRootTable(target)
+                )
+            )
+            : new ScriptedWriteSession(
+                CreateCaptureReader(target),
+                // The ownership segment authorizes, then hydration runs.
+                CreateReader(CreateAuthorizationTable()),
+                CreateReader(CreateDocumentMetadataTable(target, 44L), CreateRootTable(target))
+            );
 
         var resolution = await CreateSut(
                 commandBudget: new RelationalCommandBudget(
-                    MaxParametersPerCommand: 2,
+                    MaxParametersPerCommand: 4,
                     MaxRowsPerStatement: 1000
                 )
             )
             .ResolveAsync(input, session);
 
         resolution.ImmediateResult.Should().BeNull();
+
+        if (expectsCoBatch)
+        {
+            session.Commands.Should().ContainSingle();
+            session.Commands[0].CommandText.Should().Contain("CreatedByOwnershipTokenId");
+            return;
+        }
+
         session.Commands.Count.Should().BeGreaterThan(1);
         session.Commands[0].CommandText.Should().NotContain("CreatedByOwnershipTokenId");
         session
@@ -1116,12 +1150,13 @@ public class Given_The_Composite_Relational_Write_First_Phase
 
     private static RelationalOwnershipAuthorization CreateStoredOwnershipAuthorization(
         int rawConfiguredIndex = 1,
-        IReadOnlyList<short>? ownershipTokenIds = null
+        IReadOnlyList<short>? ownershipTokenIds = null,
+        SqlDialect dialect = SqlDialect.Pgsql
     ) =>
         new(
             new OwnershipAuthorizationCheckSpec(rawConfiguredIndex),
             OwnershipTokenParameterizationFactory.Create(
-                SqlDialect.Pgsql,
+                dialect,
                 ownershipTokenIds ?? [11],
                 "ownershipTokenIds"
             )
