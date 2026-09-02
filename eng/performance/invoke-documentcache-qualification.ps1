@@ -311,7 +311,7 @@ $summaryPath = Join-Path -Path $runDirectory -ChildPath 'qualification-summary.m
     '- provider-metrics/mssql-log-ghost-index.md',
     '- provider-metrics/operator-cpu-io.json',
     '',
-    'Record representative-scale measured values against reference/document-cache/performance-qualification.md before release qualification.'
+    'Record representative-scale measured values against reference/document-cache-documentation/performance-qualification.md before release qualification.'
 ) | Set-Content -Path $summaryPath -Encoding UTF8
 
 if ($RunRepresentative) {

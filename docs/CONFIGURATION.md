@@ -69,7 +69,7 @@ For the authoritative behavior, see the
 and
 [configuration and projection target selection](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#configuration-and-projection-target-selection).
 For operational workflows, use the
-[DocumentCache operations runbook](../reference/document-cache/operations-runbook.md).
+[DocumentCache operations runbook](../reference/document-cache-documentation/operations-runbook.md).
 
 | Parameter                               | Description                                                                                                                                                  |
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |

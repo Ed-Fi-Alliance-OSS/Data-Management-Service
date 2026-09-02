@@ -146,4 +146,4 @@ traditional-paging baseline. The threshold catalog lives in
 `eng/performance/invoke-documentcache-qualification.ps1`; and the release-validation
 thresholds, PostgreSQL WAL/vacuum/bloat observations, SQL Server log/ghost/index
 observations, and durable-baseline-cursor failure rule are documented in
-`reference/document-cache/performance-qualification.md`.
+`reference/document-cache-documentation/performance-qualification.md`.

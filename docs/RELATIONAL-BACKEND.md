@@ -129,7 +129,7 @@ cache-backed read behavior is in
 runtime configuration is summarized in
 [`docs/CONFIGURATION.md`](./CONFIGURATION.md#datamanagementdocumentcache);
 operator workflows are in
-[`reference/document-cache/operations-runbook.md`](../reference/document-cache/operations-runbook.md);
+[`reference/document-cache-documentation/operations-runbook.md`](../reference/document-cache-documentation/operations-runbook.md);
 and the `CDC-INV-02` / `CDC-INV-03` traceability rows live under
 [`Contract-to-Evidence Traceability`](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-to-evidence-traceability).
 
