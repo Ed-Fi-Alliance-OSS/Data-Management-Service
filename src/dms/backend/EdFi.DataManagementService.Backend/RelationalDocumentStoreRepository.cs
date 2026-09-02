@@ -4324,10 +4324,6 @@ public sealed class RelationalDocumentStoreRepository(
     ) => [.. checks.Where(check => check.ConfiguredStrategy.RawConfiguredIndex < terminalRawConfiguredIndex)];
 
     /// <summary>
-    /// Validates the views a GET-by-id terminal carries. Empty is a no-op, so every terminal can route
-    /// through this unconditionally.
-    /// </summary>
-    /// <summary>
     /// Completes a GET-by-id preflight terminal: validates the custom views configured ahead of it, then
     /// yields the terminal's result.
     /// </summary>
@@ -4350,6 +4346,10 @@ public sealed class RelationalDocumentStoreRepository(
         return preflightStop.Result;
     }
 
+    /// <summary>
+    /// Validates the views a GET-by-id terminal carries. Empty is a no-op, so every terminal can route
+    /// through this unconditionally.
+    /// </summary>
     private Task ValidateSingleRecordCustomViewsAsync(
         MappingSet mappingSet,
         IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checks

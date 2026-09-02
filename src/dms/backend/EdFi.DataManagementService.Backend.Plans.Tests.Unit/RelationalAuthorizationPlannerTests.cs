@@ -204,8 +204,13 @@ public class Given_RelationalAuthorizationPlanner
         plan.NonNamespaceConfiguredStrategies.Should().Equal(relationshipStrategy);
     }
 
+    /// <summary>
+    /// Both AND strategies plan together for ReadSingle. The ownership check carries its configured index,
+    /// and it is not left among the non-namespace strategies the relationship classifier receives, which are
+    /// what a 501 would be built from.
+    /// </summary>
     [Test]
-    public void It_returns_still_unsupported_when_OwnershipBased_is_configured_alongside_NamespaceBased()
+    public void It_plans_ownership_alongside_namespace_for_read_single()
     {
         var resource = RootNamespaceResource();
 
@@ -220,11 +225,20 @@ public class Given_RelationalAuthorizationPlanner
             TwoPrefixContext()
         );
 
-        outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>();
+        var plan = outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.Plan>().Subject;
+        plan.NamespaceChecks.Should().HaveCount(1);
+        plan.OwnershipCheck.Should().NotBeNull();
+        plan.OwnershipCheck!.RawConfiguredIndex.Should().Be(1);
+        plan.OwnershipCheck.StrategyName.Should().Be(AuthorizationStrategyNameConstants.OwnershipBased);
+        plan.NonNamespaceConfiguredStrategies.Should().BeEmpty();
     }
 
+    /// <summary>
+    /// OwnershipBased alone is a complete plan for ReadSingle. It needs neither a securable element nor a
+    /// root namespace column, because its subject is the same document column for every resource.
+    /// </summary>
     [Test]
-    public void It_returns_still_unsupported_when_OwnershipBased_is_configured_alone()
+    public void It_plans_ownership_configured_alone_for_read_single()
     {
         var resource = ResourceWithoutSecurableElements();
 
@@ -236,7 +250,10 @@ public class Given_RelationalAuthorizationPlanner
             TwoPrefixContext()
         );
 
-        outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>();
+        var plan = outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.Plan>().Subject;
+        plan.NamespaceChecks.Should().BeEmpty();
+        plan.OwnershipCheck.Should().NotBeNull();
+        plan.OwnershipCheck!.RawConfiguredIndex.Should().Be(0);
     }
 
     // OwnershipBased is known-but-not-enabled for GET-many exactly as it is for every other operation:
@@ -364,12 +381,13 @@ public class Given_RelationalAuthorizationPlanner
         outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.SecurityConfigurationError>();
     }
 
-    [TestCase(NamespaceAuthorizationOperation.ReadSingle)]
+    /// <summary>
+    /// Update and Delete keep the known-but-not-enabled 501 until their own executors exist. This is the
+    /// fail-closed half of the ReadSingle flip: enabling one operation must not enable the others.
+    /// </summary>
     [TestCase(NamespaceAuthorizationOperation.Update)]
     [TestCase(NamespaceAuthorizationOperation.Delete)]
-    public void It_returns_still_unsupported_for_non_ReadMany_operations(
-        NamespaceAuthorizationOperation operation
-    )
+    public void It_returns_still_unsupported_for_write_operations(NamespaceAuthorizationOperation operation)
     {
         var outcome = RelationalAuthorizationPlanner.Plan(
             EmptyMappingSet(),
@@ -488,6 +506,11 @@ public class Given_RelationalAuthorizationPlanner
         noUsableRootColumn.CustomViewStrategies.Should().ContainSingle();
     }
 
+    /// <summary>
+    /// A still-unsupported outcome carries the strategies the relationship classifier could not support so
+    /// the 501 can name them. Uses Update, where ownership is still withheld; for ReadSingle it now plans
+    /// instead, which is asserted separately.
+    /// </summary>
     [Test]
     public void It_carries_the_non_namespace_strategies_on_a_still_unsupported_outcome()
     {
@@ -497,7 +520,7 @@ public class Given_RelationalAuthorizationPlanner
         var outcome = RelationalAuthorizationPlanner.Plan(
             EmptyMappingSet(),
             resource,
-            NamespaceAuthorizationOperation.ReadSingle,
+            NamespaceAuthorizationOperation.Update,
             [Strategy(AuthorizationStrategyNameConstants.NamespaceBased, 0), ownership],
             TwoPrefixContext()
         );
@@ -822,15 +845,26 @@ public class Given_RelationalAuthorizationPlanner
     // flip each operation on, because only those commits can observe them.
 
     /// <summary>
-    /// Every operation is withheld at this point in the story. Each enforcement step adds its own operation
-    /// in the same commit that wires that operation's executor, so no commit exists in which a planned
-    /// ownership check has no executor.
+    /// ReadSingle is enforced from this commit on, and only ReadSingle. Each enforcement step adds its own
+    /// operation in the same commit that wires that operation's executor, so no commit exists in which a
+    /// planned ownership check has no executor.
     /// </summary>
-    [TestCase(NamespaceAuthorizationOperation.ReadSingle)]
+    [Test]
+    public void It_enforces_ownership_for_read_single()
+    {
+        RelationalAuthorizationPlanner
+            .EnforcesOwnershipChecks(
+                NamespaceAuthorizationOperation.ReadSingle,
+                ResourceStorageKind.RelationalTables
+            )
+            .Should()
+            .BeTrue();
+    }
+
     [TestCase(NamespaceAuthorizationOperation.Update)]
     [TestCase(NamespaceAuthorizationOperation.Delete)]
     [TestCase(NamespaceAuthorizationOperation.ReadMany)]
-    public void It_withholds_ownership_enforcement_for_every_operation(
+    public void It_withholds_ownership_enforcement_for_every_operation_but_read_single(
         NamespaceAuthorizationOperation operation
     )
     {
@@ -880,7 +914,8 @@ public class Given_RelationalAuthorizationPlanner
     /// An over-cap ownership-token list must not produce the cap terminal while the operation is withheld:
     /// the strategy is not enforced, so there is nothing for the cap to gate. It keeps its 501.
     /// </summary>
-    [TestCase(NamespaceAuthorizationOperation.ReadSingle)]
+    [TestCase(NamespaceAuthorizationOperation.Update)]
+    [TestCase(NamespaceAuthorizationOperation.Delete)]
     [TestCase(NamespaceAuthorizationOperation.ReadMany)]
     public void It_does_not_report_the_token_cap_while_the_gate_withholds_the_operation(
         NamespaceAuthorizationOperation operation
@@ -895,6 +930,58 @@ public class Given_RelationalAuthorizationPlanner
         );
 
         outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>();
+    }
+
+    /// <summary>
+    /// Now that ReadSingle is enforced, the cap terminal is reachable: it reports the configured token count
+    /// so an operator can see what to reduce, and never a token value.
+    /// </summary>
+    [Test]
+    public void It_reports_the_token_cap_for_read_single()
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(),
+            ResourceWithoutSecurableElements(),
+            NamespaceAuthorizationOperation.ReadSingle,
+            [Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 0)],
+            OverCapOwnershipContext()
+        );
+
+        var capExceeded = outcome
+            .Should()
+            .BeOfType<RelationalAuthorizationPlanOutcome.OwnershipTokenCapExceeded>()
+            .Subject;
+        capExceeded.OwnershipTokenCount.Should().Be(OwnershipTokenLimitExceededException.OwnershipTokenLimit);
+        capExceeded.StrategyName.Should().Be(AuthorizationStrategyNameConstants.OwnershipBased);
+    }
+
+    /// <summary>
+    /// The precedence carried since Phase 3 and now observable: a custom view whose basis resource cannot be
+    /// resolved is a configuration failure at a position ahead of OwnershipBased, which executes last among
+    /// the AND strategies. It must win over the cap terminal, or an over-cap token list would mask a
+    /// misconfigured view that a compliant token list would have reported.
+    /// </summary>
+    [Test]
+    public void It_reports_an_unresolved_custom_view_basis_ahead_of_the_read_single_token_cap()
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(),
+            ResourceWithoutSecurableElements(),
+            NamespaceAuthorizationOperation.ReadSingle,
+            [
+                Strategy("MissingBasisWithCustomAuthorization", 0),
+                Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 1),
+            ],
+            OverCapOwnershipContext()
+        );
+
+        outcome
+            .Should()
+            .BeOfType<RelationalAuthorizationPlanOutcome.SecurityConfigurationError>()
+            .Which.RelationshipClassification.SecurityConfigurationFailures.Should()
+            .Contain(failure =>
+                failure.FailureKind == RelationshipAuthorizationFailureKind.UnknownCustomViewBasisResource
+            );
     }
 
     /// <summary>

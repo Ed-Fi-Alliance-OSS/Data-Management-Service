@@ -7,6 +7,7 @@ using System.Data;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
@@ -14,6 +15,7 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Security;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -35,7 +37,8 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 /// leaves the stored token alone rather than merely omitting it from a statement the unit tests inspected.
 /// </para>
 /// <para>
-/// Stamping only — this suite asserts nothing about ownership enforcement, which is not yet wired.
+/// Stamping first, then enforcement: the same seeded row proves both, because what a create stamps is
+/// exactly what a later GET-by-id has to authorize against.
 /// </para>
 /// </remarks>
 [TestFixture]
@@ -149,6 +152,165 @@ public class Given_A_Postgresql_Relational_Write_With_Ownership_Stamping
         await ExecuteUpdateAsync(CreatorToken);
 
         (await ReadStoredOwnershipTokenAsync()).Should().BeNull();
+    }
+
+    // ----- Enforcement -----------------------------------------------------
+    // These execute the compiled ownership SQL against the real engine. Only a live provider can prove the
+    // SELECT CASE parses, the membership predicate binds smallint to smallint, and the AUTH1 abort device
+    // raises an error the dispatcher and mapper decode back into a response. The stamping tests above put a
+    // known token on the row, so each arm is reached by choosing which tokens the reader holds.
+
+    /// <summary>
+    /// The stored token is one of the reader's, so the read is authorized and the document is served.
+    /// </summary>
+    [Test]
+    public async Task It_authorizes_a_get_by_id_whose_stored_token_the_reader_holds()
+    {
+        await ExecuteCreateAsync(CreatorToken);
+
+        var result = await ExecuteOwnershipGetByIdAsync([OtherToken, CreatorToken]);
+
+        result.Should().BeOfType<GetResult.GetSuccess>();
+    }
+
+    /// <summary>
+    /// The stored token is not one of the reader's: auth.md 2.13. The row exists and is readable by its own
+    /// owner, so only the membership predicate can be denying it.
+    /// </summary>
+    [Test]
+    public async Task It_denies_a_get_by_id_whose_stored_token_the_reader_does_not_hold()
+    {
+        await ExecuteCreateAsync(CreatorToken);
+
+        var result = await ExecuteOwnershipGetByIdAsync([OtherToken]);
+
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch);
+    }
+
+    /// <summary>
+    /// A reader holding no tokens at all still runs the check rather than being short-circuited, so the
+    /// constant-false membership predicate has to be valid SQL on this engine. The row carries a token, so
+    /// this is a mismatch rather than the uninitialized case.
+    /// </summary>
+    [Test]
+    public async Task It_denies_a_get_by_id_for_a_reader_holding_no_tokens()
+    {
+        await ExecuteCreateAsync(CreatorToken);
+
+        var result = await ExecuteOwnershipGetByIdAsync([]);
+
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch);
+    }
+
+    /// <summary>
+    /// The stored token is null: auth.md 2.14, a different response type from 2.13 because the document can
+    /// never be reached by any client rather than merely not by this one. Reached by creating through a
+    /// client that has no creator token, which is exactly how such a row arises in practice.
+    /// </summary>
+    [Test]
+    public async Task It_denies_a_get_by_id_whose_stored_token_was_never_assigned()
+    {
+        await ExecuteCreateAsync(creatorOwnershipTokenId: null);
+
+        var result = await ExecuteOwnershipGetByIdAsync([CreatorToken]);
+
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized);
+    }
+
+    /// <summary>
+    /// The configured position travels through the emitted payload and back, so a denial is attributed to
+    /// the position OwnershipBased actually holds rather than to a normalized zero.
+    /// </summary>
+    [Test]
+    public async Task It_reports_the_configured_strategy_index_a_denial_came_from()
+    {
+        await ExecuteCreateAsync(CreatorToken);
+
+        var result = await ExecuteOwnershipGetByIdAsync(
+            [OtherToken],
+            strategyNames:
+            [
+                AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+                AuthorizationStrategyNameConstants.OwnershipBased,
+            ]
+        );
+
+        var failure = result.Should().BeOfType<GetResult.GetFailureOwnershipNotAuthorized>().Subject;
+        failure.OwnershipFailure.ConfiguredStrategyIndex.Should().Be(1);
+        failure.OwnershipFailure.StrategyName.Should().Be(AuthorizationStrategyNameConstants.OwnershipBased);
+    }
+
+    /// <summary>
+    /// The provider-independent defensive limit, reported before any statement is emitted. Proves the cap
+    /// terminal reaches the response on a live engine rather than the over-limit parameter list reaching the
+    /// SQL boundary.
+    /// </summary>
+    [Test]
+    public async Task It_fails_closed_for_a_get_by_id_with_an_over_cap_ownership_token_list()
+    {
+        await ExecuteCreateAsync(CreatorToken);
+
+        var result = await ExecuteOwnershipGetByIdAsync([
+            .. Enumerable
+                .Range(1, OwnershipTokenLimitExceededException.OwnershipTokenLimit)
+                .Select(static tokenId => (short)tokenId),
+        ]);
+
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureSecurityConfiguration>()
+            .Which.Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("2,000");
+    }
+
+    private async Task<GetResult> ExecuteOwnershipGetByIdAsync(
+        IReadOnlyList<short> ownershipTokenIds,
+        IReadOnlyList<string>? strategyNames = null
+    )
+    {
+        using var scope = CreateScopeForDatabase();
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return await repository.GetDocumentById(
+            new IntegrationRelationalGetRequest(
+                DocumentUuid: SchoolDocumentUuid,
+                ResourceInfo: SchoolResourceInfo,
+                MappingSet: _mappingSet,
+                AuthorizationStrategyEvaluators:
+                [
+                    .. (strategyNames ?? [AuthorizationStrategyNameConstants.OwnershipBased]).Select(
+                        static strategyName => new AuthorizationStrategyEvaluator(
+                            strategyName,
+                            [],
+                            FilterOperator.And
+                        )
+                    ),
+                ],
+                TraceId: new TraceId("pg-ownership-enforcement-get")
+            )
+            {
+                AuthorizationContext = new RelationalAuthorizationContext(
+                    [],
+                    [],
+                    creatorOwnershipTokenId: null,
+                    ownershipTokenIds
+                ),
+            }
+        );
     }
 
     private async Task<UpsertResult> ExecuteCreateAsync(

@@ -49,7 +49,12 @@ public class Given_A_Mssql_Relational_Get_By_Id_Authorization_With_A_Synthetic_E
         AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
         AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
     ];
-    private static readonly IReadOnlyList<string> _normalPlusKnownUnsupportedStrategy =
+
+    /// <summary>
+    /// OwnershipBased is enforced for GET-by-id and withheld everywhere else, so this composition plans
+    /// rather than returning the known-but-not-enabled 501 that the write and query routes still return.
+    /// </summary>
+    private static readonly IReadOnlyList<string> _normalPlusOwnershipStrategy =
     [
         AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
         AuthorizationStrategyNameConstants.OwnershipBased,
@@ -538,16 +543,22 @@ public class Given_A_Mssql_Relational_Get_By_Id_Authorization_With_A_Synthetic_E
         _context.AssertNoHydration();
     }
 
+    /// <summary>
+    /// OwnershipBased composed with a supported relationship strategy. It is an AND filter running before the
+    /// relationship OR group, so it decides first: these rows were seeded without an ownership token, which
+    /// is auth.md 2.14 and stops the read before hydration even though the relationship claim would have
+    /// authorized it.
+    /// </summary>
     [Test]
-    public async Task It_returns_501_for_known_but_not_enabled_mixed_strategies()
+    public async Task It_denies_an_unstamped_row_for_ownership_composed_with_a_relationship_strategy()
     {
-        var result = await GetRootChildAsync(
-            _authorizationRootChildSeeds[0],
-            _normalPlusKnownUnsupportedStrategy
-        );
+        var result = await GetRootChildAsync(_authorizationRootChildSeeds[0], _normalPlusOwnershipStrategy);
 
-        var failure = result.Should().BeOfType<GetResult.GetFailureNotImplemented>().Subject;
-        failure.FailureMessage.Should().Contain(AuthorizationStrategyNameConstants.OwnershipBased);
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized);
         _context.AssertNoHydration();
     }
 
@@ -559,7 +570,7 @@ public class Given_A_Mssql_Relational_Get_By_Id_Authorization_With_A_Synthetic_E
             RelationshipAuthorizationCrudTestSupport.ChildOnlyEdOrgResourceName,
             _authorizationChildOnlySeed.DocumentUuid,
             [ClaimEducationOrganizationId],
-            _normalPlusKnownUnsupportedStrategy
+            _normalPlusOwnershipStrategy
         );
 
         var failure = result.Should().BeOfType<GetResult.GetFailureSecurityConfiguration>().Subject;

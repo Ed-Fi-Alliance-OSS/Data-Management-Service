@@ -439,8 +439,9 @@ public static class RelationalAuthorizationPlanner
         && _ownershipEnforcedOperations.Contains(operation);
 
     /// <summary>
-    /// The operations whose callers execute the ownership check. Empty until each enforcement step adds its
-    /// own operation in the same commit that wires that operation's executor.
+    /// The operations whose callers execute the ownership check. Each enforcement step adds its own
+    /// operation in the same commit that wires that operation's executor, so no operation can be planned a
+    /// check nothing executes.
     /// </summary>
     /// <remarks>
     /// A membership set rather than a per-operation switch, so an operation absent from it is withheld by
@@ -452,7 +453,12 @@ public static class RelationalAuthorizationPlanner
     /// <see cref="OwnershipAuthorizationPlanner"/> throws if it is ever asked to plan one.
     /// </para>
     /// </remarks>
-    private static readonly HashSet<NamespaceAuthorizationOperation> _ownershipEnforcedOperations = [];
+    private static readonly HashSet<NamespaceAuthorizationOperation> _ownershipEnforcedOperations =
+    [
+        // ReadSingle only. Update, Delete and ReadMany keep the known-but-not-enabled 501 until their own
+        // executors exist; ReadMany ownership filtering is DMS-1410's, not this ticket's.
+        NamespaceAuthorizationOperation.ReadSingle,
+    ];
 
     /// <summary>
     /// Whether the ownership token-cap terminal may displace the relationship classifier's
