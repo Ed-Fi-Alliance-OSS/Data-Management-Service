@@ -98,6 +98,8 @@ internal sealed class CdcControlBrokerFixture : IAsyncDisposable
     private static readonly TimeSpan ConnectorRunningTimeout = TimeSpan.FromMinutes(3);
     private static readonly TimeSpan HeartbeatProgressTimeout = TimeSpan.FromMinutes(3);
     private static readonly TimeSpan TopicDeletionTimeout = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan AclVisibilityTimeout = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan TopicConfigVisibilityTimeout = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(2);
 
     private readonly CdcConnectorTemplateSmokeSettings _settings;
@@ -281,6 +283,15 @@ internal sealed class CdcControlBrokerFixture : IAsyncDisposable
                 },
             }),
         ]);
+
+        await WaitForAclsAsync(
+            ResourceType.Topic,
+            topicName,
+            principal,
+            patternType,
+            operations,
+            cancellationToken
+        );
     }
 
     public async Task DeleteTopicAclsAsync(
@@ -308,6 +319,8 @@ internal sealed class CdcControlBrokerFixture : IAsyncDisposable
                 },
             },
         ]);
+
+        await WaitForAclsAsync(ResourceType.Topic, topicName, principal, patternType, [], cancellationToken);
     }
 
     public async Task CreateConsumerGroupAclAsync(
@@ -335,11 +348,83 @@ internal sealed class CdcControlBrokerFixture : IAsyncDisposable
                 },
             },
         ]);
+
+        await WaitForAclsAsync(
+            ResourceType.Group,
+            consumerGroup,
+            principal,
+            ResourcePatternType.Literal,
+            [AclOperation.Read],
+            cancellationToken
+        );
+    }
+
+    /// <summary>
+    /// Waits for a principal's grants on one resource pattern to match what was just written. The
+    /// authorizer acknowledges a create or delete before every broker has applied the metadata
+    /// record, so an immediate describe can miss a grant that was accepted - the same
+    /// acknowledged-before-applied window <see cref="WaitForTopicAbsentAsync"/> covers for topic
+    /// deletion. Without this wait a positive case reads as a missing grant, and a fail-closed case
+    /// passes vacuously because the grant it was meant to observe had not landed yet.
+    /// </summary>
+    private async Task WaitForAclsAsync(
+        ResourceType resourceType,
+        string resourceName,
+        string principal,
+        ResourcePatternType patternType,
+        IReadOnlyList<AclOperation> expectedOperations,
+        CancellationToken cancellationToken
+    )
+    {
+        AclBindingFilter filter = new()
+        {
+            PatternFilter = new ResourcePatternFilter
+            {
+                Type = resourceType,
+                Name = resourceName,
+                ResourcePatternType = patternType,
+            },
+            EntryFilter = new AccessControlEntryFilter
+            {
+                Principal = principal,
+                Operation = AclOperation.Any,
+                PermissionType = AclPermissionType.Any,
+            },
+        };
+        DateTimeOffset deadline = DateTimeOffset.UtcNow.Add(AclVisibilityTimeout);
+
+        while (true)
+        {
+            DescribeAclsResult described = await AdminClient.DescribeAclsAsync(filter);
+            HashSet<AclOperation> observed =
+            [
+                .. (described?.AclBindings ?? []).Select(binding => binding.Entry.Operation),
+            ];
+
+            if (observed.SetEquals(expectedOperations))
+            {
+                return;
+            }
+
+            if (DateTimeOffset.UtcNow >= deadline)
+            {
+                throw new TimeoutException(
+                    $"Grants for {principal} on {resourceType} '{resourceName}' did not settle to "
+                        + $"[{string.Join(", ", expectedOperations)}] within {AclVisibilityTimeout}; "
+                        + $"the authorizer reports [{string.Join(", ", observed)}]."
+                );
+            }
+
+            await Task.Delay(PollInterval, cancellationToken);
+        }
     }
 
     /// <summary>
     /// Sets an explicit topic-level configuration override, which is how a deployment supplies the
     /// governed values the Connect worker does not set on the internal topics it creates for itself.
+    /// The write is acknowledged before every broker has applied it, so the override is read back
+    /// until it is the value a describe reports - otherwise the observation under test still sees the
+    /// unset value and reports the nonconformance the override was supplied to clear.
     /// </summary>
     public async Task SetTopicConfigAsync(string topicName, string configName, string value)
     {
@@ -357,6 +442,31 @@ internal sealed class CdcControlBrokerFixture : IAsyncDisposable
                 ],
             }
         );
+
+        DateTimeOffset deadline = DateTimeOffset.UtcNow.Add(TopicConfigVisibilityTimeout);
+
+        while (true)
+        {
+            IReadOnlyDictionary<string, ConfigEntryResult> entries = await ReadTopicConfigAsync(topicName);
+
+            if (
+                entries.TryGetValue(configName, out ConfigEntryResult? entry)
+                && string.Equals(entry.Value, value, StringComparison.Ordinal)
+            )
+            {
+                return;
+            }
+
+            if (DateTimeOffset.UtcNow >= deadline)
+            {
+                throw new TimeoutException(
+                    $"Topic '{topicName}' did not report {configName}={value} within "
+                        + $"{TopicConfigVisibilityTimeout}."
+                );
+            }
+
+            await Task.Delay(PollInterval);
+        }
     }
 
     /// <summary>Reads one topic's explicit configuration straight from the broker.</summary>
