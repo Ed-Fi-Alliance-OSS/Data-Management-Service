@@ -1156,6 +1156,18 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
             $script:retireArguments | Should -Not -Contain "--write-admission"
         }
 
+        It "asserts the connector may already be absent, because the same pass removes the broker" {
+            # Retirement otherwise refuses a connector the worker does not hold: its committed
+            # offsets outlive the configuration and a 404 cannot tell "never registered" from
+            # "deleted out from under the record". Only the destructive teardown builds this list,
+            # and its very next act removes the broker with its volumes, so those offsets are going
+            # either way. Without the assertion, a binding whose connector was never registered -
+            # an enable interrupted between the durable record and the connector registration -
+            # survives the down naming artifacts that no longer exist, with no stack left to retire
+            # it against.
+            $script:retireArguments | Should -Contain "--connector-already-absent"
+        }
+
         It "runs the provider teardown as the engine's own administrative principal" {
             ($script:retireArguments -join " ") |
                 Should -BeLike "*DataManagement__DocumentCache__Cdc__SetupPrincipal=postgres*"

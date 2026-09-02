@@ -1002,9 +1002,15 @@ Teardown is where the distinction matters:
   stops the connector, deletes its committed offsets while it is stopped, deletes the
   connector, then the governed topics and ACLs and the provider capture artifacts, and
   deletes the binding record last. Retirement runs against the still-running stack, so tear
-  down before stopping the containers another way. A binding that could not be retired — for
-  example when DMS is already stopped — is reported and left in place, and can be retired
-  later with `dms-document-cache cdc retire`.
+  down before stopping the containers another way. A connector the worker no longer holds does
+  not block it: this teardown asserts `--connector-already-absent`, because the same pass
+  removes the broker along with the committed offsets that assertion covers.
+
+A binding that still could not be retired — DMS already stopped, so no operator token could be
+obtained — is reported and left in place. Retire it against a running stack with
+`dms-document-cache cdc retire` before reusing the store. If the stack is already gone, the
+record names artifacts that no longer exist and nothing can retire it: delete the binding state
+store (`.cdc-state` by default) so the next `-EnableKafkaCdc` run starts from an empty one.
 
 For E2E, `setup-local-dms.ps1 -EnableKafkaCdc` registers capture against the fresh E2E
 database that setup provisions, before the suite issues any write, and the matching

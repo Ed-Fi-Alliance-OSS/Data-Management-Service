@@ -164,6 +164,39 @@ public class Given_CdcSetupControllerReplaceSource
         AssertRefusedBeforeFencing(harness, admission);
     }
 
+    /// <summary>
+    /// A replacing source that is already tracking is one the replacing generation's enablement cannot
+    /// bind: its guarded activation admits a new empty target, and the pre-binding classifier rejects an
+    /// unbound tracking lifecycle outright. That is the shape an operator who ran the replacement before
+    /// repointing the data store presents — the connection still resolves to the database being replaced
+    /// — so it is refused while the outgoing generation is still publishing.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_a_replacing_source_that_is_already_tracking_without_fencing_the_outgoing_connector()
+    {
+        CdcSetupControllerHarness harness = ReplaceableTarget();
+        harness.Eligibility = CdcSetupControllerHarness.Reading(lifecycleStateToken: "Tracking");
+
+        CdcAdmission admission = await harness.ReplaceSourceAsync();
+
+        AssertRefusedBeforeFencing(harness, admission);
+    }
+
+    /// <summary>
+    /// Same for pre-capture rows the replacing generation would capture over. The classifier reads them
+    /// from the observation the replacement has already taken, so this too is settled before the fence.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_a_replacing_source_holding_pre_capture_rows_without_fencing_the_outgoing_connector()
+    {
+        CdcSetupControllerHarness harness = ReplaceableTarget();
+        harness.Eligibility = CdcSetupControllerHarness.Reading(canonicalRowsPresent: true);
+
+        CdcAdmission admission = await harness.ReplaceSourceAsync();
+
+        AssertRefusedBeforeFencing(harness, admission);
+    }
+
     [Test]
     public async Task It_refuses_a_generation_whose_source_history_loss_is_terminal()
     {

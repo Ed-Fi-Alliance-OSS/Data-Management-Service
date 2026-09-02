@@ -240,6 +240,11 @@ internal sealed class CdcSetupController(
         ArgumentException.ThrowIfNullOrWhiteSpace(request.ConnectionString);
 
         CdcControlOptions controlOptions = options.Value;
+
+        // When the sequence started. It seeds the admission and the classifier inputs, and it stamps
+        // the steps that run before the first await. A step diagnostic raised after one is stamped
+        // with a fresh read instead: the waiting steps here are budgeted in minutes, and a diagnostic
+        // that named this instant would report an observation the step had not yet made.
         DateTimeOffset now = timeProvider.GetUtcNow();
         CoreCdc.CdcProvider provider = eligibilityProbe.Provider;
         string dataStoreId = request.DataStoreId.ToString(CultureInfo.InvariantCulture);
@@ -331,7 +336,7 @@ internal sealed class CdcSetupController(
                     "CDC enablement could not read the running DMS projection status it must observe "
                         + "caught-up evidence from.",
                     preflight.CorrelationState.ToString(),
-                    now
+                    timeProvider.GetUtcNow()
                 ),
                 preflight.Diagnostics
             );
@@ -435,7 +440,7 @@ internal sealed class CdcSetupController(
             if (!preBinding.CanCreateBinding)
             {
                 return Blocked(
-                    RejectionStep(preBinding.Rejection, now),
+                    RejectionStep(preBinding.Rejection, timeProvider.GetUtcNow()),
                     preBinding.Rejection?.Diagnostics ?? preBinding.Diagnostics
                 );
             }
@@ -456,7 +461,7 @@ internal sealed class CdcSetupController(
             );
             if (retry.Action != CdcRetryAction.Proceed)
             {
-                return Blocked(RejectionStep(retry, now), retry.Diagnostics);
+                return Blocked(RejectionStep(retry, timeProvider.GetUtcNow()), retry.Diagnostics);
             }
 
             retryClassification = retry.RetryClassification;
@@ -471,7 +476,7 @@ internal sealed class CdcSetupController(
                     CdcDiagnosticComponent.ProviderSetup,
                     "CDC enablement could not identify the physical source to bind against.",
                     "absent",
-                    now
+                    timeProvider.GetUtcNow()
                 ),
                 eligibility.Diagnostics
             );
@@ -530,7 +535,7 @@ internal sealed class CdcSetupController(
                         CdcDiagnosticComponent.Projection,
                         "CDC enablement could not complete the guarded new-empty tracking activation.",
                         $"{activation.Status} / {activation.Classification}",
-                        now
+                        timeProvider.GetUtcNow()
                     ),
                     []
                 );
@@ -590,7 +595,7 @@ internal sealed class CdcSetupController(
                     CdcDiagnosticComponent.ProviderSetup,
                     "CDC enablement could not create or exact-match the provider capture artifacts.",
                     created.Outcome.ToString(),
-                    now
+                    timeProvider.GetUtcNow()
                 ),
                 []
             );
@@ -1660,9 +1665,8 @@ internal sealed class CdcSetupController(
             );
         }
 
-        // A published cache-ahead latch is a projection state a replacement cannot clear, and a latch
-        // that cannot be read is not a clear one. Either way the source is not replaceable, and this is
-        // decided before the outgoing connector is fenced.
+        // One read-only observation of the replacing source, and both refusals it can settle, before
+        // the outgoing connector is fenced.
         InitialCdcEligibilityObservation eligibility = await eligibilityProbe
             .ProbeAsync(
                 new(
@@ -1676,6 +1680,12 @@ internal sealed class CdcSetupController(
                 cancellationToken
             )
             .ConfigureAwait(false);
+        DateTimeOffset probedAt = timeProvider.GetUtcNow();
+
+        // A published cache-ahead latch is a projection state a replacement cannot clear, and a latch
+        // that cannot be read is not a clear one. Either way the source is not replaceable. This is
+        // the stricter of the two checks on that dimension — the classifier below rejects only a
+        // published latch — so it stays as its own refusal rather than being folded into it.
         if (eligibility.CacheAheadState != CdcCacheAheadState.Clear)
         {
             return Refused(
@@ -1686,6 +1696,40 @@ internal sealed class CdcSetupController(
                 "CDC source replacement cannot proceed while the cache-ahead recovery latch is published.",
                 eligibility.CacheAheadState.ToString(),
                 eligibility.Diagnostics
+            );
+        }
+
+        // The rest of what makes a source bindable, asked of the classifier that owns the rule rather
+        // than restated here: a lifecycle already tracking, resetting or rebuilding, and pre-capture
+        // rows the replacing generation would capture over. The enablement sequence runs this same
+        // classification against this same observation, so a source that fails it is going to be
+        // refused either way — and refusing it here is what keeps a replacement that cannot proceed
+        // from stopping the outgoing generation's publication first. The enablement still classifies
+        // for itself, because it is also entered directly.
+        CdcInitialEnablePreBindingEligibilityResult preBinding =
+            CdcInitialEnableRetryClassifier.EvaluatePreBindingEligibility(
+                new(
+                    request.OperationId,
+                    probedAt,
+                    probedAt,
+                    targetIdentity,
+                    eligibility.PhysicalSourceFingerprint,
+                    provisioningProof,
+                    eligibility
+                )
+            );
+        if (!preBinding.CanCreateBinding)
+        {
+            return Refused(
+                request.OperationId,
+                targetIdentity,
+                CdcDiagnosticCategory.InvalidObservation,
+                CdcDiagnosticComponent.Retry,
+                "CDC source replacement requires a replacing source the enablement sequence can bind.",
+                preBinding.Rejection is { } rejection
+                    ? $"{rejection.RetryClassification} / {rejection.Action}"
+                    : "rejected",
+                preBinding.Rejection?.Diagnostics ?? preBinding.Diagnostics
             );
         }
 

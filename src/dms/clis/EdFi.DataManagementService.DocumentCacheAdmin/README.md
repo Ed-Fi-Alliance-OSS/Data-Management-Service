@@ -203,6 +203,7 @@ each one overrides for the current run:
 | `--max-record-bytes <n>` | Largest record the pipeline must carry end to end. | `MaxRecordBytes` |
 | `--durability-profile local\|production` | Durability profile governed topics are created with and validated against. | `DurabilityProfile` |
 | `--binding-json <path\|->` | Complete binding record to adopt; required by `cdc adopt` and never inferred. | None; request-only. |
+| `--connector-already-absent` | Assert the connector the record names is already gone, so `cdc retire` may proceed without observing its committed offsets. | None; request-only. |
 
 `--generation` and `--previous-generation` are positive integers, and
 `--max-record-bytes` is a positive byte count. Zero, negative, malformed, and overflow

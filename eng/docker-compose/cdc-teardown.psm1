@@ -124,6 +124,23 @@ function Get-CdcRetireArgument {
         retirement registers no connector and reads none, and the connector's database name is a
         per-run value this module has no authority over, so supplying a guess would put a wrong
         value where nothing reads a right one.
+
+        It asserts --connector-already-absent. Retirement otherwise refuses a connector the worker
+        does not hold, because committed offsets outlive the connector configuration and a 404
+        cannot tell "never registered" from "deleted out from under the record" - so that judgement
+        is left to whoever accepts losing sight of those offsets. Here the answer is yes and it is
+        this caller's to give: the only invocation is the destructive teardown, whose very next act
+        removes the broker along with its volumes, so the offsets the refusal protects are going
+        with them either way.
+
+        Without it, a binding whose connector was never registered - an enable interrupted between
+        the durable binding record and the connector registration - refuses retirement, then
+        survives the `down -v` naming artifacts that no longer exist, with no stack left to retire
+        it against and every later enable rejected on the stale record.
+
+        It changes nothing when the connector is present: the control plane reads the assertion only
+        after the fence answers 404, so the healthy path still stops the connector and proves its
+        offsets were deleted.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns the argument list for one invocation; the plural noun reflects the return shape.')]
     [CmdletBinding()]
@@ -182,6 +199,8 @@ function Get-CdcRetireArgument {
         "cdc-setup",
         "cdc", "retire",
         "--confirm", $script:BindingRetirementConfirmation,
+        # See .DESCRIPTION: the destructive teardown is where that assertion is the caller's to make.
+        "--connector-already-absent",
         "--data-store-id", "$($BindingRecord.DataStoreId)"
     )
 
