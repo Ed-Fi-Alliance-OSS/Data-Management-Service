@@ -544,6 +544,20 @@ public sealed class Given_DocumentCacheAdminCdcCommandSurface
     private static IEnumerable<string> CdcVerbNameCases() => DocumentCacheAdminCommandSurface.CdcVerbNames;
 
     /// <summary>A minimally valid invocation of one cdc verb.</summary>
+    /// <summary>
+    /// The downstream-publication-history provider reads the deployment key straight from
+    /// configuration rather than through the bound control options, so it spells the path itself.
+    /// If the two spellings drift, the provider silently reads nothing and every E18 offline command
+    /// rejects with an unknown history no operator can explain.
+    /// </summary>
+    [Test]
+    public void It_reads_the_deployment_key_from_the_path_the_surface_writes_it_to()
+    {
+        CdcDownstreamPublicationHistoryProvider
+            .DeploymentKeyConfigurationPath.Should()
+            .Be(DocumentCacheAdminCommandSurface.CdcDeploymentKeyConfigurationKey);
+    }
+
     private static string[] VerbArgs(string verbName)
     {
         List<string> args =

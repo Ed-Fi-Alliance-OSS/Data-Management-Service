@@ -107,6 +107,140 @@ public class Given_CdcDownstreamPublicationHistoryProvider
         observation.EvidenceGenerationIdentifier.Should().Be("2");
     }
 
+    /// <summary>
+    /// Only the data-store id differs in the "other targets" case, so without this one the tenant key
+    /// could be ignored entirely and every case would still pass.
+    /// </summary>
+    [Test]
+    public async Task It_reports_internal_only_when_only_another_tenant_binds_the_same_data_store_id()
+    {
+        DocumentCacheDownstreamPublicationHistoryObservation observation = await ObserveAsync(
+            Listed(Binding(tenantKey: "other-tenant", dataStoreId: "1", CurrentFingerprintValue))
+        );
+
+        observation.Status.Should().Be(DocumentCacheDownstreamPublicationStatus.InternalOnly);
+    }
+
+    /// <summary>
+    /// The E18 target key compares tenant keys case-insensitively. A binding recorded under a
+    /// different casing is the same binding, and reading it as absent would report the admitting
+    /// status for a target that is published.
+    /// </summary>
+    [Test]
+    public async Task It_matches_a_binding_recorded_under_a_different_tenant_key_casing()
+    {
+        DocumentCacheDownstreamPublicationHistoryObservation observation = await ObserveAsync(
+            Listed(Binding(tenantKey: "Tenant-A", dataStoreId: "1", CurrentFingerprintValue)),
+            targetKey: DocumentCacheTargetKey.Create("tenant-a", 1)
+        );
+
+        observation.Status.Should().Be(DocumentCacheDownstreamPublicationStatus.Active);
+    }
+
+    /// <summary>
+    /// A latched source-history incident says the binding's stream broke, not that it never existed.
+    /// The record still proves the target was bound, so it must disqualify it like any other.
+    /// </summary>
+    [Test]
+    public async Task It_reports_active_for_a_matching_binding_carrying_a_latched_incident()
+    {
+        CdcBindingStateContract latched = Binding(
+            tenantKey: "default",
+            dataStoreId: "1",
+            CurrentFingerprintValue
+        ) with
+        {
+            State = CdcBindingState.IncidentLatched,
+        };
+
+        DocumentCacheDownstreamPublicationHistoryObservation observation = await ObserveAsync(
+            Listed(latched)
+        );
+
+        observation.Status.Should().Be(DocumentCacheDownstreamPublicationStatus.Active);
+    }
+
+    /// <summary>
+    /// With no resolved fingerprint nothing can be the same physical source, so a binding for the
+    /// target is history rather than a live publication. The E18 evaluator rejects an unresolved
+    /// fingerprint outright, so this only has to avoid claiming more than was observed.
+    /// </summary>
+    [Test]
+    public async Task It_reports_historical_for_a_matching_binding_when_the_source_is_unresolved()
+    {
+        DocumentCacheDownstreamPublicationHistoryObservation observation = await ObserveAsync(
+            Listed(Binding(tenantKey: "default", dataStoreId: "1", CurrentFingerprintValue)),
+            currentPhysicalSourceFingerprint: null
+        );
+
+        observation.Status.Should().Be(DocumentCacheDownstreamPublicationStatus.Historical);
+        observation.PhysicalSourceFingerprint.Should().BeNull();
+    }
+
+    /// <summary>
+    /// An unresolved fingerprint must never be admitted even when no binding names the target: the
+    /// evaluator needs the fingerprint to prove the observation describes the source in hand.
+    /// </summary>
+    [Test]
+    public async Task It_keeps_the_gate_closed_when_the_source_is_unresolved_and_no_binding_matches()
+    {
+        DocumentCacheTargetKey targetKey = DocumentCacheTargetKey.Create("default", 1);
+
+        DocumentCacheDownstreamPublicationHistoryProofResult rejected =
+            DocumentCacheDownstreamPublicationHistoryProofEvaluator.Evaluate(
+                targetKey,
+                currentPhysicalSourceFingerprint: null,
+                await ObserveAsync(
+                    Listed(Binding(tenantKey: "default", dataStoreId: "7", CurrentFingerprintValue)),
+                    currentPhysicalSourceFingerprint: null
+                )
+            );
+
+        rejected.IsAccepted.Should().BeFalse();
+        rejected
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.ExpectedSourceMismatch);
+    }
+
+    [TestCase("")]
+    [TestCase("   ")]
+    public async Task It_reports_unknown_when_the_deployment_key_is_blank(string deploymentKey)
+    {
+        DocumentCacheDownstreamPublicationHistoryObservation observation = await ObserveAsync(
+            Listed(Binding(tenantKey: "default", dataStoreId: "1", CurrentFingerprintValue)),
+            deploymentKey: deploymentKey
+        );
+
+        observation.Status.Should().Be(DocumentCacheDownstreamPublicationStatus.Unknown);
+    }
+
+    [Test]
+    public async Task It_rejects_a_missing_target_key()
+    {
+        CdcDownstreamPublicationHistoryProvider provider = BuildProvider(Listed(), DeploymentKey);
+
+        Func<Task> observe = () => provider.ObserveAsync(null!, null);
+
+        await observe.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+    [Test]
+    public async Task It_observes_nothing_once_cancellation_is_requested()
+    {
+        CdcDownstreamPublicationHistoryProvider provider = BuildProvider(Listed(), DeploymentKey);
+        using CancellationTokenSource cancellation = new();
+        await cancellation.CancelAsync();
+
+        Func<Task> observe = () =>
+            provider.ObserveAsync(
+                DocumentCacheTargetKey.Create("default", 1),
+                new DocumentCachePhysicalSourceFingerprint(CurrentFingerprintValue),
+                cancellation.Token
+            );
+
+        await observe.Should().ThrowAsync<OperationCanceledException>();
+    }
+
     [Test]
     public async Task It_reports_unknown_when_no_deployment_key_is_configured()
     {
@@ -216,25 +350,37 @@ public class Given_CdcDownstreamPublicationHistoryProvider
         rejected.Diagnostics.Should().NotBeEmpty();
     }
 
+    /// <summary>
+    /// Passing <c>null</c> for <paramref name="currentPhysicalSourceFingerprint"/> models a target
+    /// whose physical source could not be resolved, which the default value never does.
+    /// </summary>
     private static async Task<DocumentCacheDownstreamPublicationHistoryObservation> ObserveAsync(
         CdcBindingLifecycleListResult listResult,
         DocumentCacheTargetKey? targetKey = null,
-        string? deploymentKey = DeploymentKey
+        string? deploymentKey = DeploymentKey,
+        string? currentPhysicalSourceFingerprint = CurrentFingerprintValue
+    ) =>
+        await BuildProvider(listResult, deploymentKey)
+            .ObserveAsync(
+                targetKey ?? DocumentCacheTargetKey.Create("default", 1),
+                currentPhysicalSourceFingerprint is null
+                    ? null
+                    : new DocumentCachePhysicalSourceFingerprint(currentPhysicalSourceFingerprint)
+            );
+
+    private static CdcDownstreamPublicationHistoryProvider BuildProvider(
+        CdcBindingLifecycleListResult listResult,
+        string? deploymentKey
     )
     {
         ICdcBindingLifecycleService bindingLifecycleService = A.Fake<ICdcBindingLifecycleService>();
         A.CallTo(() => bindingLifecycleService.ListBindingsAsync(A<string>._, A<CancellationToken>._))
             .Returns(listResult);
 
-        CdcDownstreamPublicationHistoryProvider provider = new(
+        return new CdcDownstreamPublicationHistoryProvider(
             bindingLifecycleService,
             BuildConfiguration(deploymentKey),
             new FixedTimeProvider(ObservedAt)
-        );
-
-        return await provider.ObserveAsync(
-            targetKey ?? DocumentCacheTargetKey.Create("default", 1),
-            new DocumentCachePhysicalSourceFingerprint(CurrentFingerprintValue)
         );
     }
 
