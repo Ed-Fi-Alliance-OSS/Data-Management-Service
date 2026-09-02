@@ -7,6 +7,12 @@
 # `up`: the phase invokes it with `docker compose run --rm`, and the profile keeps it out of every
 # other compose command. It joins the dms network because that is the only place the instance
 # database, the broker, and Kafka Connect answer to the names they are registered under.
+#
+# It declares no depends_on deliberately. `docker compose run` starts a service's dependencies, and
+# the ordering this container needs - CMS reachable, DMS healthy and answering the DocumentCache
+# status endpoint, the broker and Connect worker up - is already established by the CDC phase
+# before it invokes this service. Declaring them here would let a bare `compose run` start a
+# partial stack the phase never gated.
 services:
   cdc-setup:
     image: ${DMS_CDC_SETUP_IMAGE:-ed-fi-document-cache-admin-local}
@@ -21,11 +27,22 @@ services:
     volumes:
       # The durable binding state store. It outlives any one bootstrap run and is deliberately
       # separate from the .bootstrap workspace, so it is mounted read-write from its own root.
+      #
+      # /state is named three times for one store and the three must agree: this mount target, the
+      # DMS_CDC_STATE_ROOT below that the image tightens, and the --cdc-binding-state-path the CDC
+      # phases pass from env-utility.psm1's Get-LocalCdcDeploymentPolicy. A Pester case in
+      # BootstrapEnableKafkaCdc.Tests.ps1 asserts all three resolve to the same path.
       - ${DMS_CDC_BINDING_STATE_PATH:-./.cdc-state}:/state
       # The same staged ApiSchema workspace the DMS container reads, so the provider-setup
       # inventories are derived from the effective schema DMS itself is running.
       - ${DMS_API_SCHEMA_MOUNT_SOURCE:-./.bootstrap/ApiSchema}:/app/ApiSchema:ro
     environment:
+      # The bind-mounted store root, which the image's entrypoint clears the group- and other-write
+      # bits from before the tool runs. Docker Desktop presents any bind mount as world-writable
+      # whatever the host permissions are, and the binding state store refuses a shared-writable
+      # root, so without this every cdc verb fails at its first binding read. It is the mount target
+      # above, not the host path: the entrypoint acts inside the container.
+      DMS_CDC_STATE_ROOT: /state
       AppSettings__Datastore: ${DMS_DATASTORE:-postgresql}
       AppSettings__UseApiSchemaPath: ${USE_API_SCHEMA_PATH:-false}
       AppSettings__ApiSchemaPath: ${API_SCHEMA_PATH:-}

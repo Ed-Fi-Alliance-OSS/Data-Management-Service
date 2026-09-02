@@ -411,6 +411,125 @@ public class Given_CdcSetupControllerRestart
     }
 
     /// <summary>
+    /// Kafka Connect's STOPPED is a worker-owned target state that a restart does not clear — a stopped
+    /// connector has no tasks to re-create — so a fenced connector is resumed instead. Without this the
+    /// verb could only re-run a connector that was already running, and a connector fenced by a
+    /// superseded source replacement could never be started again through any cdc verb.
+    /// </summary>
+    [TestCase("STOPPED")]
+    [TestCase("PAUSED")]
+    public async Task It_resumes_a_fenced_connector_rather_than_restarting_it(string connectorState)
+    {
+        CdcSetupControllerHarness harness = Given_CdcSetupControllerStatus.EnabledBinding();
+        harness.ConnectorStatus = CdcSetupControllerHarness.RunningConnector(
+            connectorState: connectorState,
+            taskState: connectorState
+        );
+
+        CdcStatus status = await harness.RestartAsync();
+
+        using var _ = new AssertionScope();
+        Given_CdcSetupControllerStatus
+            .Target(status)
+            .SourceHistory.Continuity.Should()
+            .Be(CdcSourceHistoryContinuity.Healthy);
+        A.CallTo(() => harness.Connect.ResumeConnectorAsync(A<string>._, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() => harness.Connect.RestartConnectorAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// A running connector is restarted, not resumed: resume clears a target state it is not in, and
+    /// restarting its tasks is what the verb is for.
+    /// </summary>
+    [Test]
+    public async Task It_restarts_a_running_connector_rather_than_resuming_it()
+    {
+        CdcSetupControllerHarness harness = Given_CdcSetupControllerStatus.EnabledBinding();
+
+        await harness.RestartAsync();
+
+        using var _ = new AssertionScope();
+        A.CallTo(() => harness.Connect.RestartConnectorAsync(A<string>._, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() => harness.Connect.ResumeConnectorAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// A request the worker refused is reported on the connector runtime. The state read back afterwards
+    /// cannot carry it: a connector that is still not running reads identically whether the worker
+    /// applied the request and it failed anyway or never accepted it, and only the second is worth
+    /// reissuing.
+    /// </summary>
+    [Test]
+    public async Task It_reports_a_restart_the_worker_did_not_apply()
+    {
+        CdcSetupControllerHarness harness = Given_CdcSetupControllerStatus.EnabledBinding();
+        harness.Restart = new(CdcConnectOutcome.Conflict, new(409, "rebalance in progress", true));
+
+        CdcStatus status = await harness.RestartAsync();
+
+        using var _ = new AssertionScope();
+        CdcDiagnostic diagnostic = Given_CdcSetupControllerStatus
+            .Target(status)
+            .Diagnostics.Should()
+            .ContainSingle(candidate => candidate.Code == "restartNotApplied")
+            .Subject;
+        diagnostic.Component.Should().Be(CdcDiagnosticComponent.ConnectorRuntime);
+        diagnostic.Observed.Should().Be(nameof(CdcConnectOutcome.Conflict));
+        diagnostic.Retryable.Should().BeTrue();
+        // The binding was read, so it stays known: the connector is what the request did not reach.
+        Given_CdcSetupControllerStatus
+            .Target(status)
+            .Binding.State.Should()
+            .NotBe(CdcComponentState.Unknown);
+    }
+
+    /// <summary>
+    /// A resume the worker refused is reported the same way, so the fenced-connector path is not the one
+    /// that silently drops the worker's answer.
+    /// </summary>
+    [Test]
+    public async Task It_reports_a_resume_the_worker_did_not_apply()
+    {
+        CdcSetupControllerHarness harness = Given_CdcSetupControllerStatus.EnabledBinding();
+        harness.ConnectorStatus = CdcSetupControllerHarness.RunningConnector(
+            connectorState: "STOPPED",
+            taskState: "STOPPED"
+        );
+        harness.Resume = new(CdcConnectOutcome.NotFound, new(404, "no such connector", false));
+
+        CdcStatus status = await harness.RestartAsync();
+
+        Given_CdcSetupControllerStatus
+            .Target(status)
+            .Diagnostics.Should()
+            .ContainSingle(candidate =>
+                candidate.Code == "restartNotApplied"
+                && candidate.Observed == nameof(CdcConnectOutcome.NotFound)
+            );
+    }
+
+    /// <summary>
+    /// An applied request adds no diagnostic of its own, so the absence of one is evidence the worker
+    /// accepted it rather than evidence that nothing was checked.
+    /// </summary>
+    [Test]
+    public async Task It_reports_no_unapplied_diagnostic_when_the_worker_accepted_the_restart()
+    {
+        CdcSetupControllerHarness harness = Given_CdcSetupControllerStatus.EnabledBinding();
+
+        CdcStatus status = await harness.RestartAsync();
+
+        Given_CdcSetupControllerStatus
+            .Target(status)
+            .Diagnostics.Should()
+            .NotContain(candidate => candidate.Code == "restartNotApplied");
+    }
+
+    /// <summary>
     /// The status a restart reports describes the connector the restart left behind, so it is read back
     /// after the worker answered rather than reported from the observation that preceded it.
     /// </summary>

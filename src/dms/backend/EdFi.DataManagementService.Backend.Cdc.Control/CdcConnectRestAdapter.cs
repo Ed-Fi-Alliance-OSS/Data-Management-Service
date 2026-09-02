@@ -129,7 +129,26 @@ public interface ICdcConnectClient
     );
 
     /// <summary>Restarts the connector together with its tasks, whether or not they have failed.</summary>
+    /// <remarks>
+    /// This does not clear a <c>STOPPED</c> or <c>PAUSED</c> target state. Those are set by the worker
+    /// rather than by a task failure, and a restart re-creates connector and task instances without
+    /// changing them — a stopped connector has no tasks to restart at all. Use
+    /// <see cref="ResumeConnectorAsync"/> for a connector the worker is holding fenced.
+    /// </remarks>
     Task<CdcConnectResult> RestartConnectorAsync(string connectorName, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Returns a connector the worker is holding <c>STOPPED</c> or <c>PAUSED</c> to its running target
+    /// state. This is the only operation that clears either one.
+    /// </summary>
+    /// <remarks>
+    /// The worker applies the resume asynchronously and this does not wait for it, unlike
+    /// <see cref="StopConnectorAsync"/>. Nothing here depends on the connector having reached a state
+    /// first — the stop wait exists because an offsets deletion is accepted only for an already stopped
+    /// connector — and the caller re-reads the runtime afterwards, so what it reports is what the worker
+    /// had actually reached rather than what the resume asked for.
+    /// </remarks>
+    Task<CdcConnectResult> ResumeConnectorAsync(string connectorName, CancellationToken cancellationToken);
 
     /// <summary>
     /// Fences the connector so it commits no further offsets. This is a precondition of deleting its
@@ -268,6 +287,24 @@ internal sealed class CdcConnectRestAdapter(
             $"{ConnectorPath(connectorName)}/restart?includeTasks=true&onlyFailed=false",
             null,
             "connector restart",
+            cancellationToken
+        );
+
+        return ToResult(response);
+    }
+
+    public async Task<CdcConnectResult> ResumeConnectorAsync(
+        string connectorName,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectorName);
+
+        CdcConnectResponse response = await SendAsync(
+            HttpMethod.Put,
+            $"{ConnectorPath(connectorName)}/resume",
+            null,
+            "connector resume",
             cancellationToken
         );
 

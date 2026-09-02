@@ -904,6 +904,8 @@ public class Given_A_SqlServer_CdcControlReadinessSequence
 
         public string? RestartedConnectorName { get; private set; }
 
+        public string? ResumedConnectorName { get; private set; }
+
         public List<string> StoppedConnectorNames { get; } = [];
 
         public Task<CdcConnectResult<CdcConnectConfigValidation>> ValidateConnectorPluginConfigAsync(
@@ -961,6 +963,16 @@ public class Given_A_SqlServer_CdcControlReadinessSequence
         )
         {
             RestartedConnectorName = connectorName;
+
+            return Task.FromResult(new CdcConnectResult(CdcConnectOutcome.Succeeded, null));
+        }
+
+        public Task<CdcConnectResult> ResumeConnectorAsync(
+            string connectorName,
+            CancellationToken cancellationToken
+        )
+        {
+            ResumedConnectorName = connectorName;
 
             return Task.FromResult(new CdcConnectResult(CdcConnectOutcome.Succeeded, null));
         }

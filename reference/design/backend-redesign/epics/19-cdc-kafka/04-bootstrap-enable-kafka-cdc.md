@@ -121,6 +121,18 @@ controller, its adapters, and the entry points that invoke them.
   is fenced. A fence the worker refuses is reported as its own diagnostic on the connector
   runtime: the loss is latched either way, and a status that reported a contained incident
   while the connector kept committing offsets would leave no evidence that it had not.
+- Against affirmative continuity, `restart` resumes a connector the worker is holding
+  `STOPPED` or `PAUSED` and restarts any other. Those two are worker-owned target states a
+  restart does not clear - it re-creates connector and task instances, and a stopped connector
+  has no tasks to re-create - so a restart-only verb could start nothing, and a generation
+  fenced by an abandoned source replacement would be unreachable from every operator command.
+  Resume is the only operation that clears either state, and like a start it is issued only
+  after continuity is proved.
+- A connector lifecycle request the worker refuses - a fence, a restart, or a resume - is
+  reported as its own diagnostic on the connector runtime rather than left to be inferred from
+  the state read back afterwards. A connector still not running reads identically whether the
+  worker applied the request and it failed anyway or never accepted it at all, and only the
+  second is worth reissuing.
 
 ### Explicit Projection Target Evidence
 
@@ -216,6 +228,14 @@ controller, its adapters, and the entry points that invoke them.
 - The durable binding state store is a persistent root outside the bootstrap manifest. The
   manifest is prepared-input handoff, while a binding record outlives any one bootstrap run
   and lives at least as long as every artifact it governs.
+- That root reaches the control-plane container as a host bind mount, and the setup image
+  clears the group- and other-write bits from it before the tool runs. Docker Desktop presents
+  any bind mount as world-writable whatever the host's own permissions are - including a
+  directory the host itself created - and the state store refuses a group- or world-writable
+  root, so every cdc verb would otherwise fail at its first binding read. The mount point is
+  the one directory in the store's tree the store never creates for itself. Only the two
+  rejected bits are cleared: an already-private root keeps the mode it has, and the owner bits
+  a retirement's host-side binding discovery reads the records through are never touched.
 - E2E setup creates a fresh database, provisions its current schema, and registers capture
   against that same database before the suite issues any write, so the initial enablement is
   admitted with write admission still closed.

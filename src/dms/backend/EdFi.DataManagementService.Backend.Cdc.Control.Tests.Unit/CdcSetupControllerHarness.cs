@@ -256,6 +256,8 @@ internal sealed class CdcSetupControllerHarness
             .ReturnsLazily(() => Task.FromResult(Restart));
         A.CallTo(() => Connect.StopConnectorAsync(A<string>._, A<CancellationToken>._))
             .ReturnsLazily(() => Task.FromResult(Stop));
+        A.CallTo(() => Connect.ResumeConnectorAsync(A<string>._, A<CancellationToken>._))
+            .ReturnsLazily(() => Task.FromResult(Resume));
 
         A.CallTo(() => Bindings.ImportVerifiedBindingAsync(A<CdcAdoptionProof>._, A<CancellationToken>._))
             .ReturnsLazily(
@@ -449,6 +451,9 @@ internal sealed class CdcSetupControllerHarness
 
     /// <summary>How the worker answers a connector stop.</summary>
     public CdcConnectResult Stop { get; set; } = new(CdcConnectOutcome.Succeeded, null);
+
+    /// <summary>How the worker answers a connector resume.</summary>
+    public CdcConnectResult Resume { get; set; } = new(CdcConnectOutcome.Succeeded, null);
 
     /// <summary>The source-history loss the control plane latched, if it latched one.</summary>
     public CdcIncident? LatchedIncident { get; private set; }

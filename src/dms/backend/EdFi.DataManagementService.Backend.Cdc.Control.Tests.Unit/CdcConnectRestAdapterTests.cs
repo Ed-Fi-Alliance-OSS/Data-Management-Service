@@ -341,6 +341,39 @@ public class Given_CdcConnectRestAdapter
         handler.Requests[0].Uri.Query.Should().Be("?includeTasks=true&onlyFailed=false");
     }
 
+    /// <summary>
+    /// Resume is the only operation that clears a worker-held STOPPED or PAUSED target state, so it is
+    /// a PUT to the connector's own resume route and not another restart.
+    /// </summary>
+    [Test]
+    public async Task It_resumes_a_fenced_connector_through_the_resume_route()
+    {
+        (ICdcConnectClient client, StubHttpMessageHandler handler) = Adapter(_ =>
+            Status(HttpStatusCode.Accepted)
+        );
+
+        CdcConnectResult result = await client.ResumeConnectorAsync(ConnectorName, CancellationToken.None);
+
+        result.Succeeded.Should().BeTrue();
+        handler.Requests[0].Method.Should().Be(HttpMethod.Put);
+        handler.Requests[0].Uri.AbsolutePath.Should().Be($"/connectors/{ConnectorName}/resume");
+    }
+
+    /// <summary>
+    /// A resume the worker refuses is fail-closed evidence like every other Connect outcome: the caller
+    /// reports it rather than reading the connector's later state as though the resume had been applied.
+    /// </summary>
+    [Test]
+    public async Task It_reports_a_resume_the_worker_refused()
+    {
+        (ICdcConnectClient client, _) = Adapter(_ => Json(HttpStatusCode.NotFound, "{}"));
+
+        CdcConnectResult result = await client.ResumeConnectorAsync(ConnectorName, CancellationToken.None);
+
+        result.Succeeded.Should().BeFalse();
+        result.Outcome.Should().Be(CdcConnectOutcome.NotFound);
+    }
+
     [Test]
     public async Task It_fences_the_connector_with_a_stop_rather_than_a_config_delete()
     {

@@ -630,6 +630,7 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
         $script:kafkaComposeText = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "kafka.yml") -Raw
         $script:cdcSetupComposeText = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "cdc-setup.yml") -Raw
         $script:envExampleText = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot ".env.example") -Raw
+        $script:documentCacheAdminDockerfileText = Get-Content -LiteralPath (Join-Path $script:sourceRepoRoot "src/dms/DocumentCacheAdmin.Dockerfile") -Raw
         $script:teardownModulePath = Join-Path $script:sourceDockerComposeRoot "cdc-teardown.psm1"
         $script:teardownModuleText = Get-Content -LiteralPath $script:teardownModulePath -Raw
 
@@ -867,6 +868,39 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
             $principalScriptText | Should -Match 'IF USER_ID'
             $principalScriptText | Should -Not -Match 'ALTER ROLE'
             $principalScriptText | Should -Not -Match 'ALTER LOGIN'
+        }
+    }
+
+    Context "binding state store root the setup container writes through" {
+        # Three declarations name one container path: cdc-setup.yml mounts the host store there,
+        # cdc-setup.yml sets DMS_CDC_STATE_ROOT to it so the image tightens the right directory, and
+        # env-utility.psm1 passes it as --cdc-binding-state-path. Drift between any two is silent -
+        # the verb would write through one path while another was mounted or tightened - so the
+        # three are reconciled against the policy resolver here rather than agreed by hand.
+        It "mounts, declares, and passes one and the same container path" {
+            $policy = Get-LocalCdcDeploymentPolicy
+            $mountSuffix = [regex]::Escape("}:" + $policy.BindingStatePath)
+            $stateRoot = [regex]::Escape($policy.BindingStatePath)
+
+            $script:cdcSetupComposeText | Should -Match "(?m)^\s+- .*$mountSuffix\s*$"
+            $script:cdcSetupComposeText | Should -Match "(?m)^\s+DMS_CDC_STATE_ROOT: $stateRoot\s*$"
+        }
+
+        It "tightens the mounted root before the tool runs" {
+            # Docker Desktop presents a bind mount as world-writable whatever the host permissions
+            # are - including a directory the host itself created - and the binding state store
+            # refuses a group- or world-writable root, so without this every cdc verb fails at its
+            # first binding read with LocalStateUnavailable. The mount point is the one directory in
+            # the store's tree the store never creates for itself.
+            $script:documentCacheAdminDockerfileText | Should -Match 'chmod g-w,o-w'
+            $script:documentCacheAdminDockerfileText | Should -Match 'DMS_CDC_STATE_ROOT'
+        }
+
+        It "clears only the two bits the store rejects" {
+            # An absolute mode would strip the owner and read bits too, which on a native Linux bind
+            # mount is the host user's own access - the access the destructive teardown's host-side
+            # binding discovery reads the records through.
+            $script:documentCacheAdminDockerfileText | Should -Not -Match 'chmod [0-7][0-7][0-7] "\$DMS_CDC_STATE_ROOT"'
         }
     }
 

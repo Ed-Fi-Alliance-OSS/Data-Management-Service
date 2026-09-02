@@ -982,6 +982,12 @@ internal sealed class CdcSetupController(
     /// committed offset is deleted and nothing is re-snapshotted into the existing public topic: a
     /// current-state snapshot cannot emit tombstones for documents deleted before it, so it would leave
     /// stale state in that topic's consumers.
+    ///
+    /// Against affirmative continuity the request depends on what the worker is holding. A connector in
+    /// <c>STOPPED</c> or <c>PAUSED</c> is resumed, because those are worker-owned target states that a
+    /// restart does not clear; anything else is restarted with its tasks. A request the worker refuses
+    /// is reported as its own diagnostic on the connector runtime rather than being left to be inferred
+    /// from the state that is read back afterwards.
     /// </remarks>
     public async Task<CdcStatus> RestartAsync(
         CdcTargetOperationRequest request,
@@ -1011,27 +1017,69 @@ internal sealed class CdcSetupController(
             return Compose(collected.Evaluation);
         }
 
-        CdcConnectResult restart = await connectClient
-            .RestartConnectorAsync(inventory.ConnectorName, cancellationToken)
-            .ConfigureAwait(false);
-        logger.LogDebug("CDC restart asked the worker to restart the connector: {Outcome}.", restart.Outcome);
+        // A connector the worker is holding fenced is resumed rather than restarted. STOPPED and
+        // PAUSED are target states the worker owns, and a restart clears neither: it re-creates the
+        // connector and task instances, and a stopped connector has no tasks to re-create. Resuming is
+        // what lets this verb start a connector, rather than only re-run one that was already running.
+        bool fenced =
+            collected.Evaluation.ConnectorRuntime?.ConnectorState
+            is CdcConnectorRuntimeState.Stopped
+                or CdcConnectorRuntimeState.Paused;
+
+        CdcConnectResult connectorAction = fenced
+            ? await connectClient
+                .ResumeConnectorAsync(inventory.ConnectorName, cancellationToken)
+                .ConfigureAwait(false)
+            : await connectClient
+                .RestartConnectorAsync(inventory.ConnectorName, cancellationToken)
+                .ConfigureAwait(false);
+        logger.LogDebug(
+            "CDC restart asked the worker to {ConnectorAction} the connector: {Outcome}.",
+            fenced ? "resume" : "restart",
+            connectorAction.Outcome
+        );
 
         // The runtime evidence is re-read so the reported status describes the connector the restart
         // left behind rather than the one that was observed before it.
+        CdcTargetStatusEvaluationInput evaluation = collected.Evaluation with
+        {
+            ConnectorRuntime = observationMapper.MapRuntime(
+                context,
+                binding,
+                await connectClient
+                    .GetConnectorStatusAsync(inventory.ConnectorName, cancellationToken)
+                    .ConfigureAwait(false),
+                await connectClient
+                    .GetConnectorOffsetsAsync(inventory.ConnectorName, cancellationToken)
+                    .ConfigureAwait(false)
+            ),
+        };
+
+        if (connectorAction.Succeeded)
+        {
+            return Compose(evaluation);
+        }
+
+        // A request the worker refused is reported rather than left to be inferred from the re-read
+        // state: a connector still not running reads identically whether the worker acted on it and it
+        // failed, or never accepted the request at all, and only the second is worth reissuing.
+        string refusedMessage = fenced
+            ? "CDC restart could not resume the connector the worker is holding fenced."
+            : "CDC restart could not restart the connector.";
+        string refusedExpectation = fenced
+            ? "the connector resumed to its running target state"
+            : "the connector restarted";
+
         return Compose(
-            collected.Evaluation with
-            {
-                ConnectorRuntime = observationMapper.MapRuntime(
-                    context,
-                    binding,
-                    await connectClient
-                        .GetConnectorStatusAsync(inventory.ConnectorName, cancellationToken)
-                        .ConfigureAwait(false),
-                    await connectClient
-                        .GetConnectorOffsetsAsync(inventory.ConnectorName, cancellationToken)
-                        .ConfigureAwait(false)
-                ),
-            }
+            WithUnappliedConnectorAction(
+                evaluation,
+                inventory,
+                connectorAction,
+                "restartNotApplied",
+                CdcDiagnosticCategory.ConnectorNotRunning,
+                refusedMessage,
+                refusedExpectation
+            )
         );
     }
 
@@ -2562,7 +2610,15 @@ internal sealed class CdcSetupController(
                 "CDC status could not fence the connector carrying a latched source-history loss: {Outcome}.",
                 fence.Outcome
             );
-            evaluation = WithUnappliedFence(evaluation, inventory, fence);
+            evaluation = WithUnappliedConnectorAction(
+                evaluation,
+                inventory,
+                fence,
+                "statusIncidentFenceNotApplied",
+                CdcDiagnosticCategory.SourceHistoryLost,
+                "CDC status latched a source-history loss but could not fence the connector that carries it.",
+                "the connector stopped so it commits no further offsets against the lost source"
+            );
         }
 
         return latch.Status == CdcControlPlaneOperationStatus.Succeeded
@@ -2574,18 +2630,27 @@ internal sealed class CdcSetupController(
     }
 
     /// <summary>
-    /// Reports that the fence a latched source-history loss asserts did not take, so the status does
-    /// not read as a contained incident while the connector keeps committing offsets.
+    /// Reports that a connector lifecycle request the worker was asked for did not take, so the status
+    /// never reads as though the request had been applied.
     /// </summary>
     /// <remarks>
-    /// The diagnostic is carried on the connector runtime the stop was applied to rather than in the
-    /// status's state-store diagnostics: those report a binding record that could not be read, and this
-    /// binding was read — the connector is what the stop did not reach.
+    /// The diagnostic is carried on the connector runtime the request was aimed at rather than in the
+    /// status's state-store diagnostics: those report a binding record that could not be read, and in
+    /// both cases here the binding was read — the connector is what the request did not reach.
+    ///
+    /// Both callers need this for the same reason. A latched source-history loss whose fence was
+    /// refused would otherwise report a contained incident while the connector kept committing
+    /// offsets, and a refused restart would be indistinguishable from one the worker applied to a
+    /// connector that then failed anyway — only the refusal is worth reissuing.
     /// </remarks>
-    private CdcTargetStatusEvaluationInput WithUnappliedFence(
+    private CdcTargetStatusEvaluationInput WithUnappliedConnectorAction(
         CdcTargetStatusEvaluationInput evaluation,
         CdcArtifactInventory inventory,
-        CdcConnectResult fence
+        CdcConnectResult result,
+        string code,
+        CdcDiagnosticCategory category,
+        string message,
+        string expected
     )
     {
         if (evaluation.ConnectorRuntime is not { } connectorRuntime)
@@ -2594,17 +2659,17 @@ internal sealed class CdcSetupController(
         }
 
         CdcDiagnostic diagnostic = new CdcDiagnostic(
-            "statusIncidentFenceNotApplied",
-            CdcDiagnosticCategory.SourceHistoryLost,
+            code,
+            category,
             CdcDiagnosticSeverity.Error,
             CdcDiagnosticComponent.ConnectorRuntime,
             timeProvider.GetUtcNow(),
-            "CDC status latched a source-history loss but could not fence the connector that carries it.",
+            message,
             retryable: true,
             artifactKind: "connector",
             artifactName: inventory.ConnectorName,
-            expected: "the connector stopped so it commits no further offsets against the lost source",
-            observed: fence.Outcome.ToString()
+            expected: expected,
+            observed: result.Outcome.ToString()
         ).WithPath("$.connectorRuntime");
 
         return evaluation with
