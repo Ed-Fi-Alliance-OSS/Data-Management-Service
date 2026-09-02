@@ -15,7 +15,8 @@
     performance evidence fixtures and places their output under writer-contention-evidence/.
     Pass -RunRepresentative only on qualified performance targets to execute the long-running
     DocumentCacheRepresentativeQualification harness and validate the produced result
-    artifacts. Pass -ValidateResults to validate an existing representative result directory
+    artifacts. Representative qualification requires both PostgreSQL and SQL Server providers.
+    Pass -ValidateResults to validate an existing representative result directory
     without running bounded guards, explicit writer evidence, or representative benchmarks.
     If an interrupted restart, database load, log pressure, or queue-DML threshold fails, pass
     -DurableBaselineCursorTicket or set PERF_DOCUMENTCACHE_DURABLE_BASELINE_CURSOR_TICKET
@@ -175,6 +176,16 @@ if ($PSCmdlet.ParameterSetName -eq 'Validate') {
 }
 
 if ($RunRepresentative) {
+    $selectedProviders = @($Provider | Sort-Object -Unique)
+    $hasRequiredProviders =
+        $selectedProviders.Count -eq 2 `
+        -and $selectedProviders -contains 'postgresql' `
+        -and $selectedProviders -contains 'mssql'
+
+    if (-not $hasRequiredProviders) {
+        throw 'Representative DocumentCache qualification requires both providers: -Provider postgresql,mssql. Use non-representative modes for provider-specific guard or writer-evidence runs.'
+    }
+
     $effectiveOperatorMetricsFile = $OperatorMetricsFile
     if ([string]::IsNullOrWhiteSpace($effectiveOperatorMetricsFile)) {
         $effectiveOperatorMetricsFile = [Environment]::GetEnvironmentVariable('PERF_DOCUMENTCACHE_OPERATOR_METRICS_FILE')
