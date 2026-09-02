@@ -24,11 +24,11 @@ namespace EdFi.DataManagementService.Backend;
 /// malformed payload, and another family can never legitimately claim ours.
 /// </para>
 /// <para>
-/// The reverse direction is not yet closed. <c>NamespaceAuthorizationProviderFailureMapper</c> still reports
-/// every undecodable AUTH1 payload — an <c>own1|</c>-prefixed one included — as a namespace invalid-payload
-/// diagnostic, so on a command where both families are co-batched the namespace mapper must not be consulted
-/// ahead of this one. Both outcomes are a 500 and only the diagnostic differs; closing it is Phase 5.1's
-/// work, when co-batching first makes the two reachable from one command.
+/// The reverse direction is closed too, and independently: <c>NamespaceAuthorizationProviderFailureMapper</c>
+/// yields on an <c>own1|</c>-prefixed undecodable payload rather than claiming every payload it cannot
+/// identify, and <c>RelationalCompositeStoredAuthorization.TryClassifyDenial</c> consults this mapper ahead
+/// of it. Either guard alone attributes a malformed ownership payload correctly; both exist so that removing
+/// one does not silently file an ownership defect under <c>NamespaceBased</c>.
 /// </para>
 /// </remarks>
 internal static class OwnershipAuthorizationProviderFailureMapper

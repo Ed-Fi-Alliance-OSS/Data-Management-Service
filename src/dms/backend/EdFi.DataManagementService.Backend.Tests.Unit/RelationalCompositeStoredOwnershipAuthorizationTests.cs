@@ -68,7 +68,21 @@ public class Given_The_Composite_Stored_Ownership_Authorization
             .Should()
             .BeTrue();
 
+        RelationalCompositeStoredAuthorization
+            .TryAppendRelationship(
+                builder,
+                builder.Carrier,
+                mappingSet,
+                RelationalCompositeStoredAuthorization.Classify(CreateAuthorizedRelationship(dialect)),
+                emittedAuth1Index: 0,
+                DefaultRelationalParameterConfigurator.Instance,
+                out var relationshipPlan
+            )
+            .Should()
+            .BeTrue();
+
         ownershipPlan.Should().NotBeNull();
+        relationshipPlan.Disposition.Should().Be(StoredRelationshipDisposition.Emitted);
         builder
             .Seal()
             .StatementsInOrder.Select(static statement => statement.Label)
@@ -76,7 +90,8 @@ public class Given_The_Composite_Stored_Ownership_Authorization
             .ContainInOrder(
                 RelationalCompositeStoredAuthorization.CustomViewLabel,
                 RelationalCompositeStoredAuthorization.NamespaceLabel,
-                RelationalCompositeStoredAuthorization.OwnershipLabel
+                RelationalCompositeStoredAuthorization.OwnershipLabel,
+                RelationalCompositeStoredAuthorization.RelationshipLabel
             );
     }
 
@@ -490,6 +505,54 @@ public class Given_The_Composite_Stored_Ownership_Authorization
             ],
             NamespacePrefixParameterizationFactory.Create(dialect, ["uri://ed-fi.org/"], "namespacePrefixes")
         );
+
+    /// <remarks>
+    /// One stored EdOrg subject, which is the smallest shape that emits a co-batchable relationship
+    /// statement. A PostgreSQL/SQL Server scalar claim parameterization keeps the disposition Emitted rather
+    /// than Standalone, which a table-valued parameter would force.
+    /// </remarks>
+    private static RelationshipAuthorizationResult.Authorized CreateAuthorizedRelationship(SqlDialect dialect)
+    {
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "School");
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+
+        return new RelationshipAuthorizationResult.Authorized(
+            [
+                new RelationshipAuthorizationCheckSpec(
+                    new ConfiguredAuthorizationStrategy(
+                        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                        RawConfiguredIndex: 2
+                    ),
+                    RelationshipLocalOrder: 0,
+                    RelationshipAuthorizationHierarchyDirection.Normal,
+                    RelationshipAuthorizationValueSource.Stored,
+                    [
+                        new RelationshipAuthorizationSubject(
+                            resource,
+                            rootTable,
+                            new DbColumnName("SchoolId"),
+                            RelationshipAuthorizationAuthObject.CreateEdOrgHierarchy(
+                                RelationshipAuthorizationHierarchyDirection.Normal
+                            ),
+                            [
+                                new RelationshipAuthorizationSubjectContributor(
+                                    SecurableElementKind.EducationOrganization,
+                                    "$.schoolId",
+                                    "SchoolId"
+                                ),
+                            ]
+                        ),
+                    ],
+                    new RelationshipAuthorizationCheckTarget.Stored(rootTable, new DbColumnName("DocumentId"))
+                ),
+            ],
+            AuthorizationClaimEducationOrganizationIdParameterizationFactory.Create(
+                dialect,
+                [255901L],
+                RelationalAuthorizationParameterNameConstants.ClaimEducationOrganizationIds
+            )
+        );
+    }
 
     private static MappingSet CreateMappingSet(SqlDialect dialect)
     {

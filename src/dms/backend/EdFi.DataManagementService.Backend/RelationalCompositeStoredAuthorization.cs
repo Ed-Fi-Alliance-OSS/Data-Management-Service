@@ -403,7 +403,7 @@ internal static class RelationalCompositeStoredAuthorization
             return true;
         }
 
-        var command = BuildOwnershipCommand(mappingSet, ownershipAuthorization, carrier);
+        var command = BuildCoBatchedOwnershipCommand(mappingSet, ownershipAuthorization, carrier);
 
         if (
             !builder.Fits(
@@ -444,24 +444,29 @@ internal static class RelationalCompositeStoredAuthorization
     }
 
     /// <summary>
-    /// Builds the stored ownership command, carrying the carrier's row guard so the check is vacuous when
-    /// the capture observed no target. Internal so an ordered-segment caller runs the identical statement.
+    /// Builds the co-batched stored ownership command, carrying the carrier's row guard so the check is
+    /// vacuous when the capture observed no target.
     /// </summary>
-    public static RelationalCommand BuildOwnershipCommand(
+    /// <remarks>
+    /// Private, and the carrier is required, because the command it produces is only safe co-batched. Its
+    /// <c>DocumentId</c> is bound to a placeholder that <see cref="TryAppendOwnership"/> rewrites into the
+    /// carrier's captured-id expression before execution — the same placeholder the namespace and
+    /// relationship builders bind — so executing it as its own command would authorize document id 0. An
+    /// ordered-segment caller runs <see cref="OwnershipAuthorizationExecutor"/> against the observed target
+    /// id instead, exactly as the namespace and custom-view segments do.
+    /// </remarks>
+    private static RelationalCommand BuildCoBatchedOwnershipCommand(
         MappingSet mappingSet,
         RelationalOwnershipAuthorization ownershipAuthorization,
-        IRelationalCompositeTargetCarrier? carrier = null
+        IRelationalCompositeTargetCarrier carrier
     )
     {
-        ArgumentNullException.ThrowIfNull(mappingSet);
-        ArgumentNullException.ThrowIfNull(ownershipAuthorization);
-
         var sqlPlan = new OwnershipAuthorizationSqlCompiler(mappingSet.Key.Dialect).Compile(
             new OwnershipAuthorizationSqlSpec(
                 ownershipAuthorization.Check,
                 ownershipAuthorization.OwnershipTokenParameterization,
                 OwnershipAuthorizationSqlSpecDefaults.DocumentIdParameterName,
-                RowGuardPredicateSql: carrier?.CapturedTargetPresentPredicate
+                RowGuardPredicateSql: carrier.CapturedTargetPresentPredicate
             )
         );
 
@@ -469,6 +474,7 @@ internal static class RelationalCompositeStoredAuthorization
             sqlPlan,
             new OwnershipAuthorizationExecutionRequest(
                 mappingSet,
+                // Rewritten to the carrier's captured-id expression by the caller; never executed as bound.
                 DocumentId: 0L,
                 ownershipAuthorization.Check,
                 ownershipAuthorization.OwnershipTokenParameterization
