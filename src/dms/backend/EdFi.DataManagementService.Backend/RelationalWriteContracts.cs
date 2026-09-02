@@ -848,6 +848,13 @@ public sealed record RelationalWriteExecutorRequest
     /// </para>
     /// </remarks>
     public short? CreatorOwnershipTokenId { get; init; }
+
+    /// <summary>
+    /// The ownership check planned for this write, or <see langword="null"/> when <c>OwnershipBased</c> is
+    /// not configured. It authorizes the stored token, so it decides an update and is vacuous for a create —
+    /// which is why one plan can serve a POST whose branch is not yet known.
+    /// </summary>
+    public RelationalOwnershipAuthorization? StoredOwnershipAuthorization { get; init; }
 }
 
 /// <summary>
@@ -966,6 +973,9 @@ public sealed record RelationalWriteExecutorInput
     /// <inheritdoc cref="RelationalWriteExecutorRequest.CreatorOwnershipTokenId"/>
     public short? CreatorOwnershipTokenId { get; init; }
 
+    /// <inheritdoc cref="RelationalWriteExecutorRequest.StoredOwnershipAuthorization"/>
+    public RelationalOwnershipAuthorization? StoredOwnershipAuthorization { get; init; }
+
     /// <summary>
     /// Produces the fully resolved executor request for a target the executor observed inside its
     /// write session. All cross-field validation runs in the resolved request's constructor.
@@ -994,6 +1004,7 @@ public sealed record RelationalWriteExecutorInput
             PostRelationshipAuthorizationPlans = PostRelationshipAuthorizationPlans,
             CustomViewAuthorization = CustomViewAuthorization,
             CreatorOwnershipTokenId = CreatorOwnershipTokenId,
+            StoredOwnershipAuthorization = StoredOwnershipAuthorization,
         };
 }
 

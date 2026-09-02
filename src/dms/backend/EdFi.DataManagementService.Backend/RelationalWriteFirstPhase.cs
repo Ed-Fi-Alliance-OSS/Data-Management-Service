@@ -220,6 +220,12 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         public StoredCustomViewStatementPlan? CustomViewPlan { get; init; }
 
         /// <summary>
+        /// The ownership check the command carried, or <see langword="null"/> when it carried none — so a
+        /// provider failure is mapped only against a check that command actually sent.
+        /// </summary>
+        public StoredOwnershipStatementPlan? OwnershipPlan { get; init; }
+
+        /// <summary>
         /// Exactly the custom-view checks the command carries statements for, so their views are validated
         /// before it runs and no other view's contract can preempt what it decides.
         /// </summary>
@@ -321,6 +327,23 @@ internal sealed class CompositeRelationalWriteFirstPhase(
                 ? new StoredCustomViewStatementPlan(customViewAuthorization.Checks)
                 : null;
 
+        // After the namespace statement and before the relationship one, matching auth.md: ownership is the
+        // last AND filter and the relationship OR group follows every AND filter. A non-fit sends the whole
+        // request to the ordered-segments path, as a namespace non-fit already does, rather than degrading
+        // this one check â€” that path executes and validates every check in configured order anyway.
+        if (
+            !RelationalCompositeStoredAuthorization.TryAppendOwnership(
+                builder,
+                carrier,
+                input.MappingSet,
+                input.StoredOwnershipAuthorization,
+                out var ownershipPlan
+            )
+        )
+        {
+            return null;
+        }
+
         if (
             !RelationalCompositeStoredAuthorization.TryAppendRelationship(
                 builder,
@@ -353,6 +376,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         {
             CustomViewPlan = customViewPlan,
             CustomViewCommandChecks = customViewsBeforeNamespace,
+            OwnershipPlan = ownershipPlan,
         };
     }
 
@@ -399,6 +423,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
                     input,
                     namespacePlan,
                     plan.CustomViewPlan,
+                    plan.OwnershipPlan,
                     relationshipPlan,
                     exception,
                     execution.Failure
@@ -583,6 +608,23 @@ internal sealed class CompositeRelationalWriteFirstPhase(
                 return RelationalWriteFirstPhaseResolution.Immediate(customViewAfterResult);
             }
 
+            // Ownership last among the AND filters, so after both custom-view runs and the namespace check,
+            // and still ahead of the relationship OR group. Reached only inside this captured-target branch,
+            // which is what makes a create vacuous here just as the carrier row guard does co-batched.
+            if (
+                await ExecuteStandaloneStoredOwnershipAsync(
+                        executionRequest,
+                        capturedTarget.DocumentId,
+                        writeSession,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false) is
+                { } ownershipResult
+            )
+            {
+                return RelationalWriteFirstPhaseResolution.Immediate(ownershipResult);
+            }
+
             var storedRelationshipResult = await ResolveStandaloneStoredRelationshipDispositionAsync(
                     executionRequest,
                     ClassifyStoredRelationshipDisposition(input),
@@ -744,6 +786,59 @@ internal sealed class CompositeRelationalWriteFirstPhase(
                 cancellationToken
             )
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Runs the ownership check as its own ordered segment against the captured target.
+    /// </summary>
+    private async Task<RelationalWriteExecutorResult?> ExecuteStandaloneStoredOwnershipAsync(
+        RelationalWriteExecutorRequest executionRequest,
+        long targetDocumentId,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        if (executionRequest.StoredOwnershipAuthorization is not { } ownershipAuthorization)
+        {
+            return null;
+        }
+
+        var executionResult = await new OwnershipAuthorizationExecutor(
+            writeSession.CreateCommandExecutor(),
+            _providerFailureExtractor
+        )
+            .ExecuteAsync(
+                new OwnershipAuthorizationExecutionRequest(
+                    executionRequest.MappingSet,
+                    targetDocumentId,
+                    ownershipAuthorization.Check,
+                    ownershipAuthorization.OwnershipTokenParameterization
+                ),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return executionResult switch
+        {
+            OwnershipAuthorizationExecutionResult.Authorized => null,
+            OwnershipAuthorizationExecutionResult.NotAuthorized notAuthorized =>
+                RelationalWriteExecutorResults.BuildOwnershipAuthorizationFailureResult(
+                    executionRequest.OperationKind,
+                    notAuthorized.Failure
+                ),
+            OwnershipAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
+                RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
+                    executionRequest.OperationKind,
+                    [invalidFailure.FailureMessage],
+                    invalidFailure.Diagnostics
+                ),
+            // Unreachable while the capture lock holds; the same defensive mapping the sibling segments use.
+            OwnershipAuthorizationExecutionResult.StaleTarget =>
+                RelationalWriteExecutorResults.BuildStaleTargetResult(executionRequest.OperationKind),
+            _ => throw new InvalidOperationException(
+                $"Unsupported ownership authorization execution result '{executionResult.GetType().Name}'."
+            ),
+        };
     }
 
     private async Task<RelationalWriteExecutorResult?> ResolveStandaloneStoredRelationshipDispositionAsync(
@@ -964,6 +1059,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         RelationalWriteExecutorInput input,
         StoredNamespaceStatementPlan? namespacePlan,
         StoredCustomViewStatementPlan? customViewPlan,
+        StoredOwnershipStatementPlan? ownershipPlan,
         StoredRelationshipStatementPlan relationshipPlan,
         DbException exception,
         RelationalCompositeFailureContext? failureContext
@@ -977,9 +1073,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
             _providerFailureExtractor,
             _logger,
             customViewPlan,
-            // The write path plans no ownership check yet; Phase 6 wires it. Passed explicitly rather than
-            // defaulted so a valid own1 denial cannot fail closed as a 500 through an omitted argument.
-            ownershipPlan: null
+            ownershipPlan
         ) switch
         {
             // Stale is unreachable while the capture lock holds; kept as the same defensive mapping the
@@ -994,6 +1088,11 @@ internal sealed class CompositeRelationalWriteFirstPhase(
                 ),
             StoredAuthorizationDenial.CustomViewNotAuthorized(var failure) =>
                 RelationalWriteExecutorResults.BuildCustomViewAuthorizationFailureResult(
+                    input.OperationKind,
+                    failure
+                ),
+            StoredAuthorizationDenial.OwnershipNotAuthorized(var failure) =>
+                RelationalWriteExecutorResults.BuildOwnershipAuthorizationFailureResult(
                     input.OperationKind,
                     failure
                 ),
