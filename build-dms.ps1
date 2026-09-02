@@ -1636,7 +1636,8 @@ function Register-InstanceE2EFixture {
                         -DataStoreType "District" `
                         -Name "Instance E2E $($route.DistrictId)/$($route.SchoolYear)" `
                         -PostgresCredential $postgresCredential `
-                        -ConnectionString $InstanceE2ESettings.RegistrationConnectionStrings[$route.Index]
+                        -ConnectionString $InstanceE2ESettings.RegistrationConnectionStrings[$route.Index] `
+                        -DatabaseEngine $InstanceE2ESettings.DatabaseEngine
 
                     $districtContextId = Add-DataStoreContext -CmsUrl $cmsUrl -AccessToken $accessToken -Tenant $tenantName -DataStoreId $dataStoreId -ContextKey "districtId" -ContextValue $route.DistrictId
                     $schoolYearContextId = Add-DataStoreContext -CmsUrl $cmsUrl -AccessToken $accessToken -Tenant $tenantName -DataStoreId $dataStoreId -ContextKey "schoolYear" -ContextValue $route.SchoolYear

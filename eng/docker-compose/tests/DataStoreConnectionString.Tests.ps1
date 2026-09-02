@@ -342,9 +342,11 @@ Describe "configure-local-data-store.ps1 MSSQL data-store wiring (DMS-1238)" {
         $script:configureSource | Should -Match '-DbHost "dms-mssql"'
     }
 
-    It "forwards the resolved connection string to the data-store creation calls" {
+    It "forwards the resolved connection string and explicit engine to the data-store creation calls" {
         # Both the default single-data-store path and the school-year path must forward it.
         ([regex]::Matches($script:configureSource, '-ConnectionString \$dataStoreConnectionString')).Count |
+            Should -BeGreaterOrEqual 2
+        ([regex]::Matches($script:configureSource, '-DatabaseEngine \$DatabaseEngine')).Count |
             Should -BeGreaterOrEqual 2
     }
 
@@ -375,11 +377,13 @@ Describe "start-published-dms.ps1 MSSQL data-store wiring (DMS-1255)" {
         $script:startPublishedSource | Should -Match '(?s)\$dataStoreConnectionString = New-DataStoreConnectionString[^\r\n]*`\s*-DatabaseEngine "mssql"[^\r\n]*`\s*-DbHost "dms-mssql"'
     }
 
-    It "forwards the resolved connection string to both data-store creation calls" {
+    It "forwards the resolved connection string and explicit engine to both data-store creation calls" {
         # Both the school-year path and the default single-data-store path must forward it so a
         # published MSSQL startup does not register PostgreSQL-shaped data stores pointing at a
         # dms-postgresql container that the mssql compose set never starts.
         ([regex]::Matches($script:startPublishedSource, '-ConnectionString \$dataStoreConnectionString')).Count |
+            Should -BeGreaterOrEqual 2
+        ([regex]::Matches($script:startPublishedSource, '-DatabaseEngine \$DatabaseEngine')).Count |
             Should -BeGreaterOrEqual 2
     }
 

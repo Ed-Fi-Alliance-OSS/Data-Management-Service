@@ -4,6 +4,7 @@ source_spike: DMS-1246
 epic: DMS-1308
 related:
   - DMS-1245
+  - DMS-1318
 ---
 
 # Story: Add DocumentCache Integration Coverage and Runbooks
@@ -32,7 +33,7 @@ performance ticket.
 - Cover transactional set-based enqueue, forced enqueue failure with complete canonical
   rollback, complete-transaction deadlock retry, test-only restricted canonical-writer
   trigger execution and direct-work-DML denial, disabled writes, projector-stopped writes,
-  cascades, descriptors, restamp, SQL Server prerequisite validation, and guarded
+  cascades, descriptors, SQL Server prerequisite validation, and guarded
   new-empty activation including prerequisite failure and racing inserts.
 - Cover current source/cache/work classification, stale-candidate suppression,
   candidate-independent `S = C = W` acknowledgement, cache-ahead-only latching, blocked
@@ -109,6 +110,8 @@ The durable low-scope fix hardens only the config MSSQL E2E compose path:
 ## Not Assigned to This Story
 
 - Kafka infrastructure, connector, and consumer operation are assigned to E19.
+- Representation restamp implementation, integration coverage, and operator guidance are
+  assigned independently to DMS-1318 / story 18-08 and are not dependencies of this story.
 - The executable representative DocumentCache performance harness, threshold catalog,
   result validation schema, representative runbook, production performance runs,
   pass/fail decisions, durable-baseline-cursor performance escalation evidence, and

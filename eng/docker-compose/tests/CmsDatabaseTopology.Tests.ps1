@@ -2226,7 +2226,9 @@ __CAPTURE_FUNCTION__ @{ RelativeUrl = $RelativeUrl; Body = $Body }
             $script:capturedRegistrations | Should -HaveCount 1
             $script:capturedRegistrations[0].RelativeUrl | Should -Be 'v3/dataStores'
 
-            $registered = ($script:capturedRegistrations[0].Body | ConvertFrom-Json).connectionString
+            $registration = $script:capturedRegistrations[0].Body | ConvertFrom-Json
+            $registration.provider | Should -BeExactly 'postgresql'
+            $registered = $registration.connectionString
             # Segment-boundary anchored: a corrupted key such as `notpassword=;` must not satisfy
             # this - the key itself has to be exactly `password`, at the string start or after `;`.
             $registered | Should -Match '(?:^|;)password=;'
@@ -2293,10 +2295,46 @@ __CAPTURE_FUNCTION__ @{ RelativeUrl = $RelativeUrl; Body = $Body }
             $prebuilt = 'Server=dms-mssql,1433;Database=edfi_datamanagementservice;User Id=sa;Password=Abcdefgh1!;TrustServerCertificate=true'
 
             Add-DataStore -CmsUrl 'http://localhost:8081' -AccessToken 'token' `
-                -PostgresCredential $emptyCredential -ConnectionString $prebuilt | Out-Null
+                -PostgresCredential $emptyCredential -ConnectionString $prebuilt -DatabaseEngine mssql | Out-Null
 
-            ($script:capturedRegistrations[0].Body | ConvertFrom-Json).connectionString |
-                Should -BeExactly $prebuilt
+            $registration = $script:capturedRegistrations[0].Body | ConvertFrom-Json
+            $registration.connectionString | Should -BeExactly $prebuilt
+            $registration.provider | Should -BeExactly 'sqlserver'
+        }
+
+        It "uses the explicit PostgreSQL engine for a prebuilt connection string containing Server" {
+            $emptyCredential = ConvertTo-PostgresCredential -UserName 'postgres' -Secret ''
+            $prebuilt = 'Server=dms-postgresql;Port=5432;Database=edfi_datamanagementservice;Username=postgres;Password=abcdefgh1!'
+
+            Add-DataStore -CmsUrl 'http://localhost:8081' -AccessToken 'token' `
+                -PostgresCredential $emptyCredential -ConnectionString $prebuilt -DatabaseEngine postgresql | Out-Null
+
+            $registration = $script:capturedRegistrations[0].Body | ConvertFrom-Json
+            $registration.connectionString | Should -BeExactly $prebuilt
+            $registration.provider | Should -BeExactly 'postgresql'
+        }
+
+        It "rejects a prebuilt connection string without an explicit database engine" {
+            $emptyCredential = ConvertTo-PostgresCredential -UserName 'postgres' -Secret ''
+            $prebuilt = 'Server=ambiguous;Database=edfi_datamanagementservice'
+
+            {
+                Add-DataStore -CmsUrl 'http://localhost:8081' -AccessToken 'token' `
+                    -PostgresCredential $emptyCredential -ConnectionString $prebuilt
+            } | Should -Throw '*-DatabaseEngine is required*'
+
+            Should -Invoke Invoke-Api -ModuleName Dms-Management -Times 0 -Exactly
+        }
+
+        It "rejects MSSQL when no prebuilt connection string is supplied" {
+            $emptyCredential = ConvertTo-PostgresCredential -UserName 'postgres' -Secret ''
+
+            {
+                Add-DataStore -CmsUrl 'http://localhost:8081' -AccessToken 'token' `
+                    -PostgresCredential $emptyCredential -DatabaseEngine mssql
+            } | Should -Throw '*-ConnectionString is required*'
+
+            Should -Invoke Invoke-Api -ModuleName Dms-Management -Times 0 -Exactly
         }
     }
 

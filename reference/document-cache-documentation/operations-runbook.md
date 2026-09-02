@@ -27,10 +27,8 @@ runbook concerns. Use this runbook only up to the DMS projection boundary, then 
 [Kafka/CDC operations](../design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md)
 when connector or downstream state may be affected.
 
-Representation restamp is outside this runbook. It requires the dedicated offline
-byte-changing representation correction workflow; until that utility and its runbook are
-present, this runbook does not claim restamp coverage and does not replace it with manual
-SQL.
+Representation restamp is owned independently by DMS-1318 / story 18-08 and is outside
+this runbook. This runbook does not replace that workflow with manual SQL.
 
 Owning design sections:
 
@@ -345,15 +343,14 @@ scrub repairs work, let projection drain and verify status again. If scrub is re
 because lifecycle is not `Tracking` or the latch is already set, resolve that lifecycle or
 latch condition through the supported workflow before claiming caught-up.
 
-## Restamp Disposition
+## Restamp Scope Boundary
 
 Representation restamp is not included in these DocumentCache projection workflows.
 Restamp requires the dedicated offline byte-changing representation correction utility and
 runbook described by
 [Offline byte-changing representation correction](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#offline-byte-changing-representation-correction).
-The current branch does not contain a DocumentCache restamp runtime or CLI implementation
-under `src/dms`, so these docs do not provide restamp tests, commands, or operational
-recovery. Until the dedicated workflow is present:
+These docs do not provide restamp tests, commands, or operational recovery. DMS-1317 does
+not depend on delivery of the independently owned DMS-1318 workflow:
 
 - do not claim restamp test or operational coverage from these docs;
 - do not update `ContentVersion`, resource mirrors, cache rows, or tracked-change tables
@@ -362,9 +359,9 @@ recovery. Until the dedicated workflow is present:
 - link operator guidance to the dedicated restamp implementation or to
   [Offline byte-changing representation correction](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#offline-byte-changing-representation-correction).
 
-When a restamp workflow is present, use its own offline utility and runbook. Its preflight
-decides between projection/publication mode and canonical-only mode; neither mode certifies
-a new exact CDC baseline.
+When available, use the DMS-1318 offline utility and runbook for representation restamp.
+Its preflight decides between projection/publication mode and canonical-only mode; neither
+mode certifies a new exact CDC baseline.
 
 ## Kafka/CDC Boundary
 
