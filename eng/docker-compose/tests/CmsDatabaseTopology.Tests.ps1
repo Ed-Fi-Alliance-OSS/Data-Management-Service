@@ -2314,16 +2314,16 @@ __CAPTURE_FUNCTION__ @{ RelativeUrl = $RelativeUrl; Body = $Body }
             $registration.provider | Should -BeExactly 'postgresql'
         }
 
-        It "rejects a prebuilt connection string without an explicit database engine" {
+        It "uses the PostgreSQL default for a prebuilt connection string when database engine is omitted" {
             $emptyCredential = ConvertTo-PostgresCredential -UserName 'postgres' -Secret ''
             $prebuilt = 'Server=ambiguous;Database=edfi_datamanagementservice'
 
-            {
-                Add-DataStore -CmsUrl 'http://localhost:8081' -AccessToken 'token' `
-                    -PostgresCredential $emptyCredential -ConnectionString $prebuilt
-            } | Should -Throw '*-DatabaseEngine is required*'
+            Add-DataStore -CmsUrl 'http://localhost:8081' -AccessToken 'token' `
+                -PostgresCredential $emptyCredential -ConnectionString $prebuilt | Out-Null
 
-            Should -Invoke Invoke-Api -ModuleName Dms-Management -Times 0 -Exactly
+            $registration = $script:capturedRegistrations[0].Body | ConvertFrom-Json
+            $registration.connectionString | Should -BeExactly $prebuilt
+            $registration.provider | Should -BeExactly 'postgresql'
         }
 
         It "rejects MSSQL when no prebuilt connection string is supplied" {

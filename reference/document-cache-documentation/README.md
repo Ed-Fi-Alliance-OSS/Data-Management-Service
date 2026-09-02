@@ -11,9 +11,10 @@ or downstream consumer runbook.
 - [CDC-INV evidence matrix](cdc-inv-evidence.md) maps implemented evidence to the
   in-scope DocumentCache CDC invariant contracts.
 
-Production-scale DocumentCache performance qualification is deferred to follow-up work.
-This DMS-1317 reference set does not define the executable representative harness,
-threshold catalog, result schema, or committed qualification artifacts.
+Production-scale DocumentCache performance qualification is deferred outside DMS-1317 and
+is not currently assigned to an implementation story. This reference set does not define
+the executable representative harness, threshold catalog, result schema, or committed
+qualification artifacts.
 
 Design and implementation references:
 

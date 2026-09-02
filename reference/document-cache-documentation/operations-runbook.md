@@ -55,6 +55,10 @@ Every command targets exactly one data store:
 dms-document-cache status --data-store-id 1 --tenant-key district-a --settings ./appsettings.Production.json --environment Production --datastore postgresql --json
 ```
 
+The `--datastore` value must match the deployed DMS/CMS database platform and the selected
+CMS data store's `Provider` metadata. Mixed-provider CMS-backed DocumentCache targets are
+not a supported production topology.
+
 Omit `--tenant-key` for the normalized default tenant:
 
 ```bash
@@ -293,7 +297,8 @@ clear the latch, clear cache, or clear work.
 
 `Rebuilding` after interruption restarts baseline from the beginning because v1 has no
 durable baseline cursor. Production-scale qualification of completion time, database load,
-and repeated queue-DML limits is deferred to follow-up performance work; the owning
+and repeated queue-DML limits is deferred outside DMS-1317 and is not currently assigned
+to an implementation story; the owning
 [Projection Performance Qualification](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-performance-qualification)
 design section still defines the requirement.
 

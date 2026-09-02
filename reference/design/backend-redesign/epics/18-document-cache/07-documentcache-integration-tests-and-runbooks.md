@@ -20,8 +20,8 @@ cross-feature evidence and implementation-specific guidance without restating th
 ## Outcome
 
 Validate the completed E18 capability across providers and publish DocumentCache operator
-guidance. Representative DocumentCache performance qualification is deferred to a follow-up
-performance ticket.
+guidance. Representative DocumentCache performance qualification is deferred outside
+DMS-1317 and is not currently assigned to an implementation story.
 
 ## Dependencies
 
@@ -52,7 +52,8 @@ performance ticket.
 - Keep bounded provider guards that are integration checks, including no-source-scan status
   and oldest-work observations; do not include the executable representative performance
   harness, threshold catalog, result validator, or qualification artifact contract in
-  DMS-1317.
+  DMS-1317. Those artifacts are deferred outside DMS-1317 and are not currently assigned
+  to an implementation story.
 - Prove projection failure/backlog never gates canonical API routing.
 - Publish operation and troubleshooting guidance for the shipped commands, configuration,
   status, and telemetry.
@@ -60,15 +61,16 @@ performance ticket.
 
 ## Acceptance Evidence
 
-- The provider integration matrix covers every E18 `CDC-INV-*` contract assignment not
-  already proven in a narrower story suite.
+- The provider integration matrix covers the DMS-1317-owned functional,
+  provider-integration, workflow, and runbook evidence for E18 `CDC-INV-*` contracts.
+  Representative production-scale performance qualification is excluded.
 - The workflows described by the runbooks are covered by integration tests against the
   implemented commands and status output. Runbook text and command examples are reviewed
   manually.
 - Runbooks explain persistent failure remediation, enqueue-vs-processing availability,
   lifecycle mismatch, activation/deactivation, rebuild, set-latch routing to cache-ahead
   recovery or containment, scrub admission and rejection, reset recovery, and where
-  production-scale performance qualification remains deferred.
+  production-scale performance qualification remains deferred outside DMS-1317.
 - Runbooks require an explicit scrub after suspected restore or unsupported direct
   mutation before operators rely on queue-empty caught-up status.
 - Runbooks limit correction and restart after SQL Server prerequisite initialization
@@ -102,6 +104,13 @@ This story therefore retains the narrow CMS contract needed to make that integra
   that silently makes a DocumentCache target ineligible.
 - Limit the change to carrying and validating provider identity. Provider compatibility,
   target eligibility, and mismatch diagnostics remain owned by the existing 18-01 DMS logic.
+
+This does not introduce a supported mixed-provider CMS deployment mode. Production CMS-backed
+deployments remain same-provider: the CMS datastore platform, DMS process
+`AppSettings:Datastore`, and stored `Provider` metadata for real data stores are expected to
+match. CMS may continue validating submitted data-store connection strings against that
+configured deployment provider, while DMS retains the projection eligibility and mismatch
+guards for stale, invalid, or test-supplied metadata.
 
 Although this is production integration code rather than test-only code, it directly closes the
 explicit 18-01 prerequisite discovered by DMS-1317's hosted coverage. Splitting it would leave
@@ -140,4 +149,5 @@ The durable low-scope fix hardens only the config MSSQL E2E compose path:
 - The executable representative DocumentCache performance harness, threshold catalog,
   result validation schema, representative runbook, production performance runs,
   pass/fail decisions, durable-baseline-cursor performance escalation evidence, and
-  committed qualification artifacts are assigned to follow-up performance work.
+  committed qualification artifacts are deferred outside DMS-1317 and are not currently
+  assigned to an implementation story.

@@ -307,7 +307,7 @@ Describe "DocumentCache hosted E2E environment isolation" {
         $localDmsCompose | Should -Not -Match "DocumentCache__Targets__0"
     }
 
-    It "adds the target and read acceleration only through the focused overlay" {
+    It "adds the target, read acceleration, and cache-refresh guard only through the focused overlay" {
         $work = Join-Path ([System.IO.Path]::GetTempPath()) "dms-document-cache-overlay-$([Guid]::NewGuid().ToString('N'))"
         try {
             $derivedPath = Join-Path $work ".env.e2e.document-cache.e2e"
@@ -320,6 +320,7 @@ Describe "DocumentCache hosted E2E environment isolation" {
             $values["DMS_DOCUMENTCACHE_TARGET_DATA_STORE_ID"] | Should -Be "1"
             $values["DMS_DOCUMENTCACHE_READ_ACCELERATION_ENABLED"] | Should -Be "true"
             $values["DMS_DOCUMENTCACHE_COMPOSE_FILE"] | Should -Be "local-dms-document-cache.yml"
+            $values["DMS_DATASTORE_CACHE_REFRESH_ENABLED"] | Should -Be "false"
 
             $targetComposePath = Join-Path `
                 $script:dockerComposeRoot `

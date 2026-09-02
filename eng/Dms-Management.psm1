@@ -1086,10 +1086,6 @@ function Add-DataStore {
     # compares the provider-parsed value, never the parameter text, and follows that exception instead
     # of missing it.
     $hasPrebuiltConnectionString = -not [string]::IsNullOrWhiteSpace($ConnectionString)
-    if ($hasPrebuiltConnectionString -and -not $PSBoundParameters.ContainsKey("DatabaseEngine")) {
-        throw "-DatabaseEngine is required when -ConnectionString is supplied."
-    }
-
     if (-not $hasPrebuiltConnectionString) {
         if ($DatabaseEngine -eq "mssql") {
             throw "-ConnectionString is required when -DatabaseEngine is 'mssql'."
@@ -1377,9 +1373,6 @@ function Add-DmsSchoolYearInstances {
         throw "StartYear ($StartYear) cannot be greater than EndYear ($EndYear)"
     }
 
-    if (-not [string]::IsNullOrWhiteSpace($ConnectionString) -and -not $PSBoundParameters.ContainsKey("DatabaseEngine")) {
-        throw "-DatabaseEngine is required when -ConnectionString is supplied."
-    }
     if ([string]::IsNullOrWhiteSpace($ConnectionString) -and $DatabaseEngine -eq "mssql") {
         throw "-ConnectionString is required when -DatabaseEngine is 'mssql'."
     }
