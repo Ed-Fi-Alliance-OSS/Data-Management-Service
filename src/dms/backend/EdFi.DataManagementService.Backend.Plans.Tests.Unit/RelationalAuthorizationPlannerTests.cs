@@ -969,6 +969,30 @@ public class Given_RelationalAuthorizationPlanner
     }
 
     /// <summary>
+    /// The other direction of the same precedence, and the half no test held: a relationship configuration
+    /// failure executes in the OR group, after every AND strategy, so the ownership cap terminal displaces
+    /// it. Asserted through <c>Plan</c> rather than through the predicate, because the predicate is consulted
+    /// at two call sites and only a plan outcome says the live one honoured its answer.
+    /// </summary>
+    [Test]
+    public void It_reports_the_token_cap_ahead_of_a_relationship_configuration_failure()
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(),
+            ResourceWithoutSecurableElements(),
+            NamespaceAuthorizationOperation.ReadSingle,
+            [Strategy("MadeUpStrategy", 0), Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 1)],
+            OverCapOwnershipContext()
+        );
+
+        outcome
+            .Should()
+            .BeOfType<RelationalAuthorizationPlanOutcome.OwnershipTokenCapExceeded>()
+            .Which.OwnershipTokenCount.Should()
+            .Be(OwnershipTokenLimitExceededException.OwnershipTokenLimit);
+    }
+
+    /// <summary>
     /// A plan produced for a request with no ownership strategy carries no ownership check — the property
     /// defaults to null rather than to an empty-but-present plan.
     /// </summary>
