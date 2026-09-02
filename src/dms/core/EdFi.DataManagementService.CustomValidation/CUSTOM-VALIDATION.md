@@ -9,6 +9,9 @@ custom resource validation to the Ed-Fi Data Management Service.
 > instances and invokes those whose `AppliesTo` matches the current request's resource, but no
 > supported registration seam ships yet.
 > An implementer has no documented way to register one, so in practice nothing runs today.
+> Registering one is not inert at startup, however: a startup guard audits every registration and
+> aborts startup if a validator is registered in a shape DMS would not resolve, so a registration
+> mistake fails the process rather than passing silently.
 > Build against it to pin the contract and to compile early, but do not expect a registered
 > validator to execute until a Data Management Service release announces custom-validation support.
 

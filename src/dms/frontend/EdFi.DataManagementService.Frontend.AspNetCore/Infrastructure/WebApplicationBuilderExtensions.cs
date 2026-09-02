@@ -146,6 +146,9 @@ public static class WebApplicationBuilderExtensions
 
         // Add JWT authentication services from Core
         webAppBuilder.Services.AddJwtAuthentication(webAppBuilder.Configuration);
+
+        // Register the startup guard that audits ICustomResourceValidator registrations
+        webAppBuilder.Services.AddCustomValidationGuard();
     }
 
     private static void ConfigureDatastore(WebApplicationBuilder webAppBuilder, Serilog.ILogger logger)
