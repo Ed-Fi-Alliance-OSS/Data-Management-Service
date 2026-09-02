@@ -356,6 +356,13 @@ command as the custom-view and namespace statements, after them and before the r
 which is what makes statement order the precedence order. Only the read path adds a command, and only
 when ownership is configured for the action.
 
+That append is budget-guarded like the namespace one, so sharing the roundtrip is the ordinary case rather
+than a guarantee: when the composite plan does not fit the command's parameter budget, the ownership
+statement takes an ordered same-session segment ahead of the mutation or delete instead. On SQL Server a
+near-ceiling namespace prefix list combined with a large ownership token list reaches this well below the
+2,000-token cap. The command count changes; authorization-before-mutation ordering and the precedence
+order above do not.
+
 Collapsing it belongs with the co-batching follow-on recommended for authorized GET-by-id above: the
 ownership check would join whatever carrier that story establishes. DMS-1060 records the deviation and
 changes nothing else on this path.
