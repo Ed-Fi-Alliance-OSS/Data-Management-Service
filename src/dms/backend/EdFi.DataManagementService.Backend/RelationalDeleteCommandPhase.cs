@@ -32,6 +32,13 @@ internal sealed record RelationalDeleteCommandRequest(
     /// </summary>
     public RelationalCustomViewAuthorization? CustomViewAuthorization { get; init; }
 
+    /// <summary>
+    /// The ownership check planned for this delete, or <see langword="null"/> when <c>OwnershipBased</c> is
+    /// not configured. It authorizes the stored token only, so like the custom views it has no proposed
+    /// source here.
+    /// </summary>
+    public RelationalOwnershipAuthorization? StoredOwnershipAuthorization { get; init; }
+
     public WritePrecondition WritePrecondition { get; init; } = new WritePrecondition.None();
 
     /// <summary>
@@ -153,6 +160,18 @@ internal sealed class CompositeRelationalDeleteCommand(
         /// </summary>
         public IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> CustomViewSegmentChecks { get; init; } =
         [];
+
+        /// <summary>
+        /// The ownership check the command carried, or <see langword="null"/> when it carried none — so a
+        /// provider failure is mapped only against a check that command actually sent.
+        /// </summary>
+        public StoredOwnershipStatementPlan? OwnershipPlan { get; init; }
+
+        /// <summary>
+        /// The ownership authorization still owed as its own ordered segment because it did not fit the
+        /// opening command, or <see langword="null"/> when nothing is owed.
+        /// </summary>
+        public RelationalOwnershipAuthorization? OwnershipSegmentAuthorization { get; init; }
     }
 
     public async Task<DeleteResult> ExecuteAsync(
@@ -190,6 +209,7 @@ internal sealed class CompositeRelationalDeleteCommand(
                 request,
                 plan.NamespacePlan,
                 plan.CustomViewPlan,
+                plan.OwnershipPlan,
                 plan.RelationshipPlan,
                 exception,
                 execution.Failure
@@ -229,6 +249,21 @@ internal sealed class CompositeRelationalDeleteCommand(
         )
         {
             return customViewResult;
+        }
+
+        if (
+            await ExecuteSegmentedOwnershipAsync(
+                    request,
+                    plan.OwnershipSegmentAuthorization,
+                    capturedTarget.DocumentId,
+                    writeSession,
+                    cancellationToken
+                )
+                .ConfigureAwait(false) is
+            { } ownershipResult
+        )
+        {
+            return ownershipResult;
         }
 
         if (
@@ -356,10 +391,28 @@ internal sealed class CompositeRelationalDeleteCommand(
             && customViewsBeforeNamespace.Count > 0
                 ? new StoredCustomViewStatementPlan(customViewAuthorization.Checks)
                 : null;
+        // Ownership rides the command only once everything configured ahead of it has: it executes last
+        // among the AND filters, so a segment owed by any of them must run before it.
+        // Declared ahead of the short-circuiting chain: when a check configured earlier already owes a
+        // segment, TryAppendOwnership is never reached and no statement was emitted to map a failure against.
+        StoredOwnershipStatementPlan? ownershipPlan = null;
+        var ownershipEmitted =
+            namespaceEmitted
+            && customViewSegmentChecks.Count == 0
+            && RelationalCompositeStoredAuthorization.TryAppendOwnership(
+                builder,
+                carrier,
+                request.MappingSet,
+                request.StoredOwnershipAuthorization,
+                out ownershipPlan
+            );
+        var ownershipSegmentAuthorization = ownershipEmitted ? null : request.StoredOwnershipAuthorization;
+
         var relationshipPlan = classifiedRelationship;
         var relationshipEmitted =
             namespaceEmitted
             && customViewSegmentChecks.Count == 0
+            && ownershipEmitted
             && RelationalCompositeStoredAuthorization.TryAppendRelationship(
                 builder,
                 carrier,
@@ -385,6 +438,7 @@ internal sealed class CompositeRelationalDeleteCommand(
         if (
             namespaceEmitted
             && customViewSegmentChecks.Count == 0
+            && ownershipEmitted
             && CanCoBatchDeletes(request, relationshipPlan.Disposition)
         )
         {
@@ -403,6 +457,8 @@ internal sealed class CompositeRelationalDeleteCommand(
             CustomViewPlan = customViewPlan,
             CustomViewCommandChecks = customViewsBeforeNamespace,
             CustomViewSegmentChecks = customViewSegmentChecks,
+            OwnershipPlan = ownershipPlan,
+            OwnershipSegmentAuthorization = ownershipSegmentAuthorization,
         };
     }
 
@@ -495,6 +551,64 @@ internal sealed class CompositeRelationalDeleteCommand(
     /// executes in configured order and strictly precedes the relationship check and any deletion, at the cost
     /// of one more command on that path.
     /// </summary>
+    /// <summary>
+    /// Runs the ownership check as its own ordered segment, which happens when it did not fit the opening
+    /// command or when a check configured ahead of it took a segment first.
+    /// </summary>
+    /// <remarks>
+    /// Ordered after the custom-view segment and before the relationship check, which is the same position
+    /// it holds co-batched: ownership executes last among the AND filters and ahead of the relationship OR
+    /// group. It runs against the decoded captured id under the lock the capture holds, so it authorizes the
+    /// row the deletes would remove — and the deletes are withheld from the opening command whenever this
+    /// segment is owed.
+    /// </remarks>
+    private async Task<DeleteResult?> ExecuteSegmentedOwnershipAsync(
+        RelationalDeleteCommandRequest request,
+        RelationalOwnershipAuthorization? ownershipAuthorization,
+        long documentId,
+        IRelationalWriteSession writeSession,
+        CancellationToken cancellationToken
+    )
+    {
+        if (ownershipAuthorization is null)
+        {
+            return null;
+        }
+
+        var executionResult = await new OwnershipAuthorizationExecutor(
+            writeSession.CreateCommandExecutor(),
+            _providerFailureExtractor
+        )
+            .ExecuteAsync(
+                new OwnershipAuthorizationExecutionRequest(
+                    request.MappingSet,
+                    documentId,
+                    ownershipAuthorization.Check,
+                    ownershipAuthorization.OwnershipTokenParameterization
+                ),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return executionResult switch
+        {
+            OwnershipAuthorizationExecutionResult.Authorized => null,
+            OwnershipAuthorizationExecutionResult.NotAuthorized notAuthorized =>
+                new DeleteResult.DeleteFailureOwnershipNotAuthorized(notAuthorized.Failure),
+            OwnershipAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure =>
+                new DeleteResult.DeleteFailureSecurityConfiguration(
+                    [invalidFailure.FailureMessage],
+                    invalidFailure.Diagnostics
+                ),
+            // Unreachable while the capture lock holds; the same defensive mapping the namespace and
+            // custom-view segments use.
+            OwnershipAuthorizationExecutionResult.StaleTarget => new DeleteResult.DeleteFailureNotExists(),
+            _ => throw new InvalidOperationException(
+                $"Unsupported ownership authorization execution result '{executionResult.GetType().Name}'."
+            ),
+        };
+    }
+
     private async Task<DeleteResult?> ExecuteSegmentedCustomViewAsync(
         RelationalDeleteCommandRequest request,
         IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> segmentChecks,
@@ -809,6 +923,7 @@ internal sealed class CompositeRelationalDeleteCommand(
         RelationalDeleteCommandRequest request,
         StoredNamespaceStatementPlan? namespacePlan,
         StoredCustomViewStatementPlan? customViewPlan,
+        StoredOwnershipStatementPlan? ownershipPlan,
         StoredRelationshipStatementPlan relationshipPlan,
         DbException exception,
         RelationalCompositeFailureContext? failureContext
@@ -821,7 +936,8 @@ internal sealed class CompositeRelationalDeleteCommand(
             RelationshipAuthorizationAuth1Index,
             _providerFailureExtractor,
             _logger,
-            customViewPlan
+            customViewPlan,
+            ownershipPlan
         ) switch
         {
             // Stale is unreachable while the capture lock holds; kept as the same defensive mapping the
@@ -831,6 +947,8 @@ internal sealed class CompositeRelationalDeleteCommand(
                 new DeleteResult.DeleteFailureNamespaceNotAuthorized(failure),
             StoredAuthorizationDenial.CustomViewNotAuthorized(var failure) =>
                 new DeleteResult.DeleteFailureCustomViewNotAuthorized(failure),
+            StoredAuthorizationDenial.OwnershipNotAuthorized(var failure) =>
+                new DeleteResult.DeleteFailureOwnershipNotAuthorized(failure),
             StoredAuthorizationDenial.RelationshipNotAuthorized(var failure) =>
                 new DeleteResult.DeleteFailureRelationshipNotAuthorized(failure),
             StoredAuthorizationDenial.SecurityConfiguration(var messages, var diagnostics) =>

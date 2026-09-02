@@ -976,7 +976,10 @@ internal sealed class CompositeRelationalWriteFirstPhase(
             RelationalWriteExecutorResults.GetRelationshipAuthorizationAuth1Index(input.OperationKind),
             _providerFailureExtractor,
             _logger,
-            customViewPlan
+            customViewPlan,
+            // The write path plans no ownership check yet; Phase 6 wires it. Passed explicitly rather than
+            // defaulted so a valid own1 denial cannot fail closed as a 500 through an omitted argument.
+            ownershipPlan: null
         ) switch
         {
             // Stale is unreachable while the capture lock holds; kept as the same defensive mapping the

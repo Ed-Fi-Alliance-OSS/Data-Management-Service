@@ -108,21 +108,22 @@ internal abstract record StoredAuthorizationDenial
 }
 
 /// <summary>
-/// Co-batches the stored namespace and stored relationship <c>AUTH1</c> checks against a captured target,
-/// and classifies the provider failure a denial raises.
+/// Co-batches the stored custom view-based, namespace, ownership, and relationship <c>AUTH1</c> checks
+/// against a captured target, and classifies the provider failure a denial raises.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Statement order is precedence order: a command aborts at its first <c>AUTH1</c>, so emitting namespace
-/// before relationship is what makes a namespace denial win. Every write verb that authorizes stored values
-/// against a locked target shares this one implementation, so that precedence — and the failure
-/// classification the caller renders — cannot drift between the write executor's first phase and the delete
-/// command.
+/// Statement order is precedence order: a command aborts at its first <c>AUTH1</c>, so emitting the custom
+/// views and namespace before ownership, and ownership before relationship, is what decides which denial
+/// wins. Every write verb that authorizes stored values against a locked target shares this one
+/// implementation, so that precedence — and the failure classification the caller renders — cannot drift
+/// between the write executor's first phase and the delete command.
 /// </para>
 /// <para>
-/// Both checks are written to be vacuous when the capture observed nothing: the namespace checks carry the
-/// carrier's row guard, and the relationship check's own target CTE yields no row. A command must serve both
-/// branches, because choosing per branch would require knowing the target before the command runs.
+/// Every check is written to be vacuous when the capture observed nothing: the custom-view, namespace and
+/// ownership checks carry the carrier's row guard, and the relationship check's own target CTE yields no
+/// row. A command must serve both branches, because choosing per branch would require knowing the target
+/// before the command runs.
 /// </para>
 /// </remarks>
 internal static class RelationalCompositeStoredAuthorization
@@ -611,8 +612,8 @@ internal static class RelationalCompositeStoredAuthorization
         int emittedAuth1Index,
         IRelationshipAuthorizationProviderFailureExtractor providerFailureExtractor,
         ILogger logger,
-        StoredCustomViewStatementPlan? customViewPlan = null,
-        StoredOwnershipStatementPlan? ownershipPlan = null
+        StoredCustomViewStatementPlan? customViewPlan,
+        StoredOwnershipStatementPlan? ownershipPlan
     )
     {
         ArgumentNullException.ThrowIfNull(exception);
