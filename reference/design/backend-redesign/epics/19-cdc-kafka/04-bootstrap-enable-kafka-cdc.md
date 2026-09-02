@@ -44,11 +44,10 @@ needed to provision, validate, start, stop, and retire a target.
   manifest.
 - Wire CDC-owned downstream-publication-history evidence into the E18 DocumentCache
   administrative command gate by providing and registering the production
-  `IDocumentCacheDownstreamPublicationHistoryProvider` bridge. The bridge must report
-  `internalOnly` only when durable CDC binding/source-history evidence proves the same
-  normalized target key and physical-source fingerprint were internal-only; `active`,
-  `historical`, `possible`, `unknown`, missing, or mismatched evidence must keep the E18
-  commands rejected with no mutation.
+  `IDocumentCacheDownstreamPublicationHistoryProvider` implementation. It reports
+  `internalOnly` only when durable CDC binding evidence proves the same normalized target key
+  and physical-source fingerprint were internal-only; `active`, `historical`, `possible`,
+  `unknown`, missing, or mismatched evidence keeps the E18 commands rejected with no mutation.
 - Add cluster-scoped Kafka Connect offset-store provisioning/validation and binding-scoped
   Kafka topic, durability, record-size, and ACL provisioning/validation.
 - Add Kafka Connect registration, live validation, status polling, restart, guarded
@@ -144,6 +143,42 @@ controller, its adapters, and the entry points that invoke them.
   before DMS starts: the CDC opt-in writes the `(tenant key, DataStoreId)` entry and the
   status endpoint's required role into the DMS runtime settings, and infrastructure opt-in
   alone never implies a projection target.
+
+### Downstream Publication History for the E18 Administrative Gate
+
+- The E18 offline activation, offline deactivation, and cache-ahead recovery commands are
+  admitted only when the trusted downstream-publication-history abstraction reports
+  `internalOnly` for the same normalized target key and physical-source fingerprint. This
+  story supplies the production implementation of that abstraction from the durable binding
+  state store, replacing the default that always answered `unknown`.
+- A binding record is the deployment's durable commitment that a target's projection is
+  published downstream. It is written before the guarded `Disabled -> Tracking` transition
+  and is immutable for the life of the generation, so its presence — not a connector's
+  current runtime state — is what disqualifies a target. Stopping a connector or removing the
+  target from `DocumentCache:Targets` leaves the record in place, which is why neither erases
+  the history.
+- The provider lists the deployment's bindings and matches on the binding tenant key and
+  data-store id, mapping the E18 empty tenant key to the binding's `default` token first. A
+  binding on the currently resolved physical source reports `active`; one on an earlier
+  physical source for the same target reports `historical`. Only a complete listing that
+  holds at least one readable binding and no binding for the target reports `internalOnly`.
+- Every other outcome reports `unknown` so the gate rejects without mutation: no configured
+  deployment key, a listing the state store could not complete, a listing holding any record
+  that could not be read as a binding — the unreadable record may be the very binding that
+  would disqualify the target — and a listing holding no binding at all.
+- An empty listing rejects rather than proving the target was never published. A fresh
+  volume, a mis-mounted state root, and a root pointed at another deployment all list empty,
+  so an absent binding means something only once a readable one has established that this is
+  the populated, authoritative store for the deployment. The cost is that a deployment which
+  has never enabled CDC for any target cannot admit the offline commands; that is the
+  fail-closed side of the trade, and it matches the rule that no operator assertion may stand
+  in for durable evidence.
+- Every observation carries the currently resolved physical-source fingerprint, including the
+  rejecting ones. The E18 evaluator checks the fingerprint before the status, so withholding
+  it would classify each rejection as a source mismatch that was never observed.
+- The deployment key is read from raw configuration rather than through the bound control
+  options, whose validation the administrative host defers to a `cdc` verb. Binding it here
+  would make every DocumentCache command fail on CDC configuration it does not use.
 
 ### Lag and the Metrics Bridge
 
@@ -256,10 +291,12 @@ controller, its adapters, and the entry points that invoke them.
   image validation.
 - Provider tests cover the initial readiness and post-enablement lifecycle paths for
   PostgreSQL and SQL Server.
-- Production-path tests prove the E18 `activate-offline`, `deactivate-offline`, and
-  `recover-cache-ahead` commands no longer receive the default `unknown` downstream
-  history when trusted CDC evidence proves `internalOnly`, and still reject active,
-  historical, possible, unknown, missing, or mismatched evidence without mutation.
+- Downstream-publication-history tests prove the E18 `activate-offline`, `deactivate-offline`,
+  and `recover-cache-ahead` commands no longer receive the default `unknown` history: the
+  shipped composition for both datastores resolves the CDC-backed provider, and the provider
+  reports `internalOnly` only for a complete listing that holds a readable binding and none for
+  the target, reporting `active`, `historical`, or `unknown` for every other evidence shape, an
+  empty listing included.
 - Diagnostics tests cover each implementation boundary without exposing secrets.
 
 ## Not Assigned to This Story

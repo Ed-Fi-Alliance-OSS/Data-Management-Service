@@ -86,6 +86,15 @@ public static class CdcControlServiceCollectionExtensions
         // administrative host replaces with its own invocation target.
         services.TryAddSingleton<CdcExplicitProjectionTargetProof>();
 
+        // Supplies the E18 administrative gate with the durable binding evidence it has had no source
+        // for. The DocumentCache runtime services register a default that always answers with the
+        // unknown status, and they register it conditionally, so this registration only takes effect
+        // when it runs first. A registration test pins that ordering for the shipped hosts.
+        services.TryAddSingleton<
+            Core.DocumentCache.IDocumentCacheDownstreamPublicationHistoryProvider,
+            CdcDownstreamPublicationHistoryProvider
+        >();
+
         services.TryAddSingleton<
             ICdcInstanceDatabaseConnectionFactory,
             CdcInstanceDatabaseConnectionFactory

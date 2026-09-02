@@ -5,6 +5,8 @@
 
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Mssql;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using FakeItEasy;
 using FluentAssertions;
@@ -134,6 +136,42 @@ public class Given_CdcControlServiceCollectionExtensionsTests
         Action resolution = () => _ = serviceProvider.GetRequiredService<IOptions<CdcControlOptions>>().Value;
 
         resolution.Should().Throw<OptionsValidationException>();
+    }
+
+    /// <summary>
+    /// The E18 offline commands reject for as long as the DocumentCache runtime's own default
+    /// provider answers with the unknown status. That default is registered conditionally, so a host
+    /// only gets durable CDC evidence when the control plane is registered ahead of it.
+    /// </summary>
+    [TestCase("postgresql")]
+    [TestCase("mssql")]
+    public void It_supplies_the_downstream_publication_history_provider_ahead_of_the_document_cache_default(
+        string datastore
+    )
+    {
+        using TempCdcControlStateRoot stateRoot = new();
+        IServiceCollection services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(A.Fake<IDocumentCacheGuardedNewEmptyActivationCommand>());
+        services.AddSingleton(A.Fake<IMappingSetProvider>());
+
+        services.AddDmsCdcControl(BuildConfiguration(datastore, stateRoot.Path));
+        if (datastore == "postgresql")
+        {
+            services.AddPostgresqlReferenceResolver();
+        }
+        else
+        {
+            services.AddMssqlReferenceResolver();
+        }
+
+        services
+            .Single(descriptor =>
+                descriptor.ServiceType
+                == typeof(Core.DocumentCache.IDocumentCacheDownstreamPublicationHistoryProvider)
+            )
+            .ImplementationType.Should()
+            .Be<CdcDownstreamPublicationHistoryProvider>();
     }
 
     private static ServiceProvider BuildServiceProvider(string datastore, TempCdcControlStateRoot stateRoot)
