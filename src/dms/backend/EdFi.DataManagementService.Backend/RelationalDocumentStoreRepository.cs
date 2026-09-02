@@ -3114,14 +3114,17 @@ public sealed class RelationalDocumentStoreRepository(
                 storedOwnershipAuthorization
             ),
 
-            // NamespaceBased and custom view-based both AND-compose before relationship OR strategies
-            // (auth.md). When any of them is planned, defer NoClaims through Continue so those filters get to
-            // deny first; the write path's second command emits the NoClaims failure only once they have
-            // authorized. With no AND filter planned at all, short-circuit at preflight to avoid a needless
-            // executor roundtrip.
+            // NamespaceBased, custom view-based and ownership all AND-compose before relationship OR
+            // strategies (auth.md), with ownership last among them. When any of them is planned, defer
+            // NoClaims through Continue so those filters get to deny first; the write path's second command
+            // emits the NoClaims failure only once they have authorized. Ownership has to be in this
+            // predicate because a POST resolving to upsert-as-update is exactly where the stored-token check
+            // can deny, and stopping here would report the relationship denial in its place. With no AND
+            // filter planned at all, short-circuit at preflight to avoid a needless executor roundtrip.
             RelationshipAuthorizationResult.NoClaims noClaims => proposedNamespaceAuthorization is null
             && storedNamespaceAuthorization is null
             && customViewAuthorization is null
+            && storedOwnershipAuthorization is null
                 ? BuildNoClaimsPostRelationshipAuthorizationFailure(noClaims, authorizationContext)
                 : new WriteGuardRailPreflightResult<UpsertResult>.Continue(
                     null,
@@ -3213,9 +3216,13 @@ public sealed class RelationalDocumentStoreRepository(
                 createNewAuthorized
             ),
 
-            // A pending custom view is an AND filter too, so it has to run before this denial is reported.
+            // A pending custom view or ownership check is an AND filter too, so each has to run before this
+            // denial is reported. Ownership is vacuous for the create this plan describes, but preflight does
+            // not yet know the branch, and stopping here would also discard the stored-token check the
+            // existing-resource plan owes an upsert-as-update.
             RelationshipAuthorizationResult.NoClaims noClaims => proposedNamespaceAuthorization is null
             && customViewAuthorization is null
+            && storedOwnershipAuthorization is null
                 ? BuildNoClaimsPostRelationshipAuthorizationFailure(noClaims, authorizationContext)
                 : DeferToExecutor(noClaims),
 
@@ -3540,9 +3547,14 @@ public sealed class RelationalDocumentStoreRepository(
             // NoClaims denial into the proposed-relationship slot so those filters get to deny first; the
             // write path's second command emits the NoClaims denial only after they authorize. Leaving it in
             // the stored slot with custom views pending ends the write at the first phase, before the proposed
-            // custom-view checks run at all. With no AND filter planned, keep NoClaims in the stored slot so
-            // the stored boundary emits it after the target lock, preserving the existing 404-over-403
-            // ordering for a missing PUT target.
+            // custom-view checks run at all. With neither planned, keep NoClaims in the stored slot so the
+            // stored boundary emits it after the target lock, preserving the existing 404-over-403 ordering
+            // for a missing PUT target.
+            //
+            // Ownership is an AND filter too, but it deliberately stays out of this predicate: a stored-slot
+            // NoClaims routes the write down the ordered-segments path, where the ownership segment already
+            // runs ahead of the stored relationship boundary. The ownership denial wins there without a
+            // deferral, and without the merge the proposed slot would run before reporting it.
             RelationshipAuthorizationResult.NoClaims noClaims => storedNamespaceAuthorization is null
             && proposedNamespaceAuthorization is null
             && customViewAuthorization is null

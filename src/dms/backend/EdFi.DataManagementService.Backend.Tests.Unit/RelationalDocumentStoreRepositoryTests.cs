@@ -9767,6 +9767,46 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         ownership.OwnershipTokenParameterization.TokensInOrder.Should().Equal((short)11);
     }
 
+    /// <summary>
+    /// Ownership is the last AND filter ahead of the relationship OR group, so a relationship NoClaims
+    /// cannot be reported at preflight while an ownership check is still planned. A POST resolving to
+    /// upsert-as-update has a stored token nothing has read yet, and short-circuiting here would report the
+    /// relationship denial in place of the ownership one auth.md gives precedence to.
+    /// </summary>
+    [Test]
+    public async Task It_defers_a_post_relationship_no_claims_denial_when_an_ownership_check_is_still_planned()
+    {
+        var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet)
+            .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Post no claims with ownership"));
+        // Empty claim EducationOrganizationIds make the relationship strategy resolve to NoClaims; the
+        // ownership tokens keep an ownership check planned alongside it.
+        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ]);
+        A.CallTo(() => upsertRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([], [], null, [11]));
+
+        await _sut.UpsertDocument(upsertRequest);
+
+        var executorInput = _capturedExecutorRequests.Should().ContainSingle().Subject;
+        executorInput.StoredOwnershipAuthorization.Should().NotBeNull();
+        executorInput
+            .StoredOwnershipAuthorization!.OwnershipTokenParameterization.TokensInOrder.Should()
+            .Equal((short)11);
+        executorInput
+            .ProposedRelationshipAuthorization.Should()
+            .BeOfType<RelationshipAuthorizationResult.NoClaims>();
+    }
+
     [Test]
     public async Task It_plans_a_custom_view_alongside_relationship_authorization_for_a_post()
     {
@@ -11049,6 +11089,52 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         var ownership = executorInput.StoredOwnershipAuthorization!;
         ownership.Check.RawConfiguredIndex.Should().Be(1);
         ownership.OwnershipTokenParameterization.TokensInOrder.Should().Equal((short)11);
+    }
+
+    /// <summary>
+    /// The PUT counterpart of the POST deferral, and the asymmetry is deliberate. A stored-slot NoClaims
+    /// routes the write down the ordered-segments path, where the ownership segment already runs ahead of
+    /// the stored relationship boundary — so the ownership denial wins from the stored slot, without the
+    /// merge the proposed slot would run before reporting it. What has to hold is that the ownership plan
+    /// still reaches the executor.
+    /// </summary>
+    [Test]
+    public async Task It_keeps_a_put_relationship_no_claims_denial_in_the_stored_slot_behind_a_planned_ownership_check()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-1111-2222-3333-aaaaaaaaaa12"));
+        GivenWriteExecutorCaptures(
+            new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateSuccess(documentUuid, ComposedWriteResultEtag)
+            )
+        );
+        var updateRequest = A.Fake<IUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet)
+            .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody("Put no claims with ownership"));
+        A.CallTo(() => updateRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ]);
+        A.CallTo(() => updateRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([], [], null, [11]));
+
+        await _sut.UpdateDocumentById(updateRequest);
+
+        var putExecutorInput = _capturedExecutorRequests.Should().ContainSingle().Subject;
+        putExecutorInput
+            .StoredRelationshipAuthorization.Should()
+            .BeOfType<RelationshipAuthorizationResult.NoClaims>();
+        putExecutorInput.ProposedRelationshipAuthorization.Should().BeNull();
+        putExecutorInput.StoredOwnershipAuthorization.Should().NotBeNull();
+        putExecutorInput
+            .StoredOwnershipAuthorization!.OwnershipTokenParameterization.TokensInOrder.Should()
+            .Equal((short)11);
     }
 
     [Test]
