@@ -88,6 +88,13 @@ dms-document-cache status --request-json status-target.json --settings ./appsett
 | `scrub` | Run the explicit integrity scrub over source/cache/work relationships. | `integrityScrub` | None |
 | `recover-cache-ahead` | Run the proven-internal-only cache-ahead recovery workflow. | `internalCacheAheadRecovery` | `closedAndDrained` |
 
+Current packaged production behavior intentionally rejects `activate-offline`,
+`deactivate-offline`, and `recover-cache-ahead` unless a trusted downstream
+publication-history provider reports `internalOnly` for the same target and
+physical-source fingerprint. The default provider reports `unknown` because durable CDC
+binding/history evidence is not available in this product scope. Treat
+`downstreamHistoryPresentOrUnknown` as expected in that default state.
+
 All commands support `--json`. In JSON mode, stdout contains exactly one shared contract
 document and no prose. Logs, warnings, progress, and sanitized diagnostics go to stderr or
 configured log sinks. Status effective settings and administrative command durations use
@@ -148,7 +155,9 @@ Activate a new empty target:
 dms-document-cache activate-new-empty --data-store-id 1 --confirm newEmptyActivation --settings ./appsettings.Production.json --environment Production --json
 ```
 
-Activate while writers are closed and drained:
+Activate while writers are closed and drained. In the default packaged production state,
+this command rejects with `downstreamHistoryPresentOrUnknown` because internal-only proof
+is unavailable:
 
 ```bash
 dms-document-cache activate-offline --data-store-id 1 --confirm offlineActivation --offline-writer-admission closedAndDrained --settings ./appsettings.Production.json --environment Production --json
@@ -166,13 +175,17 @@ Run an explicit integrity scrub:
 dms-document-cache scrub --data-store-id 1 --confirm integrityScrub --settings ./appsettings.Production.json --environment Production --json
 ```
 
-Deactivate while writers are closed and drained:
+Deactivate while writers are closed and drained. In the default packaged production
+state, this command rejects with `downstreamHistoryPresentOrUnknown` because
+internal-only proof is unavailable:
 
 ```bash
 dms-document-cache deactivate-offline --data-store-id 1 --confirm offlineDeactivation --offline-writer-admission closedAndDrained --settings ./appsettings.Production.json --environment Production --json
 ```
 
-Recover cache-ahead state only after trusted internal-only evidence exists:
+Recover cache-ahead state only after trusted internal-only evidence exists. In the
+default packaged production state, this command rejects with
+`downstreamHistoryPresentOrUnknown` because internal-only proof is unavailable:
 
 ```bash
 dms-document-cache recover-cache-ahead --data-store-id 1 --confirm internalCacheAheadRecovery --offline-writer-admission closedAndDrained --settings ./appsettings.Production.json --environment Production --json

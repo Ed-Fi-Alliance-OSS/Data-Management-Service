@@ -80,6 +80,14 @@ Mutating commands and required tokens:
 | Explicit integrity scrub | `scrub` | `integrityScrub` | None |
 | Internal-only cache-ahead recovery | `recover-cache-ahead` | `internalCacheAheadRecovery` | `closedAndDrained` |
 
+Current packaged production behavior intentionally rejects offline activation, offline
+deactivation, and internal-only cache-ahead recovery unless a trusted downstream
+publication-history provider reports `internalOnly` for the same target and
+physical-source fingerprint. The default provider reports `unknown` because durable CDC
+binding/history evidence is not available in this product scope. Treat
+`downstreamHistoryPresentOrUnknown` as expected in that default state and use the
+Kafka/CDC containment path instead of these internal-only workflows.
+
 Command result statuses are:
 
 - `completed`: workflow finished according to the shared result DTO.
@@ -164,20 +172,23 @@ canonical write, with write admission closed and in-flight writers drained:
 dms-document-cache activate-new-empty --data-store-id 1 --confirm newEmptyActivation --settings ./appsettings.Production.json --environment Production --datastore postgresql --json
 ```
 
-Existing `Disabled` target activation requires an offline writer fence. Stop every DMS
-replica, projector/direct-fill writer, bulk loader, administrative writer, external
-writer, and other canonical writer, then drain in-flight transactions before asserting
-`closedAndDrained`:
+Existing `Disabled` target activation is admitted only after trusted downstream
+publication history proves `internalOnly` for the same target and physical-source
+fingerprint. In the default packaged production state this proof is unavailable and the
+command rejects with `downstreamHistoryPresentOrUnknown`. When that proof exists, stop
+every DMS replica, projector/direct-fill writer, bulk loader, administrative writer,
+external writer, and other canonical writer, then drain in-flight transactions before
+asserting `closedAndDrained`:
 
 ```bash
 dms-document-cache activate-offline --data-store-id 1 --confirm offlineActivation --offline-writer-admission closedAndDrained --settings ./appsettings.Production.json --environment Production --datastore postgresql --json
 ```
 
-Activation revalidates provider prerequisites, clears residual cache/work through the
-supported workflow, enters `Rebuilding`, seeds baseline work, drains work, then enters
-`Tracking`. After completion, run status and require `operationalHealth.status =
-operational`; require `caughtUp.status = caughtUp` only after the queue has drained.
-Activation is not Kafka CDC admission.
+Accepted activation revalidates provider prerequisites, clears residual cache/work
+through the supported workflow, enters `Rebuilding`, seeds baseline work, drains work,
+then enters `Tracking`. After completion, run status and require
+`operationalHealth.status = operational`; require `caughtUp.status = caughtUp` only
+after the queue has drained. Activation is not Kafka CDC admission.
 
 ## Online Rebuild
 
@@ -200,19 +211,22 @@ restart-safe only for an explicitly reissued operation.
 
 ## Deactivation
 
-Offline deactivation is allowed only when projection is proven internal-only. A data store
-with an active, historical, possible, or unknown downstream consumer or CDC binding is not
-eligible for the simple deactivation toggle.
+Offline deactivation is allowed only when trusted downstream publication history proves
+`internalOnly` for the same target and physical-source fingerprint. A data store with an
+active, historical, possible, or unknown downstream consumer or CDC binding is not
+eligible for the simple deactivation toggle. In the default packaged production state,
+the command rejects with `downstreamHistoryPresentOrUnknown`.
 
-Close and drain writers before using `closedAndDrained`:
+When internal-only proof exists, close and drain writers before using
+`closedAndDrained`:
 
 ```bash
 dms-document-cache deactivate-offline --data-store-id 1 --confirm offlineDeactivation --offline-writer-admission closedAndDrained --settings ./appsettings.Production.json --environment Production --datastore postgresql --json
 ```
 
-The workflow enters `Resetting`, clears cache and work through supported bounded paths,
-then enters `Disabled`. Removing a runtime `DocumentCache:Targets` entry only pauses
-processing; it is not deactivation and does not authorize clearing cache/work.
+An accepted workflow enters `Resetting`, clears cache and work through supported bounded
+paths, then enters `Disabled`. Removing a runtime `DocumentCache:Targets` entry only
+pauses processing; it is not deactivation and does not authorize clearing cache/work.
 
 ## Explicit Integrity Scrub
 
@@ -240,22 +254,26 @@ are unsupported.
 canonical source. Cache-backed reads and cache/direct-fill writes are fenced until an
 explicit workflow resolves the latch.
 
-If the higher cache value is proven internal-only and could not have been observed by
-downstream systems, close and drain writers, stop projector/direct fill, then run:
+If trusted downstream publication history proves the target/source is internal-only for
+the same target and physical-source fingerprint, and incident analysis proves the higher
+cache value could not have been observed by downstream systems, close and drain writers,
+stop projector/direct fill, then run:
 
 ```bash
 dms-document-cache recover-cache-ahead --data-store-id 1 --confirm internalCacheAheadRecovery --offline-writer-admission closedAndDrained --expected-physical-source-fingerprint sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --settings ./appsettings.Production.json --environment Production --datastore postgresql --json
 ```
 
-The workflow keeps the latch set through `Resetting`, clears cache and work, then enters
-`Rebuilding` and clears the latch only in the verified transition. Baseline seeding and
-work drain must complete before `Tracking`, operational health, and caught-up success
-return.
+An accepted workflow keeps the latch set through `Resetting`, clears cache and work,
+then enters `Rebuilding` and clears the latch only in the verified transition. Baseline
+seeding and work drain must complete before `Tracking`, operational health, and
+caught-up success return.
 
-If the higher cache value may have been published, or downstream observation is uncertain,
-do not run internal-only recovery. Stop publication, preserve cache/work/latch evidence,
-and follow the Kafka/CDC containment and new downstream namespace path. V1 never publishes a
-lower canonical version as an in-place correction to the old namespace.
+If the higher cache value may have been published, or downstream observation is
+uncertain, do not run internal-only recovery. In the default packaged production state,
+downstream observation is uncertain and the command rejects with
+`downstreamHistoryPresentOrUnknown`. Stop publication, preserve cache/work/latch
+evidence, and follow the Kafka/CDC containment and new downstream namespace path. V1
+never publishes a lower canonical version as an in-place correction to the old namespace.
 
 ## Persistent Projection Failure and Poison Remediation
 
