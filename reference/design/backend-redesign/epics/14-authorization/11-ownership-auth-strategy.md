@@ -31,16 +31,24 @@ CMS limits assignments to 1,999 ownership tokens; DMS defensively fails at 2,000
 - DELETE checks the stored token before deletion.
 - `OwnershipTokenIds` authorizes reads and mutations, while the single `CreatorOwnershipTokenId` is only for creation stamping.
 - Failures use `AUTH1` with the configured strategy index and map to `auth.md` sections 2.13 and 2.14.
-- The write and delete paths co-batch the ownership check into the operation's own command: it is appended to the
-  same composite command as the guarded mutation or delete, after the custom-view and namespace statements and
-  before the relationship statement, so statement order is precedence order and the `AUTH1` abort discards the
-  later statements in that command.
-- The co-batch is budget-guarded, so it is not unconditional. When the composite plan does not fit the command's
-  parameter budget, ownership runs instead as an ordered segment on the same session and transaction, ahead of the
-  mutation or delete. The guard is provider-independent, but in practice only SQL Server's 2,098 usable parameters
-  (`MssqlCommandLimits.MaxUserParametersPerCommand`) are low enough to trip it, and a near-ceiling namespace prefix
-  list combined with a large token list can trip it well below the 2,000-token cap. That costs commands but
-  preserves authorization-before-mutation ordering and the precedence order above.
+- POST and PUT run the ownership check as a statement in the write's first-phase command, after the
+  custom-view and namespace statements and before the relationship statement and the current-state
+  hydration that command also carries, so statement order is precedence order. It is not in the same
+  command as the mutation: the proposed checks and the DML form a second command, because they bind
+  values taken from the finalized merged root row, which does not exist until the first command's
+  hydration is decoded and the merge runs. A denial aborts the later first-phase statements and the
+  second command is never sent, so no DML is issued.
+- DELETE co-batches the ownership check into the same command as the deletes on the ordinary path, in
+  that same custom-view then namespace then ownership then relationship order. The `AUTH1` abort
+  therefore discards the deletes that rode the command with it, which is why a denied delete leaves the
+  row present.
+- Either arrangement is budget-guarded, so neither is unconditional. When the composite plan does not fit
+  the command's parameter budget, ownership runs instead as an ordered segment on the same session and
+  transaction, ahead of the hydration or the deletes it would otherwise have shared a command with. The
+  guard is provider-independent, but in practice only SQL Server's 2,098 usable parameters
+  (`MssqlCommandLimits.MaxUserParametersPerCommand`) are low enough to trip it, and a near-ceiling
+  namespace prefix list combined with a large token list can trip it well below the 2,000-token cap. That
+  costs commands but preserves authorization-before-mutation ordering and the precedence order above.
 - GET-by-id is the one path that never co-batches: the ownership check is one additional command, because it is
   not an `AUTH1` statement against the carrier the namespace and relationship checks share, and it runs ahead of
   hydration so a denial is decided before any representation is built. Accepted deviation, recorded alongside the
