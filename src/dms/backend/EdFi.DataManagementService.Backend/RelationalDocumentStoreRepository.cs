@@ -4950,7 +4950,8 @@ public sealed class RelationalDocumentStoreRepository(
                 documentId,
                 storedNamespaceAuthorization,
                 storedCustomViewAuthorization,
-                storedOwnershipAuthorization
+                storedOwnershipAuthorization,
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -5000,14 +5001,16 @@ public sealed class RelationalDocumentStoreRepository(
         long documentId,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
         RelationalCustomViewAuthorization? storedCustomViewAuthorization,
-        RelationalOwnershipAuthorization? storedOwnershipAuthorization
+        RelationalOwnershipAuthorization? storedOwnershipAuthorization,
+        CancellationToken cancellationToken
     )
     {
         var namespaceAndCustomViewOutcome = await AuthorizeGetNamespaceAndCustomViewFiltersAsync(
                 mappingSet,
                 documentId,
                 storedNamespaceAuthorization,
-                storedCustomViewAuthorization
+                storedCustomViewAuthorization,
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -5021,7 +5024,8 @@ public sealed class RelationalDocumentStoreRepository(
             : await ExecuteGetOwnershipAuthorizationAsync(
                     mappingSet,
                     documentId,
-                    storedOwnershipAuthorization
+                    storedOwnershipAuthorization,
+                    cancellationToken
                 )
                 .ConfigureAwait(false);
     }
@@ -5041,7 +5045,8 @@ public sealed class RelationalDocumentStoreRepository(
         MappingSet mappingSet,
         long documentId,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
-        RelationalCustomViewAuthorization? storedCustomViewAuthorization
+        RelationalCustomViewAuthorization? storedCustomViewAuthorization,
+        CancellationToken cancellationToken
     )
     {
         if (storedNamespaceAuthorization is null)
@@ -5052,7 +5057,8 @@ public sealed class RelationalDocumentStoreRepository(
                         mappingSet,
                         documentId,
                         storedCustomViewAuthorization.Checks,
-                        storedCustomViewAuthorization.Checks
+                        storedCustomViewAuthorization.Checks,
+                        cancellationToken
                     )
                     .ConfigureAwait(false);
         }
@@ -5070,7 +5076,8 @@ public sealed class RelationalDocumentStoreRepository(
                     mappingSet,
                     documentId,
                     customViewsBeforeNamespace,
-                    storedCustomViewAuthorization!.Checks
+                    storedCustomViewAuthorization!.Checks,
+                    cancellationToken
                 )
                 .ConfigureAwait(false);
 
@@ -5083,7 +5090,8 @@ public sealed class RelationalDocumentStoreRepository(
         var namespaceOutcome = await ExecuteGetNamespaceAuthorizationAsync(
                 mappingSet,
                 documentId,
-                storedNamespaceAuthorization
+                storedNamespaceAuthorization,
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -5098,7 +5106,8 @@ public sealed class RelationalDocumentStoreRepository(
                     mappingSet,
                     documentId,
                     customViewsAfterNamespace,
-                    storedCustomViewAuthorization!.Checks
+                    storedCustomViewAuthorization!.Checks,
+                    cancellationToken
                 )
                 .ConfigureAwait(false);
     }
@@ -5107,12 +5116,14 @@ public sealed class RelationalDocumentStoreRepository(
         MappingSet mappingSet,
         long documentId,
         IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checks,
-        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> plannedChecks
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> plannedChecks,
+        CancellationToken cancellationToken
     )
     {
         var executionResult = await _customViewAuthorizationExecutor
             .ExecuteAsync(
-                new CustomViewAuthorizationExecutionRequest(mappingSet, documentId, checks, plannedChecks)
+                new CustomViewAuthorizationExecutionRequest(mappingSet, documentId, checks, plannedChecks),
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -5239,7 +5250,7 @@ public sealed class RelationalDocumentStoreRepository(
         MappingSet mappingSet,
         long documentId,
         RelationalWriteNamespaceAuthorization storedNamespaceAuthorization,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken
     )
     {
         var executionResult = await _namespaceAuthorizationExecutor
@@ -5290,7 +5301,7 @@ public sealed class RelationalDocumentStoreRepository(
         MappingSet mappingSet,
         long documentId,
         RelationalOwnershipAuthorization storedOwnershipAuthorization,
-        CancellationToken cancellationToken = default
+        CancellationToken cancellationToken
     )
     {
         var executionResult = await _ownershipAuthorizationExecutor

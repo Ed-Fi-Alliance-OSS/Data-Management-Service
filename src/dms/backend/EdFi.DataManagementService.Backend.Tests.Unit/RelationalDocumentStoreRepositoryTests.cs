@@ -3233,6 +3233,87 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     /// <summary>
+    /// The caller's cancellation token has to reach every GET-by-id AND-filter executor. All three support
+    /// cancellation, so a dropped token means an abandoned request keeps its connection busy running
+    /// authorization SQL for a response nobody will read.
+    /// </summary>
+    /// <remarks>
+    /// A token from a live source rather than <see cref="CancellationToken.None"/>: the defect this pins was
+    /// the chain calling these executors with defaulted tokens, and a default token compares equal to
+    /// <c>None</c>, so only a distinguishable token can fail when it is dropped. All three executors are
+    /// asserted in one test because they are reached through one call chain, and the ownership one is the
+    /// last link — the chain has to stay threaded end to end for it to observe the token.
+    /// </remarks>
+    [Test]
+    public async Task It_passes_the_caller_cancellation_token_to_every_get_by_id_and_filter_executor()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-cccccccccc21"));
+        var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
+        var getRequest = GivenAResolvableOwnershipGetByIdTarget(
+            documentUuid,
+            mappingSet,
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                CreateAuthorizationStrategyEvaluator(CustomViewStrategyName),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ]
+        );
+
+        using var cancellationTokenSource = new CancellationTokenSource();
+        var cancellationToken = cancellationTokenSource.Token;
+
+        CancellationToken observedNamespaceToken = default;
+        CancellationToken observedCustomViewToken = default;
+        CancellationToken observedOwnershipToken = default;
+
+        A.CallTo(() =>
+                _namespaceAuthorizationExecutor.ExecuteAsync(
+                    A<NamespaceAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => observedNamespaceToken = call.GetArgument<CancellationToken>(1))
+            .Returns(
+                Task.FromResult<NamespaceAuthorizationExecutionResult>(
+                    new NamespaceAuthorizationExecutionResult.Authorized()
+                )
+            );
+        A.CallTo(() =>
+                _customViewAuthorizationExecutor.ExecuteAsync(
+                    A<CustomViewAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => observedCustomViewToken = call.GetArgument<CancellationToken>(1))
+            .Returns(
+                Task.FromResult<CustomViewAuthorizationExecutionResult>(
+                    new CustomViewAuthorizationExecutionResult.Authorized()
+                )
+            );
+        A.CallTo(() =>
+                _ownershipAuthorizationExecutor.ExecuteAsync(
+                    A<OwnershipAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => observedOwnershipToken = call.GetArgument<CancellationToken>(1))
+            .Returns(
+                Task.FromResult<OwnershipAuthorizationExecutionResult>(
+                    new OwnershipAuthorizationExecutionResult.NotAuthorized(
+                        CreateOwnershipFailure(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch, 2)
+                    )
+                )
+            );
+
+        var result = await _sut.GetDocumentById(getRequest, cancellationToken);
+
+        result.Should().BeOfType<GetResult.GetFailureOwnershipNotAuthorized>();
+        observedOwnershipToken.Should().Be(cancellationToken);
+        observedNamespaceToken.Should().Be(cancellationToken);
+        observedCustomViewToken.Should().Be(cancellationToken);
+    }
+
+    /// <summary>
     /// The authorized path, which the denial tests cannot reach: ownership authorizes, and only then does
     /// the relationship OR group run. Ownership is an AND filter and the relationship group follows every
     /// AND filter, so a reorder that moved the relationship group ahead of ownership would let a document

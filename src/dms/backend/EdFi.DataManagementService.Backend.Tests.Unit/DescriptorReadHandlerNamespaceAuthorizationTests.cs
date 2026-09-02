@@ -1014,6 +1014,41 @@ public class Given_Descriptor_Read_Handler_Namespace_Authorization
         return count;
     }
 
+    /// <summary>
+    /// Descriptor ownership enforcement is out of scope for DMS-1060, so a descriptor GET-by-id configured
+    /// with OwnershipBased fails closed with 501 even when NamespaceBased is configured alongside it and the
+    /// client has no namespace prefixes. Reporting the namespace 403 first would answer as though the
+    /// caller's prefixes refused a check that was never enforced.
+    /// </summary>
+    [Test]
+    public async Task It_returns_not_implemented_for_descriptor_get_by_id_with_ownership_when_the_client_has_no_prefixes()
+    {
+        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var sut = CreateSut(commandExecutor);
+
+        var result = await sut.HandleGetByIdAsync(
+            CreateGetByIdRequest(
+                namespacePrefixes: [],
+                authorizationStrategies:
+                [
+                    NamespaceStrategy(),
+                    new AuthorizationStrategyEvaluator(
+                        AuthorizationStrategyNameConstants.OwnershipBased,
+                        [],
+                        FilterOperator.And
+                    ),
+                ]
+            )
+        );
+
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureNotImplemented>()
+            .Which.FailureMessage.Should()
+            .Contain(AuthorizationStrategyNameConstants.OwnershipBased);
+        commandExecutor.Commands.Should().BeEmpty();
+    }
+
     private static DescriptorGetByIdRequest CreateGetByIdRequest(
         IReadOnlyList<string> namespacePrefixes,
         AuthorizationStrategyEvaluator authorizationStrategy,

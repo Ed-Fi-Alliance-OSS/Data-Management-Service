@@ -104,6 +104,42 @@ public class Given_RelationalAuthorizationPlanner
         );
     }
 
+    /// <summary>
+    /// A descriptor-storage resource whose namespace column resolves, so the namespace planner reaches its
+    /// no-prefixes terminal instead of stopping at <c>NoUsableRootColumn</c>. Descriptors carry no securable
+    /// element metadata; their Namespace column comes from the descriptor column contract.
+    /// </summary>
+    private static ConcreteResourceModel NamespaceableDescriptorResource()
+    {
+        var root = RootTable("SchoolTypeDescriptor", []);
+        var model = new RelationalResourceModel(
+            new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor"),
+            _edfiSchema,
+            ResourceStorageKind.SharedDescriptorTable,
+            root,
+            [root],
+            [],
+            []
+        );
+        return new ConcreteResourceModel(
+            ResourceKey(4, "SchoolTypeDescriptor"),
+            ResourceStorageKind.SharedDescriptorTable,
+            model,
+            new DescriptorMetadata(
+                new DescriptorColumnContract(
+                    Col("Namespace"),
+                    Col("CodeValue"),
+                    null,
+                    null,
+                    null,
+                    null,
+                    null
+                ),
+                DiscriminatorStrategy.ResourceKeyId
+            )
+        );
+    }
+
     private static MappingSet EmptyMappingSet(params ResourceKeyEntry[] resourceKeysInIdOrder) =>
         new(
             Key: new MappingSetKey("schema-hash", SqlDialect.Pgsql, "v1"),
@@ -1241,5 +1277,124 @@ public class Given_RelationalAuthorizationPlanner
         );
 
         outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>();
+    }
+
+    /// <summary>
+    /// The descriptor ownership boundary must not be maskable by the namespace no-prefixes 403. Descriptor
+    /// ownership enforcement is out of scope for DMS-1060, so GET-by-id, the write verbs, and DELETE fail
+    /// closed with the known-but-not-enabled 501 even when <c>NamespaceBased</c> is configured alongside it
+    /// and the caller has no namespace prefixes.
+    /// </summary>
+    /// <remarks>
+    /// Without the descriptor arm the namespace terminal is reported first and the descriptor handlers turn
+    /// it into a namespace 403, which says the caller's prefixes refused the request rather than that
+    /// descriptor ownership is not implemented.
+    /// </remarks>
+    [TestCase(NamespaceAuthorizationOperation.ReadSingle)]
+    [TestCase(NamespaceAuthorizationOperation.Update)]
+    [TestCase(NamespaceAuthorizationOperation.Delete)]
+    public void It_keeps_descriptor_ownership_unsupported_ahead_of_the_namespace_no_prefixes_terminal(
+        NamespaceAuthorizationOperation operation
+    )
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(ResourceKey(4, "SchoolTypeDescriptor")),
+            NamespaceableDescriptorResource(),
+            operation,
+            [
+                Strategy(AuthorizationStrategyNameConstants.NamespaceBased, 0),
+                Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 1),
+            ],
+            EmptyPrefixContext()
+        );
+
+        var stillUnsupported = outcome
+            .Should()
+            .BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>()
+            .Subject;
+        stillUnsupported
+            .RelationshipClassification.KnownButNotEnabledStrategies.Select(static strategy =>
+                strategy.ConfiguredStrategy.StrategyName
+            )
+            .Should()
+            .Equal(AuthorizationStrategyNameConstants.OwnershipBased);
+    }
+
+    /// <summary>
+    /// The same descriptor terminal still carries the resolved custom views, so a view configured ahead of
+    /// it keeps its own configuration failure rather than being masked by the 501.
+    /// </summary>
+    [Test]
+    public void It_carries_resolved_custom_views_on_a_descriptor_ownership_terminal_over_the_namespace_terminal()
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(ResourceKey(4, "SchoolTypeDescriptor"), ResourceKey(3, "Student")),
+            NamespaceableDescriptorResource(),
+            NamespaceAuthorizationOperation.ReadSingle,
+            [
+                Strategy("StudentWithCTECourseEnrollments", 0),
+                Strategy(AuthorizationStrategyNameConstants.NamespaceBased, 1),
+                Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 2),
+            ],
+            EmptyPrefixContext()
+        );
+
+        var stillUnsupported = outcome
+            .Should()
+            .BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>()
+            .Subject;
+        stillUnsupported
+            .RelationshipClassification.SupportedCustomViewStrategies.Should()
+            .ContainSingle()
+            .Which.ConfiguredStrategy.StrategyName.Should()
+            .Be("StudentWithCTECourseEnrollments");
+    }
+
+    /// <summary>
+    /// Descriptor GET-many is left exactly as it was. Ownership filtering for GET-many belongs to DMS-1410,
+    /// so the namespace no-prefixes 403 stays the reported terminal there — the descriptor arm covers only
+    /// the single-record operations the ownership gate would otherwise enforce.
+    /// </summary>
+    [Test]
+    public void It_keeps_the_namespace_no_prefixes_terminal_for_a_descriptor_read_many()
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(ResourceKey(4, "SchoolTypeDescriptor")),
+            NamespaceableDescriptorResource(),
+            NamespaceAuthorizationOperation.ReadMany,
+            [
+                Strategy(AuthorizationStrategyNameConstants.NamespaceBased, 0),
+                Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 1),
+            ],
+            EmptyPrefixContext()
+        );
+
+        outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.NoPrefixesConfigured>();
+    }
+
+    /// <summary>
+    /// Regular resources are left exactly as they were: ownership is enforced there, so the namespace
+    /// no-prefixes 403 still outranks it — Namespace-based executes ahead of Ownership-based among the AND
+    /// strategies. The descriptor arm must not generalize to relational storage.
+    /// </summary>
+    [TestCase(NamespaceAuthorizationOperation.ReadSingle)]
+    [TestCase(NamespaceAuthorizationOperation.Update)]
+    [TestCase(NamespaceAuthorizationOperation.Delete)]
+    public void It_keeps_the_namespace_no_prefixes_terminal_for_a_regular_resource_with_ownership(
+        NamespaceAuthorizationOperation operation
+    )
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(ResourceKey(1, "AcademicWeek")),
+            RootNamespaceResource(),
+            operation,
+            [
+                Strategy(AuthorizationStrategyNameConstants.NamespaceBased, 0),
+                Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 1),
+            ],
+            EmptyPrefixContext()
+        );
+
+        outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.NoPrefixesConfigured>();
     }
 }

@@ -1837,6 +1837,75 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         request.RelationalAuthorizationContext.NamespacePrefixes.Should().BeEmpty();
     }
 
+    /// <summary>
+    /// Descriptor ownership enforcement is out of scope for DMS-1060, so a descriptor write configured with
+    /// OwnershipBased fails closed with 501 even when NamespaceBased is configured alongside it and the
+    /// client has no namespace prefixes. Reporting the namespace 403 first would answer as though the
+    /// caller's prefixes refused a check that was never enforced.
+    /// </summary>
+    [Test]
+    public async Task It_returns_not_implemented_for_descriptor_post_with_ownership_when_the_client_has_no_prefixes()
+    {
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(sessionFactory);
+
+        var result = await sut.HandlePostAsync(
+            CreatePostRequest(
+                namespacePrefixes: [],
+                authorizationStrategies:
+                [
+                    NamespaceStrategy(),
+                    UnsupportedStrategy(AuthorizationStrategyNameConstants.OwnershipBased),
+                ]
+            )
+        );
+
+        result.Should().BeOfType<UpsertResult.UpsertFailureNotImplemented>();
+        sessionFactory.CreateAsyncCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_returns_not_implemented_for_descriptor_put_with_ownership_when_the_client_has_no_prefixes()
+    {
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(sessionFactory);
+
+        var result = await sut.HandlePutAsync(
+            CreatePutRequest(
+                namespacePrefixes: [],
+                authorizationStrategies:
+                [
+                    NamespaceStrategy(),
+                    UnsupportedStrategy(AuthorizationStrategyNameConstants.OwnershipBased),
+                ]
+            )
+        );
+
+        result.Should().BeOfType<UpdateResult.UpdateFailureNotImplemented>();
+        sessionFactory.CreateAsyncCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_returns_not_implemented_for_descriptor_delete_with_ownership_when_the_client_has_no_prefixes()
+    {
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(sessionFactory);
+
+        var result = await sut.HandleDeleteAsync(
+            CreateDeleteRequest(
+                namespacePrefixes: [],
+                authorizationStrategies:
+                [
+                    NamespaceStrategy(),
+                    UnsupportedStrategy(AuthorizationStrategyNameConstants.OwnershipBased),
+                ]
+            )
+        );
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureNotImplemented>();
+        sessionFactory.CreateAsyncCallCount.Should().Be(0);
+    }
+
     private static System.Text.Json.Nodes.JsonNode CreateDescriptorRequestBody(
         string @namespace,
         string codeValue
