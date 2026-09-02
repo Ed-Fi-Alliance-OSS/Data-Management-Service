@@ -160,6 +160,7 @@ public interface ICdcConnectClient
 internal sealed class CdcConnectRestAdapter(
     IHttpClientFactory httpClientFactory,
     IOptions<CdcControlOptions> options,
+    TimeProvider timeProvider,
     ILogger<CdcConnectRestAdapter> logger
 ) : ICdcConnectClient
 {
@@ -304,10 +305,16 @@ internal sealed class CdcConnectRestAdapter(
     }
 
     /// <summary>
-    /// Reads the connector's state back until the worker reports it stopped, bounded by the Connect
-    /// request timeout. A read the worker does not answer ends the wait on its own outcome rather than
-    /// being retried into the budget.
+    /// Reads the connector's state back until the worker reports it stopped, bounded by the elapsed
+    /// Connect request timeout. A read the worker does not answer ends the wait on its own outcome
+    /// rather than being retried into the budget.
     /// </summary>
+    /// <remarks>
+    /// The bound is a deadline rather than a read count: each state read carries its own request
+    /// timeout, so a worker that accepts the stop and then answers slowly would spend that timeout on
+    /// every one of a counted number of reads and take many multiples of the budget the exhaustion
+    /// message names.
+    /// </remarks>
     private async Task<CdcConnectResult> AwaitStoppedAsync(
         string connectorName,
         CancellationToken cancellationToken
@@ -316,7 +323,7 @@ internal sealed class CdcConnectRestAdapter(
         CdcControlOptions controlOptions = options.Value;
         TimeSpan budget = controlOptions.Timeouts.ConnectRequest;
         TimeSpan pollInterval = controlOptions.Timeouts.PollInterval;
-        int remainingReads = Math.Max(1, (int)Math.Ceiling(budget / pollInterval));
+        DateTimeOffset deadline = timeProvider.GetUtcNow() + budget;
 
         while (true)
         {
@@ -340,7 +347,7 @@ internal sealed class CdcConnectRestAdapter(
                 return new(CdcConnectOutcome.Succeeded, null);
             }
 
-            if (--remainingReads <= 0)
+            if (timeProvider.GetUtcNow() >= deadline)
             {
                 return new(
                     CdcConnectOutcome.Unavailable,
@@ -354,7 +361,7 @@ internal sealed class CdcConnectRestAdapter(
                 );
             }
 
-            await Task.Delay(pollInterval, cancellationToken);
+            await Task.Delay(pollInterval, timeProvider, cancellationToken);
         }
     }
 

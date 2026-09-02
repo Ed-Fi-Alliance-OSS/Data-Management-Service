@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using System.Net;
 using System.Net.Mime;
 using System.Text;
@@ -411,6 +412,48 @@ public class Given_CdcConnectRestAdapter
     }
 
     /// <summary>
+    /// The budget the exhaustion message names is elapsed time. Each state read carries its own request
+    /// timeout, so a counted number of reads bounds nothing: a worker that accepts the stop and then
+    /// answers slowly would spend that timeout on every counted read.
+    /// </summary>
+    [Test]
+    public async Task It_ends_the_stop_wait_within_the_elapsed_budget_when_each_state_read_is_slow()
+    {
+        int reads = 0;
+        (ICdcConnectClient client, _) = Adapter(
+            request =>
+            {
+                if (request.Method == HttpMethod.Put)
+                {
+                    return Status(HttpStatusCode.NoContent);
+                }
+
+                reads++;
+
+                return ConnectorState("RUNNING");
+            },
+            requestTimeout: TimeSpan.FromMilliseconds(200),
+            pollInterval: TimeSpan.FromMilliseconds(20),
+            // Every answer consumes most of the request timeout the read itself carries.
+            responseDelay: TimeSpan.FromMilliseconds(80)
+        );
+
+        long startedAt = Stopwatch.GetTimestamp();
+        CdcConnectResult result = await client.StopConnectorAsync(ConnectorName, CancellationToken.None);
+        TimeSpan elapsed = Stopwatch.GetElapsedTime(startedAt);
+
+        using AssertionScope scope = new();
+        result.Outcome.Should().Be(CdcConnectOutcome.Unavailable);
+        reads
+            .Should()
+            .BeLessThan(
+                6,
+                "the wait is bounded by elapsed time rather than by a budget-over-poll-interval read count"
+            );
+        elapsed.Should().BeLessThan(TimeSpan.FromSeconds(1));
+    }
+
+    /// <summary>
     /// A state read the worker will not answer ends the wait on that read's own outcome: a stop is never
     /// reported succeeded on evidence the adapter did not get.
     /// </summary>
@@ -648,10 +691,11 @@ public class Given_CdcConnectRestAdapter
         bool neverAnswers = false,
         TimeSpan? requestTimeout = null,
         string connectBaseUri = "http://localhost:8083",
-        TimeSpan? pollInterval = null
+        TimeSpan? pollInterval = null,
+        TimeSpan? responseDelay = null
     )
     {
-        StubHttpMessageHandler handler = new(respond, neverAnswers);
+        StubHttpMessageHandler handler = new(respond, neverAnswers, responseDelay);
         IHttpClientFactory httpClientFactory = A.Fake<IHttpClientFactory>();
         A.CallTo(() => httpClientFactory.CreateClient(A<string>._))
             .ReturnsLazily(() => new HttpClient(handler, disposeHandler: false));
@@ -659,6 +703,7 @@ public class Given_CdcConnectRestAdapter
         CdcConnectRestAdapter adapter = new(
             httpClientFactory,
             Options.Create(ControlOptions(connectBaseUri, requestTimeout, pollInterval)),
+            TimeProvider.System,
             NullLogger<CdcConnectRestAdapter>.Instance
         );
 
@@ -705,7 +750,8 @@ public class Given_CdcConnectRestAdapter
 
     private sealed class StubHttpMessageHandler(
         Func<RecordedRequest, HttpResponseMessage> respond,
-        bool neverAnswers
+        bool neverAnswers,
+        TimeSpan? responseDelay = null
     ) : HttpMessageHandler
     {
         public List<RecordedRequest> Requests { get; } = [];
@@ -724,6 +770,11 @@ public class Given_CdcConnectRestAdapter
             if (neverAnswers)
             {
                 await Task.Delay(Timeout.Infinite, cancellationToken);
+            }
+
+            if (responseDelay is { } delay)
+            {
+                await Task.Delay(delay, cancellationToken);
             }
 
             return respond(recorded);

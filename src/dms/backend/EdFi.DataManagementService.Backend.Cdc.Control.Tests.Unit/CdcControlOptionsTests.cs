@@ -52,11 +52,16 @@ public class Given_CdcControlOptionsTests
         yield return Case(nameof(CdcControlOptions.DeploymentKey), options => options.DeploymentKey = "   ");
         yield return Case(nameof(CdcControlOptions.InstanceKey), options => options.InstanceKey = "");
         yield return Case(nameof(CdcControlOptions.TopicPrefix), options => options.TopicPrefix = "");
-        // Unlike the ACL principals, the provider-setup principal is required whether or not an
-        // authorizer is enabled: every cdc verb runs a provider-setup pass as it.
+        // The two database principals are required whether or not an authorizer is enabled: every cdc
+        // verb runs a provider-setup pass as the setup principal, granting the source objects to the
+        // connector principal. Only the Connect worker principal is ACL-conditional.
         yield return Case(
             nameof(CdcControlOptions.SetupPrincipal),
             options => options.SetupPrincipal = "   "
+        );
+        yield return Case(
+            nameof(CdcControlOptions.ConnectorPrincipal),
+            options => options.ConnectorPrincipal = "   "
         );
         yield return Case(
             nameof(CdcControlOptions.KafkaBootstrapServers),
@@ -338,15 +343,30 @@ public class Given_CdcControlOptionsTests
         result.Failures.Should().HaveCount(2);
     }
 
+    /// <summary>
+    /// Only the Connect worker principal is ACL-conditional. The connector principal is named by the
+    /// provider-setup pass every verb runs, so a deployment with no authorizer still requires it —
+    /// which is what <see cref="CdcProviderSetupInputsFactory"/> refuses every verb without.
+    /// </summary>
     [Test]
-    public void It_does_not_require_acl_principals_when_acls_are_disabled()
+    public void It_requires_only_the_worker_principal_conditionally_when_acls_are_disabled()
+    {
+        CdcControlOptions options = ValidOptions();
+        options.AclsEnabled = false;
+        options.ConnectWorkerPrincipal = string.Empty;
+
+        Validate(options).Succeeded.Should().BeTrue();
+    }
+
+    [Test]
+    public void It_requires_the_connector_principal_when_acls_are_disabled()
     {
         CdcControlOptions options = ValidOptions();
         options.AclsEnabled = false;
         options.ConnectorPrincipal = string.Empty;
         options.ConnectWorkerPrincipal = string.Empty;
 
-        Validate(options).Succeeded.Should().BeTrue();
+        AssertFailsWith(options, nameof(CdcControlOptions.ConnectorPrincipal));
     }
 
     [TestCase("")]
@@ -474,6 +494,7 @@ public class Given_CdcControlOptionsTests
             InstanceKey = "instance",
             TopicPrefix = "edfi.documents.instance",
             SetupPrincipal = "setup_principal",
+            ConnectorPrincipal = "connector_principal",
             Generation = 7,
             PartitionCount = 3,
             KafkaBootstrapServers = "localhost:9092",

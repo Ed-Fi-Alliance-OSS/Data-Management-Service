@@ -704,6 +704,7 @@ internal sealed class CdcControlBrokerFixture : IAsyncDisposable
         new CdcConnectRestAdapter(
             _serviceProvider.GetRequiredService<IHttpClientFactory>(),
             Options.Create(controlOptions),
+            TimeProvider.System,
             NullLogger<CdcConnectRestAdapter>.Instance
         );
 

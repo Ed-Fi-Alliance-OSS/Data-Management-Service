@@ -98,12 +98,17 @@ public sealed class CdcControlOptions
 
     /// <summary>
     /// Database principal the provider-setup pass runs as. Required for every cdc operation, because
-    /// both the create pass and the validate-only pass report the grants this principal made; unlike
-    /// <see cref="ConnectorPrincipal"/> it has nothing to do with Kafka ACLs, so it is required whether
-    /// or not an authorizer is enabled.
+    /// both the create pass and the validate-only pass report the grants this principal made.
     /// </summary>
     public string SetupPrincipal { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Database principal the connector authenticates as, and the Kafka principal its governed grants
+    /// are written for. Required for every cdc operation like <see cref="SetupPrincipal"/>: the
+    /// provider-setup pass every verb runs grants the source objects to it, so it is required whether
+    /// or not an authorizer is enabled — enabling an authorizer adds the Kafka grants, it is not what
+    /// makes the principal necessary.
+    /// </summary>
     public string ConnectorPrincipal { get; set; } = string.Empty;
 
     /// <summary>
@@ -239,6 +244,7 @@ public sealed class CdcControlOptionsValidator : IValidateOptions<CdcControlOpti
         RequireText(options.InstanceKey, nameof(CdcControlOptions.InstanceKey), failures);
         RequireText(options.TopicPrefix, nameof(CdcControlOptions.TopicPrefix), failures);
         RequireText(options.SetupPrincipal, nameof(CdcControlOptions.SetupPrincipal), failures);
+        RequireText(options.ConnectorPrincipal, nameof(CdcControlOptions.ConnectorPrincipal), failures);
 
         if (options.Generation <= 0)
         {
@@ -363,7 +369,10 @@ public sealed class CdcControlOptionsValidator : IValidateOptions<CdcControlOpti
             return;
         }
 
-        RequireText(options.ConnectorPrincipal, nameof(CdcControlOptions.ConnectorPrincipal), failures);
+        // ConnectorPrincipal is required unconditionally, beside SetupPrincipal: the provider-setup
+        // pass grants the source objects to it whether or not the broker has an authorizer, and
+        // CdcProviderSetupInputsFactory refuses every verb without it. Only the worker principal is
+        // ACL-conditional, because nothing outside the Kafka grants names it.
         RequireText(
             options.ConnectWorkerPrincipal,
             nameof(CdcControlOptions.ConnectWorkerPrincipal),

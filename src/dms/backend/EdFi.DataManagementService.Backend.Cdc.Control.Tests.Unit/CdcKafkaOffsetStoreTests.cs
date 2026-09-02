@@ -90,6 +90,36 @@ public class Given_CdcKafkaOffsetStore
             .MustHaveHappenedOnceExactly();
     }
 
+    /// <summary>
+    /// The describe pass never provisions: a status read of the shared store reports it absent rather
+    /// than creating it and then reporting the policy of the topic it had just made itself.
+    /// </summary>
+    [Test]
+    public async Task It_reports_an_absent_offset_store_without_creating_it()
+    {
+        IAdminClient adminClient = A.Fake<IAdminClient>();
+        A.CallTo(() => adminClient.GetMetadata(A<TimeSpan>._)).Returns(EmptyCluster());
+        StubConfigs(adminClient, CompactConfigs(1));
+
+        CdcConnectOffsetStorePolicyObservation observation = await RunAsync(
+            adminClient,
+            ControlOptions(),
+            describe: true
+        );
+
+        observation.PolicyState.Should().Be(CdcConnectOffsetStorePolicyState.Unknown);
+        observation
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Component == CdcDiagnosticComponent.ConnectOffsetStore
+                && diagnostic.Observed == "absent"
+            );
+        A.CallTo(() =>
+                adminClient.CreateTopicsAsync(A<IEnumerable<TopicSpecification>>._, A<CreateTopicsOptions>._)
+            )
+            .MustNotHaveHappened();
+    }
+
     [Test]
     public async Task It_validates_an_existing_offset_store_without_recreating_it()
     {
@@ -492,7 +522,8 @@ public class Given_CdcKafkaOffsetStore
 
     private static async Task<CdcConnectOffsetStorePolicyObservation> RunAsync(
         IAdminClient adminClient,
-        CdcControlOptions options
+        CdcControlOptions options,
+        bool describe = false
     )
     {
         CdcKafkaAdminAdapter adapter = new(
@@ -502,10 +533,10 @@ public class Given_CdcKafkaOffsetStore
             NullLogger<CdcKafkaAdminAdapter>.Instance
         );
 
-        CdcConnectOffsetStorePolicyObservation observation = await adapter.EnsureConnectOffsetStoreAsync(
-            new(OperationId, TargetIdentity, SourceFingerprint),
-            CancellationToken.None
-        );
+        CdcObservationContext context = new(OperationId, TargetIdentity, SourceFingerprint);
+        CdcConnectOffsetStorePolicyObservation observation = describe
+            ? await adapter.DescribeConnectOffsetStoreAsync(context, CancellationToken.None)
+            : await adapter.EnsureConnectOffsetStoreAsync(context, CancellationToken.None);
 
         CdcConnectOffsetStorePolicyObservationValidator
             .Validate(

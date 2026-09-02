@@ -295,7 +295,12 @@ public class Given_CdcConnectRestSecretRedaction
         RecordingLogger logger = new();
 
         return (
-            new CdcConnectRestAdapter(httpClientFactory, Options.Create(ControlOptions()), logger),
+            new CdcConnectRestAdapter(
+                httpClientFactory,
+                Options.Create(ControlOptions()),
+                TimeProvider.System,
+                logger
+            ),
             logger
         );
     }

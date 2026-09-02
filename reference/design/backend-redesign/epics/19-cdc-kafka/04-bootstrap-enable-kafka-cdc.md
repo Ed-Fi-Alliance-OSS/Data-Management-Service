@@ -104,6 +104,23 @@ controller, its adapters, and the entry points that invoke them.
 - Consumer principals come from configuration, and an empty list is valid: local and
   no-consumer deployments grant no instance-consumer access, and ACL items report
   `NotApplicable` when the broker has no authorizer.
+- Both database principals — the setup principal and the connector principal — are required for
+  every cdc verb whether or not the broker has an authorizer, and options validation refuses at
+  start-up rather than mid-sequence when either is absent. Every verb runs a provider-setup pass
+  as the setup principal, and that pass reports the source grants held by the connector
+  principal, so neither is conditional on Kafka. Only the Connect worker principal is
+  ACL-conditional: nothing outside the Kafka grants names it.
+- `status` and `restart` observe the governed artifacts; they never provision them. Both
+  read the Kafka policy and the shared Connect offset store through the describe pass, so an
+  absent topic is reported absent and a missing grant reported missing. Only `enable` and
+  `replace-source` create. A status that provisioned would report artifacts it had just
+  created itself, and would put back what an interrupted retirement had already removed -
+  leaving the next retirement's cleanup proof describing something other than what the
+  failed one left behind.
+- A source-history loss proved on a status interval is latched and the connector carrying it
+  is fenced. A fence the worker refuses is reported as its own diagnostic on the connector
+  runtime: the loss is latched either way, and a status that reported a contained incident
+  while the connector kept committing offsets would leave no evidence that it had not.
 
 ### Explicit Projection Target Evidence
 
@@ -142,7 +159,8 @@ controller, its adapters, and the entry points that invoke them.
   later registrations. The worker applies a stop asynchronously, so the control plane reads
   the connector's state back until it reports `STOPPED` rather than treating the accepted
   request as the fence; a connector that never settles is reported unavailable and
-  retryable. Stopping the connector is also how source replacement fences the outgoing
+  retryable. The wait is bounded by the Connect request timeout as elapsed time rather than
+  as a number of reads, because each state read carries that timeout of its own. Stopping the connector is also how source replacement fences the outgoing
   generation.
 - A connector the worker does not have ends the retirement. Because the offsets outlive the
   configuration and the worker answers the same `404` whether the connector never existed or

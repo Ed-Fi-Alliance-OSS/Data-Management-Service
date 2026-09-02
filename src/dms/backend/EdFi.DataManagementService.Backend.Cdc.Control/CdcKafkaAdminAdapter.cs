@@ -30,6 +30,20 @@ public interface ICdcKafkaAdmin
     );
 
     /// <summary>
+    /// Reports the same Connect offset-store evidence without provisioning it: a store that does not
+    /// exist is reported as absent rather than created.
+    /// </summary>
+    /// <remarks>
+    /// This is what a status read observes the store through. A read that created what it found absent
+    /// would report the policy of a topic the pass itself had just created, which is not an
+    /// observation of what the deployment holds.
+    /// </remarks>
+    Task<CdcConnectOffsetStorePolicyObservation> DescribeConnectOffsetStoreAsync(
+        CdcObservationContext context,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
     /// Resolves the binding-governed Kafka topics named by <paramref name="inventory"/>, creating each
     /// when absent and validating the actual partition count, cleanup policy, durability, and explicit
     /// per-topic overrides against the deployment policy. Repeated execution is idempotent.
@@ -294,8 +308,19 @@ internal sealed class CdcKafkaAdminAdapter(
         ReplicaFetchResponseMaxBytesConfigName,
     ];
 
-    public async Task<CdcConnectOffsetStorePolicyObservation> EnsureConnectOffsetStoreAsync(
+    public Task<CdcConnectOffsetStorePolicyObservation> EnsureConnectOffsetStoreAsync(
         CdcObservationContext context,
+        CancellationToken cancellationToken
+    ) => ConnectOffsetStoreAsync(context, CdcKafkaProvisioningMode.CreateOrValidate, cancellationToken);
+
+    public Task<CdcConnectOffsetStorePolicyObservation> DescribeConnectOffsetStoreAsync(
+        CdcObservationContext context,
+        CancellationToken cancellationToken
+    ) => ConnectOffsetStoreAsync(context, CdcKafkaProvisioningMode.ValidateOnly, cancellationToken);
+
+    private async Task<CdcConnectOffsetStorePolicyObservation> ConnectOffsetStoreAsync(
+        CdcObservationContext context,
+        CdcKafkaProvisioningMode mode,
         CancellationToken cancellationToken
     )
     {
@@ -332,7 +357,7 @@ internal sealed class CdcKafkaAdminAdapter(
             cancellationToken.ThrowIfCancellationRequested();
 
             TopicMetadata? topicMetadata = FindTopic(topicName, timeout);
-            if (topicMetadata is null)
+            if (topicMetadata is null && mode == CdcKafkaProvisioningMode.CreateOrValidate)
             {
                 await CreateTopicAsync(
                     topicName,
@@ -343,6 +368,21 @@ internal sealed class CdcKafkaAdminAdapter(
                     timeout
                 );
                 topicMetadata = FindTopic(topicName, timeout);
+            }
+
+            if (topicMetadata is null && mode == CdcKafkaProvisioningMode.ValidateOnly)
+            {
+                // The store is reported absent rather than created, for the same reason the governed
+                // topics are: a pass that provisions is not a verification of what the deployment holds.
+                diagnostics.Add(
+                    OffsetStoreUnavailable(
+                        "$.offsetStorageTopic",
+                        observedAt,
+                        "CDC Connect offset store does not exist.",
+                        observed: "absent"
+                    )
+                );
+                return Unresolved(context, controlOptions, observedAt, diagnostics);
             }
 
             cancellationToken.ThrowIfCancellationRequested();

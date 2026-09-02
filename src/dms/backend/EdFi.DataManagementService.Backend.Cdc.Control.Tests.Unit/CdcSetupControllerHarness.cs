@@ -172,6 +172,13 @@ internal sealed class CdcSetupControllerHarness
                     Task.FromResult(OffsetStorePolicy ?? SatisfiedOffsetStore(context, _clock.GetUtcNow()))
             );
         A.CallTo(() =>
+                Kafka.DescribeConnectOffsetStoreAsync(A<CdcObservationContext>._, A<CancellationToken>._)
+            )
+            .ReturnsLazily(
+                (CdcObservationContext context, CancellationToken _) =>
+                    Task.FromResult(OffsetStorePolicy ?? SatisfiedOffsetStore(context, _clock.GetUtcNow()))
+            );
+        A.CallTo(() =>
                 Kafka.EnsureBindingKafkaPolicyAsync(
                     A<CdcObservationContext>._,
                     A<CdcArtifactInventory>._,

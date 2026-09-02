@@ -189,6 +189,7 @@ public class Given_CdcControlServiceCollectionExtensionsTests
             [$"{section}:InstanceKey"] = "instance",
             [$"{section}:TopicPrefix"] = "edfi.documents.instance",
             [$"{section}:SetupPrincipal"] = "setup_principal",
+            [$"{section}:ConnectorPrincipal"] = "connector_principal",
             [$"{section}:Generation"] = "1",
             [$"{section}:PartitionCount"] = "3",
             [$"{section}:KafkaBootstrapServers"] = "localhost:9092",

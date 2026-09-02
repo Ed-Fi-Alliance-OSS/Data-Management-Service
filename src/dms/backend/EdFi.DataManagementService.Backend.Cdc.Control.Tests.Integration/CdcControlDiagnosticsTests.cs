@@ -110,6 +110,7 @@ public class Given_CdcControlDiagnosticBoundaries
         CdcConnectRestAdapter adapter = new(
             _services.GetRequiredService<IHttpClientFactory>(),
             Options.Create(ControlOptions()),
+            TimeProvider.System,
             _services.GetRequiredService<ILogger<CdcConnectRestAdapter>>()
         );
 

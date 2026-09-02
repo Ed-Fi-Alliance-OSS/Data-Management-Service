@@ -8,6 +8,7 @@ using FakeItEasy;
 using FluentAssertions;
 using FluentAssertions.Execution;
 using NUnit.Framework;
+using Ddl = EdFi.DataManagementService.Backend.Ddl;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Control.Tests.Unit;
 
@@ -90,6 +91,62 @@ public class Given_CdcSetupControllerStatus
     }
 
     /// <summary>
+    /// A status is an observation of the target as it is: it creates no absent topic, re-grants no
+    /// missing ACL, does not create the shared Connect offset store, and captures no provider artifact.
+    /// A pass that provisioned would report artifacts it had just created itself, and would put back
+    /// what a failed retirement had already removed.
+    /// </summary>
+    [Test]
+    public async Task It_reports_the_target_status_without_provisioning_any_governed_artifact()
+    {
+        CdcSetupControllerHarness harness = EnabledBinding();
+
+        CdcStatus status = await harness.StatusAsync();
+
+        using var _ = new AssertionScope();
+        status.Readiness.Should().Be(CdcReadiness.Ready);
+        A.CallTo(() =>
+                harness.Kafka.EnsureConnectOffsetStoreAsync(
+                    A<CdcObservationContext>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                harness.Kafka.EnsureBindingKafkaPolicyAsync(
+                    A<CdcObservationContext>._,
+                    A<CdcArtifactInventory>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                harness.ProviderSetup.SetupAsync(
+                    A<Ddl.CdcProviderSetupRequest>.That.Matches(request =>
+                        request.Mode != Ddl.CdcProviderSetupMode.ValidateOnly
+                    ),
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                harness.Kafka.DescribeConnectOffsetStoreAsync(
+                    A<CdcObservationContext>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() =>
+                harness.Kafka.DescribeBindingKafkaPolicyAsync(
+                    A<CdcObservationContext>._,
+                    A<CdcArtifactInventory>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+
+    /// <summary>
     /// Lag that could not be read is unknown lag, and unknown lag keeps readiness false: an unreachable
     /// metrics bridge is not evidence that the connector is close to its source.
     /// </summary>
@@ -133,6 +190,49 @@ public class Given_CdcSetupControllerStatus
             .MustHaveHappenedOnceExactly();
         A.CallTo(() => harness.Connect.RestartConnectorAsync(A<string>._, A<CancellationToken>._))
             .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// The latch asserts a fence as well as a loss. A stop the worker refuses leaves the connector
+    /// committing offsets against a source it can no longer resume from exactly, so the status reports
+    /// the fence that did not take rather than only the incident it latched.
+    /// </summary>
+    [Test]
+    public async Task It_reports_a_latched_loss_whose_connector_fence_the_worker_refused()
+    {
+        CdcSetupControllerHarness harness = EnabledBinding(CdcProvider.SqlServer);
+        harness.SchemaHistoryState = CdcSqlServerSchemaHistoryState.Missing;
+        harness.Stop = new(CdcConnectOutcome.Conflict, new(409, "a rebalance is in progress", true));
+
+        CdcStatus status = await harness.StatusAsync();
+
+        using var _ = new AssertionScope();
+        Target(status).SourceHistory.Continuity.Should().Be(CdcSourceHistoryContinuity.Lost);
+        Target(status).SourceHistory.IncidentLatched.Should().BeTrue();
+        CdcDiagnostic fence = Target(status)
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic => diagnostic.Code == "statusIncidentFenceNotApplied")
+            .Subject;
+        fence.Component.Should().Be(CdcDiagnosticComponent.ConnectorRuntime);
+        fence.Observed.Should().Be(nameof(CdcConnectOutcome.Conflict));
+        Target(status).Binding.State.Should().NotBe(CdcComponentState.Unknown);
+    }
+
+    /// <summary>
+    /// A fence the worker applied is not reported as one that did not: the diagnostic is evidence of a
+    /// failure, not a record that the stop was attempted.
+    /// </summary>
+    [Test]
+    public async Task It_reports_no_fence_failure_when_the_worker_stops_the_connector()
+    {
+        CdcSetupControllerHarness harness = EnabledBinding(CdcProvider.SqlServer);
+        harness.SchemaHistoryState = CdcSqlServerSchemaHistoryState.Missing;
+
+        CdcStatus status = await harness.StatusAsync();
+
+        Target(status)
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Code == "statusIncidentFenceNotApplied");
     }
 
     /// <summary>

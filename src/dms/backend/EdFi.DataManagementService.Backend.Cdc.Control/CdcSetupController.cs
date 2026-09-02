@@ -2287,17 +2287,20 @@ internal sealed class CdcSetupController(
             .CollectAsync(context, cancellationToken)
             .ConfigureAwait(false);
 
+        // The describe variants, never the ensure ones: a status is what the target is now. A pass that
+        // created an absent topic or re-granted a missing ACL would report artifacts it had just made
+        // itself, and would silently undo what a failed retirement had already removed.
         evaluation = evaluation with
         {
             Projection = projection,
             ConnectOffsetStore = await kafkaAdmin
-                .EnsureConnectOffsetStoreAsync(context, cancellationToken)
+                .DescribeConnectOffsetStoreAsync(context, cancellationToken)
                 .ConfigureAwait(false),
         };
         evaluation = evaluation with
         {
             KafkaPolicy = await kafkaAdmin
-                .EnsureBindingKafkaPolicyAsync(context, inventory, cancellationToken)
+                .DescribeBindingKafkaPolicyAsync(context, inventory, cancellationToken)
                 .ConfigureAwait(false),
         };
 
@@ -2461,7 +2464,10 @@ internal sealed class CdcSetupController(
     /// The latch is written from the classifier's own incident candidate, which it raises only for a
     /// loss it proved and never for one it read back from the binding record — so repeated status polls
     /// latch once. A latch that could not be written leaves the binding state as it was read, and the
-    /// loss is reported from the observation rather than from a state that was not durable.
+    /// loss is reported from the observation rather than from a state that was not durable. A fence
+    /// the worker did not apply is reported on the connector runtime: the loss is latched either way,
+    /// and a status that reported a contained incident while the connector still committed offsets
+    /// would leave nothing behind saying so.
     /// </remarks>
     private async Task<CdcTargetStatusEvaluationInput> LatchSourceHistoryLossAsync(
         CdcTargetStatusEvaluationInput evaluation,
@@ -2475,9 +2481,18 @@ internal sealed class CdcSetupController(
             .ConfigureAwait(false);
         logger.LogDebug("CDC status latched a source-history continuity loss: {Status}.", latch.Status);
 
-        await connectClient
+        CdcConnectResult fence = await connectClient
             .StopConnectorAsync(inventory.ConnectorName, cancellationToken)
             .ConfigureAwait(false);
+
+        if (!fence.Succeeded && fence.Outcome != CdcConnectOutcome.NotFound)
+        {
+            logger.LogDebug(
+                "CDC status could not fence the connector carrying a latched source-history loss: {Outcome}.",
+                fence.Outcome
+            );
+            evaluation = WithUnappliedFence(evaluation, inventory, fence);
+        }
 
         return latch.Status == CdcControlPlaneOperationStatus.Succeeded
             ? evaluation with
@@ -2485,6 +2500,49 @@ internal sealed class CdcSetupController(
                 BindingState = latch.State ?? evaluation.BindingState,
             }
             : evaluation;
+    }
+
+    /// <summary>
+    /// Reports that the fence a latched source-history loss asserts did not take, so the status does
+    /// not read as a contained incident while the connector keeps committing offsets.
+    /// </summary>
+    /// <remarks>
+    /// The diagnostic is carried on the connector runtime the stop was applied to rather than in the
+    /// status's state-store diagnostics: those report a binding record that could not be read, and this
+    /// binding was read — the connector is what the stop did not reach.
+    /// </remarks>
+    private CdcTargetStatusEvaluationInput WithUnappliedFence(
+        CdcTargetStatusEvaluationInput evaluation,
+        CdcArtifactInventory inventory,
+        CdcConnectResult fence
+    )
+    {
+        if (evaluation.ConnectorRuntime is not { } connectorRuntime)
+        {
+            return evaluation;
+        }
+
+        CdcDiagnostic diagnostic = new CdcDiagnostic(
+            "statusIncidentFenceNotApplied",
+            CdcDiagnosticCategory.SourceHistoryLost,
+            CdcDiagnosticSeverity.Error,
+            CdcDiagnosticComponent.ConnectorRuntime,
+            timeProvider.GetUtcNow(),
+            "CDC status latched a source-history loss but could not fence the connector that carries it.",
+            retryable: true,
+            artifactKind: "connector",
+            artifactName: inventory.ConnectorName,
+            expected: "the connector stopped so it commits no further offsets against the lost source",
+            observed: fence.Outcome.ToString()
+        ).WithPath("$.connectorRuntime");
+
+        return evaluation with
+        {
+            ConnectorRuntime = connectorRuntime with
+            {
+                Diagnostics = [.. connectorRuntime.Diagnostics, diagnostic],
+            },
+        };
     }
 
     /// <summary>

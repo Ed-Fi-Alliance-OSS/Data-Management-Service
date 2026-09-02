@@ -741,24 +741,31 @@ public class Given_A_SqlServer_CdcControlReadinessSequence
         public Task<CoreCdc.CdcConnectOffsetStorePolicyObservation> EnsureConnectOffsetStoreAsync(
             CdcObservationContext context,
             CancellationToken cancellationToken
+        ) => Task.FromResult(SatisfiedOffsetStore(context));
+
+        public Task<CoreCdc.CdcConnectOffsetStorePolicyObservation> DescribeConnectOffsetStoreAsync(
+            CdcObservationContext context,
+            CancellationToken cancellationToken
+        ) => Task.FromResult(SatisfiedOffsetStore(context));
+
+        private CoreCdc.CdcConnectOffsetStorePolicyObservation SatisfiedOffsetStore(
+            CdcObservationContext context
         ) =>
-            Task.FromResult(
-                new CoreCdc.CdcConnectOffsetStorePolicyObservation(
-                    CoreCdc.CdcJsonContract.CurrentContractVersion,
-                    context.OperationId,
-                    clock.GetUtcNow(),
-                    context.TargetIdentity,
-                    context.TargetIdentity.Provider,
-                    context.PhysicalSourceFingerprint,
-                    options.ConnectWorkerKey,
-                    options.ConnectOffsetStorageTopic,
-                    CoreCdc.CdcConnectOffsetStorePolicyState.Satisfied,
-                    "compact",
-                    1,
-                    1,
-                    CoreCdc.CdcConnectOffsetStoreItemState.Satisfied,
-                    []
-                )
+            new(
+                CoreCdc.CdcJsonContract.CurrentContractVersion,
+                context.OperationId,
+                clock.GetUtcNow(),
+                context.TargetIdentity,
+                context.TargetIdentity.Provider,
+                context.PhysicalSourceFingerprint,
+                options.ConnectWorkerKey,
+                options.ConnectOffsetStorageTopic,
+                CoreCdc.CdcConnectOffsetStorePolicyState.Satisfied,
+                "compact",
+                1,
+                1,
+                CoreCdc.CdcConnectOffsetStoreItemState.Satisfied,
+                []
             );
 
         public Task<CdcKafkaBindingTopicPolicies> EnsureBindingTopicsAsync(
