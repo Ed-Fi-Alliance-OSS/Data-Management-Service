@@ -755,7 +755,10 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
 
         // Cursor bounds are emitted last, alongside rather than instead of every authorization
         // predicate. Appending them keeps the filter and authorization fragments byte-identical to the
-        // other candidate modes, which is what makes the shared-candidate guarantee checkable.
+        // other candidate modes, which is what makes the shared-candidate guarantee checkable. The one
+        // deliberate exception is a person subject anchored on the ordering column, whose auth-view
+        // subquery repeats the bounds so the auth-view scan is range-bounded as well (see
+        // AppendPersonAuthViewMembershipSubquerySql); the candidate set is unchanged.
         var cursorBoundCount = cursor is null ? 0 : CursorBoundCount;
         var predicateCount =
             predicates.Count + orderedAndFilters.Count + (hasRelationshipGroup ? 1 : 0) + cursorBoundCount;
@@ -794,7 +797,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                         authorizationClaimParameterization
                             ?? throw new InvalidOperationException(
                                 "Authorization SQL emission requires a claim EdOrg parameterization when authorization strategies are present."
-                            )
+                            ),
+                        cursor
                     );
                     return;
                 }
@@ -1073,7 +1077,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         SqlWriter writer,
         DbTableName rootTable,
         PageDocumentIdAuthorizationSpec authorization,
-        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization
+        AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
+        PageCandidateMode.Cursor? cursor
     )
     {
         var aliasAllocator = PlanNamingConventions.CreateTableAliasAllocator();
@@ -1091,7 +1096,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                 rootTable,
                 authorization.Strategies[strategyIndex],
                 authorizationClaimParameterization,
-                aliasAllocator
+                aliasAllocator,
+                cursor
             );
             writer.Append(")");
         }
@@ -1102,7 +1108,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         DbTableName rootTable,
         PageDocumentIdAuthorizationStrategy strategy,
         AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
-        PlanSqlTableAliasAllocator aliasAllocator
+        PlanSqlTableAliasAllocator aliasAllocator,
+        PageCandidateMode.Cursor? cursor
     )
     {
         for (var subjectIndex = 0; subjectIndex < strategy.Subjects.Count; subjectIndex++)
@@ -1117,7 +1124,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                 rootTable,
                 strategy.Subjects[subjectIndex],
                 authorizationClaimParameterization,
-                aliasAllocator
+                aliasAllocator,
+                cursor
             );
         }
     }
@@ -1127,7 +1135,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         DbTableName rootTable,
         PageDocumentIdAuthorizationSubject subject,
         AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
-        PlanSqlTableAliasAllocator aliasAllocator
+        PlanSqlTableAliasAllocator aliasAllocator,
+        PageCandidateMode.Cursor? cursor
     )
     {
         switch (subject)
@@ -1147,7 +1156,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                     rootTable,
                     personSubject,
                     authorizationClaimParameterization,
-                    aliasAllocator
+                    aliasAllocator,
+                    cursor
                 );
                 return;
             default:
@@ -1164,7 +1174,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         DbTableName rootTable,
         PageDocumentIdAuthorizationPersonSubject subject,
         AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
-        PlanSqlTableAliasAllocator aliasAllocator
+        PlanSqlTableAliasAllocator aliasAllocator,
+        PageCandidateMode.Cursor? cursor
     )
     {
         var personMetadata = subject.PersonMetadata;
@@ -1194,7 +1205,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                     personMetadata.StoredAnchor.RootDocumentIdColumn,
                     subject.AuthObject,
                     authorizationClaimParameterization,
-                    aliasAllocator.AllocateNext()
+                    aliasAllocator.AllocateNext(),
+                    cursor
                 );
                 return;
             case RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn:
@@ -1211,7 +1223,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                     ),
                     subject.AuthObject,
                     authorizationClaimParameterization,
-                    aliasAllocator.AllocateNext()
+                    aliasAllocator.AllocateNext(),
+                    cursor
                 );
                 return;
             case RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath:
@@ -1338,24 +1351,47 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         DbColumnName anchorColumn,
         RelationshipAuthorizationAuthObject authObject,
         AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
-        string authAlias
+        string authAlias,
+        PageCandidateMode.Cursor? cursor
     )
     {
+        // The auth view's subject column holds the same key as the anchor column, so the cursor bounds
+        // transfer to it only when the anchor is the column the cursor ranges over. A reference anchor
+        // (a *_DocumentId foreign key) or a ContentVersion cursor ranges over a different key space and
+        // keeps the unbounded subquery.
+        var anchorBound =
+            cursor is not null
+            && string.Equals(anchorColumn.Value, ResolveOrderingColumnName(cursor), StringComparison.Ordinal)
+                ? cursor
+                : null;
+
         writer.Append($"{_rootAlias}.");
         writer.AppendQuoted(anchorColumn.Value);
         AppendPersonAuthViewMembershipSubquerySql(
             writer,
             authObject,
             authorizationClaimParameterization,
-            authAlias
+            authAlias,
+            anchorBound
         );
     }
 
+    /// <summary>
+    /// Emits <c> IN (SELECT subject FROM auth.View alias WHERE claim filter [AND subject range])</c>.
+    /// </summary>
+    /// <remarks>
+    /// When <paramref name="anchorBound" /> is supplied the subquery repeats the cursor's inclusive bounds
+    /// on the subject column. The root row is already bounded, so the candidate set does not change; the
+    /// inner bounds exist so the auth-view scan can be range-bounded too. Without them PostgreSQL
+    /// merge-joins an unbounded auth-view scan and reads every authorized row below the anchor before
+    /// producing its first match, making page cost proportional to cursor depth.
+    /// </remarks>
     private static void AppendPersonAuthViewMembershipSubquerySql(
         SqlWriter writer,
         RelationshipAuthorizationAuthObject authObject,
         AuthorizationClaimEducationOrganizationIdParameterization authorizationClaimParameterization,
-        string authAlias
+        string authAlias,
+        PageCandidateMode.Cursor? anchorBound = null
     )
     {
         writer.Append(" IN (SELECT ");
@@ -1369,6 +1405,19 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             writer,
             authorizationClaimParameterization
         );
+
+        if (anchorBound is not null)
+        {
+            writer.Append($" AND {authAlias}.");
+            writer.AppendQuoted(authObject.SubjectValueColumn.Value);
+            writer.Append(" >= ");
+            writer.AppendParameter(anchorBound.InclusiveMinimumParameterName);
+            writer.Append($" AND {authAlias}.");
+            writer.AppendQuoted(authObject.SubjectValueColumn.Value);
+            writer.Append(" <= ");
+            writer.AppendParameter(anchorBound.InclusiveMaximumParameterName);
+        }
+
         writer.Append(")");
     }
 
