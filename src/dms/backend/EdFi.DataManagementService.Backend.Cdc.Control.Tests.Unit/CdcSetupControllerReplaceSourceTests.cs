@@ -130,6 +130,40 @@ public class Given_CdcSetupControllerReplaceSource
         AssertRefusedBeforeFencing(harness, admission);
     }
 
+    /// <summary>
+    /// The replacing generation's enablement proves the target is one the DMS projector is configured
+    /// to project. That proof reads configuration and nothing else, so it is settled before the fence:
+    /// deciding it afterwards would stop the outgoing generation for a replacement that then refused.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_an_unconfigured_projection_target_without_fencing_the_outgoing_connector()
+    {
+        CdcSetupControllerHarness harness = ReplaceableTarget();
+        harness.ConfiguredProjectionTargets = [];
+
+        CdcAdmission admission = await harness.ReplaceSourceAsync();
+
+        AssertRefusedBeforeFencing(harness, admission);
+    }
+
+    /// <summary>
+    /// Same reason for the projector's own status endpoint: the replacing generation's caught-up
+    /// evidence is read from it, so a replacement that could never collect that evidence refuses while
+    /// the outgoing generation is still publishing.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_an_unreadable_projection_status_without_fencing_the_outgoing_connector()
+    {
+        CdcSetupControllerHarness harness = ReplaceableTarget();
+        harness.ProjectionStatus = CdcSetupControllerHarness.StatusEndpointFailure(
+            CdcProjectionStatusReadOutcome.EndpointNotMapped
+        );
+
+        CdcAdmission admission = await harness.ReplaceSourceAsync();
+
+        AssertRefusedBeforeFencing(harness, admission);
+    }
+
     [Test]
     public async Task It_refuses_a_generation_whose_source_history_loss_is_terminal()
     {

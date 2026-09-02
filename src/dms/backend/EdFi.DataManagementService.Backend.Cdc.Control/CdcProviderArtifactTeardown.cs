@@ -119,12 +119,27 @@ internal sealed class CdcProviderArtifactTeardown(
     /// The capture instances first and then the gating role: the role gates access to the change tables
     /// the capture instances own, so it is removed once nothing is left for it to gate.
     /// </summary>
+    /// <remarks>
+    /// Whether the capture catalog exists at all is established before it is queried. Database-level CDC
+    /// is what creates the <c>cdc</c> schema that catalog lives in, and the provider create pass enables
+    /// it in the same pass that creates the capture instances — but the binding record is made durable
+    /// before that pass runs, so an enablement interrupted in between leaves a record whose database has
+    /// no <c>cdc.change_tables</c>. SQL Server compiles a batch naming a table the database does not
+    /// have as an error rather than answering no rows, so asking the catalog directly there would end
+    /// the retirement in a provider failure and keep the record forever. An absent catalog is instead
+    /// the same answer the query would have given: none of this binding's capture instances exists.
+    /// </remarks>
     private static async Task<IReadOnlyList<CdcGovernedArtifact>> DeleteSqlServerAsync(
         CdcProviderArtifactTeardownRequest request,
         CancellationToken cancellationToken
     )
     {
         List<CdcGovernedArtifact> artifacts = [];
+        bool captureCatalogPresent = await IsPresentAsync(
+            request.Executor,
+            RenderDatabaseCdcEnabledCommandText(),
+            cancellationToken
+        );
 
         foreach (
             (
@@ -134,6 +149,12 @@ internal sealed class CdcProviderArtifactTeardown(
             ) in SqlServerCaptureInstances(request.Inventory)
         )
         {
+            if (!captureCatalogPresent)
+            {
+                artifacts.Add(Artifact(artifactKind, captureInstanceName, present: false));
+                continue;
+            }
+
             await DropAsync(
                 request.Executor,
                 artifactKind,
@@ -182,27 +203,52 @@ internal sealed class CdcProviderArtifactTeardown(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        IReadOnlyList<IReadOnlyDictionary<string, string?>> rows = await executor
-            .QueryAsync(existenceCommandText, cancellationToken)
-            .ConfigureAwait(false);
-        bool present = rows.Count > 0;
+        bool present = await IsPresentAsync(executor, existenceCommandText, cancellationToken);
 
         if (present)
         {
             await executor.ExecuteNonQueryAsync(dropCommandText, cancellationToken).ConfigureAwait(false);
         }
 
-        artifacts.Add(
-            new CdcGovernedArtifact(
-                artifactKind,
-                artifactName,
-                present ? CdcCleanupState.Deleted : CdcCleanupState.NotFound,
-                present
-                    ? "the provider reported the governed artifact and it was removed"
-                    : "the provider reported no such governed artifact"
-            )
-        );
+        artifacts.Add(Artifact(artifactKind, artifactName, present));
     }
+
+    /// <summary>
+    /// Whether one existence query answered with a row. Read-only, so it is also how a precondition the
+    /// removals depend on is established without removing anything.
+    /// </summary>
+    private static async Task<bool> IsPresentAsync(
+        ICdcProviderDatabaseExecutor executor,
+        string existenceCommandText,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        IReadOnlyList<IReadOnlyDictionary<string, string?>> rows = await executor
+            .QueryAsync(existenceCommandText, cancellationToken)
+            .ConfigureAwait(false);
+
+        return rows.Count > 0;
+    }
+
+    /// <summary>
+    /// One governed artifact as this teardown found it. The reason is the provider's own answer, so an
+    /// artifact reported absent reads identically whether the catalog said so or was not there to ask.
+    /// </summary>
+    private static CdcGovernedArtifact Artifact(
+        CdcGovernedArtifactKind artifactKind,
+        string artifactName,
+        bool present
+    ) =>
+        new(
+            artifactKind,
+            artifactName,
+            present ? CdcCleanupState.Deleted : CdcCleanupState.NotFound,
+            present
+                ? "the provider reported the governed artifact and it was removed"
+                : "the provider reported no such governed artifact"
+        );
 
     private static IEnumerable<(
         CdcGovernedArtifactKind ArtifactKind,
@@ -264,6 +310,19 @@ internal sealed class CdcProviderArtifactTeardown(
         "SELECT slot_name\n"
         + "FROM pg_catalog.pg_replication_slots\n"
         + $"WHERE slot_name = {Literal(logicalSlotName)};";
+
+    /// <summary>
+    /// Whether database-level CDC is enabled, which is whether the <c>cdc</c> schema holding the capture
+    /// catalog exists at all.
+    /// </summary>
+    /// <remarks>
+    /// Read from <c>sys.databases</c>, which every database has, precisely because
+    /// <c>cdc.change_tables</c> is the thing in question: SQL Server resolves the names in a batch
+    /// before it runs, so a query naming that catalog in a database without CDC is a compile error
+    /// rather than an empty result.
+    /// </remarks>
+    internal static string RenderDatabaseCdcEnabledCommandText() =>
+        "SELECT name\n" + "FROM sys.databases\n" + "WHERE database_id = DB_ID() AND is_cdc_enabled = 1;";
 
     internal static string RenderCaptureInstanceExistenceCommandText(string captureInstanceName) =>
         "SELECT capture_instance\n"

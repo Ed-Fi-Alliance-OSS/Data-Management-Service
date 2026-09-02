@@ -405,7 +405,10 @@ internal sealed class CdcSetupController(
         evaluation = evaluation with { BindingState = bindingRead.State };
 
         InitialCdcEligibilityObservation eligibility = await eligibilityProbe
-            .ProbeAsync(EligibilityProbeRequest(request, target, provisioningProof), cancellationToken)
+            .ProbeAsync(
+                EligibilityProbeRequest(request, target, provisioningProof, controlOptions),
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         evaluation = evaluation with
@@ -538,7 +541,10 @@ internal sealed class CdcSetupController(
             // classified against the observed lifecycle, and a command that answered without leaving the
             // database tracking is not an activation the sequence may build on.
             eligibility = await eligibilityProbe
-                .ProbeAsync(EligibilityProbeRequest(request, target, provisioningProof), cancellationToken)
+                .ProbeAsync(
+                    EligibilityProbeRequest(request, target, provisioningProof, controlOptions),
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
             evaluation = evaluation with { EligibilityObservation = eligibility };
 
@@ -1422,11 +1428,20 @@ internal sealed class CdcSetupController(
     /// Replaces the physical source behind an enabled target with a new binding generation.
     /// </summary>
     /// <remarks>
-    /// Every refusal is decided before anything is changed, because the first thing this does change is
-    /// fence the outgoing connector, and a target that cannot be replaced must not be left with its
-    /// publication stopped. The outgoing connector is stopped rather than deleted: stopping fences it
-    /// from the source it is being replaced from while leaving its configuration and committed offsets
-    /// for the retirement that removes them in order.
+    /// Every refusal that can be decided without reading state the replacement itself creates is
+    /// decided before anything is changed, because the first thing this does change is fence the
+    /// outgoing connector, and a target that cannot be replaced must not be left with its publication
+    /// stopped. That includes the two the enablement sequence would otherwise reach only afterwards:
+    /// the target must be one the DMS projector is configured to project, and the projector's status
+    /// endpoint must answer, because the replacing generation's readiness is collected from it. Both
+    /// are read-only and neither depends on the cutover, so both are settled here; the enablement
+    /// sequence still runs them for itself, since it is also entered directly. Once the fence is
+    /// applied the replacement is under way, and a later step that cannot produce its evidence ends it
+    /// with the outgoing generation fenced, which is the cutover's own semantics rather than a refusal.
+    ///
+    /// The outgoing connector is stopped rather than deleted: stopping fences it from the source it is
+    /// being replaced from while leaving its configuration and committed offsets for the retirement
+    /// that removes them in order.
     ///
     /// The rotated source identity reaches durable state through the new generation's binding record,
     /// which the enablement sequence creates from the fingerprint it reads out of the replacing
@@ -1606,7 +1621,10 @@ internal sealed class CdcSetupController(
                     new(request.OperationId, targetIdentity, null),
                     provisioningProof,
                     request.ConnectionString
-                ),
+                )
+                {
+                    CommandTimeout = controlOptions.Timeouts.EligibilityProbe,
+                },
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -1620,6 +1638,44 @@ internal sealed class CdcSetupController(
                 "CDC source replacement cannot proceed while the cache-ahead recovery latch is published.",
                 eligibility.CacheAheadState.ToString(),
                 eligibility.Diagnostics
+            );
+        }
+
+        // The replacing generation's own enablement will refuse without both of these, and both are
+        // reads: the projection target is a configuration fact, and the status endpoint is a GET. They
+        // are answered here rather than after the fence below, because a replacement refused for either
+        // one would otherwise leave the outgoing generation stopped and nothing replacing it.
+        CdcExplicitProjectionTargetProofResult projectionTarget = projectionTargetProof.Prove(
+            target,
+            timeProvider.GetUtcNow()
+        );
+        if (!projectionTarget.Succeeded)
+        {
+            return Refused(
+                request.OperationId,
+                targetIdentity,
+                CdcDiagnosticCategory.TargetMismatch,
+                CdcDiagnosticComponent.Projection,
+                "CDC source replacement requires the target to be configured on the DMS projector itself.",
+                projectionTarget.State.ToString(),
+                projectionTarget.Diagnostics
+            );
+        }
+
+        CdcProjectionCorrelationObservation preflight = await projectionCorrelation
+            .CollectAsync(new(request.OperationId, targetIdentity, null), cancellationToken)
+            .ConfigureAwait(false);
+        if (preflight.CorrelationState == CdcProjectionCorrelationState.Unavailable)
+        {
+            return Refused(
+                request.OperationId,
+                targetIdentity,
+                CdcDiagnosticCategory.StatusObservationUnavailable,
+                CdcDiagnosticComponent.Projection,
+                "CDC source replacement could not read the running DMS projection status the replacing "
+                    + "generation must observe caught-up evidence from.",
+                preflight.CorrelationState.ToString(),
+                preflight.Diagnostics
             );
         }
 
@@ -2638,16 +2694,28 @@ internal sealed class CdcSetupController(
         offset is { IsSnapshot: false, IsNull: false }
         && offset.SourcePartitionMatchResult == CdcConnectorOffsetMatchResult.Exact;
 
+    /// <summary>
+    /// The probe request one enablement attempt runs, under the configured eligibility-probe budget.
+    /// </summary>
+    /// <remarks>
+    /// The budget is passed rather than left to the request's own default: it is a per-step timeout the
+    /// deployment configures and options validation requires, and a request that omitted it would bound
+    /// the probe by a constant no setting could move.
+    /// </remarks>
     private static CdcEligibilityProbeRequest EligibilityProbeRequest(
         CdcEnableRequest request,
         CdcValidatedTarget target,
-        InitialCdcProvisioningProof provisioningProof
+        InitialCdcProvisioningProof provisioningProof,
+        CdcControlOptions controlOptions
     ) =>
         new(
             new(request.OperationId, target.ToTargetIdentity(), null),
             provisioningProof,
             request.ConnectionString
-        );
+        )
+        {
+            CommandTimeout = controlOptions.Timeouts.EligibilityProbe,
+        };
 
     /// <summary>
     /// The source partition the registered connector will commit under, taken from the configuration the

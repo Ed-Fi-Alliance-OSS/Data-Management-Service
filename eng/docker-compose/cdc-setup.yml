@@ -50,6 +50,15 @@ services:
       DataManagement__DocumentCache__Cdc__ConnectWorkerKey: ${DMS_CDC_CONNECT_WORKER_KEY:-1}
       DataManagement__DocumentCache__Cdc__ConnectOffsetStorageTopic: ${DMS_CDC_CONNECT_OFFSET_STORAGE_TOPIC:-debezium_source_offset}
       DataManagement__DocumentCache__Cdc__DmsBaseUrl: ${DMS_CDC_DMS_BASE_URL:-http://ed-fi-api:8080}
+      # The projection target the enable workflow's FIRST step proves. It is read here from the
+      # unmodified configuration - not through the CLI's own target resolver, which this invocation's
+      # arguments overwrite - so the question the proof answers is whether the DMS projector is
+      # configured to project the target, and this container has to see the same entry the DMS
+      # container does. Same two variables local-dms.yml and published-dms.yml read, so the pair the
+      # projector was started with and the pair the proof reads cannot drift. Blank on a run that did
+      # not opt into CDC, which binds to no target and is exactly what a non-CDC run wants.
+      DataManagement__DocumentCache__Targets__0__TenantKey: ${DMS_CDC_TARGET_TENANT_KEY:-}
+      DataManagement__DocumentCache__Targets__0__DataStoreId: ${DMS_CDC_TARGET_DATA_STORE_ID:-}
     networks:
       - dms
     logging:

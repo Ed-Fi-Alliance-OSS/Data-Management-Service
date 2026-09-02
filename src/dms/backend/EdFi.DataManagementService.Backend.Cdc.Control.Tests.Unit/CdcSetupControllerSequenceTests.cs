@@ -52,6 +52,32 @@ public class Given_CdcSetupControllerInitialReadinessSequence
     }
 
     /// <summary>
+    /// The eligibility read runs under the deployment's configured budget, not under the probe
+    /// request's own default. Options validation requires the setting to be positive, so a sequence
+    /// that never passed it would bound the probe by a constant no deployment could move — and both
+    /// values are 30 seconds by default, which is why the budget is set to something else here.
+    /// </summary>
+    [Test]
+    public async Task It_runs_the_eligibility_read_under_the_configured_probe_budget()
+    {
+        CdcSetupControllerHarness harness = new();
+        harness.Timeouts.EligibilityProbe = TimeSpan.FromSeconds(7);
+
+        await harness.EnableAsync();
+
+        A.CallTo(() =>
+                harness.Probe.ProbeAsync(
+                    A<CdcEligibilityProbeRequest>.That.Matches(request =>
+                        request.CommandTimeout == TimeSpan.FromSeconds(7)
+                    ),
+                    A<CancellationToken>._
+                )
+            )
+            // Once before the binding is created and once to observe the activation it reported.
+            .MustHaveHappenedTwiceExactly();
+    }
+
+    /// <summary>
     /// The order the design fixes: the connector is registered only after the binding record and the
     /// governed artifacts exist, the barrier is captured only after the projector reported caught up,
     /// and continuity is checked only after the connector committed past the barrier.

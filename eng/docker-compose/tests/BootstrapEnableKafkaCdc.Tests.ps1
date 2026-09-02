@@ -550,6 +550,21 @@ Describe "DMS-1323 bootstrap CDC phase" {
             }
         }
 
+        It "passes the projection target to the cdc setup container as well as to the dms service" {
+            # The enable workflow's first step proves the target against the UNMODIFIED configuration
+            # of the process running the verb, so the setup container has to receive the same pair the
+            # projector was started with. Reading the same two variables is what keeps them one pair:
+            # delivering them to the dms service alone left every enable refusing at step 1 with the
+            # target section absent, while DMS itself was configured correctly.
+            $cdcSetupText = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "cdc-setup.yml") -Raw
+
+            $cdcSetupText | Should -Match 'DataManagement__DocumentCache__Targets__0__TenantKey: \$\{DMS_CDC_TARGET_TENANT_KEY:-\}'
+            $cdcSetupText | Should -Match 'DataManagement__DocumentCache__Targets__0__DataStoreId: \$\{DMS_CDC_TARGET_DATA_STORE_ID:-\}'
+            # The status role configures the DMS endpoint itself; the verb only reads that endpoint,
+            # so naming it here would suggest this container maps it.
+            $cdcSetupText | Should -Not -Match 'DataManagement__DocumentCache__Status__RequiredRole'
+        }
+
         It "leaves every per-run CDC variable blank in the tracked environment sample" {
             # These three are written by the CDC opt-in for the run that enables it. Blank is what
             # binds to no projection target and leaves the status endpoint unmapped, which is what a

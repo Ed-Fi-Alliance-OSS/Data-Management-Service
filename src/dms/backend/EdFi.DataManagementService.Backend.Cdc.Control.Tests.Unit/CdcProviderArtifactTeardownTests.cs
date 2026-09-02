@@ -143,6 +143,55 @@ public class Given_CdcProviderArtifactTeardown
     }
 
     /// <summary>
+    /// The binding record is made durable before the provider create pass runs, so an enablement
+    /// interrupted between them leaves a record whose database never had CDC enabled and therefore has
+    /// no <c>cdc</c> schema. SQL Server resolves a batch's names before running it, so querying the
+    /// capture catalog there is a compile error rather than an empty result — and that error would end
+    /// every retirement of such a binding in a provider failure, keeping the record forever.
+    /// </summary>
+    [Test]
+    public async Task It_reports_the_capture_instances_absent_when_the_database_has_no_cdc_schema()
+    {
+        ICdcProviderDatabaseExecutor executor = Executor(present: true);
+        A.CallTo(() =>
+                executor.QueryAsync(
+                    A<string>.That.Matches(sql => sql.Contains("is_cdc_enabled", StringComparison.Ordinal)),
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(Task.FromResult<IReadOnlyList<IReadOnlyDictionary<string, string?>>>([]));
+
+        IReadOnlyList<CdcGovernedArtifact> artifacts = await RunAsync(
+            CoreCdc.CdcProvider.SqlServer,
+            CdcSetupControllerHarness.Inventory(CoreCdc.CdcProvider.SqlServer),
+            executor
+        );
+
+        using var _ = new AssertionScope();
+        Artifact(artifacts, CdcGovernedArtifactKind.SqlServerCaptureInstanceDocument)
+            .CleanupState.Should()
+            .Be(CdcCleanupState.NotFound);
+        Artifact(artifacts, CdcGovernedArtifactKind.SqlServerCaptureInstanceDocumentCache)
+            .CleanupState.Should()
+            .Be(CdcCleanupState.NotFound);
+        Artifact(artifacts, CdcGovernedArtifactKind.SqlServerCaptureInstanceCdcHeartbeat)
+            .CleanupState.Should()
+            .Be(CdcCleanupState.NotFound);
+        Queried(executor)
+            .Should()
+            .NotContain(sql => sql.Contains("cdc.change_tables", StringComparison.Ordinal));
+        Executed(executor)
+            .Should()
+            .NotContain(sql => sql.Contains("sp_cdc_disable_table", StringComparison.Ordinal));
+
+        // The gating role is a database principal rather than a capture artifact, so it lives in a
+        // catalog that is always there and is still asked about — and here it is still present.
+        Artifact(artifacts, CdcGovernedArtifactKind.SqlServerCdcGatingRole)
+            .CleanupState.Should()
+            .Be(CdcCleanupState.Deleted);
+    }
+
+    /// <summary>
     /// A capture instance whose source table the caller did not supply cannot be disabled, and the
     /// retirement fails rather than reporting an artifact it did not remove.
     /// </summary>
@@ -210,15 +259,18 @@ public class Given_CdcProviderArtifactTeardown
     }
 
     private static IReadOnlyList<string> Executed(ICdcProviderDatabaseExecutor executor) =>
+        CommandText(executor, nameof(ICdcProviderDatabaseExecutor.ExecuteNonQueryAsync));
+
+    private static IReadOnlyList<string> Queried(ICdcProviderDatabaseExecutor executor) =>
+        CommandText(executor, nameof(ICdcProviderDatabaseExecutor.QueryAsync));
+
+    private static IReadOnlyList<string> CommandText(
+        ICdcProviderDatabaseExecutor executor,
+        string methodName
+    ) =>
         [
             .. Fake.GetCalls(executor)
-                .Where(call =>
-                    string.Equals(
-                        call.Method.Name,
-                        nameof(ICdcProviderDatabaseExecutor.ExecuteNonQueryAsync),
-                        StringComparison.Ordinal
-                    )
-                )
+                .Where(call => string.Equals(call.Method.Name, methodName, StringComparison.Ordinal))
                 .Select(call => (string)call.Arguments[0]!),
         ];
 
