@@ -315,9 +315,8 @@ evidence and treat the target as an unsupported incident. Do not manually set li
 clear the latch, clear cache, or clear work.
 
 `Rebuilding` after interruption restarts baseline from the beginning because v1 has no
-durable baseline cursor. Production-scale qualification of completion time, database load,
-and repeated queue-DML limits is deferred outside DMS-1317 and is not currently assigned
-to an implementation story; the owning
+durable baseline cursor. These operator workflows do not qualify production-scale
+completion time, database load, or repeated queue-DML limits; the owning
 [Projection Performance Qualification](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-performance-qualification)
 design section still defines the requirement.
 

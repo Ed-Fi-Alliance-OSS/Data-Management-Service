@@ -239,7 +239,7 @@ not reconnect under presumed mutex ownership after cancellation or session loss.
 
 ## Runbook Links
 
-- DMS-1317 operator workflows are in the
+- DocumentCache operator workflows are in the
   [DocumentCache operations runbook](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/document-cache-documentation/operations-runbook.md).
 - Safe new-empty activation is owned by
   [Guarded New-Empty Activation](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/reference/design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#guarded-new-empty-activation).
