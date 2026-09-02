@@ -16,6 +16,12 @@ is not currently assigned to an implementation story. This reference set does no
 the executable representative harness, threshold catalog, result schema, or committed
 qualification artifacts.
 
+Documentation prose is not treated as an executable CLI contract test. The
+DocumentCacheAdmin command names, options, confirmation tokens, JSON shapes, and exit-code
+behavior are pinned by the CLI parser, contract, and command-execution tests. Runbook text
+and command examples are reviewed as operator guidance instead of being coupled to README
+text assertions.
+
 Design and implementation references:
 
 - [Backend redesign summary](../design/backend-redesign/design-docs/summary.md)

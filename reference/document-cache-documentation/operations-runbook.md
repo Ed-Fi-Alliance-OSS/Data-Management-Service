@@ -95,7 +95,8 @@ different recovery based only on `Resetting`.
 ## Status Interpretation
 
 The CLI `status` command and `GET /health/document-cache` expose the same projection
-status contract. Check the first target object for the selected target:
+status contract. Select the target object whose `targetKey.tenantKey` and
+`targetKey.dataStoreId` match the target being investigated, then inspect:
 
 - `resolution.status` and `resolution.reason`: whether the target was found and resolved.
 - `eligibility.status` and `eligibility.reason`: process-level projection eligibility.
