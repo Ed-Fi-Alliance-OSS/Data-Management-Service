@@ -477,10 +477,15 @@ public sealed partial class DocumentCacheHostedHappyPathTests
 
         string output = await standardOutput;
         string error = await standardError;
+        AssertDocumentCacheAdminOutputDoesNotLeakProtectedValues(output, error);
         process
             .ExitCode.Should()
-            .Be(expectedExitCode, "DocumentCache admin CLI stderr:\n{0}\nstdout:\n{1}", error, output);
-        error.Should().NotContain(AppSettings.DataStoreConnectionString);
+            .Be(
+                expectedExitCode,
+                "DocumentCache admin CLI stderr:\n{0}\nstdout:\n{1}",
+                RedactDocumentCacheAdminProtectedValues(error),
+                RedactDocumentCacheAdminProtectedValues(output)
+            );
 
         JsonNode? parsed = JsonNode.Parse(output);
         return parsed as JsonObject
@@ -1138,6 +1143,45 @@ public sealed partial class DocumentCacheHostedHappyPathTests
 
     private static string ConfigurationEncryptionKey() =>
         Environment.GetEnvironmentVariable("DMS_CONFIG_DATABASE_ENCRYPTION_KEY") ?? CmsEncryptionKey;
+
+    private static void AssertDocumentCacheAdminOutputDoesNotLeakProtectedValues(string output, string error)
+    {
+        foreach (string protectedValue in DocumentCacheAdminProtectedValues())
+        {
+            if (output.Contains(protectedValue, StringComparison.Ordinal))
+            {
+                Assert.Fail("DocumentCache admin CLI stdout contained a protected configuration value.");
+            }
+
+            if (error.Contains(protectedValue, StringComparison.Ordinal))
+            {
+                Assert.Fail("DocumentCache admin CLI stderr contained a protected configuration value.");
+            }
+        }
+    }
+
+    private static string RedactDocumentCacheAdminProtectedValues(string text)
+    {
+        string redacted = text;
+        foreach (string protectedValue in DocumentCacheAdminProtectedValues())
+        {
+            redacted = redacted.Replace(protectedValue, "[redacted]", StringComparison.Ordinal);
+        }
+
+        return redacted;
+    }
+
+    private static IEnumerable<string> DocumentCacheAdminProtectedValues() =>
+        new[]
+        {
+            AppSettings.DataStoreAdminConnectionString,
+            AppSettings.DataStoreConnectionString,
+            AppSettings.DataStoreSnapshotConnectionString,
+            ConfigurationSecret(),
+            ConfigurationEncryptionKey(),
+        }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.Ordinal);
 
     private static string FindRepositoryRoot(string startDirectory)
     {
