@@ -215,6 +215,47 @@ public class DataStoreTests : DatabaseTest
         }
     }
 
+    [TestFixture]
+    public class Given_update_data_store_without_provider : DataStoreTests
+    {
+        private int _id;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            DataStoreInsertCommand instance = new()
+            {
+                DataStoreType = "Staging",
+                Name = "Original Instance",
+                Provider = "postgresql",
+            };
+
+            var insertResult = await _repository.InsertDataStore(instance);
+            insertResult.Should().BeOfType<DataStoreInsertResult.Success>();
+            _id = ((DataStoreInsertResult.Success)insertResult).Id;
+
+            DataStoreUpdateCommand update = new()
+            {
+                Id = _id,
+                DataStoreType = "Production",
+                Name = "Updated Instance",
+            };
+
+            var updateResult = await _repository.UpdateDataStore(update);
+            updateResult.Should().BeOfType<DataStoreUpdateResult.Success>();
+        }
+
+        [Test]
+        public async Task It_should_preserve_the_existing_provider()
+        {
+            var getResult = await _repository.GetDataStore(_id);
+            getResult.Should().BeOfType<DataStoreGetResult.Success>();
+
+            var instanceFromDb = ((DataStoreGetResult.Success)getResult).DataStoreResponse;
+            instanceFromDb.Provider.Should().Be("postgresql");
+        }
+    }
+
     /// <summary>
     /// A deployment moving off a rejected encryption key recovers by re-submitting each connection
     /// string once the new key is configured. That procedure is only sound if update re-encrypts with

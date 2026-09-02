@@ -201,6 +201,7 @@ Describe "Get-E2ETestEnvironmentContext resolves the E2E database name with Comp
         }
 
         Mock Import-Module { }
+        Mock New-DataStandardDerivedEnvFile { $TargetPath }
         Mock Resolve-DataStandardEnvironmentFile { $BaseEnvironmentFile }
         Mock Resolve-DatabaseEngineEnvironmentFile { $BaseEnvironmentFile }
         Mock ReadValuesFromEnvFile { $script:contextEnvValues }
@@ -218,6 +219,46 @@ Describe "Get-E2ETestEnvironmentContext resolves the E2E database name with Comp
         $context = Get-E2ETestEnvironmentContext -EnvironmentFile "./.env.e2e" -DatabaseEngine "postgresql"
 
         $context.DataStoreDatabaseName | Should -Be "edfi_datamanagementservice_e2e"
+        Should -Invoke New-DataStandardDerivedEnvFile -Times 0 -Exactly
+    }
+
+    It "composes an explicit feature overlay before the data-standard and database-engine overlays" {
+        $script:DataStandardVersion = "6.1"
+        try {
+            Mock Resolve-E2EEnvironmentFilePath {
+                if ($Path -eq "./.env.document-cache.e2e") {
+                    return "/resolved/.env.document-cache.e2e"
+                }
+
+                return "/resolved/.env.e2e"
+            }
+            Mock New-DataStandardDerivedEnvFile { "/resolved/.env.e2e.document-cache.e2e" }
+            Mock Resolve-DataStandardEnvironmentFile { "$BaseEnvironmentFile.ds61" }
+            Mock Resolve-DatabaseEngineEnvironmentFile { "$BaseEnvironmentFile.mssql" }
+
+            $context = Get-E2ETestEnvironmentContext `
+                -EnvironmentFile "./.env.e2e" `
+                -EnvironmentOverlayFile "./.env.document-cache.e2e" `
+                -TestFilter "Category=@DocumentCacheHostedHappyPath" `
+                -DatabaseEngine "mssql"
+
+            $context.EnvironmentFile | Should -Be "/resolved/.env.e2e.document-cache.e2e.ds61.mssql"
+            $context.TestResultSuffix | Should -Be "e2e-document-cache"
+            Should -Invoke New-DataStandardDerivedEnvFile -Times 1 -Exactly -ParameterFilter {
+                $BaseEnvironmentFile -eq "/resolved/.env.e2e" -and
+                $OverlayEnvironmentFile -eq "/resolved/.env.document-cache.e2e" -and
+                $TargetPath -like "*/.derived/.env.e2e.document-cache.e2e"
+            }
+            Should -Invoke Resolve-DataStandardEnvironmentFile -Times 1 -Exactly -ParameterFilter {
+                $BaseEnvironmentFile -eq "/resolved/.env.e2e.document-cache.e2e"
+            }
+            Should -Invoke Resolve-DatabaseEngineEnvironmentFile -Times 1 -Exactly -ParameterFilter {
+                $BaseEnvironmentFile -eq "/resolved/.env.e2e.document-cache.e2e.ds61"
+            }
+        }
+        finally {
+            $script:DataStandardVersion = $null
+        }
     }
 
     It "lets an ambient E2E_DATABASE_NAME override select the reset/provision target (Compose precedence)" {
@@ -248,5 +289,53 @@ Describe "Get-E2ETestEnvironmentContext resolves the E2E database name with Comp
 
         { Get-E2ETestEnvironmentContext -EnvironmentFile "./.env.e2e" -DatabaseEngine "postgresql" } |
             Should -Throw "*E2E_DATABASE_NAME*"
+    }
+}
+
+Describe "DocumentCache hosted E2E environment isolation" {
+    BeforeAll {
+        $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+        Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
+    }
+
+    It "keeps the shared E2E environment free of a configured DocumentCache target" {
+        $baseValues = ReadValuesFromEnvFile (Join-Path $script:dockerComposeRoot ".env.e2e")
+        $localDmsCompose = Get-Content -LiteralPath (Join-Path $script:dockerComposeRoot "local-dms.yml") -Raw
+
+        $baseValues.ContainsKey("DMS_DOCUMENTCACHE_TARGET_DATA_STORE_ID") | Should -BeFalse
+        $baseValues.ContainsKey("DMS_DOCUMENTCACHE_READ_ACCELERATION_ENABLED") | Should -BeFalse
+        $localDmsCompose | Should -Not -Match "DocumentCache__Targets__0"
+    }
+
+    It "adds the target and read acceleration only through the focused overlay" {
+        $work = Join-Path ([System.IO.Path]::GetTempPath()) "dms-document-cache-overlay-$([Guid]::NewGuid().ToString('N'))"
+        try {
+            $derivedPath = Join-Path $work ".env.e2e.document-cache.e2e"
+            New-DataStandardDerivedEnvFile `
+                -BaseEnvironmentFile (Join-Path $script:dockerComposeRoot ".env.e2e") `
+                -OverlayEnvironmentFile (Join-Path $script:dockerComposeRoot ".env.document-cache.e2e") `
+                -TargetPath $derivedPath | Out-Null
+
+            $values = ReadValuesFromEnvFile $derivedPath
+            $values["DMS_DOCUMENTCACHE_TARGET_DATA_STORE_ID"] | Should -Be "1"
+            $values["DMS_DOCUMENTCACHE_READ_ACCELERATION_ENABLED"] | Should -Be "true"
+            $values["DMS_DOCUMENTCACHE_COMPOSE_FILE"] | Should -Be "local-dms-document-cache.yml"
+
+            $targetComposePath = Join-Path `
+                $script:dockerComposeRoot `
+                ([string]$values["DMS_DOCUMENTCACHE_COMPOSE_FILE"])
+            $targetComposePath | Should -Exist
+            Get-Content -LiteralPath $targetComposePath -Raw |
+                Should -Match "DataManagement__DocumentCache__Targets__0__DataStoreId"
+
+            $startScript = Get-Content -LiteralPath (Join-Path $script:dockerComposeRoot "start-local-dms.ps1") -Raw
+            $startScript | Should -Match 'Name "DMS_DOCUMENTCACHE_COMPOSE_FILE"'
+            $startScript | Should -Match '\$files \+= @\("-f", \$documentCacheComposeFilePath\)'
+        }
+        finally {
+            if (Test-Path -LiteralPath $work) {
+                Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
     }
 }

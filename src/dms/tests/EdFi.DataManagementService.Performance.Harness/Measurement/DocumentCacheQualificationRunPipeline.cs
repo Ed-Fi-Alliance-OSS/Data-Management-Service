@@ -35,6 +35,9 @@ public static class DocumentCacheQualificationRunPipeline
     private const long TrackingWriteFirstOrdinal = 1_001;
     private const int SmallInventoryWorkRows = 1;
     private const int NaturalInterruptionPollLimit = 300;
+    private const string NaturalCommandCancellationInterruptionMode = "natural-command-cancellation";
+    private const string DeterministicPartialProgressInterruptionMode =
+        "deterministic-rebuilding-partial-progress";
 
     private static readonly UTF8Encoding _utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
@@ -147,7 +150,8 @@ public static class DocumentCacheQualificationRunPipeline
             openReplayConnectionAsync,
             leasedConnectionString,
             configuration,
-            setup
+            setup,
+            representativeEvidence
         );
         await runner.ExecuteAsync();
 
@@ -179,7 +183,8 @@ public static class DocumentCacheQualificationRunPipeline
         Func<Task<DbConnection>> openReplayConnectionAsync,
         string leasedConnectionString,
         DocumentCacheRepresentativeRunConfiguration configuration,
-        DocumentCacheQualificationFixtureSetupResult setup
+        DocumentCacheQualificationFixtureSetupResult setup,
+        bool representativeEvidence
     )
     {
         private readonly ApiIntegrationHarness _harness = harness;
@@ -188,6 +193,7 @@ public static class DocumentCacheQualificationRunPipeline
         private readonly string _leasedConnectionString = leasedConnectionString;
         private readonly DocumentCacheRepresentativeRunConfiguration _configuration = configuration;
         private readonly DocumentCacheQualificationFixtureSetupResult _setup = setup;
+        private readonly bool _representativeEvidence = representativeEvidence;
         private readonly Func<Task<DbConnection>> _openReplayConnectionAsync = openReplayConnectionAsync;
         private readonly List<string> _completedPhaseStems = [];
 
@@ -604,14 +610,29 @@ public static class DocumentCacheQualificationRunPipeline
             DocumentCacheAdministrativeCommandResult? interruptedResult =
                 await TryInterruptOnlineRebuildAsync(targetContext);
             DocumentCacheQualificationPhaseCounts interruptedCounts = await CaptureCountsAsync();
-            string interruptionMode = "natural-command-cancellation";
+            string interruptionMode = NaturalCommandCancellationInterruptionMode;
             IReadOnlyList<DocumentCacheQualificationDrainSliceMetrics> deterministicSlices = [];
 
             if (!IsInterruptedRebuildingState(interruptedResult, interruptedCounts))
             {
+                if (_representativeEvidence)
+                {
+                    string interruptedCommandStatus =
+                        interruptedResult?.Status.ToString() ?? "cancelled-or-not-observed";
+                    throw new PerfObservationException(
+                        "Representative interrupted-rebuild qualification requires observing the production "
+                            + "online rebuild command stop in Rebuilding with partial cache/work progress. "
+                            + "Synthetic interrupted state setup is allowed only for smoke-scale pipeline validation. "
+                            + $"Observed lifecycle '{interruptedCounts.ProjectionLifecycleState}', "
+                            + $"cache rows {interruptedCounts.DocumentCacheRows}, "
+                            + $"work rows {interruptedCounts.DocumentProjectionWorkRows}, "
+                            + $"command status '{interruptedCommandStatus}'."
+                    );
+                }
+
                 (interruptedCounts, deterministicSlices) =
                     await BuildDeterministicInterruptedRebuildStateAsync();
-                interruptionMode = "deterministic-rebuilding-partial-progress";
+                interruptionMode = DeterministicPartialProgressInterruptionMode;
             }
 
             DocumentCacheProjectionTargetRuntimeContext replacementTargetContext =

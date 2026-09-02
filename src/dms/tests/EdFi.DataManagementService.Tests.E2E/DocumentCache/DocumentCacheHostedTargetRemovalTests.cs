@@ -24,7 +24,7 @@ public sealed partial class DocumentCacheHostedHappyPathTests
             .Should()
             .Be(
                 TargetDataStoreId,
-                "the DocumentCache hosted E2E target configured in .env.e2e must match the provisioned CMS data store"
+                "the focused DocumentCache E2E overlay target must match the provisioned CMS data store"
             );
 
         ClientCredentials credentials = await CreateClientCredentialsForDataStoreAsync(dataStoreId);

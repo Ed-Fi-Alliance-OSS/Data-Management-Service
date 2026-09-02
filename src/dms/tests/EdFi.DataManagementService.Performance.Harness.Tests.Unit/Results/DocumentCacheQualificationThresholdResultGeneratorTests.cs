@@ -44,7 +44,11 @@ internal sealed class DocumentCacheThresholdGenerationSample : IDisposable
         }
     }
 
-    public void RewriteInterruptedRestart(PerfProvider provider, double replacementElapsedMs)
+    public void RewriteInterruptedRestart(
+        PerfProvider provider,
+        double replacementElapsedMs,
+        string interruptionMode = "natural-command-cancellation"
+    )
     {
         string providerName = PerfProviders.ArtifactName(provider);
         WritePhase(
@@ -52,6 +56,7 @@ internal sealed class DocumentCacheThresholdGenerationSample : IDisposable
             "interrupted-rebuild-restart-from-beginning",
             elapsedMs: replacementElapsedMs + 250,
             [
+                Metric("interruptionMode", interruptionMode),
                 Metric("replacementElapsedMs", replacementElapsedMs, "ms"),
                 Metric("restartFromBeginningCompleted", true),
             ]
@@ -393,5 +398,28 @@ public class Given_DocumentCache_Qualification_Threshold_Result_Generation
         );
         restartRow.Passed.Should().BeFalse();
         restartRow.DurableBaselineCursorTicket.Should().Be("DMS-9999");
+    }
+
+    [Test]
+    public void It_rejects_synthetic_interrupted_rebuild_evidence_for_representative_thresholds()
+    {
+        using DocumentCacheThresholdGenerationSample sample = DocumentCacheThresholdGenerationSample.Create();
+        sample.RewriteInterruptedRestart(
+            PerfProvider.Postgresql,
+            replacementElapsedMs: TimeSpan.FromMinutes(20).TotalMilliseconds,
+            interruptionMode: "deterministic-rebuilding-partial-progress"
+        );
+
+        FluentActions
+            .Invoking(() =>
+                DocumentCacheQualificationThresholdResultGenerator.GenerateFromDirectory(
+                    sample.ResultDirectory
+                )
+            )
+            .Should()
+            .Throw<PerfArtifactValidationException>()
+            .WithMessage(
+                "*interruptionMode*deterministic-rebuilding-partial-progress*natural-command-cancellation*"
+            );
     }
 }

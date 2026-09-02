@@ -293,7 +293,8 @@ public class DataStoreRepository(
 
             var sql = $"""
                 UPDATE "dmscs"."DataStore"
-                SET "DataStoreType" = @DataStoreType, "Name" = @Name, "Provider" = @Provider, {connectionStringAssignment}
+                SET "DataStoreType" = @DataStoreType, "Name" = @Name,
+                    "Provider" = COALESCE(@Provider, "Provider"), {connectionStringAssignment}
                     "LastModifiedAt" = @LastModifiedAt, "ModifiedBy" = @ModifiedBy
                 WHERE "Id" = @Id AND {TenantContext.TenantWhereClause()};
                 """;

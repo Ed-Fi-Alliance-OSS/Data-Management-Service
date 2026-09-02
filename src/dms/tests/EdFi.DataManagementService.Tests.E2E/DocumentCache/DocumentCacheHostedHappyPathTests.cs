@@ -121,7 +121,7 @@ public sealed partial class DocumentCacheHostedHappyPathTests
             .Should()
             .Be(
                 TargetDataStoreId,
-                "the DocumentCache hosted E2E target configured in .env.e2e must match the provisioned CMS data store"
+                "the focused DocumentCache E2E overlay target must match the provisioned CMS data store"
             );
 
         ClientCredentials credentials = await CreateClientCredentialsForDataStoreAsync(dataStoreId);
@@ -905,7 +905,7 @@ public sealed partial class DocumentCacheHostedHappyPathTests
     {
         string dockerComposeDirectory = Path.Combine(_repositoryRoot, "eng", "docker-compose");
         string prepareSchemaScript = Path.Combine(dockerComposeDirectory, "prepare-dms-schema.ps1");
-        string environmentFile = Path.Combine(dockerComposeDirectory, ".env.e2e");
+        string environmentFile = E2EEnvironmentFilePath();
 
         using var process = new Process();
         process.StartInfo = new ProcessStartInfo
@@ -937,6 +937,14 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         string error = errorTask.GetAwaiter().GetResult();
         process.ExitCode.Should().Be(0, "prepare-dms-schema.ps1 stderr:\n{0}\nstdout:\n{1}", error, output);
     }
+
+    private static string E2EEnvironmentFilePath() =>
+        Environment.GetEnvironmentVariable("DMS_E2E_ENVIRONMENT_FILE") is { } environmentFile
+        && !string.IsNullOrWhiteSpace(environmentFile)
+            ? environmentFile
+            : throw new InvalidOperationException(
+                "DocumentCache hosted E2E tests require build-dms.ps1 E2ETest to provide the resolved environment file."
+            );
 
     private string ResolveDockerComposeRelativePath(string path)
     {

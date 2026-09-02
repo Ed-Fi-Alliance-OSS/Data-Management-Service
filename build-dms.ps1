@@ -150,6 +150,11 @@ param(
     [string]
     $EnvironmentFile="./.env.e2e",
 
+    # Optional E2E-only environment overlay. Its keys replace matching values from
+    # -EnvironmentFile before data-standard and database-engine overlays are applied.
+    [string]
+    $EnvironmentOverlayFile,
+
     # Optional test filter for dotnet test operations
     [string]
     $TestFilter,
@@ -338,6 +343,10 @@ function Get-E2ETestResultSuffix {
         return "e2e-shard-$($Matches[1])"
     }
 
+    if ($normalizedTestFilter -match '(?i)\b(?:TestCategory|Category)\s*=\s*DocumentCacheHostedHappyPath\b') {
+        return "e2e-document-cache"
+    }
+
     return "filtered"
 }
 
@@ -370,6 +379,9 @@ function Get-E2ETestEnvironmentContext {
         $EnvironmentFile,
 
         [string]
+        $EnvironmentOverlayFile,
+
+        [string]
         $TestFilter,
 
         # Database engine backing the E2E stack. "postgresql" (default) or "mssql". An empty value
@@ -389,12 +401,29 @@ function Get-E2ETestEnvironmentContext {
     # E2E_DATABASE_NAME override exactly like provision-e2e-database.ps1's destructive reset does.
     Import-Module -Name "$PSScriptRoot/eng/docker-compose/database-safety.psm1" -Force
 
-    # Single resolution point for the standard suite: compose the data-standard overlay (.env.ds<NN>)
-    # first, then the database-engine overlay (.env.mssql), so every downstream consumer - relational
-    # provisioning, configure, DMS startup, the test process, and teardown - reads the one resolved
-    # file. The order (data standard then engine) matches start-local-dms.ps1 and must not be
-    # reversed. With no -DataStandardVersion the data-standard step returns the file unchanged (DS 5.2
-    # default), and for postgresql the engine step is a no-op.
+    # Single resolution point for the standard suite: compose an explicit feature overlay first,
+    # then the data-standard overlay (.env.ds<NN>), then the database-engine overlay (.env.mssql).
+    # Every downstream consumer - relational provisioning, configure, DMS startup, the test process,
+    # and teardown - reads the one resolved file. With no feature overlay or -DataStandardVersion,
+    # those steps return the input unchanged; for postgresql the engine step is also a no-op.
+    if (-not [string]::IsNullOrWhiteSpace($EnvironmentOverlayFile)) {
+        $environmentOverlayPath = Resolve-E2EEnvironmentFilePath -Path $EnvironmentOverlayFile
+        $overlayFileName = [System.IO.Path]::GetFileName($environmentOverlayPath)
+        $overlaySuffix = $overlayFileName -replace '^\.env\.?', ''
+        if ([string]::IsNullOrWhiteSpace($overlaySuffix)) {
+            $overlaySuffix = "overlay"
+        }
+
+        $derivedEnvironmentFileName = "$([System.IO.Path]::GetFileName($environmentFilePath)).$overlaySuffix"
+        $derivedEnvironmentFilePath = Join-Path `
+            (Join-Path "$PSScriptRoot/eng/docker-compose" ".derived") `
+            $derivedEnvironmentFileName
+        $environmentFilePath = New-DataStandardDerivedEnvFile `
+            -BaseEnvironmentFile $environmentFilePath `
+            -OverlayEnvironmentFile $environmentOverlayPath `
+            -TargetPath $derivedEnvironmentFilePath
+    }
+
     $environmentFilePath = Resolve-DataStandardEnvironmentFile `
         -DataStandardVersion $DataStandardVersion `
         -BaseEnvironmentFile $environmentFilePath `
@@ -479,6 +508,8 @@ function Invoke-WithE2ETestProcessContext {
     $previousDataStoreConnectionString = $env:AppSettings__DataStoreConnectionString
     $previousDataStoreSnapshotConnectionStringExists = Test-Path Env:AppSettings__DataStoreSnapshotConnectionString
     $previousDataStoreSnapshotConnectionString = $env:AppSettings__DataStoreSnapshotConnectionString
+    $previousE2EEnvironmentFileExists = Test-Path Env:DMS_E2E_ENVIRONMENT_FILE
+    $previousE2EEnvironmentFile = $env:DMS_E2E_ENVIRONMENT_FILE
     $previousNodeOptionsExists = Test-Path Env:NODE_OPTIONS
     $previousNodeOptions = $env:NODE_OPTIONS
 
@@ -495,6 +526,7 @@ function Invoke-WithE2ETestProcessContext {
         $env:AppSettings__DataStoreAdminConnectionString = $E2ETestSettings.DataStoreAdminConnectionString
         $env:AppSettings__DataStoreConnectionString = $E2ETestSettings.DataStoreConnectionString
         $env:AppSettings__DataStoreSnapshotConnectionString = $E2ETestSettings.DataStoreSnapshotConnectionString
+        $env:DMS_E2E_ENVIRONMENT_FILE = $E2ETestSettings.EnvironmentFile
         Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
         & $Action
     }
@@ -533,6 +565,13 @@ function Invoke-WithE2ETestProcessContext {
         }
         else {
             Remove-Item Env:AppSettings__DataStoreConnectionString -ErrorAction SilentlyContinue
+        }
+
+        if ($previousE2EEnvironmentFileExists) {
+            $env:DMS_E2E_ENVIRONMENT_FILE = $previousE2EEnvironmentFile
+        }
+        else {
+            Remove-Item Env:DMS_E2E_ENVIRONMENT_FILE -ErrorAction SilentlyContinue
         }
 
         if ($previousNodeOptionsExists) {
@@ -1235,6 +1274,9 @@ function E2ETests {
         [string]
         $TestFilter,
 
+        [string]
+        $EnvironmentOverlayFile,
+
         # Database engine backing the E2E stack. "postgresql" (default) or "mssql". Resolved once in
         # Get-E2ETestEnvironmentContext (empty is normalized to postgresql) and reused from the
         # returned context for every downstream step.
@@ -1246,7 +1288,11 @@ function E2ETests {
         throw "E2ETest -LoadSeedData is not supported after legacy backend removal. E2ETest resets and provisions E2E_DATABASE_NAME with provision-e2e-database.ps1 before tests run; use StartEnvironment -LoadSeedData or add a relational/API seed path instead."
     }
 
-    $e2eTestSettings = Get-E2ETestEnvironmentContext -EnvironmentFile $EnvironmentFile -TestFilter $TestFilter -DatabaseEngine $DatabaseEngine
+    $e2eTestSettings = Get-E2ETestEnvironmentContext `
+        -EnvironmentFile $EnvironmentFile `
+        -EnvironmentOverlayFile $EnvironmentOverlayFile `
+        -TestFilter $TestFilter `
+        -DatabaseEngine $DatabaseEngine
 
     # Resolve the startup phase plan once (single decision point, unit-tested in
     # E2EEngineForwarding.Tests.ps1). SQL Server requires the generated relational DDL to exist before
@@ -2195,7 +2241,7 @@ Invoke-Main {
             Invoke-Publish
         }
         UnitTest { Invoke-TestExecution UnitTests }
-        E2ETest { Invoke-TestExecution E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider -TestFilter $TestFilter -DatabaseEngine $DatabaseEngine }
+        E2ETest { Invoke-TestExecution E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider -TestFilter $TestFilter -EnvironmentOverlayFile $EnvironmentOverlayFile -DatabaseEngine $DatabaseEngine }
         InstanceE2ETest {
             $instanceE2EArguments = @{
                 SkipDockerBuild     = [bool]$SkipDockerBuild

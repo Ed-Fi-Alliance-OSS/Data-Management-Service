@@ -17,6 +17,7 @@ public static class DocumentCacheQualificationThresholdResultGenerator
     private const string OfflineActivationPhase = "offline-activation-first-baseline";
     private const string OnlineRebuildPhase = "online-rebuild-clear-reseed-drain";
     private const string InterruptedRebuildPhase = "interrupted-rebuild-restart-from-beginning";
+    private const string NaturalCommandCancellationInterruptionMode = "natural-command-cancellation";
     private const string TrackingWriteOverheadPhase = "tracking-canonical-write-overhead";
     private const string StatusEmptyWorkPhase = "status-empty-work-latency";
     private const string StatusLargeWorkPhase = "status-large-work-inventory-latency";
@@ -195,6 +196,22 @@ public static class DocumentCacheQualificationThresholdResultGenerator
     private static ThresholdMeasurement RestartFromBeginningMinutes(ProviderThresholdInputs inputs)
     {
         ThresholdPhaseMetrics metrics = inputs.Phase(InterruptedRebuildPhase);
+        string interruptionMode = MetricText(metrics, "interruptionMode");
+        if (
+            !string.Equals(
+                interruptionMode,
+                NaturalCommandCancellationInterruptionMode,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            throw new PerfArtifactValidationException([
+                $"DocumentCache qualification artifact '{PhasePath(inputs.ProviderName, InterruptedRebuildPhase)}' "
+                    + $"has interruptionMode '{interruptionMode}'. Representative restart-from-beginning "
+                    + $"threshold evidence requires '{NaturalCommandCancellationInterruptionMode}'.",
+            ]);
+        }
+
         decimal replacementElapsedMs = MetricDecimal(metrics, "replacementElapsedMs");
         bool completed = MetricBool(metrics, "restartFromBeginningCompleted");
         return new ThresholdMeasurement(
@@ -364,6 +381,15 @@ public static class DocumentCacheQualificationThresholdResultGenerator
         }
 
         return parsed;
+    }
+
+    private static string MetricText(ThresholdPhaseMetrics metrics, string metricName)
+    {
+        DocumentCacheQualificationPhaseMetricValue metric =
+            metrics.Metrics.SingleOrDefault(metric => metric.Name == metricName)
+            ?? throw MissingMetric(PhasePath(metrics.Provider, metrics.Phase), metricName);
+
+        return metric.Value;
     }
 
     private static bool MetricBool(ThresholdPhaseMetrics metrics, string metricName)

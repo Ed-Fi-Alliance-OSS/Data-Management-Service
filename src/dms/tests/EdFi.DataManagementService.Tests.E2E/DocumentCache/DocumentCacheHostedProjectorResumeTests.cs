@@ -30,7 +30,7 @@ public sealed partial class DocumentCacheHostedHappyPathTests
             .Should()
             .Be(
                 TargetDataStoreId,
-                "the DocumentCache hosted E2E target configured in .env.e2e must match the provisioned CMS data store"
+                "the focused DocumentCache E2E overlay target must match the provisioned CMS data store"
             );
 
         ClientCredentials credentials = await CreateClientCredentialsForDataStoreAsync(dataStoreId);
@@ -209,6 +209,8 @@ public sealed partial class DocumentCacheHostedHappyPathTests
             IsMssql() ? "mssql.yml" : "postgresql.yml",
             "-f",
             "local-dms.yml",
+            "-f",
+            "local-dms-document-cache.yml",
         ];
 
         if (DmsDotnetDiagnosticsEnabled(environmentFile))
@@ -245,7 +247,7 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         Directory.CreateDirectory(tempDirectory);
         _tempDirectories.Add(tempDirectory);
 
-        string baseEnvironmentFile = Path.Combine(_repositoryRoot, "eng", "docker-compose", ".env.e2e");
+        string baseEnvironmentFile = E2EEnvironmentFilePath();
         string[] environmentLines = File.ReadAllLines(baseEnvironmentFile);
         List<string> updatedEnvironmentLines = [.. environmentLines];
         foreach ((string key, string value) in environmentOverrides)
