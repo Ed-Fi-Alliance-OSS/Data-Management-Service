@@ -459,11 +459,12 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
-        // Planner terminals (namespace setup failures, relationship security-configuration failures,
-        // and known unsupported relationship composition) resolve before the write session opens, so
-        // those denials issue no DB roundtrip and never lock the target. Target-dependent namespace
-        // and relationship checks still run inside the delete session against the locked target (see
-        // AuthorizeDeleteIfRequiredAsync).
+        // Planner terminals (namespace setup failures, the ownership token cap, relationship
+        // security-configuration failures, and known unsupported relationship composition) resolve before
+        // the write session opens, so those denials issue no DB roundtrip and never lock the target. The
+        // target-dependent custom-view, namespace, ownership and relationship checks run inside the delete
+        // session against the locked target, co-batched with the deletes or as ordered segments ahead of
+        // them (see CompositeRelationalDeleteCommand).
         var authorizationPreflight = AuthorizeDeletePreflight(deleteRequest, mappingSet, resource);
 
         return authorizationPreflight switch
@@ -957,7 +958,7 @@ public sealed class RelationalDocumentStoreRepository(
         // as the same security-configuration 500, and NamespaceBased executes ahead of OwnershipBased, so a
         // request that would fail both must report the namespace one.
         if (
-            !TryPlanGetByIdOwnershipAuthorization(
+            !TryPlanStoredOwnershipAuthorization(
                 mappingSet,
                 plan.OwnershipCheck,
                 authorizationContext,
@@ -3813,11 +3814,11 @@ public sealed class RelationalDocumentStoreRepository(
         CancellationToken cancellationToken = default
     )
     {
-        // Planner terminals (namespace setup failures, relationship security-configuration failures,
-        // and known unsupported relationship composition) resolve before the target lookup, so those
-        // denials issue no read roundtrip and never depend on document existence. Target-dependent
-        // namespace and relationship checks still run per attempt against the resolved target (see
-        // AuthorizeGetByIdAgainstTargetAsync).
+        // Planner terminals (namespace setup failures, the ownership token cap, relationship
+        // security-configuration failures, and known unsupported relationship composition) resolve before
+        // the target lookup, so those denials issue no read roundtrip and never depend on document
+        // existence. The target-dependent custom-view, namespace, ownership and relationship checks still
+        // run per attempt against the resolved target (see AuthorizeGetByIdAgainstTargetAsync).
         var authorizationPreflight = AuthorizeGetByIdPreflight(relationalGetRequest, mappingSet, resource);
 
         if (authorizationPreflight is GetByIdAuthorizationPreflightResult.Stop preflightStop)
@@ -4581,7 +4582,7 @@ public sealed class RelationalDocumentStoreRepository(
         // same security-configuration 500, so whichever is attempted first is the one reported when a request
         // would fail both. NamespaceBased executes ahead of OwnershipBased, so its failure must win.
         if (
-            !TryPlanGetByIdOwnershipAuthorization(
+            !TryPlanStoredOwnershipAuthorization(
                 mappingSet,
                 plan.OwnershipCheck,
                 authorizationContext,
@@ -4618,7 +4619,8 @@ public sealed class RelationalDocumentStoreRepository(
 
     /// <summary>
     /// Builds the ownership-token parameterization for the planned ownership check, or reports the
-    /// security-configuration failure that stops the read.
+    /// security-configuration failure that stops the request. Shared by the GET-by-id and DELETE
+    /// preflights, so the two cannot drift on when an over-limit token list fails closed.
     /// </summary>
     /// <remarks>
     /// Defence in depth rather than the primary gate. The planner already returns its own token-cap
@@ -4627,7 +4629,7 @@ public sealed class RelationalDocumentStoreRepository(
     /// planner change that dropped the terminal still fails closed rather than emitting an over-limit
     /// parameter list at the SQL boundary.
     /// </remarks>
-    private static bool TryPlanGetByIdOwnershipAuthorization(
+    private static bool TryPlanStoredOwnershipAuthorization(
         MappingSet mappingSet,
         OwnershipAuthorizationCheckSpec? ownershipCheck,
         RelationalAuthorizationContext authorizationContext,

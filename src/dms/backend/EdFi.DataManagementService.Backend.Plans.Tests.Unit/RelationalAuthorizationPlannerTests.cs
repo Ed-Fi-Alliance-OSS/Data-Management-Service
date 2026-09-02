@@ -841,9 +841,9 @@ public class Given_RelationalAuthorizationPlanner
 
     // ── DMS-1060 ownership enablement gate ──────────────────────────────
     //
-    // ReadSingle is enforced; every other operation is still withheld. The predicate is asserted directly
-    // as well as through plan outcomes, because a withheld operation produces the same 501 whether the gate
-    // withheld it or the classifier never saw it, and only the predicate separates those.
+    // ReadSingle and Delete are enforced; Update and ReadMany are still withheld. The predicate is asserted
+    // directly as well as through plan outcomes, because a withheld operation produces the same 501 whether
+    // the gate withheld it or the classifier never saw it, and only the predicate separates those.
 
     /// <summary>
     /// The operations enforced so far, and only those. Each enforcement step adds its own operation in the
