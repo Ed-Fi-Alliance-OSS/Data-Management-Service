@@ -51,11 +51,14 @@ param(
     [string] $Fixture = 'primary-500k',
 
     # The documented primary-baseline iteration plan and deep offset, pinned here so the
-    # recorded run provenance does not depend on harness-side defaults. A non-default
-    # -Fixture needs a -DeepOffset that fits inside its row count.
-    [int] $WarmupIterations = 5,
+    # recorded run provenance does not depend on harness-side defaults. Ten warmups and
+    # sixty measured iterations, matching invoke-final-gate.ps1 so baseline and final-gate
+    # tails share one sample size. The harness floors (5 / 30) stay where they are so the
+    # retained DMS-1391 artifacts still validate. A non-default -Fixture needs a
+    # -DeepOffset that fits inside its row count.
+    [int] $WarmupIterations = 10,
 
-    [int] $MeasuredIterations = 30,
+    [int] $MeasuredIterations = 60,
 
     [long] $DeepOffset = 450000,
 

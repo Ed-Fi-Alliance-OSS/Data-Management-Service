@@ -59,9 +59,11 @@ The entry points are `Runs/Given_<Provider>_TraditionalBaselineRun`, normally in
 `eng/performance/invoke-traditional-baseline.ps1`, which handles the baseline worktree
 overlay, image digest validation, binding the connection-string endpoint to the validated
 container's published port, and environment wiring, and pins the documented
-primary-run iteration plan and deep offset (5 warmups / 30 measured / 450,000) as
-overridable parameters. The wrapper is currently Windows-only: it drives the overlay with
-PowerShell and robocopy.
+primary-run iteration plan and deep offset (10 warmups / 60 measured / 450,000) as
+overridable parameters. Sixty measured iterations make p95 the third-slowest sample rather
+than the second, so a tail gate needs three host-side stalls to flip instead of two; the
+extra warmups absorb the stalls that cluster in the first measured iterations. The wrapper is
+currently Windows-only: it drives the overlay with PowerShell and robocopy.
 
 | Variable | Required | Meaning |
 | --- | --- | --- |
@@ -70,7 +72,7 @@ PowerShell and robocopy.
 | `PERF_FIXTURE` | yes | `primary-500k` or `smoke-10k` |
 | `PERF_IMAGE_TAG` / `PERF_IMAGE_DIGEST` | yes | The validated image pin recorded in the manifest |
 | `PERF_STORAGE_NOTE` | yes | Storage caveat, for example `local docker volume, not tmpfs` |
-| `PERF_WARMUP_ITERATIONS` / `PERF_MEASURED_ITERATIONS` | no | Default 5 / 30; may be raised, never lowered |
+| `PERF_WARMUP_ITERATIONS` / `PERF_MEASURED_ITERATIONS` | no | Harness floor 5 / 30 (the retained DMS-1391 baseline was captured at the floor); both wrappers pin 10 / 60. May be raised, never lowered |
 | `PERF_DEEP_OFFSET` | no | Default 90% of the fixture row count (450,000 for the primary fixture) |
 | `PERF_ALLOW_CI` | no | Default `false`: runs refuse GitHub Actions because its databases run on tmpfs |
 | `PERF_ALLOW_DIRTY_PREFIXES` | no | Semicolon-separated allowlist for dirty worktree paths, matched on path-segment boundaries; defaults to the harness overlay directory. Empty entries are invalid — allow-all exists only as the in-code `AllowAnyDirtyPath` setting the smokes use, never through the environment |

@@ -59,11 +59,15 @@ param(
     [string] $DescriptorFixture = 'descriptors-25k',
 
     # The documented final-gate iteration plan and deep offset, pinned here so the
-    # recorded run provenance does not depend on harness-side defaults. A non-default
-    # -Fixture needs a -DeepOffset that fits inside its row count.
-    [int] $WarmupIterations = 5,
+    # recorded run provenance does not depend on harness-side defaults. Ten warmups and
+    # sixty measured iterations: with thirty, p95 is the second-slowest sample, so two
+    # host-side stalls flip a tail gate; with sixty it takes three, and the extra warmups
+    # absorb the stalls that cluster in the first measured iterations. The harness floors
+    # (5 / 30) stay where they are so the retained DMS-1391 artifacts still validate. A
+    # non-default -Fixture needs a -DeepOffset that fits inside its row count.
+    [int] $WarmupIterations = 10,
 
-    [int] $MeasuredIterations = 30,
+    [int] $MeasuredIterations = 60,
 
     [long] $DeepOffset = 450000,
 
