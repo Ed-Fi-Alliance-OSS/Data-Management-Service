@@ -440,6 +440,180 @@ public class Given_A_Mssql_Relational_Write_With_Ownership_Stamping
         );
     }
 
+    // ----- Write enforcement -----------------------------------------------
+
+    /// <summary>
+    /// The live half of the D1 proof, moved here from 6.2 because a POST create cannot plan an ownership
+    /// check until the Update gate is open. <c>OwnershipBased</c> is configured and the caller holds no
+    /// tokens at all — the configuration most likely to deny if the carrier row guard were missing — and the
+    /// create still succeeds and still stamps.
+    /// </summary>
+    [Test]
+    public async Task It_creates_and_stamps_with_ownership_configured_and_no_tokens()
+    {
+        var createResult = await ExecuteOwnershipCreateAsync(CreatorToken, ownershipTokenIds: []);
+
+        createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+        (await ReadStoredOwnershipTokenAsync()).Should().Be(CreatorToken);
+    }
+
+    /// <summary>
+    /// A POST that resolves to an upsert-as-update is denied for a foreign token, and the stored row is
+    /// unchanged — including the token, which a denied write must never rewrite.
+    /// </summary>
+    [Test]
+    public async Task It_denies_a_post_as_update_for_a_foreign_token_and_leaves_the_row_unmodified()
+    {
+        await ExecuteCreateAsync(CreatorToken);
+
+        var result = await ExecuteOwnershipCreateAsync(
+            CreatorToken,
+            ownershipTokenIds: [OtherToken],
+            requestBody: UpdateRequestBody()
+        );
+
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch);
+        (await ReadStoredOwnershipTokenAsync()).Should().Be(CreatorToken);
+    }
+
+    [Test]
+    public async Task It_denies_a_put_for_a_foreign_token_and_leaves_the_row_unmodified()
+    {
+        await ExecuteCreateAsync(CreatorToken);
+
+        var result = await ExecuteOwnershipUpdateAsync([OtherToken]);
+
+        result
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch);
+        (await ReadStoredOwnershipTokenAsync()).Should().Be(CreatorToken);
+    }
+
+    /// <summary>
+    /// An owner may update, and the stored token survives it. The write carries its own creator token, which
+    /// a create would have stamped, so this also proves the update path still does not rewrite it.
+    /// </summary>
+    [Test]
+    public async Task It_authorizes_a_put_for_an_owner_and_preserves_the_stored_token()
+    {
+        await ExecuteCreateAsync(CreatorToken);
+
+        var result = await ExecuteOwnershipUpdateAsync([OtherToken, CreatorToken]);
+
+        result.Should().BeOfType<UpdateResult.UpdateSuccess>();
+        (await ReadStoredOwnershipTokenAsync()).Should().Be(CreatorToken);
+    }
+
+    /// <summary>
+    /// A document created without a token cannot be updated by anyone: auth.md 2.14.
+    /// </summary>
+    [Test]
+    public async Task It_denies_a_put_whose_stored_ownership_token_was_never_assigned()
+    {
+        await ExecuteCreateAsync(creatorOwnershipTokenId: null);
+
+        var result = await ExecuteOwnershipUpdateAsync([CreatorToken]);
+
+        result
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized);
+        (await ReadStoredOwnershipTokenAsync()).Should().BeNull();
+    }
+
+    /// <summary>
+    /// The denial outranks a stale If-Match, as on the delete path: telling a non-owner its etag is stale
+    /// would disclose that the row changed.
+    /// </summary>
+    [Test]
+    public async Task It_reports_an_ownership_put_denial_over_a_stale_if_match()
+    {
+        await ExecuteCreateAsync(CreatorToken);
+
+        var result = await ExecuteOwnershipUpdateAsync([OtherToken], ifMatch: "\"stale-etag\"");
+
+        result.Should().BeOfType<UpdateResult.UpdateFailureOwnershipNotAuthorized>();
+        (await ReadStoredOwnershipTokenAsync()).Should().Be(CreatorToken);
+    }
+
+    private async Task<UpsertResult> ExecuteOwnershipCreateAsync(
+        short? creatorOwnershipTokenId,
+        IReadOnlyList<short> ownershipTokenIds,
+        JsonNode? requestBody = null
+    )
+    {
+        using var scope = CreateScopeForDatabase();
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return await repository.UpsertDocument(
+            new UpsertRequest(
+                ResourceInfo: SchoolResourceInfo,
+                DocumentInfo: CreateSchoolDocumentInfo(),
+                MappingSet: _mappingSet,
+                EdfiDoc: requestBody ?? CreateRequestBody(),
+                Headers: [],
+                TraceId: new TraceId("ownership-enforcement-post"),
+                DocumentUuid: SchoolDocumentUuid
+            )
+            {
+                AuthorizationContext = new RelationalAuthorizationContext(
+                    [],
+                    [],
+                    creatorOwnershipTokenId,
+                    ownershipTokenIds
+                ),
+                AuthorizationStrategyEvaluators = OwnershipStrategyEvaluators,
+            }
+        );
+    }
+
+    private async Task<UpdateResult> ExecuteOwnershipUpdateAsync(
+        IReadOnlyList<short> ownershipTokenIds,
+        string? ifMatch = null
+    )
+    {
+        using var scope = CreateScopeForDatabase();
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return await repository.UpdateDocumentById(
+            new UpdateRequest(
+                ResourceInfo: SchoolResourceInfo,
+                DocumentInfo: CreateSchoolDocumentInfo(),
+                MappingSet: _mappingSet,
+                EdfiDoc: UpdateRequestBody(),
+                Headers: ifMatch is null ? [] : new Dictionary<string, string> { ["If-Match"] = ifMatch },
+                TraceId: new TraceId("ownership-enforcement-put"),
+                DocumentUuid: SchoolDocumentUuid
+            )
+            {
+                AuthorizationContext = new RelationalAuthorizationContext(
+                    [],
+                    [],
+                    // A PUT carries a creator token too; a create would stamp it, an update must not.
+                    creatorOwnershipTokenId: OtherToken,
+                    ownershipTokenIds
+                ),
+                AuthorizationStrategyEvaluators = OwnershipStrategyEvaluators,
+            }
+        );
+    }
+
+    private static AuthorizationStrategyEvaluator[] OwnershipStrategyEvaluators =>
+        [
+            new AuthorizationStrategyEvaluator(
+                AuthorizationStrategyNameConstants.OwnershipBased,
+                [],
+                FilterOperator.And
+            ),
+        ];
+
     private async Task<UpsertResult> ExecuteCreateAsync(
         short? creatorOwnershipTokenId,
         JsonNode? requestBody = null

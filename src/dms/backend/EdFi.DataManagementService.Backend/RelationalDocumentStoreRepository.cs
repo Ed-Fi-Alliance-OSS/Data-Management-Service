@@ -2834,6 +2834,30 @@ public sealed class RelationalDocumentStoreRepository(
                     failures => BuildPostAuthorizationSecurityConfigurationFailure(mappingSet, failures)
                 );
 
+            // The ownership token list reaches the defensive limit. A planner terminal, so it is reported
+            // before the write session opens and after the namespace terminals; the planner has already
+            // resolved custom-view configuration failures by not returning this outcome in that case.
+            case RelationalAuthorizationPlanOutcome.OwnershipTokenCapExceeded ownershipTokenCapExceeded:
+                return WriteTerminal<UpsertResult>(
+                    mappingSet,
+                    resource,
+                    new UpsertResult.UpsertFailureSecurityConfiguration(
+                        [
+                            OwnershipAuthorizationSecurityConfigurationMessages.TokenCapExceeded(
+                                ownershipTokenCapExceeded.OwnershipTokenCount
+                            ),
+                        ],
+                        AuthorizationSecurityConfigurationDiagnostics.ForOwnershipTokenParameterization(
+                            AuthorizationSecurityConfigurationDiagnostics.OwnershipTokenCapExceeded
+                        )
+                    ),
+                    ownershipTokenCapExceeded.CustomViewStrategies,
+                    // Every configured view runs before this terminal: OwnershipBased executes last among
+                    // the AND strategies whatever position it is configured at.
+                    int.MaxValue,
+                    failures => BuildPostAuthorizationSecurityConfigurationFailure(mappingSet, failures)
+                );
+
             case RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError:
                 return AuthorizePostRelationshipBucket(
                     mappingSet,
@@ -2899,43 +2923,59 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
-        if (plan.NamespaceChecks.Count == 0)
+        RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization = null;
+        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null;
+
+        if (plan.NamespaceChecks.Count > 0)
         {
-            return AuthorizePostRelationshipBucket(
-                mappingSet,
-                resource,
-                writePlan,
-                plan.NonNamespaceConfiguredStrategies,
-                authorizationContext,
-                storedNamespaceAuthorization: null,
-                proposedNamespaceAuthorization: null,
-                customViewAuthorization: customViewAuthorization
+            if (
+                !NamespacePrefixParameterizationPreflight.TryCreate(
+                    mappingSet.Key.Dialect,
+                    authorizationContext.NamespacePrefixes,
+                    out var namespacePrefixParameterization,
+                    out var securityConfigurationMessage,
+                    out var securityConfigurationDiagnostics
+                )
+            )
+            {
+                return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
+                    new UpsertResult.UpsertFailureSecurityConfiguration(
+                        [securityConfigurationMessage],
+                        securityConfigurationDiagnostics
+                    ),
+                    CustomViewChecksBeforeNamespaceCheck(customViewAuthorization, plan.NamespaceChecks)
+                );
+            }
+
+            (storedNamespaceAuthorization, proposedNamespaceAuthorization) = SplitNamespaceAuthorization(
+                plan.NamespaceChecks,
+                namespacePrefixParameterization
             );
         }
 
+        // After the namespace parameterization, as on every other path: both are setup failures reported as
+        // the same security-configuration 500, and NamespaceBased executes ahead of OwnershipBased.
         if (
-            !NamespacePrefixParameterizationPreflight.TryCreate(
-                mappingSet.Key.Dialect,
-                authorizationContext.NamespacePrefixes,
-                out var namespacePrefixParameterization,
-                out var securityConfigurationMessage,
-                out var securityConfigurationDiagnostics
+            !TryPlanStoredOwnershipAuthorization(
+                mappingSet,
+                plan.OwnershipCheck,
+                authorizationContext,
+                out var storedOwnershipAuthorization,
+                out var ownershipSecurityConfigurationMessage,
+                out var ownershipSecurityConfigurationDiagnostics
             )
         )
         {
             return new WriteGuardRailPreflightResult<UpsertResult>.Stop(
                 new UpsertResult.UpsertFailureSecurityConfiguration(
-                    [securityConfigurationMessage],
-                    securityConfigurationDiagnostics
+                    [ownershipSecurityConfigurationMessage],
+                    ownershipSecurityConfigurationDiagnostics
                 ),
-                CustomViewChecksBeforeNamespaceCheck(customViewAuthorization, plan.NamespaceChecks)
+                // Every configured view runs before this failure: OwnershipBased executes last among the
+                // AND strategies whatever position it is configured at.
+                AllCustomViewChecks(customViewAuthorization)
             );
         }
-
-        var (storedNamespaceAuthorization, proposedNamespaceAuthorization) = SplitNamespaceAuthorization(
-            plan.NamespaceChecks,
-            namespacePrefixParameterization
-        );
 
         return AuthorizePostRelationshipBucket(
             mappingSet,
@@ -2945,7 +2985,8 @@ public sealed class RelationalDocumentStoreRepository(
             authorizationContext,
             storedNamespaceAuthorization,
             proposedNamespaceAuthorization,
-            customViewAuthorization
+            customViewAuthorization,
+            storedOwnershipAuthorization
         );
     }
 
@@ -2986,6 +3027,7 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
         RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization,
         RelationalCustomViewAuthorization? customViewAuthorization = null,
+        RelationalOwnershipAuthorization? storedOwnershipAuthorization = null,
         IReadOnlyList<SupportedCustomViewAuthorizationStrategy>? supportedCustomViewStrategies = null
     )
     {
@@ -3055,7 +3097,8 @@ public sealed class RelationalDocumentStoreRepository(
                     null,
                     storedNamespaceAuthorization,
                     proposedNamespaceAuthorization,
-                    customViewAuthorization: customViewAuthorization
+                    customViewAuthorization: customViewAuthorization,
+                    storedOwnershipAuthorization: storedOwnershipAuthorization
                 ),
 
             RelationshipAuthorizationResult.Authorized => CreatePostRelationshipAuthorizationContinue(
@@ -3067,7 +3110,8 @@ public sealed class RelationalDocumentStoreRepository(
                 existingResourcePlan,
                 storedNamespaceAuthorization,
                 proposedNamespaceAuthorization,
-                customViewAuthorization
+                customViewAuthorization,
+                storedOwnershipAuthorization
             ),
 
             // NamespaceBased and custom view-based both AND-compose before relationship OR strategies
@@ -3084,7 +3128,8 @@ public sealed class RelationalDocumentStoreRepository(
                     noClaims,
                     storedNamespaceAuthorization,
                     proposedNamespaceAuthorization,
-                    customViewAuthorization: customViewAuthorization
+                    customViewAuthorization: customViewAuthorization,
+                    storedOwnershipAuthorization: storedOwnershipAuthorization
                 ),
 
             RelationshipAuthorizationResult.KnownButNotEnabled knownButNotEnabled =>
@@ -3126,7 +3171,8 @@ public sealed class RelationalDocumentStoreRepository(
         RelationshipAuthorizationUpdatePlan existingResourcePlan,
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
         RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization,
-        RelationalCustomViewAuthorization? customViewAuthorization = null
+        RelationalCustomViewAuthorization? customViewAuthorization = null,
+        RelationalOwnershipAuthorization? storedOwnershipAuthorization = null
     )
     {
         var createNewProposedValues = _relationshipAuthorizationPlanner.PlanProposedValues(
@@ -3154,7 +3200,8 @@ public sealed class RelationalDocumentStoreRepository(
                     createNewProposedRelationshipAuthorization,
                     createNewImmediateResult
                 ),
-                customViewAuthorization
+                customViewAuthorization,
+                storedOwnershipAuthorization
             );
 
         return createNewProposedValues switch
@@ -3252,6 +3299,30 @@ public sealed class RelationalDocumentStoreRepository(
                     failures => BuildPutAuthorizationSecurityConfigurationFailure(mappingSet, failures)
                 );
 
+            // The ownership token list reaches the defensive limit. A planner terminal, so it is reported
+            // before the write session opens and after the namespace terminals; the planner has already
+            // resolved custom-view configuration failures by not returning this outcome in that case.
+            case RelationalAuthorizationPlanOutcome.OwnershipTokenCapExceeded ownershipTokenCapExceeded:
+                return WriteTerminal<UpdateResult>(
+                    mappingSet,
+                    resource,
+                    new UpdateResult.UpdateFailureSecurityConfiguration(
+                        [
+                            OwnershipAuthorizationSecurityConfigurationMessages.TokenCapExceeded(
+                                ownershipTokenCapExceeded.OwnershipTokenCount
+                            ),
+                        ],
+                        AuthorizationSecurityConfigurationDiagnostics.ForOwnershipTokenParameterization(
+                            AuthorizationSecurityConfigurationDiagnostics.OwnershipTokenCapExceeded
+                        )
+                    ),
+                    ownershipTokenCapExceeded.CustomViewStrategies,
+                    // Every configured view runs before this terminal: OwnershipBased executes last among
+                    // the AND strategies whatever position it is configured at.
+                    int.MaxValue,
+                    failures => BuildPutAuthorizationSecurityConfigurationFailure(mappingSet, failures)
+                );
+
             case RelationalAuthorizationPlanOutcome.SecurityConfigurationError securityConfigurationError:
                 return AuthorizePutRelationshipBucket(
                     mappingSet,
@@ -3315,43 +3386,59 @@ public sealed class RelationalDocumentStoreRepository(
             );
         }
 
-        if (plan.NamespaceChecks.Count == 0)
+        RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization = null;
+        RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null;
+
+        if (plan.NamespaceChecks.Count > 0)
         {
-            return AuthorizePutRelationshipBucket(
-                mappingSet,
-                resource,
-                writePlan,
-                plan.NonNamespaceConfiguredStrategies,
-                authorizationContext,
-                storedNamespaceAuthorization: null,
-                proposedNamespaceAuthorization: null,
-                customViewAuthorization: customViewAuthorization
+            if (
+                !NamespacePrefixParameterizationPreflight.TryCreate(
+                    mappingSet.Key.Dialect,
+                    authorizationContext.NamespacePrefixes,
+                    out var namespacePrefixParameterization,
+                    out var securityConfigurationMessage,
+                    out var securityConfigurationDiagnostics
+                )
+            )
+            {
+                return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
+                    new UpdateResult.UpdateFailureSecurityConfiguration(
+                        [securityConfigurationMessage],
+                        securityConfigurationDiagnostics
+                    ),
+                    CustomViewChecksBeforeNamespaceCheck(customViewAuthorization, plan.NamespaceChecks)
+                );
+            }
+
+            (storedNamespaceAuthorization, proposedNamespaceAuthorization) = SplitNamespaceAuthorization(
+                plan.NamespaceChecks,
+                namespacePrefixParameterization
             );
         }
 
+        // After the namespace parameterization, as on every other path: both are setup failures reported as
+        // the same security-configuration 500, and NamespaceBased executes ahead of OwnershipBased.
         if (
-            !NamespacePrefixParameterizationPreflight.TryCreate(
-                mappingSet.Key.Dialect,
-                authorizationContext.NamespacePrefixes,
-                out var namespacePrefixParameterization,
-                out var securityConfigurationMessage,
-                out var securityConfigurationDiagnostics
+            !TryPlanStoredOwnershipAuthorization(
+                mappingSet,
+                plan.OwnershipCheck,
+                authorizationContext,
+                out var storedOwnershipAuthorization,
+                out var ownershipSecurityConfigurationMessage,
+                out var ownershipSecurityConfigurationDiagnostics
             )
         )
         {
             return new WriteGuardRailPreflightResult<UpdateResult>.Stop(
                 new UpdateResult.UpdateFailureSecurityConfiguration(
-                    [securityConfigurationMessage],
-                    securityConfigurationDiagnostics
+                    [ownershipSecurityConfigurationMessage],
+                    ownershipSecurityConfigurationDiagnostics
                 ),
-                CustomViewChecksBeforeNamespaceCheck(customViewAuthorization, plan.NamespaceChecks)
+                // Every configured view runs before this failure: OwnershipBased executes last among the
+                // AND strategies whatever position it is configured at.
+                AllCustomViewChecks(customViewAuthorization)
             );
         }
-
-        var (storedNamespaceAuthorization, proposedNamespaceAuthorization) = SplitNamespaceAuthorization(
-            plan.NamespaceChecks,
-            namespacePrefixParameterization
-        );
 
         return AuthorizePutRelationshipBucket(
             mappingSet,
@@ -3361,7 +3448,8 @@ public sealed class RelationalDocumentStoreRepository(
             authorizationContext,
             storedNamespaceAuthorization,
             proposedNamespaceAuthorization,
-            customViewAuthorization
+            customViewAuthorization,
+            storedOwnershipAuthorization
         );
     }
 
@@ -3374,6 +3462,7 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization,
         RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization,
         RelationalCustomViewAuthorization? customViewAuthorization = null,
+        RelationalOwnershipAuthorization? storedOwnershipAuthorization = null,
         IReadOnlyList<SupportedCustomViewAuthorizationStrategy>? supportedCustomViewStrategies = null
     )
     {
@@ -3442,7 +3531,8 @@ public sealed class RelationalDocumentStoreRepository(
                     null,
                     storedNamespaceAuthorization,
                     proposedNamespaceAuthorization,
-                    customViewAuthorization: customViewAuthorization
+                    customViewAuthorization: customViewAuthorization,
+                    storedOwnershipAuthorization: storedOwnershipAuthorization
                 ),
 
             // NamespaceBased and custom view-based both AND-compose before the relationship OR group
@@ -3461,14 +3551,16 @@ public sealed class RelationalDocumentStoreRepository(
                     null,
                     storedNamespaceAuthorization,
                     proposedNamespaceAuthorization,
-                    customViewAuthorization: customViewAuthorization
+                    customViewAuthorization: customViewAuthorization,
+                    storedOwnershipAuthorization: storedOwnershipAuthorization
                 )
                 : new WriteGuardRailPreflightResult<UpdateResult>.Continue(
                     null,
                     noClaims,
                     storedNamespaceAuthorization,
                     proposedNamespaceAuthorization,
-                    customViewAuthorization: customViewAuthorization
+                    customViewAuthorization: customViewAuthorization,
+                    storedOwnershipAuthorization: storedOwnershipAuthorization
                 ),
 
             RelationshipAuthorizationResult.Authorized authorized =>
@@ -3478,7 +3570,8 @@ public sealed class RelationalDocumentStoreRepository(
                         as RelationshipAuthorizationResult.Authorized,
                     storedNamespaceAuthorization,
                     proposedNamespaceAuthorization,
-                    customViewAuthorization: customViewAuthorization
+                    customViewAuthorization: customViewAuthorization,
+                    storedOwnershipAuthorization: storedOwnershipAuthorization
                 ),
 
             _ => throw new InvalidOperationException(
@@ -3587,6 +3680,7 @@ public sealed class RelationalDocumentStoreRepository(
         RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null;
         PostRelationshipAuthorizationPlans? postRelationshipAuthorizationPlans = null;
         RelationalCustomViewAuthorization? customViewAuthorization = null;
+        RelationalOwnershipAuthorization? storedOwnershipAuthorization = null;
 
         if (preflight is not null)
         {
@@ -3601,6 +3695,7 @@ public sealed class RelationalDocumentStoreRepository(
                     proposedNamespaceAuthorization = continueResult.ProposedNamespaceAuthorization;
                     postRelationshipAuthorizationPlans = continueResult.PostRelationshipAuthorizationPlans;
                     customViewAuthorization = continueResult.CustomViewAuthorization;
+                    storedOwnershipAuthorization = continueResult.StoredOwnershipAuthorization;
                     break;
 
                 case WriteGuardRailPreflightResult<TResult>.Stop stopResult:
@@ -3663,6 +3758,7 @@ public sealed class RelationalDocumentStoreRepository(
                         PostRelationshipAuthorizationPlans = postRelationshipAuthorizationPlans,
                         CustomViewAuthorization = customViewAuthorization,
                         CreatorOwnershipTokenId = creatorOwnershipTokenId,
+                        StoredOwnershipAuthorization = storedOwnershipAuthorization,
                     }
                 )
                 .ConfigureAwait(false);
@@ -3725,7 +3821,8 @@ public sealed class RelationalDocumentStoreRepository(
                 RelationalWriteNamespaceAuthorization? storedNamespaceAuthorization = null,
                 RelationalWriteNamespaceAuthorization? proposedNamespaceAuthorization = null,
                 PostRelationshipAuthorizationPlans? postRelationshipAuthorizationPlans = null,
-                RelationalCustomViewAuthorization? customViewAuthorization = null
+                RelationalCustomViewAuthorization? customViewAuthorization = null,
+                RelationalOwnershipAuthorization? storedOwnershipAuthorization = null
             )
             {
                 ValidateStoredRelationshipAuthorization(storedRelationshipAuthorization);
@@ -3736,6 +3833,7 @@ public sealed class RelationalDocumentStoreRepository(
                 ProposedNamespaceAuthorization = proposedNamespaceAuthorization;
                 PostRelationshipAuthorizationPlans = postRelationshipAuthorizationPlans;
                 CustomViewAuthorization = customViewAuthorization;
+                StoredOwnershipAuthorization = storedOwnershipAuthorization;
             }
 
             public RelationshipAuthorizationResult? StoredRelationshipAuthorization { get; }
@@ -3745,6 +3843,14 @@ public sealed class RelationalDocumentStoreRepository(
             public RelationalWriteNamespaceAuthorization? StoredNamespaceAuthorization { get; }
 
             public RelationalWriteNamespaceAuthorization? ProposedNamespaceAuthorization { get; }
+
+            /// <summary>
+            /// The ownership check planned for this write, or <see langword="null"/> when
+            /// <c>OwnershipBased</c> is not configured. Ownership has one value source — the stored token —
+            /// so unlike namespace and custom view there is no proposed counterpart: the check decides an
+            /// update and is vacuous for a create.
+            /// </summary>
+            public RelationalOwnershipAuthorization? StoredOwnershipAuthorization { get; }
 
             /// <summary>
             /// Every custom-view check planned for this write, across both value sources. Null when no custom

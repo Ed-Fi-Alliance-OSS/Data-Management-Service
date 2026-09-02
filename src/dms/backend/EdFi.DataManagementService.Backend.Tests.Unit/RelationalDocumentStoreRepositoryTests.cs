@@ -9729,7 +9729,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_returns_post_not_implemented_for_known_but_not_enabled_relationship_authorization_before_target_lookup()
+    public async Task It_plans_post_ownership_alongside_a_supported_relationship_strategy()
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var requestBody = CreateRequestBody("Roosevelt High");
@@ -9753,19 +9753,18 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
             ]);
         A.CallTo(() => upsertRequest.AuthorizationContext)
-            .Returns(new RelationalAuthorizationContext([255901]));
+            .Returns(new RelationalAuthorizationContext([255901], [], null, [11]));
 
-        var result = await _sut.UpsertDocument(upsertRequest);
+        await _sut.UpsertDocument(upsertRequest);
 
-        var failure = result.Should().BeOfType<UpsertResult.UpsertFailureNotImplemented>().Subject;
-        failure.Reason.Should().Be(UpsertFailureNotImplementedReason.StrategyNotEnabled);
-        failure.FailureMessage.Should().Contain(AuthorizationStrategyNameConstants.OwnershipBased);
-        AssertSupportedRelationshipStrategyNames(failure.FailureMessage);
-        _capturedExecutorRequests.Should().BeEmpty();
-        A.CallTo(() => _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorInput>._, A<CancellationToken>._))
-            .MustNotHaveHappened();
-        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
-            .MustNotHaveHappened();
+        // OwnershipBased is the only strategy in the relationship classifier's known-but-not-enabled set, so
+        // once Update is enforced this composition plans instead of returning a 501, and the executor
+        // receives the planned check with the caller's tokens.
+        var executorInput = _capturedExecutorRequests.Should().ContainSingle().Subject;
+        executorInput.StoredOwnershipAuthorization.Should().NotBeNull();
+        var ownership = executorInput.StoredOwnershipAuthorization!;
+        ownership.Check.RawConfiguredIndex.Should().Be(1);
+        ownership.OwnershipTokenParameterization.TokensInOrder.Should().Equal((short)11);
     }
 
     [Test]
@@ -9913,40 +9912,14 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_validates_a_post_custom_view_when_an_unsupported_strategy_stops_before_planning()
+    public async Task It_validates_a_put_custom_view_when_an_unknown_strategy_stops_before_planning()
     {
-        // OwnershipBased makes the strategy-level outcome StillUnsupported, which enters the relationship
-        // bucket before any custom view has been planned. The view still AND-composes ahead of that 501, so
-        // the bucket has to plan and validate it rather than reporting the terminal over an unchecked view.
-        var capturedValidationSql = GivenCustomViewValidationIsRecorded();
-        var upsertRequest = A.Fake<IUpsertRequest>();
-        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
-        A.CallTo(() => upsertRequest.MappingSet)
-            .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
-        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
-        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
-        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Post unsupported strategy"));
-        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
-                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
-            ]);
-        A.CallTo(() => upsertRequest.AuthorizationContext)
-            .Returns(new RelationalAuthorizationContext([255901]));
-
-        var result = await _sut.UpsertDocument(upsertRequest);
-
-        result.Should().BeOfType<UpsertResult.UpsertFailureNotImplemented>();
-        capturedValidationSql
-            .Should()
-            .ContainSingle()
-            .Which.Should()
-            .Contain("SchoolWithCustomAuthorization");
-    }
-
-    [Test]
-    public async Task It_validates_a_put_custom_view_when_an_unsupported_strategy_stops_before_planning()
-    {
+        // The PUT counterpart of the POST unknown-strategy case above. An unknown strategy makes the
+        // strategy-level outcome SecurityConfigurationError, which enters the relationship bucket with
+        // nothing planned, and the view AND-composes ahead of that 500 so the bucket owes its validation.
+        // OwnershipBased used to give this test its own StillUnsupported trigger; it is enforced for every
+        // single-record operation now, so an unknown strategy is the remaining way to reach the bucket
+        // unplanned.
         var capturedValidationSql = GivenCustomViewValidationIsRecorded();
         var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
@@ -9954,18 +9927,18 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
         A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
         A.CallTo(() => updateRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
-        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody("Put unsupported strategy"));
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody("Put unknown strategy"));
         A.CallTo(() => updateRequest.AuthorizationStrategyEvaluators)
             .Returns([
                 CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
-                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                CreateAuthorizationStrategyEvaluator("AnUnknownAuthorizationStrategy"),
             ]);
         A.CallTo(() => updateRequest.AuthorizationContext)
             .Returns(new RelationalAuthorizationContext([255901]));
 
         var result = await _sut.UpdateDocumentById(updateRequest);
 
-        result.Should().BeOfType<UpdateResult.UpdateFailureNotImplemented>();
+        result.Should().BeOfType<UpdateResult.UpdateFailureSecurityConfiguration>();
         capturedValidationSql
             .Should()
             .ContainSingle()
@@ -10137,7 +10110,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_returns_post_security_configuration_failure_before_known_but_not_enabled_result()
+    public async Task It_returns_post_security_configuration_failure_for_an_unknown_strategy()
     {
         var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
@@ -10156,8 +10129,14 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.UpsertDocument(upsertRequest);
 
         var failure = result.Should().BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>().Subject;
-        failure.Errors.Should().Contain(error => error.Contains("Relational POST authorization metadata"));
-        failure.Errors.Should().Contain(error => error.Contains("CustomAuthorizationStrategy"));
+        // OwnershipBased no longer contributes a known-but-not-enabled failure to this bucket — it is
+        // enforced for every single-record operation — so the unknown strategy's own 500 is what remains.
+        failure
+            .Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("Could not find authorization strategy implementations")
+            .And.Contain("CustomAuthorizationStrategy");
         _capturedExecutorRequests.Should().BeEmpty();
         A.CallTo(() => _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorInput>._, A<CancellationToken>._))
             .MustNotHaveHappened();
@@ -11025,8 +11004,18 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_returns_put_not_implemented_for_known_but_not_enabled_relationship_authorization_before_target_lookup()
+    public async Task It_plans_put_ownership_alongside_a_supported_relationship_strategy()
     {
+        // The shared fake write executor answers with an upsert result, which the PUT projector rejects, so
+        // this test scripts an update result the way the other PUT cases in this fixture do.
+        GivenWriteExecutorCaptures(
+            new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateSuccess(
+                    new DocumentUuid(Guid.Parse("bbbbbbbb-1111-2222-3333-aaaaaaaaaa11")),
+                    ComposedWriteResultEtag
+                )
+            )
+        );
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var requestBody = CreateRequestBody("Roosevelt High");
         var documentInfo = CreateDocumentInfo();
@@ -11049,21 +11038,21 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
             ]);
         A.CallTo(() => updateRequest.AuthorizationContext)
-            .Returns(new RelationalAuthorizationContext([255901]));
+            .Returns(new RelationalAuthorizationContext([255901], [], null, [11]));
 
-        var result = await _sut.UpdateDocumentById(updateRequest);
+        await _sut.UpdateDocumentById(updateRequest);
 
-        var failure = result.Should().BeOfType<UpdateResult.UpdateFailureNotImplemented>().Subject;
-        failure.Reason.Should().Be(UpdateFailureNotImplementedReason.StrategyNotEnabled);
-        failure.FailureMessage.Should().Contain(AuthorizationStrategyNameConstants.OwnershipBased);
-        AssertSupportedRelationshipStrategyNames(failure.FailureMessage);
-        _capturedExecutorRequests.Should().BeEmpty();
-        A.CallTo(() => _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorInput>._, A<CancellationToken>._))
-            .MustNotHaveHappened();
+        // The PUT twin of the POST case above: enforced, so planned rather than 501, and the executor
+        // receives the planned check.
+        var executorInput = _capturedExecutorRequests.Should().ContainSingle().Subject;
+        executorInput.StoredOwnershipAuthorization.Should().NotBeNull();
+        var ownership = executorInput.StoredOwnershipAuthorization!;
+        ownership.Check.RawConfiguredIndex.Should().Be(1);
+        ownership.OwnershipTokenParameterization.TokensInOrder.Should().Equal((short)11);
     }
 
     [Test]
-    public async Task It_returns_put_security_configuration_failure_before_known_but_not_enabled_result()
+    public async Task It_returns_put_security_configuration_failure_for_an_unknown_strategy()
     {
         var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
@@ -11082,8 +11071,14 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.UpdateDocumentById(updateRequest);
 
         var failure = result.Should().BeOfType<UpdateResult.UpdateFailureSecurityConfiguration>().Subject;
-        failure.Errors.Should().Contain(error => error.Contains("Relational PUT authorization metadata"));
-        failure.Errors.Should().Contain(error => error.Contains("CustomAuthorizationStrategy"));
+        // OwnershipBased no longer contributes a known-but-not-enabled failure to this bucket — it is
+        // enforced for every single-record operation — so the unknown strategy's own 500 is what remains.
+        failure
+            .Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("Could not find authorization strategy implementations")
+            .And.Contain("CustomAuthorizationStrategy");
         _capturedExecutorRequests.Should().BeEmpty();
         A.CallTo(() => _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorInput>._, A<CancellationToken>._))
             .MustNotHaveHappened();
@@ -14008,16 +14003,6 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
                 )
             )
             .MustNotHaveHappened();
-
-    private static void AssertSupportedRelationshipStrategyNames(string message)
-    {
-        foreach (
-            var expectedStrategyName in RelationshipAuthorizationStrategyCatalog.SupportedRelationshipStrategyNames
-        )
-        {
-            message.Should().Contain(expectedStrategyName);
-        }
-    }
 
     private static IGetRequest CreateGetRequest(
         DocumentUuid documentUuid,

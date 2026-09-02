@@ -158,8 +158,8 @@ public abstract record RelationalAuthorizationPlanOutcome
 /// <c>EnforcesOwnershipChecks</c> says the caller executes the check. Everywhere else it stays in the
 /// non-namespace bucket, so the classifier keeps reporting it known-but-not-enabled and the request keeps its
 /// fail-closed 501 — which is what stops an unenforced ownership strategy from being silently dropped. The
-/// gate enforces <c>ReadSingle</c> and <c>Delete</c> and withholds the rest; each enforcement step adds its
-/// own operation in the same commit that wires that operation's executor. <c>ReadMany</c> is withheld for the whole story (DMS-1410 owns
+/// gate enforces every single-record operation and withholds <c>ReadMany</c>; each enforcement step added
+/// its own operation in the same commit that wired that operation's executor. <c>ReadMany</c> is withheld for the whole story (DMS-1410 owns
 /// GET-many ownership filtering, which is a page filter rather than a single-record check), and descriptor
 /// storage is withheld because descriptor ownership enforcement is out of this story's scope. A custom view
 /// configured ahead of any of these terminals is still validated first, so an earlier custom-view
@@ -408,10 +408,10 @@ public static class RelationalAuthorizationPlanner
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Returns <see langword="true"/> for <see cref="NamespaceAuthorizationOperation.ReadSingle"/> and
-    /// <see cref="NamespaceAuthorizationOperation.Delete"/>. Each enforcement step flips exactly one
-    /// operation on in the same commit that adds its execution, so no commit can exist in which a planned
-    /// ownership check has no executor.
+    /// Returns <see langword="true"/> for every single-record operation, and never for
+    /// <see cref="NamespaceAuthorizationOperation.ReadMany"/> or descriptor storage. Each enforcement step
+    /// flipped exactly one operation on in the same commit that added its execution, so no commit existed in
+    /// which a planned ownership check had no executor.
     /// </para>
     /// <para>
     /// <see cref="ResourceStorageKind.SharedDescriptorTable"/> is withheld permanently for this story.
@@ -456,9 +456,10 @@ public static class RelationalAuthorizationPlanner
     /// </remarks>
     private static readonly HashSet<NamespaceAuthorizationOperation> _ownershipEnforcedOperations =
     [
-        // ReadSingle and Delete. Update keeps the known-but-not-enabled 501 until Phase 6 wires the write
-        // path; ReadMany ownership filtering is DMS-1410's, not this ticket's.
+        // Every single-record operation. ReadMany is absent and must stay absent: GET-many ownership
+        // filtering is DMS-1410's, and it is a page filter rather than a single-record check.
         NamespaceAuthorizationOperation.ReadSingle,
+        NamespaceAuthorizationOperation.Update,
         NamespaceAuthorizationOperation.Delete,
     ];
 
