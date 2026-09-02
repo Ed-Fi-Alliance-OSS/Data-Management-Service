@@ -61,7 +61,9 @@ performance ticket.
 
 - The provider integration matrix covers every E18 `CDC-INV-*` contract assignment not
   already proven in a narrower story suite.
-- Runbook steps are exercised against the implemented commands and status output.
+- The workflows described by the runbooks are covered by integration tests against the
+  implemented commands and status output. Runbook text and command examples are reviewed
+  manually.
 - Runbooks explain persistent failure remediation, enqueue-vs-processing availability,
   lifecycle mismatch, activation/deactivation, rebuild, set-latch routing to cache-ahead
   recovery or containment, scrub admission and rejection, reset recovery, and where
