@@ -18,7 +18,11 @@ This change turns windowed cursor walks and partitions into `ContentVersion` ind
 It removes the walk-entry dead run, makes page cost depend on page size rather than window
 position, and allows `Next-Page-Token` on `ContentVersion`-ordered pages.
 
-Min-only and unfiltered walks remain anchored on `DocumentId`.
+Min-only and unfiltered walks remain anchored on `DocumentId`. DMS-1396 later qualified the
+min-only half of that: a min-only window served from a frozen snapshot anchors on `ContentVersion`,
+because the hazard below is a property of the data moving rather than of the window. Unfiltered
+walks keep `DocumentId` on every source. The current statement of the rule lives in
+[`Page-selection ordering`](../../design-docs/change-queries.md#page-selection-ordering).
 
 ## Design References
 
@@ -78,8 +82,8 @@ acceptance gates instead of incorporating it into those gates retroactively.
   traditional page-selection SQL was written before that case existed and is not amended here; the
   current statement of the invariant lives in
   [partitioned-cursor-paging.md](../../design-docs/partitioned-cursor-paging.md) under "Structural
-  invariants". `DocumentId`-anchored pages — every unfiltered and min-only request, and every request
-  under the legacy ordering switch — are unchanged.
+  invariants". `DocumentId`-anchored pages — every request that resolves that anchor, and every
+  request under the legacy ordering switch — are unchanged.
 - Do not change hydration, within-page `DocumentId` ordering, or Total-Count behavior.
 
 ## Acceptance Evidence and Test Expectations
@@ -111,6 +115,8 @@ acceptance gates instead of incorporating it into those gates retroactively.
 
 ## Explicit Exclusions / Not Assigned
 
-- Snapshot data sources, which are deferred beyond DMS v1.0.
+- Snapshot data sources, which are deferred beyond DMS v1.0. Superseded: DMS-1396 brought snapshot
+  routing into this rule, and with it the min-only exclusion below.
 - A schema constraint that enforces `ContentVersion` uniqueness.
-- Any change to unfiltered or min-only cursor behavior.
+- Any change to unfiltered or min-only cursor behavior. Superseded for min-only against a frozen
+  snapshot only, by DMS-1396; unfiltered behavior is unchanged on every source.

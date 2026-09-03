@@ -5,7 +5,6 @@
 
 using EdFi.DataManagementService.Core.ChangeQueries;
 using EdFi.DataManagementService.Core.Configuration;
-using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -55,9 +54,10 @@ internal class ValidatePartitionQueryMiddleware(
 ) : IPipelineStep
 {
     /// <summary>
-    /// Resolves the boundary anchor from the request's change-version window, with the same resolver
-    /// the GET-many step uses. Sharing it is what makes a boundary set describe the same ordering a
-    /// page of the same request would be selected in.
+    /// Resolves the boundary anchor from the request's change-version window and the effective
+    /// data-store target serving it, with the same resolver the GET-many step uses. Sharing it is what
+    /// makes a boundary set describe the same ordering a page of the same request would be selected
+    /// in.
     /// </summary>
     private readonly ChangeQueryPageOrderingPolicy _orderingPolicy = new(
         _useLegacyDocumentIdOrderingForChangeQueries
@@ -199,13 +199,13 @@ internal class ValidatePartitionQueryMiddleware(
         // its own follow-up requests reject.
         requestInfo.QueryElements = ((ResourceQueryFilterResult.Valid)filterResult).QueryElements;
         requestInfo.ChangeVersionRange = changeVersionResult.Range;
-        requestInfo.PageOrderingMode =
+        requestInfo.PageOrderingMode = _orderingPolicy.ResolveFor(
+            changeVersionResult.Range,
             requestInfo
                 .ScopedServiceProvider.GetRequiredService<IDataStoreSelection>()
                 .GetEffectiveTarget()
-                .Kind is EffectiveTargetKind.Snapshot
-                ? _orderingPolicy.ResolveForSnapshotQuery(changeVersionResult.Range)
-                : _orderingPolicy.ResolveForLiveQuery(changeVersionResult.Range);
+                .Kind
+        );
         requestInfo.RequestedPartitionCount =
             partitionResult.RequestedPartitionCount ?? _defaultPartitionCount;
 

@@ -5,7 +5,6 @@
 
 using EdFi.DataManagementService.Core.ChangeQueries;
 using EdFi.DataManagementService.Core.Configuration;
-using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Paging;
@@ -48,9 +47,10 @@ internal class ValidateQueryMiddleware(
 ) : IPipelineStep
 {
     /// <summary>
-    /// Resolves the page anchor from the request's change-version window. Core owns that resolution
-    /// because both sides of the request need the anchor and there is only one rule: this step stamps
-    /// it on the request, and the backend compiles page selection against the column it names.
+    /// Resolves the page anchor from the request's change-version window and the effective data-store
+    /// target serving it. Core owns that resolution because both sides of the request need the anchor
+    /// and there is only one rule: this step stamps it on the request, and the backend compiles page
+    /// selection against the column it names.
     /// </summary>
     private readonly ChangeQueryPageOrderingPolicy _orderingPolicy = new(
         _useLegacyDocumentIdOrderingForChangeQueries
@@ -179,13 +179,13 @@ internal class ValidateQueryMiddleware(
         // this step in every pipeline that reaches it, and GetEffectiveTarget throwing when unset is
         // the documented behavior, so a pipeline that skipped selection fails loudly here rather than
         // quietly anchoring a snapshot walk as if it were live.
-        PageOrderingMode pageOrderingMode =
+        PageOrderingMode pageOrderingMode = _orderingPolicy.ResolveFor(
+            changeVersionResult.Range,
             requestInfo
                 .ScopedServiceProvider.GetRequiredService<IDataStoreSelection>()
                 .GetEffectiveTarget()
-                .Kind is EffectiveTargetKind.Snapshot
-                ? _orderingPolicy.ResolveForSnapshotQuery(changeVersionResult.Range)
-                : _orderingPolicy.ResolveForLiveQuery(changeVersionResult.Range);
+                .Kind
+        );
 
         // A faulty window resolves no anchor at all, rather than whichever one its surviving bounds
         // happen to imply. An unparseable maximum parses to null exactly as an empty one does, and an

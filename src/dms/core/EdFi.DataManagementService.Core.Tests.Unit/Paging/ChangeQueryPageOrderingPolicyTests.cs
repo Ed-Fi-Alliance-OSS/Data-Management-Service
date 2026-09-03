@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.ChangeQueries;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Paging;
 using FluentAssertions;
@@ -458,5 +459,101 @@ public class Given_ChangeQueryPageOrderingPolicy_Resolving_From_Parsed_Query_Par
         ResolveSnapshot(_legacyPolicy, ("minChangeVersion", minimum), ("maxChangeVersion", maximum))
             .Should()
             .Be(PageOrderingMode.DocumentId);
+    }
+}
+
+/// <summary>
+/// The dispatch: which entry point a data-store kind resolves through. Being frozen for the life of
+/// the walk is what qualifies a source for the snapshot rule, so only a snapshot takes it. A read
+/// replica keeps applying changes, so a row can still move later within an open window there, and it
+/// stays on the live rule along with the primary.
+/// </summary>
+/// <remarks>
+/// Pinned on the policy rather than at the two middlewares that call it, because it is one rule and
+/// they must not come to disagree about it: a boundary set cut under one and a page selected under the
+/// other is a walk whose own tokens its follow-up requests reject. A new target kind that is not
+/// frozen needs no change here and must not get one — the default is the live rule.
+/// </remarks>
+[TestFixture]
+public class Given_ChangeQueryPageOrderingPolicy_Resolving_For_A_Data_Store_Kind
+{
+    private readonly ChangeQueryPageOrderingPolicy _policy = new(useLegacyDocumentIdOrdering: false);
+    private readonly ChangeQueryPageOrderingPolicy _legacyPolicy = new(useLegacyDocumentIdOrdering: true);
+
+    private static readonly ChangeVersionRange _minOnly = new(100L, null);
+
+    /// <summary>
+    /// Every window shape except min-only, which is the one shape the two entry points disagree on and
+    /// so the one this fixture asserts separately.
+    /// </summary>
+    private static IEnumerable<TestCaseData> EveryShapeButMinOnly()
+    {
+        yield return new TestCaseData((ChangeVersionRange?)null).SetName("No range at all");
+        yield return new TestCaseData(ChangeVersionRange.None).SetName("A range with no bounds");
+        yield return new TestCaseData(new ChangeVersionRange(null, 200L)).SetName("Max-only");
+        yield return new TestCaseData(new ChangeVersionRange(100L, 200L)).SetName("Bounded");
+        yield return new TestCaseData(new ChangeVersionRange(200L, 100L)).SetName("Inverted");
+    }
+
+    [Test]
+    public void It_resolves_a_snapshot_through_the_snapshot_entry_point()
+    {
+        _policy
+            .ResolveFor(_minOnly, EffectiveTargetKind.Snapshot)
+            .Should()
+            .Be(_policy.ResolveForSnapshotQuery(_minOnly));
+    }
+
+    [TestCase(EffectiveTargetKind.Primary, TestName = "the primary is not frozen")]
+    [TestCase(EffectiveTargetKind.ReadReplica, TestName = "a read replica is not frozen")]
+    public void It_resolves_an_unfrozen_target_through_the_live_entry_point(EffectiveTargetKind targetKind)
+    {
+        _policy.ResolveFor(_minOnly, targetKind).Should().Be(_policy.ResolveForLiveQuery(_minOnly));
+    }
+
+    /// <summary>
+    /// The same rule in the form a request actually experiences it, so a reader does not have to
+    /// compose two entry points to see what a min-only walk gets from each data store.
+    /// </summary>
+    [TestCase(EffectiveTargetKind.Primary, PageOrderingMode.DocumentId, TestName = "min-only on the primary")]
+    [TestCase(
+        EffectiveTargetKind.ReadReplica,
+        PageOrderingMode.DocumentId,
+        TestName = "min-only on a read replica"
+    )]
+    [TestCase(
+        EffectiveTargetKind.Snapshot,
+        PageOrderingMode.ContentVersion,
+        TestName = "min-only on a snapshot"
+    )]
+    public void It_anchors_a_min_only_window_by_data_store_kind(
+        EffectiveTargetKind targetKind,
+        PageOrderingMode expected
+    )
+    {
+        _policy.ResolveFor(_minOnly, targetKind).Should().Be(expected);
+    }
+
+    /// <summary>
+    /// Every other shape resolves alike on every kind, which is what makes those tokens replayable
+    /// across a change of data source — the behavior CURSOR-PAGING.md documents for clients.
+    /// </summary>
+    [TestCaseSource(nameof(EveryShapeButMinOnly))]
+    public void It_anchors_every_other_window_shape_alike_on_every_kind(ChangeVersionRange? range)
+    {
+        PageOrderingMode onThePrimary = _policy.ResolveFor(range, EffectiveTargetKind.Primary);
+
+        _policy.ResolveFor(range, EffectiveTargetKind.ReadReplica).Should().Be(onThePrimary);
+        _policy.ResolveFor(range, EffectiveTargetKind.Snapshot).Should().Be(onThePrimary);
+    }
+
+    [TestCase(EffectiveTargetKind.Primary, TestName = "legacy switch, primary")]
+    [TestCase(EffectiveTargetKind.ReadReplica, TestName = "legacy switch, read replica")]
+    [TestCase(EffectiveTargetKind.Snapshot, TestName = "legacy switch, snapshot")]
+    public void It_anchors_on_the_document_id_for_every_kind_when_the_kill_switch_is_enabled(
+        EffectiveTargetKind targetKind
+    )
+    {
+        _legacyPolicy.ResolveFor(_minOnly, targetKind).Should().Be(PageOrderingMode.DocumentId);
     }
 }

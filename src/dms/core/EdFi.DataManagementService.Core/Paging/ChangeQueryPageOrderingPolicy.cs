@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Paging;
@@ -16,8 +17,9 @@ namespace EdFi.DataManagementService.Core.Paging;
 /// still-open window, so ContentVersion ordering would let offset paging return it twice while its
 /// departure shifts offsets and skips another row. Nothing moves in a frozen snapshot, so there a
 /// min-only window orders by <c>ContentVersion</c> as well and the planner fix reaches every
-/// windowed shape (DMS-1396). The caller picks the entry point from the effective data-store target;
-/// neither entry point looks at the target itself.
+/// windowed shape (DMS-1396). Callers resolve through <see cref="ResolveFor"/>, which picks the entry
+/// point from the effective data-store target; the two entry points stay target-blind, so each rule
+/// can be read and tested on its own.
 /// </summary>
 /// <remarks>
 /// What makes a max-bearing window safe is that an update pushes the row past the maximum and out of
@@ -104,4 +106,32 @@ internal sealed class ChangeQueryPageOrderingPolicy(bool useLegacyDocumentIdOrde
             ? PageOrderingMode.ContentVersion
             : PageOrderingMode.DocumentId;
     }
+
+    /// <summary>
+    /// Resolves the page-selection ordering for a request from its window and the kind of data store
+    /// serving it, by picking the entry point that kind qualifies for.
+    /// </summary>
+    /// <remarks>
+    /// What qualifies a source for the snapshot rule is being frozen for the life of the walk, which is
+    /// what removes the min-only hazard. Only <see cref="EffectiveTargetKind.Snapshot"/> is frozen: a
+    /// read replica keeps applying changes, so a row can still move later within an open window there,
+    /// and it takes the live rule along with the primary. Anything short of frozen does the same.
+    /// <para>
+    /// The dispatch lives here rather than at each call site so that the two paging middlewares cannot
+    /// come to disagree about which sources are frozen — a boundary set cut under one rule and a page
+    /// selected under the other is a walk whose own tokens its follow-up requests reject. The entry
+    /// points stay target-blind and independently callable, so what a given source resolves is still
+    /// testable without constructing one.
+    /// </para>
+    /// </remarks>
+    /// <param name="changeVersionRange">The validated change-version window, if any.</param>
+    /// <param name="targetKind">The kind of data store this request resolved to.</param>
+    /// <returns>The ordering mode page selection must use.</returns>
+    public PageOrderingMode ResolveFor(
+        ChangeVersionRange? changeVersionRange,
+        EffectiveTargetKind targetKind
+    ) =>
+        targetKind is EffectiveTargetKind.Snapshot
+            ? ResolveForSnapshotQuery(changeVersionRange)
+            : ResolveForLiveQuery(changeVersionRange);
 }
