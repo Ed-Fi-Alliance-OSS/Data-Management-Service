@@ -28,6 +28,7 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
     private ICdcSetupController _controller = null!;
     private ICdcProviderSetupInputsFactory _setupInputsFactory = null!;
     private ICdcProviderSourcePositionAdapter _sourcePositions = null!;
+    private IDataStoreProvider _dataStores = null!;
     private IConnectionStringProvider _connectionStrings = null!;
 
     [SetUp]
@@ -36,6 +37,7 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
         _controller = A.Fake<ICdcSetupController>();
         _setupInputsFactory = A.Fake<ICdcProviderSetupInputsFactory>();
         _sourcePositions = A.Fake<ICdcProviderSourcePositionAdapter>();
+        _dataStores = A.Fake<IDataStoreProvider>();
         _connectionStrings = A.Fake<IConnectionStringProvider>();
 
         A.CallTo(() => _sourcePositions.Provider).Returns(CoreCdc.CdcProvider.Postgresql);
@@ -310,6 +312,103 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
         result.Diagnostics.Should().NotBeEmpty();
     }
 
+    /// <summary>
+    /// Nothing else on the cdc path loads the deployment's data stores. The DocumentCache status and
+    /// mutating commands reach the Configuration Service through the target-registry refresh their own
+    /// executor branch runs first; the cdc branch dispatches straight to this class, and the connection
+    /// string provider reads a cache with no lazy load behind it. Without the load every verb refuses
+    /// on an empty cache and names the wrong cause.
+    /// </summary>
+    [Test]
+    public async Task It_loads_the_data_stores_before_it_reads_the_instance_database()
+    {
+        A.CallTo(() => _controller.StatusAsync(A<CdcTargetOperationRequest>._, A<CancellationToken>._))
+            .Returns(Status(CdcReadiness.Ready));
+
+        await ExecuteAsync(Request(DocumentCacheAdminCommandSurface.CdcStatusVerbName));
+
+        A.CallTo(() => _dataStores.LoadDataStores(null, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly()
+            .Then(
+                A.CallTo(() => _connectionStrings.GetConnectionString(1, null)).MustHaveHappenedOnceExactly()
+            );
+    }
+
+    /// <summary>
+    /// The tenant reaches the provider in its own terms: the target key normalizes the default tenant
+    /// to the empty string, and the provider expects null for it. A verb that loaded one tenant and
+    /// read another would refuse on a cache it had just filled.
+    /// </summary>
+    [Test]
+    public async Task It_loads_the_same_tenant_it_reads_the_instance_database_for()
+    {
+        A.CallTo(() => _controller.StatusAsync(A<CdcTargetOperationRequest>._, A<CancellationToken>._))
+            .Returns(Status(CdcReadiness.Ready));
+
+        await ExecuteAsync(
+            new DocumentCacheAdminCdcCommandRequest(
+                DocumentCacheAdminCommandSurface.CdcStatusVerbName,
+                DocumentCacheTargetKey.Create("district-a", 1),
+                null,
+                null,
+                null,
+                null,
+                false
+            )
+        );
+
+        A.CallTo(() => _dataStores.LoadDataStores("district-a", A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() => _connectionStrings.GetConnectionString(1, "district-a")).MustHaveHappenedOnceExactly();
+    }
+
+    /// <summary>
+    /// A Configuration Service the load cannot reach is reported as its own refusal rather than thrown:
+    /// the verb still owes the operator a classified result, and an unresolvable instance database is
+    /// not the same fault as a data store the deployment does not have.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_before_reaching_the_controller_when_the_data_stores_cannot_be_loaded()
+    {
+        A.CallTo(() => _dataStores.LoadDataStores(A<string?>._, A<CancellationToken>._))
+            .ThrowsAsync(new InvalidOperationException("Unable to connect to Configuration Service."));
+
+        DocumentCacheAdminCdcCommandResult result = await ExecuteAsync(
+            Request(DocumentCacheAdminCommandSurface.CdcRetireVerbName)
+        );
+
+        result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.RejectedNoMutation);
+        CdcDiagnostic diagnostic = result.Diagnostics.Should().ContainSingle().Subject;
+        diagnostic.Code.Should().Be("cdcDataStoresUnavailable");
+        // A Configuration Service that was momentarily unreachable is worth reissuing against, unlike
+        // the sibling refusals that name a fact about the request itself.
+        diagnostic.Retryable.Should().BeTrue();
+        A.CallTo(_controller).MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// The refusal names the rejection's type and nothing else: the provider's own message quotes the
+    /// configured Configuration Service base address.
+    /// </summary>
+    [Test]
+    public async Task It_does_not_publish_the_data_store_load_failure_message()
+    {
+        A.CallTo(() => _dataStores.LoadDataStores(A<string?>._, A<CancellationToken>._))
+            .ThrowsAsync(
+                new InvalidOperationException(
+                    "Unable to connect to Configuration Service at http://cms:8081."
+                )
+            );
+
+        DocumentCacheAdminCdcCommandResult result = await ExecuteAsync(
+            Request(DocumentCacheAdminCommandSurface.CdcStatusVerbName)
+        );
+
+        CdcDiagnostic diagnostic = result.Diagnostics.Should().ContainSingle().Subject;
+        diagnostic.Observed.Should().Be(nameof(InvalidOperationException));
+        diagnostic.Message.Should().NotContain("http://cms:8081");
+    }
+
     [Test]
     public async Task It_refuses_before_reaching_the_controller_when_the_instance_database_is_unresolved()
     {
@@ -426,6 +525,7 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
             _controller,
             _setupInputsFactory,
             _sourcePositions,
+            _dataStores,
             _connectionStrings,
             Options.Create(ControlOptions()),
             TimeProvider.System

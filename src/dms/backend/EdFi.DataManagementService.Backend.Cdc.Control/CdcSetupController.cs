@@ -1909,14 +1909,27 @@ internal sealed class CdcSetupController(
             .ConfigureAwait(false);
         if (!fence.Succeeded && fence.Outcome != CdcConnectOutcome.NotFound)
         {
+            // The message does not claim the outgoing generation is still publishing, because this
+            // refusal cannot establish that. A stop the worker refused outright leaves it publishing,
+            // but a stop the worker accepted and did not settle out of within the wait's budget
+            // reports the same outcome, and that connector has very likely stopped - the worker
+            // applies a stop asynchronously. Saying "nothing changed" would be wrong half the time,
+            // and the half it is wrong about is the one where publication has already stopped.
             return Refused(
                 request.OperationId,
                 targetIdentity,
                 CdcDiagnosticCategory.ConnectorNotRunning,
                 CdcDiagnosticComponent.ConnectorRuntime,
-                "CDC source replacement could not fence the connector of the generation it replaces.",
+                "CDC source replacement did not prove the connector of the generation it replaces was "
+                    + "fenced. That generation may or may not still be publishing: the worker applies a "
+                    + "stop asynchronously, so reissue the replacement to observe and act on the state "
+                    + "it actually reached.",
                 fence.Outcome.ToString(),
-                []
+                [],
+                // The one replace-source refusal a reissue can resolve without the operator changing
+                // anything: an unsettled stop settles, and the retry then observes STOPPED and
+                // proceeds. Every other refusal here names a fact that has to be changed first.
+                retryable: true
             );
         }
 
@@ -1960,6 +1973,12 @@ internal sealed class CdcSetupController(
     /// The admission a refused operation reports: no step observed its evidence, and the refusal names
     /// what stopped it.
     /// </summary>
+    /// <param name="retryable">
+    /// Whether reissuing the same operation could reach a different answer. False for the refusals
+    /// that name a fact the operator must change first - an invalid target, a generation that does not
+    /// advance, an unrotated source identity, a latched incident. True only where the refusal names
+    /// something the deployment may settle on its own.
+    /// </param>
     private CdcAdmission Refused(
         string operationId,
         CdcTargetIdentity targetIdentity,
@@ -1967,7 +1986,8 @@ internal sealed class CdcSetupController(
         CdcDiagnosticComponent component,
         string message,
         string observed,
-        IReadOnlyList<CdcDiagnostic> diagnostics
+        IReadOnlyList<CdcDiagnostic> diagnostics,
+        bool retryable = false
     )
     {
         DateTimeOffset observedAt = timeProvider.GetUtcNow();
@@ -1984,7 +2004,7 @@ internal sealed class CdcSetupController(
                         component,
                         observedAt,
                         message,
-                        retryable: false,
+                        retryable,
                         artifactKind: "cdcSourceReplacement",
                         expected: "a replaceable source and a new binding generation",
                         observed: observed

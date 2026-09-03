@@ -49,6 +49,48 @@ Set-StrictMode -Version Latest
 # The exact token `cdc retire` requires; a retirement is never inferred from the absence of one.
 $script:BindingRetirementConfirmation = 'cdcBindingRetirement'
 
+# The binding-space token the control plane writes for the E18 default tenant.
+$script:DefaultBindingTenantKey = 'default'
+
+function ConvertTo-CdcE18TenantKey {
+    <#
+    .SYNOPSIS
+        The E18 tenant key a cdc verb takes, from the binding-space key a binding record carries.
+
+    .DESCRIPTION
+        The two spaces differ in exactly one value. CdcTargetValidator maps the E18 default tenant -
+        the empty string - onto the binding token 'default' before a binding record is ever written,
+        so a record for the default tenant carries 'default' and not a blank. Every cdc verb takes
+        the E18 key back: the CLI resolves the instance database under it, and the data-store cache
+        holds the default tenant under the empty key. Handing a record's own 'default' back as
+        --tenant-key would name a tenant the deployment does not have, and the retirement would
+        refuse for an instance database it could not resolve - failing the destructive teardown that
+        this module exists to complete.
+
+        Compared case-sensitively, matching the ordinal comparison the forward mapping uses. Every
+        other tenant key is identical in both spaces and is returned unchanged.
+
+        The forward mapping is not injective - both '' and 'default' render as 'default' - so a
+        deployment with a real tenant literally named 'default' cannot be told apart from the default
+        tenant by a binding record alone. That is a property of the mapping this inverts rather than
+        of this function, and it does not arise on the local bootstrap stacks this module tears down.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]
+        $BindingTenantKey
+    )
+
+    if ($BindingTenantKey -ceq $script:DefaultBindingTenantKey) {
+        return ""
+    }
+
+    return $BindingTenantKey
+}
+
 function Get-CdcRetirableBinding {
     <#
     .SYNOPSIS
@@ -58,6 +100,10 @@ function Get-CdcRetirableBinding {
         The store lays a record out at <root>/bindings/<deploymentKey>/<instanceKey>/<generation>.json.
         The target is read from the record's own fields rather than parsed out of the path, because
         the record is the authority for what was bound and the path segments are only its index.
+
+        The tenant key is the one field that does not cross unchanged: a record carries it in binding
+        space, the cdc verbs take it in E18 space, and ConvertTo-CdcE18TenantKey maps between them
+        here so that nothing downstream of this discovery has to know the two differ.
 
         A file that is not a readable binding record stops the discovery rather than being guessed at
         or skipped: an unreadable record is exactly the case where inferring a target could retire
@@ -116,10 +162,13 @@ function Get-CdcRetirableBinding {
             throw "CDC teardown: '$($file.FullName)' does not name a complete binding target (missing $(@($missingField) -join ', ')). The artifacts it governs cannot be named from it, so the teardown stops rather than removing the stack around them. Retire that binding by hand, or repair or remove the record, before tearing the stack down."
         }
 
+        # The record's own key is binding-space; the verbs take the E18 key. Mapped here, at the one
+        # place a binding record is read, so nothing downstream has to know the two spaces differ.
+        $recordTenantKey = if ($null -eq $record.PSObject.Properties['tenantKey']) { "" } else { [string]$record.tenantKey }
+
         $records += [pscustomobject]@{
             DeploymentKey = [string]$record.deploymentKey
-            # A blank tenant key is the default tenant, which the record carries as an empty string.
-            TenantKey     = if ($null -eq $record.PSObject.Properties['tenantKey']) { "" } else { [string]$record.tenantKey }
+            TenantKey     = ConvertTo-CdcE18TenantKey -BindingTenantKey $recordTenantKey
             DataStoreId   = [string]$record.dataStoreId
             InstanceKey   = [string]$record.instanceKey
             Generation    = [long]$record.generation
@@ -360,6 +409,7 @@ function Invoke-CdcDestructiveTeardown {
 }
 
 Export-ModuleMember -Function `
+    ConvertTo-CdcE18TenantKey, `
     Get-CdcRetirableBinding, `
     Get-CdcRetireArgument, `
     Invoke-CdcDestructiveTeardown

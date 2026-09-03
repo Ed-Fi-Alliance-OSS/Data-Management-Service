@@ -240,6 +240,26 @@ public sealed partial class Given_LocalCdcOptInConfiguration
         return [.. composeArguments.Skip(commandIndex)];
     }
 
+    /// <summary>
+    /// A binding state store root that does not exist, so the enable builder allocates the first
+    /// generation from nothing.
+    /// </summary>
+    /// <remarks>
+    /// The builder reads the store to allocate the generation, which would otherwise make this
+    /// reconciliation depend on whatever the developer's real <c>eng/docker-compose/.cdc-state</c>
+    /// holds from an actual local run. An absent root is the deterministic "no target has ever been
+    /// bound" case, and the generation is not what this test is about: it asserts that the composed
+    /// configuration satisfies <c>CdcControlOptionsValidator</c>, which requires only that the
+    /// generation be positive. Mirrors <c>New-AbsentStateRoot</c> in the Pester suite, for the same
+    /// reason.
+    ///
+    /// Forward slashes because the value is interpolated into a single-quoted PowerShell literal,
+    /// where a Windows separator would still be a literal backslash rather than an escape - but the
+    /// builder joins it with Join-Path, which takes either.
+    /// </remarks>
+    private static string AbsentBindingStateRoot() =>
+        Path.Combine(Path.GetTempPath(), $"dms-1323-absent-state-{Guid.NewGuid():N}").Replace('\\', '/');
+
     private static IReadOnlyList<string> EnableArguments(string databaseEngine) =>
         ArgumentList(
             $$"""
@@ -255,7 +275,8 @@ public sealed partial class Given_LocalCdcOptInConfiguration
                 -DatabaseEngine '{{databaseEngine}}' `
                 -DatabaseCreatedByThisRun $true `
                 -DmsBearerToken 'operator-token' `
-                -SourceDatabaseName 'edfi_datamanagementservice'
+                -SourceDatabaseName 'edfi_datamanagementservice' `
+                -BindingStateRoot '{{AbsentBindingStateRoot()}}'
             """
         );
 

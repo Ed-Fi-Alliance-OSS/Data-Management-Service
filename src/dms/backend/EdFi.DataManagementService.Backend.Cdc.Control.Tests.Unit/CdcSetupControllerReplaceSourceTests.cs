@@ -252,8 +252,15 @@ public class Given_CdcSetupControllerReplaceSource
     /// The fence is the cutover barrier. A connector that could not be stopped may still publish from
     /// the source being replaced, so nothing of the replacing generation is provisioned.
     /// </summary>
+    /// <remarks>
+    /// Reported retryable, unlike every other refusal this verb raises. The worker applies a stop
+    /// asynchronously, and this outcome covers both a stop it refused outright and a stop it accepted
+    /// that had not settled when the wait's budget ran out - so the outgoing generation may already
+    /// have stopped publishing, and reissuing is what observes which happened. The refusals that name
+    /// a fact the operator must change first are pinned non-retryable below.
+    /// </remarks>
     [Test]
-    public async Task It_refuses_when_the_outgoing_connector_could_not_be_fenced()
+    public async Task It_refuses_retryably_when_the_outgoing_connector_could_not_be_fenced()
     {
         CdcSetupControllerHarness harness = ReplaceableTarget();
         harness.Stop = new(CdcConnectOutcome.Unavailable, new(503, "worker unavailable", true));
@@ -263,6 +270,7 @@ public class Given_CdcSetupControllerReplaceSource
         using var _ = new AssertionScope();
         admission.AdmissionState.Should().NotBe(CdcAdmissionState.Admitted);
         Refusal(admission).Should().NotBeNull();
+        Refusal(admission)!.Retryable.Should().BeTrue();
         A.CallTo(() => harness.Bindings.CreateBindingIfAbsentAsync(A<CdcBinding>._, A<CancellationToken>._))
             .MustNotHaveHappened();
         A.CallTo(() =>
@@ -273,6 +281,27 @@ public class Given_CdcSetupControllerReplaceSource
                 )
             )
             .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// The counterpart to the fence refusal above. A generation that does not advance past the one it
+    /// replaces is a fact about the request, so no reissue of the same request can change the answer
+    /// and the refusal says so.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_a_non_advancing_generation_without_offering_a_retry()
+    {
+        CdcSetupControllerHarness harness = ReplaceableTarget();
+
+        // The configured generation itself, so the replacing generation does not advance past the one
+        // it replaces and every governed artifact name would collide.
+        CdcAdmission admission = await harness.ReplaceSourceAsync(
+            previousGeneration: CdcControlTemplateTestData.BindingGeneration
+        );
+
+        using var _ = new AssertionScope();
+        admission.AdmissionState.Should().NotBe(CdcAdmissionState.Admitted);
+        Refusal(admission)!.Retryable.Should().BeFalse();
     }
 
     /// <summary>

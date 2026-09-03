@@ -228,6 +228,15 @@ owning rule rather than a gap in this story.
 - A normal stop retains all of it. Local destructive volume removal is the only workflow
   that may remove a binding record, and only in the same pass that removes every artifact
   the record governs.
+- A binding record carries its tenant key in binding space, and every cdc verb takes it in E18
+  space. The two differ in exactly one value: the E18 default tenant is the empty string and the
+  binding token for it is `default`. Anything that reads a record and drives a verb from it -
+  the destructive teardown, and an operator reading a record by hand - maps back, because the
+  verb resolves the instance database's connection string under the E18 key and the deployment
+  holds the default tenant under the empty one. A record's own `default` passed through as
+  `--tenant-key` names a tenant the deployment does not have. The forward mapping is not
+  injective, so a deployment with a real tenant named `default` cannot be told apart from the
+  default tenant by a binding record alone.
 
 ### Local Bootstrap and E2E Entry Points
 

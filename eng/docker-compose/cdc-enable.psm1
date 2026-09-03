@@ -746,7 +746,24 @@ function Assert-CdcDocumentCacheStatusEndpoint {
     $lastStatusCode = 0
 
     while ((Get-Date) -lt $deadline) {
-        $response = Invoke-WebRequest -Uri $statusUrl -Method Get -Headers $headers -TimeoutSec 30 -SkipHttpErrorCheck
+        # -SkipHttpErrorCheck suppresses an error STATUS, not a transport failure: a refused
+        # connection or a reset socket still throws. The DMS answered /health and minted a token a
+        # moment ago, so this is the narrow window where it restarts or drops a connection while its
+        # authority metadata warms - the same window the 401/5xx retry below exists for, and it is
+        # retried the same way rather than ending the phase with a raw PowerShell error.
+        $response = $null
+        try {
+            $response = Invoke-WebRequest -Uri $statusUrl -Method Get -Headers $headers -TimeoutSec 30 -SkipHttpErrorCheck
+        }
+        catch {
+            Write-Debug "Waiting for the DocumentCache status endpoint at $statusUrl : $($_.Exception.Message)"
+        }
+
+        if ($null -eq $response) {
+            Start-Sleep -Seconds 2
+            continue
+        }
+
         $lastStatusCode = [int]$response.StatusCode
 
         if ($lastStatusCode -eq 200) {

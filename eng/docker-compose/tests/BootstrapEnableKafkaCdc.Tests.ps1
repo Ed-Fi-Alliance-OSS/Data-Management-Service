@@ -929,6 +929,17 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
         }
 
         function script:New-BindingRecordFile {
+            <#
+            .SYNOPSIS
+                Writes one binding record into the store, in the shape the control plane writes.
+
+            .DESCRIPTION
+                -Record is the record's own JSON body, so it is written in BINDING space rather than
+                in the E18 space the cdc verbs take. The one field where that matters is tenantKey:
+                CdcTargetValidator maps the E18 default tenant - the empty string - onto the token
+                'default' before a record is ever created, so a fixture carrying a blank there would
+                pin a shape no deployment produces, and the mapping back out of it would go untested.
+            #>
             param(
                 [Parameter(Mandatory)]
                 [string]
@@ -1369,7 +1380,7 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
                 $recordPath = New-BindingRecordFile `
                     -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds1" -Generation 1 -Record @{
                     deploymentKey = "local"
-                    tenantKey     = ""
+                    tenantKey     = "default"
                     dataStoreId   = "1"
                     instanceKey   = "ds1"
                     generation    = 1
@@ -1401,7 +1412,7 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
                 New-BindingRecordFile `
                     -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds1" -Generation 1 -Record @{
                     deploymentKey = "local"
-                    tenantKey     = ""
+                    tenantKey     = "default"
                     dataStoreId   = "1"
                     instanceKey   = "ds1"
                     generation    = 1
@@ -1468,13 +1479,72 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
             }
         }
 
+        It "maps the record's default-tenant token back to the E18 tenant key" {
+            # The control plane never writes a blank tenant key: CdcTargetValidator maps the E18
+            # default tenant onto the binding token 'default' before the record is created. The cdc
+            # verbs take the E18 key back, and the CLI resolves the instance database's connection
+            # string under it, so a record's own 'default' handed back as --tenant-key would name a
+            # tenant the deployment does not have and refuse the retirement.
+            $root = New-TemporaryStateRoot
+            try {
+                New-BindingRecordFile -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds1" -Generation 1 -Record @{
+                    deploymentKey = "local"
+                    tenantKey     = "default"
+                    dataStoreId   = "1"
+                    instanceKey   = "ds1"
+                    generation    = 1
+                    connectorName = "edfi-dms-local-ds1-1"
+                } | Out-Null
+
+                @(Get-CdcRetirableBinding -BindingStateRoot $root)[0].TenantKey | Should -BeNullOrEmpty
+            }
+            finally {
+                Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "leaves every other tenant key in both spaces alone" {
+            ConvertTo-CdcE18TenantKey -BindingTenantKey "district-a" | Should -Be "district-a"
+            ConvertTo-CdcE18TenantKey -BindingTenantKey "" | Should -BeNullOrEmpty
+            # Case-sensitive, matching the ordinal comparison the forward mapping uses.
+            ConvertTo-CdcE18TenantKey -BindingTenantKey "Default" | Should -Be "Default"
+        }
+
+        It "omits --tenant-key for a record carrying the default-tenant token" {
+            # The end of the same path: the mapped key is blank, so the retire invocation carries no
+            # --tenant-key at all, exactly as the enable invocation for that target did not.
+            $root = New-TemporaryStateRoot
+            try {
+                New-BindingRecordFile -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds1" -Generation 1 -Record @{
+                    deploymentKey = "local"
+                    tenantKey     = "default"
+                    dataStoreId   = "1"
+                    instanceKey   = "ds1"
+                    generation    = 1
+                    connectorName = "edfi-dms-local-ds1-1"
+                } | Out-Null
+
+                $arguments = Get-CdcRetireArgument `
+                    -ComposeProjectName "dms-local" `
+                    -EnvironmentFile "/tmp/.env.derived" `
+                    -BindingRecord @(Get-CdcRetirableBinding -BindingStateRoot $root)[0] `
+                    -DatabaseEngine "postgresql"
+
+                $arguments | Should -Not -Contain "--tenant-key"
+                $arguments | Should -Not -Contain "default"
+            }
+            finally {
+                Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
         It "retires a superseding generation before the one it superseded" {
             $root = New-TemporaryStateRoot
             try {
                 foreach ($generation in 1, 2, 3) {
                     New-BindingRecordFile -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds1" -Generation $generation -Record @{
                         deploymentKey = "local"
-                        tenantKey     = ""
+                        tenantKey     = "default"
                         dataStoreId   = "1"
                         instanceKey   = "ds1"
                         generation    = $generation
@@ -1512,7 +1582,7 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
             try {
                 New-BindingRecordFile -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds2" -Generation 1 -Record @{
                     deploymentKey = "local"
-                    tenantKey     = ""
+                    tenantKey     = "default"
                     instanceKey   = "ds2"
                     generation    = 1
                 } | Out-Null
