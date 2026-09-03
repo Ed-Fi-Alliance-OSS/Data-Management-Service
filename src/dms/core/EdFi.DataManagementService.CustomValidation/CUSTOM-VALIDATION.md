@@ -40,10 +40,25 @@ Management Service can change its internal model without that being a breaking c
 compiled against this contract. `ValidatedResourceInfo` in particular is a projection of what the
 service knows about a resource, carrying the fields a validator has a use for and nothing else.
 
+## Registration shape
+
+No host support for loading an implementation has shipped yet, so nothing here can register one.
+When that arrives, the shape below is the one DMS accepts, because a startup guard now audits these
+registrations and terminates the process rather than letting a validator silently never run:
+
+```csharp
+services.TryAddEnumerable(
+    ServiceDescriptor.Transient<ICustomResourceValidator, MyValidator>()
+);
+```
+
+Transient, unkeyed, and an implementation type rather than a shared instance or a factory delegate.
+To supply configuration, bind an options type and take `IOptions<T>` in the constructor.
+
 ## What is not here yet
 
-This document does not yet describe how to register an implementation with a host, the validation
-lifecycle, or the error-reporting model.
+This document does not yet describe the validation lifecycle or the error-reporting model, and the
+registration note above is not a substitute for the full guide.
 A full implementer guide is planned to accompany the release that adds host support.
 
 ## Dependencies

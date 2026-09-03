@@ -194,7 +194,8 @@ public class Given_A_Custom_Validator_Registration_Guard
             .BeOfType<InvalidOperationException>()
             .Which.Message.Should()
             .Contain($"'{Logged(typeof(MatchingValidator))}':")
-            .And.Contain("it is keyed, and DMS resolves without a key")
+            .And.Contain("are not among the")
+            .And.Contain(", keyed,")
             .And.NotContain("<registration with no implementation type>");
     }
 
@@ -225,6 +226,43 @@ public class Given_A_Custom_Validator_Registration_Guard
     /// collection registration must still abort, because otherwise the correct one stops resolving
     /// while the guard reports success.
     /// </summary>
+    /// <summary>
+    /// A keyed descriptor is invisible to the unkeyed resolution DMS performs, so registering one
+    /// beside a valid contract registration hides nothing: the validator still resolves. Rejecting
+    /// it for being keyed would refuse to boot over a working registration.
+    /// </summary>
+    [Test]
+    public async Task It_accepts_a_keyed_alias_beside_a_contract_registration()
+    {
+        GuardRun run = await RunGuard(services =>
+        {
+            services.TryAddEnumerable(
+                ServiceDescriptor.Transient<ICustomResourceValidator, MatchingValidator>()
+            );
+            services.AddKeyedTransient<ICustomResourceValidator, MatchingValidator>("mine");
+        });
+
+        run.Thrown.Should().BeNull();
+    }
+
+    /// <summary>
+    /// The same reasoning one level up: a keyed registration of the collection type does not
+    /// displace the unkeyed collection DMS resolves.
+    /// </summary>
+    [Test]
+    public async Task It_accepts_a_keyed_collection_registration()
+    {
+        GuardRun run = await RunGuard(services =>
+        {
+            services.TryAddEnumerable(
+                ServiceDescriptor.Transient<ICustomResourceValidator, MatchingValidator>()
+            );
+            services.AddKeyedSingleton<IEnumerable<ICustomResourceValidator>>("k", (_, _) => []);
+        });
+
+        run.Thrown.Should().BeNull();
+    }
+
     [Test]
     public async Task It_aborts_for_a_collection_registration_that_hides_a_valid_one()
     {
@@ -417,7 +455,7 @@ public class Given_A_Custom_Validator_Registration_Guard
         // The sanitizer strips the control character, so the name shown is a real resource name. A
         // second record must therefore say the shown name was altered, rather than leaving the miss
         // record to be read as a typo in a resource that does exist.
-        run.Warnings[1].Should().Contain("altered to make them safe to log");
+        run.Warnings[1].Should().Contain("was altered to make it safe to log");
         run.Warnings.Should().OnlyContain(warning => !warning.Contains("\u0007"));
     }
 
@@ -442,7 +480,7 @@ public class Given_A_Custom_Validator_Registration_Guard
         // neither the declared entry nor a real resource. The alteration record is what keeps the
         // miss record from being read as naming the entry in source.
         run.Warnings[0].Should().Contain("ResourceName 'MissingSchool' matches no resource");
-        run.Warnings[1].Should().Contain("altered to make them safe to log");
+        run.Warnings[1].Should().Contain("was altered to make it safe to log");
     }
 
     /// <summary>
@@ -532,6 +570,27 @@ public class Given_A_Custom_Validator_Registration_Guard
     }
 
     /// <summary>
+    /// The property returns, and the list it returned throws when walked. Enumeration sits inside
+    /// the same try as the getter, so this is reported against the validator rather than escaping
+    /// to a startup message that names no registration.
+    /// </summary>
+    [Test]
+    public async Task It_aborts_for_a_validator_whose_applies_to_list_throws_when_walked()
+    {
+        GuardRun run = await RunGuard(services =>
+            services.TryAddEnumerable(
+                ServiceDescriptor.Transient<ICustomResourceValidator, ThrowingEnumerationValidator>()
+            )
+        );
+
+        run.Thrown.Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Contain($"'{Logged(typeof(ThrowingEnumerationValidator))}'")
+            .And.Contain("reading or walking AppliesTo threw");
+    }
+
+    /// <summary>
     /// A null element among real ones. The null-list guard exists so the operator never gets a bare
     /// NullReferenceException naming no registration, and dereferencing an element is the same hazard
     /// one level down. The validator is reported as unusable as a whole, so the real entry beside the
@@ -571,7 +630,7 @@ public class Given_A_Custom_Validator_Registration_Guard
             .Which.Message.Should()
             .Contain("cannot be used")
             .And.Contain($"'{Logged(typeof(ThrowingAppliesToValidator))}'")
-            .And.Contain("reading AppliesTo threw");
+            .And.Contain("reading or walking AppliesTo threw");
     }
 
     [Test]
@@ -758,7 +817,8 @@ public class Given_A_Custom_Validator_Registration_Guard
         run.Thrown.Should()
             .BeOfType<InvalidOperationException>()
             .Which.Message.Should()
-            .Contain("Registering a collection type replaces the collection DMS resolves");
+            .Contain($"'{Logged(typeof(MatchingValidator))}'")
+            .And.Contain("are not among the");
     }
 
     /// <summary>
@@ -805,7 +865,7 @@ public class Given_A_Custom_Validator_Registration_Guard
         string warning = run.Warnings.Should().ContainSingle().Subject;
         warning.Should().Contain("matches no resource in the effective ApiSchema");
         warning.Should().NotContain("carries");
-        warning.Should().NotContain("altered to make them safe to log");
+        warning.Should().NotContain("was altered to make it safe to log");
     }
 
     /// <summary>
@@ -961,6 +1021,24 @@ public class Given_A_Custom_Validator_Registration_Guard
     {
         public override IReadOnlyList<ValidatedResource> AppliesTo =>
             [null!, new ValidatedResource(CoreProjectName, CoreResourceName)];
+    }
+
+    private sealed class ThrowingEnumerationValidator : ValidatorBase
+    {
+        public override IReadOnlyList<ValidatedResource> AppliesTo => new ThrowingList();
+
+        private sealed class ThrowingList : IReadOnlyList<ValidatedResource>
+        {
+            public ValidatedResource this[int index] =>
+                throw new InvalidOperationException("indexer reached");
+
+            public int Count => throw new InvalidOperationException("Count reached");
+
+            public IEnumerator<ValidatedResource> GetEnumerator() =>
+                throw new InvalidOperationException("enumerator reached");
+
+            IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+        }
     }
 
     private sealed class ThrowingAppliesToValidator : ValidatorBase

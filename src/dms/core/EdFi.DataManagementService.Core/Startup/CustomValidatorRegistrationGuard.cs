@@ -28,8 +28,8 @@ namespace EdFi.DataManagementService.Core.Startup;
 /// container actually returns. This compares intent against the resolution DMS itself performs, so
 /// it does not depend on knowing the ways a registration can fail to reach that resolution.</item>
 /// </list>
-/// The checks share no state, so a descriptor rejected by the first is never also described by the
-/// second.
+/// The first aborts before the second resolves anything, so a descriptor rejected for its shape is
+/// never also described as unreachable.
 /// Descriptors come from the closure-captured collection rather than from a snapshot taken at the
 /// registering extension's call site, because an implementer's registration may run either side of
 /// Core's and is the party being checked.
@@ -120,7 +120,7 @@ internal sealed class CustomValidatorRegistrationGuard(
             {
                 AuditContractDescriptor(descriptor, offenses);
             }
-            else if (IsValidatorCollectionServiceType(descriptor.ServiceType))
+            else if (!descriptor.IsKeyedService && IsValidatorCollectionServiceType(descriptor.ServiceType))
             {
                 offenses.Add(
                     $"'{DescribeImplementation(descriptor)}': registered against "
@@ -140,14 +140,6 @@ internal sealed class CustomValidatorRegistrationGuard(
         if (descriptor.Lifetime != ServiceLifetime.Transient)
         {
             brokenRules.Add($"its lifetime is {descriptor.Lifetime} rather than Transient");
-        }
-
-        // Reading the unkeyed Implementation accessors on a keyed descriptor returns null rather
-        // than throwing, so a keyed registration breaks none of the rules below, while the unkeyed
-        // resolution DMS performs never returns it.
-        if (descriptor.IsKeyedService)
-        {
-            brokenRules.Add("it is keyed, and DMS resolves without a key");
         }
 
         if (descriptor.ImplementationInstance is not null)
@@ -248,8 +240,12 @@ internal sealed class CustomValidatorRegistrationGuard(
     /// collection, so it is check 1's business and not this one's.
     /// </summary>
     /// <remarks>
-    /// A factory under a service type unrelated to the contract shows no validator type at all and
-    /// is therefore invisible here. Naming it would require invoking the factory.
+    /// The residual is a factory under a service type unrelated to the contract, registered through
+    /// the single-generic-argument overload, whose delegate is a Func&lt;IServiceProvider, TService&gt; and
+    /// so names only the unrelated service type. The two-generic-argument overload does expose the
+    /// implementation through the delegate's return type, but reading it means trusting a delegate
+    /// signature rather than a descriptor property, and the reachability comparison below already
+    /// catches that registration whenever the validator resolves nowhere else.
     /// </remarks>
     private static Type? ValidatorTypeShownBy(ServiceDescriptor descriptor)
     {
@@ -278,52 +274,54 @@ internal sealed class CustomValidatorRegistrationGuard(
         {
             string validatorTypeName = TypeNameForLog(validator.GetType());
 
-            IReadOnlyList<ValidatedResource>? appliesToEntries;
+            // AppliesTo is implementer code, and so is the list it hands back: reading the
+            // property, counting it, and walking it can each throw. All of it sits inside one try
+            // so the failure is reported against the validator that produced it rather than
+            // escaping to a startup message that names no registration.
             try
             {
-                appliesToEntries = validator.AppliesTo;
+                IReadOnlyList<ValidatedResource>? appliesToEntries = validator.AppliesTo;
+
+                if (appliesToEntries is null)
+                {
+                    unusableValidators.Add(
+                        $"'{validatorTypeName}': AppliesTo returned null, which the contract declares "
+                            + "it never does"
+                    );
+                    continue;
+                }
+
+                if (appliesToEntries.Any(static entry => entry is null))
+                {
+                    unusableValidators.Add(
+                        $"'{validatorTypeName}': AppliesTo contains a null entry, which the contract "
+                            + "declares it never does"
+                    );
+                    continue;
+                }
+
+                if (appliesToEntries.Count == 0)
+                {
+                    logger.LogWarning(
+                        "ICustomResourceValidator '{ValidatorType}' declares no AppliesTo entries, so "
+                            + "it can never run for any resource",
+                        validatorTypeName
+                    );
+                    continue;
+                }
+
+                foreach (ValidatedResource appliesToEntry in appliesToEntries)
+                {
+                    InspectAppliesToEntry(effectiveSchemaDocuments, validatorTypeName, appliesToEntry);
+                }
             }
             catch (Exception appliesToException)
             {
                 unusableValidators.Add(
-                    $"'{validatorTypeName}': reading AppliesTo threw "
+                    $"'{validatorTypeName}': reading or walking AppliesTo threw "
                         + $"{appliesToException.GetType().FullName}: "
                         + LoggingSanitizer.SanitizeForLogging(appliesToException.Message)
                 );
-                continue;
-            }
-
-            if (appliesToEntries is null)
-            {
-                unusableValidators.Add(
-                    $"'{validatorTypeName}': AppliesTo returned null, which the contract declares it "
-                        + "never does"
-                );
-                continue;
-            }
-
-            if (appliesToEntries.Any(static entry => entry is null))
-            {
-                unusableValidators.Add(
-                    $"'{validatorTypeName}': AppliesTo contains a null entry, which the contract "
-                        + "declares it never does"
-                );
-                continue;
-            }
-
-            if (appliesToEntries.Count == 0)
-            {
-                logger.LogWarning(
-                    "ICustomResourceValidator '{ValidatorType}' declares no AppliesTo entries, so it can "
-                        + "never run for any resource",
-                    validatorTypeName
-                );
-                continue;
-            }
-
-            foreach (ValidatedResource appliesToEntry in appliesToEntries)
-            {
-                InspectAppliesToEntry(effectiveSchemaDocuments, validatorTypeName, appliesToEntry);
             }
         }
 
@@ -374,9 +372,10 @@ internal sealed class CustomValidatorRegistrationGuard(
         if (projectName != appliesToEntry.ProjectName || resourceName != appliesToEntry.ResourceName)
         {
             logger.LogWarning(
-                "The ProjectName and ResourceName in the preceding record for ICustomResourceValidator "
-                    + "'{ValidatorType}' were altered to make them safe to log, so compare against the "
-                    + "AppliesTo entry in source rather than against that record",
+                "At least one of the ProjectName and ResourceName in the preceding record for "
+                    + "ICustomResourceValidator '{ValidatorType}' was altered to make it safe to log, "
+                    + "so compare against the AppliesTo entry in source rather than against that "
+                    + "record",
                 validatorTypeName
             );
         }
@@ -430,19 +429,12 @@ internal sealed class CustomValidatorRegistrationGuard(
     }
 
     private static bool IsValidatorCollectionServiceType(Type serviceType) =>
-        serviceType == typeof(IEnumerable<ICustomResourceValidator>) || serviceType == typeof(IEnumerable<>);
+        serviceType == typeof(IEnumerable<ICustomResourceValidator>);
 
-    private static string DescribeServiceType(Type serviceType)
-    {
-        if (serviceType == typeof(IEnumerable<ICustomResourceValidator>))
-        {
-            return "IEnumerable<ICustomResourceValidator>";
-        }
-
-        return serviceType == typeof(IEnumerable<>)
-            ? "the open generic IEnumerable<>"
+    private static string DescribeServiceType(Type serviceType) =>
+        serviceType == typeof(IEnumerable<ICustomResourceValidator>)
+            ? "IEnumerable<ICustomResourceValidator>"
             : TypeNameForLog(serviceType);
-    }
 
     private static Type? ImplementationTypeOf(ServiceDescriptor descriptor) =>
         descriptor.IsKeyedService
