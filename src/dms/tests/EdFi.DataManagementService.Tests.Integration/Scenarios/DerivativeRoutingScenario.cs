@@ -6,6 +6,7 @@
 using System.Net;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Tests.Integration.Doubles;
 using FluentAssertions;
 
@@ -194,6 +195,104 @@ internal static class DerivativeRoutingScenario
         }
 
         return walked;
+    }
+
+    /// <summary>
+    /// A min-only walk belongs to the data source it started against. The snapshot resolves the
+    /// <c>ContentVersion</c> anchor for that window and every live source resolves <c>DocumentId</c>, so
+    /// the token a page hands out names bounds in units only its own source reads. Adding or dropping
+    /// the snapshot header mid-walk is answered with the invalid-page-token response, exactly as
+    /// changing the window would be.
+    /// </summary>
+    /// <remarks>
+    /// The verdict is reached by comparing the token's marker against the anchor the request resolves,
+    /// before any row is read, so this proves the two sources resolve different anchors without needing
+    /// the snapshot database to hold a ContentVersion order that diverges from its DocumentId order.
+    /// </remarks>
+    public static async Task It_binds_a_min_only_walk_to_the_source_that_issued_its_token(
+        ApiIntegrationHarness harness
+    )
+    {
+        string snapshotToken = await IssueMinOnlyPageTokenAsync(harness, useSnapshotHeaderValue: "true");
+        string liveToken = await IssueMinOnlyPageTokenAsync(harness, useSnapshotHeaderValue: null);
+
+        snapshotToken
+            .Should()
+            .NotBe(
+                liveToken,
+                "the two sources anchor the same window differently, so their tokens cannot be identical"
+            );
+
+        await AssertReplayAsync(harness, snapshotToken, useSnapshotHeaderValue: "true", accepted: true);
+        await AssertReplayAsync(harness, snapshotToken, useSnapshotHeaderValue: null, accepted: false);
+
+        // The mirror. The replica serves this one, and it is walked exactly as the parent would be:
+        // anything short of a frozen source keeps the live anchor.
+        await AssertReplayAsync(harness, liveToken, useSnapshotHeaderValue: null, accepted: true);
+        await AssertReplayAsync(harness, liveToken, useSnapshotHeaderValue: "true", accepted: false);
+    }
+
+    /// <summary>
+    /// Takes the first page of a min-only walk and returns the continuation it hands out. The window is
+    /// open below every seeded row, so the page is served and a continuation exists on all three
+    /// databases.
+    /// </summary>
+    /// <remarks>
+    /// The opening page is a traditional one: <c>pageSize</c> is the continuation's page size and is
+    /// rejected without a <c>pageToken</c> to accompany it. That a traditional page hands out a
+    /// continuation at all is the property this scenario turns on — the anchor is stamped into the
+    /// token of every successful page, so a walk can start traditionally and continue by cursor.
+    /// </remarks>
+    private static async Task<string> IssueMinOnlyPageTokenAsync(
+        ApiIntegrationHarness harness,
+        string? useSnapshotHeaderValue
+    )
+    {
+        using HttpResponseMessage response = await DerivativeRoutingSupport.SendAsync(
+            harness,
+            HttpMethod.Get,
+            $"{DerivativeRoutingSupport.StudentsEndpoint}?minChangeVersion=1&limit=1",
+            useSnapshotHeaderValue
+        );
+
+        string body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+
+        response
+            .Headers.TryGetValues("Next-Page-Token", out var tokens)
+            .Should()
+            .BeTrue("a min-only page hands out a continuation on every data source");
+
+        return tokens!.Single();
+    }
+
+    private static async Task AssertReplayAsync(
+        ApiIntegrationHarness harness,
+        string pageToken,
+        string? useSnapshotHeaderValue,
+        bool accepted
+    )
+    {
+        string source = useSnapshotHeaderValue is null ? "without the header" : "with the header";
+
+        using HttpResponseMessage response = await DerivativeRoutingSupport.SendAsync(
+            harness,
+            HttpMethod.Get,
+            $"{DerivativeRoutingSupport.StudentsEndpoint}"
+                + $"?minChangeVersion=1&pageToken={Uri.EscapeDataString(pageToken)}&pageSize=1",
+            useSnapshotHeaderValue
+        );
+
+        string body = await response.Content.ReadAsStringAsync();
+
+        if (accepted)
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.OK, $"replayed {source}: {body}");
+            return;
+        }
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"replayed {source}: {body}");
+        body.Should().Contain(CursorRequestValidator.InvalidPageToken);
     }
 
     /// <summary>
