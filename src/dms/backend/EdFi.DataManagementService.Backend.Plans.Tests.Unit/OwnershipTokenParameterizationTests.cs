@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
 using NUnit.Framework;
@@ -170,44 +169,6 @@ public class Given_OwnershipTokenParameterizationFactory
             .Throw<OwnershipTokenLimitExceededException>()
             .Which.OwnershipTokenCount.Should()
             .Be(2600);
-    }
-
-    [Test]
-    public void It_reports_the_cap_message_without_disclosing_token_values()
-    {
-        var created = OwnershipTokenParameterizationFactory.TryCreate(
-            SqlDialect.Mssql,
-            Tokens(Limit),
-            BaseParameterName,
-            out var parameterization,
-            out var securityConfigurationMessage,
-            out var failureKind
-        );
-
-        created.Should().BeFalse();
-        parameterization.Should().BeNull();
-        failureKind.Should().Be(OwnershipTokenParameterizationFailureKind.TokenCapExceeded);
-        securityConfigurationMessage.Should().Contain(Limit.ToString(CultureInfo.InvariantCulture));
-        securityConfigurationMessage.Should().Contain("ownership tokens");
-    }
-
-    [TestCase(SqlDialect.Pgsql)]
-    [TestCase(SqlDialect.Mssql)]
-    public void It_reports_success_through_try_create_below_the_limit(SqlDialect dialect)
-    {
-        var created = OwnershipTokenParameterizationFactory.TryCreate(
-            dialect,
-            [4, 9],
-            BaseParameterName,
-            out var parameterization,
-            out var securityConfigurationMessage,
-            out var failureKind
-        );
-
-        created.Should().BeTrue();
-        parameterization.Should().NotBeNull();
-        securityConfigurationMessage.Should().BeEmpty();
-        failureKind.Should().BeNull();
     }
 
     [Test]

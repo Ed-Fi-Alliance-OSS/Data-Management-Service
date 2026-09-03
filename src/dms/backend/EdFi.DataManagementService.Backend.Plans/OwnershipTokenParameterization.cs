@@ -21,12 +21,6 @@ public enum OwnershipTokenParameterizationKind
     MssqlScalar,
 }
 
-public enum OwnershipTokenParameterizationFailureKind
-{
-    /// <summary>The token list reached the provider-independent defensive limit.</summary>
-    TokenCapExceeded,
-}
-
 /// <summary>
 /// Dialect-specific ownership-token parameterization.
 /// </summary>
@@ -107,32 +101,6 @@ public static class OwnershipTokenParameterizationFactory
                 $"Ownership token parameterization does not support SQL dialect '{dialect}'."
             ),
         };
-    }
-
-    public static bool TryCreate(
-        SqlDialect dialect,
-        IReadOnlyList<short> ownershipTokenIds,
-        string baseParameterName,
-        out OwnershipTokenParameterization parameterization,
-        out string securityConfigurationMessage,
-        out OwnershipTokenParameterizationFailureKind? failureKind
-    )
-    {
-        try
-        {
-            parameterization = Create(dialect, ownershipTokenIds, baseParameterName);
-            securityConfigurationMessage = string.Empty;
-            failureKind = null;
-            return true;
-        }
-        catch (OwnershipTokenLimitExceededException ex)
-        {
-            parameterization = null!;
-            securityConfigurationMessage =
-                OwnershipAuthorizationSecurityConfigurationMessages.TokenCapExceeded(ex.OwnershipTokenCount);
-            failureKind = OwnershipTokenParameterizationFailureKind.TokenCapExceeded;
-            return false;
-        }
     }
 
     private static string CreateScalarParameterName(string baseParameterName, int index)

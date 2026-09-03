@@ -36,35 +36,28 @@ internal static class OwnershipTokenParameterizationPreflight
         out SecurityConfigurationFailureDiagnostic[] securityConfigurationDiagnostics
     )
     {
-        if (
-            OwnershipTokenParameterizationFactory.TryCreate(
+        try
+        {
+            parameterization = OwnershipTokenParameterizationFactory.Create(
                 dialect,
                 ownershipTokenIds,
-                OwnershipAuthorizationSqlSpecDefaults.OwnershipTokenIdsParameterName,
-                out parameterization,
-                out securityConfigurationMessage,
-                out OwnershipTokenParameterizationFailureKind? failureKind
-            )
-        )
-        {
+                OwnershipAuthorizationSqlSpecDefaults.OwnershipTokenIdsParameterName
+            );
+            securityConfigurationMessage = string.Empty;
             securityConfigurationDiagnostics = [];
             return true;
         }
-
-        string diagnosticFailureKind = failureKind switch
+        catch (OwnershipTokenLimitExceededException ex)
         {
-            OwnershipTokenParameterizationFailureKind.TokenCapExceeded =>
-                AuthorizationSecurityConfigurationDiagnostics.OwnershipTokenCapExceeded,
-            _ => throw new InvalidOperationException(
-                $"Unsupported ownership token parameterization failure kind '{failureKind}'."
-            ),
-        };
-
-        securityConfigurationDiagnostics =
-            AuthorizationSecurityConfigurationDiagnostics.ForOwnershipTokenParameterization(
-                diagnosticFailureKind
-            );
-        return false;
+            parameterization = null!;
+            securityConfigurationMessage =
+                OwnershipAuthorizationSecurityConfigurationMessages.TokenCapExceeded(ex.OwnershipTokenCount);
+            securityConfigurationDiagnostics =
+                AuthorizationSecurityConfigurationDiagnostics.ForOwnershipTokenParameterization(
+                    AuthorizationSecurityConfigurationDiagnostics.OwnershipTokenCapExceeded
+                );
+            return false;
+        }
     }
 }
 
