@@ -6,6 +6,7 @@
 using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
@@ -1272,7 +1273,10 @@ public class ValidateQueryMiddlewareTests
                 .ToApiSchemaDocuments();
         }
 
-        private static RequestInfo NewRequestInfo(params (string Key, string Value)[] queryParameters)
+        private static RequestInfo NewRequestInfo(
+            EffectiveTargetKind targetKind,
+            params (string Key, string Value)[] queryParameters
+        )
         {
             FrontendRequest frontendRequest = new(
                 Path: "/ed-fi/academicWeeks",
@@ -1291,7 +1295,7 @@ public class ValidateQueryMiddlewareTests
             RequestInfo requestInfo = new(
                 frontendRequest,
                 RequestMethod.GET,
-                ServiceProviderWithEffectiveTarget()
+                ServiceProviderWithEffectiveTarget(targetKind)
             )
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
@@ -1311,12 +1315,25 @@ public class ValidateQueryMiddlewareTests
             return requestInfo;
         }
 
-        private static async Task<RequestInfo> Execute(
+        /// <summary>
+        /// Executes against the primary, which is where every expectation written before the data
+        /// source mattered belongs.
+        /// </summary>
+        private static Task<RequestInfo> Execute(
             IPipelineStep middleware,
             params (string Key, string Value)[] queryParameters
         )
         {
-            RequestInfo requestInfo = NewRequestInfo(queryParameters);
+            return Execute(middleware, EffectiveTargetKind.Primary, queryParameters);
+        }
+
+        private static async Task<RequestInfo> Execute(
+            IPipelineStep middleware,
+            EffectiveTargetKind targetKind,
+            params (string Key, string Value)[] queryParameters
+        )
+        {
+            RequestInfo requestInfo = NewRequestInfo(targetKind, queryParameters);
 
             await middleware.Execute(requestInfo, NullNext);
 
@@ -1453,6 +1470,158 @@ public class ValidateQueryMiddlewareTests
             RequestInfo requestInfo = await Execute(
                 MiddlewareWithoutCursorRecognition(),
                 ("maxChangeVersion", "200")
+            );
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.ContentVersion);
+        }
+
+        /// <summary>
+        /// The window no longer decides the anchor on its own. A min-only window served from a frozen
+        /// snapshot anchors on ContentVersion, because nothing in a frozen source can move a row later
+        /// within the still-open window and take the duplicate-and-skip hazard with it.
+        /// </summary>
+        [Test]
+        public async Task It_anchors_a_min_only_window_on_the_content_version_against_a_snapshot()
+        {
+            RequestInfo requestInfo = await Execute(
+                Middleware(),
+                EffectiveTargetKind.Snapshot,
+                ("minChangeVersion", "100")
+            );
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.ContentVersion);
+        }
+
+        /// <summary>
+        /// The shapes that already anchored on ContentVersion are unchanged by the data source: the
+        /// snapshot rule widens which windows take that anchor, it does not narrow any.
+        /// </summary>
+        [Test]
+        public async Task It_anchors_the_max_bearing_windows_on_the_content_version_against_a_snapshot()
+        {
+            RequestInfo maxOnly = await Execute(
+                Middleware(),
+                EffectiveTargetKind.Snapshot,
+                ("maxChangeVersion", "200")
+            );
+            RequestInfo minAndMax = await Execute(
+                Middleware(),
+                EffectiveTargetKind.Snapshot,
+                ("minChangeVersion", "100"),
+                ("maxChangeVersion", "200")
+            );
+
+            maxOnly.FrontendResponse.Should().Be(No.FrontendResponse);
+            maxOnly.PageOrderingMode.Should().Be(PageOrderingMode.ContentVersion);
+            minAndMax.FrontendResponse.Should().Be(No.FrontendResponse);
+            minAndMax.PageOrderingMode.Should().Be(PageOrderingMode.ContentVersion);
+        }
+
+        /// <summary>
+        /// An unfiltered read keeps DocumentId even on a snapshot. With no window predicate there is
+        /// no planner pathology to fix and nothing to gain, and routing a request to a snapshot must
+        /// not by itself change the order a collection is walked in.
+        /// </summary>
+        [Test]
+        public async Task It_anchors_an_unfiltered_snapshot_request_on_the_document_id()
+        {
+            RequestInfo requestInfo = await Execute(
+                Middleware(),
+                EffectiveTargetKind.Snapshot,
+                ("schoolId", "255901")
+            );
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+        }
+
+        /// <summary>
+        /// The snapshot rule reads the parsed window like the live one does, so a bound that is
+        /// present but does not parse is an absent bound on either data source.
+        /// </summary>
+        [TestCase("", TestName = "snapshot, empty maximum")]
+        [TestCase("   ", TestName = "snapshot, whitespace maximum")]
+        public async Task It_anchors_a_present_but_blank_snapshot_maximum_on_the_document_id(string maximum)
+        {
+            RequestInfo requestInfo = await Execute(
+                Middleware(),
+                EffectiveTargetKind.Snapshot,
+                ("maxChangeVersion", maximum)
+            );
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+        }
+
+        [TestCase("abc", TestName = "snapshot, maximum is not a number")]
+        [TestCase("-2", TestName = "snapshot, negative maximum")]
+        public async Task It_rejects_an_unparseable_snapshot_maximum_without_moving_the_anchor(string maximum)
+        {
+            RequestInfo requestInfo = await Execute(
+                Middleware(),
+                EffectiveTargetKind.Snapshot,
+                ("maxChangeVersion", maximum)
+            );
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+        }
+
+        /// <summary>
+        /// Only a frozen source qualifies. A read replica keeps applying changes, so a row can still
+        /// move later within an open window there and the live rule stands — which is what stops a
+        /// later simplification to "anything that is not the primary" from passing.
+        /// </summary>
+        [TestCase(EffectiveTargetKind.Primary, TestName = "primary keeps the live rule")]
+        [TestCase(EffectiveTargetKind.ReadReplica, TestName = "read replica keeps the live rule")]
+        public async Task It_anchors_a_min_only_window_on_the_document_id_for_every_unfrozen_target(
+            EffectiveTargetKind targetKind
+        )
+        {
+            RequestInfo requestInfo = await Execute(Middleware(), targetKind, ("minChangeVersion", "100"));
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+        }
+
+        /// <summary>
+        /// The kill switch overrides every branch, the snapshot one included, so a legacy deployment
+        /// issues DocumentId tokens whichever database served the request.
+        /// </summary>
+        [Test]
+        public async Task It_anchors_a_snapshot_window_on_the_document_id_under_legacy_ordering()
+        {
+            RequestInfo minOnly = await Execute(
+                MiddlewareWithLegacyDocumentIdOrdering(),
+                EffectiveTargetKind.Snapshot,
+                ("minChangeVersion", "100")
+            );
+            RequestInfo maxOnly = await Execute(
+                MiddlewareWithLegacyDocumentIdOrdering(),
+                EffectiveTargetKind.Snapshot,
+                ("maxChangeVersion", "200")
+            );
+
+            minOnly.FrontendResponse.Should().Be(No.FrontendResponse);
+            minOnly.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+            maxOnly.FrontendResponse.Should().Be(No.FrontendResponse);
+            maxOnly.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+        }
+
+        /// <summary>
+        /// The Change Query composition resolves by the target too. Nothing on that pipeline reads the
+        /// anchor, so this is inert by design — and asserted so that the rule stays in one place
+        /// rather than acquiring a second, composition-specific form.
+        /// </summary>
+        [Test]
+        public async Task It_resolves_by_the_target_without_cursor_recognition()
+        {
+            RequestInfo requestInfo = await Execute(
+                MiddlewareWithoutCursorRecognition(),
+                EffectiveTargetKind.Snapshot,
+                ("minChangeVersion", "100")
             );
 
             requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);

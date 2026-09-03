@@ -883,6 +883,35 @@ public class PipelineOrderingTests
         }
 
         /// <summary>
+        /// The query-validation step resolves the page anchor from the change-version window and the
+        /// effective target, reading the target off the request scope with GetRequiredService. That
+        /// throws when no target has been recorded, so composing validation ahead of selection would
+        /// fault every request these pipelines serve. Pinned structurally because the failure is a
+        /// composition-order mistake, not one any single step's own tests could catch.
+        /// </summary>
+        [TestCase("CreateQueryPipeline", typeof(ValidateQueryMiddleware))]
+        [TestCase("CreateGetPartitionsPipeline", typeof(ValidatePartitionQueryMiddleware))]
+        [TestCase("CreateGetTrackedChangesPipeline", typeof(ValidateQueryMiddleware))]
+        public void It_selects_a_target_before_query_validation(
+            string factoryMethodName,
+            Type validationStepType
+        )
+        {
+            var stepTypes = GetRoutedResourcePipelineStepTypes(factoryMethodName);
+            var selectionIndex = stepTypes.IndexOf(typeof(SelectEffectiveDataStoreTargetMiddleware));
+            var validationIndex = stepTypes.IndexOf(validationStepType);
+
+            selectionIndex.Should().BeGreaterThanOrEqualTo(0, "the pipeline selects a target");
+            validationIndex.Should().BeGreaterThanOrEqualTo(0, "the pipeline validates its query");
+            selectionIndex
+                .Should()
+                .BeLessThan(
+                    validationIndex,
+                    "the page anchor is resolved from the effective target, which must already be recorded"
+                );
+        }
+
+        /// <summary>
         /// Selection needs the resolved parent and reads no schema of its own, so it belongs after the
         /// endpoint phase: an unroutable request still answers its endpoint 404.
         /// </summary>

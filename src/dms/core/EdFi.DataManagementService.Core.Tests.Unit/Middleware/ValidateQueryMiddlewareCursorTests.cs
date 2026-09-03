@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
@@ -59,7 +60,10 @@ public class ValidateQueryMiddlewareCursorTests
             .WithEndProject()
             .ToApiSchemaDocuments();
 
-    private static RequestInfo RequestInfoFor(params (string Key, string Value)[] queryParameters)
+    private static RequestInfo RequestInfoFor(
+        EffectiveTargetKind targetKind,
+        params (string Key, string Value)[] queryParameters
+    )
     {
         FrontendRequest frontendRequest = new(
             Path: "/ed-fi/academicWeeks",
@@ -78,7 +82,7 @@ public class ValidateQueryMiddlewareCursorTests
         RequestInfo requestInfo = new(
             frontendRequest,
             RequestMethod.GET,
-            ServiceProviderWithEffectiveTarget()
+            ServiceProviderWithEffectiveTarget(targetKind)
         )
         {
             ApiSchemaDocuments = NewApiSchemaDocuments(),
@@ -115,12 +119,18 @@ public class ValidateQueryMiddlewareCursorTests
     /// The composition under test is supplied directly by the fixtures that need one this file does not
     /// otherwise build — the deployment running with the page-ordering kill switch on.
     /// </summary>
+    private static Task<RequestInfo> Execute(
+        IPipelineStep middleware,
+        params (string Key, string Value)[] queryParameters
+    ) => Execute(middleware, EffectiveTargetKind.Primary, queryParameters);
+
     private static async Task<RequestInfo> Execute(
         IPipelineStep middleware,
+        EffectiveTargetKind targetKind,
         params (string Key, string Value)[] queryParameters
     )
     {
-        RequestInfo requestInfo = RequestInfoFor(queryParameters);
+        RequestInfo requestInfo = RequestInfoFor(targetKind, queryParameters);
 
         await middleware.Execute(requestInfo, NullNext);
 
@@ -784,7 +794,7 @@ public class ValidateQueryMiddlewareCursorTests
         {
             RecordingCollectionPagingTelemetry telemetry = new();
 
-            RequestInfo requestInfo = RequestInfoFor(queryParameters);
+            RequestInfo requestInfo = RequestInfoFor(EffectiveTargetKind.Primary, queryParameters);
             requestInfo.MappingSet = RelationalWriteSeamFixture
                 .Create()
                 .CreateSupportedMappingSet(SqlDialect.Pgsql);
@@ -865,7 +875,11 @@ public class ValidateQueryMiddlewareCursorTests
         public async Task It_counts_nothing_for_a_request_it_accepts()
         {
             RecordingCollectionPagingTelemetry telemetry = new();
-            RequestInfo requestInfo = RequestInfoFor(("schoolId", "1"), ("limit", "25"));
+            RequestInfo requestInfo = RequestInfoFor(
+                EffectiveTargetKind.Primary,
+                ("schoolId", "1"),
+                ("limit", "25")
+            );
 
             await ValidateQueryMiddlewareTests.Middleware(telemetry).Execute(requestInfo, NullNext);
 
@@ -878,7 +892,7 @@ public class ValidateQueryMiddlewareCursorTests
         [Test]
         public async Task It_still_answers_the_rejection_when_recording_throws()
         {
-            RequestInfo requestInfo = RequestInfoFor(("limit", "-1"));
+            RequestInfo requestInfo = RequestInfoFor(EffectiveTargetKind.Primary, ("limit", "-1"));
 
             await ValidateQueryMiddlewareTests
                 .Middleware(new ThrowingCollectionPagingTelemetry())
@@ -889,6 +903,93 @@ public class ValidateQueryMiddlewareCursorTests
                 .FrontendResponse.Body!.ToJsonString()
                 .Should()
                 .Contain("Limit must be omitted or set to a numeric value between 0 and");
+        }
+    }
+
+    /// <summary>
+    /// The token marker names the anchor a page was cut on, and a request resolves its anchor from the
+    /// window <em>and</em> the data store serving it. A min-only walk therefore belongs to the source it
+    /// started against: the same token, replayed with the same window against the other source, names
+    /// bounds in the wrong units and is answered with the standard invalid-token response.
+    /// </summary>
+    /// <remarks>
+    /// This is the pair that fails if the anchor is ever made to depend on paging shape — resolving one
+    /// way for a traditional page and another for a cursor page would make a snapshot min-only page
+    /// hand out a token its own follow-up request rejects, and every ordering test would still pass.
+    /// </remarks>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Min_Only_Page_Token_Replayed_Against_A_Different_Data_Store
+        : ValidateQueryMiddlewareCursorTests
+    {
+        [Test]
+        public async Task It_accepts_a_content_version_token_against_a_snapshot()
+        {
+            RequestInfo requestInfo = await Execute(
+                ValidateQueryMiddlewareTests.Middleware(),
+                EffectiveTargetKind.Snapshot,
+                ("pageToken", WindowedToken),
+                ("minChangeVersion", "100")
+            );
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.ContentVersion);
+            requestInfo
+                .CollectionPaging.Should()
+                .Be(new CollectionPaging.Cursor(new CursorRange(7, 42), new PageSize(MaximumPageSize)));
+        }
+
+        [Test]
+        public async Task It_rejects_a_document_id_token_against_a_snapshot()
+        {
+            AssertParameterValidationShell(
+                await Execute(
+                    ValidateQueryMiddlewareTests.Middleware(),
+                    EffectiveTargetKind.Snapshot,
+                    ("pageToken", ValidToken),
+                    ("minChangeVersion", "100")
+                ),
+                CursorRequestValidator.InvalidPageToken
+            );
+        }
+
+        [Test]
+        public async Task It_rejects_a_content_version_token_against_the_primary()
+        {
+            AssertParameterValidationShell(
+                await Execute(
+                    ValidateQueryMiddlewareTests.Middleware(),
+                    EffectiveTargetKind.Primary,
+                    ("pageToken", WindowedToken),
+                    ("minChangeVersion", "100")
+                ),
+                CursorRequestValidator.InvalidPageToken
+            );
+        }
+
+        /// <summary>
+        /// The client-visible consequence, stated in one place: a min-only walk must keep its data
+        /// source for its whole life, because adding or dropping the snapshot request mid-walk changes
+        /// the order the collection is walked in exactly as changing the window would.
+        /// </summary>
+        [Test]
+        public async Task It_answers_one_token_and_window_differently_by_data_store()
+        {
+            RequestInfo onTheSnapshot = await Execute(
+                ValidateQueryMiddlewareTests.Middleware(),
+                EffectiveTargetKind.Snapshot,
+                ("pageToken", WindowedToken),
+                ("minChangeVersion", "100")
+            );
+            RequestInfo onTheReplica = await Execute(
+                ValidateQueryMiddlewareTests.Middleware(),
+                EffectiveTargetKind.ReadReplica,
+                ("pageToken", WindowedToken),
+                ("minChangeVersion", "100")
+            );
+
+            onTheSnapshot.FrontendResponse.Should().Be(No.FrontendResponse);
+            onTheReplica.FrontendResponse.StatusCode.Should().Be(400);
         }
     }
 }
