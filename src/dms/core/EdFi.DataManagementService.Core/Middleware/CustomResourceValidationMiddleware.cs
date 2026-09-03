@@ -26,9 +26,7 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         // TraceId is client-supplied whenever AppSettings:CorrelationIdHeader is configured, so it
-        // is sanitized before it reaches any log template here. That matches the middlewares in this
-        // folder that log it - RequestResponseLoggingMiddleware, ProfileWritePipelineMiddleware and
-        // ResolveMappingSetMiddleware all sanitize it first - and the repository's own logging rule.
+        // is sanitized before it reaches any log template here, per the repository's logging rule.
         // Only the log records are sanitized: the trace id handed to a validator, and the one that
         // becomes the 400 body's correlationId, must stay the client's real value.
         string sanitizedTraceId = LoggingSanitizer.SanitizeForLogging(
@@ -44,9 +42,24 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
 
         var resourceInfo = requestInfo.ResourceInfo;
 
-        var applicableValidators = validators.Where(validator =>
-            AppliesToRequestedResource(validator, resourceInfo)
-        );
+        // Materialized rather than left as a deferred Where. Enumerating lazily inside the loop
+        // below would interleave the AppliesTo guard with validator execution, so a validator that
+        // violates the contract would only be detected after earlier validators had already run -
+        // side effects and outbound I/O included - and whether a misconfigured deployment failed at
+        // all would depend on DI registration order.
+        List<ICustomResourceValidator> applicableValidators =
+        [
+            .. validators.Where(validator => AppliesToRequestedResource(validator, resourceInfo)),
+        ];
+
+        // Nothing applies, which is every request in a deployment that has registered no validators.
+        // Returning here rather than falling through keeps that path free of the per-request
+        // projections below, which no one would read.
+        if (applicableValidators.Count == 0)
+        {
+            await next();
+            return;
+        }
 
         var validatedResourceInfo = new ValidatedResourceInfo(
             resourceInfo.ProjectName.Value,
@@ -106,9 +119,9 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
                 // A null return is not a substitute for an empty list per ICustomResourceValidator's
                 // own contract: without this guard a validator that mistakenly returns null is
                 // indistinguishable from one that ran and found nothing. Named with the sanitized
-                // type name rather than the raw one, because this exception lands on
-                // RequestInfo.CaughtException and RequestResponseLoggingMiddleware passes it to
-                // LogError, so its message reaches a log record like any other template argument.
+                // type name rather than the raw one, because this exception is caught into
+                // RequestInfo.CaughtException and logged, and control characters in a rendered
+                // exception message can forge lines in a text sink.
                 failures =
                     await validator.ValidateAsync(
                         document,
@@ -130,28 +143,29 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
                 // when a validator is slow. In a finally rather than after the await because the
                 // case this record exists for is a validator that hangs, and one that hangs and then
                 // throws - an HttpClient timeout, say - is exactly when the elapsed time is worth
-                // having. Left at Debug because it is per-request detail: the shipped Serilog
-                // default is Information (appsettings.json). An operator turning it on needs the
-                // right category, and it is not this file's namespace: the step is constructed with
-                // ApiService's own ILogger<ApiService>, as every pipeline step is, so this record
-                // lands under "EdFi.DataManagementService.Core.ApiService". An override scoped to
-                // the middleware namespace surfaces nothing, and lowering that one category to Debug
-                // also switches on every step's "Entering ..." line for every request.
-                _logger.LogDebug(
-                    "{ValidatorTypeName} ran in {ElapsedMilliseconds} ms - {TraceId}",
-                    sanitizedValidatorTypeName,
-                    Stopwatch.GetElapsedTime(validatorStartTimestamp).TotalMilliseconds,
-                    sanitizedTraceId
-                );
+                // having. Left at Debug because it is per-request detail. An operator turning it
+                // on needs the right category, and it is not this file's namespace: ApiService
+                // constructs this step with its own ILogger<ApiService>, so the record lands under
+                // "EdFi.DataManagementService.Core.ApiService" and an override scoped to the
+                // middleware namespace surfaces nothing.
+                if (_logger.IsEnabled(LogLevel.Debug))
+                {
+                    _logger.LogDebug(
+                        "{ValidatorTypeName} ran in {ElapsedMilliseconds} ms - {TraceId}",
+                        sanitizedValidatorTypeName,
+                        Stopwatch.GetElapsedTime(validatorStartTimestamp).TotalMilliseconds,
+                        sanitizedTraceId
+                    );
+                }
             }
 
             if (failures.Count > 0)
             {
                 // Information rather than Debug: this is a client-visible rejection, and at Debug
                 // it would never appear in a default deployment, leaving a custom-validation 400
-                // with no operator trace at all. The count is bounded by what one validator
-                // returned, so this cannot become a per-document flood the way the timing record
-                // could.
+                // with no operator trace at all. That costs one record per rejecting validator per
+                // rejected document, which under a bulk load of invalid documents is a real volume -
+                // accepted deliberately, because a 400 nobody can see is worse.
                 // Names the validator and the failure count only. Failure messages are never
                 // logged: they can quote submitted document values.
                 _logger.LogInformation(

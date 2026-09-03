@@ -566,12 +566,10 @@ public class PipelineOrderingTests
 
     /// <summary>
     /// The real ApiService, with <paramref name="collectionPagingTelemetry" /> registered as the
-    /// telemetry its pipeline factories resolve, and <paramref name="configureServices" /> given the
-    /// chance to add registrations none of the other fixtures in this file need.
+    /// telemetry its pipeline factories resolve.
     /// </summary>
     private static ApiService BuildRoutedResourceApiService(
-        ICollectionPagingTelemetry? collectionPagingTelemetry = null,
-        Action<IServiceCollection>? configureServices = null
+        ICollectionPagingTelemetry? collectionPagingTelemetry = null
     )
     {
         var services = new ServiceCollection();
@@ -635,8 +633,6 @@ public class PipelineOrderingTests
         services.AddTransient<ILogger<AvailableChangeVersionsHandler>>(_ =>
             NullLogger<AvailableChangeVersionsHandler>.Instance
         );
-
-        configureServices?.Invoke(services);
 
         var serviceProvider = services.BuildServiceProvider();
 

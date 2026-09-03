@@ -65,6 +65,14 @@ public interface ICustomResourceValidator
     /// The failures found, or an empty list when the document is valid. A null return is not a
     /// substitute for an empty list and is treated as a hard failure by the caller.
     /// </returns>
+    /// <remarks>
+    /// A validator runs after the request's claim-set and resource-action authorization, but before
+    /// the relationship, namespace, ownership and custom-view authorization that the backend decides
+    /// while performing the write. Two consequences an implementer has to plan for: a validator is
+    /// invoked - and any I/O it performs is performed - for documents whose caller will ultimately
+    /// be refused, and when a validator returns failures the caller receives that 400 instead of the
+    /// 403 they would otherwise have been given.
+    /// </remarks>
     Task<IReadOnlyList<CustomValidationFailure>> ValidateAsync(
         JsonNode document,
         ValidatedResourceInfo resource,

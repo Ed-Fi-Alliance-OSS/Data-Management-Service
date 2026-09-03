@@ -18,7 +18,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
-using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
@@ -1532,6 +1531,55 @@ public class CustomResourceValidationMiddlewareTests
                 .Which.Message.Should()
                 .Contain(nameof(FakeValidator))
                 .And.Contain(nameof(ICustomResourceValidator.AppliesTo));
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Later_Validators_AppliesTo_Is_Null_And_An_Earlier_One_Applies
+        : CustomResourceValidationMiddlewareTests
+    {
+        private FakeValidator _applicableValidator = null!;
+        private Func<Task> _execute = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _applicableValidator = new FakeValidator
+            {
+                AppliesTo = [new ValidatedResource("Ed-Fi", "School")],
+            };
+
+            var scopedServiceProvider = new ServiceCollection()
+                .AddSingleton<ICustomResourceValidator>(_applicableValidator)
+                .AddSingleton<ICustomResourceValidator>(new FakeValidator { AppliesTo = null! })
+                .BuildServiceProvider();
+
+            var requestInfo = BuildRequestInfo(scopedServiceProvider);
+
+            _execute = () =>
+                Middleware().Execute(requestInfo, () => throw new AssertionException("next should not run"));
+        }
+
+        [Test]
+        public async Task It_still_throws_for_the_later_validators_broken_contract()
+        {
+            await _execute.Should().ThrowAsync<InvalidOperationException>();
+        }
+
+        /// <summary>
+        /// The guard has to run for every registered validator before any validator is invoked. A
+        /// deferred Where would interleave the two, letting this applicable validator run - and any
+        /// outbound I/O it performs happen - before the broken one is ever inspected, so whether a
+        /// misconfigured deployment did work on the way to failing would depend on the order DI
+        /// happened to return the registrations in.
+        /// </summary>
+        [Test]
+        public async Task It_invokes_no_validator_at_all_before_detecting_the_broken_one()
+        {
+            await _execute.Should().ThrowAsync<InvalidOperationException>();
+
+            _applicableValidator.CallCount.Should().Be(0);
         }
     }
 
