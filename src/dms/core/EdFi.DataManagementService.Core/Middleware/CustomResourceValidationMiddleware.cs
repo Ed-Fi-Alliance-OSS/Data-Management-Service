@@ -25,10 +25,17 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
 {
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
-        _logger.LogDebug(
-            "Entering CustomResourceValidationMiddleware - {TraceId}",
+        // TraceId is client-supplied whenever AppSettings:CorrelationIdHeader is configured, so it
+        // is sanitized before it reaches any log template here. That matches the middlewares in this
+        // folder that log it - RequestResponseLoggingMiddleware, ProfileWritePipelineMiddleware and
+        // ResolveMappingSetMiddleware all sanitize it first - and the repository's own logging rule.
+        // Only the log records are sanitized: the trace id handed to a validator, and the one that
+        // becomes the 400 body's correlationId, must stay the client's real value.
+        string sanitizedTraceId = LoggingSanitizer.SanitizeForLogging(
             requestInfo.FrontendRequest.TraceId.Value
         );
+
+        _logger.LogDebug("Entering CustomResourceValidationMiddleware - {TraceId}", sanitizedTraceId);
 
         // Resolved from the per-request scoped service provider, not a constructor field: the
         // pipeline itself is built once and cached in a Lazy<PipelineProvider>, so a constructor-held
@@ -88,10 +95,7 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
             var document = ProfileWriteValidationBody.Effective(requestInfo).DeepClone();
 
             // The validator's own type name is implementer-authored, so it is routed through the
-            // sanitizer before it reaches a log template. Note this is not the only externally
-            // influenced value here: TraceId is client-supplied whenever AppSettings:CorrelationIdHeader
-            // is configured, and is logged unsanitized, matching what every other middleware in Core
-            // does with it.
+            // sanitizer before it reaches a log template, for the same reason the trace id is.
             string sanitizedValidatorTypeName = LoggingSanitizer.SanitizeForLogging(validator.GetType().Name);
             long validatorStartTimestamp = Stopwatch.GetTimestamp();
 
@@ -127,13 +131,17 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
                 // case this record exists for is a validator that hangs, and one that hangs and then
                 // throws - an HttpClient timeout, say - is exactly when the elapsed time is worth
                 // having. Left at Debug because it is per-request detail: the shipped Serilog
-                // default is Information (appsettings.json), so an operator chasing a slow validator
-                // has to turn Debug on for this namespace to see it.
+                // default is Information (appsettings.json). An operator turning it on needs the
+                // right category, and it is not this file's namespace: the step is constructed with
+                // ApiService's own ILogger<ApiService>, as every pipeline step is, so this record
+                // lands under "EdFi.DataManagementService.Core.ApiService". An override scoped to
+                // the middleware namespace surfaces nothing, and lowering that one category to Debug
+                // also switches on every step's "Entering ..." line for every request.
                 _logger.LogDebug(
                     "{ValidatorTypeName} ran in {ElapsedMilliseconds} ms - {TraceId}",
                     sanitizedValidatorTypeName,
                     Stopwatch.GetElapsedTime(validatorStartTimestamp).TotalMilliseconds,
-                    requestInfo.FrontendRequest.TraceId.Value
+                    sanitizedTraceId
                 );
             }
 
@@ -150,7 +158,7 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
                     "{ValidatorTypeName} returned {FailureCount} failure(s) - {TraceId}",
                     sanitizedValidatorTypeName,
                     failures.Count,
-                    requestInfo.FrontendRequest.TraceId.Value
+                    sanitizedTraceId
                 );
             }
 

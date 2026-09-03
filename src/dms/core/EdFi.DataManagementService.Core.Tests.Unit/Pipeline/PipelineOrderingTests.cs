@@ -1188,29 +1188,6 @@ public class PipelineOrderingTests
                 );
         }
 
-        /// <summary>
-        /// GetTokenInfoHandler and AvailableChangeVersionsHandler are both resolved through
-        /// GetRequiredService, and BuildRoutedResourceApiService does not carry either
-        /// registration - no other fixture in this file needs them. This builder adds only what
-        /// those two factories require to build without throwing, so an omitted registration never
-        /// masquerades as an absent CustomResourceValidationMiddleware.
-        /// </summary>
-        private static ApiService BuildOmissionCheckApiService() =>
-            BuildRoutedResourceApiService(configureServices: services =>
-            {
-                services.AddSingleton<IClaimSetProvider>(A.Fake<IClaimSetProvider>());
-                services.AddSingleton(A.Fake<ITokenInfoRelationalMappingSetResolver>());
-                services.AddTransient<GetTokenInfoHandler>();
-                services.AddTransient<ILogger<GetTokenInfoHandler>>(_ =>
-                    NullLogger<GetTokenInfoHandler>.Instance
-                );
-
-                services.AddTransient<AvailableChangeVersionsHandler>();
-                services.AddTransient<ILogger<AvailableChangeVersionsHandler>>(_ =>
-                    NullLogger<AvailableChangeVersionsHandler>.Instance
-                );
-            });
-
         // Custom validation is POST and PUT only. DELETE belongs in this list even though the
         // design treats it as a stated non-goal: without a case for it here, an implementation that
         // added the step to CreateDeleteByIdPipeline would satisfy every other criterion in this
@@ -1226,7 +1203,7 @@ public class PipelineOrderingTests
         [TestCase("CreateTrackedChangeMethodNotAllowedPipeline")]
         public void It_is_absent_from_every_non_write_pipeline(string factoryMethodName)
         {
-            var stepTypes = GetStepTypes(BuildOmissionCheckApiService(), factoryMethodName);
+            var stepTypes = GetRoutedResourcePipelineStepTypes(factoryMethodName);
 
             stepTypes.Should().NotContain(typeof(CustomResourceValidationMiddleware));
         }

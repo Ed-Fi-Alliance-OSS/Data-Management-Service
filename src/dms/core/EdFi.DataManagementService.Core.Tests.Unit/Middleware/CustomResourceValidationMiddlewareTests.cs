@@ -1098,6 +1098,38 @@ public class CustomResourceValidationMiddlewareTests
                 .Should()
                 .Equal("second failure.");
         }
+
+        /// <summary>
+        /// This is the only fixture where both arms are populated at once, so it is the only place
+        /// the factory-selection rule can be pinned for the mixed case: an errors-arm failure picks
+        /// ForBadRequest even when validationErrors is also non-empty. Both factories emit
+        /// validationErrors and errors identically and differ only in detail, type and title, so
+        /// asserting arm contents cannot tell them apart - narrowing the rule to
+        /// "errors.Count > 0 &amp;&amp; validationErrors.Count == 0" leaves every other test green.
+        /// </summary>
+        [Test]
+        public void It_picks_ForBadRequest_even_though_validationErrors_is_also_populated()
+        {
+            JsonNode expectedForBadRequest = FailureResponse.ForBadRequest(
+                "ignored",
+                new TraceId("ignored"),
+                [],
+                []
+            );
+
+            _requestInfo.FrontendResponse.Body!["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be(expectedForBadRequest["type"]!.GetValue<string>());
+            _requestInfo.FrontendResponse.Body!["title"]!
+                .GetValue<string>()
+                .Should()
+                .Be(expectedForBadRequest["title"]!.GetValue<string>());
+            _requestInfo.FrontendResponse.Body!["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be(FailureResponse.ErrorsArmDetail);
+        }
     }
 
     [TestFixture]
@@ -1120,12 +1152,14 @@ public class CustomResourceValidationMiddlewareTests
                 .AddSingleton<ICustomResourceValidator>(validator)
                 .BuildServiceProvider();
 
-            _requestInfo = BuildRequestInfo(scopedServiceProvider);
+            _requestInfo = BuildRequestInfo(scopedServiceProvider, traceId: "errors-arm-trace-id-23!");
             await ExecuteAndCaptureNext(_requestInfo);
 
             // The arm's own factory output, compared against rather than a hand-built literal: the
             // two factories differ in both type and title, so a detail-only comparison would pass
-            // against a body a client could tell apart from core's.
+            // against a body a client could tell apart from core's. Built with placeholder arguments
+            // because only the factory-fixed fields are compared against it - the correlationId is
+            // request-derived, so it is asserted against the request's own trace id instead.
             _expectedForBadRequest = FailureResponse.ForBadRequest("ignored", new TraceId("ignored"), [], []);
         }
 
@@ -1171,6 +1205,24 @@ public class CustomResourceValidationMiddlewareTests
                 .Be(_expectedForBadRequest["status"]!.GetValue<int>());
         }
 
+        /// <summary>
+        /// The correlationId is the only client-visible value in this body that comes from the
+        /// request rather than from the factory, so nothing else here can pin it. Without this,
+        /// hardcoding any other trace id at the factory call site leaves the whole suite green
+        /// while every custom-validation 400 reports the wrong correlation id to the client.
+        /// The trace id ends in a character LoggingSanitizer strips, so this also pins that the
+        /// response echoes the client's value verbatim: the sanitizing this step does for its log
+        /// records must not reach the body, or the client cannot match the id it sent.
+        /// </summary>
+        [Test]
+        public void It_carries_the_requests_own_trace_id_as_the_correlation_id()
+        {
+            _requestInfo.FrontendResponse.Body!["correlationId"]!
+                .GetValue<string>()
+                .Should()
+                .Be("errors-arm-trace-id-23!");
+        }
+
         [Test]
         public void It_uses_the_json_content_type()
         {
@@ -1210,7 +1262,10 @@ public class CustomResourceValidationMiddlewareTests
                 .AddSingleton<ICustomResourceValidator>(validator)
                 .BuildServiceProvider();
 
-            _requestInfo = BuildRequestInfo(scopedServiceProvider);
+            _requestInfo = BuildRequestInfo(
+                scopedServiceProvider,
+                traceId: "validation-errors-arm-trace-id-29!"
+            );
             await ExecuteAndCaptureNext(_requestInfo);
 
             _expectedForDataValidation = FailureResponse.ForDataValidation(
@@ -1261,6 +1316,24 @@ public class CustomResourceValidationMiddlewareTests
                 .GetValue<int>()
                 .Should()
                 .Be(_expectedForDataValidation["status"]!.GetValue<int>());
+        }
+
+        /// <summary>
+        /// The correlationId is the only client-visible value in this body that comes from the
+        /// request rather than from the factory, so nothing else here can pin it. Without this,
+        /// hardcoding any other trace id at the factory call site leaves the whole suite green
+        /// while every custom-validation 400 reports the wrong correlation id to the client.
+        /// The trace id ends in a character LoggingSanitizer strips, so this also pins that the
+        /// response echoes the client's value verbatim: the sanitizing this step does for its log
+        /// records must not reach the body, or the client cannot match the id it sent.
+        /// </summary>
+        [Test]
+        public void It_carries_the_requests_own_trace_id_as_the_correlation_id()
+        {
+            _requestInfo.FrontendResponse.Body!["correlationId"]!
+                .GetValue<string>()
+                .Should()
+                .Be("validation-errors-arm-trace-id-29!");
         }
 
         [Test]

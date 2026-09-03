@@ -24,9 +24,10 @@ public static class FailureResponse
     /// write-path 400. Those two share it because custom validation is required to produce a body a
     /// client cannot tell apart from core schema validation's, and two separate copies of the string
     /// would let one of them change alone.
-    /// This is deliberately not the codebase-wide source of truth for the literal: roughly fifteen
-    /// other call sites still spell it out inline, so changing this constant diverges these two from
-    /// the rest rather than renaming the value everywhere.
+    /// This is deliberately not the codebase-wide source of truth for the literal: other production
+    /// call sites across Core and Backend still spell both write-path 400 detail literals out inline,
+    /// so changing this constant diverges these two from the rest rather than renaming the value
+    /// everywhere.
     /// </summary>
     internal const string ErrorsArmDetail = "The request could not be processed. See 'errors' for details.";
 
