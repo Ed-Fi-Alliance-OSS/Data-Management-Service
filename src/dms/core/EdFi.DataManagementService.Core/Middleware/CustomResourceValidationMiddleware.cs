@@ -172,14 +172,14 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
 
             if (failures.Count > 0)
             {
-                // Information rather than Debug: this is a client-visible rejection, and at Debug
-                // it would never appear in a default deployment, leaving a custom-validation 400
-                // with no operator trace at all. That costs one record per rejecting validator per
-                // rejected document, which under a bulk load of invalid documents is a real volume -
-                // accepted deliberately, because a 400 nobody can see is worse.
+                // Debug, matching the level ValidateDocumentMiddleware uses for its own write-path
+                // 400. A custom-validation rejection is the same kind of event as a core-validation
+                // one, so it gets the same visibility rather than a louder one. The tradeoff, shared
+                // with the core middleware, is that neither leaves a trace in a deployment running
+                // at the shipped default level.
                 // Names the validator and the failure count only. Failure messages are never
                 // logged: they can quote submitted document values.
-                _logger.LogInformation(
+                _logger.LogDebug(
                     "{ValidatorTypeName} returned {FailureCount} failure(s) - {TraceId}",
                     sanitizedValidatorTypeName,
                     failures.Count,
