@@ -992,4 +992,110 @@ public class ValidateQueryMiddlewareCursorTests
             onTheReplica.FrontendResponse.StatusCode.Should().Be(400);
         }
     }
+
+    /// <summary>
+    /// The complement of the fixture above, and the half of the rule a client is most likely to get
+    /// wrong. Every window shape except min-only resolves the same anchor on every data source, so its
+    /// token's marker matches wherever it is replayed and the request is served. A walk that changes
+    /// data source mid-stream is therefore not stopped: it continues against a different database from
+    /// the position the token names.
+    /// </summary>
+    /// <remarks>
+    /// Pinned because what rejects a min-only replay is a marker comparison, not a data-source check:
+    /// <see cref="CursorRequestValidator" /> compares the token's anchor against the one this request
+    /// resolved, and nothing in a token identifies the database that issued it. Making a token carry
+    /// its source, or widening the snapshot rule so it diverged from the live rule on a max-bearing
+    /// window, would break these walks while every ordering test kept passing. CURSOR-PAGING.md
+    /// documents this as the behavior clients get, so the two are changed together or not at all.
+    /// </remarks>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Page_Token_Whose_Anchor_Is_The_Same_On_Every_Data_Store
+        : ValidateQueryMiddlewareCursorTests
+    {
+        [TestCase(EffectiveTargetKind.Primary, TestName = "bounded window, primary")]
+        [TestCase(EffectiveTargetKind.ReadReplica, TestName = "bounded window, read replica")]
+        [TestCase(EffectiveTargetKind.Snapshot, TestName = "bounded window, snapshot")]
+        public async Task It_accepts_a_bounded_window_token_on_every_data_store(
+            EffectiveTargetKind targetKind
+        )
+        {
+            RequestInfo requestInfo = await Execute(
+                ValidateQueryMiddlewareTests.Middleware(),
+                targetKind,
+                ("pageToken", WindowedToken),
+                ("minChangeVersion", "100"),
+                ("maxChangeVersion", "200")
+            );
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.ContentVersion);
+        }
+
+        [TestCase(EffectiveTargetKind.Primary, TestName = "max-only window, primary")]
+        [TestCase(EffectiveTargetKind.ReadReplica, TestName = "max-only window, read replica")]
+        [TestCase(EffectiveTargetKind.Snapshot, TestName = "max-only window, snapshot")]
+        public async Task It_accepts_a_max_only_window_token_on_every_data_store(
+            EffectiveTargetKind targetKind
+        )
+        {
+            RequestInfo requestInfo = await Execute(
+                ValidateQueryMiddlewareTests.Middleware(),
+                targetKind,
+                ("pageToken", WindowedToken),
+                ("maxChangeVersion", "200")
+            );
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.ContentVersion);
+        }
+
+        /// <summary>
+        /// An unwindowed walk keeps <c>DocumentId</c> on every source, snapshot included, because
+        /// routing alone must not change the order a collection is walked in. Its token stays
+        /// replayable everywhere for that reason.
+        /// </summary>
+        [TestCase(EffectiveTargetKind.Primary, TestName = "no window, primary")]
+        [TestCase(EffectiveTargetKind.ReadReplica, TestName = "no window, read replica")]
+        [TestCase(EffectiveTargetKind.Snapshot, TestName = "no window, snapshot")]
+        public async Task It_accepts_an_unwindowed_token_on_every_data_store(EffectiveTargetKind targetKind)
+        {
+            RequestInfo requestInfo = await Execute(
+                ValidateQueryMiddlewareTests.Middleware(),
+                targetKind,
+                ("pageToken", ValidToken)
+            );
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+        }
+
+        /// <summary>
+        /// The contrast that gives this fixture its point, written as the same shape the min-only
+        /// fixture uses: one token and one window, replayed on the primary and on the snapshot. There,
+        /// the pair is answered differently; here, identically.
+        /// </summary>
+        [Test]
+        public async Task It_answers_a_max_bearing_token_the_same_way_on_both_data_stores()
+        {
+            RequestInfo onThePrimary = await Execute(
+                ValidateQueryMiddlewareTests.Middleware(),
+                EffectiveTargetKind.Primary,
+                ("pageToken", WindowedToken),
+                ("minChangeVersion", "100"),
+                ("maxChangeVersion", "200")
+            );
+            RequestInfo onTheSnapshot = await Execute(
+                ValidateQueryMiddlewareTests.Middleware(),
+                EffectiveTargetKind.Snapshot,
+                ("pageToken", WindowedToken),
+                ("minChangeVersion", "100"),
+                ("maxChangeVersion", "200")
+            );
+
+            onThePrimary.FrontendResponse.Should().Be(No.FrontendResponse);
+            onTheSnapshot.FrontendResponse.Should().Be(No.FrontendResponse);
+            onTheSnapshot.PageOrderingMode.Should().Be(onThePrimary.PageOrderingMode);
+        }
+    }
 }

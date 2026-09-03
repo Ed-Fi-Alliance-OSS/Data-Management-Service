@@ -24,6 +24,15 @@ internal static class DerivativeRoutingScenario
     private const string PartitionsEndpoint = "/data/ed-fi/students/partitions?number=2";
 
     /// <summary>
+    /// The window every min-only scenario here uses. It is open below every seeded row, so the same
+    /// query is answered with the whole collection on each of the three databases and a difference in
+    /// what a walk returns is a difference in which database served it, never in the window.
+    /// </summary>
+    private const string MinOnlyWindowQuery = "minChangeVersion=1";
+
+    private const string MinOnlyPartitionsEndpoint = $"{PartitionsEndpoint}&{MinOnlyWindowQuery}";
+
+    /// <summary>
     /// With a replica configured and no snapshot asked for, an eligible read is served by the replica.
     /// </summary>
     public static async Task It_serves_an_eligible_read_from_the_replica(ApiIntegrationHarness harness)
@@ -153,9 +162,16 @@ internal static class DerivativeRoutingScenario
     /// continuation to its end, and returns the studentUniqueId values the walk produced. Every request
     /// carries the snapshot header, because a walk that dropped it would page a different database.
     /// </summary>
+    /// <param name="windowQuery">
+    /// The change-version window the boundaries were cut over, repeated on every request of the walk.
+    /// A window is not carried in a token, and the anchor is resolved from it, so a walk that dropped
+    /// it would resolve a different anchor than the boundaries were computed under and reject them.
+    /// Empty for an unwindowed partition set.
+    /// </param>
     private static async Task<HashSet<string>> WalkPartitionsAsync(
         ApiIntegrationHarness harness,
-        IReadOnlyList<string> pageTokens
+        IReadOnlyList<string> pageTokens,
+        string windowQuery = ""
     )
     {
         HashSet<string> walked = new(StringComparer.Ordinal);
@@ -171,7 +187,8 @@ internal static class DerivativeRoutingScenario
                     harness,
                     HttpMethod.Get,
                     $"{DerivativeRoutingSupport.StudentsEndpoint}"
-                        + $"?pageToken={Uri.EscapeDataString(pageToken)}&pageSize=1",
+                        + $"?pageToken={Uri.EscapeDataString(pageToken)}&pageSize=1"
+                        + (windowQuery.Length == 0 ? "" : $"&{windowQuery}"),
                     useSnapshotHeaderValue: "true"
                 );
 
@@ -233,6 +250,68 @@ internal static class DerivativeRoutingScenario
     }
 
     /// <summary>
+    /// The cross-operation half of the same rule. Boundaries are cut in the units the walk that
+    /// consumes them reads, so /partitions resolves its anchor from the same two inputs GET-many does:
+    /// against a frozen snapshot a min-only window balances on <c>ContentVersion</c>, not
+    /// <c>DocumentId</c>. The boundaries therefore belong to the snapshot, and a walk that drops the
+    /// header is answered with the invalid-page-token response rather than served rows read against
+    /// the wrong column.
+    /// </summary>
+    /// <remarks>
+    /// The unwindowed twin, <see cref="It_partitions_the_selected_target" />, runs entirely on the
+    /// DocumentId anchor and would pass unchanged if the partition-side resolution regressed to the
+    /// live rule. This is the scenario that fails if /partitions and GET-many ever resolve their
+    /// anchors differently — the defect the partition step resolves its anchor at all to prevent,
+    /// which neither operation's own tests can see.
+    /// </remarks>
+    public static async Task It_partitions_a_min_only_window_on_the_snapshot_anchor(
+        ApiIntegrationHarness harness
+    )
+    {
+        using HttpResponseMessage partitionsResponse = await DerivativeRoutingSupport.SendAsync(
+            harness,
+            HttpMethod.Get,
+            MinOnlyPartitionsEndpoint,
+            useSnapshotHeaderValue: "true"
+        );
+
+        string partitionsBody = await partitionsResponse.Content.ReadAsStringAsync();
+        partitionsResponse.StatusCode.Should().Be(HttpStatusCode.OK, partitionsBody);
+
+        string[] pageTokens =
+        [
+            .. JsonNode.Parse(partitionsBody)!["pageTokens"]!
+                .AsArray()
+                .Select(token => token!.GetValue<string>()),
+        ];
+
+        pageTokens.Should().NotBeEmpty("the snapshot holds Students inside the window");
+
+        // The walk these boundaries were cut for. Covering the snapshot exactly once is only true if
+        // the boundaries and the pages were computed over the same column: a ContentVersion boundary
+        // consumed by a DocumentId page selection would overlap or leave a gap.
+        HashSet<string> walked = await WalkPartitionsAsync(harness, pageTokens, MinOnlyWindowQuery);
+
+        walked
+            .Should()
+            .HaveCount(
+                DerivativeRoutingSupport.SnapshotStudentCount,
+                "the walk must cover the snapshot's Students, whose count differs from the "
+                    + "parent's and the replica's"
+            );
+        walked
+            .Should()
+            .Contain(
+                DerivativeRoutingSupport.SnapshotStudentUniqueId,
+                "the snapshot's marker row must be among them"
+            );
+
+        // Dropping the header resolves the live anchor for this window, so a boundary named in
+        // ContentVersion units is no longer replayable — the same verdict a GET-many continuation gets.
+        await AssertReplayAsync(harness, pageTokens[0], useSnapshotHeaderValue: null, accepted: false);
+    }
+
+    /// <summary>
     /// Takes the first page of a min-only walk and returns the continuation it hands out. The window is
     /// open below every seeded row, so the page is served and a continuation exists on all three
     /// databases.
@@ -251,7 +330,7 @@ internal static class DerivativeRoutingScenario
         using HttpResponseMessage response = await DerivativeRoutingSupport.SendAsync(
             harness,
             HttpMethod.Get,
-            $"{DerivativeRoutingSupport.StudentsEndpoint}?minChangeVersion=1&limit=1",
+            $"{DerivativeRoutingSupport.StudentsEndpoint}?{MinOnlyWindowQuery}&limit=1",
             useSnapshotHeaderValue
         );
 
@@ -279,7 +358,7 @@ internal static class DerivativeRoutingScenario
             harness,
             HttpMethod.Get,
             $"{DerivativeRoutingSupport.StudentsEndpoint}"
-                + $"?minChangeVersion=1&pageToken={Uri.EscapeDataString(pageToken)}&pageSize=1",
+                + $"?{MinOnlyWindowQuery}&pageToken={Uri.EscapeDataString(pageToken)}&pageSize=1",
             useSnapshotHeaderValue
         );
 
