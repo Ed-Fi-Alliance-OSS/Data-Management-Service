@@ -14,8 +14,6 @@ namespace EdFi.DataManagementService.CustomValidation;
 /// those whose <see cref="AppliesTo"/> matches the current request's resource, but no supported
 /// registration seam ships yet: an implementer has no documented way to register one, so in practice
 /// nothing runs today. This declares the shape that support will be built against.
-/// When host support lands, an implementation is compiled into the host deployment and registered
-/// into DMS's composition; it is not loaded from a dropped-in assembly at runtime.
 /// </summary>
 public interface ICustomResourceValidator
 {

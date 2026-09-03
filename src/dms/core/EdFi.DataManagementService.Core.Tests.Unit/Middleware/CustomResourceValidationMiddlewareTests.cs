@@ -1509,6 +1509,15 @@ public class CustomResourceValidationMiddlewareTests
         {
             await _execute.Should().ThrowAsync<InvalidOperationException>();
         }
+
+        [Test]
+        public async Task It_names_the_offending_validator_and_what_it_returned()
+        {
+            (await _execute.Should().ThrowAsync<InvalidOperationException>())
+                .Which.Message.Should()
+                .Contain(nameof(FakeValidator))
+                .And.Contain("returned null");
+        }
     }
 
     [TestFixture]
