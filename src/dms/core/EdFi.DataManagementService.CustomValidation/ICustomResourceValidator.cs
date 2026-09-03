@@ -17,8 +17,8 @@ namespace EdFi.DataManagementService.CustomValidation;
 /// names no resource in the effective schema.
 /// No supported registration seam ships yet, so an implementer has no documented way to register one
 /// and in practice nothing runs today. This declares the shape that support will be built against.
-/// When host support lands, an implementation is compiled into the host deployment and registered
-/// into DMS's composition; it is not loaded from a dropped-in assembly at runtime.
+/// How an implementation reaches DMS's composition is decided by the plugin work, not by this
+/// contract. See CUSTOM-VALIDATION.md for the registration shape the startup guard accepts.
 /// </summary>
 public interface ICustomResourceValidator
 {
@@ -33,7 +33,9 @@ public interface ICustomResourceValidator
     /// without complaint, and an entry matching no resource in the effective schema surfaces as a
     /// startup warning rather than a failure, because an entry may legitimately name an extension
     /// resource a given deployment does not carry. Declaring no entries at all warns for the same
-    /// reason: the validator can never run.
+    /// reason: the validator can never run. A name carrying anything outside letters, digits, dash
+    /// and underscore is reported the same way without being looked up, since no resource name can
+    /// contain such a character.
     /// </summary>
     IReadOnlyList<ValidatedResource> AppliesTo { get; }
 

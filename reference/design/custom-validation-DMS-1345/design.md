@@ -427,8 +427,13 @@ This is a deliberate refusal of the ODS precedent for extension registration, wh
 The catch covers only that much: Autofac defers a module's own `Load` body to container build, outside the cited `try`, so a module that throws while performing its registrations is not swallowed but takes the process down.
 It is the swallowing half that this design refuses.
 
-Fatal conditions: a descriptor that is not transient; a descriptor carrying an `ImplementationFactory`; and a registered validator the container cannot construct.
+Fatal conditions: a descriptor that is not transient; a descriptor carrying an `ImplementationFactory`; a keyed descriptor; a registration of `IEnumerable<ICustomResourceValidator>` itself; and a registered validator the container cannot construct.
 An `ImplementationInstance` descriptor is fatal too, but it is not an independent condition: `ServiceDescriptor` only produces one at `Singleton` lifetime, so the lifetime check already catches every such descriptor and a test for it cannot fail while the lifetime test passes.
+
+The last two conditions were found during implementation rather than during design, and both share a shape: a descriptor that carries the right `ServiceType` but is invisible to, or supersedes, the unkeyed collection resolution DMS actually performs.
+A keyed descriptor returns `null` from every unkeyed `Implementation*` accessor instead of throwing, so it breaks none of the other rules, and `GetServices<ICustomResourceValidator>()` never yields it: unrejected it would be audited clean, skip the activation probe, never be `AppliesTo`-checked, and never run, while the guard reported success.
+A registration of the closed `IEnumerable<ICustomResourceValidator>` type is worse. MS DI resolves `GetServices<T>()` through `IEnumerable<T>` and finds an explicit registration of it before synthesizing the collection from the individual descriptors, so such a registration both supplies validators that bypass the audit entirely and stops every correctly registered validator from resolving at all.
+Note that a count check comparing audited descriptors against resolved instances does not catch this, because the two counts can agree while the objects differ.
 
 **The operator-facing message will name the wrong phase.**
 An `Order` in the 200s runs inside the `[0, 299]` window that `Program.cs:163-169` labels `InitializeApiSchemas`, whose failure text is "API schema initialization failed. DMS cannot start with invalid schemas." (`:167`).
@@ -438,6 +443,13 @@ The implementer guide and the guard's own log record carry the accurate wording.
 
 **One guard, running after the container is built.** It is an `IDmsStartupTask`, so it runs through the frontend's existing fatal-startup path: `DmsStartupOrchestrator` catches any non-cancellation exception, logs it at `Critical`, and rethrows it wrapped (`Startup/DmsStartupOrchestrator.cs:93-97`), and `StartupPhaseExecutor.RunFatalAsync` (`Infrastructure/StartupPhaseExecutor.cs:88-116`) logs a fatal failure and calls `IStartupProcessExit.Exit`, implemented in production as `Environment.Exit` (`:13-19`).
 The guard does three things: audits the captured descriptor set for lifetime and shape; resolves the full `IEnumerable<ICustomResourceValidator>` once from a throwaway scope and discards the instances; and logs each validator's `AppliesTo`, warning on entries matching no resource in the effective ApiSchema.
+It disposes that scope asynchronously, because a validator implementing only `IAsyncDisposable` is tracked by the scope and a synchronous dispose over one throws from outside the resolution's own error handling.
+
+The `AppliesTo` walk also has to defend against the entry values themselves, since `ProjectSchema.FindResourceSchemaNodeByResourceName` builds its query by interpolating the resource name into a quoted bracket selector.
+A name carrying a control character or a trailing backslash makes that query unparseable, which the lookup raises as an exception; a name embedding a double quote can close the selector and open a second one naming a real resource, so the query parses and returns a match for an entry that could never match at request time, where comparison is exact and ordinal.
+The guard therefore reports any resource name outside letters, digits, dash and underscore as unmatched without attempting the lookup, and says so in wording distinct from the ordinary miss, because the sanitizer strips such characters for logging and a "check for a typo" diagnosis would name a resource that does exist.
+Project names are not gated this way: that lookup compares ordinally against a value read from a fixed path, so it carries no injection or parse hazard, and `JsonSchemaForApiSchema.json` places no pattern on `projectName`.
+`AppliesTo` is implementer code, so a null list, a null element, and a throwing getter are each reported against the validator that produced them rather than being allowed to abort startup with a message naming no registration.
 
 The activation half closes a failure MS DI would otherwise defer: constructors resolve lazily, `ValidateOnBuild` is not enabled outside Development, and the fan-in step resolves per request, so an unsatisfiable constructor dependency would otherwise surface as a 500 on the first write, matching or not.
 

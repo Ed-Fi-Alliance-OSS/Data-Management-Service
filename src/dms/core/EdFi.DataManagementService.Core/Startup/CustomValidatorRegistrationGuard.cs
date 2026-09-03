@@ -35,6 +35,11 @@ internal sealed class CustomValidatorRegistrationGuard(
     // later. 250 rather than joining the two sibling registration guards at 50/55 because those run
     // before LoadAndBuildEffectiveSchemaTask (Order => 100, LoadAndBuildEffectiveSchemaTask.cs:19),
     // whose effective ApiSchema this guard's AppliesTo warning reads.
+    // A consequence worth recording: 250 is below the backend-mapping (300-399) and auth-metadata
+    // (400-499) windows, so the activation probe builds validators before those have initialized. A
+    // validator whose constructor read state they populate would fail startup even though it would
+    // resolve at request time. The contract asks implementers to keep constructors trivial, which
+    // makes that remote rather than impossible.
     public int Order => 250;
 
     public string Name => "Validate Custom Validator Registration";
@@ -47,14 +52,36 @@ internal sealed class CustomValidatorRegistrationGuard(
 
         foreach (ServiceDescriptor descriptor in services)
         {
-            if (descriptor.ServiceType != typeof(ICustomResourceValidator))
+            bool isContractDescriptor = descriptor.ServiceType == typeof(ICustomResourceValidator);
+
+            // A registration of the collection type itself has to be audited too, not just
+            // registrations of the contract. MS DI resolves GetServices<T>() through
+            // IEnumerable<T>, and an explicit registration of that closed type is found before the
+            // enumerable is synthesized from the individual descriptors. So one supersedes the
+            // whole set: the validators it supplies are the ones that resolve, without any of them
+            // appearing here as a descriptor to audit, and every correctly registered validator
+            // stops resolving at all.
+            bool isCollectionDescriptor =
+                descriptor.ServiceType == typeof(IEnumerable<ICustomResourceValidator>);
+
+            if (!isContractDescriptor && !isCollectionDescriptor)
             {
                 continue;
             }
 
             List<string> brokenRules = [];
 
-            if (descriptor.Lifetime != ServiceLifetime.Transient)
+            if (isCollectionDescriptor)
+            {
+                brokenRules.Add(
+                    "registered as IEnumerable<ICustomResourceValidator>, which supersedes the "
+                        + "collection assembled from the individual registrations, so the validators it "
+                        + "supplies bypass this audit and every separately registered validator stops "
+                        + "resolving"
+                );
+            }
+
+            if (isContractDescriptor && descriptor.Lifetime != ServiceLifetime.Transient)
             {
                 brokenRules.Add(
                     $"lifetime is {descriptor.Lifetime}, but ICustomResourceValidator registrations must be Transient"
@@ -67,7 +94,7 @@ internal sealed class CustomValidatorRegistrationGuard(
             // that the activation probe below and the request path both perform never yields it. Left
             // unrejected it would pass the audit, skip the probe, never be AppliesTo-checked, and
             // never run, while this guard reported success.
-            if (descriptor.IsKeyedService)
+            if (isContractDescriptor && descriptor.IsKeyedService)
             {
                 brokenRules.Add(
                     "registered as a keyed service, which the unkeyed ICustomResourceValidator "
@@ -75,7 +102,7 @@ internal sealed class CustomValidatorRegistrationGuard(
                 );
             }
 
-            if (descriptor.ImplementationInstance is not null)
+            if (isContractDescriptor && descriptor.ImplementationInstance is not null)
             {
                 brokenRules.Add(
                     "registered as a shared instance (ImplementationInstance is set), which hands every request "
@@ -83,7 +110,7 @@ internal sealed class CustomValidatorRegistrationGuard(
                 );
             }
 
-            if (descriptor.ImplementationFactory is not null)
+            if (isContractDescriptor && descriptor.ImplementationFactory is not null)
             {
                 brokenRules.Add(
                     "registered through an ImplementationFactory delegate, which cannot be proven to construct "
@@ -187,11 +214,26 @@ internal sealed class CustomValidatorRegistrationGuard(
         {
             string validatorTypeName = validator.GetType().FullName ?? validator.GetType().Name;
 
-            // AppliesTo is implementer-authored code running outside this repository, so it can
-            // return null despite the interface declaring a non-null list. Null and empty mean the
-            // same thing operationally - the validator can never run for any resource - which is the
-            // same silently-absent-validation outcome the unmatched-entry warning below surfaces.
-            IReadOnlyList<ValidatedResource> appliesToEntries = validator.AppliesTo ?? [];
+            // AppliesTo is implementer-authored code running outside this repository, so nothing
+            // here can rely on the interface's non-null declaration, and the getter itself can
+            // throw. Every such outcome is reported against the validator that produced it, because
+            // an exception escaping this loop would abort startup with a message naming no
+            // registration at all.
+            IReadOnlyList<ValidatedResource> appliesToEntries;
+            try
+            {
+                appliesToEntries = validator.AppliesTo ?? [];
+            }
+            catch (Exception appliesToException)
+            {
+                logger.LogWarning(
+                    appliesToException,
+                    "ICustomResourceValidator '{ValidatorType}' AppliesTo could not be read, so no "
+                        + "resource can be matched to it and it will never run",
+                    validatorTypeName
+                );
+                continue;
+            }
 
             if (appliesToEntries.Count == 0)
             {
@@ -203,8 +245,18 @@ internal sealed class CustomValidatorRegistrationGuard(
                 continue;
             }
 
-            foreach (ValidatedResource appliesToEntry in appliesToEntries)
+            foreach (ValidatedResource? appliesToEntry in appliesToEntries)
             {
+                if (appliesToEntry is null)
+                {
+                    logger.LogWarning(
+                        "ICustomResourceValidator '{ValidatorType}' declares a null AppliesTo entry, "
+                            + "which names no resource and will never run",
+                        validatorTypeName
+                    );
+                    continue;
+                }
+
                 string sanitizedProjectName = LoggingSanitizer.SanitizeForLogging(appliesToEntry.ProjectName);
                 string sanitizedResourceName = LoggingSanitizer.SanitizeForLogging(
                     appliesToEntry.ResourceName
@@ -218,34 +270,46 @@ internal sealed class CustomValidatorRegistrationGuard(
                     sanitizedResourceName
                 );
 
-                // Both lookups below build a JsonPath by interpolating these names into a quoted
-                // bracket selector, so a name carrying a character that selector cannot hold is not
-                // merely unmatchable. A control character or a trailing backslash makes the query
-                // fail to parse, and the lookup surfaces that as an exception that would abort
-                // startup. A name embedding a double quote is worse, because it can close the
-                // selector and open a second one naming a real resource, parse cleanly, and match
-                // that resource instead, reporting a match for an entry that could never match at
-                // request time. Neither kind of name can identify a real resource in any case,
-                // because request-time matching is exact and ordinal. So an unsafe name is reported
-                // as the miss it is, without attempting the lookup at all, which also keeps the raw
-                // value away from the JsonPath helper's own error log, where the interpolated query
-                // is recorded unsanitized.
-                bool namesAreLookupSafe =
-                    IsLookupSafeName(appliesToEntry.ProjectName)
-                    && IsLookupSafeName(appliesToEntry.ResourceName);
-
-                JsonNode? resourceSchemaNode = null;
-
-                if (namesAreLookupSafe)
+                // Only the resource-name lookup interpolates its argument into a quoted bracket
+                // selector of a JsonPath. The project-name lookup compares ordinally against a value
+                // read from a fixed path, so it carries no injection or parse hazard and is not
+                // gated here.
+                // A resource name that selector cannot hold is not merely unmatchable. A control
+                // character or a trailing backslash makes the query fail to parse, and the lookup
+                // surfaces that as an exception that would abort startup. A name embedding a double
+                // quote is worse, because it can close the selector and open a second one naming a
+                // real resource, parse cleanly, and match that resource instead, reporting a match
+                // for an entry that could never match at request time. Such a name cannot identify a
+                // real resource in any case, because request-time matching is exact and ordinal, so
+                // it is reported without attempting the lookup. That also keeps the raw value away
+                // from the JsonPath helper's own error log, where the interpolated query is recorded
+                // unsanitized.
+                if (!IsLookupSafeName(appliesToEntry.ResourceName))
                 {
-                    ProjectSchema? projectSchema = effectiveSchemaDocuments.FindProjectSchemaForProjectName(
-                        new ProjectName(appliesToEntry.ProjectName)
+                    // Deliberately not the miss message below. The sanitizer strips the offending
+                    // characters rather than replacing them, so the name shown here can be a real
+                    // resource name, and telling the operator to check for a typo would point at a
+                    // resource that does exist and a typo that is not there.
+                    logger.LogWarning(
+                        "ICustomResourceValidator '{ValidatorType}' AppliesTo entry ProjectName "
+                            + "'{ProjectName}', ResourceName '{ResourceName}' carries a character no "
+                            + "resource name can contain, so it matches no resource and will never run. "
+                            + "The name shown here has had those characters removed for logging, so "
+                            + "compare against the entry in source rather than against this message",
+                        validatorTypeName,
+                        sanitizedProjectName,
+                        sanitizedResourceName
                     );
-
-                    resourceSchemaNode = projectSchema?.FindResourceSchemaNodeByResourceName(
-                        new ResourceName(appliesToEntry.ResourceName)
-                    );
+                    continue;
                 }
+
+                ProjectSchema? projectSchema = effectiveSchemaDocuments.FindProjectSchemaForProjectName(
+                    new ProjectName(appliesToEntry.ProjectName)
+                );
+
+                JsonNode? resourceSchemaNode = projectSchema?.FindResourceSchemaNodeByResourceName(
+                    new ResourceName(appliesToEntry.ResourceName)
+                );
 
                 if (resourceSchemaNode is null)
                 {
@@ -275,9 +339,10 @@ internal sealed class CustomValidatorRegistrationGuard(
     /// and still mean only itself. Deliberately narrower than LoggingSanitizer's allowlist, which
     /// permits a backslash for Windows file paths, and a name ending in one escapes the closing
     /// quote of the selector and leaves the query unterminated. Letters, digits, dash and underscore
-    /// cover every name a lookup could match: across Data Standard 5.2 all 349 resourceName values
-    /// are alphanumeric and the only projectName is "Ed-Fi". An unsafe name is reported as a miss,
-    /// which it is, rather than failing startup.
+    /// cover every name a lookup could match: JsonSchemaForApiSchema.json constrains
+    /// resourceNameMapping keys to the pattern ^[A-Za-z0-9]+$ with additionalProperties false, so
+    /// this allowlist is if anything wider than the schema contract permits. An unsafe name is
+    /// reported as the miss it is rather than failing startup.
     /// </summary>
     private static bool IsLookupSafeName(string? name)
     {
