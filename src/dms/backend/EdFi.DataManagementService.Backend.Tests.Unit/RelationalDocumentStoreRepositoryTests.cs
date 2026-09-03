@@ -2041,6 +2041,55 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     /// <summary>
+    /// The caller's cancellation token has to reach the custom-view validation a GET-by-id terminal runs.
+    /// A terminal has already decided to refuse the request, so this is DB work whose result only feeds a
+    /// response that may never be read — dropping the token leaves an abandoned request holding a
+    /// connection to validate views for it.
+    /// </summary>
+    /// <remarks>
+    /// The ownership token cap is the terminal used here because it carries every resolved view rather than
+    /// only those configured before some index, so it is the terminal most likely to run this validation.
+    /// A token from a live source, not <see cref="CancellationToken.None"/>: a dropped token binds to
+    /// <c>None</c>, so only a distinguishable one can fail when it is dropped.
+    /// </remarks>
+    [Test]
+    public async Task It_passes_the_caller_cancellation_token_to_get_by_id_terminal_custom_view_validation()
+    {
+        CancellationToken observedValidationToken = default;
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => observedValidationToken = call.GetArgument<CancellationToken>(2))
+            .Returns(Task.FromResult(true));
+
+        var getRequest = CreateGetRequest(
+            new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-aaaaaaaaaa22")),
+            CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo),
+            _schoolResourceInfo,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(CustomViewStrategyName),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ],
+            namespacePrefixes: ["uri://ed-fi.org/"],
+            ownershipTokenIds: OverCapOwnershipTokenIds()
+        );
+
+        using var cancellationTokenSource = new CancellationTokenSource();
+        var cancellationToken = cancellationTokenSource.Token;
+
+        var result = await _sut.GetDocumentById(getRequest, cancellationToken);
+
+        result.Should().BeOfType<GetResult.GetFailureSecurityConfiguration>();
+        observedValidationToken.Should().Be(cancellationToken);
+    }
+
+    /// <summary>
     /// A view configured after OwnershipBased still runs before the cap terminal. Ownership executes last
     /// among the AND strategies whatever position it holds, so no configured view can follow it.
     /// </summary>

@@ -680,7 +680,14 @@ public sealed class RelationalDocumentStoreRepository(
         DeleteAuthorizationPreflightResult.Stop stop
     )
     {
-        await ValidateSingleRecordCustomViewsAsync(mappingSet, stop.CustomViewChecksToValidate)
+        // CancellationToken.None, and not a defaulted parameter: IDocumentStoreRepository.DeleteDocumentById
+        // takes no token, so the delete path has none to forward. Saying so here keeps the remaining gap
+        // greppable instead of hiding it behind an optional parameter that silently binds to None.
+        await ValidateSingleRecordCustomViewsAsync(
+                mappingSet,
+                stop.CustomViewChecksToValidate,
+                CancellationToken.None
+            )
             .ConfigureAwait(false);
 
         return stop.Result;
@@ -3713,9 +3720,13 @@ public sealed class RelationalDocumentStoreRepository(
                 case WriteGuardRailPreflightResult<TResult>.Stop stopResult:
                     // Views configured ahead of this terminal execute first, so a missing or non-conforming
                     // one keeps its own failure instead of being masked by the terminal's result.
+                    //
+                    // CancellationToken.None for the same reason as the delete terminal: the write
+                    // repository contract carries no token, so this path has none to forward.
                     await ValidateSingleRecordCustomViewsAsync(
                             mappingSet,
-                            stopResult.CustomViewChecksToValidate
+                            stopResult.CustomViewChecksToValidate,
+                            CancellationToken.None
                         )
                         .ConfigureAwait(false);
                     return stopResult.Result;
@@ -3941,7 +3952,8 @@ public sealed class RelationalDocumentStoreRepository(
 
         if (authorizationPreflight is GetByIdAuthorizationPreflightResult.Stop preflightStop)
         {
-            return await CompleteGetByIdPreflightStopAsync(mappingSet, preflightStop).ConfigureAwait(false);
+            return await CompleteGetByIdPreflightStopAsync(mappingSet, preflightStop, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         for (var attemptIndex = 0; attemptIndex < GetByIdReadBoundaryAttemptCount; attemptIndex++)
@@ -4185,7 +4197,8 @@ public sealed class RelationalDocumentStoreRepository(
         if (authorizationPreflight is GetByIdAuthorizationPreflightResult.Stop preflightStop)
         {
             return new DocumentCacheReadAccelerationGetByIdSelectionResult.Complete(
-                await CompleteGetByIdPreflightStopAsync(mappingSet, preflightStop).ConfigureAwait(false)
+                await CompleteGetByIdPreflightStopAsync(mappingSet, preflightStop, cancellationToken)
+                    .ConfigureAwait(false)
             );
         }
 
@@ -4507,27 +4520,39 @@ public sealed class RelationalDocumentStoreRepository(
     /// </remarks>
     private async Task<GetResult> CompleteGetByIdPreflightStopAsync(
         MappingSet mappingSet,
-        GetByIdAuthorizationPreflightResult.Stop preflightStop
+        GetByIdAuthorizationPreflightResult.Stop preflightStop,
+        CancellationToken cancellationToken
     )
     {
-        await ValidateSingleRecordCustomViewsAsync(mappingSet, preflightStop.CustomViewChecksToValidate)
+        await ValidateSingleRecordCustomViewsAsync(
+                mappingSet,
+                preflightStop.CustomViewChecksToValidate,
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         return preflightStop.Result;
     }
 
     /// <summary>
-    /// Validates the views a GET-by-id terminal carries. Empty is a no-op, so every terminal can route
+    /// Validates the views a single-record terminal carries. Empty is a no-op, so every terminal can route
     /// through this unconditionally.
     /// </summary>
+    /// <remarks>
+    /// The token is required rather than optional: this issues DB work on a path that has already decided
+    /// to refuse the request, so an omitted token means an abandoned request keeps a connection busy
+    /// validating views for a response nobody will read. Requiring it makes each caller state what it has.
+    /// </remarks>
     private Task ValidateSingleRecordCustomViewsAsync(
         MappingSet mappingSet,
-        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checks
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checks,
+        CancellationToken cancellationToken
     ) =>
         CustomViewAuthorizationValidator.ValidateSingleRecordAsync(
             _commandExecutor,
             mappingSet.Key.Dialect,
-            checks
+            checks,
+            cancellationToken
         );
 
     private GetByIdAuthorizationPreflightResult AuthorizeGetByIdPreflight(
