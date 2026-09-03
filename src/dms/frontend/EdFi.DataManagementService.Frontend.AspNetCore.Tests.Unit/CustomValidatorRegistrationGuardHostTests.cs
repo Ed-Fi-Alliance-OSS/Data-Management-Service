@@ -7,7 +7,6 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Startup;
-using EdFi.DataManagementService.Core.Utilities;
 using EdFi.DataManagementService.CustomValidation;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using FluentAssertions;
@@ -108,12 +107,12 @@ public class Given_A_Host_With_The_Custom_Validator_Startup_Guard
     );
 
     /// <summary>
-    /// The guard logs validator type names through the sanitizer, whose allowlist excludes '+', so a
-    /// nested fixture type appears in records without it. Expected messages apply the same
-    /// transformation rather than embedding a hand-copied name.
+    /// The guard strips control characters from type names rather than passing them through the
+    /// logging sanitizer, so a nested fixture type keeps the '+' in its full name. Expected messages
+    /// apply the same transformation rather than embedding a hand-copied name.
     /// </summary>
     private static string Logged(Type validatorType) =>
-        LoggingSanitizer.SanitizeForLogging(validatorType.FullName);
+        string.Concat((validatorType.FullName ?? validatorType.Name).Where(c => !char.IsControl(c)));
 
     private TestHost BuildHost(Action<IServiceCollection> configureValidators) =>
         BuildHost(configureValidators, _statusDirectoriesToClean, _disposables);

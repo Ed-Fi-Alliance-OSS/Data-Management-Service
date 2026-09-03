@@ -8,7 +8,6 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
-using EdFi.DataManagementService.Core.Utilities;
 using EdFi.DataManagementService.CustomValidation;
 using FakeItEasy;
 using FluentAssertions;
@@ -97,18 +96,18 @@ public class Given_A_Custom_Validator_Registration_Guard
     }
 
     /// <summary>
-    /// The guard logs validator type names through the sanitizer, whose allowlist excludes '+', so a
-    /// nested fixture type appears in records without it. Expected messages therefore apply the same
-    /// transformation rather than embedding a hand-copied name.
+    /// The guard strips control characters from type names rather than passing them through the
+    /// logging sanitizer, so a nested fixture type keeps the '+' in its full name. Expected messages
+    /// apply the same transformation rather than embedding a hand-copied name.
     /// </summary>
     private static string Logged(Type validatorType) =>
-        LoggingSanitizer.SanitizeForLogging(validatorType.FullName);
+        string.Concat((validatorType.FullName ?? validatorType.Name).Where(c => !char.IsControl(c)));
 
     private static string MissWarning(Type validatorType, string projectName, string resourceName) =>
         $"ICustomResourceValidator '{Logged(validatorType)}' AppliesTo entry ProjectName "
         + $"'{projectName}', ResourceName '{resourceName}' matches no resource in the effective "
         + "ApiSchema, so it will never run. Matching is exact and ordinal. Expected for an extension "
-        + "resource this deployment does not carry.";
+        + "resource this deployment does not carry";
 
     // ---------------------------------------------------------------- descriptor audit
 
@@ -413,12 +412,13 @@ public class Given_A_Custom_Validator_Registration_Guard
 
         run.Thrown.Should().BeNull();
 
-        string warning = run.Warnings.Should().ContainSingle().Subject;
-        warning.Should().Contain("matches no resource in the effective ApiSchema");
-        // The sanitizer strips the control character, so the name shown is a real resource name.
-        // The message must therefore say the shown name was altered, rather than diagnosing a typo.
-        warning.Should().Contain("altered to make them safe to log");
-        warning.Should().NotContain("\u0007");
+        run.Warnings.Should().HaveCount(2);
+        run.Warnings[0].Should().Contain("matches no resource in the effective ApiSchema");
+        // The sanitizer strips the control character, so the name shown is a real resource name. A
+        // second record must therefore say the shown name was altered, rather than leaving the miss
+        // record to be read as a typo in a resource that does exist.
+        run.Warnings[1].Should().Contain("altered to make them safe to log");
+        run.Warnings.Should().OnlyContain(warning => !warning.Contains("\u0007"));
     }
 
     /// <summary>
@@ -436,10 +436,13 @@ public class Given_A_Custom_Validator_Registration_Guard
         );
 
         run.Thrown.Should().BeNull();
-        run.Warnings.Should()
-            .ContainSingle()
-            .Which.Should()
-            .Contain("matches no resource in the effective ApiSchema");
+
+        run.Warnings.Should().HaveCount(2);
+        // The sanitizer drops the quote and comma, so the name shown is 'MissingSchool', which is
+        // neither the declared entry nor a real resource. The alteration record is what keeps the
+        // miss record from being read as naming the entry in source.
+        run.Warnings[0].Should().Contain("ResourceName 'MissingSchool' matches no resource");
+        run.Warnings[1].Should().Contain("altered to make them safe to log");
     }
 
     /// <summary>
@@ -457,10 +460,12 @@ public class Given_A_Custom_Validator_Registration_Guard
         );
 
         run.Thrown.Should().BeNull();
-        run.Warnings.Should()
-            .ContainSingle()
-            .Which.Should()
-            .Contain("matches no resource in the effective ApiSchema");
+
+        // LogSanitizer's allowlist admits the backslash, so the name reaches the log unaltered and
+        // no alteration record is emitted. The shape gate is what keeps it away from the lookup,
+        // whose selector a trailing backslash would make unparseable.
+        string warning = run.Warnings.Should().ContainSingle().Subject;
+        warning.Should().Contain(@"ResourceName 'School\' matches no resource");
     }
 
     /// <summary>
@@ -528,8 +533,9 @@ public class Given_A_Custom_Validator_Registration_Guard
 
     /// <summary>
     /// A null element among real ones. The null-list guard exists so the operator never gets a bare
-    /// NullReferenceException naming no registration; dereferencing an element is the same hazard one
-    /// level down, and the good entry beside it must still be processed.
+    /// NullReferenceException naming no registration, and dereferencing an element is the same hazard
+    /// one level down. The validator is reported as unusable as a whole, so the real entry beside the
+    /// null is not inspected.
     /// </summary>
     [Test]
     public async Task It_aborts_for_a_null_applies_to_entry()
@@ -625,7 +631,7 @@ public class Given_A_Custom_Validator_Registration_Guard
             .BeOfType<InvalidOperationException>()
             .Which.Message.Should()
             .Contain($"'{Logged(typeof(DerivedInterfaceValidator))}'")
-            .And.Contain("implements ICustomResourceValidator but is registered only against");
+            .And.Contain("are not among the");
     }
 
     [Test]
@@ -637,7 +643,80 @@ public class Given_A_Custom_Validator_Registration_Guard
             .BeOfType<InvalidOperationException>()
             .Which.Message.Should()
             .Contain($"'{Logged(typeof(MatchingValidator))}'")
-            .And.Contain("registered only against");
+            .And.Contain("are not among the");
+    }
+
+    /// <summary>
+    /// The factory forms of the two rules above. A factory descriptor carries no implementation
+    /// type, so the service type is the only type evidence a descriptor sweep has, and for both of
+    /// these it is still assignable to the contract.
+    /// </summary>
+    [Test]
+    public async Task It_aborts_for_a_factory_registered_validator_under_its_concrete_type()
+    {
+        GuardRun run = await RunGuard(services =>
+            services.AddTransient<MatchingValidator>(_ => new MatchingValidator())
+        );
+
+        run.Thrown.Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Contain($"'{Logged(typeof(MatchingValidator))}'")
+            .And.Contain("are not among the");
+    }
+
+    [Test]
+    public async Task It_aborts_for_a_factory_registered_validator_under_a_derived_interface()
+    {
+        GuardRun run = await RunGuard(services =>
+            services.AddTransient<IImplementerOwnValidator>(_ => new DerivedInterfaceValidator())
+        );
+
+        run.Thrown.Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Contain("are not among the");
+    }
+
+    /// <summary>
+    /// Aliasing a validator under the implementer's own interface with a factory, while also
+    /// registering it against the contract, is legitimate: an instance of the aliased type does
+    /// resolve. The reachability check compares against resolved instances rather than against a
+    /// list of approved types so that this is not an offense.
+    /// </summary>
+    [Test]
+    public async Task It_accepts_a_derived_interface_alias_beside_a_contract_registration()
+    {
+        GuardRun run = await RunGuard(services =>
+        {
+            services.TryAddEnumerable(
+                ServiceDescriptor.Transient<ICustomResourceValidator, DerivedInterfaceValidator>()
+            );
+            services.AddTransient<IImplementerOwnValidator>(provider => new DerivedInterfaceValidator());
+        });
+
+        run.Thrown.Should().BeNull();
+    }
+
+    /// <summary>
+    /// A rejected contract descriptor must not also be reported as unreachable. The two checks are
+    /// independent, and the reachability check reads what actually resolved rather than what the
+    /// descriptor audit approved, so the wrong-lifetime registration below is one offense and not
+    /// two contradictory ones.
+    /// </summary>
+    [Test]
+    public async Task It_reports_a_wrong_lifetime_registration_once_and_not_as_unreachable()
+    {
+        GuardRun run = await RunGuard(services =>
+        {
+            services.AddTransient<MatchingValidator>();
+            services.AddSingleton<ICustomResourceValidator, MatchingValidator>();
+        });
+
+        string message = run.Thrown.Should().BeOfType<InvalidOperationException>().Subject.Message;
+        message.Should().Contain("its lifetime is Singleton rather than Transient");
+        message.Should().NotContain("would never run");
+        message.Should().NotContain("are not among the");
     }
 
     /// <summary>
@@ -750,65 +829,6 @@ public class Given_A_Custom_Validator_Registration_Guard
                     + $"AppliesTo entry: ProjectName 'EdFi', ResourceName '{CoreResourceName}'"
             );
         run.Records.Should().OnlyContain(record => !record.Message.Contains("\u0007"));
-    }
-
-    // ------------------------------------------- invariant 3, tested directly
-
-    /// <summary>
-    /// Every shape known to trip this invariant is rejected by an earlier check, so it cannot be
-    /// reached through IServiceCollection. Tested directly rather than left unfalsifiable, and in
-    /// particular to pin that it compares type sets: a count comparison passes the second case
-    /// below, which is the weaker check that a collection registration defeats.
-    /// </summary>
-    [Test]
-    public void It_accepts_resolved_instances_matching_the_audited_types()
-    {
-        Action verify = () =>
-            CustomValidatorRegistrationGuard.VerifyResolvedMatchesAudited(
-                [new MatchingValidator(), new NonexistentResourceValidator()],
-                [typeof(NonexistentResourceValidator), typeof(MatchingValidator)]
-            );
-
-        verify.Should().NotThrow();
-    }
-
-    [Test]
-    public void It_rejects_resolved_instances_of_the_same_count_but_different_types()
-    {
-        Action verify = () =>
-            CustomValidatorRegistrationGuard.VerifyResolvedMatchesAudited(
-                [new MatchingValidator()],
-                [typeof(NonexistentResourceValidator)]
-            );
-
-        verify
-            .Should()
-            .Throw<InvalidOperationException>()
-            .Which.Message.Should()
-            .Contain("are not the ones its registrations describe")
-            .And.Contain(typeof(MatchingValidator).FullName!)
-            .And.Contain(typeof(NonexistentResourceValidator).FullName!);
-    }
-
-    [Test]
-    public void It_rejects_a_resolved_set_that_is_missing_an_audited_type()
-    {
-        Action verify = () =>
-            CustomValidatorRegistrationGuard.VerifyResolvedMatchesAudited([], [typeof(MatchingValidator)]);
-
-        verify.Should().Throw<InvalidOperationException>();
-    }
-
-    [Test]
-    public void It_rejects_a_resolved_set_carrying_an_unaudited_type()
-    {
-        Action verify = () =>
-            CustomValidatorRegistrationGuard.VerifyResolvedMatchesAudited(
-                [new MatchingValidator(), new NonexistentResourceValidator()],
-                [typeof(MatchingValidator)]
-            );
-
-        verify.Should().Throw<InvalidOperationException>();
     }
 
     // ---------------------------------------------------------------- fixtures

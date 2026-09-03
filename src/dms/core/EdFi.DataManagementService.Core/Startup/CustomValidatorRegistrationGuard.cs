@@ -19,17 +19,17 @@ namespace EdFi.DataManagementService.Core.Startup;
 /// </summary>
 /// <remarks>
 /// Registration code runs outside this repository, so this cannot rely on any convention an
-/// implementer is asked to follow. It checks three things that together avoid depending on an
-/// enumeration of the ways a registration can be wrong:
+/// implementer is asked to follow. It applies two independent checks:
 /// <list type="number">
-/// <item>Every descriptor registered under the contract is transient and unkeyed and carries an
-/// implementation type.</item>
-/// <item>No type assignable to the contract is registered only under some other service type, where
-/// the resolution DMS performs would never find it.</item>
-/// <item>The set of instances the container returns is exactly the set the first check approved.
-/// Anything that substitutes, hides, or displaces the collection fails here regardless of how it
-/// was registered.</item>
+/// <item>A descriptor registered under the contract carries a shape the contract permits. The
+/// properties a ServiceDescriptor can hold are finite, so this check is complete by construction
+/// rather than by enumerating mistakes.</item>
+/// <item>Every type a descriptor shows to be a validator is represented among the instances the
+/// container actually returns. This compares intent against the resolution DMS itself performs, so
+/// it does not depend on knowing the ways a registration can fail to reach that resolution.</item>
 /// </list>
+/// The checks share no state, so a descriptor rejected by the first is never also described by the
+/// second.
 /// Descriptors come from the closure-captured collection rather than from a snapshot taken at the
 /// registering extension's call site, because an implementer's registration may run either side of
 /// Core's and is the party being checked.
@@ -55,19 +55,19 @@ internal sealed class CustomValidatorRegistrationGuard(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        DescriptorAudit audit = AuditDescriptors();
+        List<string> shapeOffenses = AuditContractDescriptorShapes();
 
-        if (audit.Offenses.Count > 0)
+        if (shapeOffenses.Count > 0)
         {
             throw new InvalidOperationException(
-                $"Startup aborted: {audit.Offenses.Count} ICustomResourceValidator registration(s) are "
+                $"Startup aborted: {shapeOffenses.Count} ICustomResourceValidator registration(s) are "
                     + "invalid. Register each validator against ICustomResourceValidator with a Transient "
                     + "lifetime and an implementation type, for example "
                     + "services.TryAddEnumerable(ServiceDescriptor.Transient<ICustomResourceValidator, "
                     + "MyValidator>()). To supply configuration to a validator, bind an options type and "
                     + "take IOptions<T> in its constructor rather than registering a factory. Correct "
                     + "every registration listed below, then restart DMS: "
-                    + string.Join(" | ", audit.Offenses)
+                    + string.Join(" | ", shapeOffenses)
             );
         }
 
@@ -76,7 +76,7 @@ internal sealed class CustomValidatorRegistrationGuard(
         {
             List<ICustomResourceValidator> resolvedValidators = ResolveValidators(scope);
 
-            VerifyResolvedMatchesAudited(resolvedValidators, audit.ImplementationTypes);
+            VerifyEveryRegisteredValidatorResolved(resolvedValidators);
             InspectAppliesTo(resolvedValidators);
 
             logger.LogInformation(
@@ -87,9 +87,10 @@ internal sealed class CustomValidatorRegistrationGuard(
         }
         finally
         {
-            // A validator's own Dispose is implementer code. Letting it throw from here would abort
-            // startup for a registration that broke no rule, after the success record above had
-            // already been written.
+            // A validator's own Dispose is implementer code, and MS DI abandons the rest of the
+            // scope's disposables after the first one throws. Letting that propagate would replace
+            // whatever outcome the body reached, including a successful audit, with a dispose
+            // failure.
             try
             {
                 await scope.DisposeAsync();
@@ -98,77 +99,41 @@ internal sealed class CustomValidatorRegistrationGuard(
             {
                 logger.LogWarning(
                     disposeException,
-                    "Disposing the ICustomResourceValidator activation scope threw. The validators "
-                        + "themselves passed every check; this affects only the throwaway scope this "
-                        + "guard used"
+                    "Disposing the ICustomResourceValidator activation scope threw. Any validator "
+                        + "instance the scope had not yet disposed stays undisposed"
                 );
             }
         }
     }
 
-    private sealed record DescriptorAudit(
-        IReadOnlyList<string> Offenses,
-        IReadOnlyList<Type> ImplementationTypes
-    );
-
-    private DescriptorAudit AuditDescriptors()
+    /// <summary>
+    /// Check 1. A descriptor registered under the contract, or under the collection type DMS
+    /// resolves, has to carry a shape the contract permits.
+    /// </summary>
+    private List<string> AuditContractDescriptorShapes()
     {
         List<string> offenses = [];
-        List<Type> implementationTypes = [];
-        List<ServiceDescriptor> otherServiceTypeDescriptors = [];
 
         foreach (ServiceDescriptor descriptor in services)
         {
             if (descriptor.ServiceType == typeof(ICustomResourceValidator))
             {
-                AuditContractDescriptor(descriptor, offenses, implementationTypes);
+                AuditContractDescriptor(descriptor, offenses);
             }
             else if (IsValidatorCollectionServiceType(descriptor.ServiceType))
             {
                 offenses.Add(
                     $"'{DescribeImplementation(descriptor)}': registered against "
                         + $"{DescribeServiceType(descriptor.ServiceType)} rather than ICustomResourceValidator. "
-                        + "Registering a "
-                        + "collection type replaces the collection DMS resolves, so the validators it "
-                        + "supplies are never checked here and separately registered validators stop "
-                        + "resolving"
-                );
-            }
-            else
-            {
-                otherServiceTypeDescriptors.Add(descriptor);
-            }
-        }
-
-        // Invariant 2, checked after the loop so that registering the same type under the contract
-        // as well, which is legitimate, does not read as an offense.
-        foreach (ServiceDescriptor descriptor in otherServiceTypeDescriptors)
-        {
-            Type? implementationType = ImplementationTypeOf(descriptor);
-
-            if (
-                implementationType is not null
-                && typeof(ICustomResourceValidator).IsAssignableFrom(implementationType)
-                && !implementationTypes.Contains(implementationType)
-            )
-            {
-                offenses.Add(
-                    $"'{LoggingSanitizer.SanitizeForLogging(implementationType.FullName)}': implements "
-                        + "ICustomResourceValidator but is "
-                        + $"registered only against {DescribeServiceType(descriptor.ServiceType)}. DMS resolves "
-                        + "ICustomResourceValidator, so this validator would never run"
+                        + "Registering a collection type replaces the collection DMS resolves"
                 );
             }
         }
 
-        return new DescriptorAudit(offenses, implementationTypes);
+        return offenses;
     }
 
-    private static void AuditContractDescriptor(
-        ServiceDescriptor descriptor,
-        List<string> offenses,
-        List<Type> implementationTypes
-    )
+    private static void AuditContractDescriptor(ServiceDescriptor descriptor, List<string> offenses)
     {
         List<string> brokenRules = [];
 
@@ -190,18 +155,19 @@ internal sealed class CustomValidatorRegistrationGuard(
             brokenRules.Add("it supplies a shared instance rather than an implementation type");
         }
 
+        // A factory descriptor records what a delegate returns, not whether the delegate constructs
+        // anything, so a Transient factory closing over one instance is indistinguishable from one
+        // that constructs per resolution. Resolving cannot separate them either, which is why this
+        // stays a descriptor rule.
         if (descriptor.ImplementationFactory is not null)
         {
             brokenRules.Add("it supplies a factory delegate rather than an implementation type");
         }
 
-        if (brokenRules.Count == 0)
+        if (brokenRules.Count > 0)
         {
-            implementationTypes.Add(descriptor.ImplementationType!);
-            return;
+            offenses.Add($"'{DescribeImplementation(descriptor)}': {string.Join("; ", brokenRules)}");
         }
-
-        offenses.Add($"'{DescribeImplementation(descriptor)}': {string.Join("; ", brokenRules)}");
     }
 
     private static List<ICustomResourceValidator> ResolveValidators(AsyncServiceScope scope)
@@ -218,45 +184,89 @@ internal sealed class CustomValidatorRegistrationGuard(
                     + "throwaway scope failed, which is the check that stands in for the per-request "
                     + "resolution a validator would otherwise fail on the first write reaching it. "
                     + $"Underlying activation exception: {activationException.GetType().FullName}: "
-                    + activationException.Message,
+                    + LoggingSanitizer.SanitizeForLogging(activationException.Message),
                 activationException
             );
         }
     }
 
     /// <summary>
-    /// Invariant 3. Compares what the container returned against what the descriptor audit approved.
+    /// Check 2. Every type the registrations show to be a validator has to be represented among the
+    /// instances DMS's own resolution returns.
     /// </summary>
     /// <remarks>
-    /// Internal rather than private so it can be tested directly. It is a backstop: every shape known
-    /// to trip it is rejected by the earlier checks first, so no registration reachable through
-    /// IServiceCollection gets this far, and an end-to-end test could not distinguish it from a
-    /// weaker count comparison.
+    /// Comparison is against resolved instances rather than against a list of approved types, so
+    /// aliasing a validator under an implementer's own interface beside a contract registration is
+    /// not an offense: an instance satisfying the alias does resolve.
     /// </remarks>
-    internal static void VerifyResolvedMatchesAudited(
-        List<ICustomResourceValidator> resolvedValidators,
-        IReadOnlyList<Type> auditedImplementationTypes
-    )
+    private void VerifyEveryRegisteredValidatorResolved(List<ICustomResourceValidator> resolvedValidators)
     {
-        List<string> resolved = [.. resolvedValidators.Select(TypeNameOf).Order(StringComparer.Ordinal)];
-        List<string> audited =
-        [
-            .. auditedImplementationTypes
-                .Select(static type => type.FullName ?? type.Name)
-                .Order(StringComparer.Ordinal),
-        ];
+        List<string> unreachable = [];
 
-        if (resolved.SequenceEqual(audited, StringComparer.Ordinal))
+        foreach (ServiceDescriptor descriptor in services)
+        {
+            Type? registeredValidatorType = ValidatorTypeShownBy(descriptor);
+
+            if (
+                registeredValidatorType is null
+                || resolvedValidators.Exists(registeredValidatorType.IsInstanceOfType)
+            )
+            {
+                continue;
+            }
+
+            unreachable.Add(
+                $"'{TypeNameForLog(registeredValidatorType)}': registered against "
+                    + $"{DescribeServiceType(descriptor.ServiceType)}"
+                    + (descriptor.IsKeyedService ? ", keyed" : string.Empty)
+                    + $", {descriptor.Lifetime} lifetime"
+            );
+        }
+
+        if (unreachable.Count == 0)
         {
             return;
         }
 
         throw new InvalidOperationException(
-            "Startup aborted: the ICustomResourceValidator instances DMS resolved are not the ones its "
-                + "registrations describe, so something is supplying or hiding validators outside the "
-                + "registrations this guard can check. Approved by the registration audit: "
-                + $"[{string.Join(", ", audited)}]. Actually resolved: [{string.Join(", ", resolved)}]"
+            $"Startup aborted: {unreachable.Count} registered type(s) assignable to "
+                + "ICustomResourceValidator are not among the "
+                + $"{resolvedValidators.Count} validator(s) DMS resolved. DMS resolves "
+                + "IEnumerable<ICustomResourceValidator>, so only a registration contributing to that "
+                + "collection runs. Register each validator with "
+                + "services.TryAddEnumerable(ServiceDescriptor.Transient<ICustomResourceValidator, "
+                + "MyValidator>()), then restart DMS: "
+                + string.Join(" | ", unreachable)
         );
+    }
+
+    /// <summary>
+    /// The validator type a descriptor shows, or null when it shows none. An implementation type or
+    /// instance names the concrete type directly. A factory names nothing, leaving the service type
+    /// as the only evidence, which is worth reporting when it is assignable to the contract but is
+    /// not the contract itself: a factory registered under the contract contributes to the resolved
+    /// collection, so it is check 1's business and not this one's.
+    /// </summary>
+    /// <remarks>
+    /// A factory under a service type unrelated to the contract shows no validator type at all and
+    /// is therefore invisible here. Naming it would require invoking the factory.
+    /// </remarks>
+    private static Type? ValidatorTypeShownBy(ServiceDescriptor descriptor)
+    {
+        Type? implementationType = ImplementationTypeOf(descriptor);
+
+        if (implementationType is not null)
+        {
+            return typeof(ICustomResourceValidator).IsAssignableFrom(implementationType)
+                ? implementationType
+                : null;
+        }
+
+        return
+            descriptor.ServiceType != typeof(ICustomResourceValidator)
+            && typeof(ICustomResourceValidator).IsAssignableFrom(descriptor.ServiceType)
+            ? descriptor.ServiceType
+            : null;
     }
 
     private void InspectAppliesTo(List<ICustomResourceValidator> resolvedValidators)
@@ -266,7 +276,7 @@ internal sealed class CustomValidatorRegistrationGuard(
 
         foreach (ICustomResourceValidator validator in resolvedValidators)
         {
-            string validatorTypeName = LoggingSanitizer.SanitizeForLogging(TypeNameOf(validator));
+            string validatorTypeName = TypeNameForLog(validator.GetType());
 
             IReadOnlyList<ValidatedResource>? appliesToEntries;
             try
@@ -275,12 +285,10 @@ internal sealed class CustomValidatorRegistrationGuard(
             }
             catch (Exception appliesToException)
             {
-                // design.md "Versioning and Compatibility" relies on reading AppliesTo here to
-                // surface a validator built against a different version of the contract, which
-                // package resolution unifies without failing. Warning would let that reach traffic.
                 unusableValidators.Add(
                     $"'{validatorTypeName}': reading AppliesTo threw "
-                        + $"{appliesToException.GetType().FullName}: {appliesToException.Message}"
+                        + $"{appliesToException.GetType().FullName}: "
+                        + LoggingSanitizer.SanitizeForLogging(appliesToException.Message)
                 );
                 continue;
             }
@@ -323,9 +331,7 @@ internal sealed class CustomValidatorRegistrationGuard(
         {
             throw new InvalidOperationException(
                 $"Startup aborted: {unusableValidators.Count} registered ICustomResourceValidator(s) "
-                    + "cannot be used. This is the check that surfaces a validator compiled against a "
-                    + "different version of the contract, which package resolution unifies without "
-                    + "failing: "
+                    + "cannot be used: "
                     + string.Join(" | ", unusableValidators)
             );
         }
@@ -354,24 +360,26 @@ internal sealed class CustomValidatorRegistrationGuard(
         }
 
         // One message for every kind of miss. Request-time matching is exact and ordinal, so a name
-        // that cannot be looked up and a name that is simply absent are the same outcome, and a
-        // single statement of fact cannot contradict itself for one of them.
-        bool shownNamesDifferFromDeclared =
-            projectName != appliesToEntry.ProjectName || resourceName != appliesToEntry.ResourceName;
-
+        // that cannot be looked up and a name that is simply absent are the same outcome.
         logger.LogWarning(
             "ICustomResourceValidator '{ValidatorType}' AppliesTo entry ProjectName '{ProjectName}', "
                 + "ResourceName '{ResourceName}' matches no resource in the effective ApiSchema, so it "
                 + "will never run. Matching is exact and ordinal. Expected for an extension resource "
-                + "this deployment does not carry.{SanitizationNote}",
+                + "this deployment does not carry",
             validatorTypeName,
             projectName,
-            resourceName,
-            shownNamesDifferFromDeclared
-                ? " The names above were altered to make them safe to log, so compare against the "
-                    + "entry in source rather than against this message."
-                : string.Empty
+            resourceName
         );
+
+        if (projectName != appliesToEntry.ProjectName || resourceName != appliesToEntry.ResourceName)
+        {
+            logger.LogWarning(
+                "The ProjectName and ResourceName in the preceding record for ICustomResourceValidator "
+                    + "'{ValidatorType}' were altered to make them safe to log, so compare against the "
+                    + "AppliesTo entry in source rather than against that record",
+                validatorTypeName
+            );
+        }
     }
 
     private static JsonNode? FindResourceSchemaNode(
@@ -433,7 +441,7 @@ internal sealed class CustomValidatorRegistrationGuard(
 
         return serviceType == typeof(IEnumerable<>)
             ? "the open generic IEnumerable<>"
-            : serviceType.FullName ?? serviceType.Name;
+            : TypeNameForLog(serviceType);
     }
 
     private static Type? ImplementationTypeOf(ServiceDescriptor descriptor) =>
@@ -447,9 +455,19 @@ internal sealed class CustomValidatorRegistrationGuard(
 
         return implementationType is null
             ? "<registration with no implementation type>"
-            : LoggingSanitizer.SanitizeForLogging(implementationType.FullName);
+            : TypeNameForLog(implementationType);
     }
 
-    private static string TypeNameOf(object instance) =>
-        instance.GetType().FullName ?? instance.GetType().Name;
+    /// <summary>
+    /// A type name for a log record. Type names come from assembly metadata, so the only hazard one
+    /// carries is a control character forging a record; stripping just those leaves '+' and '`'
+    /// intact, which LoggingSanitizer removes, so a nested or generic name stays searchable in the
+    /// source it came from.
+    /// </summary>
+    private static string TypeNameForLog(Type type)
+    {
+        string name = type.FullName ?? type.Name;
+
+        return string.Concat(name.Where(static character => !char.IsControl(character)));
+    }
 }

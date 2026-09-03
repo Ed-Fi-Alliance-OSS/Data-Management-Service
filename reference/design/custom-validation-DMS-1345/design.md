@@ -108,7 +108,7 @@ DMS defines four write-path resource-document validator interfaces, all `interna
 Three properties of that set constrain any extension point built next to it.
 All four are `internal`, so nothing outside the Core assembly can implement or replace them.
 All four take the parsed document or a piece of it, `RequestInfo` (which wraps `ParsedBody`) or a raw `JsonNode`, never a typed domain object, and none takes a resource discriminator: the calling middleware supplies the schema, constraints, or path context, and the validator itself is resource-agnostic.
-Each is registered exactly once as the sole implementation of its interface (`DmsCoreServiceExtensions.cs:84-87`), with no `IEnumerable<T>` collection registration anywhere for any validator interface.
+Each is registered exactly once as the sole implementation of its interface (the `AddTransient` chain in `DmsCoreServiceExtensions.cs`), with no `IEnumerable<T>` collection registration anywhere for any validator interface.
 
 Wiring is by hand rather than by container.
 Validator middleware objects are `new`-ed directly inside `ApiService` with the resolved validator passed in: three in the POST (Upsert) pipeline (`ApiService.cs:230`, `:231`, `:233`) and four in the PUT (Update) pipeline (`:323`, `:324`, `:326`, `:327`). Those line numbers are not contiguous because `ProfileWritePipelineMiddleware` sits between them (`:232`, `:325`) and is the one write-path middleware resolved from the container rather than `new`-ed.
@@ -357,7 +357,7 @@ That is the whole delivery mechanism.
 Note where the configuration plumbing lives: the deployment's composition root is an ASP.NET Core host that already has the full shared framework, so reading a section there costs nothing, while the implementer's own assembly stays compilable against the abstractions package alone.
 The implementer supplies their own options type and the deployment supplies its values, so **custom validation adds no DMS-owned configuration surface**: there is no section to document in `docs/CONFIGURATION.md` and no option that turns the feature on or off, because a deployment that registered no validators has none.
 
-**Core's own contribution is the guard, not the registration.** Core ships an extension that registers the startup guard specified under [Startup Failure Semantics](#startup-failure-semantics), and the frontend calls it once, unconditionally, the way it already calls `AddJwtAuthentication(this IServiceCollection services, IConfiguration configuration)` (`DmsCoreServiceExtensions.cs:436-439`, called at `Infrastructure/WebApplicationBuilderExtensions.cs:148`).
+**Core's own contribution is the guard, not the registration.** Core ships an extension that registers the startup guard specified under [Startup Failure Semantics](#startup-failure-semantics), and the frontend calls it once, unconditionally, the way it already calls `AddJwtAuthentication(this IServiceCollection services, IConfiguration configuration)` (`AddJwtAuthentication` in `DmsCoreServiceExtensions.cs`, called from `Infrastructure/WebApplicationBuilderExtensions.cs`).
 Core is the right home for it because the collection being guarded is Core's own, and hosting it there keeps the guard's internals `internal` rather than forcing new public Core API purely to be callable from the frontend.
 
 **Ordering must not matter, and that is a design constraint rather than a convention.** The implementer's registration call may sit before or after Core's guard call, and an implementer is exactly the party the guard exists to check, so a rule of the form "register the validators before the guard" would be broken by the party it protects and would fail silently.
@@ -369,7 +369,7 @@ An earlier revision anchored this audit at "the last statement of the loader's r
 
 ### Lifetime and Resolution
 
-**Transient only.** The four existing internal validators are registered `AddTransient` (`DmsCoreServiceExtensions.cs:84-87`), and `ICustomResourceValidator` implementations follow the same convention, in the collection-shaped `TryAddEnumerable` form.
+**Transient only.** The four existing internal validators are registered `AddTransient` (the `AddTransient` chain in `DmsCoreServiceExtensions.cs`), and `ICustomResourceValidator` implementations follow the same convention, in the collection-shaped `TryAddEnumerable` form.
 Singleton registration is prohibited because a singleton that constructor-injects a scoped host service resolves it once and holds it captive for every later request.
 No type in this contract is scoped, but a validator's constructor can take anything the host registers, so the defect stays reachable through an implementer's own choices.
 
@@ -427,20 +427,21 @@ This is a deliberate refusal of the ODS precedent for extension registration, wh
 The catch covers only that much: Autofac defers a module's own `Load` body to container build, outside the cited `try`, so a module that throws while performing its registrations is not swallowed but takes the process down.
 It is the swallowing half that this design refuses.
 
-Fatal conditions: a descriptor that is not transient; a descriptor carrying an `ImplementationFactory`; a keyed descriptor; a registration of `IEnumerable<ICustomResourceValidator>` itself; and a registered validator the container cannot construct.
-An `ImplementationInstance` descriptor is fatal too, but it is not an independent condition: `ServiceDescriptor` only produces one at `Singleton` lifetime, so the lifetime check already catches every such descriptor and a test for it cannot fail while the lifetime test passes.
+Fatal conditions: a descriptor that is not transient; a descriptor carrying an `ImplementationInstance` or an `ImplementationFactory`; a keyed descriptor; a registration of `IEnumerable<ICustomResourceValidator>` itself; a registered validator type that is not among the instances DMS resolves; and a registered validator the container cannot construct.
 
-**Enumerating the ways a registration can be wrong does not converge, so the guard also asserts invariants.**
-Implementation found four distinct shapes that reach or displace the collection DMS resolves while evading a per-shape rule list: a keyed descriptor, an explicit registration of the closed `IEnumerable<ICustomResourceValidator>`, an open generic registration of `IEnumerable<>`, and a validator registered only under its concrete type or a derived interface.
+**Enumerating the ways a registration can fail to be reached does not converge, so the guard does not enumerate them.**
+Implementation found five distinct shapes that reach or displace the collection DMS resolves while evading a per-shape rule list: a keyed descriptor, an explicit registration of the closed `IEnumerable<ICustomResourceValidator>`, an open generic registration of `IEnumerable<>`, a validator registered only under its concrete type or a derived interface, and the factory form of that last one, which carries no implementation type for a descriptor sweep to read.
 Each was found separately, and each looked like the last one needed.
-The guard therefore rests on three checks that do not depend on that list being complete:
+The guard therefore rests on two independent checks, neither of which depends on that list being complete:
 
-1. Every descriptor registered under the contract is transient and unkeyed and carries an implementation type. This is the per-shape audit, and it keeps its specific messages because they are what an implementer can act on.
-2. No type assignable to the contract is registered *only* under some other service type. DMS resolves the contract and nothing else, so such a validator is unreachable. Checked after the descriptor sweep so that also registering the same type under its own name, which is legitimate, is not an offense.
-3. The set of instances the container returns is exactly the set check 1 approved. Anything that substitutes, hides, or displaces the collection fails here whatever shape produced it.
+1. **A descriptor registered under the contract carries a permitted shape.** The properties a `ServiceDescriptor` can hold are finite, so this check is closed by construction rather than by enumerating mistakes: transient, unkeyed, an implementation type rather than an instance or a factory. It keeps its specific messages because they are what an implementer can act on. Registration of the collection type itself is rejected here too, on the same grounds: the service type is a descriptor property, not a behaviour to be predicted.
+2. **Every validator type a descriptor shows is represented among the instances DMS actually resolves.** This compares intent against the resolution DMS itself performs, so a registration that fails to reach that resolution is caught whatever shape produced it, including shapes not on the list above.
 
-Check 3 has to compare type sets rather than counts: an explicit collection registration can yield the same count as the audit approved while the objects are entirely different.
-With checks 2 and 3 in place the per-shape rejections become defence in depth rather than the only defence, which is why they are kept.
+Check 2 compares against resolved *instances* rather than a list of approved types, so aliasing a validator under an implementer's own interface beside a contract registration is not an offense: an instance satisfying the alias does resolve.
+The two checks share no state and run in sequence, check 1 aborting before check 2 resolves anything, so a descriptor rejected for its shape is never also described as unreachable.
+
+One residual is worth stating rather than defending with code: a factory registered under a service type unrelated to the contract shows no validator type at all, and naming it would require invoking the factory.
+The `ImplementationInstance` rejection does not change whether startup aborts, since `ServiceDescriptor` only produces one at `Singleton` lifetime and the lifetime rule already aborts on it; it earns its place by naming the actual mistake rather than reporting a lifetime the implementer never chose.
 
 **The operator-facing message will name the wrong phase.**
 An `Order` in the 200s runs inside the `[0, 299]` window that `Program.cs:163-169` labels `InitializeApiSchemas`, whose failure text is "API schema initialization failed. DMS cannot start with invalid schemas." (`:167`).
@@ -454,7 +455,9 @@ It disposes that scope asynchronously, because a validator implementing only `IA
 
 The `AppliesTo` walk also has to defend against the entry values themselves, since `ProjectSchema.FindResourceSchemaNodeByResourceName` builds its query by interpolating the resource name into a quoted bracket selector.
 A name carrying a control character or a trailing backslash makes that query unparseable, which the lookup raises as an exception; a name embedding a double quote can close the selector and open a second one naming a real resource, so the query parses and returns a match for an entry that could never match at request time, where comparison is exact and ordinal.
-The guard therefore reports any resource name outside letters, digits, dash and underscore as unmatched without attempting the lookup, and says so in wording distinct from the ordinary miss, because the sanitizer strips such characters for logging and a "check for a typo" diagnosis would name a resource that does exist.
+The guard therefore reports any resource name outside ASCII letters and digits, the shape `JsonSchemaForApiSchema.json` requires of a `resourceNameMapping` key, as unmatched without attempting the lookup.
+Request-time matching is exact and ordinal, so a name the lookup cannot hold and a name that is simply absent are the same outcome and carry the same record.
+Where the sanitizer altered the names for logging, a second record says so, because the altered form can name a resource that does exist and would otherwise read as a typo.
 Project names are not gated this way: that lookup compares ordinally against a value read from a fixed path, so it carries no injection or parse hazard, and `JsonSchemaForApiSchema.json` places no pattern on `projectName`.
 `AppliesTo` is implementer code, so a null list, a null element, and a throwing getter are each reported against the validator that produced them rather than being allowed to abort startup with a message naming no registration.
 
