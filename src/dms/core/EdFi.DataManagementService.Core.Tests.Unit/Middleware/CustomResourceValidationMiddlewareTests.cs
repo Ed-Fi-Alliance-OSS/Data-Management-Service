@@ -1310,9 +1310,11 @@ public class CustomResourceValidationMiddlewareTests
 
         /// <summary>
         /// This design puts third-party network I/O on the write path with no timeout the contract
-        /// controls, so per-validator elapsed time is the only diagnostic a deployment has when a
-        /// validator is slow. This proves that record actually exists, names the validator, and
-        /// carries the request's own TraceId for correlation.
+        /// controls, so per-validator elapsed time is what a deployment reaches for when a validator
+        /// is slow. This proves that record actually exists, names the validator, and carries the
+        /// request's own TraceId for correlation. See
+        /// <see cref="Given_An_Applicable_Validator_That_Throws_Its_Elapsed_Time_Log_Entry"/> for
+        /// the same record on the path where the validator does not return normally.
         /// </summary>
         [Test]
         public void It_logs_the_validators_elapsed_time_against_the_trace_id()
@@ -1415,6 +1417,194 @@ public class CustomResourceValidationMiddlewareTests
         public async Task It_throws_rather_than_treating_the_null_as_an_empty_list()
         {
             await _execute.Should().ThrowAsync<InvalidOperationException>();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Validator_Whose_AppliesTo_Is_Null : CustomResourceValidationMiddlewareTests
+    {
+        private Func<Task> _execute = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // AppliesTo is read for every registered validator on every write, so an unguarded null
+            // here fails writes to every resource rather than only to this validator's own. That is
+            // wider reach than a null ValidateAsync return has, so it gets at least as loud a
+            // failure: an exception naming the property and the validator, not a bare
+            // NullReferenceException raised inside a filtering lambda.
+            var validator = new FakeValidator { AppliesTo = null! };
+
+            var scopedServiceProvider = new ServiceCollection()
+                .AddSingleton<ICustomResourceValidator>(validator)
+                .BuildServiceProvider();
+
+            var requestInfo = BuildRequestInfo(scopedServiceProvider);
+
+            _execute = () =>
+                Middleware().Execute(requestInfo, () => throw new AssertionException("next should not run"));
+        }
+
+        [Test]
+        public async Task It_throws_an_InvalidOperationException_rather_than_dereferencing_the_null()
+        {
+            await _execute.Should().ThrowAsync<InvalidOperationException>();
+        }
+
+        [Test]
+        public async Task It_names_the_offending_validator_and_the_property()
+        {
+            (await _execute.Should().ThrowAsync<InvalidOperationException>())
+                .Which.Message.Should()
+                .Contain(nameof(FakeValidator))
+                .And.Contain(nameof(ICustomResourceValidator.AppliesTo));
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Validator_Whose_AppliesTo_Contains_A_Null_Entry
+        : CustomResourceValidationMiddlewareTests
+    {
+        private Func<Task> _execute = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // The null entry deliberately sits after a matching one. A short-circuiting match would
+            // hide it, so this also pins that the null check does not depend on entry order: the
+            // same broken validator must be reported whether or not it happens to apply here.
+            var validator = new FakeValidator
+            {
+                AppliesTo = [new ValidatedResource("Ed-Fi", "School"), null!],
+            };
+
+            var scopedServiceProvider = new ServiceCollection()
+                .AddSingleton<ICustomResourceValidator>(validator)
+                .BuildServiceProvider();
+
+            var requestInfo = BuildRequestInfo(scopedServiceProvider);
+
+            _execute = () =>
+                Middleware().Execute(requestInfo, () => throw new AssertionException("next should not run"));
+        }
+
+        [Test]
+        public async Task It_throws_an_InvalidOperationException_rather_than_dereferencing_the_entry()
+        {
+            await _execute.Should().ThrowAsync<InvalidOperationException>();
+        }
+
+        [Test]
+        public async Task It_names_the_offending_validator()
+        {
+            (await _execute.Should().ThrowAsync<InvalidOperationException>())
+                .Which.Message.Should()
+                .Contain(nameof(FakeValidator));
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Validator_Returns_A_Null_Failure_In_Its_List
+        : CustomResourceValidationMiddlewareTests
+    {
+        private Func<Task> _execute = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // A type pattern never matches null, so without an explicit null arm this element falls
+            // through to the switch expression's discard arm and throws NullReferenceException on
+            // failure.GetType() - inside the very arm that exists to fail loud with a name. Asserting
+            // InvalidOperationException is what separates the two: NullReferenceException is not one.
+            var validator = new FakeValidator
+            {
+                AppliesTo = [new ValidatedResource("Ed-Fi", "School")],
+                ReturnValue = [null!],
+            };
+
+            var scopedServiceProvider = new ServiceCollection()
+                .AddSingleton<ICustomResourceValidator>(validator)
+                .BuildServiceProvider();
+
+            var requestInfo = BuildRequestInfo(scopedServiceProvider);
+
+            _execute = () =>
+                Middleware().Execute(requestInfo, () => throw new AssertionException("next should not run"));
+        }
+
+        [Test]
+        public async Task It_throws_an_InvalidOperationException_rather_than_a_NullReferenceException()
+        {
+            await _execute.Should().ThrowAsync<InvalidOperationException>();
+        }
+
+        [Test]
+        public async Task It_names_the_offending_validator()
+        {
+            (await _execute.Should().ThrowAsync<InvalidOperationException>())
+                .Which.Message.Should()
+                .Contain(nameof(FakeValidator));
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Applicable_Validator_That_Throws_Its_Elapsed_Time_Log_Entry
+        : CustomResourceValidationMiddlewareTests
+    {
+        private CapturingLogger _logger = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _logger = new CapturingLogger();
+
+            var validator = new ThrowingValidator(() => new InvalidOperationException("validator failed"))
+            {
+                AppliesTo = [new ValidatedResource("Ed-Fi", "School")],
+            };
+
+            var scopedServiceProvider = new ServiceCollection()
+                .AddSingleton<ICustomResourceValidator>(validator)
+                .BuildServiceProvider();
+
+            var requestInfo = BuildRequestInfo(scopedServiceProvider, traceId: "throwing-trace-id-11");
+
+            try
+            {
+                await new CustomResourceValidationMiddleware(
+                    _logger,
+                    CustomValidationOperation.Upsert
+                ).Execute(requestInfo, () => Task.CompletedTask);
+            }
+            catch (InvalidOperationException)
+            {
+                // Expected, and not what this fixture is about: the step adds no exception handling
+                // of its own, so a throwing validator escapes to Core's existing catch chain. What
+                // is asserted below is what was recorded on the way out.
+            }
+        }
+
+        /// <summary>
+        /// A validator that hangs and then throws - an HttpClient timeout, say - is exactly the case
+        /// the elapsed-time record exists for, and it is the case that would lose the record if the
+        /// log sat after the await rather than in a finally.
+        /// </summary>
+        [Test]
+        public void It_still_logs_the_validators_elapsed_time_against_the_trace_id()
+        {
+            _logger
+                .Entries.Should()
+                .Contain(entry =>
+                    entry.Level == LogLevel.Debug
+                    && entry.Message.Contains(nameof(ThrowingValidator))
+                    && entry.Message.Contains("ran in")
+                    && entry.Message.Contains("ms")
+                    && entry.Message.Contains("throwing-trace-id-11")
+                );
         }
     }
 

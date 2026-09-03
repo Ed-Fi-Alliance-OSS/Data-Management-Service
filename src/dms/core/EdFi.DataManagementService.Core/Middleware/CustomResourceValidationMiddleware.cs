@@ -5,6 +5,7 @@
 
 using System.Diagnostics;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
@@ -36,17 +37,8 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
 
         var resourceInfo = requestInfo.ResourceInfo;
 
-        // Matching against the current request's resource is exact and ordinal, so a typo'd or
-        // wrong-cased AppliesTo entry never matches and that validator never runs for this resource.
         var applicableValidators = validators.Where(validator =>
-            validator.AppliesTo.Any(appliesTo =>
-                string.Equals(appliesTo.ProjectName, resourceInfo.ProjectName.Value, StringComparison.Ordinal)
-                && string.Equals(
-                    appliesTo.ResourceName,
-                    resourceInfo.ResourceName.Value,
-                    StringComparison.Ordinal
-                )
-            )
+            AppliesToRequestedResource(validator, resourceInfo)
         );
 
         var validatedResourceInfo = new ValidatedResourceInfo(
@@ -103,34 +95,47 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
             string sanitizedValidatorTypeName = LoggingSanitizer.SanitizeForLogging(validator.GetType().Name);
             long validatorStartTimestamp = Stopwatch.GetTimestamp();
 
-            // A null return is not a substitute for an empty list per ICustomResourceValidator's own
-            // contract: without this guard a validator that mistakenly returns null is
-            // indistinguishable from one that ran and found nothing.
-            var failures =
-                await validator.ValidateAsync(
-                    document,
-                    validatedResourceInfo,
-                    _operation,
-                    scope,
-                    requestInfo.FrontendRequest.TraceId.Value,
-                    requestInfo.RequestCancellationToken
-                )
-                ?? throw new InvalidOperationException(
-                    $"{validator.GetType().Name}.ValidateAsync returned null. A null return is not "
-                        + "a substitute for an empty list and is treated as a hard failure."
-                );
+            IReadOnlyList<CustomValidationFailure> failures;
 
-            // This design puts third-party network I/O on the write path with no timeout the
-            // contract controls, so per-validator elapsed time is what a deployment reaches for when
-            // a validator is slow. Left at Debug because it is per-request detail: the shipped
-            // Serilog default is Information (appsettings.json), so an operator chasing a slow
-            // validator has to turn Debug on for this namespace to see it.
-            _logger.LogDebug(
-                "{ValidatorTypeName} ran in {ElapsedMilliseconds} ms - {TraceId}",
-                sanitizedValidatorTypeName,
-                Stopwatch.GetElapsedTime(validatorStartTimestamp).TotalMilliseconds,
-                requestInfo.FrontendRequest.TraceId.Value
-            );
+            try
+            {
+                // A null return is not a substitute for an empty list per ICustomResourceValidator's
+                // own contract: without this guard a validator that mistakenly returns null is
+                // indistinguishable from one that ran and found nothing. Named with the sanitized
+                // type name rather than the raw one, because this exception lands on
+                // RequestInfo.CaughtException and RequestResponseLoggingMiddleware passes it to
+                // LogError, so its message reaches a log record like any other template argument.
+                failures =
+                    await validator.ValidateAsync(
+                        document,
+                        validatedResourceInfo,
+                        _operation,
+                        scope,
+                        requestInfo.FrontendRequest.TraceId.Value,
+                        requestInfo.RequestCancellationToken
+                    )
+                    ?? throw new InvalidOperationException(
+                        $"{sanitizedValidatorTypeName}.ValidateAsync returned null. A null return is "
+                            + "not a substitute for an empty list and is treated as a hard failure."
+                    );
+            }
+            finally
+            {
+                // This design puts third-party network I/O on the write path with no timeout the
+                // contract controls, so per-validator elapsed time is what a deployment reaches for
+                // when a validator is slow. In a finally rather than after the await because the
+                // case this record exists for is a validator that hangs, and one that hangs and then
+                // throws - an HttpClient timeout, say - is exactly when the elapsed time is worth
+                // having. Left at Debug because it is per-request detail: the shipped Serilog
+                // default is Information (appsettings.json), so an operator chasing a slow validator
+                // has to turn Debug on for this namespace to see it.
+                _logger.LogDebug(
+                    "{ValidatorTypeName} ran in {ElapsedMilliseconds} ms - {TraceId}",
+                    sanitizedValidatorTypeName,
+                    Stopwatch.GetElapsedTime(validatorStartTimestamp).TotalMilliseconds,
+                    requestInfo.FrontendRequest.TraceId.Value
+                );
+            }
 
             if (failures.Count > 0)
             {
@@ -168,6 +173,15 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
                             ? [.. existingMessages, onPath.Message]
                             : [onPath.Message],
                     CustomValidationFailure.OnResource onResource => () => errors.Add(onResource.Message),
+                    // Ahead of the discard arm because a type pattern never matches null. Without
+                    // it a null element falls through to "_" and throws NullReferenceException on
+                    // failure.GetType() - inside the one arm whose whole purpose is to fail loud
+                    // with a name.
+                    null => throw new InvalidOperationException(
+                        $"{sanitizedValidatorTypeName} returned a null "
+                            + $"{nameof(CustomValidationFailure)}. A null is not a valid failure and "
+                            + "is treated as a hard failure."
+                    ),
                     _ => throw new InvalidOperationException(
                         $"Unhandled {nameof(CustomValidationFailure)} case: {failure.GetType().Name}."
                     ),
@@ -203,6 +217,49 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
             StatusCode: 400,
             Body: failureResponse,
             Headers: []
+        );
+    }
+
+    /// <summary>
+    /// Whether a validator declares itself applicable to the resource this request is for.
+    /// </summary>
+    /// <remarks>
+    /// AppliesTo and its entries are guarded here the same way the ValidateAsync return is guarded
+    /// in <see cref="Execute" />, and for a stronger reason. This runs for every registered
+    /// validator on every write, so one validator that violates the non-nullable contract on this
+    /// property fails writes to every resource rather than only to its own - the widest reach on
+    /// this seam. Unguarded it surfaced as a bare NullReferenceException raised inside a lambda,
+    /// naming neither the property nor the validator that broke the contract; throwing here names
+    /// both.
+    /// </remarks>
+    private static bool AppliesToRequestedResource(
+        ICustomResourceValidator validator,
+        ResourceInfo resourceInfo
+    )
+    {
+        IReadOnlyList<ValidatedResource> appliesTo =
+            validator.AppliesTo
+            ?? throw new InvalidOperationException(
+                $"{LoggingSanitizer.SanitizeForLogging(validator.GetType().Name)}.AppliesTo returned "
+                    + "null. A null is not a substitute for an empty list and is treated as a hard "
+                    + "failure."
+            );
+
+        // Checked across the whole list before any matching is attempted, so whether a null entry is
+        // reported does not depend on where it sits relative to a matching entry.
+        if (appliesTo.Any(entry => entry is null))
+        {
+            throw new InvalidOperationException(
+                $"{LoggingSanitizer.SanitizeForLogging(validator.GetType().Name)}.AppliesTo contains "
+                    + "a null entry."
+            );
+        }
+
+        // Matching against the current request's resource is exact and ordinal, so a typo'd or
+        // wrong-cased AppliesTo entry never matches and that validator never runs for this resource.
+        return appliesTo.Any(entry =>
+            string.Equals(entry.ProjectName, resourceInfo.ProjectName.Value, StringComparison.Ordinal)
+            && string.Equals(entry.ResourceName, resourceInfo.ResourceName.Value, StringComparison.Ordinal)
         );
     }
 }
