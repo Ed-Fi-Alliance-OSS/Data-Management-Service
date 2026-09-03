@@ -21,11 +21,13 @@
 
     Per provider, two evidence runs execute: the primary run (one 500k load measured
     across the pristine, authorized, and filtered phases) and the descriptor run (its own
-    25k fixture). Baseline directories default to the retained DMS-1391 artifacts under
-    reference/performance/partitioned-cursor-paging/traditional-baseline.
+    25k fixture). The DMS-1391 baseline directories must be supplied: measured artifacts
+    are attached to their Jira story rather than kept in the repository, so download and
+    extract the baseline attachment and point -PostgresqlBaselineDirectory and
+    -MssqlBaselineDirectory at the extracted run directories.
 
     -ReportOnly skips all measurement and evaluates explicitly supplied artifact
-    directories, so reviewers can regenerate the report from retained evidence.
+    directories, so reviewers can regenerate the report from an extracted evidence set.
 
 .EXAMPLE
     ./eng/performance/invoke-final-gate.ps1 -Provider postgresql,mssql `
@@ -34,6 +36,7 @@
 .EXAMPLE
     ./eng/performance/invoke-final-gate.ps1 -ReportOnly `
         -ReportDirectory C:\perf\final-gate\final-report `
+        -PostgresqlBaselineDirectory C:\perf\baseline\postgresql-primary-500k-... `
         -PostgresqlPrimaryDirectory C:\perf\final-gate\postgresql-final-primary-... `
         -PostgresqlDescriptorsDirectory C:\perf\final-gate\postgresql-final-descriptors-...
 #>
@@ -63,7 +66,7 @@ param(
     # sixty measured iterations: with thirty, p95 is the second-slowest sample, so two
     # host-side stalls flip a tail gate; with sixty it takes three, and the extra warmups
     # absorb the stalls that cluster in the first measured iterations. The harness floors
-    # (5 / 30) stay where they are so the retained DMS-1391 artifacts still validate. A
+    # (5 / 30) stay where they are so the original DMS-1391 artifacts still validate. A
     # non-default -Fixture needs a -DeepOffset that fits inside its row count.
     [int] $WarmupIterations = 10,
 
@@ -73,8 +76,8 @@ param(
 
     [string] $StorageNote = 'local docker volume, not tmpfs',
 
-    # Baseline artifact directories; default to the retained DMS-1391 runs discovered
-    # under reference/performance/partitioned-cursor-paging/traditional-baseline.
+    # Baseline artifact directories, required for the report step: extracted from the
+    # DMS-1391 baseline attachment on the Jira story.
     [string] $PostgresqlBaselineDirectory,
 
     [string] $MssqlBaselineDirectory,
@@ -101,10 +104,6 @@ $harnessPrefix = 'src/dms/tests/EdFi.DataManagementService.Performance.Harness'
 $sourceRoot = (Resolve-Path (Join-Path -Path $PSScriptRoot -ChildPath '..' -AdditionalChildPath '..')).Path
 $harnessProject = Join-Path $sourceRoot ($harnessPrefix -replace '/', [IO.Path]::DirectorySeparatorChar) |
     Join-Path -ChildPath 'EdFi.DataManagementService.Performance.Harness.csproj'
-$baselineRoot = Join-Path $sourceRoot 'reference' |
-    Join-Path -ChildPath 'performance' |
-    Join-Path -ChildPath 'partitioned-cursor-paging' |
-    Join-Path -ChildPath 'traditional-baseline'
 
 function Invoke-Git {
     param(
@@ -269,16 +268,6 @@ function Assert-EnvironmentVariable {
     }
 }
 
-function Find-DefaultBaselineDirectory {
-    param([Parameter(Mandatory = $true)][string] $ProviderName)
-    $candidates = @(Get-ChildItem -Path $baselineRoot -Directory -Filter "$ProviderName-*" -ErrorAction SilentlyContinue)
-    if ($candidates.Count -ne 1) {
-        throw ("Cannot discover a unique $ProviderName baseline directory under '$baselineRoot' " +
-            "(found $($candidates.Count)); pass it explicitly.")
-    }
-    return $candidates[0].FullName
-}
-
 function Find-NewestRunDirectory {
     param(
         [Parameter(Mandatory = $true)][string] $Root,
@@ -396,8 +385,8 @@ if ($SkipReport) {
 }
 
 # Resolve the evidence directories the report evaluates. After a measurement run the newest
-# matching run directories are used; -ReportOnly relies on explicit parameters (baselines
-# still default to the retained DMS-1391 artifacts).
+# matching run directories are used; -ReportOnly relies on explicit parameters. Baseline
+# directories are always explicit: they come from the Jira attachment, not the repository.
 $reportVariables = @{}
 foreach ($reportProvider in @('postgresql', 'mssql')) {
     $isSelected = $Provider -contains $reportProvider
@@ -418,7 +407,10 @@ foreach ($reportProvider in @('postgresql', 'mssql')) {
         continue
     }
     if (-not $baselineParameter) {
-        $baselineParameter = Find-DefaultBaselineDirectory -ProviderName $reportProvider
+        $suppliedParameter = if ($reportProvider -eq 'postgresql') { '-PostgresqlBaselineDirectory' } else { '-MssqlBaselineDirectory' }
+        throw ("The report step needs the $reportProvider DMS-1391 baseline directory; pass " +
+            "$suppliedParameter. The baseline runs are attached to their Jira story rather " +
+            'than kept in the repository, so extract that attachment first.')
     }
 
     $suffix = $reportProvider.ToUpperInvariant()

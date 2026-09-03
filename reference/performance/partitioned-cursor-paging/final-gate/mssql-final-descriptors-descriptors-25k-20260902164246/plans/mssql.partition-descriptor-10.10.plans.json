@@ -1,7 +1,0 @@
-{
-  "replay": "full hydration batch under SET STATISTICS XML, IO, TIME ON; one actual XML plan per planned statement, in arrival order",
-  "planFiles": [
-    "plans/mssql.partition-descriptor-10.10.plan01.sqlplan"
-  ],
-  "statisticsFile": "plans/mssql.partition-descriptor-10.10.stats.txt"
-}

@@ -72,7 +72,7 @@ currently Windows-only: it drives the overlay with PowerShell and robocopy.
 | `PERF_FIXTURE` | yes | `primary-500k` or `smoke-10k` |
 | `PERF_IMAGE_TAG` / `PERF_IMAGE_DIGEST` | yes | The validated image pin recorded in the manifest |
 | `PERF_STORAGE_NOTE` | yes | Storage caveat, for example `local docker volume, not tmpfs` |
-| `PERF_WARMUP_ITERATIONS` / `PERF_MEASURED_ITERATIONS` | no | Harness floor 5 / 30 (the retained DMS-1391 baseline was captured at the floor); both wrappers pin 10 / 60. May be raised, never lowered |
+| `PERF_WARMUP_ITERATIONS` / `PERF_MEASURED_ITERATIONS` | no | Harness floor 5 / 30 (the original DMS-1391 baseline was captured at the floor); both wrappers pin 10 / 60. May be raised, never lowered |
 | `PERF_DEEP_OFFSET` | no | Default 90% of the fixture row count (450,000 for the primary fixture) |
 | `PERF_ALLOW_CI` | no | Default `false`: runs refuse GitHub Actions because its databases run on tmpfs |
 | `PERF_ALLOW_DIRTY_PREFIXES` | no | Semicolon-separated allowlist for dirty worktree paths, matched on path-segment boundaries; defaults to the harness overlay directory. Empty entries are invalid — allow-all exists only as the in-code `AllowAnyDirtyPath` setting the smokes use, never through the environment |
@@ -129,7 +129,7 @@ requests' exact plan-caching regime.
 The final gate is **manual and off-CI**, like the baseline capture: its fixtures are
 `[Explicit]`, the harness project is never discovered by CI, and the in-pipeline guardrails
 refuse CI databases. It measures the epic's closed 36-cell matrix and evaluates every
-acceptance gate against the retained DMS-1391 baseline.
+acceptance gate against the DMS-1391 baseline.
 
 Entry points under `Runs/`, configured through the same `PERF_*` conventions:
 
@@ -153,7 +153,7 @@ The wrapper `eng/performance/invoke-final-gate.ps1` sequences everything: it req
 harness and wrapper sources to be committed clean (HEAD is both runner and subject commit),
 validates the running containers against the pinned digests, rewrites the connection-string
 endpoints to the validated containers' published ports, runs both evidence fixtures per
-provider, and finishes with the report step against the retained baseline directories.
+provider, and finishes with the report step against the baseline directories.
 
 ```powershell
 ./eng/performance/invoke-final-gate.ps1 -Provider postgresql,mssql `
@@ -161,7 +161,10 @@ provider, and finishes with the report step against the retained baseline direct
 ```
 
 `-ReportOnly` regenerates the report from existing artifact directories without rerunning
-any measurement (baselines still default to the retained DMS-1391 runs):
+any measurement. Baseline directories are always passed explicitly: measured artifacts are
+attached to their Jira story rather than kept in the repository, so extract the DMS-1391
+baseline attachment and point `-PostgresqlBaselineDirectory` / `-MssqlBaselineDirectory` at
+the extracted runs:
 
 ```powershell
 ./eng/performance/invoke-final-gate.ps1 -ReportOnly `

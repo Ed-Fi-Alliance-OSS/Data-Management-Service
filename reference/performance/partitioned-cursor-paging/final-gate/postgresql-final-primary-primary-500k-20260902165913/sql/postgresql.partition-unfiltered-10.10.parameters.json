@@ -1,7 +1,0 @@
-{
-  "source": "relational-command",
-  "parameters": {
-    "minimumPartitionSize": 2500,
-    "number": 10
-  }
-}

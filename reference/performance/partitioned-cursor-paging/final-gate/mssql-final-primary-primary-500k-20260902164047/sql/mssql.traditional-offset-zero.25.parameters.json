@@ -1,7 +1,0 @@
-{
-  "source": "hydration-keyset",
-  "parameters": {
-    "limit": 25,
-    "offset": 0
-  }
-}

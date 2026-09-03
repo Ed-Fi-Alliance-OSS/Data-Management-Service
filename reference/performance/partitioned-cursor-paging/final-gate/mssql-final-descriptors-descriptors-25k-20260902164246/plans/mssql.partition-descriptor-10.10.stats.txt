@@ -1,7 +1,0 @@
-SQL Server parse and compile time: 
-   CPU time = 0 ms, elapsed time = 0 ms.
-Table 'Worktable'. Scan count 3, logical reads 25361, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-Table 'Descriptor'. Scan count 1, logical reads 37715, physical reads 0, page server reads 0, read-ahead reads 0, page server read-ahead reads 0, lob logical reads 0, lob physical reads 0, lob page server reads 0, lob read-ahead reads 0, lob page server read-ahead reads 0.
-
- SQL Server Execution Times:
-   CPU time = 73 ms,  elapsed time = 73 ms.
