@@ -144,13 +144,19 @@ mean to read. Changing the *value* of `maxChangeVersion` is not refused — it
 leaves a bounded window bounded — but it reads a different result set from that
 token's position, like any other filter change.
 
-The same rule applies to asking for a snapshot. A change-version window is walked
-in a different order against a snapshot than against current data, so a walk that
-requested one must keep requesting it on every request, and a walk that did not
-must keep not requesting it. Adding or dropping `Use-Snapshot: true` partway
-through a walk is rejected with the invalid-token message, exactly as adding or
-dropping `maxChangeVersion` is. This applies to a window of `minChangeVersion`
-alone as much as to a bounded one.
+The same rule applies to asking for a snapshot, but only for a window of
+`minChangeVersion` alone. A snapshot walks that window in a different
+order than current data does, so such a walk belongs to the source that
+started it: adding or dropping `Use-Snapshot: true` partway through one
+is rejected with the invalid-token message, exactly as adding or
+dropping `maxChangeVersion` is.
+
+A walk that carries `maxChangeVersion`, and a walk with no change-version
+window at all, are walked in the same order on either source, so their
+tokens are *not* rejected when the header changes. Keep the header
+identical for the whole walk regardless: a token records a position, not
+a database, and a walk that switches simply reads a different copy of the
+collection from that position, like any other filter change.
 
 ## Reading a collection in parallel
 
@@ -287,7 +293,7 @@ provide one.
 | `pageSize` | Optional, and valid **only** alongside `pageToken`. An integer from `0` to the deployment's configured `MaximumPageSize`. Sending it without `pageToken` is rejected. |
 | `limit`, `offset` | Traditional paging. Rejected alongside `pageToken`. |
 | `totalCount` | `totalCount=true` is rejected alongside a valid `pageToken`. Cursor paging does not report a total. |
-| `minChangeVersion`, `maxChangeVersion` | Allowed, including on the request that starts a walk. Both must be repeated unchanged on every request of the walk. Adding or removing `maxChangeVersion` mid-walk is rejected with the invalid-token message, because a bounded window is walked in a different order than an unbounded request; restart the walk instead. A walk carrying either parameter must also keep asking for the same data source: adding or dropping `Use-Snapshot: true` mid-walk is rejected the same way. |
+| `minChangeVersion`, `maxChangeVersion` | Allowed, including on the request that starts a walk. Both must be repeated unchanged on every request of the walk. Adding or removing `maxChangeVersion` mid-walk is rejected with the invalid-token message, because a bounded window is walked in a different order than an unbounded request; restart the walk instead. A walk carrying `minChangeVersion` without `maxChangeVersion` must also keep asking for the same data source: adding or dropping `Use-Snapshot: true` mid-walk is rejected the same way. Every other walk is walked in the same order on either source and is not rejected on that change, but should still repeat the same `Use-Snapshot` choice so it keeps reading the database it started on. |
 
 `pageSize=0` is accepted and returns an empty response with no
 `Next-Page-Token`, because a page that selects nothing has nowhere to continue
@@ -298,8 +304,8 @@ from. It cannot be used to advance a walk.
 | Parameter | Rules |
 | --- | --- |
 | `number` | Optional. The desired number of partitions, from `1` to `200`. Omitted means the deployment's configured `DefaultPartitionCount`. A non-numeric or out-of-range value is rejected. |
-| Resource filters, `minChangeVersion` | Allowed, and should match the filters the walks will use. A partition calculated over a different filter set describes segments that do not match what the walks read. When `minChangeVersion` is supplied, the returned tokens also belong to the data source the request asked for: walks replaying them must repeat the same `Use-Snapshot` choice, and are rejected otherwise. |
-| `maxChangeVersion` | Allowed, and must match the walks that replay the returned tokens: a token from a request that included it is rejected on a walk that omits it, and a token from a request that omitted it is rejected on a walk that adds it. Same rule and same message as the `maxChangeVersion` row above, and the same rule applies to the `Use-Snapshot` choice. |
+| Resource filters, `minChangeVersion` | Allowed, and should match the filters the walks will use. A partition calculated over a different filter set describes segments that do not match what the walks read. When `minChangeVersion` is supplied without `maxChangeVersion`, the returned tokens also belong to the data source the request asked for: walks replaying them must repeat the same `Use-Snapshot` choice, and are rejected otherwise. |
+| `maxChangeVersion` | Allowed, and must match the walks that replay the returned tokens: a token from a request that included it is rejected on a walk that omits it, and a token from a request that omitted it is rejected on a walk that adds it. Same rule and same message as the `maxChangeVersion` row above. The `Use-Snapshot` choice is not enforced for these tokens, because a max-bearing window is anchored the same way on every data source; repeat it anyway, so the walks read the database the boundaries were cut from. |
 | `pageToken`, `pageSize`, `limit`, `offset`, `totalCount` | Not supported on this operation and rejected. They belong to the collection GET-many. |
 
 A `/partitions` response is always `application/json` and never carries
