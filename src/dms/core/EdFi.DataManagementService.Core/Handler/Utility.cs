@@ -234,10 +234,9 @@ public static class Utility
     /// keeps retrying work nobody is waiting for. The failure modes are not symmetric, so the
     /// default protects the one that loses data.
     /// Read handlers therefore pass <see cref="RequestInfo.RequestCancellationToken" /> explicitly.
-    /// <c>UpsertHandler</c> and <c>UpdateByIdHandler</c> also pass <see cref="CancellationToken.None" />
-    /// explicitly rather than relying on the default, so the durability choice stays visible at the
-    /// call site and survives anyone changing this default back. <c>DeleteByIdHandler</c> relies on
-    /// the default.
+    /// All three write handlers pass <see cref="CancellationToken.None" /> explicitly rather than
+    /// relying on the default, so the durability choice stays visible at the call site and none of
+    /// them changes behaviour if this default is ever flipped. No call site relies on the default.
     /// </param>
     internal static async Task<TResult> ExecuteWithRetryLogging<TResult>(
         ResiliencePipeline resiliencePipeline,

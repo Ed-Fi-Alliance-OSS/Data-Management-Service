@@ -122,8 +122,11 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
                 // type name rather than the raw one, because this exception is caught into
                 // RequestInfo.CaughtException and logged, and control characters in a rendered
                 // exception message can forge lines in a text sink.
-                failures =
-                    await validator.ValidateAsync(
+                // Two guards, not one: "await X ?? throw" only covers the awaited result, so a
+                // null Task throws NullReferenceException at the await before the second can name
+                // the validator.
+                Task<IReadOnlyList<CustomValidationFailure>> validation =
+                    validator.ValidateAsync(
                         document,
                         validatedResourceInfo,
                         _operation,
@@ -131,6 +134,14 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
                         requestInfo.FrontendRequest.TraceId.Value,
                         requestInfo.RequestCancellationToken
                     )
+                    ?? throw new InvalidOperationException(
+                        $"{sanitizedValidatorTypeName}.ValidateAsync returned a null Task. A null "
+                            + "Task is not a substitute for a completed one and is treated as a "
+                            + "hard failure."
+                    );
+
+                failures =
+                    await validation
                     ?? throw new InvalidOperationException(
                         $"{sanitizedValidatorTypeName}.ValidateAsync returned null. A null return is "
                             + "not a substitute for an empty list and is treated as a hard failure."
@@ -259,6 +270,16 @@ internal class CustomResourceValidationMiddleware(ILogger _logger, CustomValidat
         ResourceInfo resourceInfo
     )
     {
+        // A container can hand back a null instance when a registration's factory returns one, and
+        // this is where every registered validator is first touched.
+        if (validator is null)
+        {
+            throw new InvalidOperationException(
+                $"A null {nameof(ICustomResourceValidator)} was resolved from the request scope. A "
+                    + "registration whose factory returns null is treated as a hard failure."
+            );
+        }
+
         IReadOnlyList<ValidatedResource> appliesTo =
             validator.AppliesTo
             ?? throw new InvalidOperationException(

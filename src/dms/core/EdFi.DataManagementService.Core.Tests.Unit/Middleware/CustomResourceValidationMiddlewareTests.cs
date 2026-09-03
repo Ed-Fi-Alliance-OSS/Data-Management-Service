@@ -229,6 +229,25 @@ public class CustomResourceValidationMiddlewareTests
     }
 
     /// <summary>
+    /// A validator that returns a null Task rather than a Task whose result is null. The two are
+    /// different contract violations and they fail at different points: the null Task fails at the
+    /// caller's await, before any guard on the awaited result can run.
+    /// </summary>
+    internal sealed class NullTaskValidator : ICustomResourceValidator
+    {
+        public IReadOnlyList<ValidatedResource> AppliesTo { get; init; } = [];
+
+        public Task<IReadOnlyList<CustomValidationFailure>> ValidateAsync(
+            JsonNode document,
+            ValidatedResourceInfo resource,
+            CustomValidationOperation operation,
+            ValidationScope scope,
+            string traceId,
+            CancellationToken cancellationToken
+        ) => null!;
+    }
+
+    /// <summary>
     /// A validator that always throws, for proving that the outcomes of a throwing validator are
     /// produced by Core's existing catch chain (<see cref="CoreExceptionLoggingMiddleware"/>) and
     /// not by this step, which adds no exception handling of its own.
@@ -1623,6 +1642,82 @@ public class CustomResourceValidationMiddlewareTests
             (await _execute.Should().ThrowAsync<InvalidOperationException>())
                 .Which.Message.Should()
                 .Contain(nameof(FakeValidator));
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Validator_Returns_A_Null_Task_From_ValidateAsync
+        : CustomResourceValidationMiddlewareTests
+    {
+        private Func<Task> _execute = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // Distinct from returning a Task whose result is null. "await task ?? throw" binds the
+            // null-coalescing to the awaited result, so a null Task dies at the await with a bare
+            // NullReferenceException naming nothing unless the Task itself is guarded first.
+            var validator = new NullTaskValidator { AppliesTo = [new ValidatedResource("Ed-Fi", "School")] };
+
+            var scopedServiceProvider = new ServiceCollection()
+                .AddSingleton<ICustomResourceValidator>(validator)
+                .BuildServiceProvider();
+
+            var requestInfo = BuildRequestInfo(scopedServiceProvider);
+
+            _execute = () =>
+                Middleware().Execute(requestInfo, () => throw new AssertionException("next should not run"));
+        }
+
+        [Test]
+        public async Task It_throws_an_InvalidOperationException_rather_than_a_NullReferenceException()
+        {
+            await _execute.Should().ThrowAsync<InvalidOperationException>();
+        }
+
+        [Test]
+        public async Task It_names_the_offending_validator()
+        {
+            (await _execute.Should().ThrowAsync<InvalidOperationException>())
+                .Which.Message.Should()
+                .Contain(nameof(NullTaskValidator));
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Null_Validator_Is_Registered : CustomResourceValidationMiddlewareTests
+    {
+        private Func<Task> _execute = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // A registration whose factory returns null resolves to a null element, which reaches
+            // the applicability guard before anything else touches it.
+            var scopedServiceProvider = new ServiceCollection()
+                .AddSingleton<ICustomResourceValidator>(_ => null!)
+                .BuildServiceProvider();
+
+            var requestInfo = BuildRequestInfo(scopedServiceProvider);
+
+            _execute = () =>
+                Middleware().Execute(requestInfo, () => throw new AssertionException("next should not run"));
+        }
+
+        [Test]
+        public async Task It_throws_an_InvalidOperationException_rather_than_a_NullReferenceException()
+        {
+            await _execute.Should().ThrowAsync<InvalidOperationException>();
+        }
+
+        [Test]
+        public async Task It_names_the_contract_that_was_violated()
+        {
+            (await _execute.Should().ThrowAsync<InvalidOperationException>())
+                .Which.Message.Should()
+                .Contain(nameof(ICustomResourceValidator));
         }
     }
 
