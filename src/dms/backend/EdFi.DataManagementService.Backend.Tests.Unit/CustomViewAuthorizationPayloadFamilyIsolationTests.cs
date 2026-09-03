@@ -103,19 +103,24 @@ public class Given_AnAuth1PayloadFromAnotherFamily
     }
 
     /// <summary>
-    /// The same yield has to hold for an <c>own1|</c> payload the ownership codec cannot parse. Nothing in
-    /// it can be decoded, so only its discriminator says whose it is — and it is the ownership mapper, not
-    /// this one, that owns the diagnostic for it.
+    /// The same yield has to hold for a payload another family's codec cannot parse. Nothing in it can be
+    /// decoded, so only its discriminator says whose it is — and the discriminator names the statement that
+    /// raised the abort, so that family's mapper owns the diagnostic rather than this one.
     /// </summary>
     /// <remarks>
-    /// The mappers used to re-test the raw prefix themselves to decide this. They now read the family the
-    /// dispatcher recognized, so this pins the malformed case that distinguishes the two: a raw-prefix test
-    /// and a recognized-family test agree on well-formed payloads and can only diverge here.
+    /// The regression this pins is narrower than the well-formed case above and outlived it: the yield used
+    /// to be written for <c>own1</c> alone, so a malformed <c>cv1</c> or <c>1|</c> payload was still filed as
+    /// <c>NamespaceInvalidAuth1Payload</c>. The composite classifier reaches the namespace arm before the
+    /// relationship one, so that stole the diagnostic from its owner on any command carrying a namespace
+    /// statement beside a custom-view or relationship one.
     /// </remarks>
     [TestCase("own1|0")]
     [TestCase("own1|0|x")]
     [TestCase("own1|-1|m")]
-    public void It_should_not_be_reported_as_namespace_invalid_metadata_when_malformed_but_ownership_prefixed(
+    [TestCase("cv1|0")]
+    [TestCase("cv1|0|x")]
+    [TestCase("1|0|1|not-a-subject-failure")]
+    public void It_should_not_be_reported_as_namespace_invalid_metadata_when_malformed_but_prefixed_with_another_family(
         string payloadText
     )
     {
@@ -162,6 +167,55 @@ public class Given_AnAuth1PayloadFromAnotherFamily
                 diagnostic.ProviderOrPlannerFailureKind
                 == AuthorizationSecurityConfigurationDiagnostics.NamespaceInvalidAuth1Payload
             );
+    }
+
+    /// <summary>
+    /// A <c>cv1|</c>-prefixed payload the custom-view codec cannot parse is still this family's to report.
+    /// Only a custom-view statement emits that prefix, so no other family may answer for it — and declining
+    /// it left it to the namespace catch-all on a co-batched command, and to nothing at all on the
+    /// standalone executor, whose catch filters call straight into this predicate.
+    /// </summary>
+    [TestCase("cv1|0")]
+    [TestCase("cv1|0|x")]
+    [TestCase("cv1||n")]
+    [TestCase("cv1|-1|n")]
+    public void It_should_be_claimed_as_an_unmappable_custom_view_payload_when_malformed(string payloadText)
+    {
+        CustomViewAuthorizationProviderFailureMapper
+            .IsUnmappableCustomViewPayload(
+                SqlDialect.Pgsql,
+                new FakeDbException(payloadText, "AUTH1"),
+                new StubProviderFailureExtractor("AUTH1", payloadText),
+                []
+            )
+            .Should()
+            .BeTrue(payloadText);
+    }
+
+    /// <summary>
+    /// The claim stays narrow: a malformed payload of any other family, and one with no known discriminator
+    /// at all, are still not this family's to report.
+    /// </summary>
+    [TestCase("own1|0")]
+    [TestCase("own1|0|x")]
+    [TestCase("ns1|0")]
+    [TestCase("ns1|0|x")]
+    [TestCase("1|0|1|not-a-subject-failure")]
+    [TestCase("garbage-with-no-discriminator")]
+    [TestCase("v2|0|x")]
+    public void It_should_not_be_claimed_as_an_unmappable_custom_view_payload_when_not_custom_view_prefixed(
+        string payloadText
+    )
+    {
+        CustomViewAuthorizationProviderFailureMapper
+            .IsUnmappableCustomViewPayload(
+                SqlDialect.Pgsql,
+                new FakeDbException(payloadText, "AUTH1"),
+                new StubProviderFailureExtractor("AUTH1", payloadText),
+                []
+            )
+            .Should()
+            .BeFalse(payloadText);
     }
 
     /// <summary>

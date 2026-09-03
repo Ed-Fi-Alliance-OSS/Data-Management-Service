@@ -110,17 +110,25 @@ internal static class NamespaceAuthorizationProviderFailureMapper
 
         string providerOrPlannerFailureKind = dispatchResult switch
         {
-            // An undecodable payload the dispatcher recognized as ownership's is not ours to report, even
-            // though nothing in it can be decoded. Only ownership emits own1, so its malformed payloads are
-            // its own to diagnose; without this, consulting namespace first on a command carrying both
-            // would file an ownership defect under NamespaceBased. Anything else — no recognizable
-            // discriminator, or a malformed relationship or custom-view payload whose own mapper has
-            // already declined it by the time this one is consulted — is still claimed below, which keeps
-            // the diagnostic for a payload no family owns.
+            // An undecodable payload the dispatcher recognized as another family's is not ours to report,
+            // even though nothing in it can be decoded. Its discriminator is the only trustworthy thing
+            // left in it, and it names the family whose statement raised the abort — so that family's
+            // mapper owns the diagnostic. Without this, a command carrying a namespace statement beside a
+            // custom-view, relationship, or ownership one files that family's defect under NamespaceBased:
+            // the composite classifier reaches this arm before the relationship one, so a malformed
+            // relationship or custom-view payload never gets back to its owner.
+            //
+            // Written as "any recognized family that is not ours" rather than as a list of the three
+            // foreign families on purpose. A list would have to be extended whenever a family is added,
+            // and an omission does not fail a build — it silently misattributes that family's malformed
+            // payloads, which is the defect this arm exists to prevent.
             RelationalAuthorizationAuth1DispatchResult.InvalidPayload
             {
-                RecognizedFamily: RelationalAuthorizationAuth1PayloadFamily.Ownership
+                RecognizedFamily: not null and not RelationalAuthorizationAuth1PayloadFamily.Namespace
             } => string.Empty,
+            // A malformed namespace payload, or one leading with no known discriminator at all. Both are
+            // ours: the first by its own discriminator, the second because no family owns it, and dropping
+            // it would lose the diagnostic entirely rather than route it somewhere better.
             RelationalAuthorizationAuth1DispatchResult.InvalidPayload =>
                 AuthorizationSecurityConfigurationDiagnostics.NamespaceInvalidAuth1Payload,
             RelationalAuthorizationAuth1DispatchResult.Namespace { Payload: var payload }

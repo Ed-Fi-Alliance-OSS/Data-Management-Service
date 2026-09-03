@@ -69,10 +69,18 @@ internal static class CustomViewAuthorizationProviderFailureMapper
 
     /// <summary>
     /// Whether <paramref name="exception"/> carries a custom-view AUTH1 payload that this family owns but
-    /// cannot turn into a response — an out-of-range index, or a kind the indexed check's value source cannot
-    /// produce. Such a payload is a security-configuration defect, not a denial, so the caller reports 500
-    /// rather than inventing a 403.
+    /// cannot turn into a response — undecodable outright, an out-of-range index, or a kind the indexed
+    /// check's value source cannot produce. Such a payload is a security-configuration defect, not a denial,
+    /// so the caller reports 500 rather than inventing a 403.
     /// </summary>
+    /// <remarks>
+    /// The undecodable case is claimed by discriminator alone. A <c>cv1|</c>-prefixed payload the codec
+    /// cannot parse still announces which statement raised the abort, and only a custom-view statement emits
+    /// that prefix, so no other family may answer for it — while nothing inside it can be trusted to
+    /// attribute a denial. Declining it here left it to the namespace mapper's catch-all on a co-batched
+    /// command, and to no one at all on the standalone executor, where it escaped as an unhandled provider
+    /// exception past every catch filter.
+    /// </remarks>
     public static bool IsUnmappableCustomViewPayload(
         SqlDialect dialect,
         DbException exception,
@@ -84,13 +92,38 @@ internal static class CustomViewAuthorizationProviderFailureMapper
         ArgumentNullException.ThrowIfNull(providerFailureExtractor);
         ArgumentNullException.ThrowIfNull(plannedChecks);
 
-        if (!TryDispatchCustomViewPayload(dialect, exception, providerFailureExtractor, out var payload))
+        var providerFailure = providerFailureExtractor.Extract(exception);
+
+        if (
+            !RelationalAuthorizationAuth1Dispatcher.TryDispatch(
+                dialect,
+                providerFailure.ErrorCode,
+                providerFailure.Message,
+                out var dispatchResult
+            )
+        )
         {
             return false;
         }
 
-        return payload is not null
-            && !CustomViewAuthorizationFailureMapper.IsStaleStoredTargetFailure(payload, plannedChecks)
+        if (
+            dispatchResult is RelationalAuthorizationAuth1DispatchResult.InvalidPayload
+            {
+                RecognizedFamily: RelationalAuthorizationAuth1PayloadFamily.CustomView
+            }
+        )
+        {
+            return true;
+        }
+
+        if (dispatchResult is not RelationalAuthorizationAuth1DispatchResult.CustomView customViewResult)
+        {
+            return false;
+        }
+
+        var payload = customViewResult.Payload;
+
+        return !CustomViewAuthorizationFailureMapper.IsStaleStoredTargetFailure(payload, plannedChecks)
             && !CustomViewAuthorizationFailureMapper.TryMapAuth1Failure(payload, plannedChecks, out _);
     }
 

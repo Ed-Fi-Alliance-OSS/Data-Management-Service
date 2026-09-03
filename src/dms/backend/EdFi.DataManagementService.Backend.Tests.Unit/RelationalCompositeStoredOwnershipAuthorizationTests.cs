@@ -362,6 +362,39 @@ public class Given_The_Composite_Stored_Ownership_Authorization
             .Be(AuthorizationSecurityConfigurationDiagnostics.NamespaceInvalidAuth1Payload);
     }
 
+    /// <summary>
+    /// A namespace plan must not answer for a malformed payload another family's statement raised. The
+    /// namespace arm is reached before the relationship one, so claiming these filed a custom-view or
+    /// relationship defect under <c>NamespaceBased</c>.
+    /// </summary>
+    /// <remarks>
+    /// Asserts <see langword="null"/> — no family claims it — because this fixture's classifier helper
+    /// supplies neither a custom-view nor a relationship plan, and building either takes a fixture larger
+    /// than this regression is worth. That is precisely the assertion that matters here: the steal is gone,
+    /// and <c>TryClassifyDenial</c> returning null leaves the caller's own database-failure handling
+    /// authoritative. The owning mappers are covered directly in
+    /// <c>Given_AnAuth1PayloadFromAnotherFamily</c>.
+    /// </remarks>
+    [TestCase("cv1|0")]
+    [TestCase("cv1|0|x")]
+    [TestCase("1|0|1|not-a-subject-failure")]
+    public void It_does_not_let_a_namespace_plan_claim_another_familys_malformed_payload(string payloadText)
+    {
+        var dialect = SqlDialect.Pgsql;
+        var namespaceAuthorization = CreateNamespaceAuthorization(dialect);
+
+        var denial = Classify(
+            dialect,
+            payloadText,
+            namespacePlan: new StoredNamespaceStatementPlan(
+                namespaceAuthorization.Checks,
+                namespaceAuthorization.NamespacePrefixParameterization
+            )
+        );
+
+        denial.Should().BeNull(payloadText);
+    }
+
     [Test]
     public void It_ignores_a_provider_failure_that_carries_no_auth1_payload()
     {
