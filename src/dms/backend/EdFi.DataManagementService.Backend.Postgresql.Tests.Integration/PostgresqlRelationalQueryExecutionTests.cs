@@ -621,6 +621,41 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
     }
 
     /// <summary>
+    /// The combination a change-version read served from a frozen snapshot resolves: an open-ended
+    /// window paged under the ContentVersion anchor. Against live data this shape keeps DocumentId,
+    /// because an update can move a row later within the still-open window; nothing moves in a frozen
+    /// source, so the anchor that makes the window a range seek becomes safe to use.
+    /// </summary>
+    /// <remarks>
+    /// The expectation cannot be reached by accident. The fixture re-upserts the first school, so its
+    /// ContentVersion order and its DocumentId order differ — asserted here rather than assumed — and
+    /// the same window paged under the other anchor returns the other progression, which is exactly
+    /// what It_pages_a_min_only_change_version_window_by_document_id asserts.
+    /// </remarks>
+    [Test]
+    public async Task It_pages_a_min_only_change_version_window_by_content_version()
+    {
+        var refreshedSchools = await UpdateFirstSchoolAndReadStateAsync();
+        var byContentVersion = refreshedSchools.OrderBy(s => s.ContentVersion).ToArray();
+        var inDocumentOrder = refreshedSchools.Select(s => s.DocumentUuid).ToArray();
+        var expectedProgression = byContentVersion.Select(s => s.DocumentUuid).ToArray();
+
+        expectedProgression
+            .Should()
+            .NotEqual(inDocumentOrder, "the scenario must discriminate the two orders");
+
+        var walkedDocumentUuids = await WalkPagesAsync(
+            new ChangeVersionRange(byContentVersion[0].ContentVersion, null),
+            PageOrderingMode.ContentVersion,
+            pageCount: refreshedSchools.Count,
+            traceIdPrefix: "pg-cv-ordering-min-only-content-version"
+        );
+
+        walkedDocumentUuids.Should().Equal(expectedProgression);
+        walkedDocumentUuids.Should().OnlyHaveUniqueItems();
+    }
+
+    /// <summary>
     /// The ordering a bounded window is paged in is the one the request carries, not one derived from
     /// the window here: a request whose anchor is DocumentId over a bounded window — what a deployment
     /// running with the legacy ordering switch produces — pages in DocumentId order.
