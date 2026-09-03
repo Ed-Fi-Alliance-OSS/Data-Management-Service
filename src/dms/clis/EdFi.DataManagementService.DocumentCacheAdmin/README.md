@@ -104,7 +104,7 @@ The `cdc` verb group carries the deployment-owned CDC binding operations:
 | `cdc status` | Report deployment-owned CDC readiness for one binding. | None | None |
 | `cdc restart` | Restart the binding's connector after affirmative continuity evidence. | None | None |
 | `cdc adopt` | Adopt an operator-supplied binding around a complete governed artifact set. | None | `--binding-json` |
-| `cdc replace-source` | Not available in this release; the verb refuses. | `cdcSourceReplacement` | `--database-creation-mode`, `--write-admission`, `--previous-generation` |
+| `cdc replace-source` | Replace the physical source behind an enabled target with a new binding generation. | `cdcSourceReplacement` | `--database-creation-mode`, `--write-admission`, `--previous-generation` |
 | `cdc retire` | Retire a binding and its governed artifacts. | `cdcBindingRetirement` | None |
 
 `cdc enable` requires the target to already be an operator-configured
@@ -119,12 +119,23 @@ the complete binding record `--binding-json` supplies. It is not a first-time en
 path, and adoption never infers a binding from the topics or connector configuration that
 happen to exist.
 
-`cdc replace-source` is not available in this release and refuses every invocation with a
-diagnostic saying so. Replacing a physical source means pointing a logical target at a
-different database — a restore, a rollback, or a copy — which requires rotating the source
-identity and cutting the binding over to a new generation. The packaged tool does not yet
-perform that rotation, and the sequence it would otherwise run admits only a source holding
-no rows, which no replacement database does.
+`cdc replace-source` points a logical target at a different physical database as a new
+binding generation. It fences the connector of the generation named by
+`--previous-generation`, then runs the replacing generation through the same initial
+readiness sequence `cdc enable` runs, which is why it requires the same
+`--database-creation-mode` and `--write-admission` evidence: in-place source reset and topic
+reuse are deferred, so the replacing database must be one created for this CDC provisioning
+that has never admitted a write, and no governed artifact of the generation it supersedes is
+reused.
+
+The replacing source's identity must already have been rotated away from the generation it
+replaces. A restore, rollback, or copy carries the replaced database's own
+`dms.DataStoreIdentity` row, so its fingerprint is the replaced source's until it is rotated,
+and binding a new generation to an unrotated identity would publish one physical source under
+two generations. The verb refuses that rather than proceeding.
+
+The generation it supersedes is retained, not retired: its connector configuration and
+committed offsets are left for a `cdc retire` that removes them in order.
 
 Each `cdc` verb writes one shared CDC contract document, selected by the verb rather than
 by the outcome:
@@ -204,7 +215,7 @@ each one overrides for the current run:
 | `--deployment-key <value>` | Opaque deployment key contributing to governed artifact names. | `DeploymentKey` |
 | `--instance-key <value>` | Opaque instance key contributing to governed artifact names. | `InstanceKey` |
 | `--generation <n>` | Positive binding generation. | `Generation` |
-| `--previous-generation <n>` | Positive generation being replaced; parsed for `cdc replace-source`, which is not available in this release. | None; request-only. |
+| `--previous-generation <n>` | Positive generation being replaced; required by `cdc replace-source` and never inferred from the generations that exist. | None; request-only. |
 | `--kafka-bootstrap-servers <value>` | Kafka bootstrap servers the governed topics are provisioned through. | `KafkaBootstrapServers` |
 | `--connect-base-url <url>` | Base URL of the Kafka Connect REST interface. | `ConnectBaseUri` |
 | `--max-record-bytes <n>` | Largest record the pipeline must carry end to end. | `MaxRecordBytes` |

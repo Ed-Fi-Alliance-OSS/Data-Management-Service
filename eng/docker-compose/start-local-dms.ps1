@@ -122,6 +122,14 @@ param (
     [string]
     $CdcBindingStatePath = "",
 
+    # Remove the compose volumes even when a CDC binding did not retire, abandoning its record and
+    # the governed artifacts it names. A destructive teardown otherwise fails on an unretired
+    # binding, because deleting the volumes around a surviving binding record destroys the very
+    # connector, offsets, topics, and capture artifacts an idempotent retirement retry needs. Requires
+    # -d -v. This is an operator decision and is never inferred from a retirement that could not run.
+    [Switch]
+    $AbandonCdcBindingState,
+
     # Enable the DMS Configuration Service.
     # Retained for backward compatibility; Config Service is now always included in the compose set.
     # Per the bootstrap entry-point spec (DMS-1153), every non-teardown run starts Config Service,
@@ -239,6 +247,12 @@ if ($DbOnly -and $r) {
 # different store was in use than the one that was written.
 if (-not [string]::IsNullOrWhiteSpace($CdcBindingStatePath) -and -not ($EnableKafkaCdc -or $d)) {
     throw "-CdcBindingStatePath requires -EnableKafkaCdc (or a teardown run). Use: start-local-dms.ps1 -EnableKafkaCdc -CdcBindingStatePath <path>"
+}
+
+# Abandoning the binding state is only meaningful for the one workflow that removes it, so a run that
+# cannot reach the retirement is refused rather than silently carrying an unused permission.
+if ($AbandonCdcBindingState -and -not ($d -and $v)) {
+    throw "-AbandonCdcBindingState requires -d -v. It permits the destructive volume removal to proceed when a CDC binding did not retire, which is the only workflow that removes a binding record."
 }
 
 function Resolve-CdcBindingStateRoot {
@@ -576,11 +590,15 @@ if ($d) {
             # script cannot know what the start run passed.
             Write-Output "CDC teardown will retire from the default binding state store at '$cdcBindingStateRoot' (no -CdcBindingStatePath was supplied). A stack started with -CdcBindingStatePath must be torn down with the same path."
         }
+        # Throws when a discovered binding did not retire, which is what keeps the compose down below
+        # from removing the volumes holding the artifacts that binding's surviving record still names.
+        # -AbandonCdcBindingState is the operator's explicit decision to accept that instead.
         Invoke-CdcDestructiveTeardown `
             -BindingStateRoot $cdcBindingStateRoot `
             -ComposeProjectName "dms-local" `
             -EnvironmentFile $EnvironmentFile `
-            -DatabaseEngine $DatabaseEngine
+            -DatabaseEngine $DatabaseEngine `
+            -AbandonBindingState:$AbandonCdcBindingState
     }
     docker compose $files --env-file $EnvironmentFile -p dms-local down $downArgs
     # Fail before workspace removal: a failed down can leave services running against the

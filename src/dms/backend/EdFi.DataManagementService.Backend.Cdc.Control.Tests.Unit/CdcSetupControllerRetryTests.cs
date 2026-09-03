@@ -354,6 +354,44 @@ public class Given_CdcSetupControllerInitialEnable
         Diagnostic(admission, "enableProviderSetupFailed").Should().NotBeNull();
         OffsetStore(harness).MustNotHaveHappened();
         KafkaPolicy(harness).MustNotHaveHappened();
+
+        // The refusal carries the provider's own account of the step, not just its outcome: a refused
+        // grant, an absent principal, and a spent budget are all one outcome, and only the diagnostics
+        // tell them apart.
+        admission.Diagnostics.Should().Contain(diagnostic => diagnostic.Code == "providerSetupTimedOut");
+    }
+
+    /// <summary>
+    /// The validate-only pass is the evidence every later status check reads the provider artifacts
+    /// through, so a pass that is not an exact match ends the sequence before any Kafka or Connect side
+    /// effect. A connector registered against nonconforming artifacts would already be capturing from
+    /// them by the time the final evaluation rejected the state.
+    /// </summary>
+    [TestCase(Ddl.CdcProviderSetupOutcome.Failed)]
+    [TestCase(Ddl.CdcProviderSetupOutcome.CreatedOrMatched)]
+    public async Task It_stops_when_the_provider_artifacts_do_not_validate_after_they_are_created(
+        Ddl.CdcProviderSetupOutcome validateOnlyOutcome
+    )
+    {
+        CdcSetupControllerHarness harness = new() { ValidateOnlyProviderSetupOutcome = validateOnlyOutcome };
+
+        CdcAdmission admission = await harness.EnableAsync();
+
+        using var _ = new AssertionScope();
+        NotAdmitted(admission);
+        Diagnostic(admission, "enableProviderSetupNotSatisfied").Should().NotBeNull();
+
+        // Nothing was provisioned or registered against artifacts that did not validate.
+        OffsetStore(harness).MustNotHaveHappened();
+        KafkaPolicy(harness).MustNotHaveHappened();
+        A.CallTo(() =>
+                harness.Connect.PutConnectorConfigAsync(
+                    A<string>._,
+                    A<IReadOnlyDictionary<string, string>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
     }
 
     [Test]

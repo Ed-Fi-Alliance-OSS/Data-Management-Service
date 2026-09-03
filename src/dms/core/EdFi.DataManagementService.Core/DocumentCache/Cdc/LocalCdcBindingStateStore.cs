@@ -659,6 +659,12 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             return LocalCreateBindingResult.Failed(collisionFailure);
         }
 
+        CdcStateStoreFailure? retiredGenerationFailure = ValidateGenerationNotRetired(binding, bindingPath);
+        if (retiredGenerationFailure is not null)
+        {
+            return LocalCreateBindingResult.Failed(retiredGenerationFailure);
+        }
+
         LocalContractFilePublishResult publishResult = await PublishContractFileCreateNewAsync(
             bindingPath.FilePath!,
             CdcJsonContract.Serialize(binding),
@@ -701,6 +707,54 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         return exactMatch.Succeeded
             ? LocalCreateBindingResult.Created(readBack.State.State)
             : LocalCreateBindingResult.Failed(ToInvalidPersistedBindingFailure(exactMatch));
+    }
+
+    /// <summary>
+    /// Whether the generation this binding names was already published and retired by this deployment.
+    /// </summary>
+    /// <remarks>
+    /// A generation is allocated against the retirement records as well as the live bindings, because
+    /// retirement removes the binding record it retires and the retirement record is what outlives it.
+    /// Reading only the bindings makes a retired generation look unallocated: the local store's default
+    /// root is a deployment path rather than a container volume, so it survives the destructive volume
+    /// removal that deletes the source it was bound to, and the next stack asks for the same first
+    /// generation of the same instance key against a new physical database. That would reassign an
+    /// existing connector name, topic namespace, and consumer state to a different physical source,
+    /// which v1 never does.
+    ///
+    /// A record whose binding file is still present is not this case: a retirement writes the retirement
+    /// record before it removes the binding record, so the two coexist while an interrupted retirement
+    /// is retried, and the exact-match path is what governs that state.
+    /// </remarks>
+    private CdcStateStoreFailure? ValidateGenerationNotRetired(
+        CdcBinding binding,
+        CdcStateStorePathResolution bindingPath
+    )
+    {
+        CdcStateStorePathResolution retirementPath = _pathResolver.ResolveRetirementPath(
+            binding.ToBindingIdentity()
+        );
+        if (!retirementPath.Succeeded)
+        {
+            return retirementPath.ToFailure();
+        }
+
+        if (
+            !_fileSystem.FileExists(retirementPath.FilePath!) || _fileSystem.FileExists(bindingPath.FilePath!)
+        )
+        {
+            return null;
+        }
+
+        return CdcStateStoreFailure.InvalidOperation([
+            new CdcDiagnostic(
+                CdcDiagnosticCategory.UnsupportedOperation,
+                ObservedAt(),
+                "$.generation",
+                "CDC binding generation was already published and retired by this deployment, so it "
+                    + "cannot be bound again."
+            ),
+        ]);
     }
 
     private async Task<LocalCreateBindingResult> ExistingBindingResultAsync(
@@ -1623,8 +1677,12 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
     /// record's removal.
     /// </summary>
     /// <remarks>
-    /// A retirement record that is already there is success, not a collision. Retirement is retried
-    /// after any failed step, and the second pass writes the same fact about the same generation.
+    /// A retirement record that is already there is success, not a collision - but only when it records
+    /// the same binding. Retirement is retried after any failed step, and the second pass writes the
+    /// same fact about the same generation; a record naming a different physical source is not that
+    /// retry, and accepting it would report a retirement whose durable trace still names the source it
+    /// replaced. Only the latch time is allowed to differ: the first pass's time is when the retirement
+    /// was recorded, and a retry re-records the fact rather than restamping it.
     /// </remarks>
     private async Task<CdcStateStoreFailure?> WriteRetirementAsync(
         CdcBinding binding,
@@ -1663,7 +1721,48 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             cancellationToken
         );
 
-        return publishResult.DestinationAlreadyExists ? null : publishResult.Failure;
+        return publishResult.DestinationAlreadyExists
+            ? await ExactMatchExistingRetirementAsync(binding, retirementPath.FilePath!, cancellationToken)
+            : publishResult.Failure;
+    }
+
+    /// <summary>
+    /// Whether the retirement record already at this path records the very binding being retired.
+    /// </summary>
+    private async Task<CdcStateStoreFailure?> ExactMatchExistingRetirementAsync(
+        CdcBinding binding,
+        string retirementFilePath,
+        CancellationToken cancellationToken
+    )
+    {
+        string json;
+        try
+        {
+            json = await File.ReadAllTextAsync(retirementFilePath, cancellationToken);
+        }
+        catch (Exception exception) when (IsFileSystemException(exception))
+        {
+            return FileSystemFailure(retirementFilePath, "read retirement state");
+        }
+
+        CdcContractReadResult<CdcRetirement> readResult = CdcJsonContract.Deserialize<CdcRetirement>(json);
+        if (readResult.Contract is not { } existing)
+        {
+            return CdcStateStoreFailure.InvalidPersistedBinding(readResult.Diagnostics);
+        }
+
+        // Compared as whole contracts against the existing record's own latch time, so a field added to
+        // the retirement contract is compared without this having to be revisited.
+        return existing == CdcRetirement.FromBinding(binding, existing.RetiredAt)
+            ? null
+            : CdcStateStoreFailure.InvalidOperation([
+                new CdcDiagnostic(
+                    CdcDiagnosticCategory.BindingMismatch,
+                    ObservedAt(),
+                    "$.retirement",
+                    "CDC retirement state already records this generation for a different binding."
+                ),
+            ]);
     }
 
     private async Task<LocalContractFilePublishResult> PublishContractFileCreateNewAsync(

@@ -627,6 +627,11 @@ internal sealed class CdcSetupController(
             .ConfigureAwait(false);
         if (created.Outcome == DdlCdc.CdcProviderSetupOutcome.Failed)
         {
+            // The pass's own diagnostics are carried, not just its outcome: a refused grant, an absent
+            // connector principal, and an exhausted step budget are all this one outcome, and they are
+            // told apart only by what the provider reported.
+            DateTimeOffset providerSetupFailedAt = timeProvider.GetUtcNow();
+
             return Blocked(
                 Step(
                     "enableProviderSetupFailed",
@@ -634,9 +639,9 @@ internal sealed class CdcSetupController(
                     CdcDiagnosticComponent.ProviderSetup,
                     "CDC enablement could not create or exact-match the provider capture artifacts.",
                     created.Outcome.ToString(),
-                    timeProvider.GetUtcNow()
+                    providerSetupFailedAt
                 ),
-                []
+                CdcProviderSetupResultMapper.MapResultDiagnostics(created, providerSetupFailedAt)
             );
         }
 
@@ -663,6 +668,28 @@ internal sealed class CdcSetupController(
                 validated
             );
         evaluation = evaluation with { ProviderSetup = providerSetupObservation.ProviderSetup };
+
+        // Gated here for the same reason the two Kafka observations below are: this validate-only pass
+        // is the evidence every later status check reads the provider artifacts through, and a connector
+        // registered against nonconforming ones would already be capturing from them by the time the
+        // final evaluation rejected the state. A failed or non-exact-match pass is not evidence that the
+        // artifacts conform - the mapper reports it as invalid or unavailable - so the sequence ends
+        // here, before any Kafka or Connect side effect.
+        if (!CdcTargetStatusEvaluator.IsProviderSetupSatisfied(providerSetupObservation.ProviderSetup))
+        {
+            return Blocked(
+                Step(
+                    "enableProviderSetupNotSatisfied",
+                    CdcDiagnosticCategory.ProviderSetupInvalid,
+                    CdcDiagnosticComponent.ProviderSetup,
+                    "CDC enablement requires conforming provider capture artifacts before it registers a "
+                        + "connector.",
+                    providerSetupObservation.ProviderSetup.SetupOutcome.ToString(),
+                    timeProvider.GetUtcNow()
+                ),
+                providerSetupObservation.ProviderSetup.Diagnostics
+            );
+        }
 
         CdcObservationContext context = new(
             request.OperationId,
@@ -2801,11 +2828,18 @@ internal sealed class CdcSetupController(
     /// <remarks>
     /// The latch is written from the classifier's own incident candidate, which it raises only for a
     /// loss it proved and never for one it read back from the binding record — so repeated status polls
-    /// latch once. A latch that could not be written leaves the binding state as it was read, and the
-    /// loss is reported from the observation rather than from a state that was not durable. A fence
-    /// the worker did not apply is reported on the connector runtime: the loss is latched either way,
-    /// and a status that reported a contained incident while the connector still committed offsets
-    /// would leave nothing behind saying so.
+    /// latch once. A fence the worker did not apply is reported on the connector runtime: the loss is
+    /// latched either way, and a status that reported a contained incident while the connector still
+    /// committed offsets would leave nothing behind saying so.
+    ///
+    /// A latch that could not be written is reported in the status's state-store diagnostics, which is
+    /// what the binding state is evaluated as unavailable from: the loss is terminal and the record that
+    /// must outlive this poll does not carry it, so no later step may read the binding as though it did.
+    /// Restart is refused for the same poll without depending on those diagnostics — the classifier
+    /// raises an incident candidate only from a proved loss, so the continuity this collection reports
+    /// is <c>Lost</c> whenever a latch was attempted at all, and the restart gate admits only
+    /// <c>Healthy</c>. The connector stays fenced, and the operator is left an error naming the
+    /// unwritten latch to retry against.
     /// </remarks>
     private async Task<CdcTargetStatusEvaluationInput> LatchSourceHistoryLossAsync(
         CdcTargetStatusEvaluationInput evaluation,
@@ -2840,12 +2874,28 @@ internal sealed class CdcSetupController(
             );
         }
 
-        return latch.Status == CdcControlPlaneOperationStatus.Succeeded
-            ? evaluation with
-            {
-                BindingState = latch.State ?? evaluation.BindingState,
-            }
-            : evaluation;
+        if (latch.Status == CdcControlPlaneOperationStatus.Succeeded)
+        {
+            return evaluation with { BindingState = latch.State ?? evaluation.BindingState };
+        }
+
+        return evaluation with
+        {
+            StateStoreDiagnostics =
+            [
+                .. evaluation.StateStoreDiagnostics,
+                StatusStep(
+                    "statusSourceHistoryLatchNotDurable",
+                    CdcDiagnosticCategory.SourceHistoryLost,
+                    CdcDiagnosticComponent.SourceHistory,
+                    "CDC status proved a terminal source-history loss but could not latch it durably in "
+                        + "the binding record.",
+                    latch.Status.ToString(),
+                    timeProvider.GetUtcNow()
+                ),
+                .. latch.Diagnostics,
+            ],
+        };
     }
 
     /// <summary>
@@ -2937,6 +2987,18 @@ internal sealed class CdcSetupController(
     /// observed either way. Elapsed time is never evidence, so a spent budget ends the wait rather than
     /// standing in for the observation it was waiting on.
     /// </summary>
+    /// <remarks>
+    /// The budget bounds real elapsed time, not just the decision between observations: each wait is
+    /// clamped to what the budget has left, and every observation after the first is issued under that
+    /// remainder. Without both, an observation or a delay begun just inside the deadline would run its
+    /// own full step timeout past it, and a slow-answering step would spend that timeout on every one of
+    /// its polls - the budget would bound the number of reads rather than the time they take.
+    ///
+    /// The first observation is the exception, and is issued under the caller's token alone: the step
+    /// has to report what it observed, and a first observation cancelled by the budget would leave
+    /// nothing to report but the elapsed time this method refuses to treat as evidence. Every later
+    /// observation has the one before it to fall back on, so cutting one off costs no evidence.
+    /// </remarks>
     private async Task<TObservation> PollAsync<TObservation>(
         Func<CancellationToken, Task<TObservation>> observe,
         Func<TObservation, bool> satisfied,
@@ -2946,17 +3008,46 @@ internal sealed class CdcSetupController(
     )
     {
         DateTimeOffset deadline = timeProvider.GetUtcNow() + budget;
+        TObservation observation = await observe(cancellationToken).ConfigureAwait(false);
 
-        while (true)
+        while (!satisfied(observation))
         {
-            TObservation observation = await observe(cancellationToken).ConfigureAwait(false);
-            if (satisfied(observation) || timeProvider.GetUtcNow() >= deadline)
+            TimeSpan remaining = deadline - timeProvider.GetUtcNow();
+            if (remaining <= TimeSpan.Zero)
             {
                 return observation;
             }
 
-            await Task.Delay(pollInterval, timeProvider, cancellationToken).ConfigureAwait(false);
+            await Task.Delay(
+                    remaining < pollInterval ? remaining : pollInterval,
+                    timeProvider,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            remaining = deadline - timeProvider.GetUtcNow();
+            if (remaining <= TimeSpan.Zero)
+            {
+                return observation;
+            }
+
+            using CancellationTokenSource remainingBudget = new(remaining, timeProvider);
+            using CancellationTokenSource observeCancellation =
+                CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, remainingBudget.Token);
+
+            try
+            {
+                observation = await observe(observeCancellation.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                // Cut off by this step's own budget rather than by the caller, so the observation before
+                // it is what the step actually observed.
+                return observation;
+            }
         }
+
+        return observation;
     }
 
     /// <summary>

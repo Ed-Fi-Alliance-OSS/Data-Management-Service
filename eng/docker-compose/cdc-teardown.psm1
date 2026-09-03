@@ -22,10 +22,21 @@
     that here would put a second, unverified ordering next to the verified one.
 
     Bindings are discovered from the state store rather than from a switch: teardown must remove what
-    an earlier run actually bound, which the run being torn down cannot be asked about. A retirement
-    that cannot run or that fails leaves the record in place and reports it; the compose down still
-    proceeds, because a surviving record with no surviving artifact is the recoverable state the
-    design already allows for a crash, while a blocked teardown leaves the operator with neither.
+    an earlier run actually bound, which the run being torn down cannot be asked about.
+
+    Every discovered binding must retire before the volumes go, and a record that cannot even be read
+    as a binding stops the teardown rather than being skipped. The design's cleanup rule leaves two
+    outcomes: the binding record is retained together with every artifact it governs, or the governed
+    artifacts are removed before the record is. Removing the volumes around a record whose retirement
+    failed is neither - the record survives naming a connector, topics, offsets, and capture artifacts
+    that `down -v` has just destroyed, which is the one state the rule forbids, and it destroys the
+    artifacts an idempotent retirement retry would have to act on. So a failed retirement is fatal
+    here: the stack stays up, and the operator can retry the retirement against the connector, broker,
+    and database it still needs.
+
+    Abandoning the binding state is a decision this module never makes for the operator. It is
+    available as an explicit request - `start-local-dms.ps1 -d -v -AbandonCdcBindingState` - which
+    retires what it can, reports what it could not, and proceeds to the volume removal anyway.
 #>
 
 Set-StrictMode -Version Latest
@@ -48,10 +59,12 @@ function Get-CdcRetirableBinding {
         The target is read from the record's own fields rather than parsed out of the path, because
         the record is the authority for what was bound and the path segments are only its index.
 
-        A file that is not a readable binding record is reported and skipped rather than guessed at:
-        an unreadable record is exactly the case where inferring a target could retire artifacts that
-        belong to a different binding. Within one instance key the newest generation is retired first,
-        so a generation is never removed before the one that superseded it.
+        A file that is not a readable binding record stops the discovery rather than being guessed at
+        or skipped: an unreadable record is exactly the case where inferring a target could retire
+        artifacts that belong to a different binding, and skipping it would let the caller remove the
+        volumes holding the artifacts it still names. Unreadable is not absent, and only one of the
+        two is safe to act on. Within one instance key the newest generation is retired first, so a
+        generation is never removed before the one that superseded it.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns the set of retirable bindings; the singular noun names the item, matching the sibling Get- helpers.')]
     [CmdletBinding()]
@@ -91,8 +104,7 @@ function Get-CdcRetirableBinding {
             $record = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json
         }
         catch {
-            Write-Warning "CDC teardown: '$($file.FullName)' is not a readable binding record and was left in place."
-            continue
+            throw "CDC teardown: '$($file.FullName)' is not a readable binding record ($($_.Exception.Message)). It may name live governed artifacts, so the teardown stops rather than removing the stack around them. Retire that binding by hand, or repair or remove the record, before tearing the stack down."
         }
 
         $identityFields = @('deploymentKey', 'instanceKey', 'dataStoreId', 'generation')
@@ -101,8 +113,7 @@ function Get-CdcRetirableBinding {
             [string]::IsNullOrWhiteSpace([string]$record.$_)
         }
         if (@($missingField).Count -gt 0) {
-            Write-Warning "CDC teardown: '$($file.FullName)' does not name a complete binding target ($(@($missingField) -join ', ')) and was left in place."
-            continue
+            throw "CDC teardown: '$($file.FullName)' does not name a complete binding target (missing $(@($missingField) -join ', ')). The artifacts it governs cannot be named from it, so the teardown stops rather than removing the stack around them. Retire that binding by hand, or repair or remove the record, before tearing the stack down."
         }
 
         $records += [pscustomobject]@{
@@ -186,36 +197,19 @@ function Get-CdcRetireArgument {
     Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
     Import-Module (Join-Path $PSScriptRoot "cdc-enable.psm1") -Force
 
-    # The database principal the provider teardown runs as - the server's own administrative login,
-    # which is the account the compose file creates, matching the enable phase's setup principal.
-    $setupPrincipal = if ($DatabaseEngine -eq "mssql") { "sa" } else { "postgres" }
-    $localPolicy = Get-LocalCdcDeploymentPolicy
-
     if ($null -eq $ConnectorPrincipal) {
         $ConnectorPrincipal = Get-CdcConnectorPrincipalConfiguration -EnvValues @{}
     }
 
-    $composeArguments = @(
-        "compose",
-        "-f", "cdc-setup.yml",
-        "--env-file", $EnvironmentFile,
-        "-p", $ComposeProjectName,
-        "run", "--rm", "--build"
+    # No operator credential. Retirement reads no projection status, and the control plane no longer
+    # demands the projection-status settings of every verb just to resolve its options - the collector
+    # the reading verbs go through refuses for itself instead. Carrying a token here would put a
+    # credential on a path that never presents it.
+    $environmentArguments = @(
+        Get-CdcConnectorPrincipalEnvArgument -ConnectorPrincipal $ConnectorPrincipal
     )
-    # Same host-user override the enable phase runs under, so the retirement reads and removes the
-    # store as the account that owns it rather than as root.
-    $composeArguments += Get-CdcContainerUserArgument
-    $composeArguments += @(
-        "-e", "DataManagement__DocumentCache__Cdc__SetupPrincipal=$setupPrincipal"
-        # No operator credential. Retirement reads no projection status, and the control plane no
-        # longer demands the projection-status settings of every verb just to resolve its options -
-        # the collector the reading verbs go through refuses for itself instead. Carrying a token here
-        # would put a credential on a path that never presents it.
-    )
-    $composeArguments += Get-CdcConnectorPrincipalEnvArgument -ConnectorPrincipal $ConnectorPrincipal
-    $composeArguments += @(
-        "cdc-setup",
-        "cdc", "retire",
+
+    $verbArguments = @(
         "--confirm", $script:BindingRetirementConfirmation,
         # See .DESCRIPTION: the destructive teardown is where that assertion is the caller's to make.
         "--connector-already-absent",
@@ -223,24 +217,27 @@ function Get-CdcRetireArgument {
     )
 
     if (-not [string]::IsNullOrWhiteSpace($BindingRecord.TenantKey)) {
-        $composeArguments += @("--tenant-key", [string]$BindingRecord.TenantKey)
+        $verbArguments += @("--tenant-key", [string]$BindingRecord.TenantKey)
     }
 
     # The generation and the artifact-name keys are the record's own. A retirement that guessed any
     # of them would be naming a binding other than the one it read.
-    $composeArguments += @(
+    $verbArguments += @(
         "--deployment-key", [string]$BindingRecord.DeploymentKey,
         "--instance-key", [string]$BindingRecord.InstanceKey,
-        "--generation", "$($BindingRecord.Generation)",
-        "--kafka-bootstrap-servers", $localPolicy.KafkaBootstrapServers,
-        "--connect-base-url", $localPolicy.ConnectBaseUrl,
-        "--max-record-bytes", $localPolicy.MaxRecordBytes,
-        "--durability-profile", $localPolicy.DurabilityProfile,
-        "--cdc-binding-state-path", $localPolicy.BindingStatePath,
-        "--json"
+        "--generation", "$($BindingRecord.Generation)"
     )
 
-    return $composeArguments
+    # The setup principal, the host-user override, the compose service, and the local deployment
+    # policy are the shared builder's, so a retirement cannot name a Connect port, record-size
+    # budget, or binding-state path other than the one the enable phase used.
+    return Get-CdcSetupComposeArgument `
+        -ComposeProjectName $ComposeProjectName `
+        -EnvironmentFile $EnvironmentFile `
+        -DatabaseEngine $DatabaseEngine `
+        -VerbName "retire" `
+        -EnvironmentArgument $environmentArguments `
+        -VerbArgument $verbArguments
 }
 
 function Invoke-CdcDestructiveTeardown {
@@ -250,9 +247,19 @@ function Invoke-CdcDestructiveTeardown {
 
     .DESCRIPTION
         Returns one result object per binding it attempted, so the caller and the tests can see what
-        was retired and what was left. Reports and continues on a failure rather than throwing: the
-        destructive down the caller is about to run is the operator's explicit request, and the
-        control plane guarantees that an incomplete teardown keeps its binding record.
+        was retired and what was left.
+
+        Every binding is attempted before anything is thrown, so one failure does not hide the state of
+        the rest. A binding that did not retire then fails the whole teardown, which is what keeps the
+        caller from removing the volumes holding the artifacts its surviving record still governs.
+
+        -AbandonBindingState is the operator's explicit decision to accept that outcome: the failures
+        are reported, the records are left in place, and the caller proceeds to the volume removal. It
+        is never inferred - not from a retirement that cannot run, and not from a stack whose services
+        are already gone.
+    .PARAMETER AbandonBindingState
+        Proceed to the caller's volume removal even when a binding did not retire, abandoning its
+        record and the artifacts it names. Reported, never inferred.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Teardown phase helper, consistent with the sibling teardown invocations; no -WhatIf surface.')]
     [CmdletBinding()]
@@ -273,7 +280,10 @@ function Invoke-CdcDestructiveTeardown {
         [Parameter(Mandatory)]
         [ValidateSet("postgresql", "mssql")]
         [string]
-        $DatabaseEngine
+        $DatabaseEngine,
+
+        [switch]
+        $AbandonBindingState
     )
 
     $bindings = @(Get-CdcRetirableBinding -BindingStateRoot $BindingStateRoot)
@@ -335,6 +345,15 @@ function Invoke-CdcDestructiveTeardown {
         else {
             $env:DMS_CDC_BINDING_STATE_PATH = $previousStatePath
         }
+    }
+
+    $unretired = @($results | Where-Object { -not $_.Retired })
+    if ($unretired.Count -gt 0 -and -not $AbandonBindingState) {
+        $unretiredDescription = ($unretired | ForEach-Object {
+                "generation $($_.Generation) of data store $($_.DataStoreId) ('$($_.RecordPath)')"
+            }) -join '; '
+
+        throw "CDC teardown: $($unretired.Count) of $($results.Count) binding(s) did not retire: $unretiredDescription. The stack is left running so the retirement can be retried against the connector, broker, and instance database it needs; removing the volumes now would destroy the artifacts those records still govern. Retry the teardown once the retirement succeeds, or abandon the binding state deliberately with -AbandonCdcBindingState."
     }
 
     return @($results)

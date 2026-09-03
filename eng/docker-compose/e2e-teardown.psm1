@@ -35,6 +35,12 @@
     the binding record last. The durable CDC binding state store is not part of either compose
     project and is deliberately outside this module's removals - the retirement is what empties it.
 
+    A binding that does not retire fails the primitive, and this module lets that failure propagate:
+    the volumes stay, so the retirement can be retried against the connector, broker, and database it
+    needs, and the artifacts a surviving binding record still names are not destroyed underneath it.
+    Abandoning that state is an explicit operator decision - `start-local-dms.ps1 -d -v
+    -AbandonCdcBindingState` - and is deliberately not something this module makes for a test run.
+
     Parameters are forwarded to the primitives by name (hashtable splatting), so switches such as
     -d and -v bind as switches rather than positional argument strings.
 #>

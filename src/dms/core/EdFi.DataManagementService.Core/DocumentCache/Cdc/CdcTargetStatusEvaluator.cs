@@ -1049,6 +1049,28 @@ public static class CdcTargetStatusEvaluator
         || observation.HeartbeatState == state;
 
     /// <summary>
+    /// Whether the provider capture artifacts, grants, source inventory, and heartbeat were all found
+    /// conforming.
+    /// </summary>
+    /// <remarks>
+    /// This is the same rule <c>EvaluateProviderSetup</c> applies when it composes a status, exposed for
+    /// the same reason as <see cref="IsKafkaPolicySatisfied"/>: a provisioning sequence reads the
+    /// validate-only evidence before it registers a connector, and nonconforming provider artifacts must
+    /// end that sequence rather than be reported by the status composed after a connector is already
+    /// publishing through them. It answers on the observed outcome and states alone; the composed status
+    /// still applies the observation contract's own validation.
+    /// </remarks>
+    public static bool IsProviderSetupSatisfied(CdcProviderSetupObservation observation)
+    {
+        ArgumentNullException.ThrowIfNull(observation);
+
+        return observation.SetupOutcome == CdcProviderSetupOutcome.Satisfied
+            && !HasProviderSetupState(observation, CdcProviderSetupState.Missing)
+            && !HasProviderSetupState(observation, CdcProviderSetupState.Mismatched)
+            && !HasProviderSetupState(observation, CdcProviderSetupState.Unknown);
+    }
+
+    /// <summary>
     /// Whether the binding's Kafka topics, ACLs, and record-size budget were all found conforming.
     /// </summary>
     /// <remarks>

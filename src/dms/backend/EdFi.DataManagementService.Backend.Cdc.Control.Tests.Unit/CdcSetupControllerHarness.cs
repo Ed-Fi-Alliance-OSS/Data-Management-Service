@@ -281,6 +281,13 @@ internal sealed class CdcSetupControllerHarness
             .ReturnsLazily(
                 (CdcIncident incident, CancellationToken _) =>
                 {
+                    if (LatchResult is { } refusedLatch)
+                    {
+                        // A latch the store did not accept leaves the binding state exactly as it was
+                        // read: nothing about the incident survives this poll.
+                        return Task.FromResult(refusedLatch);
+                    }
+
                     // The latch is durable, so every later read of the binding state reports it — which
                     // is what keeps a proved loss latched across polls.
                     LatchedIncident ??= incident;
@@ -445,6 +452,14 @@ internal sealed class CdcSetupControllerHarness
     public Ddl.CdcProviderSetupOutcome ProviderSetupOutcome { get; set; } =
         Ddl.CdcProviderSetupOutcome.CreatedOrMatched;
 
+    /// <summary>
+    /// The outcome of the validate-only provider setup pass, which is the evidence every later status
+    /// check reads the provider artifacts through. Exact-match by default, because that is what a
+    /// conforming read-back of artifacts just created reports.
+    /// </summary>
+    public Ddl.CdcProviderSetupOutcome ValidateOnlyProviderSetupOutcome { get; set; } =
+        Ddl.CdcProviderSetupOutcome.ExactMatch;
+
     /// <summary>Overrides the shared Connect offset-store evidence.</summary>
     public CdcConnectOffsetStorePolicyObservation? OffsetStorePolicy { get; set; }
 
@@ -490,6 +505,9 @@ internal sealed class CdcSetupControllerHarness
 
     /// <summary>Overrides how the state store answers a verified-binding import.</summary>
     public CdcBindingLifecycleResult? ImportResult { get; set; }
+
+    /// <summary>Overrides how the state store answers a source-history loss latch.</summary>
+    public CdcBindingLifecycleResult? LatchResult { get; set; }
 
     /// <summary>The cleanup proof the control plane presented to delete the binding record.</summary>
     public CdcCleanupProof? CleanupProof { get; private set; }
@@ -1284,7 +1302,7 @@ internal sealed class CdcSetupControllerHarness
                 _ddlProvider,
                 request.Mode,
                 request.Mode == Ddl.CdcProviderSetupMode.ValidateOnly
-                    ? Ddl.CdcProviderSetupOutcome.ExactMatch
+                    ? ValidateOnlyProviderSetupOutcome
                     : ProviderSetupOutcome
             )
             .Result;

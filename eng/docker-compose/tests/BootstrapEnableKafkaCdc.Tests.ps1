@@ -257,7 +257,16 @@ Describe "DMS-1323 bootstrap CDC phase" {
 
         It "forwards both to teardown, which rebuilds the compose set" {
             $script:entryScriptText |
-                Should -Match 'foreach \(\$name in ''EnvironmentFile'', ''IdentityProvider'', ''EnableKafkaUI'', ''EnableKafkaCdc'', ''CdcBindingStatePath'', ''EnableSwaggerUI'', ''DatabaseEngine''\)'
+                Should -Match 'foreach \(\$name in ''EnvironmentFile'', ''IdentityProvider'', ''EnableKafkaUI'', ''EnableKafkaCdc'', ''CdcBindingStatePath'', ''AbandonCdcBindingState'', ''EnableSwaggerUI'', ''DatabaseEngine''\)'
+        }
+
+        It "offers the explicit binding-state abandonment only for the destructive teardown" {
+            # A failed retirement never infers it, so the entry point has to be able to express it -
+            # and a start run that named it is refused rather than carrying an unread permission.
+            $script:entryScriptText | Should -Match '\[Switch\]\$AbandonCdcBindingState'
+            $script:entryScriptText |
+                Should -Match '(?s)if \(\$AbandonCdcBindingState -and -not \(\$d -and \$v\)\) \{[^}]*throw'
+            $script:entryScriptText | Should -Match '\$wrapperArgs\.Remove\("AbandonCdcBindingState"\)'
         }
 
         It "forwards the opt-in to the start script's infrastructure and DMS invocations" {
@@ -1169,18 +1178,119 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
             $userArgumentText | Should -Match '\$IsLinux'
             $userArgumentText | Should -Match '"--user"'
 
-            # Both invocation paths, or the enable phase writes records the retirement cannot read.
-            $script:teardownModuleText | Should -Match 'Get-CdcContainerUserArgument'
+            # Both invocation paths carry it, or the enable phase writes records the retirement
+            # cannot read. They carry it because both are built by the one shared builder, which is
+            # also what keeps the setup principal, the compose service, and the policy flags from
+            # drifting between them.
+            #
+            # Re-imported rather than relied on from the Describe: the teardown module imports this
+            # one -Force from inside its own functions, which unloads the copy this session holds, so
+            # any test that runs after one of those invocations has to bring it back itself.
+            Import-Module (Join-Path $script:sourceDockerComposeRoot "cdc-enable.psm1") -Force
+
+            $enableArguments = Get-CdcEnableArgument `
+                -ComposeProjectName "dms-local" `
+                -EnvironmentFile ".env" `
+                -TenantKey "" `
+                -DataStoreId 1 `
+                -DatabaseEngine "postgresql" `
+                -DatabaseCreatedByThisRun $true `
+                -DmsBearerToken "token" `
+                -SourceDatabaseName "edfi_datamanagementservice"
+            $retireArguments = Get-CdcRetireArgument `
+                -ComposeProjectName "dms-local" `
+                -EnvironmentFile ".env" `
+                -BindingRecord ([pscustomobject]@{
+                    DataStoreId   = 1
+                    TenantKey     = ""
+                    DeploymentKey = "local"
+                    InstanceKey   = "ds1"
+                    Generation    = 1
+                }) `
+                -DatabaseEngine "postgresql"
+
+            $expectedUserArgument = @(Get-CdcContainerUserArgument)
+            foreach ($arguments in @($enableArguments, $retireArguments)) {
+                $joined = $arguments -join " "
+                if ($expectedUserArgument.Count -gt 0) {
+                    $joined | Should -BeLike "*$($expectedUserArgument -join " ")*"
+                }
+
+                $joined | Should -BeLike "*DataManagement__DocumentCache__Cdc__SetupPrincipal=postgres*"
+            }
+
+            $script:teardownModuleText | Should -Match 'Get-CdcSetupComposeArgument'
             (Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "cdc-enable.psm1") -Raw) |
                 Should -Match '\$composeArguments \+= Get-CdcContainerUserArgument'
         }
 
-        It "leaves the binding record in place when the retirement could not run" {
-            # A record this module cannot read, and a retirement the tool refused, both keep the
-            # record: the artifacts it names are still there and only a completed retirement may
-            # remove it.
-            $script:teardownModuleText | Should -Match 'was left in place'
-            $script:teardownModuleText | Should -Match 'was retained'
+        It "retains the binding record of a failed retirement and fails the teardown with it" {
+            # Removing the volumes around a surviving binding record destroys the connector, offsets,
+            # topics, and capture artifacts it still names - the one outcome the cleanup rule forbids,
+            # and the state an idempotent retirement retry would have had to act on.
+            $root = New-TemporaryStateRoot
+            try {
+                $recordPath = New-BindingRecordFile `
+                    -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds1" -Generation 1 -Record @{
+                    deploymentKey = "local"
+                    tenantKey     = ""
+                    dataStoreId   = "1"
+                    instanceKey   = "ds1"
+                    generation    = 1
+                }
+                $environmentFile = Join-Path $root ".env"
+                "" | Set-Content -LiteralPath $environmentFile -Encoding utf8
+
+                Mock -ModuleName cdc-teardown docker { $global:LASTEXITCODE = 1 }
+
+                {
+                    Invoke-CdcDestructiveTeardown `
+                        -BindingStateRoot $root `
+                        -ComposeProjectName "dms-local" `
+                        -EnvironmentFile $environmentFile `
+                        -DatabaseEngine "postgresql" `
+                        -WarningAction SilentlyContinue
+                } | Should -Throw -ExpectedMessage "*did not retire*"
+
+                Test-Path -LiteralPath $recordPath | Should -BeTrue
+            }
+            finally {
+                Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "reports an unretired binding and proceeds only when the operator abandons the state" {
+            $root = New-TemporaryStateRoot
+            try {
+                New-BindingRecordFile `
+                    -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds1" -Generation 1 -Record @{
+                    deploymentKey = "local"
+                    tenantKey     = ""
+                    dataStoreId   = "1"
+                    instanceKey   = "ds1"
+                    generation    = 1
+                } | Out-Null
+                $environmentFile = Join-Path $root ".env"
+                "" | Set-Content -LiteralPath $environmentFile -Encoding utf8
+
+                Mock -ModuleName cdc-teardown docker { $global:LASTEXITCODE = 1 }
+
+                $results = @(
+                    Invoke-CdcDestructiveTeardown `
+                        -BindingStateRoot $root `
+                        -ComposeProjectName "dms-local" `
+                        -EnvironmentFile $environmentFile `
+                        -DatabaseEngine "postgresql" `
+                        -AbandonBindingState `
+                        -WarningAction SilentlyContinue
+                )
+
+                $results.Count | Should -Be 1
+                $results[0].Retired | Should -BeFalse
+            }
+            finally {
+                Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+            }
         }
     }
 
@@ -1243,12 +1353,27 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
             }
         }
 
-        It "leaves a record it cannot read in place instead of guessing a target" {
+        It "refuses the discovery for a record it cannot read instead of skipping it" {
+            # Unreadable is not absent. Skipping the record would let the caller remove the volumes
+            # holding the artifacts it still names, which is exactly the case where the target cannot
+            # be inferred well enough to retire them first.
             $root = New-TemporaryStateRoot
             try {
                 $directory = Join-Path (Join-Path (Join-Path $root "bindings") "local") "ds1"
                 New-Item -ItemType Directory -Path $directory -Force | Out-Null
                 "{ not json" | Set-Content -LiteralPath (Join-Path $directory "1.json") -Encoding utf8
+
+                { Get-CdcRetirableBinding -BindingStateRoot $root } |
+                    Should -Throw -ExpectedMessage "*is not a readable binding record*"
+            }
+            finally {
+                Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "refuses the discovery for a record that names no complete binding target" {
+            $root = New-TemporaryStateRoot
+            try {
                 New-BindingRecordFile -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds2" -Generation 1 -Record @{
                     deploymentKey = "local"
                     tenantKey     = ""
@@ -1256,9 +1381,8 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
                     generation    = 1
                 } | Out-Null
 
-                # The malformed record and the one that names no data store are both skipped.
-                @(Get-CdcRetirableBinding -BindingStateRoot $root -WarningAction SilentlyContinue).Count |
-                    Should -Be 0
+                { Get-CdcRetirableBinding -BindingStateRoot $root } |
+                    Should -Throw -ExpectedMessage "*does not name a complete binding target*"
             }
             finally {
                 Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue

@@ -1010,11 +1010,20 @@ Teardown is where the distinction matters:
   not block it: this teardown asserts `--connector-already-absent`, because the same pass
   removes the broker along with the committed offsets that assertion covers.
 
-A binding that still could not be retired — DMS already stopped, so no operator token could be
-obtained — is reported and left in place. Retire it against a running stack with
-`dms-document-cache cdc retire` before reusing the store. If the stack is already gone, the
-record names artifacts that no longer exist and nothing can retire it: delete the binding state
-store (`.cdc-state` by default) so the next `-EnableKafkaCdc` run starts from an empty one.
+A binding that could not be retired **fails the teardown before the volumes are removed**, and
+the stack is left running. That is deliberate: the binding record survives `down -v` while the
+connector, offsets, topics, and capture artifacts it names would not, which is the one state the
+cleanup rule forbids and which destroys everything a retirement retry would have to act on. A
+file under the store that cannot be read as a binding record stops the teardown the same way,
+because an unreadable record may still name live artifacts.
+
+Retire the binding against the still-running stack with `dms-document-cache cdc retire`, then
+tear down again. If the state must be abandoned instead — the artifacts are already gone, or the
+stack it was bound to no longer exists — say so explicitly with
+`./start-local-dms.ps1 -d -v -AbandonCdcBindingState` (also accepted by
+`./bootstrap-local-dms.ps1 -d -v`), which reports what it could not retire and removes the
+volumes anyway. Deleting the binding state store (`.cdc-state` by default) is the equivalent by
+hand.
 
 For E2E, `setup-local-dms.ps1 -EnableKafkaCdc` registers capture against the fresh E2E
 database that setup provisions, before the suite issues any write, and the matching

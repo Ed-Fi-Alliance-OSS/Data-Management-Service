@@ -214,30 +214,59 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
     }
 
     /// <summary>
-    /// The packaged tool does not offer source replacement. The controller reaches replacement only
-    /// through the initial enablement sequence, which admits a source with no canonical, cache, or work
-    /// rows — and every database a replacement would be pointed at (a restore, a rollback, a copy) has
-    /// rows. Running that sequence under a replacement's name would be the wrong operation, so the verb
-    /// refuses and the controller is never reached, whether or not the operator named a generation.
+    /// The replacing generation runs the same initial readiness sequence, so it carries the same
+    /// provisioning evidence, and the generation it supersedes is the operator's own rather than one
+    /// inferred from what exists.
     /// </summary>
-    [TestCase(null)]
-    [TestCase(4L)]
-    public async Task It_refuses_a_source_replacement_the_packaged_tool_does_not_perform(
-        long? previousGeneration
-    )
+    [Test]
+    public async Task It_replaces_a_source_with_the_operator_s_superseded_generation()
     {
+        A.CallTo(() => _controller.ReplaceSourceAsync(A<CdcReplaceSourceRequest>._, A<CancellationToken>._))
+            .Returns(Admission(CdcAdmissionState.Admitted));
+
         DocumentCacheAdminCdcCommandResult result = await ExecuteAsync(
             Request(
                 DocumentCacheAdminCommandSurface.CdcReplaceSourceVerbName,
-                previousGeneration: previousGeneration
+                databaseCreationMode: DocumentCacheAdminCommandSurface.DatabaseCreationModeCreatedForInitialCdcProvisioningOptionValue,
+                writeAdmission: DocumentCacheAdminCommandSurface.WriteAdmissionClosedNeverOpenedOptionValue,
+                previousGeneration: 4L
             )
+        );
+
+        using var _ = new AssertionScope();
+        result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.Success);
+        result.Contract.Should().BeOfType<CdcAdmission>();
+
+        CdcReplaceSourceRequest replaceRequest = CapturedRequest<CdcReplaceSourceRequest>(
+            nameof(ICdcSetupController.ReplaceSourceAsync)
+        );
+        replaceRequest.PreviousGeneration.Should().Be(4L);
+        replaceRequest
+            .ProvisioningEvidence.DatabaseCreationMode.Should()
+            .Be(
+                DocumentCacheAdminCommandSurface.DatabaseCreationModeCreatedForInitialCdcProvisioningOptionValue
+            );
+        replaceRequest
+            .ProvisioningEvidence.WriteAdmissionState.Should()
+            .Be(DocumentCacheAdminCommandSurface.WriteAdmissionClosedNeverOpenedOptionValue);
+    }
+
+    /// <summary>
+    /// The superseded generation names the connector the replacement fences, so a request built without
+    /// one is refused for itself rather than defaulted to a generation nobody asked for.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_a_source_replacement_that_names_no_superseded_generation()
+    {
+        DocumentCacheAdminCdcCommandResult result = await ExecuteAsync(
+            Request(DocumentCacheAdminCommandSurface.CdcReplaceSourceVerbName, previousGeneration: null)
         );
 
         using var _ = new AssertionScope();
         result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.RejectedNoMutation);
         result
             .Diagnostics.Should()
-            .Contain(diagnostic => diagnostic.Category == CdcDiagnosticCategory.UnsupportedOperation);
+            .Contain(diagnostic => diagnostic.Category == CdcDiagnosticCategory.MissingRequiredField);
         A.CallTo(() => _controller.ReplaceSourceAsync(A<CdcReplaceSourceRequest>._, A<CancellationToken>._))
             .MustNotHaveHappened();
     }

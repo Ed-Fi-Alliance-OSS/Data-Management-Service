@@ -340,6 +340,86 @@ public class Given_LocalCdcStateStore
             .Be(CdcStateStoreFailureKind.InvalidPersistedBinding);
     }
 
+    /// <summary>
+    /// A generation is allocated against the retirement records as well as the live bindings. The local
+    /// store's root is a deployment path rather than a container volume, so it survives the destructive
+    /// volume removal that deletes the source it was bound to, and the next stack asks for the same
+    /// first generation of the same instance key against a new physical database - which would reassign
+    /// an existing connector name, topic namespace, and consumer state to a different physical source.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_a_binding_for_a_generation_it_already_retired()
+    {
+        using TempCdcStateRoot tempRoot = new();
+        LocalCdcBindingStateStore store = new(tempRoot.Path);
+
+        // What a completed retirement leaves: the record of the publication, and no binding record.
+        tempRoot.WriteRetirement(SampleBinding, SampleObservedAt);
+
+        CdcCreateBindingStateStoreResult result = await store.CreateBindingIfAbsentAsync(
+            SampleBinding with
+            {
+                PhysicalSourceFingerprint =
+                    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            },
+            CancellationToken.None
+        );
+
+        CdcStateStoreFailure failure = result
+            .Should()
+            .BeOfType<CdcCreateBindingStateStoreResult.StateStoreFailure>()
+            .Subject.Failure;
+        failure.Kind.Should().Be(CdcStateStoreFailureKind.InvalidOperation);
+        failure
+            .Diagnostics.Should()
+            .Contain(diagnostic => diagnostic.Category == CdcDiagnosticCategory.UnsupportedOperation);
+
+        // Nothing was written for the refused generation.
+        File.Exists(tempRoot.BindingPath(SampleBinding)).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// An existing retirement record is an idempotent retry only when it says the same thing. The
+    /// generation and its path are stable across a destructive volume removal, so accepting a record
+    /// that names another physical source would report this binding retired while the durable trace
+    /// still named the one it replaced, and the second publication would be recorded nowhere.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_a_retirement_whose_existing_record_names_a_different_binding()
+    {
+        using TempCdcStateRoot tempRoot = new();
+        LocalCdcBindingStateStore store = new(tempRoot.Path);
+
+        await store.CreateBindingIfAbsentAsync(SampleBinding, CancellationToken.None);
+
+        // The same generation, retired earlier against the source this one replaced.
+        tempRoot.WriteRetirement(
+            SampleBinding with
+            {
+                PhysicalSourceFingerprint =
+                    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            },
+            SampleObservedAt
+        );
+
+        CdcDeleteBindingStateStoreResult result = await store.DeleteStateAfterVerifiedCleanupAsync(
+            CreateCleanupProof(SampleBinding),
+            CancellationToken.None
+        );
+
+        CdcStateStoreFailure failure = result
+            .Should()
+            .BeOfType<CdcDeleteBindingStateStoreResult.StateStoreFailure>()
+            .Subject.Failure;
+        failure.Kind.Should().Be(CdcStateStoreFailureKind.InvalidOperation);
+        failure
+            .Diagnostics.Should()
+            .Contain(diagnostic => diagnostic.Category == CdcDiagnosticCategory.BindingMismatch);
+
+        // The binding record is the last thing a retirement removes, and this one never got there.
+        File.Exists(tempRoot.BindingPath(SampleBinding)).Should().BeTrue();
+    }
+
     [Test]
     public async Task It_latches_incidents_idempotently_and_deletes_state_after_verified_cleanup()
     {
@@ -1500,6 +1580,29 @@ public class Given_LocalCdcStateStore
                 binding.InstanceKey,
                 $"{binding.Generation}.json"
             );
+
+        public string RetirementPath(CdcBinding binding) =>
+            System.IO.Path.Combine(
+                Path,
+                "retirements",
+                binding.DeploymentKey,
+                binding.InstanceKey,
+                $"{binding.Generation}.json"
+            );
+
+        /// <summary>
+        /// Plants the retirement record a completed retirement leaves behind, without the binding
+        /// record it removed.
+        /// </summary>
+        public void WriteRetirement(CdcBinding binding, DateTimeOffset retiredAt)
+        {
+            string path = RetirementPath(binding);
+            Directory.CreateDirectory(
+                System.IO.Path.GetDirectoryName(path)
+                    ?? throw new InvalidOperationException("Retirement path has no parent directory.")
+            );
+            File.WriteAllText(path, CdcJsonContract.Serialize(CdcRetirement.FromBinding(binding, retiredAt)));
+        }
 
         public void Dispose()
         {

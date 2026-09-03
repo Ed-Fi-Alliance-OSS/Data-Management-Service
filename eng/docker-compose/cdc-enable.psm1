@@ -226,6 +226,89 @@ function Get-CdcConnectorEnvArgument {
     return $arguments
 }
 
+function Get-CdcSetupComposeArgument {
+    <#
+    .SYNOPSIS
+    The docker compose argument list that runs one `dms-document-cache cdc` verb in the setup
+    container.
+
+    .DESCRIPTION
+    Every cdc verb a deployment runs reaches the control plane the same way: as a one-shot container
+    on the dms network, from the same compose service, under the same host-user override, as the same
+    database setup principal, and against the same local deployment policy. Only the environment a
+    verb needs and the verb's own options differ, so those are what the caller supplies and
+    everything else is built here - the enable phase and the destructive teardown cannot drift on the
+    connector base URL, the record-size budget, the binding-state path, the durability profile, the
+    user override, the setup principal, or the build flags, and a retirement that named a Connect port
+    the enable phase had moved would reach nothing.
+
+    The setup principal is the database server's own administrative login, which is the account the
+    compose file creates for each engine.
+
+    .PARAMETER EnvironmentArgument
+    Additional `-e` pairs the verb needs, emitted after the setup principal. Deployment facts the
+    control plane requires but has no command-line surface for, including its secrets.
+
+    .PARAMETER VerbArgument
+    The verb's own options, emitted after `cdc <VerbName>` and before the deployment-policy flags.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns the argument list for one invocation; the plural noun reflects the return shape.')]
+    [CmdletBinding()]
+    [OutputType([object[]])]
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $ComposeProjectName,
+
+        [Parameter(Mandatory)]
+        [string]
+        $EnvironmentFile,
+
+        [Parameter(Mandatory)]
+        [ValidateSet("postgresql", "mssql")]
+        [string]
+        $DatabaseEngine,
+
+        [Parameter(Mandatory)]
+        [string]
+        $VerbName,
+
+        [object[]]
+        $EnvironmentArgument = @(),
+
+        [object[]]
+        $VerbArgument = @()
+    )
+
+    Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
+
+    $setupPrincipal = if ($DatabaseEngine -eq "mssql") { "sa" } else { "postgres" }
+    $localPolicy = Get-LocalCdcDeploymentPolicy
+
+    $composeArguments = @(
+        "compose",
+        "-f", "cdc-setup.yml",
+        "--env-file", $EnvironmentFile,
+        "-p", $ComposeProjectName,
+        "run", "--rm", "--build"
+    )
+    $composeArguments += Get-CdcContainerUserArgument
+    $composeArguments += @("-e", "DataManagement__DocumentCache__Cdc__SetupPrincipal=$setupPrincipal")
+    $composeArguments += $EnvironmentArgument
+    $composeArguments += @("cdc-setup", "cdc", $VerbName)
+    $composeArguments += $VerbArgument
+    $composeArguments += @(
+        "--kafka-bootstrap-servers", $localPolicy.KafkaBootstrapServers,
+        "--connect-base-url", $localPolicy.ConnectBaseUrl,
+        "--max-record-bytes", $localPolicy.MaxRecordBytes,
+        "--durability-profile", $localPolicy.DurabilityProfile,
+        "--cdc-binding-state-path", $localPolicy.BindingStatePath,
+        "--json"
+    )
+
+    return $composeArguments
+}
+
 function Get-CdcEnableArgument {
     <#
     .SYNOPSIS
@@ -296,65 +379,48 @@ function Get-CdcEnableArgument {
 
     Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
 
-    # The database principal the provider-setup pass runs as. Both local stacks run their setup as
-    # the server's own administrative login, which is the account the compose file creates.
-    $setupPrincipal = if ($DatabaseEngine -eq "mssql") { "sa" } else { "postgres" }
-    # The endpoints and record-size policy, from the same resolver the destructive teardown reads:
-    # a retirement that named a Connect port this phase had moved would reach nothing.
-    $localPolicy = Get-LocalCdcDeploymentPolicy
-
     if ($null -eq $ConnectorPrincipal) {
         $ConnectorPrincipal = Get-CdcConnectorPrincipalConfiguration -EnvValues @{}
     }
 
-    $composeArguments = @(
-        "compose",
-        "-f", "cdc-setup.yml",
-        "--env-file", $EnvironmentFile,
-        "-p", $ComposeProjectName,
-        "run", "--rm", "--build"
-    )
-    $composeArguments += Get-CdcContainerUserArgument
-    $composeArguments += @(
-        "-e", "DataManagement__DocumentCache__Cdc__SetupPrincipal=$setupPrincipal",
+    # The operator token and the connector's own source-connection properties. Both are deployment
+    # facts with no command-line surface, and the password among them is a secret.
+    $environmentArguments = @(
         "-e", "DataManagement__DocumentCache__Cdc__DmsBearerToken=$DmsBearerToken"
     )
-    $composeArguments += Get-CdcConnectorEnvArgument `
+    $environmentArguments += Get-CdcConnectorEnvArgument `
         -DatabaseEngine $DatabaseEngine `
         -SourceDatabaseName $SourceDatabaseName `
         -ConnectorPrincipal $ConnectorPrincipal
-    $composeArguments += @(
-        "cdc-setup",
-        "cdc", "enable",
-        "--data-store-id", "$DataStoreId"
-    )
+
+    $verbArguments = @("--data-store-id", "$DataStoreId")
 
     if (-not [string]::IsNullOrWhiteSpace($TenantKey)) {
-        $composeArguments += @("--tenant-key", $TenantKey)
+        $verbArguments += @("--tenant-key", $TenantKey)
     }
 
     if ($DatabaseCreatedByThisRun) {
-        $composeArguments += @(
+        $verbArguments += @(
             "--database-creation-mode", "created-for-initial-cdc-provisioning",
             "--write-admission", "closed-never-opened"
         )
     }
 
-    # Local deployment policy. The keys are opaque and only have to be stable for the binding they
-    # name; the generation is 1 because bootstrap only ever creates a target's first binding.
-    $composeArguments += @(
+    # The keys are opaque and only have to be stable for the binding they name; the generation is 1
+    # because bootstrap only ever creates a target's first binding.
+    $verbArguments += @(
         "--deployment-key", "local",
         "--instance-key", "ds$DataStoreId",
-        "--generation", "1",
-        "--kafka-bootstrap-servers", $localPolicy.KafkaBootstrapServers,
-        "--connect-base-url", $localPolicy.ConnectBaseUrl,
-        "--max-record-bytes", $localPolicy.MaxRecordBytes,
-        "--durability-profile", $localPolicy.DurabilityProfile,
-        "--cdc-binding-state-path", $localPolicy.BindingStatePath,
-        "--json"
+        "--generation", "1"
     )
 
-    return $composeArguments
+    return Get-CdcSetupComposeArgument `
+        -ComposeProjectName $ComposeProjectName `
+        -EnvironmentFile $EnvironmentFile `
+        -DatabaseEngine $DatabaseEngine `
+        -VerbName "enable" `
+        -EnvironmentArgument $environmentArguments `
+        -VerbArgument $verbArguments
 }
 
 function Invoke-CdcEnablePhase {
@@ -586,6 +652,7 @@ Export-ModuleMember -Function `
     Get-CdcContainerUserArgument, `
     Get-CdcConnectorPrincipalEnvArgument, `
     Get-CdcConnectorEnvArgument, `
+    Get-CdcSetupComposeArgument, `
     Get-CdcEnableArgument, `
     Invoke-CdcEnablePhase, `
     Wait-CdcHttpEndpoint, `

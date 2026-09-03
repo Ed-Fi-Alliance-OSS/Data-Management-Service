@@ -279,6 +279,44 @@ public class Given_CdcSetupControllerStatus
             .MustNotHaveHappened();
     }
 
+    /// <summary>
+    /// A latch the state store did not accept is reported, not dropped. The loss is terminal and the
+    /// record that has to outlive this poll does not carry it, so the status reports the binding state
+    /// as unavailable rather than composing one from a state it could not write - and the store's own
+    /// account of why is carried with it.
+    /// </summary>
+    [Test]
+    public async Task It_reports_a_source_history_latch_that_did_not_become_durable()
+    {
+        CdcSetupControllerHarness harness = EnabledBinding(CdcProvider.SqlServer);
+        harness.SchemaHistoryState = CdcSqlServerSchemaHistoryState.Missing;
+        harness.LatchResult = CdcSetupControllerHarness.StateStoreUnavailable();
+
+        CdcStatus status = await harness.StatusAsync();
+
+        using var _ = new AssertionScope();
+        status.Readiness.Should().Be(CdcReadiness.NotReady);
+
+        CdcDiagnostic latch = Target(status)
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic => diagnostic.Code == "statusSourceHistoryLatchNotDurable")
+            .Subject;
+        latch.Component.Should().Be(CdcDiagnosticComponent.SourceHistory);
+        latch.Category.Should().Be(CdcDiagnosticCategory.SourceHistoryLost);
+
+        Target(status)
+            .Diagnostics.Should()
+            .Contain(diagnostic => diagnostic.Category == CdcDiagnosticCategory.LocalStateUnavailable);
+
+        // The connector is fenced whether or not the latch became durable: the loss was proved either
+        // way, and a connector left committing offsets against it is the outcome the fence exists for.
+        A.CallTo(() => harness.Connect.StopConnectorAsync(A<string>._, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
+
+        // Nothing reports the incident as latched, because nothing durable holds it.
+        Target(status).SourceHistory.IncidentLatched.Should().BeFalse();
+    }
+
     internal static CdcSetupControllerHarness EnabledBinding(CdcProvider provider = CdcProvider.Postgresql) =>
         new(provider)
         {
@@ -383,6 +421,40 @@ public class Given_CdcSetupControllerRestart
             .MustNotHaveHappened();
         A.CallTo(() => harness.Connect.StopConnectorAsync(A<string>._, A<CancellationToken>._))
             .MustHaveHappenedOnceExactly();
+    }
+
+    /// <summary>
+    /// A proved loss whose latch never became durable still refuses the restart. The classifier raises
+    /// an incident candidate only from a loss it proved, so the continuity this collection reports is
+    /// lost whenever a latch was attempted at all - and the restart gate admits only affirmative
+    /// continuity, which is what keeps the connector from resuming against a source it cannot resume
+    /// from while the incident is missing from the binding record.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_a_restart_while_the_source_history_latch_is_not_durable()
+    {
+        CdcSetupControllerHarness harness = Given_CdcSetupControllerStatus.EnabledBinding(
+            CdcProvider.SqlServer
+        );
+        harness.SchemaHistoryState = CdcSqlServerSchemaHistoryState.Missing;
+        harness.LatchResult = CdcSetupControllerHarness.StateStoreUnavailable();
+        harness.ConnectorStatus = CdcSetupControllerHarness.RunningConnector(
+            connectorState: "STOPPED",
+            taskState: "STOPPED"
+        );
+
+        CdcStatus status = await harness.RestartAsync();
+
+        using var _ = new AssertionScope();
+        status.Readiness.Should().Be(CdcReadiness.NotReady);
+        A.CallTo(() => harness.Connect.RestartConnectorAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => harness.Connect.ResumeConnectorAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        Given_CdcSetupControllerStatus
+            .Target(status)
+            .Diagnostics.Should()
+            .Contain(diagnostic => diagnostic.Code == "statusSourceHistoryLatchNotDurable");
     }
 
     /// <summary>

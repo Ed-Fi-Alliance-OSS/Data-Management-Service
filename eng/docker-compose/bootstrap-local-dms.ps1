@@ -27,8 +27,8 @@
     returns before any staging, configure, provision, DMS-startup, or seed orchestration. Only the
     options that shape the Docker compose set (`-EnvironmentFile`, `-IdentityProvider`,
     `-EnableKafkaUI`, `-EnableKafkaCdc`, `-CdcBindingStatePath`, `-EnableSwaggerUI`,
-    `-DatabaseEngine`) are forwarded to teardown; pass the same infrastructure flags used at start
-    so teardown targets the same compose shape.
+    `-DatabaseEngine`) plus `-AbandonCdcBindingState` are forwarded to teardown; pass the same
+    infrastructure flags used at start so teardown targets the same compose shape.
 
     Seed loading is wrapper-level opt-in: when `-LoadSeedData` is absent the wrapper does
     not invoke `load-dms-seed-data.ps1`. Direct invocation of `load-dms-seed-data.ps1`
@@ -121,6 +121,12 @@
 .PARAMETER CdcBindingStatePath
     Root path of the durable CDC binding state store, defaulting to
     `eng/docker-compose/.cdc-state`. Requires `-EnableKafkaCdc`.
+
+.PARAMETER AbandonCdcBindingState
+    Remove the data volumes even when a CDC binding did not retire. A `-d -v` teardown otherwise
+    fails on an unretired binding, because removing the volumes around a surviving binding record
+    destroys the artifacts a retirement retry needs. Requires `-d -v`, and is an explicit operator
+    decision rather than something a failed retirement infers.
 
 .PARAMETER EnableSwaggerUI
     Forwarded to `start-local-dms.ps1`.
@@ -246,6 +252,10 @@ param(
     # Root path of the durable CDC binding state store. Requires -EnableKafkaCdc.
     [string]$CdcBindingStatePath = "",
 
+    # Abandon an unretired CDC binding rather than failing the destructive teardown. Requires -d -v.
+    # See .PARAMETER AbandonCdcBindingState.
+    [Switch]$AbandonCdcBindingState,
+
     [Switch]$EnableSwaggerUI,
 
     [Switch]$EnableConfig,
@@ -305,6 +315,11 @@ $ErrorActionPreference = "Stop"
 if ($v -and -not $d) {
     throw "-v requires -d. Use bootstrap-local-dms.ps1 -d -v to stop services, delete volumes, and remove the .bootstrap workspace."
 }
+# Abandoning CDC binding state is only meaningful for the workflow that removes it, so a start run
+# that named it is refused here rather than starting a stack under a permission nothing will read.
+if ($AbandonCdcBindingState -and -not ($d -and $v)) {
+    throw "-AbandonCdcBindingState requires -d -v. It permits the destructive volume removal to proceed when a CDC binding did not retire, which is the only workflow that removes a binding record."
+}
 if ($d) {
     $teardownArgs = @{ d = $true }
     if ($v) {
@@ -326,7 +341,7 @@ if ($d) {
     # but that script owns its own teardown; this wrapper offers none for the published path.)
     # -EnableKafkaCdc joins that list because it also selects kafka.yml, and -CdcBindingStatePath
     # travels with it so a teardown names the same binding state store the start run used.
-    foreach ($name in 'EnvironmentFile', 'IdentityProvider', 'EnableKafkaUI', 'EnableKafkaCdc', 'CdcBindingStatePath', 'EnableSwaggerUI', 'DatabaseEngine') {
+    foreach ($name in 'EnvironmentFile', 'IdentityProvider', 'EnableKafkaUI', 'EnableKafkaCdc', 'CdcBindingStatePath', 'AbandonCdcBindingState', 'EnableSwaggerUI', 'DatabaseEngine') {
         if ($PSBoundParameters.ContainsKey($name)) {
             $teardownArgs[$name] = $PSBoundParameters[$name]
         }
@@ -343,9 +358,12 @@ Import-Module "$PSScriptRoot/bootstrap-wrapper.psm1" -Force
 # binds the switch into $PSBoundParameters without tripping the short-circuit above, so this point is
 # reachable with either bound; the wrapper declares neither parameter, so leaving them in the splat
 # would crash Invoke-BootstrapWrapper.
+# -AbandonCdcBindingState is stripped for the same reason: the guard above leaves only an explicit
+# -AbandonCdcBindingState:$false reachable here, and the wrapper does not declare it either.
 $wrapperArgs = @{} + $PSBoundParameters
 $wrapperArgs.Remove("d")
 $wrapperArgs.Remove("v")
+$wrapperArgs.Remove("AbandonCdcBindingState")
 $wrapperArgs["StartScriptName"] = "start-local-dms.ps1"
 
 Invoke-BootstrapWrapper @wrapperArgs

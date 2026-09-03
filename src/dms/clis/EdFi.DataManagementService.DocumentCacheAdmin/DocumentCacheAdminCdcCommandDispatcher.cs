@@ -262,7 +262,11 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
                     cancellationToken
                 )
                 .ConfigureAwait(false),
-            DocumentCacheAdminCommandSurface.CdcReplaceSourceVerbName => ReplaceSourceDeferred(invocation),
+            DocumentCacheAdminCommandSurface.CdcReplaceSourceVerbName => await ReplaceSourceAsync(
+                    invocation,
+                    cancellationToken
+                )
+                .ConfigureAwait(false),
             DocumentCacheAdminCommandSurface.CdcRetireVerbName => Retire(
                 invocation,
                 await controller
@@ -296,33 +300,57 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
     }
 
     /// <summary>
-    /// Refuses source replacement, which the packaged tool does not yet offer.
+    /// Moves a target onto a different physical source as a new binding generation.
     /// </summary>
     /// <remarks>
-    /// Replacement exists to move a logical target onto a different physical database — a restore, a
-    /// rollback, or a copy. The controller's implementation reaches that only through the initial
-    /// enablement sequence, which admits a source with no canonical, cache, or work rows; every
-    /// database a replacement would actually be pointed at has rows. It also requires the replacing
-    /// source's identity to have been rotated before the command is issued, rather than rotating it
-    /// through the binding-state operation itself.
+    /// The replacing source carries the same provisioning evidence <c>enable</c> requires - a database
+    /// created for this CDC provisioning whose write admission was never opened - because the replacing
+    /// generation runs that same initial readiness sequence. V1 defers in-place source reset and topic
+    /// reuse, so a replacement is a new generation over a new physical database rather than a retrofit
+    /// onto one that already holds rows, and the option surface refuses a caller that cannot attest
+    /// both claims.
     ///
-    /// So the verb as it stands cannot perform the replacement it names, and the honest answer is to
-    /// refuse rather than to run an enablement under a replacement's name. The refusal lives here, at
-    /// the packaged tool's boundary, so the controller workflow and its tests stay in place for the
-    /// rotation and cutover the design describes.
+    /// The generation being superseded is the operator's own <c>--previous-generation</c> and is never
+    /// inferred from what exists. The option surface requires it for this verb, so an absent value here
+    /// is a request that was built without one rather than a caller omission; it is refused for itself
+    /// rather than defaulted, because the value names the generation whose connector gets fenced.
     /// </remarks>
-    private DocumentCacheAdminCdcCommandResult ReplaceSourceDeferred(Invocation invocation) =>
-        Refused(
-            invocation.Request.VerbName,
-            "cdcSourceReplacementUnavailable",
-            CdcDiagnosticCategory.UnsupportedOperation,
-            CdcDiagnosticComponent.Binding,
-            "CDC source replacement is not available in this release: replacing a physical source "
-                + "requires the identity rotation and cutover the packaged tool does not yet perform, "
-                + "and the sequence it would otherwise run admits only a source with no existing rows.",
-            "unavailable",
-            timeProvider.GetUtcNow()
-        );
+    private async Task<DocumentCacheAdminCdcCommandResult> ReplaceSourceAsync(
+        Invocation invocation,
+        CancellationToken cancellationToken
+    )
+    {
+        if (invocation.Request.PreviousGeneration is not { } previousGeneration)
+        {
+            return Refused(
+                invocation.Request.VerbName,
+                "cdcSourceReplacementPreviousGenerationMissing",
+                CdcDiagnosticCategory.MissingRequiredField,
+                CdcDiagnosticComponent.Binding,
+                "CDC source replacement requires the generation it supersedes, which is named "
+                    + "explicitly and never inferred from the generations that exist.",
+                "absent",
+                timeProvider.GetUtcNow()
+            );
+        }
+
+        CdcAdmission admission = await controller
+            .ReplaceSourceAsync(
+                new CdcReplaceSourceRequest(
+                    invocation.OperationId,
+                    invocation.Request.TargetKey.TenantKey,
+                    invocation.Request.TargetKey.DataStoreId,
+                    invocation.ConnectionString,
+                    previousGeneration,
+                    Evidence(invocation),
+                    invocation.ProviderSetup
+                ),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return Admission(invocation, admission, "cdcReplaceSource");
+    }
 
     private async Task<DocumentCacheAdminCdcCommandResult> AdoptAsync(
         Invocation invocation,

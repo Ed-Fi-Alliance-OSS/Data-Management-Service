@@ -390,11 +390,12 @@ param(
     [switch] `$EnableKafkaUI,
     [switch] `$EnableKafkaCdc,
     [string] `$CdcBindingStatePath,
+    [switch] `$AbandonCdcBindingState,
     [switch] `$EnableSwaggerUI,
     [string] `$DatabaseEngine,
     [Parameter(ValueFromRemainingArguments = `$true)] `$Rest
 )
-Add-Content -LiteralPath '$CallLogPath' -Value "teardown d=`$d v=`$v RemoveBootstrap=`$RemoveBootstrap EnvironmentFile=`$EnvironmentFile IdentityProvider=`$IdentityProvider EnableKafkaUI=`$EnableKafkaUI EnableKafkaCdc=`$EnableKafkaCdc CdcBindingStatePath=`$CdcBindingStatePath EnableSwaggerUI=`$EnableSwaggerUI DatabaseEngine=`$DatabaseEngine Rest=`$Rest"
+Add-Content -LiteralPath '$CallLogPath' -Value "teardown d=`$d v=`$v RemoveBootstrap=`$RemoveBootstrap EnvironmentFile=`$EnvironmentFile IdentityProvider=`$IdentityProvider EnableKafkaUI=`$EnableKafkaUI EnableKafkaCdc=`$EnableKafkaCdc CdcBindingStatePath=`$CdcBindingStatePath AbandonCdcBindingState=`$AbandonCdcBindingState EnableSwaggerUI=`$EnableSwaggerUI DatabaseEngine=`$DatabaseEngine Rest=`$Rest"
 $failureStatement
 "@ | Set-Content -LiteralPath $scriptPath -Encoding utf8
             return $scriptPath
@@ -2037,9 +2038,12 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
             # so an accidental addition to the forwarding loop surfaces here instead of passing silently.
             # -EnableKafkaCdc also selects kafka.yml, so it shapes the compose set a teardown must
             # cover; -CdcBindingStatePath travels with it so teardown names the same state store.
+            # -AbandonCdcBindingState is forwarded for a different reason: it shapes no compose file,
+            # but a destructive teardown fails on an unretired binding, and abandoning that state is a
+            # decision only the operator can make - so the entry point has to be able to express it.
             $forwarded = @(
                 'EnvironmentFile', 'IdentityProvider', 'EnableKafkaUI', 'EnableKafkaCdc',
-                'CdcBindingStatePath', 'EnableSwaggerUI', 'DatabaseEngine'
+                'CdcBindingStatePath', 'AbandonCdcBindingState', 'EnableSwaggerUI', 'DatabaseEngine'
             )
             $excluded = @(
                 'LoadSeedData', 'SeedTemplate', 'SeedDataPath', 'AdditionalNamespacePrefix',
@@ -2089,6 +2093,39 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
     }
 
     Context "bootstrap-local-dms.ps1 teardown fail-fast validation (DMS-1272)" {
+        It "-d -v -AbandonCdcBindingState reaches the delegation that owns the retirement" {
+            # The destructive teardown fails on a binding that did not retire, because removing the
+            # volumes around a surviving binding record destroys the artifacts it still names. The
+            # operator's decision to accept that has to reach the script that runs the retirement.
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-teardown-abandon-cdc.txt"
+            New-RecordingTeardownStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            & $script:repo.WrapperScript `
+                -EnvironmentFile $script:repo.EnvFile `
+                -d -v -AbandonCdcBindingState
+
+            $log = @(Get-Content -LiteralPath $callLog)
+
+            $log.Count | Should -Be 1
+            $log[0] | Should -Match 'AbandonCdcBindingState=True'
+            $log[0] | Should -Match 'Rest=$'
+        }
+
+        It "-AbandonCdcBindingState is rejected on a run that removes no volumes" {
+            # It permits only the volume removal to proceed, so a start run or a plain stop that named
+            # it would carry a permission nothing reads.
+            $callLog = Join-Path $script:repo.RepoRoot "call-log-teardown-abandon-cdc-invalid.txt"
+            New-RecordingPrepareScripts -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog
+            New-RecordingTeardownStartScript -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog | Out-Null
+
+            {
+                & $script:repo.WrapperScript `
+                    -EnvironmentFile $script:repo.EnvFile -d -AbandonCdcBindingState
+            } | Should -Throw "*-AbandonCdcBindingState requires -d -v*"
+
+            Test-Path -LiteralPath $callLog | Should -BeFalse
+        }
+
         It "-v without -d is rejected before any phase or delegation runs" {
             $callLog = Join-Path $script:repo.RepoRoot "call-log-teardown-v-only.txt"
             New-RecordingPrepareScripts -Directory $script:repo.DockerComposeRoot -CallLogPath $callLog

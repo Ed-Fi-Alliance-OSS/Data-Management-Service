@@ -351,6 +351,12 @@ internal sealed class CdcConnectRestAdapter(
     /// timeout, so a worker that accepts the stop and then answers slowly would spend that timeout on
     /// every one of a counted number of reads and take many multiples of the budget the exhaustion
     /// message names.
+    ///
+    /// The deadline is real elapsed time, so it bounds each read and each wait rather than only the
+    /// decision between them. A read is issued under the time the budget has left, and the wait before
+    /// the next one is clamped to that remainder - otherwise a read or a delay begun just inside the
+    /// deadline would run its own full request timeout past it, and the wait would overrun the budget
+    /// its own exhaustion message names by the same amount it was meant to bound.
     /// </remarks>
     private async Task<CdcConnectResult> AwaitStoppedAsync(
         string connectorName,
@@ -362,12 +368,48 @@ internal sealed class CdcConnectRestAdapter(
         TimeSpan pollInterval = controlOptions.Timeouts.PollInterval;
         DateTimeOffset deadline = timeProvider.GetUtcNow() + budget;
 
+        CdcConnectResult BudgetExhausted() =>
+            new(
+                CdcConnectOutcome.Unavailable,
+                new(
+                    null,
+                    "Kafka Connect accepted the connector stop, but the connector did not reach "
+                        + $"{StoppedConnectorState} within "
+                        + $"{budget.TotalSeconds.ToString(CultureInfo.InvariantCulture)} seconds.",
+                    Retryable: true
+                )
+            );
+
         while (true)
         {
-            CdcConnectResult<CdcConnectorStatus> status = await GetConnectorStatusAsync(
-                connectorName,
-                cancellationToken
-            );
+            TimeSpan remaining = deadline - timeProvider.GetUtcNow();
+            if (remaining <= TimeSpan.Zero)
+            {
+                return BudgetExhausted();
+            }
+
+            CdcConnectResult<CdcConnectorStatus> status;
+            using (
+                CancellationTokenSource remainingBudget = new(remaining, timeProvider),
+                    readCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                        cancellationToken,
+                        remainingBudget.Token
+                    )
+            )
+            {
+                try
+                {
+                    status = await GetConnectorStatusAsync(connectorName, readCancellation.Token);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    // The read was cut off by this wait's own budget rather than by the caller, which is
+                    // the exhaustion the deadline check below the read would otherwise report a full
+                    // request timeout later.
+                    return BudgetExhausted();
+                }
+            }
+
             if (!status.Succeeded)
             {
                 return new(status.Outcome, status.Failure);
@@ -384,21 +426,17 @@ internal sealed class CdcConnectRestAdapter(
                 return new(CdcConnectOutcome.Succeeded, null);
             }
 
-            if (timeProvider.GetUtcNow() >= deadline)
+            remaining = deadline - timeProvider.GetUtcNow();
+            if (remaining <= TimeSpan.Zero)
             {
-                return new(
-                    CdcConnectOutcome.Unavailable,
-                    new(
-                        null,
-                        "Kafka Connect accepted the connector stop, but the connector did not reach "
-                            + $"{StoppedConnectorState} within "
-                            + $"{budget.TotalSeconds.ToString(CultureInfo.InvariantCulture)} seconds.",
-                        Retryable: true
-                    )
-                );
+                return BudgetExhausted();
             }
 
-            await Task.Delay(pollInterval, timeProvider, cancellationToken);
+            await Task.Delay(
+                remaining < pollInterval ? remaining : pollInterval,
+                timeProvider,
+                cancellationToken
+            );
         }
     }
 
