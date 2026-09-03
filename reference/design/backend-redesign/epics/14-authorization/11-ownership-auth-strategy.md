@@ -49,10 +49,9 @@ CMS limits assignments to 1,999 ownership tokens; DMS defensively fails at 2,000
   (`MssqlCommandLimits.MaxUserParametersPerCommand`) are low enough to trip it, and a near-ceiling
   namespace prefix list combined with a large token list can trip it well below the 2,000-token cap. That
   costs commands but preserves authorization-before-mutation ordering and the precedence order above.
-- GET-by-id is the one path that never co-batches: the ownership check is one additional command, because it is
-  not an `AUTH1` statement against the carrier the namespace and relationship checks share, and it runs ahead of
-  hydration so a denial is decided before any representation is built. Accepted deviation, recorded alongside the
-  authorized-GET-by-id one in
+- GET-by-id runs the ownership check as one added command ahead of hydration, rather than in the
+  operation's database roundtrip. This accepted deviation follows the existing stored-authorization
+  GET-by-id shape and is recorded alongside the authorized-GET-by-id one in
   `reference/design/backend-redesign/epics/07-relational-write-path/08-write-roundtrip-batching.md`.
 - Ownership executes last among AND strategies and composes with the other configured strategies.
 - PostgreSQL and SQL Server are supported; SQL Server uses parameterized `IN` below 2,000 ownership tokens and fails at 2,000 or more without a TVP.
