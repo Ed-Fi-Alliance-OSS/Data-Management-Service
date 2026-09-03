@@ -320,9 +320,7 @@ public static class DmsCoreServiceExtensions
         );
         services.TryAddSingleton(serviceProvider =>
         {
-            CacheSettings cacheSettings = serviceProvider
-                .GetRequiredService<IOptions<CacheSettings>>()
-                .Value;
+            CacheSettings cacheSettings = serviceProvider.GetRequiredService<IOptions<CacheSettings>>().Value;
 
             // Read the raw value as well as the bound one. Binding leaves the property at its default
             // when the setting is absent, so the bound value alone cannot tell an absent setting from
