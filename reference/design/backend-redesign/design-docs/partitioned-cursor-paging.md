@@ -71,7 +71,8 @@ rule it governs.
 1. **Depth insensitivity.** Cursor page latency MUST NOT grow with position in the collection.
    Cursor SQL MUST contain no `OFFSET`, no row-number skip, and no count query.
 2. **No regression to traditional paging.** `DocumentId`-anchored `limit`/`offset` page-selection
-   SQL — every unfiltered and min-only request — MUST remain behaviorally and textually unchanged,
+   SQL — every request that resolves the `DocumentId` anchor — MUST remain behaviorally and
+   textually unchanged,
    and its latency MUST NOT regress. A max-bearing change-version window is the stated exception:
    its traditional page is ordered by `ContentVersion` and projects that column beside `DocumentId`
    so the page can hand out a continuation, which is the whole of DMS-1394. Traditional response
@@ -111,7 +112,7 @@ rule it governs.
 
 | Input/output | Contract |
 | --- | --- |
-| `Next-Page-Token` response header | Included whenever regular-resource or descriptor GET-many page selection produces a non-null `HighestSelectedAnchor`, including on a `limit`/`offset` response that can begin a cursor walk and when concurrent deletes leave the hydrated response body empty. The token is anchored on whichever column page selection ordered by — `DocumentId` for unfiltered and min-only requests, `ContentVersion` for a max-bearing change-version window — and names that anchor in its marker, so ordering is never a reason to withhold a continuation. See "Consistency Under Writes" below. Absent when page selection is skipped or selects no keys, and at `Int64.MaxValue` where advancing would overflow. |
+| `Next-Page-Token` response header | Included whenever regular-resource or descriptor GET-many page selection produces a non-null `HighestSelectedAnchor`, including on a `limit`/`offset` response that can begin a cursor walk and when concurrent deletes leave the hydrated response body empty. The token is anchored on whichever column page selection ordered by — resolved from the change-version window and the data store serving the request, per [change-queries.md](change-queries.md#page-selection-ordering) — and names that anchor in its marker, so ordering is never a reason to withhold a continuation. See "Consistency Under Writes" below. Absent when page selection is skipped or selects no keys, and at `Int64.MaxValue` where advancing would overflow. |
 | `pageToken` | Selects the next inclusive anchor range, in the units its marker names. It is opaque to clients and is normally copied from `Next-Page-Token` or from a `/partitions` response. |
 | `pageSize` | Optional, and permitted only when `pageToken` is present; integer `0..MaximumPageSize`. When omitted, the configured `MaximumPageSize` applies — initially `500`, matching the existing default GET-many size. |
 | `limit`, `offset` | Remain supported for traditional paging. When `limit` is omitted, the configured `MaximumPageSize` applies. Neither parameter may be combined with `pageToken` or `pageSize`, including when its value is zero. |
@@ -577,8 +578,10 @@ would, and it would report the defect in production rather than in the build.
 
 ### Provider cursor SQL
 
-`<anchor>` below is `DocumentId` for an unfiltered or min-only request and `ContentVersion` for a
-max-bearing change-version window. One column name is substituted throughout: ordering, both bounds,
+`<anchor>` below is whichever column the request resolved, per
+[change-queries.md](change-queries.md#page-selection-ordering): `ContentVersion` for a max-bearing
+change-version window, and for any windowed request served from a frozen snapshot; `DocumentId`
+otherwise. One column name is substituted throughout: ordering, both bounds,
 and the projection all resolve from the same anchor.
 
 PostgreSQL:
@@ -655,7 +658,7 @@ already does (see [flattening-reconstitution.md](flattening-reconstitution.md) �
 When the keyset is `ContentVersion`-anchored, and only then, the keyset temp table gains a nullable
 `ContentVersion` column, the `page_ids` selection and the insert column list carry it, and the
 returning clause names it as a second column. The conditional is keyed on the anchor, so it leaves
-every `DocumentId`-anchored batch — unfiltered and min-only, whichever paging shape — byte-identical
+every `DocumentId`-anchored batch, whichever paging shape, byte-identical
 to its pre-cursor form, and widens the batch of a max-bearing window whether that window is paged
 traditionally or by cursor. A zero-size page and the candidate-metadata batch take the same
 treatment, so an empty page keeps the same result-set shape as any other.
@@ -706,8 +709,10 @@ that:
 3. computes the partition size; and
 4. returns only the starting anchor values.
 
-`<anchor>` below is `DocumentId` for an unfiltered or min-only request and `ContentVersion` for a
-max-bearing change-version window — the same resolution a page of the same request uses, so
+`<anchor>` below is whichever column the request resolved, per
+[change-queries.md](change-queries.md#page-selection-ordering): `ContentVersion` for a max-bearing
+change-version window, and for any windowed request served from a frozen snapshot; `DocumentId`
+otherwise — the same resolution a page of the same request uses, so
 boundaries and pages cannot be computed over different columns. The unpaged candidate relation
 projects that one column and nothing else, which is why the CTEs name it directly.
 
@@ -892,6 +897,13 @@ does not change underneath it, but that stability comes from the snapshot, not f
 the non-goal above stands. A walk that mixes targets mid-stream is a walk across databases, with the
 token-portability caveat above.
 
+Because a frozen source resolves the `ContentVersion` anchor for every windowed shape, the selected
+database is part of what a min-only token's marker describes. Such a walk is therefore not portable
+across the routing decision even against one logical collection: replaying a min-only token under a
+different data source is answered with the invalid-page-token response, the same way replaying it
+under a different window is. Keeping the routing request identical for the whole walk is what keeps
+its tokens replayable.
+
 **Relationship to change-query extraction.** [change-queries.md](change-queries.md) catalogues the
 hazards of extracting a `ChangeVersion` window without snapshots. Cursor paging changes one of them
 and none of the others.
@@ -923,11 +935,19 @@ continuation tokens on `ContentVersion`. **Invariant: the anchor follows the ord
 ordering key, its cursor bounds, and the anchor stamped on the token it hands out are always the
 same column, and the token names which column that was.
 
-Min-only and unfiltered walks keep `DocumentId` anchors, and the asymmetry is not an omission. A
-min-only window stays open as data changes: an update moves a row later in `ContentVersion` order
-while the row remains eligible, so a `ContentVersion`-anchored walk could return it twice. A
-max-bearing window is a monotonic-escape window — an update pushes the row past the maximum and out
-of the window entirely — so the same movement removes the row rather than replaying it.
+Against a mutable source, min-only and unfiltered walks keep `DocumentId` anchors, and the asymmetry
+is not an omission. A min-only window stays open as data changes: an update moves a row later in
+`ContentVersion` order while the row remains eligible, so a `ContentVersion`-anchored walk could
+return it twice. A max-bearing window is a monotonic-escape window — an update pushes the row past
+the maximum and out of the window entirely — so the same movement removes the row rather than
+replaying it.
+
+The min-only asymmetry is a consequence of the data moving, so it lifts where nothing moves. A
+min-only window served from a frozen snapshot anchors on `ContentVersion` for cursor pages, partition
+boundaries, and tokens alike, because no update can reach the copy being walked. A read replica is
+not frozen and keeps the mutable-source rule. An unfiltered walk keeps `DocumentId` on every source:
+with no window predicate there is nothing to seek. See
+[change-queries.md](change-queries.md#page-selection-ordering), which owns the rule.
 
 **The escape property is a property of the ceiling, not of the parameter.** It holds while
 `maxChangeVersion` is at or below the current change version, which is what a client following the
@@ -969,9 +989,9 @@ violates one of these has not implemented this design.
   mode: the conditional ordering rule; the anchor projected beside `DocumentId` in the candidate
   select list; and the selected-key result set added to collection hydration batches. Each applies
   exactly when the request resolves the `ContentVersion` anchor, which a max-bearing window does
-  whether it is paged traditionally or by cursor. `DocumentId`-anchored text — every unfiltered and
-  min-only request, and every request under the legacy ordering switch — is byte-identical to its
-  pre-cursor form in all three respects.
+  whether it is paged traditionally or by cursor. `DocumentId`-anchored text — every request that resolves that
+  anchor, and every request under the legacy ordering switch — is byte-identical to its pre-cursor
+  form in all three respects.
 - Cursor hydration performs one database command and adds no roundtrip over the existing
   single-command page-keyset architecture.
 - `/partitions` performs one database command for its boundary selection and returns identifiers

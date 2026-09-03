@@ -2051,18 +2051,19 @@ Reads of `_lastModifiedDate` and per-item `ChangeVersion` in response bodies rem
 
 #### Page-selection ordering
 
-For live resource and descriptor GET-many queries, the change-version filter determines the
-page-selection order, and with it the cursor and partition anchor:
+For resource and descriptor GET-many queries, the change-version filter and the data store serving
+the request together determine the page-selection order, and with it the cursor and partition
+anchor:
 
-| Request shape | Page-selection ordering and anchor |
-| --- | --- |
-| `maxChangeVersion` present, with or without `minChangeVersion` | `ContentVersion` |
-| `minChangeVersion` only | `DocumentId` |
-| No change-version filters | `DocumentId` |
+| Request shape | Mutable source (parent database or read replica) | Frozen snapshot |
+| --- | --- | --- |
+| `maxChangeVersion` present, with or without `minChangeVersion` | `ContentVersion` | `ContentVersion` |
+| `minChangeVersion` only | `DocumentId` | `ContentVersion` |
+| No change-version filters | `DocumentId` | `DocumentId` |
 
-One resolver answers this question for every live collection read, and the resolved value travels on
-the request rather than being derived again downstream. Ordering and anchoring cannot disagree
-because they are the same choice.
+One resolver answers this question for every collection read, and the resolved value travels on the
+request rather than being derived again downstream. Ordering and anchoring cannot disagree because
+they are the same choice.
 
 A window with `maxChangeVersion` is a monotonic-escape window: when a row changes, its
 `ContentVersion` advances beyond the maximum and the row leaves the window. Ordering by
@@ -2086,7 +2087,27 @@ A min-only window remains open as data changes. Updating a row moves it later in
 `ContentVersion` order without removing it from the window. With offset paging, that movement
 can return the row twice and shift another row past an offset boundary; with a `ContentVersion`
 cursor anchor it moves the row past an anchor the walk has yet to reach, which returns it twice.
-Min-only requests therefore retain `DocumentId` ordering and `DocumentId` anchors.
+Against a mutable source, min-only requests therefore retain `DocumentId` ordering and `DocumentId`
+anchors.
+
+That hazard is a property of the data moving, not of the window. Nothing moves in a frozen
+snapshot, so a min-only window served from one cannot return a row twice or skip one, and it takes
+the `ContentVersion` anchor along with every other windowed shape. The planner pathology the anchor
+exists to fix does survive the copy, because it is a property of the data distribution rather than of
+mutability, and min-only is the natural request shape against a snapshot, whose newest version is the
+implicit maximum. Snapshot-based synchronization therefore receives the same seek for every windowed
+filter shape.
+
+Being frozen for the duration of the client's paging session is what qualifies a source. A read
+replica does not qualify: it continues to apply changes, so a row can still move later within an open
+window there, and requests served from a replica keep the mutable-source rule. Nothing weaker than
+frozen may take the snapshot rule. Which physical database serves a request, and the guarantee that a
+snapshot is frozen, are the snapshot-routing contract's to state; this section consumes that decision
+and does not restate it.
+
+An unfiltered read served from a snapshot keeps `DocumentId`. With no window predicate there is no
+planner pathology to fix and nothing to gain, and routing a request to a snapshot must not by itself
+change the order in which a collection is walked.
 
 The optimized path matches the recommended synchronization workflow: always supply a maximum.
 
@@ -2098,23 +2119,32 @@ Client-visible behavior:
   last response item's ChangeVersion as a cursor. A client that wants a value-anchored walk uses
   `pageToken`, whose token carries a server-issued anchor rather than one read off a response body.
 - Total-Count behavior does not change.
-- Page progression now depends on the request shape. Response order was not previously a
-  documented contract; this section makes the variation explicit.
+- Page progression depends on the request shape and on the data store serving the request. Response
+  order was not previously a documented contract; this section makes the variation explicit.
+- A walk of a min-only window belongs to the source that issued its first page. Because the two
+  sources anchor that window differently, a continuation token issued by one is not replayable
+  against the other, and a client that changes data source mid-walk is answered with the
+  invalid-page-token response exactly as a client that changed its window would be. A client must
+  therefore keep asking for the same data source for the whole walk.
 - `AppSettings:UseLegacyDocumentIdOrderingForChangeQueries` defaults to `false`. Setting it to
   `true` restores `DocumentId` ordering and `DocumentId` anchoring for all clients in the
   deployment. This setting is an operator escape hatch, not a per-client option.
 
-**Scope.** This rule governs page selection for live resource and descriptor GET-many collection
-reads in all three of their paging shapes: traditional `limit`/`offset` pages, `pageToken` cursor
-pages, and `/partitions` boundary calculation. A max-bearing window orders and anchors all three by
-`ContentVersion`; the tokens a windowed request issues carry `ContentVersion` bounds and are marked
+**Scope.** This rule governs page selection for resource and descriptor GET-many collection reads in
+all three of their paging shapes: traditional `limit`/`offset` pages, `pageToken` cursor pages, and
+`/partitions` boundary calculation. The three resolve one anchor per request, never one anchor per
+paging shape: a page hands out a token marked with the anchor it was cut on, and a request that
+resolved a different anchor rejects that token, so a split would break walks the rule itself created.
+A max-bearing window orders and anchors all three by `ContentVersion`; the tokens a windowed request issues carry `ContentVersion` bounds and are marked
 as such, so a client replaying one under a different window is rejected rather than served rows read
 against the wrong column. See
 [partitioned-cursor-paging.md](partitioned-cursor-paging.md) for the token contract, the anchored
 cursor and partition SQL, and the consistency consequences.
 
-Because the kill switch governs anchoring as well as ordering, tokens issued while it is set stay
-replayable while it stays set: a deployment running with legacy ordering issues and accepts
+The kill switch overrides every branch of this rule, the snapshot branch included: a deployment
+running with legacy ordering walks and partitions every window shape by `DocumentId` whichever
+database served the request. Because the kill switch governs anchoring as well as ordering, tokens
+issued while it is set stay replayable while it stays set: a deployment running with legacy ordering issues and accepts
 `DocumentId`-marked windowed tokens throughout, instead of breaking walks in progress. Flipping the
 switch mid-walk invalidates tokens already handed out, which is the expected cost of an operator
 escape hatch and the reason it is deployment-wide rather than per-request.
