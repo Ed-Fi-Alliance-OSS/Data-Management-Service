@@ -63,39 +63,44 @@ The Claims.json file contains two main sections and is used as:
           }
         ]
       },
-      "resources": [
+      "claims": [
         {
-          "name": "ed-fi/academicWeeks",
-          "actions": [
+          "name": "http://ed-fi.org/identity/claims/ed-fi/academicWeeks",
+          "claimSets": [
             {
-              "name": "Create",
-              "authorizationStrategies": [
+              "name": "CustomClaimSet",
+              "actions": [
                 {
-                  "name": "NamespaceBased"
-                }
-              ]
-            },
-            {
-              "name": "Read",
-              "authorizationStrategies": [
+                  "name": "Create",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "NamespaceBased"
+                    }
+                  ]
+                },
                 {
-                  "name": "NoFurtherAuthorizationRequired"
-                }
-              ]
-            },
-            {
-              "name": "Update",
-              "authorizationStrategies": [
+                  "name": "Read",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "NoFurtherAuthorizationRequired"
+                    }
+                  ]
+                },
                 {
-                  "name": "NamespaceBased"
-                }
-              ]
-            },
-            {
-              "name": "Delete",
-              "authorizationStrategies": [
+                  "name": "Update",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "NamespaceBased"
+                    }
+                  ]
+                },
                 {
-                  "name": "NamespaceBased"
+                  "name": "Delete",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "NamespaceBased"
+                    }
+                  ]
                 }
               ]
             }
@@ -114,11 +119,13 @@ The Claims.json file contains two main sections and is used as:
 - **isSystemReserved**: Boolean indicating if the claim set is protected from modification
 
 #### Claims Hierarchy Section
-- **name**: Domain or resource identifier
-- **defaultAuthorization**: Default authorization strategies for all resources in the domain
-- **resources**: Specific resource claims with their authorization strategies
+- **name**: Domain or resource claim identifier
+- **defaultAuthorization**: Default authorization strategies inherited by the claim and its children
+- **claims**: Nested child claims, such as the resource claims within a domain
+- **claimSets**: Per-claim-set grants on a claim, each naming a claim set and the actions it may perform
 - **actions**: CRUD operations (Create, Read, Update, Delete, ReadChanges)
-- **authorizationStrategies**: Security strategies applied to each action
+- **authorizationStrategies**: Security strategies on a `defaultAuthorization` action
+- **authorizationStrategyOverrides**: Strategies replacing the inherited default for a claim set action
 
 ### Per-Data-Standard Embedded Claims
 
@@ -296,14 +303,19 @@ curl -X POST -H "Content-Type: application/json" \
             }
           ]
         },
-        "resources": [
+        "claims": [
           {
-            "name": "ed-fi/students",
-            "actions": [
+            "name": "http://ed-fi.org/identity/claims/ed-fi/students",
+            "claimSets": [
               {
-                "name": "Create",
-                "authorizationStrategies": [
-                  {"name": "NamespaceBased"}
+                "name": "CustomVendor",
+                "actions": [
+                  {
+                    "name": "Create",
+                    "authorizationStrategyOverrides": [
+                      {"name": "NamespaceBased"}
+                    ]
+                  }
                 ]
               }
             ]
@@ -316,10 +328,15 @@ curl -X POST -H "Content-Type: application/json" \
 ```
 
 **Important Notes:**
-- The uploaded structure completely replaces the current claims
+- The uploaded document becomes the active claims configuration. Internally, persisted
+  non-system-reserved claim-set rows are replaced while existing system-reserved claim-set rows are
+  not deleted.
 - Must include both `claimSets` and `claimsHierarchy` sections
+- The request body is the claims document itself. It is not nested under a `claims` property; a body
+  shaped that way is rejected with HTTP 400 naming the missing `claimSets` and `claimsHierarchy`
+  properties.
 - Subject to JSON Schema validation
-- Returns a reload ID header for tracking
+- Returns the new reload ID in the response body: `{ "success": true, "reloadId": "<guid>" }`
 
 ### Reload Claims from Fragments
 
@@ -330,10 +347,14 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://localhost:8081/management/reload-claims
 ```
 
-Response includes:
-- X-Reload-Id header with unique identifier
-- Status of reload operation
-- Any validation errors encountered
+On success the response body carries the status and the new reload ID:
+
+```json
+{ "success": true, "reloadId": "<guid>" }
+```
+
+A failed reload is returned as an Ed-Fi problem-details error response, not as an error list on a
+success body.
 
 ### Get Current Claims
 
@@ -344,7 +365,29 @@ curl -H "Authorization: Bearer $TOKEN" \
   http://localhost:8081/management/current-claims
 ```
 
-Returns the full Claims.json structure currently in use.
+Returns the full Claims.json structure currently in use, along with an `X-Reload-Id` response header
+identifying the loaded claims. This is the only endpoint that sets that header, and the body is
+exactly the document the upload endpoint accepts, so the response can be uploaded again without
+modification.
+
+### Round-Trip: Download and Re-Upload
+
+Because both endpoints use the same two-section document, a downloaded file can be uploaded as-is:
+
+```bash
+# Download the active claims
+curl -H "Authorization: Bearer $TOKEN" \
+  http://localhost:8081/management/current-claims > claims.json
+
+# Upload it unchanged (or after editing claims.json)
+curl -X POST -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  --data-binary @claims.json \
+  http://localhost:8081/management/upload-claims
+```
+
+No wrapping, re-indenting or property renaming is required in between. The upload responds with HTTP
+200 and a new reload ID.
 
 ## Deployment Steps
 

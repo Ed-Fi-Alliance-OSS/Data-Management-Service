@@ -42,6 +42,13 @@ needed to provision, validate, start, stop, and retire a target.
 - Integrate provider setup, binding lifecycle, and connector rendering. DMS startup itself
   never enables tracking, and mutable projection/CDC state stays outside the bootstrap
   manifest.
+- Wire CDC-owned downstream-publication-history evidence into the E18 DocumentCache
+  administrative command gate by providing and registering the production
+  `IDocumentCacheDownstreamPublicationHistoryProvider` bridge. The bridge must report
+  `internalOnly` only when durable CDC binding/source-history evidence proves the same
+  normalized target key and physical-source fingerprint were internal-only; `active`,
+  `historical`, `possible`, `unknown`, missing, or mismatched evidence must keep the E18
+  commands rejected with no mutation.
 - Add cluster-scoped Kafka Connect offset-store provisioning/validation and binding-scoped
   Kafka topic, durability, record-size, and ACL provisioning/validation.
 - Add Kafka Connect registration, live validation, status polling, restart, guarded
@@ -64,6 +71,10 @@ needed to provision, validate, start, stop, and retire a target.
   image validation.
 - Provider tests cover the initial readiness and post-enablement lifecycle paths for
   PostgreSQL and SQL Server.
+- Production-path tests prove the E18 `activate-offline`, `deactivate-offline`, and
+  `recover-cache-ahead` commands no longer receive the default `unknown` downstream
+  history when trusted CDC evidence proves `internalOnly`, and still reject active,
+  historical, possible, unknown, missing, or mismatched evidence without mutation.
 - Diagnostics tests cover each implementation boundary without exposing secrets.
 
 ## Not Assigned to This Story

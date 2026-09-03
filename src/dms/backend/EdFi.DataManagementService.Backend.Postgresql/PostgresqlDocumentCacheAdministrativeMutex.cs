@@ -58,21 +58,22 @@ internal sealed class PostgresqlDocumentCacheAdministrativeMutex(
             ProviderToken
         );
 
-        NpgsqlDataSource dataSource = _dataSourceCache.GetOrCreate(connectionString);
-        NpgsqlConnection connection = await dataSource
-            .OpenConnectionAsync(cancellationToken)
+        // The mutex session outlives this method, so the lease that keeps its data source alive
+        // travels with the connection rather than being released here.
+        LeasedNpgsqlConnection leased = await _dataSourceCache
+            .OpenLeasedConnectionAsync(connectionString, cancellationToken)
             .ConfigureAwait(false);
 
         try
         {
-            await ExecuteAcquireAsync(connection, cancellationToken).ConfigureAwait(false);
-            int backendPid = await ExecuteBackendPidAsync(connection, cancellationToken)
+            await ExecuteAcquireAsync(leased.Connection, cancellationToken).ConfigureAwait(false);
+            int backendPid = await ExecuteBackendPidAsync(leased.Connection, cancellationToken)
                 .ConfigureAwait(false);
-            return new PostgresqlDocumentCacheAdministrativeMutexLease(connection, _logger, backendPid);
+            return new PostgresqlDocumentCacheAdministrativeMutexLease(leased, _logger, backendPid);
         }
         catch
         {
-            await connection.DisposeAsync().ConfigureAwait(false);
+            await leased.DisposeAsync().ConfigureAwait(false);
             throw;
         }
     }
@@ -99,10 +100,15 @@ internal sealed class PostgresqlDocumentCacheAdministrativeMutex(
     }
 
     private sealed class PostgresqlDocumentCacheAdministrativeMutexLease(
-        NpgsqlConnection connection,
+        LeasedNpgsqlConnection leased,
         ILogger logger,
         int backendPid
-    ) : DocumentCacheAdministrativeMutexLease(RelationalProviderToken.Postgresql, connection)
+    )
+        : DocumentCacheAdministrativeMutexLease(
+            RelationalProviderToken.Postgresql,
+            leased.Connection,
+            leased.Lease
+        )
     {
         private readonly ILogger _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         private readonly int _backendPid = backendPid;

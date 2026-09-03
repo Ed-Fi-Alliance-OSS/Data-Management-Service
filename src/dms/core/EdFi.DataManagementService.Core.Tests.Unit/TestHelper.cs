@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.Middleware;
@@ -17,6 +18,7 @@ using EdFi.DataManagementService.Core.Tests.Unit.Handler;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -64,6 +66,8 @@ public static class TestHelper
     {
         services.AddSingleton<IResourceKeyRowReader, NullResourceKeyRowReader>();
         services.AddSingleton<IResourceKeyValidator>(A.Fake<IResourceKeyValidator>());
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton(new CacheSettings());
         services.AddSingleton<ResourceKeyValidationCacheProvider>();
         services.AddSingleton<IEffectiveSchemaSetProvider>(A.Fake<IEffectiveSchemaSetProvider>());
         services.AddTransient<ValidateResourceKeySeedMiddleware>();

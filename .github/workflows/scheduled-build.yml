@@ -164,10 +164,9 @@ jobs:
         if: success()
         continue-on-error: true
         # This lane runs against the default DS 5.2 stack, so exclude the DS 6.1 version-coupled
-        # scenarios (@StandardVersion-6_1); those are covered on every PR by the run-e2e-tests-ds61
-        # lane and in full by the scheduled smoke test workflow. The non-empty filter makes
-        # build-dms.ps1 write the ...E2E.filtered.trx result file (see the upload step below).
-        run: ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter 'Category!=@StandardVersion-6_1'
+        # scenarios and the DocumentCache fixture. The latter runs below with its explicit overlay.
+        # The non-empty filter writes the filtered TRX uploaded by the following step.
+        run: ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)'
 
       - name: Export DMS E2E Docker Logs
         if: always() && steps.e2e.outcome == 'failure'
@@ -205,11 +204,59 @@ jobs:
           path: TestResults/EdFi.DataManagementService.Tests.E2E.filtered.trx
           if-no-files-found: ignore
 
+      - name: Run DocumentCache End to End Tests - IdentityProvider (${{ matrix.identityprovider }})
+        id: document_cache_e2e
+        if: steps.e2e.outcome == 'success'
+        continue-on-error: true
+        run: >-
+          ./build-dms.ps1 E2ETest
+          -Configuration ${{ env.CONFIGURATION }}
+          -SkipDockerBuild
+          -IdentityProvider ${{ matrix.identityprovider }}
+          -EnvironmentFile './.env.e2e'
+          -EnvironmentOverlayFile './.env.document-cache.e2e'
+          -TestFilter 'Category=@DocumentCacheHostedHappyPath'
+
+      - name: Export DocumentCache E2E Docker Logs
+        if: always() && steps.document_cache_e2e.outcome == 'failure'
+        run: |
+          $logDir = "${{ github.workspace }}/logs/document-cache-e2e"
+          Remove-Item -Path $logDir -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+
+          $containers = @(docker ps -a --format "{{.Names}}" | Sort-Object)
+          foreach ($container in $containers) {
+              $logPath = Join-Path $logDir "$container.log"
+              docker logs $container > $logPath 2>&1
+          }
+
+      - name: Upload DocumentCache E2E Logs
+        if: always() && steps.document_cache_e2e.outcome == 'failure'
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        with:
+          name: scheduled-build-logs-${{ matrix.identityprovider }}-document-cache-e2e
+          path: ${{ github.workspace }}/logs/document-cache-e2e
+          retention-days: 10
+
+      - name: Upload DocumentCache End to End Test Results
+        if: always() && steps.document_cache_e2e.outcome != 'skipped'
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        with:
+          name: scheduled-build-document-cache-e2e-results-${{ matrix.identityprovider }}
+          path: TestResults/EdFi.DataManagementService.Tests.E2E.e2e-document-cache.trx
+          if-no-files-found: ignore
+
       - name: Fail if DMS E2E failed
         if: always() && steps.e2e.outcome == 'failure'
         run: |
           Write-Host "DMS E2E outcome: ${{ steps.e2e.outcome }}"
           throw "DMS E2E failed."
+
+      - name: Fail if DocumentCache E2E failed
+        if: always() && steps.document_cache_e2e.outcome == 'failure'
+        run: |
+          Write-Host "DocumentCache E2E outcome: ${{ steps.document_cache_e2e.outcome }}"
+          throw "DocumentCache E2E failed."
 
   build-and-start-dms:
     name: Build and Start DMS, Download OpenAPI Specs

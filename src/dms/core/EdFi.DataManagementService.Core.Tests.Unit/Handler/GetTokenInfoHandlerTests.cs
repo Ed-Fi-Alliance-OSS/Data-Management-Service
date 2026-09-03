@@ -454,6 +454,36 @@ public class Given_GetTokenInfoHandler
         await action.Should().ThrowAsync<InvalidOperationException>();
     }
 
+    [Test]
+    public async Task It_returns_401_when_application_context_is_not_found()
+    {
+        var clientAuthorizations = CreateClientAuthorizations([]);
+        ConfigureJwtValidation(clientAuthorizations);
+        RequestInfo requestInfo = CreateRequestInfo(
+            clientAuthorizations,
+            CreateScopedServiceProvider(null, new ApplicationContextResult.NotFound())
+        );
+
+        await Execute(requestInfo);
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(401);
+    }
+
+    [Test]
+    public async Task It_returns_503_when_application_context_is_unavailable()
+    {
+        var clientAuthorizations = CreateClientAuthorizations([]);
+        ConfigureJwtValidation(clientAuthorizations);
+        RequestInfo requestInfo = CreateRequestInfo(
+            clientAuthorizations,
+            CreateScopedServiceProvider(null, new ApplicationContextResult.Unavailable())
+        );
+
+        await Execute(requestInfo);
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(503);
+    }
+
     private void ConfigureJwtValidation(ClientAuthorizations clientAuthorizations)
     {
         A.CallTo(() =>
@@ -556,21 +586,27 @@ public class Given_GetTokenInfoHandler
     }
 
     private static ServiceProvider CreateScopedServiceProvider(
-        IRelationalTokenInfoEducationOrganizationLookup? relationalLookup
+        IRelationalTokenInfoEducationOrganizationLookup? relationalLookup,
+        ApplicationContextResult? applicationContextResult = null
     )
     {
         var services = new ServiceCollection();
         var applicationContextProvider = A.Fake<IApplicationContextProvider>();
-        A.CallTo(() => applicationContextProvider.GetApplicationByClientIdAsync(ClientId))
+        A.CallTo(() => applicationContextProvider.GetApplicationByClientIdAsync(ClientId, tenant: null))
             .Returns(
-                Task.FromResult<ApplicationContext?>(
-                    new ApplicationContext(
-                        Id: 1,
-                        ApplicationId: 7,
-                        ClientId: ClientId,
-                        ClientUuid: Guid.Parse("a650c029-1fc0-4d9a-8844-f9386e35103f"),
-                        DataStoreIds: [1]
-                    )
+                Task.FromResult(
+                    applicationContextResult
+                        ?? new ApplicationContextResult.Success(
+                            new ApplicationContext(
+                                Id: 1,
+                                ApplicationId: 7,
+                                ClientId: ClientId,
+                                ClientUuid: Guid.Parse("a650c029-1fc0-4d9a-8844-f9386e35103f"),
+                                DataStoreIds: [1],
+                                CreatorOwnershipTokenId: null,
+                                OwnershipTokenIds: []
+                            )
+                        )
                 )
             );
 

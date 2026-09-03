@@ -211,7 +211,7 @@ jobs:
 
           Add-CmsClient -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd" -DisplayName "Data Store Setup Administrator"
           $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "data-store-admin" -ClientSecret "ValidClientSecret1234567890!Abcd"
-          $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresCredential $postgresCredential -PostgresDbName $env:TEMPLATE_DB_NAME -ConnectionString $dataStoreConnectionString -Name "Template Data Store" -DataStoreType "Template"
+          $dataStoreId = Add-DataStore -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresCredential $postgresCredential -PostgresDbName $env:TEMPLATE_DB_NAME -ConnectionString $dataStoreConnectionString -DatabaseEngine "${{ inputs.database_engine }}" -Name "Template Data Store" -DataStoreType "Template"
           if (-not $dataStoreId) {
             throw "Failed to register the template data store."
           }

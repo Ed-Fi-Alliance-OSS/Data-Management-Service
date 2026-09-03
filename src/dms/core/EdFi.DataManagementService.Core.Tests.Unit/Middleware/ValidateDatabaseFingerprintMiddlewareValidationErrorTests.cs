@@ -86,7 +86,11 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         var serviceProvider = A.Fake<IServiceProvider>();
         A.CallTo(() => serviceProvider.GetService(typeof(IDataStoreSelection))).Returns(dataStoreSelection);
 
-        var fingerprintProvider = new DatabaseFingerprintProvider(fingerprintReader);
+        var fingerprintProvider = new DatabaseFingerprintProvider(
+            fingerprintReader,
+            TimeProvider.System,
+            new CacheSettings()
+        );
         var middleware = new ValidateDatabaseFingerprintMiddleware(
             fingerprintProvider,
             effectiveSchemaSetProvider,
@@ -98,7 +102,7 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
 
     private sealed class CapturingLogger<T> : ILogger<T>
     {
-        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+        public List<(LogLevel Level, string Message, Exception? Exception)> Entries { get; } = [];
 
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull => null;
@@ -113,7 +117,7 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
             Func<TState, Exception?, string> formatter
         )
         {
-            Entries.Add((logLevel, formatter(state, exception)));
+            Entries.Add((logLevel, formatter(state, exception), exception));
         }
     }
 
@@ -175,8 +179,14 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
                         RouteContext: []
                     )
                 );
+            A.CallTo(() => dataStoreSelection.GetEffectiveTarget())
+                .Returns(EffectiveDataStoreTarget.Primary("Server=test;Database=corrupt"));
 
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=test;Database=corrupt"))
+            A.CallTo(() =>
+                    fingerprintReader.ReadFingerprintAsync(
+                        EffectiveDataStoreTarget.Primary("Server=test;Database=corrupt")
+                    )
+                )
                 .Returns(
                     Task.FromException<DatabaseFingerprint?>(
                         new DatabaseFingerprintValidationException(DuplicateRowsMessage)
@@ -282,7 +292,11 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         [Test]
         public void It_still_reads_the_database_fingerprint_when_startup_validation_bypass_is_enabled()
         {
-            A.CallTo(() => _fingerprintReader.ReadFingerprintAsync("Server=test;Database=corrupt"))
+            A.CallTo(() =>
+                    _fingerprintReader.ReadFingerprintAsync(
+                        EffectiveDataStoreTarget.Primary("Server=test;Database=corrupt")
+                    )
+                )
                 .MustHaveHappenedOnceExactly();
         }
 
@@ -323,8 +337,14 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
                         RouteContext: []
                     )
                 );
+            A.CallTo(() => dataStoreSelection.GetEffectiveTarget())
+                .Returns(EffectiveDataStoreTarget.Primary("Server=test;Database=invalid-seed"));
 
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=test;Database=invalid-seed"))
+            A.CallTo(() =>
+                    fingerprintReader.ReadFingerprintAsync(
+                        EffectiveDataStoreTarget.Primary("Server=test;Database=invalid-seed")
+                    )
+                )
                 .Returns(
                     Task.FromException<DatabaseFingerprint?>(
                         new DatabaseFingerprintValidationException(InvalidSeedHashMessage)
@@ -424,8 +444,14 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
                         RouteContext: []
                     )
                 );
+            A.CallTo(() => dataStoreSelection.GetEffectiveTarget())
+                .Returns(EffectiveDataStoreTarget.Primary("Server=test;Database=multi-issue"));
 
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=test;Database=multi-issue"))
+            A.CallTo(() =>
+                    fingerprintReader.ReadFingerprintAsync(
+                        EffectiveDataStoreTarget.Primary("Server=test;Database=multi-issue")
+                    )
+                )
                 .Returns(
                     Task.FromException<DatabaseFingerprint?>(
                         new DatabaseFingerprintValidationException(ValidationIssues)
@@ -494,7 +520,11 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         [Test]
         public void It_uses_the_cached_validation_failure_without_retrying_the_reader()
         {
-            A.CallTo(() => _fingerprintReader.ReadFingerprintAsync("Server=test;Database=multi-issue"))
+            A.CallTo(() =>
+                    _fingerprintReader.ReadFingerprintAsync(
+                        EffectiveDataStoreTarget.Primary("Server=test;Database=multi-issue")
+                    )
+                )
                 .MustHaveHappenedOnceExactly();
         }
     }
@@ -531,8 +561,14 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
                         RouteContext: []
                     )
                 );
+            A.CallTo(() => dataStoreSelection.GetEffectiveTarget())
+                .Returns(EffectiveDataStoreTarget.Primary("Server=test;Database=projection-failure"));
 
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=test;Database=projection-failure"))
+            A.CallTo(() =>
+                    fingerprintReader.ReadFingerprintAsync(
+                        EffectiveDataStoreTarget.Primary("Server=test;Database=projection-failure")
+                    )
+                )
                 .Returns(
                     Task.FromException<DatabaseFingerprint?>(
                         new DatabaseFingerprintValidationException(ProjectionFailureMessage)
@@ -601,11 +637,15 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         private RequestInfo _requestInfo = No.RequestInfo();
         private JsonNode _body = default!;
         private CapturingLogger _exceptionLogger = null!;
+        private CapturingLogger<ValidateDatabaseFingerprintMiddleware> _middlewareLogger = null!;
 
         [SetUp]
         public async Task Setup()
         {
-            var (middleware, fingerprintReader, dataStoreSelection, _, serviceProvider) = CreateMiddleware();
+            var (middleware, fingerprintReader, dataStoreSelection, middlewareLogger, serviceProvider) =
+                CreateMiddleware();
+
+            _middlewareLogger = middlewareLogger;
 
             A.CallTo(() => dataStoreSelection.IsSet).Returns(true);
             A.CallTo(() => dataStoreSelection.GetSelectedDataStore())
@@ -618,9 +658,13 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
                         RouteContext: new Dictionary<RouteQualifierName, RouteQualifierValue>()
                     )
                 );
+            A.CallTo(() => dataStoreSelection.GetEffectiveTarget())
+                .Returns(EffectiveDataStoreTarget.Primary("Host=localhost;Database=transient"));
 
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<string>._))
-                .ThrowsAsync(new TimeoutException("connection timed out"));
+            // A provider exception raised inside connection acquisition can quote connection-string
+            // values back, which is exactly what must never reach the log.
+            A.CallTo(() => fingerprintReader.ReadFingerprintAsync(A<EffectiveDataStoreTarget>._))
+                .ThrowsAsync(new TimeoutException("connection timed out for Password=hunter2"));
 
             _requestInfo = CreateRequestInfoWithAuthorizations(serviceProvider);
             _exceptionLogger = new CapturingLogger();
@@ -651,6 +695,37 @@ public class ValidateDatabaseFingerprintMiddlewareValidationErrorTests
         public void It_returns_a_problem_response_body()
         {
             _body["title"]?.GetValue<string>().Should().NotBeNullOrEmpty();
+        }
+
+        [Test]
+        public void It_logs_the_exception_type_for_the_transient_failure()
+        {
+            _middlewareLogger
+                .Entries.Should()
+                .Contain(entry =>
+                    entry.Level == LogLevel.Error
+                    && entry.Message.Contains("Database fingerprint read failed")
+                    && entry.Message.Contains(nameof(TimeoutException))
+                );
+        }
+
+        [Test]
+        public void It_never_hands_the_provider_exception_to_the_logger()
+        {
+            _middlewareLogger
+                .Entries.Should()
+                .OnlyContain(
+                    entry => entry.Exception == null,
+                    "a provider exception can quote connection-string values back"
+                );
+        }
+
+        [Test]
+        public void It_never_logs_connection_material()
+        {
+            _middlewareLogger
+                .Entries.Should()
+                .NotContain(entry => entry.Message.Contains("Password=hunter2"));
         }
     }
 }

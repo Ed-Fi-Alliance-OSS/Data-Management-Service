@@ -18,7 +18,7 @@ internal sealed class MissingResourceKeyRowReader : IResourceKeyRowReader
         + "(see WebApplicationBuilderExtensions.ConfigureDatastore for an example).";
 
     public Task<IReadOnlyList<ResourceKeyRow>> ReadResourceKeyRowsAsync(
-        string connectionString,
+        EffectiveDataStoreTarget target,
         CancellationToken cancellationToken = default
     )
     {

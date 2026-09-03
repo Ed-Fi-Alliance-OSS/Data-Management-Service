@@ -11,6 +11,7 @@ public class DataStoreResponse
     public required string DataStoreType { get; set; }
     public required string Name { get; set; }
     public string? ConnectionString { get; set; }
+    public string? Provider { get; set; }
     public IEnumerable<DataStoreContextItem> DataStoreContexts { get; set; } = [];
     public IEnumerable<DataStoreDerivativeItem> DataStoreDerivatives { get; set; } = [];
     public long? TenantId { get; set; }

@@ -51,11 +51,16 @@ public class Given_A_Postgresql_Database_Provisioned_With_Generated_DDL_For_Effe
 
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(combinedSql);
 
+        using NpgsqlDataSourceCache dataSourceCache = new(NullLogger<NpgsqlDataSourceCache>.Instance);
+
         var reader = new PostgresqlDatabaseFingerprintReader(
+            dataSourceCache,
             NullLogger<PostgresqlDatabaseFingerprintReader>.Instance
         );
 
-        _fingerprint = await reader.ReadFingerprintAsync(_database.ConnectionString);
+        _fingerprint = await reader.ReadFingerprintAsync(
+            EffectiveDataStoreTarget.Primary(_database.ConnectionString)
+        );
     }
 
     [OneTimeTearDown]

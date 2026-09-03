@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Configuration;
@@ -26,6 +27,41 @@ public static class MssqlServiceExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.AddRelationalMappingSetServices(configuration, SqlDialect.Mssql, new MssqlDialectRules());
+        services.AddMssqlConnectionAcquisition();
+
+        return services;
+    }
+
+    /// <summary>
+    /// The single SQL Server acquisition boundary, shared by every seam that opens a connection for a
+    /// request, so all of them realize the same effective connection string for a given target.
+    /// </summary>
+    /// <remarks>
+    /// Expressed once because two composition roots need it: <see cref="AddMssqlDatastore" />, and the
+    /// standalone <see cref="MssqlReferenceResolverServiceCollectionExtensions.AddMssqlReferenceResolver" />
+    /// whose seams take the boundary by constructor injection. One shared registration is what keeps
+    /// the two roots from drifting to different lifetimes or implementation types.
+    /// </remarks>
+    internal static IServiceCollection AddMssqlConnectionAcquisition(this IServiceCollection services)
+    {
+        services.TryAddSingleton<ISqlServerPoolClearing, SqlClientPoolClearing>();
+
+        // Registered as the concrete type so both the acquisition boundary and the ownership
+        // reconciler resolve the very same singleton. A second instance would hold its own realization
+        // memo and pool state, and only one of the two would ever be reconciled.
+        services.TryAddSingleton<MssqlConnectionAcquisition>();
+        services.TryAddSingleton<IMssqlConnectionAcquisition>(provider =>
+            provider.GetRequiredService<MssqlConnectionAcquisition>()
+        );
+
+        // Both type arguments are supplied deliberately: TryAddEnumerable identifies a factory
+        // registration by the factory's own return type, so a factory typed to the interface is
+        // indistinguishable from every other reconciler and is rejected outright.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IDataStoreOwnershipReconciler, MssqlConnectionAcquisition>(provider =>
+                provider.GetRequiredService<MssqlConnectionAcquisition>()
+            )
+        );
 
         return services;
     }

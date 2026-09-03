@@ -11,7 +11,20 @@ on:
   # PRs regardless of which files changed. detect-fresh-build-changes computes dms_relevant and
   # the heavy jobs skip when no DMS-relevant file changed, so idle PRs stay cheap and the gate
   # still reports (a skipped dependency counts as a pass).
+  # The default type set is opened, synchronize and reopened. Declaring types replaces that set
+  # outright, so all three are listed alongside the two draft transitions. ready_for_review is what
+  # makes draft gating safe: the expensive jobs below skip while a pull request is a draft, and
+  # marking it ready fires this trigger so the full suite validates it before review.
+  # converted_to_draft is the cost side of the same gate: the cancel-in-progress concurrency group
+  # cancels the in-flight run, and the replacement run classifies as a draft, so its expensive jobs
+  # skip instead of finishing for a pull request that just declared itself not ready.
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+      - converted_to_draft
     branches:
       - main
 
@@ -59,6 +72,19 @@ jobs:
       # suite while this workflow still runs and reports dms-ci-gate. src/config counts as
       # DMS-relevant, so a config-only PR does not skip.
       dms_relevant: ${{ steps.detect.outputs.dms_relevant }}
+      # True while a pull request is a draft. Only the expensive roots and leaves gate on it, so a
+      # draft still gets the cheap lanes and still gets a reporting dms-ci-gate; ready_for_review is
+      # in the trigger types above, so marking the PR ready re-runs the full suite.
+      draft: ${{ steps.detect.outputs.draft }}
+      # Promoted-suite categories. Six integration lanes that have caught nothing at pull request
+      # time run only when a changed file reaches them; merge_group and workflow_dispatch always
+      # report every category true, so the merge queue still runs the full suite. Anything
+      # DMS-relevant that the classifier does not recognise sets all four, so a new project
+      # directory is validated by everything until it is classified.
+      backend_mssql_relevant: ${{ steps.detect.outputs.backend_mssql_relevant }}
+      dms_api_relevant: ${{ steps.detect.outputs.dms_api_relevant }}
+      schematools_relevant: ${{ steps.detect.outputs.schematools_relevant }}
+      cdc_relevant: ${{ steps.detect.outputs.cdc_relevant }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -67,66 +93,69 @@ jobs:
 
       - name: Detect files that require a fresh rebuild
         id: detect
-        shell: bash
+        shell: pwsh
+        env:
+          # Read through the environment rather than interpolated into the script body, so a ref
+          # or SHA can never be parsed as PowerShell.
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.sha }}
+          # Empty on merge_group and workflow_dispatch, which have no pull request.
+          PULL_REQUEST_IS_DRAFT: ${{ github.event.pull_request.draft }}
         run: |
-          # emit <fresh_build_required> <dms_relevant>
-          emit() {
-            echo "fresh_build_required=$1" >> "$GITHUB_OUTPUT"
-            echo "dms_relevant=$2" >> "$GITHUB_OUTPUT"
+          # PowerShell 7.4 makes a non-zero native exit code terminating under
+          # ErrorActionPreference Stop, which this step must not be: a git failure is handled
+          # below by running the full suite, not by failing the job.
+          $PSNativeCommandUseErrorActionPreference = $false
+
+          # The classification rules live in eng/ci/dms-change-categories.psm1 so Pester can
+          # exercise them directly. Producing the changed-file list stays here, because only the
+          # workflow knows the diff base. Any failure to produce a trustworthy list leaves
+          # $diffUnavailable set, and the classifier then reports the full suite.
+          $changedFilePath = Join-Path $env:RUNNER_TEMP "dms-changed-files.txt"
+          $diffUnavailable = $false
+
+          switch ($env:EVENT_NAME) {
+            "pull_request" {
+              git fetch --no-tags origin "$($env:BASE_REF):refs/remotes/origin/$($env:BASE_REF)"
+
+              if ($LASTEXITCODE -ne 0) {
+                $diffUnavailable = $true
+              }
+              else {
+                git diff --no-renames --name-only "origin/$($env:BASE_REF)...HEAD" |
+                  Set-Content -LiteralPath $changedFilePath
+
+                if ($LASTEXITCODE -ne 0) {
+                  $diffUnavailable = $true
+                }
+              }
+            }
+            "merge_group" {
+              if ([string]::IsNullOrWhiteSpace($env:MERGE_GROUP_BASE_SHA)) {
+                $diffUnavailable = $true
+              }
+              else {
+                git diff --no-renames --name-only $env:MERGE_GROUP_BASE_SHA $env:HEAD_SHA |
+                  Set-Content -LiteralPath $changedFilePath
+
+                if ($LASTEXITCODE -ne 0) {
+                  $diffUnavailable = $true
+                }
+              }
+            }
           }
 
-          # Non-pull_request events (merge_group, workflow_dispatch) always run the full
-          # suite, so dms_relevant is reported true and only fresh_build_required is meaningful.
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            emit true true
-            exit 0
-          fi
+          ./eng/ci/Write-DmsChangeCategories.ps1 `
+            -EventName $env:EVENT_NAME `
+            -ChangedFilePath $changedFilePath `
+            -DiffUnavailable:$diffUnavailable `
+            -IsDraft:($env:PULL_REQUEST_IS_DRAFT -eq 'true')
 
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            git fetch --no-tags origin "${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
-            changed_files="$(git diff --no-renames --name-only "origin/${{ github.base_ref }}...HEAD")"
-          elif [[ "${{ github.event_name }}" == "merge_group" ]]; then
-            base_sha="${{ github.event.merge_group.base_sha }}"
-
-            if [[ -z "$base_sha" ]] || ! changed_files="$(git diff --no-renames --name-only "$base_sha" "${{ github.sha }}")"; then
-              emit true true
-              exit 0
-            fi
-          else
-            # Unreachable with the current triggers: workflow_dispatch returned above and the
-            # only other events are pull_request and merge_group. Run the full suite rather
-            # than infer a diff base for an event this script does not model.
-            emit true true
-            exit 0
-          fi
-
-          fresh_build_required=false
-          # For merge_group, force dms_relevant true so nothing is skipped when
-          # validating the merged result; only pull_request narrows to the changed area.
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            dms_relevant=false
-          else
-            dms_relevant=true
-          fi
-
-          while IFS= read -r file; do
-            case "$file" in
-              src/Directory.Packages.props|src/nuget.config|src/dms/Dockerfile|src/config/Dockerfile|eng/docker-compose/*)
-                fresh_build_required=true
-                ;;
-            esac
-            # src/config counts as DMS-relevant: the DMS E2E lanes (incl. the DS 6.1
-            # version-coupled lane) bring up the Config Service built from src/config, so
-            # config-only changes (e.g. ds61 Claims.json, ClaimsProvider, ResourceClaim
-            # seeding) must still trigger this workflow's DMS + DS 6.1 validation.
-            case "$file" in
-              .github/actions/*|.github/workflows/*|build-dms.ps1|eng/*|src/Directory.Packages.props|src/nuget.config|src/dms/*|src/config/*)
-                dms_relevant=true
-                ;;
-            esac
-          done <<< "$changed_files"
-
-          emit "$fresh_build_required" "$dms_relevant"
+          # The step's own success is decided by the classifier having run, not by the exit code
+          # of the last git command, which is deliberately tolerated above.
+          exit 0
 
   scan-actions-bidi:
     name: Scan Actions, scan all files for BIDI Trojan Attacks
@@ -198,6 +227,7 @@ jobs:
             "eng/docker-compose/tests/DatabaseEngineEnvironmentFile.Tests.ps1",
             "eng/docker-compose/tests/ComposeResolutionAndProviderBuilder.Tests.ps1",
             "eng/docker-compose/tests/OpenIddictCrypto.Tests.ps1",
+            "eng/docker-compose/tests/ConfigMssqlComposeStartup.Tests.ps1",
             "eng/docker-compose/tests/CmsDatabaseTopology.Tests.ps1",
             "eng/docker-compose/tests/MssqlCollationParity.Tests.ps1",
             "eng/docker-compose/tests/NativeCommandInputRunner.Tests.ps1",
@@ -217,6 +247,9 @@ jobs:
             "eng/ci/tests/BuildScriptTestGuards.Tests.ps1",
             "eng/ci/tests/Sanitize-E2EArtifacts.Tests.ps1",
             "eng/ci/tests/DmsPullRequestMssqlWorkflow.Tests.ps1",
+            "eng/ci/tests/DmsChangeCategories.Tests.ps1",
+            "eng/ci/tests/DmsPullRequestCiBudget.Tests.ps1",
+            "eng/ci/tests/UnitTestCoverage.Tests.ps1",
             "eng/ci/tests/PullCiImages.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-Management.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-WorkflowInputs.Tests.ps1",
@@ -267,9 +300,21 @@ jobs:
   verify-dms-packages:
     name: Verify DMS Packages
     needs: detect-fresh-build-changes
+    # Draft-gated: BuildAndPublish plus four package builds and two scratch-consumer compiles is one
+    # of the most expensive jobs here, and nothing about packaging is feedback a draft needs.
+    #
+    # Deliberately NOT a dms-build-output consumer, even though it does compile the solution. Its
+    # target is BuildAndPublish, not Build, and the difference is the whole point of the job:
+    # BuildAndPublish regenerates src/dms/Directory.Build.props to version-stamp the assemblies
+    # before compiling them, restores in locked mode, and publishes output the shared artifact does
+    # not stage. The shared producer runs plain Build, so its assemblies carry the tracked props
+    # version; packing those would emit packages whose assembly version disagrees with the package
+    # version they are labelled with. eng/ci/tests/DmsPullRequestCiBudget.Tests.ps1 pins this
+    # exclusion together with the reason, so the decision has to be revisited if the reason moves.
     if: >-
       github.event_name != 'pull_request' ||
-      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true'
+      (needs.detect-fresh-build-changes.outputs.dms_relevant == 'true' &&
+      needs.detect-fresh-build-changes.outputs.draft != 'true')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -382,9 +427,12 @@ jobs:
             -PackageVersion $packageVersion `
             -NuGetPackagesDirectory (Join-Path $env:RUNNER_TEMP "nuget-verify-custom-validation")
 
-  run-unit-tests:
-    name: Run Unit Tests
+  build-dms-solution:
+    name: Build DMS Solution
     needs: detect-fresh-build-changes
+    # Gated on DMS relevance only, and deliberately not draft-gated: run-unit-tests depends on this
+    # producer, so draft-gating here would skip unit tests on every draft DMS pull request through
+    # the dependency.
     if: >-
       github.event_name != 'pull_request' ||
       needs.detect-fresh-build-changes.outputs.dms_relevant == 'true'
@@ -414,6 +462,135 @@ jobs:
       - name: Build
         run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
 
+      - name: Stage DMS Build Output
+        run: |
+          $configuration = "${{ env.CONFIGURATION }}"
+          $artifactRoot = "./TestArtifacts/dms-build-output"
+
+          if (Test-Path $artifactRoot) {
+            Remove-Item -LiteralPath $artifactRoot -Recurse -Force
+          }
+
+          $repositoryRoot = (Get-Location).Path
+
+          # Compiled output for every project, plus the per-project NuGet evaluation markers that
+          # `dotnet test --no-build` and `dotnet run --no-build` read when they evaluate a project
+          # without compiling it. obj/$configuration is deliberately excluded: --no-build evaluates
+          # the project but never reads intermediate output or reference assemblies.
+          # The directories are resolved first and then walked with -LiteralPath. A wildcard -Path
+          # combined with -Recurse makes Get-ChildItem treat the last segment as a name filter, so
+          # "./src/dms/*/*/bin/$configuration" -Recurse -File searches for files *named*
+          # "$configuration" and silently matches nothing.
+          $binDirectories = @(Get-ChildItem -Path "./src/dms/*/*/bin/$configuration" -Directory -Force)
+          $objDirectories = @(Get-ChildItem -Path "./src/dms/*/*/obj" -Directory -Force)
+
+          $stagedFiles = @(
+            $binDirectories | ForEach-Object {
+              Get-ChildItem -LiteralPath $_.FullName -Recurse -File -Force
+            }
+            $objDirectories | ForEach-Object {
+              Get-ChildItem -LiteralPath $_.FullName -File -Force
+            } | Where-Object {
+              $_.Name -in @('project.assets.json', 'project.nuget.cache') -or
+              $_.Name -like '*.csproj.nuget.g.props' -or
+              $_.Name -like '*.csproj.nuget.g.targets'
+            }
+          )
+
+          # An empty set means the build produced nothing where this expects it, which would upload
+          # an empty artifact and fail every consumer with a confusing missing-assembly error.
+          if ($stagedFiles.Count -eq 0) {
+            throw "No build output found to stage. Expected compiled output under src/dms/*/*/bin/$configuration."
+          }
+
+          # Staged at repository-relative paths so a consumer extracting the artifact over its own
+          # checkout root gets every file exactly where its own build would have written it.
+          foreach ($file in $stagedFiles) {
+            $relativePath = [System.IO.Path]::GetRelativePath($repositoryRoot, $file.FullName)
+            $destination = Join-Path $artifactRoot $relativePath
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
+            Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
+          }
+
+          $totalBytes = ($stagedFiles | Measure-Object -Property Length -Sum).Sum
+          Write-Output "Staged $($stagedFiles.Count) files ($([math]::Round($totalBytes / 1MB, 1)) MB) to $artifactRoot"
+
+      - name: Archive DMS Build Output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Uploaded as a tar rather than as a directory path, because upload-artifact zips a
+          # directory and the zip handoff does not carry Unix mode bits: everything arrives 755/644.
+          # The staged tree contains files that must arrive executable - Playwright's
+          # .playwright/node/*/node, which the driver spawns, and the apphost beside each executable
+          # project - and nothing in a --no-build consumer re-applies the bit, since Playwright's own
+          # chmod target only runs as part of a build. A directory upload therefore produces an
+          # artifact that downloads cleanly and then fails at run time with permission denied.
+          #
+          # -C <root> . archives the directory's contents, dotfiles included, which is also what
+          # keeps the .playwright tree in the artifact now that include-hidden-files is gone.
+          tar -czf TestArtifacts/dms-build-output.tar.gz -C TestArtifacts/dms-build-output .
+          ls -l TestArtifacts/dms-build-output.tar.gz
+
+      - name: Upload DMS Build Output
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        with:
+          name: dms-build-output
+          path: TestArtifacts/dms-build-output.tar.gz
+          # The tar is already gzipped; zipping it again costs minutes on a multi-gigabyte tree and
+          # saves nothing.
+          compression-level: 0
+          if-no-files-found: error
+          # Same retention as dms-integration-test-assemblies. Once it expires, re-running a single
+          # failed consumer fails at the download step; a "re-run all jobs" regenerates the artifact.
+          retention-days: 1
+
+  run-unit-tests:
+    name: Run Unit Tests
+    needs: [detect-fresh-build-changes, build-dms-solution]
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Cache Nuget packages
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Download DMS Build Output
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-build-output
+          path: ${{ runner.temp }}/dms-build-output
+
+      - name: Extract DMS Build Output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # -p so the recorded modes are applied exactly. Without it tar masks them with the
+          # runner's umask, and the execute bit this artifact depends on would survive only because
+          # the image happens to use umask 022 - a property of the runner, not of the handoff.
+          tar -xzpf "$RUNNER_TEMP/dms-build-output/dms-build-output.tar.gz" -C .
+
       - name: Restore .NET tools
         if: success()
         run: dotnet tool restore
@@ -426,10 +603,15 @@ jobs:
         # they can share its fixture types) but are pure unit tests that need no Docker. build-dms.ps1
         # UnitTest only runs *.Tests.Unit projects and the instance E2E shard jobs filter on shard tags,
         # so without this step these tests would run in no PR job. They are selected by the
-        # InstanceFixtureUnit category and run standalone here.
+        # InstanceFixtureUnit category and run standalone here, against the downloaded build output
+        # like every other step in this job: without --no-build this recompiles the project and its
+        # whole ProjectReference graph, because the artifact stages bin without the intermediate
+        # output an incremental build would need.
         run: >-
           dotnet test src/dms/tests/EdFi.InstanceManagement.Tests.E2E/EdFi.InstanceManagement.Tests.E2E.csproj
           --configuration ${{ env.CONFIGURATION }}
+          --no-build
+          --no-restore
           --filter "Category=InstanceFixtureUnit"
           --logger "trx;LogFileName=instance-fixture-unit.trx"
 
@@ -457,10 +639,16 @@ jobs:
 
   build-integration-test-assemblies:
     name: Build Integration Test Assemblies
-    needs: detect-fresh-build-changes
+    needs: [detect-fresh-build-changes, build-dms-solution]
+    # Both a consumer and a producer: it takes the shared build output and republishes the much
+    # smaller slice the eight integration lanes need, so they download megabytes rather than
+    # gigabytes. All five projects it stages are in the solution the shared build already compiles.
+    # Draft-gated. This is the root of every integration lane, so gating it here skips all eight
+    # through their needs rather than repeating the condition on each.
     if: >-
       github.event_name != 'pull_request' ||
-      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true'
+      (needs.detect-fresh-build-changes.outputs.dms_relevant == 'true' &&
+      needs.detect-fresh-build-changes.outputs.draft != 'true')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -484,45 +672,21 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Restore and Build Integration Test Projects
-        run: |
-          $configuration = "${{ env.CONFIGURATION }}"
-          $projects = @(
-            @{
-              Name = "backend-mssql"
-              Project = "./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj"
-              Assembly = "EdFi.DataManagementService.Backend.Mssql.Tests.Integration.dll"
-            },
-            @{
-              Name = "dms-api"
-              Project = "./src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj"
-              Assembly = "EdFi.DataManagementService.Tests.Integration.dll"
-            },
-            @{
-              Name = "backend-postgresql"
-              Project = "./src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj"
-              Assembly = "EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.dll"
-            },
-            @{
-              Name = "backend-cdc"
-              Project = "./src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.csproj"
-              Assembly = "EdFi.DataManagementService.Backend.Cdc.Tests.Integration.dll"
-            },
-            @{
-              Name = "schematools"
-              Project = "./src/dms/clis/EdFi.DataManagementService.SchemaTools.Tests.Integration/EdFi.DataManagementService.SchemaTools.Tests.Integration.csproj"
-              Assembly = "EdFi.DataManagementService.SchemaTools.Tests.Integration.dll"
-            }
-          )
+      - name: Download DMS Build Output
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-build-output
+          path: ${{ runner.temp }}/dms-build-output
 
-          foreach ($project in $projects) {
-            dotnet restore $project.Project --verbosity:normal
-            dotnet build $project.Project `
-              -c $configuration `
-              --no-restore `
-              -v normal `
-              --nologo
-          }
+      - name: Extract DMS Build Output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # -p so the recorded modes are applied exactly. Without it tar masks them with the
+          # runner's umask, and the execute bit this artifact depends on would survive only because
+          # the image happens to use umask 022 - a property of the runner, not of the handoff.
+          tar -xzpf "$RUNNER_TEMP/dms-build-output/dms-build-output.tar.gz" -C .
 
       - name: Stage Integration Test Assemblies
         run: |
@@ -614,9 +778,12 @@ jobs:
   build-ci-docker-images:
     name: Build CI Docker Images
     needs: detect-fresh-build-changes
+    # Draft-gated. This is the root of every E2E, instance-E2E and OpenAPI lane, so gating it here
+    # skips that whole family through their needs.
     if: >-
       github.event_name != 'pull_request' ||
-      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true'
+      (needs.detect-fresh-build-changes.outputs.dms_relevant == 'true' &&
+      needs.detect-fresh-build-changes.outputs.draft != 'true')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -744,7 +911,13 @@ jobs:
 
   run-backend-mssql-integration-tests:
     name: Run Backend MSSQL Integration Tests (${{ matrix.shard-name }})
-    needs: build-integration-test-assemblies
+    needs: [detect-fresh-build-changes, build-integration-test-assemblies]
+    # Path-promoted. This suite has caught nothing at pull request time, so it runs on a pull
+    # request only when a changed file reaches it; merge_group and workflow_dispatch always run
+    # it, which is the recovery path for anything a pull request skipped.
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.backend_mssql_relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -850,7 +1023,13 @@ jobs:
 
   run-dms-api-mssql-integration-tests:
     name: Run DMS API MSSQL Integration Tests
-    needs: build-integration-test-assemblies
+    needs: [detect-fresh-build-changes, build-integration-test-assemblies]
+    # Path-promoted. This suite has caught nothing at pull request time, so it runs on a pull
+    # request only when a changed file reaches it; merge_group and workflow_dispatch always run
+    # it, which is the recovery path for anything a pull request skipped.
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.dms_api_relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1006,7 +1185,13 @@ jobs:
 
   run-dms-api-postgresql-integration-tests:
     name: Run DMS API PostgreSQL Integration Tests
-    needs: build-integration-test-assemblies
+    needs: [detect-fresh-build-changes, build-integration-test-assemblies]
+    # Path-promoted. This suite has caught nothing at pull request time, so it runs on a pull
+    # request only when a changed file reaches it; merge_group and workflow_dispatch always run
+    # it, which is the recovery path for anything a pull request skipped.
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.dms_api_relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1074,7 +1259,13 @@ jobs:
 
   run-backend-cdc-integration-tests:
     name: Run Backend CDC Integration Tests
-    needs: build-integration-test-assemblies
+    needs: [detect-fresh-build-changes, build-integration-test-assemblies]
+    # Path-promoted. This suite has caught nothing at pull request time, so it runs on a pull
+    # request only when a changed file reaches it; merge_group and workflow_dispatch always run
+    # it, which is the recovery path for anything a pull request skipped.
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.cdc_relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1199,9 +1390,11 @@ jobs:
   run-cli-integration-tests:
     name: Run CLI Integration Tests (${{ matrix.cli }})
     needs: detect-fresh-build-changes
+    # Draft-gated: two matrix legs, each a separate restore, build and test.
     if: >-
       github.event_name != 'pull_request' ||
-      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true'
+      (needs.detect-fresh-build-changes.outputs.dms_relevant == 'true' &&
+      needs.detect-fresh-build-changes.outputs.draft != 'true')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1334,7 +1527,13 @@ jobs:
 
   run-schematools-postgresql-integration-tests:
     name: Run SchemaTools PostgreSQL Integration Tests
-    needs: build-integration-test-assemblies
+    needs: [detect-fresh-build-changes, build-integration-test-assemblies]
+    # Path-promoted. This suite has caught nothing at pull request time, so it runs on a pull
+    # request only when a changed file reaches it; merge_group and workflow_dispatch always run
+    # it, which is the recovery path for anything a pull request skipped.
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.schematools_relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1408,7 +1607,13 @@ jobs:
 
   run-schematools-mssql-integration-tests:
     name: Run SchemaTools MSSQL Integration Tests
-    needs: build-integration-test-assemblies
+    needs: [detect-fresh-build-changes, build-integration-test-assemblies]
+    # Path-promoted. This suite has caught nothing at pull request time, so it runs on a pull
+    # request only when a changed file reaches it; merge_group and workflow_dispatch always run
+    # it, which is the recovery path for anything a pull request skipped.
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.schematools_relevant == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1483,7 +1688,7 @@ jobs:
 
   run-e2e-tests:
     name: Run PostgreSQL DMS E2E (${{ matrix.identityprovider }}, Shard ${{ matrix.shard }})
-    needs: build-ci-docker-images
+    needs: [build-ci-docker-images, build-dms-solution]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -1573,14 +1778,27 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Build
-        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }} -IdentityProvider ${{matrix.identityprovider}}
+      - name: Download DMS Build Output
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-build-output
+          path: ${{ runner.temp }}/dms-build-output
+
+      - name: Extract DMS Build Output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # -p so the recorded modes are applied exactly. Without it tar masks them with the
+          # runner's umask, and the execute bit this artifact depends on would survive only because
+          # the image happens to use umask 022 - a property of the runner, not of the handoff.
+          tar -xzpf "$RUNNER_TEMP/dms-build-output/dms-build-output.tar.gz" -C .
 
       - name: Run DMS E2E (IdentityProvider ${{ matrix.identityprovider }}, Shard ${{ matrix.shard }})
         id: e2e
         if: success()
         run: |
-          ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-${{ matrix.shard }}'
+          ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-${{ matrix.shard }}'
 
       - name: Export DMS E2E Docker Logs
         if: always() && steps.e2e.outcome == 'failure'
@@ -1658,7 +1876,7 @@ jobs:
   # (EdFi.DataManagementService.Tests.E2E.filtered.trx).
   run-e2e-tests-ds61:
     name: Run PostgreSQL DMS E2E (DS 6.1, version-coupled)
-    needs: build-ci-docker-images
+    needs: [build-ci-docker-images, build-dms-solution]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1743,8 +1961,21 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Build
-        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }} -IdentityProvider self-contained
+      - name: Download DMS Build Output
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-build-output
+          path: ${{ runner.temp }}/dms-build-output
+
+      - name: Extract DMS Build Output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # -p so the recorded modes are applied exactly. Without it tar masks them with the
+          # runner's umask, and the execute bit this artifact depends on would survive only because
+          # the image happens to use umask 022 - a property of the runner, not of the handoff.
+          tar -xzpf "$RUNNER_TEMP/dms-build-output/dms-build-output.tar.gz" -C .
 
       - name: Add Kafka hostname to /etc/hosts
         run: echo "127.0.0.1 dms-kafka1" | sudo tee -a /etc/hosts
@@ -1755,7 +1986,7 @@ jobs:
         env:
           KAFKA_BOOTSTRAP_SERVERS: dms-kafka1:9092
         run: |
-          ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter 'Category=@StandardVersion-6_1'
+          ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter 'Category=@StandardVersion-6_1'
 
       - name: Export DMS E2E Docker Logs
         if: always() && steps.e2e_ds61.outcome == 'failure'
@@ -1834,7 +2065,7 @@ jobs:
   # writes the filtered TRX (EdFi.DataManagementService.Tests.E2E.filtered.trx).
   run-e2e-tests-partition-sizing:
     name: Run PostgreSQL DMS E2E (partition sizing, isolated page size)
-    needs: build-ci-docker-images
+    needs: [build-ci-docker-images, build-dms-solution]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1919,8 +2150,21 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Build
-        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }} -IdentityProvider self-contained
+      - name: Download DMS Build Output
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-build-output
+          path: ${{ runner.temp }}/dms-build-output
+
+      - name: Extract DMS Build Output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # -p so the recorded modes are applied exactly. Without it tar masks them with the
+          # runner's umask, and the execute bit this artifact depends on would survive only because
+          # the image happens to use umask 022 - a property of the runner, not of the handoff.
+          tar -xzpf "$RUNNER_TEMP/dms-build-output/dms-build-output.tar.gz" -C .
 
       - name: Run DMS E2E (partition sizing)
         id: e2e_partition_sizing
@@ -1928,7 +2172,7 @@ jobs:
         env:
           KAFKA_BOOTSTRAP_SERVERS: dms-kafka1:9092
         run: |
-          ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.cursorpartitions.e2e' -TestFilter 'Category=@CursorPartitionSizing'
+          ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.cursorpartitions.e2e' -TestFilter 'Category=@CursorPartitionSizing'
 
       - name: Export DMS E2E Docker Logs
         if: always() && steps.e2e_partition_sizing.outcome == 'failure'
@@ -2006,7 +2250,7 @@ jobs:
   # runs regardless of outcome, and diagnostic artifacts are sanitized before any upload or report.
   run-e2e-tests-mssql:
     name: Run SQL Server DMS E2E (${{ matrix.identityprovider }}, representative)
-    needs: build-ci-docker-images
+    needs: [build-ci-docker-images, build-dms-solution]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -2095,8 +2339,21 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Build
-        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }} -IdentityProvider ${{matrix.identityprovider}}
+      - name: Download DMS Build Output
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-build-output
+          path: ${{ runner.temp }}/dms-build-output
+
+      - name: Extract DMS Build Output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # -p so the recorded modes are applied exactly. Without it tar masks them with the
+          # runner's umask, and the execute bit this artifact depends on would survive only because
+          # the image happens to use umask 022 - a property of the runner, not of the handoff.
+          tar -xzpf "$RUNNER_TEMP/dms-build-output/dms-build-output.tar.gz" -C .
 
       - name: Run SQL Server DMS E2E (IdentityProvider ${{ matrix.identityprovider }}, representative)
         id: e2e
@@ -2112,7 +2369,7 @@ jobs:
           $diagDir = "${{ github.workspace }}/logs/e2e-mssql-${{ matrix.identityprovider }}"
           New-Item -ItemType Directory -Path $diagDir -Force | Out-Null
           $diagFile = Join-Path $diagDir 'build-dms-setup.log'
-          & pwsh -NoProfile -File ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter 'Category=@MssqlRepresentative' *> $diagFile
+          & pwsh -NoProfile -File ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter 'Category=@MssqlRepresentative' *> $diagFile
           $buildExitCode = $LASTEXITCODE
           if ($buildExitCode -ne 0) {
               throw "build-dms.ps1 E2ETest failed with exit code $buildExitCode. See the sanitized build-dms-setup.log artifact."
@@ -2222,7 +2479,7 @@ jobs:
   # (EdFi.DataManagementService.Tests.E2E.filtered.trx).
   run-e2e-tests-mssql-ds61:
     name: Run SQL Server DMS E2E (DS 6.1, version-coupled)
-    needs: build-ci-docker-images
+    needs: [build-ci-docker-images, build-dms-solution]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -2307,8 +2564,21 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Build
-        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }} -IdentityProvider self-contained
+      - name: Download DMS Build Output
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-build-output
+          path: ${{ runner.temp }}/dms-build-output
+
+      - name: Extract DMS Build Output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # -p so the recorded modes are applied exactly. Without it tar masks them with the
+          # runner's umask, and the execute bit this artifact depends on would survive only because
+          # the image happens to use umask 022 - a property of the runner, not of the handoff.
+          tar -xzpf "$RUNNER_TEMP/dms-build-output/dms-build-output.tar.gz" -C .
 
       - name: Run DS 6.1 SQL Server DMS E2E (version-coupled scenarios)
         id: e2e_ds61_mssql
@@ -2320,7 +2590,7 @@ jobs:
           $diagDir = "${{ github.workspace }}/logs/e2e-mssql-ds61"
           New-Item -ItemType Directory -Path $diagDir -Force | Out-Null
           $diagFile = Join-Path $diagDir 'build-dms-setup.log'
-          & pwsh -NoProfile -File ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter 'Category=@StandardVersion-6_1' *> $diagFile
+          & pwsh -NoProfile -File ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter 'Category=@StandardVersion-6_1' *> $diagFile
           $buildExitCode = $LASTEXITCODE
           if ($buildExitCode -ne 0) {
               throw "build-dms.ps1 E2ETest (DS 6.1) failed with exit code $buildExitCode. See the sanitized build-dms-setup.log artifact."
@@ -2457,7 +2727,7 @@ jobs:
 
   run-instance-management-e2e-tests:
     name: Run Instance Management E2E Tests (Shard ${{ matrix.shard }})
-    needs: build-ci-docker-images
+    needs: [build-ci-docker-images, build-dms-solution]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -2546,8 +2816,21 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Build
-        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
+      - name: Download DMS Build Output
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-build-output
+          path: ${{ runner.temp }}/dms-build-output
+
+      - name: Extract DMS Build Output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # -p so the recorded modes are applied exactly. Without it tar masks them with the
+          # runner's umask, and the execute bit this artifact depends on would survive only because
+          # the image happens to use umask 022 - a property of the runner, not of the handoff.
+          tar -xzpf "$RUNNER_TEMP/dms-build-output/dms-build-output.tar.gz" -C .
 
       - name: Run Instance Management E2E Tests
         if: success()
@@ -2555,7 +2838,7 @@ jobs:
           DMS_API_URL: http://localhost:8080
         run: |
           # Build script handles Docker environment setup, database configuration, and test execution
-          ./build-dms.ps1 InstanceE2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -TestFilter 'Category=@instance-management-ci-shard-${{ matrix.shard }}'
+          ./build-dms.ps1 InstanceE2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -TestFilter 'Category=@instance-management-ci-shard-${{ matrix.shard }}'
 
       - name: Export Docker Logs
         if: failure()
@@ -2640,7 +2923,7 @@ jobs:
   # sanitized before any upload or report.
   run-instance-management-e2e-tests-mssql:
     name: Run SQL Server Instance Management E2E Tests (Shard ${{ matrix.shard }})
-    needs: build-ci-docker-images
+    needs: [build-ci-docker-images, build-dms-solution]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -2729,8 +3012,21 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Build
-        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
+      - name: Download DMS Build Output
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-build-output
+          path: ${{ runner.temp }}/dms-build-output
+
+      - name: Extract DMS Build Output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # -p so the recorded modes are applied exactly. Without it tar masks them with the
+          # runner's umask, and the execute bit this artifact depends on would survive only because
+          # the image happens to use umask 022 - a property of the runner, not of the handoff.
+          tar -xzpf "$RUNNER_TEMP/dms-build-output/dms-build-output.tar.gz" -C .
 
       - name: Run SQL Server Instance Management E2E Tests
         id: e2e
@@ -2748,7 +3044,7 @@ jobs:
           $diagDir = "${{ github.workspace }}/logs"
           New-Item -ItemType Directory -Path $diagDir -Force | Out-Null
           $diagFile = Join-Path $diagDir 'build-dms-setup.log'
-          & pwsh -NoProfile -File ./build-dms.ps1 InstanceE2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -TestFilter 'Category=@instance-management-ci-shard-${{ matrix.shard }}' *> $diagFile
+          & pwsh -NoProfile -File ./build-dms.ps1 InstanceE2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -TestFilter 'Category=@instance-management-ci-shard-${{ matrix.shard }}' *> $diagFile
           $buildExitCode = $LASTEXITCODE
           if ($buildExitCode -ne 0) {
               throw "build-dms.ps1 InstanceE2ETest failed with exit code $buildExitCode. See the sanitized build-dms-setup.log artifact."
@@ -2848,7 +3144,7 @@ jobs:
 
   build-and-start-dms:
     name: Build and Start DMS, Download OpenAPI Specs
-    needs: build-ci-docker-images
+    needs: [build-ci-docker-images, build-dms-solution]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -2933,8 +3229,21 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Build
-        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
+      - name: Download DMS Build Output
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dms-build-output
+          path: ${{ runner.temp }}/dms-build-output
+
+      - name: Extract DMS Build Output
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # -p so the recorded modes are applied exactly. Without it tar masks them with the
+          # runner's umask, and the execute bit this artifact depends on would survive only because
+          # the image happens to use umask 022 - a property of the runner, not of the handoff.
+          tar -xzpf "$RUNNER_TEMP/dms-build-output/dms-build-output.tar.gz" -C .
 
       - name: Preflight DMS Schema Compile
         run: |
@@ -3188,10 +3497,14 @@ jobs:
         run-backend-mssql-integration-tests,
         run-dms-api-mssql-integration-tests,
       ]
+    # Draft-gated as well as DMS-gated. Unlike the lanes above this one skips through its own
+    # condition rather than a needs chain, so without the draft clause it would run on a draft and
+    # summarize an empty download directory.
     if: >-
       always() &&
       (github.event_name != 'pull_request' ||
-      needs.detect-fresh-build-changes.outputs.dms_relevant == 'true')
+      (needs.detect-fresh-build-changes.outputs.dms_relevant == 'true' &&
+      needs.detect-fresh-build-changes.outputs.draft != 'true'))
     permissions:
       contents: read
     defaults:
@@ -3283,6 +3596,7 @@ jobs:
       - run-bootstrap-pester-tests
       - verify-lock-files
       - verify-dms-packages
+      - build-dms-solution
       - run-unit-tests
       - build-integration-test-assemblies
       - build-ci-docker-images

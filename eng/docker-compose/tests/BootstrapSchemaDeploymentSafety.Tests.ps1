@@ -332,10 +332,44 @@ exit $ExitCode
             $params | Should -Contain "Configuration"
             $params | Should -Contain "PostgresContainerName"
             $params | Should -Contain "DatabaseEngine"
+            # Opt-in only. The direct local callers (both setup-local-dms.ps1 scripts) build nothing
+            # themselves, so this script has to stay self-sufficient by default; the build path is
+            # the only caller that can promise compiled output.
+            $params | Should -Contain "UsePrebuiltTools"
             $params | Should -Not -Contain "SchemaToolPath"
             $params | Should -Not -Contain "DataStoreId"
             $params | Should -Not -Contain "SchoolYear"
-            $params.Count | Should -Be 5
+            $params.Count | Should -Be 6
+        }
+
+        It "provision-e2e-database.ps1 reuses prebuilt CLI output only when asked" {
+            # Both CLI invocations are dotnet run against a project, which restores and builds by
+            # default - and SchemaTools' project references reach Core and Backend.Ddl, so that is a
+            # large share of a solution build paid inside every E2E job. The workflow's E2E consumers
+            # extract the shared artifact before reaching here, so they must not pay it again; a
+            # developer running this script straight from setup-local-dms.ps1 has no build to reuse
+            # and must.
+            $content = Get-Content -LiteralPath $script:repo.E2EProvisionScript -Raw
+
+            # Guarded by the switch, not unconditional.
+            $content | Should -Match '\$UsePrebuiltTools'
+            # --no-launch-profile is preserved rather than replaced: it is why the downloader call
+            # overrode the helper's --no-build default in the first place.
+            $content | Should -Match '--no-launch-profile'
+
+            # Both flags live on one shared argument set, gated by the switch.
+            $content | Should -Match '\$script:PrebuiltToolDotnetRunArgs\s*=\s*if \(\$UsePrebuiltTools\) \{ @\("--no-build", "--no-restore"\) \} else \{ @\(\) \}'
+
+            # And both CLI invocations - the downloader arguments and the SchemaTools provisioning
+            # arguments - consume that set, so neither can silently fall back to rebuilding.
+            $argSetConsumer = @(
+                ($content -split "\r?\n") | Where-Object {
+                    $_ -notmatch '^\s*#' -and
+                    $_ -match '\$script:PrebuiltToolDotnetRunArgs' -and
+                    $_ -notmatch '\$script:PrebuiltToolDotnetRunArgs\s*='
+                }
+            )
+            $argSetConsumer.Count | Should -Be 2
         }
 
         It "provision-e2e-database.ps1 owns explicit E2E database reset and SchemaTools provisioning" {
@@ -1133,6 +1167,8 @@ Export-ModuleMember -Function Get-SmokeTestCredential
                     [string] $AccessToken,
                     [System.Management.Automation.PSCredential] $PostgresCredential,
                     [string] $PostgresDbName,
+                    [string] $ConnectionString,
+                    [string] $DatabaseEngine,
                     [string] $Name,
                     [string] $DataStoreType,
                     [string] $Tenant
@@ -1163,6 +1199,8 @@ Export-ModuleMember -Function Get-SmokeTestCredential
                     [int] $EndYear,
                     [System.Management.Automation.PSCredential] $PostgresCredential,
                     [string] $PostgresDbName,
+                    [string] $ConnectionString,
+                    [string] $DatabaseEngine,
                     [string] $Tenant
                 )
                 $script:capturedPostgresDbName = $PostgresDbName
@@ -2219,10 +2257,11 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 function Get-CmsToken { return "token" }
                 $script:capturedDataStore = $null
                 function Add-DataStore {
-                    param($CmsUrl, $AccessToken, [System.Management.Automation.PSCredential]$PostgresCredential, $PostgresDbName, $ConnectionString, $Name, $DataStoreType, $Tenant)
+                    param($CmsUrl, $AccessToken, [System.Management.Automation.PSCredential]$PostgresCredential, $PostgresDbName, $ConnectionString, $DatabaseEngine, $Name, $DataStoreType, $Tenant)
                     $script:capturedDataStore = [pscustomobject]@{
                         ConnectionString = $ConnectionString
                         PostgresDbName = $PostgresDbName
+                        DatabaseEngine = $DatabaseEngine
                     }
                     return [long]42
                 }
@@ -2234,6 +2273,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 $parsed.set_ConnectionString($script:capturedDataStore.ConnectionString)
                 $parsed["Password"] | Should -Be $ambientPassword
                 $parsed["Database"] | Should -Be "ambient_dms_db"
+                $script:capturedDataStore.DatabaseEngine | Should -Be "mssql"
             }
             finally {
                 Remove-Item Env:MSSQL_SA_PASSWORD -ErrorAction SilentlyContinue
@@ -4082,7 +4122,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
             function Add-DataStore {
-                param($CmsUrl, $AccessToken, $PostgresCredential, $PostgresDbName, $ConnectionString, $Name, $DataStoreType, $Tenant)
+                param($CmsUrl, $AccessToken, $PostgresCredential, $PostgresDbName, $ConnectionString, $DatabaseEngine, $Name, $DataStoreType, $Tenant)
                 $script:guardRegisteredName = $ConnectionString
                 return 606
             }
@@ -4140,7 +4180,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
             function Add-DataStore {
-                param($CmsUrl, $AccessToken, $PostgresCredential, $PostgresDbName, $ConnectionString, $Name, $DataStoreType, $Tenant)
+                param($CmsUrl, $AccessToken, $PostgresCredential, $PostgresDbName, $ConnectionString, $DatabaseEngine, $Name, $DataStoreType, $Tenant)
                 $script:guardRegisteredName = $PostgresDbName
                 return 609
             }
@@ -4176,7 +4216,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
             function Add-DataStore {
-                param($CmsUrl, $AccessToken, $PostgresCredential, $PostgresDbName, $ConnectionString, $Name, $DataStoreType, $Tenant)
+                param($CmsUrl, $AccessToken, $PostgresCredential, $PostgresDbName, $ConnectionString, $DatabaseEngine, $Name, $DataStoreType, $Tenant)
                 $script:guardRegisteredName = $PostgresDbName
                 return 611
             }
@@ -4232,7 +4272,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             function Add-CmsClient { }
             function Get-CmsToken { return "token" }
             function Add-DmsSchoolYearInstances {
-                param($CmsUrl, $AccessToken, $StartYear, $EndYear, $PostgresCredential, $PostgresDbName, $ConnectionString, $Tenant)
+                param($CmsUrl, $AccessToken, $StartYear, $EndYear, $PostgresCredential, $PostgresDbName, $ConnectionString, $DatabaseEngine, $Tenant)
                 $script:guardRegisteredName = $PostgresDbName
                 return @(
                     @{ DataStoreId = [long]613; Year = 2024 },

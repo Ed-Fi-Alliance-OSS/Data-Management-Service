@@ -17,6 +17,7 @@ using EdFi.DataManagementService.Core.Validation;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -48,15 +49,21 @@ public class ApiServiceJwtAuthenticationTests
         services.AddTransient<ResolveDataStoreMiddleware>();
 
         var fakeApplicationContextProvider = A.Fake<IApplicationContextProvider>();
-        A.CallTo(() => fakeApplicationContextProvider.GetApplicationByClientIdAsync(A<string>._))
+        A.CallTo(() =>
+                fakeApplicationContextProvider.GetApplicationByClientIdAsync(A<string>._, tenant: null)
+            )
             .Returns(
-                Task.FromResult<ApplicationContext?>(
-                    new ApplicationContext(
-                        Id: 1,
-                        ApplicationId: 1,
-                        ClientId: "test-client",
-                        ClientUuid: Guid.NewGuid(),
-                        DataStoreIds: [1]
+                Task.FromResult<ApplicationContextResult>(
+                    new ApplicationContextResult.Success(
+                        new ApplicationContext(
+                            Id: 1,
+                            ApplicationId: 1,
+                            ClientId: "test-client",
+                            ClientUuid: Guid.NewGuid(),
+                            DataStoreIds: [1],
+                            CreatorOwnershipTokenId: null,
+                            OwnershipTokenIds: []
+                        )
                     )
                 )
             );
@@ -117,7 +124,13 @@ public class ApiServiceJwtAuthenticationTests
         services.AddSingleton(appSettingsOptions);
         services.AddSingleton<IDatabaseFingerprintReader, NullDatabaseFingerprintReader>();
         services.AddSingleton(TimeProvider.System);
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton(new CacheSettings());
         services.AddSingleton<DatabaseFingerprintProvider>();
+        services.AddTransient<
+            IEffectiveTargetSelectionResponseFactory,
+            DefaultEffectiveTargetSelectionResponseFactory
+        >();
         services.AddTransient<ValidateDatabaseFingerprintMiddleware>();
         services.AddTransient<ILogger<ValidateDatabaseFingerprintMiddleware>>(_ =>
             NullLogger<ValidateDatabaseFingerprintMiddleware>.Instance

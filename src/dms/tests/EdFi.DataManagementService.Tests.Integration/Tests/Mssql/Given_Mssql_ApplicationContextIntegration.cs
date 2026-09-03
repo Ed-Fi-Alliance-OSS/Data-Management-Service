@@ -1,0 +1,140 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Security;
+using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Tests.Integration.Doubles;
+using EdFi.DataManagementService.Tests.Integration.Fixtures;
+using EdFi.DataManagementService.Tests.Integration.Mssql;
+using EdFi.DataManagementService.Tests.Integration.Scenarios;
+
+namespace EdFi.DataManagementService.Tests.Integration.Tests.Mssql;
+
+/// <summary>
+/// Real-HTTP-pipeline coverage for the DMS-1373 tenant-aware application-context provider: request-scoped
+/// memoization, tenant isolation, and the fail-closed 401/503 mapping with no ownership disclosure. The
+/// production scoped <c>CachedApplicationContextProvider</c> stays wired; only the CMS-facing
+/// <c>IConfigurationServiceApplicationProvider</c> underneath it is replaced.
+/// </summary>
+public sealed class Given_Mssql_ApplicationContextIntegration : MssqlApiIntegrationTestBase
+{
+    private const string CallCountTenant = "app-context-call-count-tenant";
+    private const string FirstIsolationTenant = "app-context-tenant-a";
+    private const string SecondIsolationTenant = "app-context-tenant-b";
+    private const string NotFoundTenant = "app-context-not-found-tenant";
+    private const string OwnershipNotFoundTenant = "app-context-ownership-not-found-tenant";
+    private const string OwnershipGetPutNotFoundTenant = "app-context-ownership-get-put-not-found-tenant";
+    private const string OwnershipSuccessTenant = "app-context-ownership-success-tenant";
+    private const string UnavailableTenant = "app-context-unavailable-tenant";
+    private const string ProfileNotFoundTenant = "app-context-profile-not-found-tenant";
+    private const string ProfileUnavailableTenant = "app-context-profile-unavailable-tenant";
+
+    private readonly RecordingConfigurationServiceApplicationProvider _applicationContextProvider = new(
+        Resolve
+    );
+
+    protected override FixtureKey Fixture => FixtureKey.ProfileRootOnlyMerge;
+
+    protected override bool MultiTenancy => true;
+
+    protected override bool BypassAuthorization => false;
+
+    protected override IClaimSetProvider CreateClaimSetProvider(FixtureContext fixture) =>
+        new ConfigurableClaimSetProvider(
+            fixture,
+            static (_, action) =>
+                action is "Read" or "Update" or "Delete"
+                    ? [AuthorizationStrategyNameConstants.OwnershipBased]
+                    : [AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired]
+        );
+
+    protected override IConfigurationServiceApplicationProvider? ApplicationContextConfigurationProviderOverride =>
+        _applicationContextProvider;
+
+    [Test]
+    public Task It_resolves_application_context_at_most_once_per_request() =>
+        ApplicationContextIntegrationScenario.It_resolves_application_context_at_most_once_per_request(
+            Harness,
+            _applicationContextProvider,
+            CallCountTenant
+        );
+
+    [Test]
+    public Task It_resolves_independent_contexts_per_tenant() =>
+        ApplicationContextIntegrationScenario.It_resolves_independent_contexts_per_tenant(
+            Harness,
+            _applicationContextProvider,
+            FirstIsolationTenant,
+            SecondIsolationTenant
+        );
+
+    [Test]
+    public Task It_maps_not_found_to_401_without_disclosure() =>
+        ApplicationContextIntegrationScenario.It_maps_not_found_to_401_without_disclosure(
+            Harness,
+            NotFoundTenant
+        );
+
+    [Test]
+    public Task It_maps_unavailable_to_503_without_disclosure() =>
+        ApplicationContextIntegrationScenario.It_maps_unavailable_to_503_without_disclosure(
+            Harness,
+            UnavailableTenant
+        );
+
+    [Test]
+    public Task It_fails_closed_for_profiled_invalid_puts_before_document_validation() =>
+        ApplicationContextIntegrationScenario.It_fails_closed_for_profiled_invalid_puts_before_document_validation(
+            Harness,
+            ProfileNotFoundTenant,
+            ProfileUnavailableTenant
+        );
+
+    [Test]
+    public Task It_requires_application_context_at_the_ownership_gate_for_delete() =>
+        ApplicationContextIntegrationScenario.It_requires_application_context_at_the_ownership_gate_for_delete(
+            Harness,
+            _applicationContextProvider,
+            OwnershipNotFoundTenant
+        );
+
+    [Test]
+    public Task It_requires_application_context_for_ownership_authorized_gets_and_puts() =>
+        ApplicationContextIntegrationScenario.It_requires_application_context_for_ownership_authorized_gets_and_puts(
+            Harness,
+            _applicationContextProvider,
+            OwnershipGetPutNotFoundTenant,
+            OwnershipSuccessTenant
+        );
+
+    private static ApplicationContextResult Resolve(string clientId, string? tenant) =>
+        tenant switch
+        {
+            NotFoundTenant => new ApplicationContextResult.NotFound(),
+            OwnershipNotFoundTenant => new ApplicationContextResult.NotFound(),
+            OwnershipGetPutNotFoundTenant => new ApplicationContextResult.NotFound(),
+            OwnershipSuccessTenant => Success(applicationId: 203),
+            UnavailableTenant => new ApplicationContextResult.Unavailable(),
+            ProfileNotFoundTenant => new ApplicationContextResult.NotFound(),
+            ProfileUnavailableTenant => new ApplicationContextResult.Unavailable(),
+            FirstIsolationTenant => Success(applicationId: 201),
+            SecondIsolationTenant => Success(applicationId: 202),
+            _ => Success(applicationId: 200),
+        };
+
+    private static ApplicationContextResult Success(long applicationId) =>
+        new ApplicationContextResult.Success(
+            new ApplicationContext(
+                Id: applicationId,
+                ApplicationId: applicationId,
+                ClientId: ExternalDoublesConstants.SmokeClientId,
+                ClientUuid: ExternalDoublesConstants.StableClientUuid,
+                DataStoreIds: [ExternalDoublesConstants.StableDataStoreId],
+                CreatorOwnershipTokenId: null,
+                OwnershipTokenIds: []
+            )
+        );
+}

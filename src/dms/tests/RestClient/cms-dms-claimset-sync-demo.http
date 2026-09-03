@@ -99,89 +99,87 @@ Authorization: bearer {{configToken}}
 Content-Type: application/json
 
 {
-    "claims": {
-        "claimSets": [
-            {
-                "claimSetName": "TestMinimalClaimSet",
-                "isSystemReserved": false
-            }
-        ],
-        "claimsHierarchy": [
-            {
-                "name": "http://ed-fi.org/identity/claims/domains/edFiTypes",
-                "claims": [
-                    {
-                        "name": "http://ed-fi.org/identity/claims/ed-fi/school",
-                        "claimSets": [
-                            {
-                                "name": "TestMinimalClaimSet",
-                                "actions": [
-                                    {
-                                        "name": "Create",
-                                        "authorizationStrategyOverrides": [
-                                            { "name": "NoFurtherAuthorizationRequired" }
-                                        ]
-                                    },
-                                    {
-                                        "name": "Read",
-                                        "authorizationStrategyOverrides": [
-                                            { "name": "NoFurtherAuthorizationRequired" }
-                                        ]
-                                    },
-                                    {
-                                        "name": "Update",
-                                        "authorizationStrategyOverrides": [
-                                            { "name": "NoFurtherAuthorizationRequired" }
-                                        ]
-                                    },
-                                    {
-                                        "name": "Delete",
-                                        "authorizationStrategyOverrides": [
-                                            { "name": "NoFurtherAuthorizationRequired" }
-                                        ]
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        "name": "http://ed-fi.org/identity/claims/ed-fi/student",
-                        "claimSets": [
-                            {
-                                "name": "TestMinimalClaimSet",
-                                "actions": [
-                                    {
-                                        "name": "Create",
-                                        "authorizationStrategyOverrides": [
-                                            { "name": "NoFurtherAuthorizationRequired" }
-                                        ]
-                                    },
-                                    {
-                                        "name": "Read",
-                                        "authorizationStrategyOverrides": [
-                                            { "name": "NoFurtherAuthorizationRequired" }
-                                        ]
-                                    },
-                                    {
-                                        "name": "Update",
-                                        "authorizationStrategyOverrides": [
-                                            { "name": "NoFurtherAuthorizationRequired" }
-                                        ]
-                                    },
-                                    {
-                                        "name": "Delete",
-                                        "authorizationStrategyOverrides": [
-                                            { "name": "NoFurtherAuthorizationRequired" }
-                                        ]
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ]
-    }
+    "claimSets": [
+        {
+            "claimSetName": "TestMinimalClaimSet",
+            "isSystemReserved": false
+        }
+    ],
+    "claimsHierarchy": [
+        {
+            "name": "http://ed-fi.org/identity/claims/domains/edFiTypes",
+            "claims": [
+                {
+                    "name": "http://ed-fi.org/identity/claims/ed-fi/school",
+                    "claimSets": [
+                        {
+                            "name": "TestMinimalClaimSet",
+                            "actions": [
+                                {
+                                    "name": "Create",
+                                    "authorizationStrategyOverrides": [
+                                        { "name": "NoFurtherAuthorizationRequired" }
+                                    ]
+                                },
+                                {
+                                    "name": "Read",
+                                    "authorizationStrategyOverrides": [
+                                        { "name": "NoFurtherAuthorizationRequired" }
+                                    ]
+                                },
+                                {
+                                    "name": "Update",
+                                    "authorizationStrategyOverrides": [
+                                        { "name": "NoFurtherAuthorizationRequired" }
+                                    ]
+                                },
+                                {
+                                    "name": "Delete",
+                                    "authorizationStrategyOverrides": [
+                                        { "name": "NoFurtherAuthorizationRequired" }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "name": "http://ed-fi.org/identity/claims/ed-fi/student",
+                    "claimSets": [
+                        {
+                            "name": "TestMinimalClaimSet",
+                            "actions": [
+                                {
+                                    "name": "Create",
+                                    "authorizationStrategyOverrides": [
+                                        { "name": "NoFurtherAuthorizationRequired" }
+                                    ]
+                                },
+                                {
+                                    "name": "Read",
+                                    "authorizationStrategyOverrides": [
+                                        { "name": "NoFurtherAuthorizationRequired" }
+                                    ]
+                                },
+                                {
+                                    "name": "Update",
+                                    "authorizationStrategyOverrides": [
+                                        { "name": "NoFurtherAuthorizationRequired" }
+                                    ]
+                                },
+                                {
+                                    "name": "Delete",
+                                    "authorizationStrategyOverrides": [
+                                        { "name": "NoFurtherAuthorizationRequired" }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
 }
 
 ###

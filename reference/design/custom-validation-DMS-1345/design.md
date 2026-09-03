@@ -8,8 +8,12 @@ This document is the design output of spike `DMS-1346` under epic `DMS-1345`; th
 This document describes the **custom validation extension point** for the Data Management Service.
 The feature lets a district or vendor enforce its own business rules on documents as they are written, with the rules living in their own versioned assembly rather than in DMS core source: a public abstractions contract the implementer compiles against, registered into DMS's composition at build time, and invoked by a Core-authored fan-in step on the POST and PUT write paths.
 
-Delivery is **compiled-in only** in this version.
-Loading a validator from a dropped-in assembly at runtime is a separate design stream, deliberately not pre-filed as a ticket; nothing here forecloses it, and the contract and pipeline seam this document specifies are exactly what that stream would reuse (see [Rejected Alternatives](#rejected-alternatives)).
+**Delta 2026-08-27: delivery is a plugin, not compiled-in.**
+The separate design stream this document deferred to ran as spike DMS-1462 and reversed the delivery decision: a validator reaches DMS as a plugin directory loaded by the host at startup, named in `Plugins:Allowed`, with its registration code invoked from an `EdFiApiPlugin.ContributeServices` hook rather than from DMS's composition root (`reference/design/plugins-DMS-1462/design.md`, "## Divergence from the Custom Validation Epic").
+The prediction under [Rejected Alternatives](#rejected-alternatives) held: the contract, the fan-in step, the failure surfacing, and the startup guard transfer unchanged, and only the composition seam and the two documents that described it change.
+This document is not rewritten.
+Where it says "compiled-in", "composition root", or "no configuration section", the spine document is authoritative, and the three affected ticket drafts beside this file carry the change in place.
+Compiling a validator into a DMS build remains possible and is the in-repo fixture route; it is no longer the documented one.
 
 - [README.md](./README.md) - epic overview and ticket index
 - [01-add-custom-validator-abstractions-contract.md](./01-add-custom-validator-abstractions-contract.md) - the contract types
@@ -335,9 +339,10 @@ public static IServiceCollection AddDistrictValidators(
 }
 ```
 
-The sample takes an `Action<TOptions>` rather than an `IConfiguration` section deliberately.
-`Microsoft.Extensions.Options` and `Microsoft.Extensions.DependencyInjection.Abstractions` are declared dependencies of the abstractions package, so `Configure` and `TryAddEnumerable` compile against the package alone; `Microsoft.Extensions.Configuration.Abstractions` and `Microsoft.Extensions.Options.ConfigurationExtensions` are not, so `IConfiguration` and `GetSection` would not.
-An implementer who prefers section binding references those two packages from their own assembly, which is theirs to decide; the contract does not oblige them either way, and does not carry the dependency on their behalf.
+The sample takes an `Action<TOptions>` rather than an `IConfiguration` section deliberately, and the reason is the package's dependency set, which is empty.
+`EdFi.Api.CustomValidation` declares no `PackageReference` at all, on purpose (`src/dms/core/EdFi.DataManagementService.CustomValidation/EdFi.DataManagementService.CustomValidation.csproj:21-35`), so **neither** form compiles against the package alone: `TryAddEnumerable` needs `Microsoft.Extensions.DependencyInjection.Abstractions`, the `Action<TOptions>` overload of `Configure` needs `Microsoft.Extensions.Options`, and the `GetSection` form additionally needs `Microsoft.Extensions.Options.ConfigurationExtensions`.
+An implementer declares whichever of those they use from their own assembly, which is theirs to decide and which is exactly what `eng/verification/CustomValidationConsumer/CustomValidationConsumer.csproj:57-58` does; the contract does not oblige them to any of it and does not carry the dependency on their behalf.
+The `Action<TOptions>` form is preferred in the sample because it needs one fewer package, not because the other is unreachable.
 
 The deployment references that assembly and adds one call at DMS's composition root, `WebApplicationBuilderExtensions.AddServices` (`Infrastructure/WebApplicationBuilderExtensions.cs:32`), alongside the calls already there:
 
@@ -356,7 +361,10 @@ The implementer supplies their own options type and the deployment supplies its 
 Core is the right home for it because the collection being guarded is Core's own, and hosting it there keeps the guard's internals `internal` rather than forcing new public Core API purely to be callable from the frontend.
 
 **Ordering must not matter, and that is a design constraint rather than a convention.** The implementer's registration call may sit before or after Core's guard call, and an implementer is exactly the party the guard exists to check, so a rule of the form "register the validators before the guard" would be broken by the party it protects and would fail silently.
-Core's extension therefore captures the live collection (`services.AddSingleton<IServiceCollection>(services)`) and the guard reads the final descriptor set after the container is built, when every registration source has contributed by construction.
+Core's extension therefore hands the live collection to the guard in a closure, and the guard reads the final descriptor set after the container is built, when every registration source has contributed by construction.
+Closure capture is the required mechanism, and `services.AddSingleton<IServiceCollection>(services)` with the guard resolving `IServiceCollection` back out of DI is specifically rejected.
+`IServiceCollection` is declared in `Microsoft.Extensions.DependencyInjection.Abstractions`, so under the plugin spine it is a service type a plugin is permitted to register, and a guard that resolved it would read whatever collection the last registration won.
+A closure cannot be displaced at all, and it leaves no public DI registration that exists only for the guard's own benefit.
 An earlier revision anchored this audit at "the last statement of the loader's registration extension", which worked only because a loader owned every registration; with the implementer owning registration, a post-container guard is what restores the guarantee.
 
 ### Lifetime and Resolution
@@ -663,7 +671,7 @@ Whether to close that gap by adding a store-read capability is recorded under [D
 
 ## Out of Scope
 
-- Runtime loading of a validator assembly that was not part of the build; a future plugin-delivery spike owns it, unfiled until a deployment needs it.
+- ~~Runtime loading of a validator assembly that was not part of the build.~~ **No longer out of scope.** Spike DMS-1462 designed it and made it the delivery path; see the Status delta at the top of this document and `reference/design/plugins-DMS-1462/`.
 - Validation on GET or DELETE.
 - Store reads from a validator. An earlier revision carried a `ICustomValidationStoreReader` facade exposing `Task<JsonNode?> GetDescriptorByUri(...)`; it is cut. The backend's own contracts cannot serve it directly, since `IQueryRequest`/`IGetRequest` demand a mapping set, query elements, authorization evaluators, and paging inputs that a validator does not hold, their concrete implementations are internal to Core, and neither is keyed by descriptor URI. A facade would also have to collapse `QueryResult`'s seven cases (`Core.External/Backend/QueryResult.cs:25-65`) into `JsonNode?`, giving an infrastructure failure and a genuine not-found the same representation, so a database outage would surface as a validator-authored 400 saying the descriptor does not exist. Designing that error contract deserves its own evidence.
 - Implementing any driving scenario.
@@ -688,7 +696,7 @@ The package becomes load-bearing under the deferred runtime-loading model, where
 
 | Deferred item | Reason |
 | --- | --- |
-| Runtime assembly loading (the plugin spike) | Its own design stream when a deployment needs it; deliberately not pre-filed. Inherits this contract, the fan-in step, the failure surfacing, and the startup guard unchanged; adds a discovery-and-registration path feeding the same collection. |
+| ~~Runtime assembly loading (the plugin spike)~~ | **Delivered as the decision, not deferred.** Spike DMS-1462 designed it and it became the documented delivery path; see the Status delta at the top of this document. It inherited this contract, the fan-in step, the failure surfacing, and the startup guard unchanged, exactly as predicted here. |
 | Store-read capability for validators | Additive to the contract surface (a validator obtains it by constructor injection, not as a parameter), so adding it later breaks no signature. Needs its own error-contract design. It is one of two things the ODS UniqueId not-changed rule needs, not the only one: that rule keys on the persisted document's identifier (`EdFi.Ods.Features/UniqueIdIntegration/Validation/UniqueIdNotChangedEntityValidator.cs:39`), and this version's `ValidateAsync` exposes neither a `DocumentUuid` nor the route, so DMS-1414 needs a document-identity capability alongside store access. The document body does not stand in for it: an `Upsert` body carries no `id` by construction (`Middleware/RejectResourceIdentifierMiddleware.cs:35-45`), and although an `Update` body must carry one matching the route id (`Validation/MatchingDocumentUuidsValidator.cs:23-27`), a writable profile can strip it from the profile-effective body the validator receives, since an `IncludeOnly` member filter keeps only the members the profile names (`Profile/WritableRequestShaper.cs:661-670`). |
 | A wildcard in `AppliesTo` | Additive to `ValidatedResource`. Only worth adding against a real requirement for breadth, which is arguably a different extension point. |
 | ~~Distinct handling for `OperationCanceledException`~~ | **Closed, not deferred.** Core already rethrows a cancelled request's `OperationCanceledException` ahead of its catch-all (`Middleware/CoreExceptionLoggingMiddleware.cs:52-55`), so a validator's inherits that outcome and there is nothing for the fan-in ticket to decide. |

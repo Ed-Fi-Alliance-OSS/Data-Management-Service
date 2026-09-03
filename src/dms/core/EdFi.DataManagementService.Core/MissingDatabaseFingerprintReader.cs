@@ -15,7 +15,7 @@ internal sealed class MissingDatabaseFingerprintReader : IDatabaseFingerprintRea
     internal const string ConfigurationErrorMessage =
         "No dialect-specific IDatabaseFingerprintReader is registered. Register the PostgreSQL or MSSQL fingerprint reader in the host composition root (see WebApplicationBuilderExtensions.ConfigureDatastore for an example).";
 
-    public Task<DatabaseFingerprint?> ReadFingerprintAsync(string connectionString)
+    public Task<DatabaseFingerprint?> ReadFingerprintAsync(EffectiveDataStoreTarget target)
     {
         throw CreateConfigurationException();
     }

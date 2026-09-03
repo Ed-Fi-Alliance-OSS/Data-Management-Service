@@ -50,9 +50,8 @@ internal sealed class PostgresqlDocumentCacheMaterializationDataStore(
             command.Parameters.Count
         );
 
-        await using var connection = await OpenConnectionAsync(request, cancellationToken)
-            .ConfigureAwait(false);
-        await using var dbCommand = connection.CreateCommand();
+        await using var leased = await OpenConnectionAsync(request, cancellationToken).ConfigureAwait(false);
+        await using var dbCommand = leased.Connection.CreateCommand();
         dbCommand.CommandText = command.CommandText;
 
         AddParameters(dbCommand, command.Parameters);
@@ -74,12 +73,11 @@ internal sealed class PostgresqlDocumentCacheMaterializationDataStore(
     {
         DocumentCacheMaterializationDataStoreGuards.RequireValidatedTargetContext(request, Dialect);
 
-        await using var connection = await OpenConnectionAsync(request, cancellationToken)
-            .ConfigureAwait(false);
+        await using var leased = await OpenConnectionAsync(request, cancellationToken).ConfigureAwait(false);
 
         return await HydrationExecutor
             .ExecuteAsync(
-                connection,
+                leased.Connection,
                 plan,
                 keyset,
                 SqlDialect.Pgsql,
@@ -90,7 +88,11 @@ internal sealed class PostgresqlDocumentCacheMaterializationDataStore(
             .ConfigureAwait(false);
     }
 
-    private async Task<NpgsqlConnection> OpenConnectionAsync(
+    /// <summary>
+    /// Opens a connection whose data-source lease travels with it, so the caller releases both
+    /// together and the source cannot be disposed mid-materialization.
+    /// </summary>
+    private async Task<LeasedNpgsqlConnection> OpenConnectionAsync(
         DocumentCacheMaterializationRequest request,
         CancellationToken cancellationToken
     )
@@ -99,9 +101,10 @@ internal sealed class PostgresqlDocumentCacheMaterializationDataStore(
             request,
             Dialect
         );
-        var dataSource = _dataSourceCache.GetOrCreate(dataStore.ConnectionString);
 
-        return await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        return await _dataSourceCache
+            .OpenLeasedConnectionAsync(dataStore.ConnectionString, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private static void AddParameters(DbCommand dbCommand, IReadOnlyList<RelationalParameter> parameters)

@@ -178,14 +178,18 @@ Describe "Invoke-WithE2ETestProcessContext restores prior environment state exac
             "AppSettings__DatabaseEngine"
             "AppSettings__DataStoreAdminConnectionString"
             "AppSettings__DataStoreConnectionString"
+            "AppSettings__DataStoreSnapshotConnectionString"
+            "DMS_E2E_ENVIRONMENT_FILE"
             "NODE_OPTIONS"
         )
 
         $script:testSettings = [pscustomobject]@{
-            DataStoreDatabaseName          = "edfi_datamanagementservice_e2e"
-            DatabaseEngine                 = "mssql"
-            DataStoreAdminConnectionString = "Server=127.0.0.1,1435;Database=edfi_datamanagementservice_e2e;User Id=sa;Password=secret;TrustServerCertificate=true;"
-            DataStoreConnectionString      = "Server=dms-mssql,1433;Database=edfi_datamanagementservice_e2e;User Id=sa;Password=secret;TrustServerCertificate=true;"
+            EnvironmentFile                   = "/repo/eng/docker-compose/.derived/.env.e2e.document-cache.e2e.mssql"
+            DataStoreDatabaseName             = "edfi_datamanagementservice_e2e"
+            DatabaseEngine                    = "mssql"
+            DataStoreAdminConnectionString    = "Server=127.0.0.1,1435;Database=edfi_datamanagementservice_e2e;User Id=sa;Password=secret;TrustServerCertificate=true;"
+            DataStoreConnectionString         = "Server=dms-mssql,1433;Database=edfi_datamanagementservice_e2e;User Id=sa;Password=secret;TrustServerCertificate=true;"
+            DataStoreSnapshotConnectionString = "Server=dms-mssql,1433;Database=edfi_datamanagementservice_e2e_snapshot;User Id=sa;Password=secret;TrustServerCertificate=true;"
         }
     }
 
@@ -212,17 +216,21 @@ Describe "Invoke-WithE2ETestProcessContext restores prior environment state exac
         }
     }
 
-    It "sets the engine and both connection strings for the action, then restores them" {
+    It "sets the engine and connection strings for the action, then restores them" {
         Remove-Item Env:AppSettings__DatabaseEngine -ErrorAction SilentlyContinue
         Remove-Item Env:AppSettings__DataStoreAdminConnectionString -ErrorAction SilentlyContinue
         Remove-Item Env:AppSettings__DataStoreConnectionString -ErrorAction SilentlyContinue
+        Remove-Item Env:AppSettings__DataStoreSnapshotConnectionString -ErrorAction SilentlyContinue
+        Remove-Item Env:DMS_E2E_ENVIRONMENT_FILE -ErrorAction SilentlyContinue
 
         $observed = $null
         { Invoke-WithE2ETestProcessContext -E2ETestSettings $script:testSettings -Action {
                 $script:observed = [pscustomobject]@{
-                    Engine       = $env:AppSettings__DatabaseEngine
-                    Admin        = $env:AppSettings__DataStoreAdminConnectionString
-                    Registration = $env:AppSettings__DataStoreConnectionString
+                    Engine          = $env:AppSettings__DatabaseEngine
+                    Admin           = $env:AppSettings__DataStoreAdminConnectionString
+                    Registration    = $env:AppSettings__DataStoreConnectionString
+                    Snapshot        = $env:AppSettings__DataStoreSnapshotConnectionString
+                    EnvironmentFile = $env:DMS_E2E_ENVIRONMENT_FILE
                 }
                 throw "boom"
             } } | Should -Throw
@@ -230,10 +238,14 @@ Describe "Invoke-WithE2ETestProcessContext restores prior environment state exac
         $script:observed.Engine | Should -Be "mssql"
         $script:observed.Admin | Should -Be $script:testSettings.DataStoreAdminConnectionString
         $script:observed.Registration | Should -Be $script:testSettings.DataStoreConnectionString
+        $script:observed.Snapshot | Should -Be $script:testSettings.DataStoreSnapshotConnectionString
+        $script:observed.EnvironmentFile | Should -Be $script:testSettings.EnvironmentFile
 
         (Test-Path Env:AppSettings__DatabaseEngine) | Should -BeFalse
         (Test-Path Env:AppSettings__DataStoreAdminConnectionString) | Should -BeFalse
         (Test-Path Env:AppSettings__DataStoreConnectionString) | Should -BeFalse
+        (Test-Path Env:AppSettings__DataStoreSnapshotConnectionString) | Should -BeFalse
+        (Test-Path Env:DMS_E2E_ENVIRONMENT_FILE) | Should -BeFalse
     }
 
     It "restores every mutated variable from a mix of absent, empty, whitespace, and valued prior states" {
@@ -241,6 +253,8 @@ Describe "Invoke-WithE2ETestProcessContext restores prior environment state exac
         $env:AppSettings__DatabaseEngine = ""
         $env:AppSettings__DataStoreAdminConnectionString = "   "
         $env:AppSettings__DataStoreConnectionString = "prior-registration"
+        $env:AppSettings__DataStoreSnapshotConnectionString = "prior-snapshot"
+        $env:DMS_E2E_ENVIRONMENT_FILE = "prior-environment-file"
         $env:NODE_OPTIONS = "--max-old-space-size=4096"
 
         { Invoke-WithE2ETestProcessContext -E2ETestSettings $script:testSettings -Action { throw "boom" } } |
@@ -251,6 +265,8 @@ Describe "Invoke-WithE2ETestProcessContext restores prior environment state exac
         $env:AppSettings__DatabaseEngine | Should -Be ""
         $env:AppSettings__DataStoreAdminConnectionString | Should -Be "   "
         $env:AppSettings__DataStoreConnectionString | Should -Be "prior-registration"
+        $env:AppSettings__DataStoreSnapshotConnectionString | Should -Be "prior-snapshot"
+        $env:DMS_E2E_ENVIRONMENT_FILE | Should -Be "prior-environment-file"
         $env:NODE_OPTIONS | Should -Be "--max-old-space-size=4096"
     }
 }
@@ -678,6 +694,9 @@ Describe "Both E2E setup wrappers run every Docker phase inside the schema-setti
         @($invocations | ForEach-Object { $_.Name }) | Should -Be @(
             "./start-local-dms.ps1",
             "./configure-local-data-store.ps1",
+            "./provision-e2e-database.ps1",
+            # The snapshot derivative's database is provisioned in its own guarded phase, right after
+            # the primary and still before DMS starts.
             "./provision-e2e-database.ps1",
             "./start-local-dms.ps1"
         )

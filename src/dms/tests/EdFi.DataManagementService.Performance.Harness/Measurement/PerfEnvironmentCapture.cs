@@ -151,9 +151,12 @@ public static class PerfEnvironmentCapture
     public static IReadOnlyList<PerfSetting> CaptureNpgsqlAutoPrepareSettings(string leasedConnectionString)
     {
         using NpgsqlDataSourceCache cache = new(NullLogger<NpgsqlDataSourceCache>.Instance);
-        NpgsqlConnectionStringBuilder effective = new(
-            cache.GetOrCreate(leasedConnectionString).ConnectionString
-        );
+
+        // Leased, like every other consumer: the cache has no unleased way in, which is what keeps a
+        // data source from outliving what the cache knows about. Released before the cache is
+        // disposed, so this capture leaves nothing behind.
+        using NpgsqlDataSourceLease lease = cache.AcquireLease(leasedConnectionString);
+        NpgsqlConnectionStringBuilder effective = new(lease.DataSource.ConnectionString);
         return
         [
             new PerfSetting(

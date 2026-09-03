@@ -49,10 +49,9 @@ jobs:
         if: success()
         continue-on-error: true
         # This lane runs against the default DS 5.2 stack, so exclude the DS 6.1 version-coupled
-        # scenarios (@StandardVersion-6_1); those are covered on every PR by the run-e2e-tests-ds61
-        # lane and in full by the scheduled smoke test workflow. The non-empty filter makes
-        # build-dms.ps1 write the ...E2E.filtered.trx result file (see the upload step below).
-        run: ./build-dms.ps1 E2ETest -UsePublishedImage -Configuration Release -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter 'Category!=@StandardVersion-6_1'
+        # scenarios and the local-compose-only DocumentCache fixture. DocumentCache runs with its
+        # explicit overlay in scheduled-build.yml. The non-empty filter writes the filtered TRX.
+        run: ./build-dms.ps1 E2ETest -UsePublishedImage -Configuration Release -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)'
 
       - name: Export DMS E2E Docker Logs
         if: always() && steps.e2e.outcome == 'failure'

@@ -34,7 +34,7 @@ public class ClaimsManagementModule : IEndpointModule
             .MapSecuredPost("/upload-claims", UploadClaims)
             .WithName("UploadClaims")
             .WithSummary("Uploads Claims from request body")
-            .Accepts<UploadClaimsRequest>("application/json")
+            .Accepts<JsonNode>("application/json")
             .Produces<UploadClaimsResponse>(200)
             .Produces(400)
             .Produces(404)
@@ -104,7 +104,7 @@ public class ClaimsManagementModule : IEndpointModule
     }
 
     internal static async Task<IResult> UploadClaims(
-        UploadClaimsRequest request,
+        JsonNode claimsDocument,
         IClaimsUploadService claimsUploadService,
         IClaimsProvider claimsProvider,
         IOptions<ClaimsOptions> claimsOptions,
@@ -126,17 +126,9 @@ public class ClaimsManagementModule : IEndpointModule
 
         logger.LogInformation("Claims upload requested via management endpoint");
 
-        if (request?.Claims == null)
-        {
-            return FailureResults.DataValidation(
-                [new ValidationFailure("Claims", "Claims JSON is required")],
-                httpContext.TraceIdentifier
-            );
-        }
-
         try
         {
-            var status = await claimsUploadService.UploadClaimsAsync(request.Claims);
+            var status = await claimsUploadService.UploadClaimsAsync(claimsDocument);
 
             if (status.Success)
             {

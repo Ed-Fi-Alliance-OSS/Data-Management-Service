@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Tests.Integration.Doubles;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
+using EdFi.DataManagementService.Tests.Integration.Scenarios;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -30,6 +31,8 @@ public abstract class ApiIntegrationTestBase
 {
     private WebApplicationFactory<Program>? _factory;
     private string? _leasedConnectionString;
+    private readonly Dictionary<DataStoreDerivativeType, string> _leasedDerivativeConnectionStrings = new();
+    private readonly List<string> _extraLeases = [];
     private DbConnection? _assertionConnection;
     private FixtureContext? _fixtureContext;
     private string? _startupStatusFilePath;
@@ -43,6 +46,47 @@ public abstract class ApiIntegrationTestBase
 
     /// <summary>The fixture this test class is bound to.</summary>
     protected abstract FixtureKey Fixture { get; }
+
+    /// <summary>
+    /// Resources whose identity this fixture may update, as the deployed comma-separated setting takes
+    /// them. Empty by default, so no existing fixture's write behavior changes.
+    /// </summary>
+    /// <remarks>
+    /// A tracked key change only exists if an identity was updated, and DMS refuses that unless the
+    /// resource is named here. A fixture that must observe the key-change surface therefore has to opt
+    /// its resource in.
+    /// </remarks>
+    protected virtual string AllowIdentityUpdateOverrides => string.Empty;
+
+    /// <summary>
+    /// Route qualifier segments this fixture's host recognizes, as the deployed comma-separated setting
+    /// takes them. Empty by default. Each becomes a path segment ahead of the rest of the route, and a
+    /// request that omits it resolves to no data store at all.
+    /// </summary>
+    protected virtual string RouteQualifierSegments => string.Empty;
+
+    /// <summary>
+    /// Derivative kinds this fixture wants provisioned as their own leased databases, each seeded
+    /// distinguishably so a response proves which one served it. Empty by default, so no existing
+    /// fixture leases anything extra.
+    /// </summary>
+    protected virtual IReadOnlyList<DataStoreDerivativeType> LeasedDerivatives => [];
+
+    /// <summary>
+    /// The leased connection string for a derivative this fixture asked for. Throws rather than
+    /// returning the primary's, because a silent fallback would make every routing assertion pass.
+    /// </summary>
+    protected string DerivativeConnectionString(DataStoreDerivativeType derivativeType) =>
+        _leasedDerivativeConnectionStrings.TryGetValue(derivativeType, out string? connectionString)
+            ? connectionString
+            : throw new InvalidOperationException(
+                $"No {derivativeType} database was leased for this fixture. Add it to {nameof(LeasedDerivatives)}."
+            );
+
+    /// <summary>The primary's leased connection string.</summary>
+    protected string PrimaryConnectionString =>
+        _leasedConnectionString
+        ?? throw new InvalidOperationException("The primary database has not been leased yet.");
 
     /// <summary>
     /// Datastore identifier consumed by <c>AppSettings:Datastore</c>; supplied by
@@ -85,6 +129,18 @@ public abstract class ApiIntegrationTestBase
     /// <summary>Enables ASP.NET Core response compression for scenarios that exercise coding variants.</summary>
     protected virtual bool EnableAspNetCompression => false;
 
+    /// <summary>Enables the <c>/{tenant}</c> route-qualifier segment for multitenancy-aware scenarios.</summary>
+    protected virtual bool MultiTenancy => false;
+
+    /// <summary>
+    /// When supplied, replaces only the singleton CMS-facing <c>IConfigurationServiceApplicationProvider</c>
+    /// instead of the whole <c>IApplicationContextProvider</c>, so a scenario can observe the real per-request
+    /// memoization performed by the production <c>CachedApplicationContextProvider</c>. Null keeps every other
+    /// scenario's historical always-stable fake.
+    /// </summary>
+    protected virtual IConfigurationServiceApplicationProvider? ApplicationContextConfigurationProviderOverride =>
+        null;
+
     /// <summary>Enables the DMS DocumentCache read-acceleration path for cache-backed read scenarios.</summary>
     protected virtual bool EnableDocumentCacheReadAcceleration => false;
 
@@ -99,6 +155,15 @@ public abstract class ApiIntegrationTestBase
 
     /// <summary>Direct-fill timeout used by cache-backed API integration scenarios.</summary>
     protected virtual string DocumentCacheReadAccelerationDirectFillTimeout => "00:00:00.250";
+
+    /// <summary>Overrides the DocumentCache projector page size for cache-backed scenarios.</summary>
+    protected virtual int? DocumentCacheProjectorPageSizeOverride => null;
+
+    /// <summary>Overrides the DocumentCache projector target concurrency for cache-backed scenarios.</summary>
+    protected virtual int? DocumentCacheProjectorMaxConcurrentTargetsOverride => null;
+
+    /// <summary>Overrides the DocumentCache baseline high-water mark for cache-backed scenarios.</summary>
+    protected virtual long? DocumentCacheProjectorBaselineHighWaterMarkOverride => null;
 
     /// <summary>Controls the public ResourceLinks response flag for scenarios that exercise link stripping.</summary>
     protected virtual bool ResourceLinksEnabled => true;
@@ -139,10 +204,35 @@ public abstract class ApiIntegrationTestBase
     protected virtual IReadOnlyList<string> AssignedProfileNames => [];
 
     /// <summary>
+    /// Replaces the data-store provider the host resolves, for a fixture that publishes derivatives or
+    /// changes its configuration between requests. Null keeps the single-instance stub.
+    /// </summary>
+    protected virtual IDataStoreProvider? CreateDataStoreProvider(
+        FixtureContext fixture,
+        string primaryConnectionString
+    ) => null;
+
+    /// <summary>
+    /// Replaces the JWT validation double, for a fixture that must change what the caller is
+    /// authorized for between requests. Null keeps the fixed stub.
+    /// </summary>
+    protected virtual MutableNamespacePrefixJwtValidationService? CreateJwtValidationService() => null;
+
+    /// <summary>
     /// Builds the claim set provider used by the in-process host.
     /// </summary>
     protected virtual IClaimSetProvider CreateClaimSetProvider(FixtureContext fixture) =>
         new AllowAllClaimSetProvider(fixture);
+
+    /// <summary>
+    /// Allows specialized fixtures to replace services after the shared integration doubles
+    /// are registered and before the in-process host is built.
+    /// </summary>
+    protected virtual void CustomizeServices(
+        IServiceCollection services,
+        FixtureContext fixture,
+        string leasedConnectionString
+    ) => ArgumentNullException.ThrowIfNull(services);
 
     /// <summary>
     /// Provisions a fresh per-test database from the dialect's baseline and returns its
@@ -157,11 +247,43 @@ public abstract class ApiIntegrationTestBase
     /// <summary>Releases (drops) the leased database identified by <paramref name="leasedConnectionString"/>.</summary>
     protected abstract Task ReleaseDatabaseAsync(string leasedConnectionString);
 
+    /// <summary>
+    /// Provisions one more database from the same baseline, for a fixture that needs several
+    /// distinguishable targets in one test. Released by <see cref="ReleaseAdditionalDatabaseAsync" />.
+    /// </summary>
+    protected abstract Task<string> LeaseAdditionalDatabaseAsync(FixtureContext fixture);
+
+    /// <summary>Releases one database taken through <see cref="LeaseAdditionalDatabaseAsync" />.</summary>
+    protected abstract Task ReleaseAdditionalDatabaseAsync(string leasedConnectionString);
+
+    /// <summary>
+    /// Switches a leased database's reachability at the server, for a fixture that proves a request
+    /// never touched a target other than the one it selected.
+    /// </summary>
+    protected abstract IDerivativeTargetReachability Reachability { get; }
+
+    /// <summary>
+    /// Hook for a fixture that must substitute a production service in the booted host, for example to
+    /// force one validation stage to fail so that a precedence rule between stages becomes observable.
+    /// It runs after the standard doubles are registered, so a replacement made here wins.
+    /// </summary>
+    protected virtual void ConfigureAdditionalServices(IServiceCollection services) { }
+
     [SetUp]
     public async Task ApiIntegrationSetUp()
     {
         _fixtureContext = FixtureContextLoader.Load(Fixture);
         _leasedConnectionString = await LeaseDatabaseAsync(_fixtureContext);
+
+        foreach (DataStoreDerivativeType derivativeType in LeasedDerivatives)
+        {
+            // A separate provisioned database per derivative, so a request that reaches the wrong one
+            // returns different rows rather than the same rows from a shared database.
+            string derivativeConnectionString = await LeaseAdditionalDatabaseAsync(_fixtureContext);
+            _leasedDerivativeConnectionStrings[derivativeType] = derivativeConnectionString;
+            _extraLeases.Add(derivativeConnectionString);
+        }
+
         _startupStatusFilePath = Path.Combine(Path.GetTempPath(), $"api-int-startup-{Guid.NewGuid():N}.json");
         _queryRecorder = CaptureQueryPlans ? new ApiIntegrationQueryRecorder() : null;
         _documentCacheReadAcquisitionFailureRecorder = ForceDocumentCacheReadLookupAdapterAcquisitionFailure
@@ -189,6 +311,14 @@ public abstract class ApiIntegrationTestBase
         var clientNamespacePrefixes = ClientNamespacePrefixes;
         var assignedProfileNames = AssignedProfileNames;
         var suppressHydratedRowsOnce = SuppressHydratedRowsOnce;
+        var multiTenancy = MultiTenancy;
+        var applicationContextConfigurationProviderOverride = ApplicationContextConfigurationProviderOverride;
+        MutableNamespacePrefixJwtValidationService? jwtValidationServiceOverride =
+            CreateJwtValidationService();
+        IDataStoreProvider? dataStoreProviderOverride = CreateDataStoreProvider(
+            _fixtureContext,
+            _leasedConnectionString
+        );
 
         _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -201,7 +331,10 @@ public abstract class ApiIntegrationTestBase
             builder.UseSetting("AppSettings:ApiSchemaPath", fixtureContext.ApiSchemaDirectory);
             builder.UseSetting("AppSettings:StartupStatusFilePath", startupStatusFilePath);
             builder.UseSetting("AppSettings:Datastore", Datastore);
+            builder.UseSetting("AppSettings:AllowIdentityUpdateOverrides", AllowIdentityUpdateOverrides);
+            builder.UseSetting("AppSettings:RouteQualifierSegments", RouteQualifierSegments);
             builder.UseSetting("AppSettings:BypassAuthorization", BypassAuthorization ? "true" : "false");
+            builder.UseSetting("AppSettings:MultiTenancy", multiTenancy ? "true" : "false");
             builder.UseSetting(
                 "AppSettings:EnableAspNetCompression",
                 EnableAspNetCompression ? "true" : "false"
@@ -233,6 +366,27 @@ public abstract class ApiIntegrationTestBase
                     DocumentCacheReadAccelerationDirectFillTimeout
                 );
                 builder.UseSetting("DataManagement:DocumentCache:Projector:PollInterval", "01:00:00");
+                if (DocumentCacheProjectorPageSizeOverride is { } pageSize)
+                {
+                    builder.UseSetting(
+                        "DataManagement:DocumentCache:Projector:PageSize",
+                        pageSize.ToString(CultureInfo.InvariantCulture)
+                    );
+                }
+                if (DocumentCacheProjectorMaxConcurrentTargetsOverride is { } maxConcurrentTargets)
+                {
+                    builder.UseSetting(
+                        "DataManagement:DocumentCache:Projector:MaxConcurrentTargets",
+                        maxConcurrentTargets.ToString(CultureInfo.InvariantCulture)
+                    );
+                }
+                if (DocumentCacheProjectorBaselineHighWaterMarkOverride is { } baselineHighWaterMark)
+                {
+                    builder.UseSetting(
+                        "DataManagement:DocumentCache:Projector:BaselineHighWaterMark",
+                        baselineHighWaterMark.ToString(CultureInfo.InvariantCulture)
+                    );
+                }
             }
             builder.UseSetting("ConfigurationServiceSettings:BaseUrl", "http://localhost/test-cms");
             builder.UseSetting("ConfigurationServiceSettings:ClientId", "test-cms-client");
@@ -254,7 +408,10 @@ public abstract class ApiIntegrationTestBase
                     documentCacheReadAcquisitionFailureRecorder,
                     documentCacheDirectFillTimeoutRecorder,
                     documentCacheReadTelemetryRecorder,
-                    assignedProfileNames
+                    assignedProfileNames,
+                    applicationContextConfigurationProviderOverride,
+                    dataStoreProviderOverride,
+                    jwtValidationServiceOverride
                 );
 
                 if (queryRecorder is not null)
@@ -268,6 +425,9 @@ public abstract class ApiIntegrationTestBase
                 {
                     services.SuppressHydratedRowsOnce();
                 }
+
+                ConfigureAdditionalServices(services);
+                CustomizeServices(services, fixtureContext, leasedConnectionString);
             });
         });
 
@@ -282,6 +442,7 @@ public abstract class ApiIntegrationTestBase
 
         Harness = new ApiIntegrationHarness(
             httpClient,
+            _factory.Services,
             _assertionConnection,
             _fixtureContext,
             _queryRecorder,
@@ -320,6 +481,14 @@ public abstract class ApiIntegrationTestBase
             await ReleaseDatabaseAsync(_leasedConnectionString);
             _leasedConnectionString = null;
         }
+
+        foreach (string extraLease in _extraLeases)
+        {
+            await ReleaseAdditionalDatabaseAsync(extraLease);
+        }
+
+        _extraLeases.Clear();
+        _leasedDerivativeConnectionStrings.Clear();
 
         _fixtureContext = null;
         _queryRecorder = null;

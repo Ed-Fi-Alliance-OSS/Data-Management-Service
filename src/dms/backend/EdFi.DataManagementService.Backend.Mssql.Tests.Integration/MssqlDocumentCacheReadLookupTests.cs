@@ -73,6 +73,10 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
         _lease = await _baseline.AcquireRestoredDatabaseAsync();
         _database = _lease.Database;
         _adapter = new MssqlDocumentCacheReadLookupAdapter(
+            new MssqlConnectionAcquisition(
+                new SqlClientPoolClearing(),
+                NullLogger<MssqlConnectionAcquisition>.Instance
+            ),
             new MssqlRelationalWriteExceptionClassifier(),
             new MssqlDocumentCacheProviderCommandTimeoutClassifier(),
             NullLogger<MssqlDocumentCacheReadLookupAdapter>.Instance,

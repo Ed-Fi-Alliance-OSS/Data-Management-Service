@@ -77,8 +77,14 @@ public class ValidateDatabaseFingerprintMiddlewareMissingTableTests
                         RouteContext: []
                     )
                 );
+            A.CallTo(() => dataStoreSelection.GetEffectiveTarget())
+                .Returns(EffectiveDataStoreTarget.Primary("Server=test;Database=testdb"));
 
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=test;Database=testdb"))
+            A.CallTo(() =>
+                    fingerprintReader.ReadFingerprintAsync(
+                        EffectiveDataStoreTarget.Primary("Server=test;Database=testdb")
+                    )
+                )
                 .Returns(new DatabaseFingerprint("1.0", "abc123", 42, new byte[32].ToImmutableArray()));
 
             await middleware.Execute(
@@ -136,8 +142,14 @@ public class ValidateDatabaseFingerprintMiddlewareMissingTableTests
                         RouteContext: []
                     )
                 );
+            A.CallTo(() => dataStoreSelection.GetEffectiveTarget())
+                .Returns(EffectiveDataStoreTarget.Primary("Server=test;Database=unprovisioned"));
 
-            A.CallTo(() => fingerprintReader.ReadFingerprintAsync("Server=test;Database=unprovisioned"))
+            A.CallTo(() =>
+                    fingerprintReader.ReadFingerprintAsync(
+                        EffectiveDataStoreTarget.Primary("Server=test;Database=unprovisioned")
+                    )
+                )
                 .Returns((DatabaseFingerprint?)null);
 
             await middleware.Execute(
@@ -205,7 +217,11 @@ public class ValidateDatabaseFingerprintMiddlewareMissingTableTests
         [Test]
         public void It_still_reads_the_database_fingerprint_when_startup_validation_bypass_is_enabled()
         {
-            A.CallTo(() => _fingerprintReader.ReadFingerprintAsync("Server=test;Database=unprovisioned"))
+            A.CallTo(() =>
+                    _fingerprintReader.ReadFingerprintAsync(
+                        EffectiveDataStoreTarget.Primary("Server=test;Database=unprovisioned")
+                    )
+                )
                 .MustHaveHappenedOnceExactly();
         }
 

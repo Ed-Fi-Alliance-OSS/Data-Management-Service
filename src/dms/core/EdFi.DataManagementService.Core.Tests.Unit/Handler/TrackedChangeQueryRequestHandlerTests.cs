@@ -142,6 +142,8 @@ public class TrackedChangeQueryRequestHandlerTests
             relationalRequest
                 .AuthorizationContext.NamespacePrefixes.Should()
                 .Equal("uri://ed-fi.org", "uri://sample.org");
+            relationalRequest.AuthorizationContext.CreatorOwnershipTokenId.Should().Be(303);
+            relationalRequest.AuthorizationContext.OwnershipTokenIds.Should().Equal(202, 404);
         }
     }
 
@@ -407,6 +409,15 @@ public class TrackedChangeQueryRequestHandlerTests
                 new NamespacePrefix("uri://sample.org"),
             ],
             DataStoreIds: []
+        );
+        requestInfo.ApplicationContext = new(
+            Id: 1,
+            ApplicationId: 2,
+            ClientId: "client-id",
+            ClientUuid: Guid.Parse("77777777-7777-7777-7777-777777777777"),
+            DataStoreIds: [],
+            CreatorOwnershipTokenId: 303,
+            OwnershipTokenIds: [202, 404]
         );
         return requestInfo;
     }

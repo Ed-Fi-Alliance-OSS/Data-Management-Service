@@ -101,7 +101,10 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddDmsCdcControlPlane();
-        services.TryAddSingleton<NpgsqlDataSourceCache>();
+
+        // Registered here as well as in AddPostgresqlDatastore because the CDC control plane is also
+        // composed on its own, and its provider work leases connections through the same cache.
+        services.AddNpgsqlDataSourceCache();
         services.TryAdd(
             ServiceDescriptor.Singleton<
                 IDocumentCacheProviderCommandTimeoutClassifier,

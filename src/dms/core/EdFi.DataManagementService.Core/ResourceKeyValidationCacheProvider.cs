@@ -3,63 +3,64 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Collections.Concurrent;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 
 namespace EdFi.DataManagementService.Core;
 
 /// <summary>
-/// Provides cached access to resource key validation results, keyed by connection string.
-/// Thread-safe and process-lifetime scoped (singleton).
+/// Provides cached access to resource key validation results, keyed by policy class and configured
+/// connection string. Thread-safe and process-lifetime scoped (singleton).
 ///
-/// Both success and failure validation results are cached permanently for the life
-/// of the process. This is intentional: if the database resource keys don't match
-/// the expected seed, the database must be reprovisioned and DMS restarted.
-/// Transient exceptions (network errors, timeouts) are evicted so the next
-/// request retries.
+/// A Primary result is cached permanently, success and failure alike: if the database resource keys do
+/// not match the expected seed, the database must be reprovisioned and DMS restarted, so re-validating
+/// per request would only repeat the same answer. A Derivative result expires at the configured
+/// bounded interval, and a request that reads a failure drops it immediately through its token.
 ///
-/// NOTE: This cache/eviction pattern is intentionally duplicated in
-/// <see cref="DatabaseFingerprintProvider"/> because the two caches store
-/// different value types and have different deterministic-failure semantics.
-/// If the retry policy needs to change, update both classes and the design
-/// doc (new-startup-flow.md §Failure Modes).
+/// Every fault is evicted on both classes, so a transient error retries on the next request. Unlike
+/// the fingerprint provider, this one retains no fault: it has no deterministic-failure exception of
+/// its own, because a resource-key mismatch is returned as a result rather than thrown.
 /// </summary>
+/// <remarks>
+/// The caching machinery lives in <see cref="ValidationEntryCache{TValue}" />, shared with
+/// <see cref="DatabaseFingerprintProvider" />, so the exact-entry eviction and expiry rules cannot
+/// drift apart between the two caches.
+/// </remarks>
 internal sealed class ResourceKeyValidationCacheProvider
 {
-    private readonly ConcurrentDictionary<string, Lazy<Task<ResourceKeyValidationResult>>> _cache = new();
+    private readonly ValidationEntryCache<ResourceKeyValidationResult> _cache;
+
+    public ResourceKeyValidationCacheProvider(TimeProvider timeProvider, CacheSettings cacheSettings)
+    {
+        ArgumentNullException.ThrowIfNull(cacheSettings);
+
+        _cache = new ValidationEntryCache<ResourceKeyValidationResult>(
+            timeProvider,
+            DerivativeValidationCacheExpiration.Effective(
+                cacheSettings.DerivativeValidationCacheExpirationSeconds,
+                cacheSettings
+            ),
+            static (_, _) => false
+        );
+    }
 
     /// <summary>
-    /// Returns the cached validation result for the given connection string, or
-    /// computes it using the provided factory on first access. Concurrent first
-    /// calls for the same connection string result in exactly one validation,
-    /// even when that validation returns a failure result.
+    /// The cached validation result for the given key, computing it with <paramref name="factory" />
+    /// on first access, plus the token that removes exactly the entry this caller observed.
     /// </summary>
-    /// <param name="connectionString">The database connection string used as cache key.</param>
+    /// <param name="key">Which database, and under which policy class, is being validated.</param>
     /// <param name="factory">
-    /// An async factory that performs the actual validation. Called at most once
-    /// per connection string (unless evicted due to transient failure).
+    /// An async factory that performs the actual validation. Called at most once per key, unless the
+    /// entry is evicted by a fault, expiry, or an invalidating caller.
     /// </param>
-    /// <returns>The cached or freshly computed validation result.</returns>
-    public async Task<ResourceKeyValidationResult> GetOrValidateAsync(
-        string connectionString,
+    /// <remarks>
+    /// Synchronous, returning the task rather than awaiting it, so concurrent first calls share one
+    /// validation - even when it returns a failure - and a caller whose await throws still holds a
+    /// token. A synchronous throw from <paramref name="factory" /> becomes a faulted task and is
+    /// evicted like any other fault, rather than escaping this call.
+    /// </remarks>
+    public ValidationCacheRead<ResourceKeyValidationResult> Read(
+        ValidationCacheKey key,
         Func<Task<ResourceKeyValidationResult>> factory
-    )
-    {
-        var lazy = _cache.GetOrAdd(
-            connectionString,
-            static (_, state) => new Lazy<Task<ResourceKeyValidationResult>>(() => state()),
-            factory
-        );
-
-        try
-        {
-            return await lazy.Value;
-        }
-        catch
-        {
-            // Evict faulted task so next request retries (transient errors)
-            _cache.TryRemove(new(connectionString, lazy));
-            throw;
-        }
-    }
+    ) => _cache.Read(key, factory);
 }

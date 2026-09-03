@@ -128,14 +128,18 @@ public abstract class CompatibilityGateTestsBase
 
         var fingerprintReader = CreateDatabaseFingerprintReader();
         _databaseFingerprint =
-            await fingerprintReader.ReadFingerprintAsync(GetConnectionString())
+            await fingerprintReader.ReadFingerprintAsync(
+                EffectiveDataStoreTarget.Primary(GetConnectionString())
+            )
             ?? throw new InvalidOperationException(
                 "Database fingerprint could not be read after provisioning. "
                     + "Ensure ProvisionDatabaseAsync wrote the dms.EffectiveSchema singleton row."
             );
 
         var rowReader = CreateResourceKeyRowReader();
-        _originalRows = await rowReader.ReadResourceKeyRowsAsync(GetConnectionString());
+        _originalRows = await rowReader.ReadResourceKeyRowsAsync(
+            EffectiveDataStoreTarget.Primary(GetConnectionString())
+        );
     }
 
     [OneTimeTearDown]
@@ -170,7 +174,7 @@ public abstract class CompatibilityGateTestsBase
             effectiveSchema.ResourceKeyCount,
             [.. effectiveSchema.ResourceKeySeedHash],
             expectedRows,
-            GetConnectionString()
+            EffectiveDataStoreTarget.Primary(GetConnectionString())
         );
 
         result.Should().BeOfType<ResourceKeyValidationResult.ValidationSuccess>();
@@ -210,7 +214,7 @@ public abstract class CompatibilityGateTestsBase
             effectiveSchema.ResourceKeyCount,
             [.. effectiveSchema.ResourceKeySeedHash],
             expectedRows,
-            GetConnectionString()
+            EffectiveDataStoreTarget.Primary(GetConnectionString())
         );
 
         var failure = result.Should().BeOfType<ResourceKeyValidationResult.ValidationFailure>().Subject;
@@ -247,7 +251,7 @@ public abstract class CompatibilityGateTestsBase
             effectiveSchema.ResourceKeyCount,
             [.. effectiveSchema.ResourceKeySeedHash],
             expectedRows,
-            GetConnectionString()
+            EffectiveDataStoreTarget.Primary(GetConnectionString())
         );
 
         var failure = result.Should().BeOfType<ResourceKeyValidationResult.ValidationFailure>().Subject;
@@ -286,7 +290,7 @@ public abstract class CompatibilityGateTestsBase
             effectiveSchema.ResourceKeyCount,
             [.. effectiveSchema.ResourceKeySeedHash],
             expectedRows,
-            GetConnectionString()
+            EffectiveDataStoreTarget.Primary(GetConnectionString())
         );
 
         var failure = result.Should().BeOfType<ResourceKeyValidationResult.ValidationFailure>().Subject;
@@ -319,7 +323,7 @@ public abstract class CompatibilityGateTestsBase
             effectiveSchema.ResourceKeyCount,
             [.. effectiveSchema.ResourceKeySeedHash],
             expectedRows,
-            GetConnectionString()
+            EffectiveDataStoreTarget.Primary(GetConnectionString())
         );
 
         var failure = result.Should().BeOfType<ResourceKeyValidationResult.ValidationFailure>().Subject;

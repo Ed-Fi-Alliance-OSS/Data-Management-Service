@@ -141,7 +141,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 namespacePrefixes,
                 educationOrganizationIds,
                 systemAdministratorToken,
-                claimSetName
+                claimSetName,
+                // The snapshot/read-replica arrangement is opt-in: only routing scenarios get a data
+                // store with derivatives, so every other scenario's reads stay on the primary path.
+                attachDataStoreDerivatives: _scenarioContext.ScenarioInfo.CombinedTags.Contains(
+                    "derivative-routing"
+                )
             );
         }
 
@@ -757,6 +762,23 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             current.ToString().Should().Be(_scenarioVariables.GetValueByName(variableName));
         }
 
+        /// <summary>
+        /// The counterpart of the equality step, for proving a value moved rather than that it landed on
+        /// a particular number. A derivative-routing scenario needs this: it captures a change version,
+        /// writes, and then proves the same target reports something different, without depending on how
+        /// much the counter advanced or on what the other target happens to report.
+        /// </summary>
+        [Then("the response body path {string} should not equal request variable {string}")]
+        public async Task ThenTheResponseBodyPathShouldNotEqualRequestVariable(
+            string jsonPath,
+            string variableName
+        )
+        {
+            JsonNode current = await ResolveResponseBodyPath(jsonPath);
+
+            current.ToString().Should().NotBe(_scenarioVariables.GetValueByName(variableName));
+        }
+
         private async Task<JsonNode> ResolveResponseBodyPath(string jsonPath)
         {
             string responseBody = await _apiResponse.TextAsync();
@@ -1056,13 +1078,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             string claimsJson = new JsonObject
             {
-                ["claims"] = new JsonObject
-                {
-                    ["claimSets"] = new JsonArray(
-                        new JsonObject { ["claimSetName"] = claimSetName, ["isSystemReserved"] = false }
-                    ),
-                    ["claimsHierarchy"] = new JsonArray(claimsHierarchyNode),
-                },
+                ["claimSets"] = new JsonArray(
+                    new JsonObject { ["claimSetName"] = claimSetName, ["isSystemReserved"] = false }
+                ),
+                ["claimsHierarchy"] = new JsonArray(claimsHierarchyNode),
             }.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
 
             // Call the CMS endpoint to upload the claim set

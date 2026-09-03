@@ -34,6 +34,12 @@ public static class AppSettings
     public static string DataStoreAdminConnectionString => _settings.DataStoreAdminConnectionString;
     public static string DataStoreConnectionString => _settings.DataStoreConnectionString;
 
+    /// <summary>
+    /// The Docker-network connection string for the snapshot database the suite registers as the data
+    /// store's Snapshot derivative. Provisioned with the same DDL as the primary and left empty.
+    /// </summary>
+    public static string DataStoreSnapshotConnectionString => _settings.DataStoreSnapshotConnectionString;
+
     public static int MaxRequestBodySizeMegabytes => _settings.MaxRequestBodySizeMegabytes;
 
     internal static AppSettingsValues Create(IConfiguration configuration)
@@ -46,6 +52,7 @@ public static class AppSettings
             GetString(configuration, nameof(DatabaseEngine), DefaultDatabaseEngine),
             GetString(configuration, nameof(DataStoreAdminConnectionString), string.Empty),
             GetString(configuration, nameof(DataStoreConnectionString), string.Empty),
+            GetString(configuration, nameof(DataStoreSnapshotConnectionString), string.Empty),
             GetInt(configuration, nameof(MaxRequestBodySizeMegabytes), DefaultMaxRequestBodySizeMegabytes)
         );
     }
@@ -82,5 +89,6 @@ internal sealed record AppSettingsValues(
     string DatabaseEngine,
     string DataStoreAdminConnectionString,
     string DataStoreConnectionString,
+    string DataStoreSnapshotConnectionString,
     int MaxRequestBodySizeMegabytes
 );

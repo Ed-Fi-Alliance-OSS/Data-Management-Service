@@ -17,7 +17,8 @@ namespace EdFi.DataManagementService.Tests.Integration.Doubles;
 /// from the lowercased project and resource names so they line up with how the
 /// resource-action authorization middleware composes claims at request time.
 /// </summary>
-internal sealed class AllowAllClaimSetProvider(FixtureContext fixture) : IClaimSetProvider
+internal sealed class AllowAllClaimSetProvider(FixtureContext fixture, bool grantReadChanges = false)
+    : IClaimSetProvider
 {
     private static readonly string[] _noFurtherAuthorizationRequiredStrategies =
     [
@@ -26,7 +27,8 @@ internal sealed class AllowAllClaimSetProvider(FixtureContext fixture) : IClaimS
 
     private readonly ConfigurableClaimSetProvider _inner = new(
         fixture,
-        static (_, _) => _noFurtherAuthorizationRequiredStrategies
+        static (_, _) => _noFurtherAuthorizationRequiredStrategies,
+        grantReadChanges
     );
 
     public Task<IList<ClaimSet>> GetAllClaimSets(string? tenant = null) => _inner.GetAllClaimSets(tenant);

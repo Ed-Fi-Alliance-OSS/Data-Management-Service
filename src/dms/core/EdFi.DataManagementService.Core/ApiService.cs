@@ -42,6 +42,8 @@ internal class ApiService : IApiService
     private readonly IDecimalValidator _decimalValidator;
     private readonly ILogger<ApiService> _logger;
     private readonly ILogger<RequestResponseLoggingMiddleware> _requestResponseLogger;
+    private readonly ILogger<ApplicationContextRequirementMiddleware> _applicationContextRequirementLogger;
+    private readonly ILogger<SelectEffectiveDataStoreTargetMiddleware> _selectEffectiveTargetLogger;
     private readonly IOptions<AppSettings> _appSettings;
     private readonly ResiliencePipeline _resiliencePipeline;
     private readonly CircuitBreakerSettings _circuitBreakerSettings;
@@ -158,6 +160,9 @@ internal class ApiService : IApiService
         _decimalValidator = decimalValidator;
         _logger = logger;
         _requestResponseLogger = loggerFactory.CreateLogger<RequestResponseLoggingMiddleware>();
+        _applicationContextRequirementLogger =
+            loggerFactory.CreateLogger<ApplicationContextRequirementMiddleware>();
+        _selectEffectiveTargetLogger = loggerFactory.CreateLogger<SelectEffectiveDataStoreTargetMiddleware>();
         _appSettings = appSettings;
         _resiliencePipeline = resiliencePipeline;
         _resourceLoadCalculator = resourceLoadCalculator;
@@ -206,12 +211,68 @@ internal class ApiService : IApiService
     private List<IPipelineStep> GetRoutedResourceInitialSteps()
     {
         var steps = GetCommonInitialSteps();
-        steps.AddRange([
-            new ParsePathMiddleware(_logger),
+        steps.Add(new ParsePathMiddleware(_logger));
+
+        return steps;
+    }
+
+    /// <summary>
+    /// The endpoint-validation phase: the steps that decide whether the request names a real project
+    /// namespace and resource. None of them opens a database connection - they read only
+    /// IApiSchemaProvider.IsSchemaValid, the startup-built effective schema documents, and the parsed
+    /// path - so this phase runs ahead of the database-validation phase below. That ordering is what
+    /// makes an unroutable request answer its endpoint 404 rather than a database availability error.
+    /// </summary>
+    private List<IPipelineStep> GetEndpointValidationSteps() =>
+        [
+            new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
+            new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
+            new ValidateEndpointMiddleware(_logger),
+        ];
+
+    /// <summary>
+    /// The step that chooses this pipeline's physical database. Every pipeline that runs the
+    /// database-validation phase runs this immediately before it, so fingerprint, resource-key, and
+    /// mapping-set validation all describe the database the request is served from. The policy is
+    /// supplied per pipeline because a separate pipeline exists per operation, and the HTTP method
+    /// alone cannot tell them apart.
+    /// </summary>
+    private SelectEffectiveDataStoreTargetMiddleware GetSelectEffectiveTargetStep(
+        DatabaseAccessIntent accessIntent,
+        SnapshotEligibility snapshot,
+        ReplicaEligibility replica
+    ) =>
+        new(
+            new DerivativeRoutingPolicy(accessIntent, snapshot, replica),
+            _serviceProvider.GetRequiredService<IEffectiveTargetSelectionResponseFactory>(),
+            _selectEffectiveTargetLogger
+        );
+
+    /// <summary>
+    /// The database-validation phase, in dependency order. Resource-key validation reads the fingerprint
+    /// that fingerprint validation resolves, and mapping-set resolution depends on the validated
+    /// fingerprint in turn, so neither can precede it. A pipeline that needs no resource-key or
+    /// mapping-set work omits it rather than reordering.
+    /// </summary>
+    private List<IPipelineStep> GetDatabaseValidationSteps(
+        bool includeResourceKeySeed = true,
+        bool includeMappingSet = true
+    )
+    {
+        List<IPipelineStep> steps =
+        [
             _serviceProvider.GetRequiredService<ValidateDatabaseFingerprintMiddleware>(),
-            _serviceProvider.GetRequiredService<ValidateResourceKeySeedMiddleware>(),
-            _serviceProvider.GetRequiredService<ResolveMappingSetMiddleware>(),
-        ]);
+        ];
+
+        if (includeResourceKeySeed)
+        {
+            steps.Add(_serviceProvider.GetRequiredService<ValidateResourceKeySeedMiddleware>());
+        }
+
+        if (includeMappingSet)
+        {
+            steps.Add(_serviceProvider.GetRequiredService<ResolveMappingSetMiddleware>());
+        }
 
         return steps;
     }
@@ -219,15 +280,22 @@ internal class ApiService : IApiService
     private PipelineProvider CreateUpsertPipeline()
     {
         var steps = GetRoutedResourceInitialSteps();
+        steps.AddRange(GetEndpointValidationSteps());
+        steps.Add(
+            GetSelectEffectiveTargetStep(
+                DatabaseAccessIntent.ReadWrite,
+                SnapshotEligibility.RejectedAsMutation,
+                ReplicaEligibility.NotApplicable
+            )
+        );
+        steps.Add(new ValidateRouteSemanticsMiddleware(_logger));
+        steps.AddRange(GetDatabaseValidationSteps());
         steps.AddRange([
-            new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
-            new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
-            new ValidateEndpointMiddleware(_logger),
-            new ValidateRouteSemanticsMiddleware(_logger),
             new ValidateContentTypeMiddleware(_logger),
             new ParseBodyMiddleware(_logger),
             new RequestInfoBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
             new DuplicatePropertiesMiddleware(_logger),
+            new ApplicationContextRequirementMiddleware(_applicationContextRequirementLogger),
             _serviceProvider.GetRequiredService<ProfileResolutionMiddleware>(),
             new RejectResourceIdentifierMiddleware(_logger),
             new CoerceDateFormatMiddleware(_logger),
@@ -258,6 +326,7 @@ internal class ApiService : IApiService
             new ArrayUniquenessValidationMiddleware(_logger),
             new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
+            new ApplicationContextRequirementMiddleware(_applicationContextRequirementLogger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
             new CustomResourceValidationMiddleware(_logger, CustomValidationOperation.Upsert),
             new UpsertHandler(_logger, _resiliencePipeline),
@@ -269,16 +338,23 @@ internal class ApiService : IApiService
     private PipelineProvider CreateGetByIdPipeline()
     {
         var steps = GetRoutedResourceInitialSteps();
+        steps.AddRange(GetEndpointValidationSteps());
+        steps.Add(
+            GetSelectEffectiveTargetStep(
+                DatabaseAccessIntent.ReadOnly,
+                SnapshotEligibility.Allowed,
+                ReplicaEligibility.Allowed
+            )
+        );
+        steps.AddRange(GetDatabaseValidationSteps());
         steps.AddRange([
-            new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
-            new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
-            new ValidateEndpointMiddleware(_logger),
             _serviceProvider.GetRequiredService<ProfileResolutionMiddleware>(),
             new BuildResourceInfoMiddleware(
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
             ),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
+            new ApplicationContextRequirementMiddleware(_applicationContextRequirementLogger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
             new GetByIdHandler(_logger, _resiliencePipeline),
         ]);
@@ -289,10 +365,16 @@ internal class ApiService : IApiService
     private PipelineProvider CreateQueryPipeline()
     {
         var steps = GetRoutedResourceInitialSteps();
+        steps.AddRange(GetEndpointValidationSteps());
+        steps.Add(
+            GetSelectEffectiveTargetStep(
+                DatabaseAccessIntent.ReadOnly,
+                SnapshotEligibility.Allowed,
+                ReplicaEligibility.Allowed
+            )
+        );
+        steps.AddRange(GetDatabaseValidationSteps());
         steps.AddRange([
-            new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
-            new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
-            new ValidateEndpointMiddleware(_logger),
             _serviceProvider.GetRequiredService<ProfileResolutionMiddleware>(),
             new BuildResourceInfoMiddleware(
                 _logger,
@@ -306,6 +388,7 @@ internal class ApiService : IApiService
                 _appSettings.Value.UseLegacyDocumentIdOrderingForChangeQueries
             ),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
+            new ApplicationContextRequirementMiddleware(_applicationContextRequirementLogger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
             new QueryRequestHandler(
                 _logger,
@@ -331,10 +414,16 @@ internal class ApiService : IApiService
     private PipelineProvider CreateGetPartitionsPipeline()
     {
         var steps = GetRoutedResourceInitialSteps();
+        steps.AddRange(GetEndpointValidationSteps());
+        steps.Add(
+            GetSelectEffectiveTargetStep(
+                DatabaseAccessIntent.ReadOnly,
+                SnapshotEligibility.Allowed,
+                ReplicaEligibility.Allowed
+            )
+        );
+        steps.AddRange(GetDatabaseValidationSteps());
         steps.AddRange([
-            new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
-            new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
-            new ValidateEndpointMiddleware(_logger),
             _serviceProvider.GetRequiredService<ProfileResolutionMiddleware>(),
             new BuildResourceInfoMiddleware(
                 _logger,
@@ -347,6 +436,7 @@ internal class ApiService : IApiService
                 _appSettings.Value.UseLegacyDocumentIdOrderingForChangeQueries
             ),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
+            new ApplicationContextRequirementMiddleware(_applicationContextRequirementLogger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
             new PartitionRequestHandler(
                 _logger,
@@ -362,11 +452,17 @@ internal class ApiService : IApiService
     private PipelineProvider CreateUpdatePipeline()
     {
         var steps = GetRoutedResourceInitialSteps();
+        steps.AddRange(GetEndpointValidationSteps());
+        steps.Add(
+            GetSelectEffectiveTargetStep(
+                DatabaseAccessIntent.ReadWrite,
+                SnapshotEligibility.RejectedAsMutation,
+                ReplicaEligibility.NotApplicable
+            )
+        );
+        steps.Add(new ValidateRouteSemanticsMiddleware(_logger));
+        steps.AddRange(GetDatabaseValidationSteps());
         steps.AddRange([
-            new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
-            new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
-            new ValidateEndpointMiddleware(_logger),
-            new ValidateRouteSemanticsMiddleware(_logger),
             new ValidateContentTypeMiddleware(_logger),
             new ParseBodyMiddleware(_logger),
             new RequestInfoBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
@@ -401,6 +497,7 @@ internal class ApiService : IApiService
             new ArrayUniquenessValidationMiddleware(_logger),
             new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
+            new ApplicationContextRequirementMiddleware(_applicationContextRequirementLogger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
             new CustomResourceValidationMiddleware(_logger, CustomValidationOperation.Update),
             new UpdateByIdHandler(_logger, _resiliencePipeline),
@@ -411,16 +508,23 @@ internal class ApiService : IApiService
     private PipelineProvider CreateDeleteByIdPipeline()
     {
         var steps = GetRoutedResourceInitialSteps();
+        steps.AddRange(GetEndpointValidationSteps());
+        steps.Add(
+            GetSelectEffectiveTargetStep(
+                DatabaseAccessIntent.ReadWrite,
+                SnapshotEligibility.RejectedAsMutation,
+                ReplicaEligibility.NotApplicable
+            )
+        );
+        steps.Add(new ValidateRouteSemanticsMiddleware(_logger));
+        steps.AddRange(GetDatabaseValidationSteps());
         steps.AddRange([
-            new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
-            new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
-            new ValidateEndpointMiddleware(_logger),
-            new ValidateRouteSemanticsMiddleware(_logger),
             new BuildResourceInfoMiddleware(
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
             ),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
+            new ApplicationContextRequirementMiddleware(_applicationContextRequirementLogger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
             new DeleteByIdHandler(_logger, _resiliencePipeline),
         ]);
@@ -430,10 +534,18 @@ internal class ApiService : IApiService
 
     private PipelineProvider CreateGetTokenInfoPipeline()
     {
+        // Token introspection keeps its existing order: it resolves no endpoint, so its ApiSchema steps
+        // stay after database validation rather than joining the endpoint phase.
         var steps = GetCommonInitialSteps();
+        steps.Add(
+            GetSelectEffectiveTargetStep(
+                DatabaseAccessIntent.ReadOnly,
+                SnapshotEligibility.NotApplicable,
+                ReplicaEligibility.NotApplicable
+            )
+        );
+        steps.AddRange(GetDatabaseValidationSteps(includeMappingSet: false));
         steps.AddRange([
-            _serviceProvider.GetRequiredService<ValidateDatabaseFingerprintMiddleware>(),
-            _serviceProvider.GetRequiredService<ValidateResourceKeySeedMiddleware>(),
             new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
             new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
             _serviceProvider.GetRequiredService<GetTokenInfoHandler>(),
@@ -449,10 +561,15 @@ internal class ApiService : IApiService
         // database. No ApiSchema or resource-key-seed steps, so availability does not depend on
         // ApiSchema.json or OpenAPI path presence.
         var steps = GetCommonInitialSteps();
-        steps.AddRange([
-            _serviceProvider.GetRequiredService<ValidateDatabaseFingerprintMiddleware>(),
-            _serviceProvider.GetRequiredService<AvailableChangeVersionsHandler>(),
-        ]);
+        steps.Add(
+            GetSelectEffectiveTargetStep(
+                DatabaseAccessIntent.ReadOnly,
+                SnapshotEligibility.Allowed,
+                ReplicaEligibility.Allowed
+            )
+        );
+        steps.AddRange(GetDatabaseValidationSteps(includeResourceKeySeed: false, includeMappingSet: false));
+        steps.Add(_serviceProvider.GetRequiredService<AvailableChangeVersionsHandler>());
 
         return new PipelineProvider(steps);
     }
@@ -460,14 +577,17 @@ internal class ApiService : IApiService
     private PipelineProvider CreateGetTrackedChangesPipeline()
     {
         var steps = GetCommonInitialSteps();
+        steps.Add(new ParseTrackedChangePathMiddleware(_logger));
+        steps.AddRange(GetEndpointValidationSteps());
+        steps.Add(
+            GetSelectEffectiveTargetStep(
+                DatabaseAccessIntent.ReadOnly,
+                SnapshotEligibility.Allowed,
+                ReplicaEligibility.Allowed
+            )
+        );
+        steps.AddRange(GetDatabaseValidationSteps());
         steps.AddRange([
-            new ParseTrackedChangePathMiddleware(_logger),
-            _serviceProvider.GetRequiredService<ValidateDatabaseFingerprintMiddleware>(),
-            _serviceProvider.GetRequiredService<ValidateResourceKeySeedMiddleware>(),
-            _serviceProvider.GetRequiredService<ResolveMappingSetMiddleware>(),
-            new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
-            new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
-            new ValidateEndpointMiddleware(_logger),
             new BuildResourceInfoMiddleware(
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
@@ -488,6 +608,7 @@ internal class ApiService : IApiService
             ),
             new ValidateTrackedChangeQueryMiddleware(_logger),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
+            new ApplicationContextRequirementMiddleware(_applicationContextRequirementLogger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
             new TrackedChangeQueryRequestHandler(_logger, _resiliencePipeline),
         ]);
@@ -508,13 +629,9 @@ internal class ApiService : IApiService
         // only then does the terminal answer 405. That reproduces ODS/API's existence-then-method
         // ordering.
         var steps = GetCommonInitialSteps();
-        steps.AddRange([
-            new ParsePathMiddleware(_logger),
-            new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
-            new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
-            new ValidateEndpointMiddleware(_logger),
-            new MethodNotAllowedMiddleware(_logger, _isTrackedChangeRoute: false),
-        ]);
+        steps.Add(new ParsePathMiddleware(_logger));
+        steps.AddRange(GetEndpointValidationSteps());
+        steps.Add(new MethodNotAllowedMiddleware(_logger, _isTrackedChangeRoute: false));
 
         return new PipelineProvider(steps);
     }
@@ -529,13 +646,9 @@ internal class ApiService : IApiService
         // answers 404 for an unknown project namespace or resource, so the terminal's 405 is reached
         // only once the endpoint is known to exist.
         var steps = GetCommonInitialSteps();
-        steps.AddRange([
-            new ParseTrackedChangePathMiddleware(_logger),
-            new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
-            new ProvideApiSchemaMiddleware(_effectiveApiSchemaProvider, _logger),
-            new ValidateEndpointMiddleware(_logger),
-            new MethodNotAllowedMiddleware(_logger, _isTrackedChangeRoute: true),
-        ]);
+        steps.Add(new ParseTrackedChangePathMiddleware(_logger));
+        steps.AddRange(GetEndpointValidationSteps());
+        steps.Add(new MethodNotAllowedMiddleware(_logger, _isTrackedChangeRoute: true));
 
         return new PipelineProvider(steps);
     }

@@ -4,8 +4,10 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Concurrent;
+using System.Collections.Immutable;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Utilities;
@@ -23,7 +25,8 @@ public class ConfigurationServiceDataStoreProvider(
     ILogger<ConfigurationServiceDataStoreProvider> logger,
     IConnectionStringDecryptionService connectionStringDecryptionService,
     CacheSettings? cacheSettings = null,
-    TimeProvider? timeProvider = null
+    TimeProvider? timeProvider = null,
+    IEnumerable<IDataStoreOwnershipReconciler>? reconcilers = null
 ) : IDataStoreProvider
 {
     private const string TenantHeaderName = "Tenant";
@@ -39,6 +42,25 @@ public class ConfigurationServiceDataStoreProvider(
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _tenantLocks = new(
         StringComparer.OrdinalIgnoreCase
     );
+
+    /// <summary>
+    /// Registration order, captured once. The interface documents that reconcilers run in order, so
+    /// enumerating a lazily-evaluated sequence per publication - which could yield a different order,
+    /// or different instances - would quietly break that promise.
+    /// </summary>
+    private readonly ImmutableArray<IDataStoreOwnershipReconciler> _reconcilers =
+        reconcilers?.ToImmutableArray() ?? [];
+
+    /// <summary>
+    /// Serializes tenant-entry replacement, version assignment, owner projection, and reconciliation,
+    /// so two overlapping tenant loads cannot interleave and a later version's reconciliation cannot
+    /// begin before an earlier one has finished. Deliberately not held across CMS network I/O or
+    /// DataStore construction, both of which happen before it is taken.
+    /// </summary>
+    private readonly SemaphoreSlim _publicationLock = new(1, 1);
+
+    /// <summary>Mutated only under <see cref="_publicationLock" />.</summary>
+    private long _ownershipVersion;
 
     /// <inheritdoc />
     public bool IsLoaded(string? tenant = null) => _instancesByTenant.ContainsKey(GetTenantKey(tenant));
@@ -78,11 +100,11 @@ public class ConfigurationServiceDataStoreProvider(
 
             logger.LogInformation("Successfully fetched {InstanceCount} data stores", instances.Count);
 
-            // Store instances by tenant
-            _instancesByTenant[GetTenantKey(tenant)] = new TenantCacheEntry(
-                instances,
-                _timeProvider.GetUtcNow()
-            );
+            // Store instances by tenant and publish the resulting ownership, atomically with
+            // respect to every other tenant load. Everything above this point - the token, the
+            // fetch, and DataStore construction - is deliberately outside the lock, so a slow or
+            // hanging Configuration Service cannot block another tenant from publishing.
+            await PublishConfiguredOwnershipAsync(tenant, instances, cancellationToken);
 
             foreach (DataStore instance in instances)
             {
@@ -192,6 +214,130 @@ public class ConfigurationServiceDataStoreProvider(
         _instancesByTenant.TryGetValue(GetTenantKey(tenant), out var instances)
             ? instances.Instances.FirstOrDefault(instance => instance.Id == id)
             : null;
+
+    /// <summary>
+    /// Replaces the tenant entry and publishes the resulting global ownership, in one critical
+    /// section, so the version, the projected owner union, and the reconciliation that consumes them
+    /// describe the same instant.
+    /// </summary>
+    /// <remarks>
+    /// Reached only after a successful load: every failure path above throws before this is called, so
+    /// a failed or cancelled load replaces no entry, assigns no version, and invokes no reconciler.
+    ///
+    /// Lock-free readers are unaffected. GetById and GetAll never take this lock, so a request in
+    /// flight sees either the previous entry or the new one - which is what lets it keep the
+    /// configuration it selected its target from.
+    /// </remarks>
+    private async Task PublishConfiguredOwnershipAsync(
+        string? tenant,
+        IList<DataStore> instances,
+        CancellationToken cancellationToken
+    )
+    {
+        await _publicationLock.WaitAsync(cancellationToken);
+
+        try
+        {
+            _instancesByTenant[GetTenantKey(tenant)] = new TenantCacheEntry(
+                instances,
+                _timeProvider.GetUtcNow()
+            );
+
+            // Projected while holding the lock, so every tenant entry is quiescent for writes and the
+            // union is a real snapshot rather than a walk over a moving collection.
+            DataStoreOwnershipSnapshot snapshot = new(++_ownershipVersion, ProjectConfiguredOwners());
+
+            foreach (IDataStoreOwnershipReconciler reconciler in _reconcilers)
+            {
+                try
+                {
+                    reconciler.Reconcile(snapshot);
+                }
+                catch (Exception exception)
+                {
+                    // One failing reconciler must not fail the load or stop the next one: the
+                    // configuration is already published and correct, and a reconciler that could not
+                    // act on it will be handed the full authoritative snapshot again by the next
+                    // publication.
+                    //
+                    // Only the exception's type is logged, never the exception itself and never its
+                    // message, data, or inner exceptions. A reconciler is arbitrary code that was just
+                    // handed every configured connection string; an exception it throws is exactly the
+                    // kind of value likely to quote one back, and passing it to the logger would put
+                    // that in the log.
+                    // S6667 asks for the caught exception to be passed to the logger. That is the
+                    // right default and the wrong thing here, for the reason above: the exception is
+                    // the untrusted value. Its type is logged instead, which is the part that helps
+                    // an operator without carrying anything the reconciler put in it.
+#pragma warning disable S6667
+                    logger.LogWarning(
+                        "Ownership reconciler {Reconciler} failed with {ExceptionType} for tenant {Tenant} at ownership version {Version}. Configuration was published; the next publication will deliver the complete snapshot again",
+                        LoggingSanitizer.SanitizeForLogging(reconciler.GetType().Name),
+                        LoggingSanitizer.SanitizeForLogging(exception.GetType().Name),
+                        LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)"),
+                        snapshot.Version
+                    );
+#pragma warning restore S6667
+                }
+            }
+        }
+        finally
+        {
+            _publicationLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Every configured target of every loaded tenant: one owner per data store with a non-blank
+    /// connection string, plus one per recognized derivative.
+    /// </summary>
+    /// <remarks>
+    /// The union spans tenants because a consumer deciding what it may stop owning cannot answer that
+    /// from one tenant alone - a connection string this tenant dropped may still be claimed by
+    /// another. Strings are copied verbatim and nothing is parsed, so a provider-invalid derivative is
+    /// published like any other owner and cannot abort a publication.
+    ///
+    /// Called only under the publication lock.
+    /// </remarks>
+    private ImmutableArray<ConfiguredTargetOwner> ProjectConfiguredOwners()
+    {
+        ImmutableArray<ConfiguredTargetOwner>.Builder owners =
+            ImmutableArray.CreateBuilder<ConfiguredTargetOwner>();
+
+        foreach (KeyValuePair<string, TenantCacheEntry> tenantEntry in _instancesByTenant)
+        {
+            foreach (DataStore dataStore in tenantEntry.Value.Instances)
+            {
+                if (!string.IsNullOrWhiteSpace(dataStore.ConnectionString))
+                {
+                    owners.Add(
+                        new ConfiguredTargetOwner(
+                            tenantEntry.Key,
+                            dataStore.Id,
+                            EffectiveTargetKind.Primary,
+                            dataStore.ConnectionString
+                        )
+                    );
+                }
+
+                foreach (KeyValuePair<DataStoreDerivativeType, string> derivative in dataStore.Derivatives)
+                {
+                    owners.Add(
+                        new ConfiguredTargetOwner(
+                            tenantEntry.Key,
+                            dataStore.Id,
+                            derivative.Key == DataStoreDerivativeType.Snapshot
+                                ? EffectiveTargetKind.Snapshot
+                                : EffectiveTargetKind.ReadReplica,
+                            derivative.Value
+                        )
+                    );
+                }
+            }
+        }
+
+        return owners.ToImmutable();
+    }
 
     /// <summary>
     /// Gets the cache key for a tenant, using empty string for null/empty tenant
@@ -359,28 +505,132 @@ public class ConfigurationServiceDataStoreProvider(
             return [];
         }
 
-        return dataStoreResponses
-            .Select(response =>
-            {
-                (
-                    RelationalProviderToken? relationalProviderToken,
-                    RelationalProviderMetadataStatus relationalProviderMetadataStatus
-                ) = NormalizeRelationalProviderMetadata(response);
+        return dataStoreResponses.Select(response => BuildDataStore(response, tenant)).ToList();
+    }
 
-                return new DataStore(
-                    response.Id,
-                    response.DataStoreType,
-                    response.Name,
-                    _connectionStringDecryptionService.DecryptFromBase64(response.ConnectionString),
-                    response.DataStoreContexts.ToDictionary(
-                        rc => new RouteQualifierName(rc.ContextKey),
-                        rc => new RouteQualifierValue(rc.ContextValue)
-                    ),
-                    relationalProviderToken,
-                    relationalProviderMetadataStatus
+    /// <summary>
+    /// Builds one data store from its Configuration Service response.
+    /// </summary>
+    private DataStore BuildDataStore(DataStoreResponse response, string? tenant)
+    {
+        (
+            RelationalProviderToken? relationalProviderToken,
+            RelationalProviderMetadataStatus relationalProviderMetadataStatus
+        ) = NormalizeRelationalProviderMetadata(response);
+
+        return new DataStore(
+            response.Id,
+            response.DataStoreType,
+            response.Name,
+            // The primary connection string is decrypted here, inside the enclosing projection, so an
+            // undecryptable primary fails the whole tenant data-store load. Derivatives are decrypted
+            // one at a time in their own fault boundary below, so an unusable optional derivative
+            // cannot take its parent, its siblings, or another data store down with it.
+            _connectionStringDecryptionService.DecryptFromBase64(response.ConnectionString),
+            response.DataStoreContexts.ToDictionary(
+                rc => new RouteQualifierName(rc.ContextKey),
+                rc => new RouteQualifierValue(rc.ContextValue)
+            ),
+            relationalProviderToken,
+            relationalProviderMetadataStatus,
+            BuildDerivatives(response, tenant)
+        );
+    }
+
+    /// <summary>
+    /// Builds the usable derivatives of one data store. A derivative is usable only when its type is
+    /// recognized, its stored connection string is present and non-blank, and that string decrypts to a
+    /// non-blank value. Every other state means the derivative is not configured.
+    /// </summary>
+    private List<KeyValuePair<DataStoreDerivativeType, string>> BuildDerivatives(
+        DataStoreResponse response,
+        string? tenant
+    )
+    {
+        List<KeyValuePair<DataStoreDerivativeType, string>> derivatives = [];
+        string sanitizedTenant = LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)");
+
+#pragma warning disable S3267 // Loops should be simplified with "LINQ" expressions - False positive: this loop has several early exits, per-item logging, and duplicate detection against what it has already accepted
+        foreach (DataStoreDerivativeItem derivative in response.DataStoreDerivatives)
+#pragma warning restore S3267
+        {
+            if (
+                !DataStoreDerivativeTypeNames.TryParseExact(
+                    derivative.DerivativeType,
+                    out DataStoreDerivativeType derivativeType
+                )
+            )
+            {
+                logger.LogError(
+                    "Ignoring a data store derivative with unrecognized type '{DerivativeType}' for tenant {Tenant}, parent data store {DataStoreId}",
+                    LoggingSanitizer.SanitizeForLogging(derivative.DerivativeType ?? "(none)"),
+                    sanitizedTenant,
+                    response.Id
                 );
-            })
-            .ToList();
+                continue;
+            }
+
+            // Checked before decryption. A missing row and a null, empty, or whitespace stored value are
+            // ordinary not-configured states rather than configuration defects, so they are not errors
+            // and are deliberately distinguishable from the undecryptable case by producing no log.
+            if (string.IsNullOrWhiteSpace(derivative.ConnectionString))
+            {
+                continue;
+            }
+
+            string plainText;
+
+            try
+            {
+                // The decryption service returns null only for a null or empty input, which the check
+                // above has already excluded, so normalizing to an empty string here changes no
+                // outcome: the blank check below treats null, empty, and whitespace alike as not
+                // configured, and this keeps the local non-nullable.
+                plainText =
+                    _connectionStringDecryptionService.DecryptFromBase64(derivative.ConnectionString)
+                    ?? string.Empty;
+            }
+            catch (InvalidOperationException ex)
+            {
+                // The decryption service wraps invalid Base64, a payload no longer than the IV, and a
+                // wrong-key failure in this one exception type. Catching only it keeps an unrelated
+                // runtime or programming defect from being reinterpreted as absent configuration.
+                // The exception object itself is not logged, so the no-secret guarantee is this
+                // boundary's own rather than the decryptor's message discipline: the tenant, parent
+                // data store, derivative type, and exception type identify the bad row, and nothing
+                // about the ciphertext, the plaintext, the key, or any connection string can leak.
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - Deliberate: the exception object is withheld so nothing it might carry can reach the log; its type name travels in the message template instead
+                logger.LogError(
+                    "Unable to decrypt the connection string for the {DerivativeType} derivative of tenant {Tenant}, parent data store {DataStoreId} ({ExceptionType}). That derivative is treated as not configured; the parent data store and its remaining derivatives are unaffected",
+                    derivativeType,
+                    sanitizedTenant,
+                    response.Id,
+                    ex.GetType().Name
+                );
+#pragma warning restore S6667
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(plainText))
+            {
+                continue;
+            }
+
+            if (derivatives.Exists(accepted => accepted.Key == derivativeType))
+            {
+                logger.LogError(
+                    "Ignoring a duplicate {DerivativeType} derivative for tenant {Tenant}, parent data store {DataStoreId}, and retaining the first. At most one derivative of each type may exist per data store, so a duplicate is a violated configuration invariant rather than a supported way to replace a derivative",
+                    derivativeType,
+                    sanitizedTenant,
+                    response.Id
+                );
+                continue;
+            }
+
+            derivatives.Add(new KeyValuePair<DataStoreDerivativeType, string>(derivativeType, plainText));
+        }
+
+        return derivatives;
     }
 
     private static (
@@ -408,12 +658,6 @@ public class ConfigurationServiceDataStoreProvider(
             : (null, RelationalProviderMetadataStatus.Unknown);
     }
 
-    /// <summary>
-    /// Sets the Tenant header for multi-tenant API calls
-    /// </summary>
-    /// <param name="tenant">The tenant identifier, or null to remove the header</param>
-    // SetTenantHeader is no longer needed; per-request headers are now used for thread safety.
-
     private SemaphoreSlim GetTenantLock(string tenantKey) =>
         _tenantLocks.GetOrAdd(tenantKey, _ => new SemaphoreSlim(1, 1));
 
@@ -430,6 +674,7 @@ public class ConfigurationServiceDataStoreProvider(
         public string? RelationalProviderToken { get; init; } = null;
         public string? Provider { get; init; } = null;
         public IList<DataStoreContextItem> DataStoreContexts { get; init; } = [];
+        public IList<DataStoreDerivativeItem> DataStoreDerivatives { get; init; } = [];
     }
 
     /// <summary>
@@ -441,6 +686,21 @@ public class ConfigurationServiceDataStoreProvider(
         public long DataStoreId { get; init; } = 0;
         public string ContextKey { get; init; } = string.Empty;
         public string ContextValue { get; init; } = string.Empty;
+    }
+
+    /// <summary>
+    /// Response model for derivative items within a data store response. Both string members are
+    /// nullable because the Configuration Service may omit either, and because both absence and a null
+    /// value carry meaning: an unrecognized or missing type is ignored, and a missing connection string
+    /// means that derivative is not configured. The connection string arrives Base64-encoded and
+    /// encrypted, exactly like the parent's.
+    /// </summary>
+    private sealed class DataStoreDerivativeItem
+    {
+        public long Id { get; init; } = 0;
+        public long DataStoreId { get; init; } = 0;
+        public string? DerivativeType { get; init; } = null;
+        public string? ConnectionString { get; init; } = null;
     }
 
     /// <summary>

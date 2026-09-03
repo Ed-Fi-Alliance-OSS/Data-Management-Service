@@ -204,6 +204,13 @@ jobs:
               throw "$($result.FailedCount) OpenIddict crypto test(s) failed."
           }
 
+      - name: Run Config MSSQL Compose Startup Tests
+        run: |
+          $result = Invoke-Pester -Path "eng/docker-compose/tests/ConfigMssqlComposeStartup.Tests.ps1" -Output Detailed -PassThru
+          if ($result.FailedCount -gt 0 -or $result.FailedContainersCount -gt 0 -or $result.FailedBlocksCount -gt 0) {
+              throw "Config MSSQL compose startup Pester lane failed: $($result.FailedCount) test(s), $($result.FailedContainersCount) container(s), $($result.FailedBlocksCount) block(s)."
+          }
+
       # Guards build-config.ps1's test targets against reporting success when the test-assembly glob
       # matched nothing, which would otherwise exit 0 having executed zero tests.
       - name: Run Build Script Zero-Test Guard Tests

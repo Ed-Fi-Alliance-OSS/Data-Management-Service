@@ -88,6 +88,17 @@ public abstract class ClaimsManagementModuleTests
     }
 
     /// <summary>
+    /// Configures the shared IClaimsProvider fake with the claims document GetCurrentClaims returns and
+    /// the reload id both claims endpoints report.
+    /// </summary>
+    protected void ArrangeCurrentClaims(JsonNode claimSetsNode, JsonNode claimsHierarchyNode, Guid reloadId)
+    {
+        A.CallTo(() => _claimsProvider.GetClaimsDocumentNodes())
+            .Returns(new ClaimsDocument(claimSetsNode, claimsHierarchyNode));
+        A.CallTo(() => _claimsProvider.ReloadId).Returns(reloadId);
+    }
+
+    /// <summary>
     /// Asserts the full Ed-Fi internal-server-error contract for a 500 response and proves the raw
     /// exception text (<paramref name="secretThatMustNotLeak"/>) is absent from the body, including
     /// the legacy ad-hoc singular <c>error</c>/<c>message</c> members.
@@ -129,8 +140,53 @@ public abstract class ClaimsManagementModuleTests
     protected void ArrangeUploadThrows(Exception exception) =>
         A.CallTo(() => _claimsUploadService.UploadClaimsAsync(A<JsonNode>._)).Throws(exception);
 
+    // A non-empty JSON object in the canonical (unwrapped) upload shape. Fixtures using it stub the
+    // upload service, so only "reaches the handler as a JSON object" matters to them.
     protected static StringContent NonEmptyUploadBody() =>
-        new("{\"claims\":{\"placeholder\":true}}", Encoding.UTF8, "application/json");
+        new("{\"claimSets\":[],\"claimsHierarchy\":[]}", Encoding.UTF8, "application/json");
+
+    /// <summary>
+    /// Builds a real <see cref="ClaimsUploadService"/> whose persistence layer reports success, so a
+    /// fixture exercises the production upload path (structure checks, validation, failure mapping)
+    /// instead of a stubbed status. Pass the real <see cref="ClaimsValidator"/> to additionally prove the
+    /// payload satisfies the canonical claims JSON schema.
+    /// </summary>
+    protected static ClaimsUploadService CreateRealUploadService(IClaimsValidator claimsValidator)
+    {
+        IClaimsDataLoader claimsDataLoader = A.Fake<IClaimsDataLoader>();
+        A.CallTo(() => claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocument>._))
+            .Returns(new ClaimsDataLoadResult.Success(ClaimSetsLoaded: 1, HierarchyLoaded: true));
+
+        return new ClaimsUploadService(
+            A.Fake<ILogger<ClaimsUploadService>>(),
+            A.Fake<IClaimsProvider>(),
+            claimsDataLoader,
+            claimsValidator
+        );
+    }
+
+    /// <summary>
+    /// Asserts the 400 produced by a body that carries neither canonical claims-document property: one
+    /// validation entry per property, keyed by the property name the caller must supply.
+    /// </summary>
+    protected static async Task AssertMissingClaimsDocumentPropertiesContract(HttpResponseMessage response) =>
+        await AssertDataValidationContract(
+            response,
+            validationErrors =>
+            {
+                validationErrors.Count.Should().Be(2);
+                validationErrors["claimSets"]!
+                    .AsArray()
+                    .Select(node => node!.GetValue<string>())
+                    .Should()
+                    .Equal("Missing required 'claimSets' property");
+                validationErrors["claimsHierarchy"]!
+                    .AsArray()
+                    .Select(node => node!.GetValue<string>())
+                    .Should()
+                    .Equal("Missing required 'claimsHierarchy' property");
+            }
+        );
 
     /// <summary>
     /// Asserts the generic Ed-Fi bad-request contract (empty extension members, fixed safe detail) and
@@ -659,27 +715,56 @@ public abstract class ClaimsManagementModuleTests
         }
     }
 
-    /// <summary>A null Claims body becomes data validation keyed by "Claims" (400).</summary>
+    /// <summary>
+    /// An empty JSON object is a well-formed request whose two canonical claims properties are both
+    /// absent, so the response names those properties rather than a request wrapper.
+    /// </summary>
     [TestFixture]
-    public class Given_upload_claims_is_null : ClaimsManagementModuleTests
+    public class Given_upload_claims_receives_an_empty_json_object : ClaimsManagementModuleTests
     {
         [SetUp]
         public void Setup() =>
-            ArrangeAuthenticatedClient(AuthorizationScopes.AdminScope.Name, dangerousFlagEnabled: true);
+            ArrangeAuthenticatedClient(
+                AuthorizationScopes.AdminScope.Name,
+                dangerousFlagEnabled: true,
+                uploadServiceOverride: CreateRealUploadService(A.Fake<IClaimsValidator>())
+            );
 
         [Test]
-        public async Task It_should_return_data_validation_for_the_claims_field()
+        public async Task It_should_report_both_missing_claims_document_properties()
         {
             var response = await Client.PostAsync(UploadClaimsRoute, EmptyJsonBody());
-            await AssertDataValidationContract(
-                response,
-                validationErrors =>
-                {
-                    validationErrors.Count.Should().Be(1);
-                    validationErrors["Claims"]!.AsArray().Count.Should().Be(1);
-                    validationErrors["Claims"]![0]!.GetValue<string>().Should().Be("Claims JSON is required");
-                }
+            await AssertMissingClaimsDocumentPropertiesContract(response);
+        }
+    }
+
+    /// <summary>
+    /// The endpoint accepts only the canonical claims document, so a body nesting that document under a
+    /// "claims" property is rejected with the same actionable 400 that names the two required
+    /// properties. The canonical schema forbids the nested shape (root additionalProperties: false).
+    /// </summary>
+    [TestFixture]
+    public class Given_upload_claims_receives_a_nested_claims_property : ClaimsManagementModuleTests
+    {
+        [SetUp]
+        public void Setup() =>
+            ArrangeAuthenticatedClient(
+                AuthorizationScopes.AdminScope.Name,
+                dangerousFlagEnabled: true,
+                uploadServiceOverride: CreateRealUploadService(A.Fake<IClaimsValidator>())
             );
+
+        [Test]
+        public async Task It_should_report_both_missing_claims_document_properties()
+        {
+            using var nestedBody = new StringContent(
+                """{"claims":{"claimSets":[],"claimsHierarchy":[]}}""",
+                Encoding.UTF8,
+                "application/json"
+            );
+
+            var response = await Client.PostAsync(UploadClaimsRoute, nestedBody);
+            await AssertMissingClaimsDocumentPropertiesContract(response);
         }
     }
 
@@ -894,7 +979,7 @@ public abstract class ClaimsManagementModuleTests
         public async Task It_should_return_the_internal_server_error_contract()
         {
             using var content = new StringContent(
-                """{"claims":{"claimSets":[],"claimsHierarchy":[]}}""",
+                """{"claimSets":[],"claimsHierarchy":[]}""",
                 Encoding.UTF8,
                 "application/json"
             );
@@ -983,7 +1068,7 @@ public abstract class ClaimsManagementModuleTests
         public async Task It_returns_the_data_validation_contract_instead_of_an_empty_body()
         {
             using var malformedBody = new StringContent(
-                "{\"claims\":{\"claimSets\":[],}}",
+                "{\"claimSets\":[],}",
                 Encoding.UTF8,
                 "application/json"
             );
@@ -1029,8 +1114,8 @@ public abstract class ClaimsManagementModuleTests
             );
         }
 
-        [TestCase("""{"claims":[]}""")]
-        [TestCase("""{"claims":"x"}""")]
+        [TestCase("[]")]
+        [TestCase("\"x\"")]
         public async Task It_returns_the_data_validation_contract_at_the_document_root(string requestBody)
         {
             using var content = new StringContent(requestBody, Encoding.UTF8, "application/json");
@@ -1089,5 +1174,158 @@ public abstract class ClaimsManagementModuleTests
             var response = await Client.PostAsync(UploadClaimsRoute, NonEmptyUploadBody());
             await AssertGenericBadRequestContract(response, Sentinel);
         }
+    }
+
+    /// <summary>
+    /// The upload request body stays required: an absent body is rejected by model binding before the
+    /// handler runs, keeping the same missing-body contract every other CMS write endpoint returns.
+    /// </summary>
+    [TestFixture]
+    public class Given_upload_claims_receives_no_request_body : ClaimsManagementModuleTests
+    {
+        [SetUp]
+        public void Setup() =>
+            ArrangeAuthenticatedClient(AuthorizationScopes.AdminScope.Name, dangerousFlagEnabled: true);
+
+        [Test]
+        public async Task It_returns_the_missing_body_bad_request_contract()
+        {
+            var response = await Client.PostAsync(UploadClaimsRoute, content: null);
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+            JsonNode body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
+            body["title"]!.GetValue<string>().Should().Be("Bad Request");
+            body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            body["errors"]!
+                .AsArray()
+                .Select(node => node!.GetValue<string>())
+                .Should()
+                .Equal("A non-empty request body is required.");
+        }
+    }
+
+    /// <summary>
+    /// A literal JSON null body deserializes to no document at all, so it is treated as a missing body
+    /// rather than reaching the upload service.
+    /// </summary>
+    [TestFixture]
+    public class Given_upload_claims_receives_a_literal_null_body : ClaimsManagementModuleTests
+    {
+        [SetUp]
+        public void Setup() =>
+            ArrangeAuthenticatedClient(AuthorizationScopes.AdminScope.Name, dangerousFlagEnabled: true);
+
+        [Test]
+        public async Task It_returns_the_missing_body_bad_request_contract()
+        {
+            using var nullBody = new StringContent("null", Encoding.UTF8, "application/json");
+
+            var response = await Client.PostAsync(UploadClaimsRoute, nullBody);
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+            JsonNode body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
+            body["errors"]!
+                .AsArray()
+                .Select(node => node!.GetValue<string>())
+                .Should()
+                .Equal("A non-empty request body is required.");
+        }
+    }
+
+    /// <summary>
+    /// The uniform-contract guarantee: the exact body returned by GET /management/current-claims is
+    /// accepted by POST /management/upload-claims with no wrapping, editing or reformatting. The real
+    /// ClaimsValidator is used, so this also proves the downloaded document satisfies the canonical
+    /// claims JSON schema.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_current_claims_response_is_uploaded_unchanged : ClaimsManagementModuleTests
+    {
+        private static readonly Guid _currentReloadId = new("11111111-2222-3333-4444-555555555555");
+
+        private HttpResponseMessage _getResponse = null!;
+        private string _downloadedClaims = null!;
+        private HttpResponseMessage _uploadResponse = null!;
+        private JsonObject _uploadResponseBody = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ArrangeCurrentClaims(
+                JsonNode.Parse("""[{ "claimSetName": "RoundTripClaimSet", "isSystemReserved": false }]""")!,
+                JsonNode.Parse(
+                    """
+                    [
+                      {
+                        "name": "http://ed-fi.org/identity/claims/domains/edFiTypes",
+                        "claimSets": [{ "name": "RoundTripClaimSet", "actions": [{ "name": "Read" }] }]
+                      }
+                    ]
+                    """
+                )!,
+                _currentReloadId
+            );
+            ArrangeAuthenticatedClient(
+                AuthorizationScopes.AdminScope.Name,
+                dangerousFlagEnabled: true,
+                uploadServiceOverride: CreateRealUploadService(
+                    new ClaimsValidator(A.Fake<ILogger<ClaimsValidator>>())
+                )
+            );
+
+            _getResponse = await Client.GetAsync(CurrentClaimsRoute);
+            _downloadedClaims = await _getResponse.Content.ReadAsStringAsync();
+
+            // Posted back exactly as downloaded: no wrapper, no re-serialization.
+            using StringContent uploadBody = new(_downloadedClaims, Encoding.UTF8, "application/json");
+            _uploadResponse = await Client.PostAsync(UploadClaimsRoute, uploadBody);
+            _uploadResponseBody = JsonNode
+                .Parse(await _uploadResponse.Content.ReadAsStringAsync())!
+                .AsObject();
+        }
+
+        [TearDown]
+        public void DisposeResponses()
+        {
+            _getResponse?.Dispose();
+            _uploadResponse?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_the_current_claims_with_the_reload_id_header()
+        {
+            _getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            _getResponse.Headers.GetValues("X-Reload-Id").Should().Equal(_currentReloadId.ToString());
+        }
+
+        [Test]
+        public void It_downloads_the_canonical_claims_document_shape() =>
+            JsonNode
+                .Parse(_downloadedClaims)!
+                .AsObject()
+                .Select(property => property.Key)
+                .Should()
+                .Equal("claimSets", "claimsHierarchy");
+
+        [Test]
+        public void It_accepts_the_downloaded_document_without_modification() =>
+            _uploadResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        [Test]
+        public void It_reports_a_successful_upload_with_a_reload_id()
+        {
+            _uploadResponseBody["success"]!.GetValue<bool>().Should().BeTrue();
+            Guid.TryParse(_uploadResponseBody["reloadId"]!.GetValue<string>(), out _).Should().BeTrue();
+        }
+
+        [Test]
+        public void It_reports_no_validation_errors() =>
+            _uploadResponseBody.ContainsKey("validationErrors").Should().BeFalse();
     }
 }

@@ -238,7 +238,11 @@ internal class GetByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePip
             DocumentUuid: requestInfo.PathComponents.DocumentUuid,
             ResourceInfo: requestInfo.ResourceInfo,
             MappingSet: mappingSet,
-            AuthorizationContext: RelationalAuthorizationContext.Create(requestInfo.ClientAuthorizations),
+            AuthorizationContext: RelationalAuthorizationContext.Create(
+                requestInfo.ClientAuthorizations,
+                requestInfo.ApplicationContext?.CreatorOwnershipTokenId,
+                requestInfo.ApplicationContext?.OwnershipTokenIds
+            ),
             AuthorizationStrategyEvaluators: requestInfo.AuthorizationStrategyEvaluators,
             TraceId: requestInfo.FrontendRequest.TraceId,
             TenantKey: requestInfo.FrontendRequest.Tenant ?? string.Empty,

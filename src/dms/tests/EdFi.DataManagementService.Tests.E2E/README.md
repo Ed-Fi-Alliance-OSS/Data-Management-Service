@@ -33,21 +33,21 @@ same public entry point against SQL Server. The `-DatabaseEngine mssql` value co
 ### PostgreSQL (default engine)
 
 ```pwsh
-# Default engine (PostgreSQL), self-contained identity, full DS 5.2 suite. The exclusion filter drops
-# the unsharded @StandardVersion-6_1 scenarios, whose assertions require a DS 6.1 stack and would fail
-# against the default DS 5.2 provisioning (run those with the DS 6.1 commands below):
-pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category!=@StandardVersion-6_1'
+# Default engine (PostgreSQL), self-contained identity, standard DS 5.2 suite. The exclusion filter
+# drops the unsharded @StandardVersion-6_1 scenarios and the separately configured DocumentCache
+# fixture (run those with the focused commands below):
+pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)'
 
 # Explicit engine is equivalent to the default:
-pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine postgresql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category!=@StandardVersion-6_1'
+pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine postgresql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)'
 ```
 
 ### SQL Server (MSSQL)
 
 ```pwsh
-# SQL Server, self-contained identity, full DS 5.2 suite. As above, exclude the DS 6.1-only scenarios
-# that require a DS 6.1 stack:
-pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category!=@StandardVersion-6_1'
+# SQL Server, self-contained identity, standard DS 5.2 suite. As above, exclude the DS 6.1-only
+# scenarios and the separately configured DocumentCache fixture:
+pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)'
 
 # SQL Server, self-contained identity, bounded representative cross-section (the PR-gated signal):
 pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@MssqlRepresentative'
@@ -66,6 +66,7 @@ Any run can be narrowed with `-TestFilter 'Category=@<tag>'`. Common tags:
 | `Category=@e2e-ci-shard-1` … `-4`   | One of the four DS 5.2 CI shards.                                        |
 | `Category=@MssqlRepresentative`     | The bounded SQL Server representative cross-section (a subset of DS 5.2).|
 | `Category=@StandardVersion-6_1`     | The DS 6.1 version-coupled scenarios (XSD metadata, Discovery, and a datastore round-trip smoke that proves a public data-plane request reaches the DS 6.1 datastore); run only against a DS 6.1 stack (`-DataStandardVersion 6.1`). |
+| `Category=@DocumentCacheHostedHappyPath` | The hosted DocumentCache fixture; run only with `-EnvironmentOverlayFile './.env.document-cache.e2e'`. |
 
 ```pwsh
 # Data Standard 6.1 focused run (add -DataStandardVersion 6.1). The DS 6.1 PostgreSQL lane
@@ -79,9 +80,17 @@ pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityPr
 pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter 'Category=@StandardVersion-6_1'
 ```
 
-The `@MssqlRepresentative` and `@StandardVersion-6_1` filters carry no shard, so the run writes
-`TestResults/EdFi.DataManagementService.Tests.E2E.filtered.trx`; a shard filter writes
-`...E2E.e2e-shard-<N>.trx`.
+The hosted DocumentCache fixture has an explicit environment overlay so ordinary E2E runs retain
+the production default of disabled read acceleration:
+
+```pwsh
+pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -EnvironmentOverlayFile './.env.document-cache.e2e' -TestFilter 'Category=@DocumentCacheHostedHappyPath'
+```
+
+The DocumentCache filter writes
+`TestResults/EdFi.DataManagementService.Tests.E2E.e2e-document-cache.trx`. The
+`@MssqlRepresentative` and `@StandardVersion-6_1` filters carry no shard and write
+`...E2E.filtered.trx`; a shard filter writes `...E2E.e2e-shard-<N>.trx`.
 
 > [!IMPORTANT]
 > A filtered run only matches scenarios whose tags are compiled into the current Release test

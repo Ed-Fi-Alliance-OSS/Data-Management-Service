@@ -604,8 +604,10 @@ public sealed class DocumentCacheTargetContextBuilder(
         DatabaseFingerprint? databaseFingerprint;
         try
         {
+            // A configured DocumentCache target names a data store's own database, so this validation
+            // is primary by construction rather than by defaulting.
             databaseFingerprint = await databaseFingerprintReader
-                .ReadFingerprintAsync(connectionValue)
+                .ReadFingerprintAsync(EffectiveDataStoreTarget.Primary(connectionValue))
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -676,7 +678,7 @@ public sealed class DocumentCacheTargetContextBuilder(
                     effectiveSchema.ResourceKeyCount,
                     [.. effectiveSchema.ResourceKeySeedHash],
                     effectiveSchema.ResourceKeysInIdOrder.ToResourceKeyRows(),
-                    connectionValue,
+                    EffectiveDataStoreTarget.Primary(connectionValue),
                     cancellationToken
                 )
                 .ConfigureAwait(false);

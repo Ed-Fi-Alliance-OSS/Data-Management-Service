@@ -7,51 +7,28 @@ using System.Data;
 using System.Data.Common;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.Configuration;
-using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Backend.Mssql;
 
 internal sealed class MssqlRelationalWriteSessionFactory : IRelationalWriteSessionFactory
 {
-    private readonly Func<CancellationToken, Task<DbConnection>> _openConnectionAsync;
+    private readonly Func<CancellationToken, Task<MssqlLeasedConnection>> _openConnectionAsync;
     private readonly IsolationLevel _isolationLevel;
 
     public MssqlRelationalWriteSessionFactory(
         IDataStoreSelection dataStoreSelection,
-        IOptions<DatabaseOptions> databaseOptions
-    )
-        : this(dataStoreSelection, connectionString => new SqlConnection(connectionString), databaseOptions)
-    { }
-
-    internal MssqlRelationalWriteSessionFactory(
-        IDataStoreSelection dataStoreSelection,
-        Func<string, DbConnection> createConnection,
+        IMssqlConnectionAcquisition acquisition,
         IOptions<DatabaseOptions> databaseOptions
     )
     {
         ArgumentNullException.ThrowIfNull(dataStoreSelection);
-        ArgumentNullException.ThrowIfNull(createConnection);
+        ArgumentNullException.ThrowIfNull(acquisition);
         ArgumentNullException.ThrowIfNull(databaseOptions);
 
         _isolationLevel = databaseOptions.Value.IsolationLevel;
-        _openConnectionAsync = async cancellationToken =>
-        {
-            var selectedInstance = dataStoreSelection.GetSelectedDataStore();
-            var connectionString = selectedInstance.ConnectionString;
-
-            if (string.IsNullOrWhiteSpace(connectionString))
-            {
-                throw new InvalidOperationException(
-                    $"Selected data store '{selectedInstance.Id}' does not have a valid connection string."
-                );
-            }
-
-            var connection = createConnection(connectionString);
-            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-
-            return connection;
-        };
+        _openConnectionAsync = cancellationToken =>
+            MssqlSeamConnection.OpenAsync(dataStoreSelection, acquisition, cancellationToken);
     }
 
     internal MssqlRelationalWriteSessionFactory(
@@ -59,25 +36,38 @@ internal sealed class MssqlRelationalWriteSessionFactory : IRelationalWriteSessi
         IsolationLevel isolationLevel
     )
     {
-        _openConnectionAsync =
-            openConnectionAsync ?? throw new ArgumentNullException(nameof(openConnectionAsync));
+        ArgumentNullException.ThrowIfNull(openConnectionAsync);
+
+        _openConnectionAsync = async cancellationToken =>
+            MssqlLeasedConnection.WithoutLease(
+                await openConnectionAsync(cancellationToken).ConfigureAwait(false)
+            );
         _isolationLevel = isolationLevel;
     }
 
     public async Task<IRelationalWriteSession> CreateAsync(CancellationToken cancellationToken = default)
     {
-        var connection = await _openConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var leased = await _openConnectionAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
-            var transaction = await connection
-                .BeginTransactionAsync(_isolationLevel, cancellationToken)
+            var transaction = await leased
+                .Connection.BeginTransactionAsync(_isolationLevel, cancellationToken)
                 .ConfigureAwait(false);
-            return new RelationalWriteSession(connection, transaction, MssqlTransactionStateProbe.Instance);
+
+            // Ownership of the connection and of the claim it was drawn from both transfer to the
+            // session, which disposes the connection first and releases the claim second.
+            return new RelationalWriteSession(
+                leased.Connection,
+                transaction,
+                MssqlTransactionStateProbe.Instance,
+                ownedLease: leased.Lease
+            );
         }
         catch
         {
-            await connection.DisposeAsync().ConfigureAwait(false);
+            // Cleanup must not replace the transaction failure the caller needs to see.
+            await MssqlLeasedConnection.DisposeWithoutMaskingAsync(leased).ConfigureAwait(false);
             throw;
         }
     }

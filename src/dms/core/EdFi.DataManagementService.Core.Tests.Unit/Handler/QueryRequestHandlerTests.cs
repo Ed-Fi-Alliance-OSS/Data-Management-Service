@@ -1135,6 +1135,15 @@ public class QueryRequestHandlerTests
                 ],
                 DataStoreIds: []
             );
+            _requestInfo.ApplicationContext = new(
+                Id: 1,
+                ApplicationId: 2,
+                ClientId: "client-id",
+                ClientUuid: Guid.Parse("33333333-3333-3333-3333-333333333333"),
+                DataStoreIds: [],
+                CreatorOwnershipTokenId: 303,
+                OwnershipTokenIds: [202, 404]
+            );
 
             var (queryHandler, serviceProvider) = Handler(_repository);
             _requestInfo.ScopedServiceProvider = serviceProvider;
@@ -1152,6 +1161,8 @@ public class QueryRequestHandlerTests
             _repository
                 .CapturedRequest.AuthorizationContext.NamespacePrefixes.Should()
                 .Equal("uri://sample-a.org", "uri://sample-b.org");
+            _repository.CapturedRequest.AuthorizationContext.CreatorOwnershipTokenId.Should().Be(303);
+            _repository.CapturedRequest.AuthorizationContext.OwnershipTokenIds.Should().Equal(202, 404);
             _repository.CapturedRequest.ResourceInfo.Should().BeSameAs(_requestInfo.ResourceInfo);
             _repository.CapturedRequest.QueryElements.Should().BeSameAs(_queryElements);
             _repository
@@ -1242,6 +1253,24 @@ public class QueryRequestHandlerTests
             _repository
                 .CapturedRequest.AuthorizationContext.NamespacePrefixes.Should()
                 .Equal(directlyConstructedContext.NamespacePrefixes);
+        }
+
+        [Test]
+        public void It_snapshots_the_optional_ownership_projection_defensively()
+        {
+            short[] ownershipTokenIds = [202, 404];
+
+            RelationalAuthorizationContext context = RelationalAuthorizationContext.Create(
+                _requestInfo.ClientAuthorizations,
+                creatorOwnershipTokenId: 303,
+                ownershipTokenIds
+            );
+            ownershipTokenIds[0] = 999;
+
+            context.CreatorOwnershipTokenId.Should().Be(303);
+            context.OwnershipTokenIds.Should().Equal(202, 404);
+            context.ClaimEducationOrganizationIds.Should().Equal(255900L, 255901L, 255902L);
+            context.NamespacePrefixes.Should().Equal("uri://sample-a.org", "uri://sample-b.org");
         }
 
         [Test]

@@ -711,6 +711,16 @@ public static class AspNetCoreFrontend
             }
         }
 
+        // Every data-plane GET's target selection depends on Use-Snapshot: a parsed true routes the
+        // same URI to a different physical database, which can change the representation, its
+        // validator, or the status itself - a missing snapshot answers 404 where the primary answers
+        // 200. Declared for every GET emitted through this boundary, error statuses included, so a
+        // cache never reuses a response across requests that differ on the selector.
+        if (HttpMethods.IsGet(httpContext.Request.Method))
+        {
+            AppendVaryHeaderIfMissing(httpContext.Response, "Use-Snapshot");
+        }
+
         // Successful resource GETs can vary by readable profile/media type. They can also vary by
         // content coding when response compression is enabled, including query responses whose item
         // etags carry the selected coding and 304 responses whose empty body bypasses compression

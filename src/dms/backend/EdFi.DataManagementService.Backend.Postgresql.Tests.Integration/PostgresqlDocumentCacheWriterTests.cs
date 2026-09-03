@@ -324,6 +324,44 @@ public class Given_A_Postgresql_DocumentCacheWriter
     }
 
     [Test]
+    public async Task It_acknowledges_equal_version_work_without_applying_a_stale_candidate()
+    {
+        var telemetry = new RecordingDocumentCacheWriterTelemetry();
+        _writer = CreateWriter(telemetry: telemetry);
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        DateTimeOffset originalComputedAt = new(2026, 1, 2, 3, 4, 5, TimeSpan.Zero);
+        await InsertCacheRowAsync(source, contentVersion: 10, computedAt: originalComputedAt);
+        string beforeComputedAt = await ReadCacheComputedAtTextAsync(source.DocumentId);
+        DocumentCacheMaterializationCandidate staleCandidate = CreateCandidate(
+            source,
+            "stale-candidate-should-not-write",
+            contentVersion: 9
+        );
+
+        DocumentCacheWriterResult result = await WriteAsync(source, staleCandidate);
+
+        result
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.AlreadyCurrentAcknowledged>()
+            .Which.AcknowledgedContentVersion.Should()
+            .Be(10);
+        CacheRow cacheRow = await ReadCacheRowAsync(source.DocumentId);
+        cacheRow.ContentVersion.Should().Be(10);
+        cacheRow.StreamEtag.Should().Be("etag-10");
+        JsonNode.Parse(cacheRow.DocumentJson)!["value"]!.GetValue<string>().Should().Be("cache-10");
+        (await ReadCacheComputedAtTextAsync(source.DocumentId)).Should().Be(beforeComputedAt);
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadCacheAheadLatchAsync()).Should().BeFalse();
+        telemetry
+            .Records.Should()
+            .Contain(record =>
+                record.Name == RecordingDocumentCacheWriterTelemetry.Outcome
+                && record.Context.Outcome == nameof(DocumentCacheWriterOutcome.AlreadyCurrentAcknowledged)
+            );
+    }
+
+    [Test]
     public async Task It_returns_already_current_without_work_when_cache_matches_source()
     {
         await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
@@ -917,6 +955,70 @@ public class Given_A_Postgresql_DocumentCacheWriter
 
     [Test]
     [Category("DocumentCacheWriterConcurrency")]
+    public async Task DocumentCacheWriterConcurrency_it_resolves_projector_and_direct_fill_racing_same_stale_cache_work()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        await InsertCacheRowAsync(source, contentVersion: 9);
+        DocumentCacheMaterializationCandidate projectorCandidate = CreateCandidate(
+            source,
+            "projector-race-winner"
+        );
+        DocumentCacheMaterializationCandidate directFillCandidate = CreateCandidate(
+            source,
+            "direct-fill-race-contender"
+        );
+        PausingFaultInjectionObserver observer = new(
+            DocumentCacheWriterFaultInjectionHook.AfterCacheDmlBeforeAcknowledgement
+        );
+        PostgresqlDocumentCacheWriter pausedProjectorWriter = CreateWriter(observer);
+
+        Task<DocumentCacheWriterResult> projectorWrite = pausedProjectorWriter.WriteAsync(
+            CreateRequest(source, projectorCandidate, DocumentCacheWriterPurpose.DurableWorkProjection)
+        );
+
+        await observer.WaitUntilReachedAsync(TimeSpan.FromSeconds(10));
+
+        Task<DocumentCacheWriterResult> directFillWrite = _writer.WriteAsync(
+            CreateRequest(source, directFillCandidate, DocumentCacheWriterPurpose.DirectFill)
+        );
+
+        observer.Release();
+
+        DocumentCacheWriterResult[] results = await Task.WhenAll(projectorWrite, directFillWrite)
+            .WaitAsync(TimeSpan.FromSeconds(30));
+        DocumentCacheWriterOutcome[] outcomes = results.Select(result => result.Outcome).ToArray();
+
+        outcomes
+            .Count(outcome => outcome == DocumentCacheWriterOutcome.CandidateWrittenAcknowledged)
+            .Should()
+            .Be(1);
+        outcomes
+            .Should()
+            .BeSubsetOf([
+                DocumentCacheWriterOutcome.CandidateWrittenAcknowledged,
+                DocumentCacheWriterOutcome.AlreadyCurrentNoWork,
+                DocumentCacheWriterOutcome.RacingWriterLost,
+            ]);
+
+        results[0]
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.CandidateWrittenAcknowledged>()
+            .Which.AcknowledgedContentVersion.Should()
+            .Be(10);
+
+        CacheRow cacheRow = await ReadCacheRowAsync(source.DocumentId);
+        cacheRow.ContentVersion.Should().Be(10);
+        JsonNode.Parse(cacheRow.DocumentJson)!["value"]!
+            .GetValue<string>()
+            .Should()
+            .Be("projector-race-winner");
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadCacheAheadLatchAsync()).Should().BeFalse();
+    }
+
+    [Test]
+    [Category("DocumentCacheWriterConcurrency")]
     public async Task DocumentCacheWriterConcurrency_it_rolls_back_cache_write_when_source_and_work_advance_before_acknowledgement()
     {
         await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
@@ -942,6 +1044,68 @@ public class Given_A_Postgresql_DocumentCacheWriter
         (await ReadCacheCountAsync(source.DocumentId)).Should().Be(0);
         (await ReadWorkRequiredContentVersionAsync(source.DocumentId)).Should().Be(11);
         (await ReadCacheAheadLatchAsync()).Should().BeFalse();
+    }
+
+    [Test]
+    [Category("DocumentCacheWriterConcurrency")]
+    public async Task DocumentCacheWriterConcurrency_it_blocks_same_document_canonical_enqueue_during_acknowledgement_without_blocking_unrelated_documents()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        await InsertCacheRowAsync(source, contentVersion: 10);
+        SourceDocument unrelatedSource = await InsertSourceDocumentAsync(contentVersion: 20);
+        PausingFaultInjectionObserver observer = new(
+            DocumentCacheWriterFaultInjectionHook.AfterAcknowledgementBeforeCommit
+        );
+        PostgresqlDocumentCacheWriter pausedWriter = CreateWriter(observer);
+
+        Task<DocumentCacheWriterResult> acknowledgement = pausedWriter.WriteAsync(
+            CreateRequest(source, candidate: null)
+        );
+
+        await observer.WaitUntilReachedAsync(TimeSpan.FromSeconds(10));
+
+        try
+        {
+            await AttemptContentVersionAdvanceWithShortLockTimeoutAsync(
+                unrelatedSource.DocumentId,
+                contentVersion: 21
+            );
+
+            PostgresException exception = (
+                await FluentActions
+                    .Awaiting(() =>
+                        AttemptContentVersionAdvanceWithShortLockTimeoutAsync(
+                            source.DocumentId,
+                            contentVersion: 11
+                        )
+                    )
+                    .Should()
+                    .ThrowAsync<PostgresException>()
+            ).Which;
+
+            exception.SqlState.Should().Be(PostgresErrorCodes.LockNotAvailable);
+            new PostgresqlRelationalWriteExceptionClassifier()
+                .IsTransientFailure(exception)
+                .Should()
+                .BeTrue();
+        }
+        finally
+        {
+            observer.Release();
+        }
+
+        DocumentCacheWriterResult result = await acknowledgement.WaitAsync(TimeSpan.FromSeconds(30));
+
+        result
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.AlreadyCurrentAcknowledged>()
+            .Which.AcknowledgedContentVersion.Should()
+            .Be(10);
+        (await ReadSourceContentVersionAsync(source.DocumentId)).Should().Be(10);
+        (await ReadWorkCountAsync(source.DocumentId)).Should().Be(0);
+        (await ReadSourceContentVersionAsync(unrelatedSource.DocumentId)).Should().Be(21);
+        (await ReadWorkRequiredContentVersionAsync(unrelatedSource.DocumentId)).Should().Be(21);
     }
 
     [Test]
@@ -1316,6 +1480,7 @@ public class Given_A_Postgresql_DocumentCacheWriter
                 .BeSubsetOf([
                     DocumentCacheWriterOutcome.CandidateWrittenAcknowledged,
                     DocumentCacheWriterOutcome.AlreadyCurrentAcknowledged,
+                    DocumentCacheWriterOutcome.AlreadyCurrentNoWork,
                     DocumentCacheWriterOutcome.RacingWriterLost,
                 ]);
         }

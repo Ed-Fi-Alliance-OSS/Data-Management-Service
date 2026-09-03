@@ -1,0 +1,1732 @@
+# Plugin Infrastructure Design
+
+## Status
+
+Approved 2026-08-27 by the spike's ticket owner, in session, as the design output of spike `DMS-1462`.
+The approval review produced four revisions, each folded in below rather than tracked separately: the contract package is versioned independently of the DMS release; the class-versus-interface argument is corrected and an additive policy is handed to the per-type contracts; the recording wrapper's removal rule is scoped to host-owned service types; and the host's assembly manifest is published per release as part of the compatibility surface.
+
+**Revision 5 (2026-08-27, panel review).**
+A multi-model review of the approved document and its drafts found forty confirmed defects.
+The load-bearing ones are corrected here rather than tracked as follow-ups, because each of them made a story unimplementable as written.
+
+- **Version skew is detected by comparing versions, not by catching an exception.** A probe on `net10.0` showed `AssemblyLoadContext.Default.LoadFromAssemblyName` throws `FileNotFoundException` both when the host lacks an assembly and when the host carries an older version than the plugin asked for, strong-named or not, so the `FileLoadException` arm the earlier revision shipped was dead code and a version-skewed plugin would silently have received its private copy. Host-first resolution is now by **simple name**, with an explicit version comparison and an eager `.deps.json` preflight. See [Load Isolation](#load-isolation).
+- **Plugin configuration sources are placed below the *last* environment variable source, not the first.** `WebApplication.CreateBuilder(args)` installs ten sources on `net10.0` when no arguments are passed and twelve when they are, not five, and the first environment variable source sits *below* `appsettings.json`. The earlier placement would have let `appsettings.json` shadow a vault value. Probe-verified. See [The Two Composition Phases](#the-two-composition-phases).
+- **Declined `TryAdd` calls are not observable at the `IServiceCollection` seam, so the wrapper stops pretending to record them.** A declined `TryAddSingleton<IFoo, Foo2>` touches only `Count` and the indexer; the candidate descriptor never reaches the wrapper. Replace-cardinality contracts were instead masked from the view each plugin sees, which Revision 6 below withdraws as unsound. See [Contract Cardinality](#contract-cardinality).
+- **The stock image change is not zero.** `src/dms/Dockerfile` builds from a per-project `COPY` list inside the `src/dms/` context, so a new `src/plugins/` tree has to reach it. The "no Dockerfile change" claim is withdrawn. **Superseded in part by Revision 7:** the assignment of the change to the host-integration story is wrong, because the frontend's project reference into `src/plugins/` lands two stories earlier; the build-stage change goes to the story that creates the tree. See [What the Stock Image Must Ship](#what-the-stock-image-must-ship).
+- **The host assembly manifest is generated from the built image, not from the build stage's `.deps.json`.** A framework-dependent publish omits every shared-framework assembly, including the two abstractions in the hook signatures, and `/app/Frontend` exists only in the build stage. Revision 6 below fixes *which* built image. See [Load Isolation](#load-isolation).
+- **The plugin attribution checks live in a frontend-owned startup task, not in Core's.** Core cannot see `EdFi.Api.Plugins.Hosting`'s per-plugin records without a project reference it must not take. See [Where the Code Lives](#where-the-code-lives).
+- **`EdFi.Api.CustomValidation` gets its own semantic version too**, and the loader's preflight covers every declared contract assembly rather than only `EdFi.Api.Plugins`. See [The Plugin Contract](#the-plugin-contract).
+- Smaller corrections folded in without their own bullet: the self-contained discriminator is a `runtimepack` library entry rather than a RID in `runtimeTarget`; unmanaged native assets are supported and their failure mode is stated; allowlist entries carry a name-shape rule and a containment check; the two acquisition recipes are proven in two deployments rather than one, because they cannot share a mount target; the compose mount is an overlay file rather than an unconditional line; `Allowed` ships empty; the inventory hashes every assembly the plugin's own context loaded, which Revision 6 below replaces with what the plugin declares; several citations, the ODS module-ordering claim, and the `IClientSecretHasher` registration count are corrected.
+
+Three findings were examined and **refuted**, and are recorded here so they are not re-litigated: that draft 03 references a Phase A hook (the text is in this document's [Testing Strategy](#testing-strategy) and is already scoped to the secrets story); that the pull-request lane's pack step is cited at the wrong lines; and that draft 03's cloud-SDK criterion forces a `src/plugins` to frontend project reference (the draft already offers the frontend suite as a home).
+
+**Revision 6 (2026-08-27, panel review round 2).**
+A second review, blind to the first round's corrections, found twenty-eight confirmed defects, all of them in text the first round wrote.
+Eight of them needed a decision rather than a correction, and each is taken here with its reasoning rather than handed to implementation.
+
+- **The recording wrapper masks nothing, and attribution is a snapshot-and-diff around each hook.** Masking replace-cardinality descriptors from a plugin's view was the first round's answer to the invisible `TryAdd` decline, and it is probe-refuted: `RemoveAll<T>` and `Replace` read masked indices and write real ones, so over a collection whose first descriptor was masked, `RemoveAll<IC>()` removed the two descriptors it was not asked to remove and kept the one it was. A plugin claiming a replace contract registers it with a plain `Add`, and a plugin that used `TryAdd` and silently declined surfaces through the existing no-contract-registered fatal. See [Contract Cardinality](#contract-cardinality).
+- **The removal exemption's rationale was false and is corrected.** The document said framework and vendor registration helpers call `Replace` and `RemoveAll` internally, and a metadata sweep of `Microsoft.Extensions.Http`, `Options`, `Options.ConfigurationExtensions`, and `Microsoft.Extensions.Azure` 1.11.0 found only `TryAdd*`, `Add*`, `AddOptions`, and `Configure`. The exemption is kept on a different ground. **Superseded in part by Revision 7:** `ClearProviders` does not exercise the exemption, it is a fatal, because DMS wires Serilog inside `AddServices` and Phase B runs after it, so the providers it removes are the host's; the exemption's exercising call is a plugin's own explicit `Replace`. See [Contract Cardinality](#contract-cardinality).
+- **The Docker build lane stops stamping `AssemblyVersion` on the command line.** The contract's independent version is real against `Directory.Build.props` and was false against the lane that builds a local image: `src/dms/Dockerfile` accumulates `/p:AssemblyVersion` into the publish arguments whenever the `ASSEMBLY_VERSION` build argument is non-empty (`:49-55`) and expands them into both `dotnet publish` calls as `"$@"` (`:56-59`); it is a global property that overrides a csproj-declared value and propagates to every project reference. Probe-measured: the same contract project publishes as `1.0.0.0` under the release lane and `8.4.0.0` under that one. See [The Plugin Contract](#the-plugin-contract).
+- **Containment resolves symbolic links rather than normalizing lexically.** `Path.GetFullPath` is lexical, so a plugin directory that is a link out of the root passes the check it was supposed to fail, and the symlink-escape test the document asked for could not have passed. Probe-measured. **The algorithm is superseded by Revision 7:** resolving each side's final component while composing against the *configured* root rejects every plugin under a symbolically linked root, so the root is canonicalized first and the plugin path is composed against the canonical root. See [Trust Model and Verification](#trust-model-and-verification).
+- **The load inventory is what the plugin declares plus what actually loaded, and it stops calling itself authoritative.** Enumerating a context's `Assemblies` after startup misses every lazily loaded request-path assembly and every native library, so the earlier claim that the log said exactly which third-party code was in the process was an overclaim. See [Observability](#observability).
+- **The contract publish policy is publish-when-absent, skip-when-unchanged, fail-when-changed.** Refusing to run when the version is already on the feed would have failed every prerelease after the first, because the prerelease workflow fires on every prerelease and the contract version deliberately does not move with the release. See [The Plugin Contract](#the-plugin-contract).
+- **A throwing Phase B hook fails the `ConfigureServices` phase, not `LoadPlugins`.** Hooks are invoked inside `AddServices`, which the host already runs inside `ConfigureServices`, and `RunBootstrapPhase` records the phase it was given. Moving the invocation would place plugin registrations before the host's own, which is the opposite of what the wrapper's pre-existing-descriptor scope needs. See [Startup Failure Semantics](#startup-failure-semantics).
+- **The host-integration story's fixture plugin implements `ICustomResourceValidator`.** That story runs DMS's production contract registry, in which a plugin registering no declared contract is fatal and `ICustomResourceValidator` is the only declared contract, so a fixture registering an invented contract could not have loaded. The dependency this creates is on the merged DMS-1432 package rather than on any open custom validation story, and the graph stays acyclic. See [README.md](./README.md).
+
+The remaining twenty are corrections rather than decisions, and are folded in without their own bullet.
+The largest is that the host assembly manifest is generated from the released image lane, `src/dms/Nuget.Dockerfile`, and not from `src/dms/Dockerfile`, which builds a local development image and pins a different `aspnet` base digest; the sweep is also scoped to top-level `/app/*.dll`, because `/app/ApiSchemaDownloader` is a second application the host's default context never probes.
+Beside it: the entry assembly's own `AssemblyName` is compared to the plugin name, which is the fourth of four equalities the document required and the only one nothing checked; `LoadUnmanagedDll` must return an `IntPtr` from `LoadUnmanagedDllFromPath` rather than the resolver's `string`; the loader's call site carries the contract assembly set at both places it appears; the `EdFi.Api.CustomValidation` version move touches five call sites rather than one; the two new projects go to two solutions rather than three and draft 02 adds a test project as well as code; the wrapped load failure's quoted message is the one the runtime actually produces; the `.deps.json` preflight's coverage of RID-specific assets is stated rather than assumed; the pull-request relevance filters and the merge trigger gain `src/plugins`; `eng/docker-compose/.env.example` exists and documents the mount variable; allowlist name comparison is stated as ordinal with a case-folded duplicate check; several counts, keys, tense, and line citations are corrected.
+
+Two findings were examined and **refuted**: that draft 04's warning on non-allowlisted directories contradicts this document's discovery rule, which carries the same row in its failure table; and that comparing `AssemblyVersion` alone is an unacknowledged gap, which [Load Isolation](#load-isolation) already acknowledges.
+
+**Revision 7 (2026-08-27, panel review round 3).**
+A third review, blind again, found twenty-five confirmed defects, all of them in text the first two rounds wrote.
+Six needed a decision rather than a correction, and each is taken here.
+
+- **The frontend's project reference and the Dockerfile build-stage change are assigned, and to two different stories.** The document asserted the DMS frontend "already references both Core and `EdFi.Api.Plugins.Hosting`", and it does not: `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj` names Core, Core.External, and the two backends and nothing else. The reference goes to the recording-wrapper story, the first one whose code the frontend must see, and the build-stage change goes **earlier**, to the story that creates `src/plugins/`, because `.github/workflows/on-dms-pullrequest.yml` builds `src/dms/Dockerfile` in nine places on a relevant pull request and would fail on any merge order that reversed the two. This **supersedes** the Revision 5 bullet that assigned the whole Dockerfile change to the host-integration story: that story keeps only the `/p:AssemblyVersion` removal. See [What the Stock Image Must Ship](#what-the-stock-image-must-ship).
+- **Containment canonicalizes the root first and composes against the canonical root.** Revision 6's rule resolved the final component of each side but composed against the *configured* root, which rejects every plugin under a symbolically linked plugin root, because `ResolveLinkTarget` returns `null` for a non-link and leaves the unresolved prefix in place. Probe-measured on `net10.0` across all four combinations of a plain or linked root with a legitimate or escaping plugin directory. This **supersedes** the Revision 6 containment bullet. See [Trust Model and Verification](#trust-model-and-verification).
+- **Clearing the host's logging providers is fatal.** Revision 6 kept the removal exemption on the ground that `ClearProviders` is the legitimate framework call it exists for. That is backwards: DMS wires Serilog inside `AddServices` at `Infrastructure/WebApplicationBuilderExtensions.cs:125` and Phase B runs after it, so the providers a plugin clears are the host's, and permitting the call silences DMS and the inventory event that was to be the record of it. Measured on `net10.0`, `ClearProviders` is exactly `RemoveAll<ILoggerProvider>()`. Four named logging-pipeline service types are a fatal; adding a provider is untouched; the exemption's exercising call is now a plugin's own explicit `Replace`. This **supersedes** the Revision 6 removal-exemption bullet's example. See [Contract Cardinality](#contract-cardinality).
+- **The contract assembly set is derived by code, from the registry, as assembly names.** It was specified as a hand-written registry property, against a registry whose only entry is `ICustomResourceValidator`, which drops `EdFi.Api.Plugins` out of its own skew check; and two places named the package id `EdFi.Api.CustomValidation` where the referenced assembly is `EdFi.DataManagementService.CustomValidation`, violating the rule this document states about the two. The set is `typeof(EdFiApiPlugin).Assembly.GetName().Name` plus the declaring assembly of every contract type in the registry. See [The Plugin Contract](#the-plugin-contract).
+- **The Docker-lane version assertion is split across two stories.** The host-integration story asserted that both contract assemblies inside the image carry "the version their own project declares", and `EdFi.DataManagementService.CustomValidation`'s csproj declares none until the publishing story adds it. That assertion is restricted to `EdFi.Api.Plugins.dll`, and the publishing story extends it in the same pass that creates the value to assert. See [Divergence from the Custom Validation Epic](#divergence-from-the-custom-validation-epic).
+- **The end-to-end tier serves Recipe 2's package over HTTP.** The recipe was to run "verbatim" against a local folder feed, and it cannot: `fetch-plugins` mounts only its output volume, its BusyBox `wget` speaks http, https, and ftp, and `PLUGIN_PACKAGE_URL` is a `PackageBaseAddress` address. The harness serves the feed directory over HTTP from a test-owned overlay and the published overlay stays verbatim. **Superseded in part by Revision 8:** what the tiers run is the committed overlay file, and "verbatim" is asserted as a doc-versus-file equality check owned by the documentation story rather than by driving a recipe out of Markdown. See [Testing Strategy](#testing-strategy).
+
+The remaining nineteen are corrections rather than decisions, and are folded in without their own bullet.
+The largest is the source count: `CreateBuilder` installs a `CommandLine` source only when `args` is non-empty and `src/dms/run.sh:118` passes none, so the shipped container has **ten** sources and not twelve, measured; the placement rule survives unchanged because it names the last environment variable source rather than an index, and the command-line precedence assertion moves from the integration tier to a unit test, since `WebApplicationFactory` gives a test no way to add configuration keys to the arguments it passes.
+Beside it: the `.deps.json` preflight cannot see the shared framework at all, measured, so a shared-framework skew is a `Load`-backstop refusal at first use rather than at load, and the manifest's promise is written that way; the additive `Sources` guard detects removal and reordering and not mutation of a pre-existing source object, probe-measured through a settable `Prefix` that erased an operator's environment override while the guard reported clean; the marker-interface rejection's rationale is replaced with the valid one, since Revision 5 itself established that default interface methods are equally additive; the host assembly manifest is attached in `on-prerelease.yml` and `on-release.yml` needs nothing, because that workflow promotes Azure Artifacts packages and retags images and attaches no release assets (**superseded in part by Revision 8:** the manifest cannot be attached from `attach-dms-artifacts-to-release`, which has no `needs:` edge on the job that pushes the image, so it gets a job of its own); `Invoke-Promote` derives its version from the release tag, so each contract's promote step passes its own version explicitly (**superseded in part by Revision 8:** skipping on absence from the prerelease view also skips a version that was never published, so the step queries the release view first and fails when the version is in neither); the publish lane's skip-when-unchanged comparison covers the XML documentation file and the nuspec dependency list beside the public surface, because both contracts ship their rules in `///` comments and both declare dependencies an implementer inherits; the plugin guard runs above DMS-1434's, so the inventory event is required to be emitted before any startup task runs, at `Program.cs:130-134`, which is what keeps a validator-audit failure attributable to a plugin; the contract package needs a packed `None` item beside its `PackageReadmeFile`; the cross-link between the two implementer guides is owned by one story rather than by two; the new `Azure*` central package entry is acknowledged as a test-only dependency tree; the containment check covers the plugin directory and not the files inside it; "by construction" is scoped to the contract; the four-way name equality is four rather than three; the pulled-image tier is gated on DMS-1433 as well as on the release carrying the loader; a plugin registering `IServiceCollection` can displace DMS-1434's captured audit collection, which is recorded here and offered to that story as a note rather than changed unilaterally; `Nuget.Dockerfile:22` unzips and `:23` copies; `IMAGE_NAME` is a repository variable rather than a literal; and one ODS citation reads `78-85`, with the Implementation repository's own catch-and-continue recorded beside the ODS one it matches.
+
+Four findings were examined and **refuted**: that `PLUGINS.md` and `CUSTOM-VALIDATION.md` link to each other across a dead edge, when both are placeholders their own contract stories created; that `WebApplicationFactory` passes no arguments, which it does, the real defect being what a test can put in them; that an older plugin on a newer host is an unsupported case stated as supported, which [The Plugin Contract](#the-plugin-contract) and [Load Isolation](#load-isolation) already hedge, leaving only the wording of "by construction" to fix; and that displacing DMS-1434's audit collection bypasses its lifetime checks as an unprotected claim, which [Contract Cardinality](#contract-cardinality) already disclaims, leaving only the note to add.
+
+**Revision 8 (2026-08-28, panel review round 4).**
+A fourth review, blind again, found twenty-four confirmed defects, all of them in text the first three rounds wrote.
+Five needed a decision rather than a correction, and each is taken here with the consequences it accepts.
+This was the last round: the residual findings now concentrate in the corrections themselves rather than in the mechanism, which is the signal that further blind rounds buy wording and not design.
+
+- **The Docker lane's `AssemblyVersion` stamping is removed and nothing replaces it.** Revision 6 removed `/p:AssemblyVersion` from `src/dms/Dockerfile` and Revision 7 kept the plan of having `build-dms.ps1`'s `DockerBuild` run `SetDMSAssemblyInfo` in its place, and that replacement has side effects a development image does not justify: `SetDMSAssemblyInfo` regenerates the **tracked** `src/dms/Directory.Build.props` into a different shape on every run, `DockerBuild` is reached from the `E2ETest` and `StartEnvironment` commands unless `-SkipDockerBuild` is passed, every CI end-to-end leg passes it and CI's own image is built by `docker/build-push-action` with no build arguments, and `Convert-ToAssemblyVersion` stamps a build height that `VersionPrefix` stamping would drop. The locally built image's DMS assemblies now carry the committed props version, which is load-bearing for nothing, and no tracked file is rewritten by an image build. This **supersedes** the stamp-through-`Directory.Build.props` replacement Revision 6 introduced and Revision 7 kept; the removal itself stands. See [The Plugin Contract](#the-plugin-contract).
+- **The host assembly manifest is generated in a job of its own, after the image is pushed.** Revision 7 put the upload inside `on-prerelease.yml`'s `attach-dms-artifacts-to-release`, which needs the pack, SBOM, and provenance jobs and has no `needs:` edge on `docker-publish-dms`, the sibling that builds and pushes the image; the two run concurrently, so the step could have inspected an image that did not exist. The manifest job declares `needs: docker-publish-dms`, and its gate is stated rather than assumed: `docker-publish-dms` carries no `if:` while the manifest job carries the release-asset gate, so an alpha prerelease publishes an image and no manifest, exactly as it already does for the SBOM. See [Load Isolation](#load-isolation).
+- **The per-plugin records reach the frontend's startup task as a `PluginAuditInput` singleton instance, and the two names the loader's return value went by are settled.** The task is resolved after `builder.Build()` while the records are produced during Phase B inside `AddServices`, and no seam was stated. The invoker returns a `PluginAuditInput`, `AddServices` registers it with `AddSingleton` beside the task, and the task takes it by constructor, which activates nothing and cannot be displaced by a plugin, because the host registers it after every hook has run. `PluginLoader.Load` returns a `LoadedPlugins` aggregate introduced by the loader story, and `PluginContractRegistry` is the host-agnostic type while `DmsPluginContracts.Registry` is DMS's instance of it, assigned to the recording-wrapper and host-integration stories respectively. See [Where the Code Lives](#where-the-code-lives).
+- **The committed overlay compose files are the artifact the end-to-end tiers run, and the documentation is pinned to them rather than the other way round.** The host-integration story required the overlays to run "exactly as `docs/OPERATIONS.md` prints it" while the story that writes that chapter comes after it, so the dependency read backwards. The tiers run the files under `eng/docker-compose/`; the documentation story asserts `docs/OPERATIONS.md` embeds them unchanged, as a document-versus-file equality check. Neither can drift without something failing, and no test pastes a recipe out of Markdown. See [Acquisition](#acquisition) and [Testing Strategy](#testing-strategy).
+- **Contract promotion queries the release view first, and absence from both views is a failure.** Revision 7 had each contract's promote step skip when its version was not in the prerelease view, and a version that was never published is absent there too, so a typo or a missed publish would have logged "nothing to do" and exited zero. The step asks the release view for the id and version, skips when it is already there, promotes when it is in the prerelease view, and fails naming the package when it is in neither. See [The Plugin Contract](#the-plugin-contract) and draft 06.
+
+The remaining nineteen are corrections rather than decisions, and are folded in without their own bullet.
+The largest is the `IClientSecretHasher` passage, which named a live configuration key that does not exist: the only `Configure<IdentityOptions>` in CMS never assigns `HashingIterations`, so the hasher always reads the model default and **both** candidate keys, `IdentitySettings__HashingIterations` and `IdentitySettings:ClientSecretHashingIterations`, are unbound. That pair is recorded as a pre-existing CMS defect worth its own ticket, and no code is changed here.
+Beside it: the inventory's loaded flags are captured when the event is emitted, immediately after the container is built, because an assembly first touched inside a hook loads after Phase B returns; only **two** fatal rules key on the host-owned assembly test, since no-contract-registered is a registry intersection, and the tripwire moves to a third rule; the replace-descriptor count is scoped to descriptors the per-hook diffs attribute to plugins, so a host default plus one claimant passes; the containment claim is qualified to directories, since files inside a plugin directory are trusted as the operator placed them; the local Dockerfile does create an `/app/ApiSchema`, at `:82`, and the released image inherits it from the package, so what `run.sh:44` makes is the downloaded-package directory instead; the ordering evidence in `Program.cs` is the `RunFatalAsync` invocations at `:156-184` and not the `RunByOrderRangeAsync` calls inside local functions declared below `await app.RunAsync()`; the throwaway-scope probe is described as an activation check rather than a disposal boundary, since a singleton resolved in a scope stays in the root; a plugin naming its own assemblies with an Ed-Fi host prefix is treated as host-owned and the implementer guide forbids it; the logging-pipeline set is stated as deliberately inclusive, since neither `AddLogging` nor `AddSerilog` registers a non-generic `ILogger`; the entry assembly's declared version is hedged like a native asset, because a framework-dependent publish's root `project` entry carries no `assemblyVersion`; the loader's existence checks run before its link resolution, because `ResolveLinkTarget` throws on a missing path; the skew fatal in the custom validation guide names the assembly rather than the package id; the manifest's contract-version assertion is split across two stories the way the Docker-lane assertion already was; the SBOM precedent list drops `EdFi.Api.ConfigurationService`, which uploads through `attach-cs-artifacts-to-release`; the DMS-1436 ledger row describes the proof that story actually owns; the pulled-image draft's dependency list gains the documentation story; the `src/plugins/` project count is two production projects plus the loader story's test project; the source count in the cross-references reads eleventh rather than thirteenth; the public-surface comparison is defined as types plus public and protected member signatures; and one ODS citation moves from the line that instantiates the settings object to the line that binds it.
+
+Five findings were examined and **refuted**: that the plugin guard's `Order` relative to DMS-1434's is ambiguous, when a lower `Order` runs first and the document is consistent about which; that the recording-wrapper story asserts its startup task on a boot before the loader is wired, when the task runs on any boot and finds nothing; that leaving the closure-capture change optional for DMS-1434 is a defect, when it is an explicit cross-story note this document already disclaims; that the `Load` backstop drops culture for satellite assemblies, when host satellites resolve in the default context and private ones reach the resolver with culture intact; and that the publish lane's public-surface gate is unpinned, when its three-way comparison already includes the XML documentation file, leaving only the definition of "public surface" to write down.
+
+**Revision 9 (2026-08-31, team review on PR #1210).**
+Two reviewers outside the panel read the branch on the open pull request and found ten confirmed defects between them, all of them in text the four panel rounds wrote.
+This was not a blind panel round: the reviewers read the diff as reviewers of a pull request, and what they found is what the blind rounds could not, since every remaining defect sits in a claim the document makes about the repository rather than in the mechanism.
+Four needed a decision rather than a correction, and each is taken here.
+
+- **Recipe 2's committed overlay is driven by environment variables and is runnable unedited.** The overlay carried the package digest as a literal in the `sha256sum -c` line, the plugin directory name as a literal in three commands, and an unpullable `alpine:3.XX@sha256:<digest>` pin, while draft 04 required the tiers to run that committed file unedited and to run a wrong-digest negative besides, which no literal digest can serve. A fixture nupkg is not byte-reproducible across packs, so no literal could have been right for the happy path either. The three deployment-specific values are now `:?`-required environment variables, `PLUGIN_PACKAGE_URL`, `PLUGIN_PACKAGE_SHA256`, and `PLUGIN_NAME`, for the same reason Recipe 1's `DMS_PLUGINS_MOUNT_SOURCE` is one; "unedited" now means env-driven, with the harness computing the digest of the nupkg it packed and the negative exporting a wrong one. The committed file carries a real pullable `alpine` digest chosen when the implementing story lands, and the placeholder survives only in this document's sketch, which is stated where the sketch appears. See [Acquisition](#acquisition) and [Testing Strategy](#testing-strategy).
+- **The `TryAdd` backstop's coverage hole is recorded, and no check is added for it.** The document claimed a plugin that used `TryAdd` on a replace contract "is not silently wrong", on the ground that a declined call adds nothing and therefore trips the no-contract-registered fatal. That rule is a conjunction, so a plugin that declines on a replace contract while also registering another declared contract or a Phase A source passes every check, and the replace-conflict count sees zero plugin-attributed claims for that contract rather than two: the host default survives, the activation probe resolves it, and the substitution the operator believed they installed never happens. It is not closable at this seam, because cardinality is host metadata and the candidate a declining `TryAdd` carried is exactly what the wrapper is measured never to see. The residual is stated, the implementer rule moves into `PLUGINS.md` as an obligation, and draft 03 gains a characterization test that pins what is not detected. See [Contract Cardinality](#contract-cardinality).
+- **The interim `AddServices` hand-off between drafts 03 and 04 is named on both halves.** Draft 03 already defined the empty-`PluginAuditInput` half and left open where the aggregate it invokes over comes from before draft 04 wires the loader. Draft 02's aggregate exposes a static `LoadedPlugins.Empty`, which is also what `Load` returns for a missing root with an empty or absent allowlist; draft 03 invokes `ContributeServices` over it from inside `AddServices` without touching that method's signature, and draft 04 owns the signature change that replaces it with the loaded aggregate. See [Where the Code Lives](#where-the-code-lives).
+- **DMS-1435 depends on the plugin spine's documentation story as well as on host integration.** Its guide links outward to `PLUGINS.md` for packaging, delivery, and the trust model, and the contract story creates `PLUGINS.md` as a placeholder only, so the earlier dependency list would have allowed the validator guide to ship against placeholder delivery documentation. This is the same reasoning that already assigns the link back from `PLUGINS.md` to the story that writes it. See [Divergence from the Custom Validation Epic](#divergence-from-the-custom-validation-epic).
+
+The remaining six are corrections rather than decisions, and are folded in without their own bullet.
+The largest is the reachability evidence behind the decision not to teach `DockerBuild` to run `SetDMSAssemblyInfo`: `DockerBuild` regenerates nothing at all, it only assembles build arguments and runs `docker buildx build`, and the two paths that reach it are the `E2ETest` command and `StartEnvironment`, not `InstanceE2ETests`, which delegates to `setup-local-dms.ps1` and rebuilds the image on that script's own path. The decision and its argument survive on the corrected reachers.
+Beside it: "writes unconditionally" was outcome-true and mechanism-unstated, since the write goes through `Invoke-RegenerateFile`, whose change guard compares an undefined `$new_content` against the file rather than the `$NewContent` parameter, so the prose now rests on the regenerated shape differing from the committed one and holds whether or not that guard is ever repaired, and two pre-existing `build-dms.ps1` defects found while establishing that are recorded as ticket candidates in [The Plugin Contract](#the-plugin-contract), the dead guard and the `${(Get-Date).year)}` non-subexpression that empties the copyright in both the regenerated props file and the shipped `EdFi.Api` nuspec; the version-skew row in the failure table promised an unqualified fatal that only holds when first use falls inside startup, so it now states what refusal means on a request thread, repeated 500s with no abort and no unwrapped message, phrased as the known gap the native-asset row beside it already is; the manifest's top-level sweep scope was justified only against `/app/ApiSchemaDownloader`, which is not in the DMS process, while `/app/runtimes/` is, so the real reason is stated, that every RID-specific managed asset repeats its top-level counterpart's name and version, with the counterpart-less case recorded as a known gap and the scan scope unchanged; draft 05's precedence criterion stated environment-over-command-line without the qualifier this document already carries, so it now names the two early reads where the command line wins, Serilog and `Plugins:Allowed`, keeps `AppSettings:StartupStatusFilePath` as the Phase-A-reach exception it is rather than an environment-versus-command-line one, and notes that the stock container installs no command-line source at all; and one batch of citations drifted while remaining substantively right, including `SetDMSAssemblyInfo` as `:210-241`, `Convert-ToAssemblyVersion` as `package-helpers.psm1:165-190`, the released image build as `on-prerelease.yml:542-552`, the custom validation pack lane as `on-dms-pullrequest.yml:357-388`, the Dockerfile's argument guard as `:49-55` with the publish at `:56-59`, the nuspec `**` glob that `ApiSchema` rides inside, the two package names behind "`Microsoft.Extensions.Options*` packages", and `Program.cs:130` as the line that resolves `StartupPhaseExecutor` rather than `IStartupProcessExit` directly.
+
+Five sub-claims were examined and **corrected or refuted**, and are recorded so they are not re-litigated.
+That `InstanceE2ETests` "sets `SkipDockerBuild` to true itself" is wrong: it forwards the switch conditionally and, when it is absent, the setup script rebuilds the image by passing `-r` to `start-local-dms.ps1`, so the correction is that it never reaches `DockerBuild`, not that it always skips the build.
+That draft 05's "placeholder the operator replaces" contradicted its own byte-equality assertion is refuted: those two were internally consistent, and the real conflict was with the run-unedited requirement in draft 04 and in [Testing Strategy](#testing-strategy).
+The reviewer's citation for the Dockerfile argument guard, `:53-54`, was itself off by the same kind of drift it reported: `:53-54` is only the `ASSEMBLY_VERSION` arm, and the guard is `:49-55`.
+That the host assembly manifest "omits managed assemblies the host can serve" is refuted for the image as it ships, because every RID-specific managed asset under `runtimes/` has a top-level counterpart of the same name and version that the sweep lists; only the rationale was incomplete.
+And the `Nuget.Dockerfile` image build step lives in `on-prerelease.yml` rather than in `on-dms-pullrequest.yml`, which is what this document already said; only its line range had moved.
+
+**Revision 10 (2026-08-31, team review on PR #1210, second round).**
+Two reviewers read the branch again on the open pull request and found seven confirmed defects between them, plus one they raised that a probe refuted.
+One of the seven is a decision change rather than a correction, and it is the third independent time the same exposure has been raised.
+
+- **DMS-1434's guard closes over the service collection it was handed, and that is now required rather than recommended.** Revision 7 recorded that a plugin registering its own `IServiceCollection` would displace the collection that guard reads, and offered closure capture to the custom validation story as a note for its owners to take or decline; Revision 8 then examined the claim that leaving it optional was itself a defect and **refuted** it, on the ground that it was an explicit cross-story note this document already disclaims. A third reviewer, independent of the first two, raised it again this round, and a note three readers in three rounds have read as a defect is not functioning as a note. This document's own text already said the alternative "costs nothing" and "cannot be displaced at all", so the mechanism is now specified: the custom validation design specifies closure capture, DMS-1434's draft carries it as a required acceptance criterion with no `services.AddSingleton<IServiceCollection>(services)` registration anywhere, and the seam that carries `PluginAuditInput` across `builder.Build()` is described as reaching the same displacement-proofness by registering last rather than by registering nothing. `IServiceCollection` stays on the list of types a plugin is permitted to register, as the example that produced the rule rather than as a live gap. See [Contract Cardinality](#contract-cardinality).
+
+The other six are corrections, one line each.
+
+- **The end-state sketch's `ContributeConfiguration` call is reconciled with the two-arg contract it invokes.** The aggregate exposes a one-arg `LoadedPlugins.ContributeConfiguration(ConfigurationManager)`, the way `LoadedPlugins.ContributeServices` already differs from the contract's own hook, and passes the manager as both the `IConfigurationBuilder` and the `IConfiguration bootstrapConfiguration` because `ConfigurationManager` implements both; `bootstrapConfiguration` also gains the one grounding sentence it had nowhere in the document, that it is the operator configuration already layered at that point, readable so a plugin can find its own vault address and not mutable through that parameter.
+- **DMS-1435's fixture project declares three packages rather than two.** The samples' section-binding form needs `Microsoft.Extensions.Options.ConfigurationExtensions`, probe-confirmed as the package that declares `OptionsConfigurationServiceCollectionExtensions` and as pulling `Configuration.Binder` transitively, so it covers the `GetSection(...).Bind(...)` shape as well; `eng/verification/CustomValidationConsumer` naming only two is correct there rather than an omission to copy, because its sample binds through the `Action<TOptions>` overload alone (`eng/verification/CustomValidationConsumer/ServiceCollectionExtensions.cs:24`).
+- **The publish lane's comparison is three-way in this document as well as in draft 06.** [The Plugin Contract](#the-plugin-contract) still described a public-surface-only comparison that Revision 9's own decision had already widened, so it now names all three normalized inputs, states that a failure reports which of the three differed, and carries the reason the packed readme is excluded.
+- **Native assets get inventory rows in draft 02's criteria and not only in this document's prose.** [Observability](#observability) promises a hashed row for every `runtimeTargets` native file, and the loader story asserted only managed rows, so it now requires a test over the native fixture it already builds: file name and SHA-256 present, declared version null and labelled, hedged exactly the way the entry assembly's row is so nobody reports it as `0.0.0.0` or drops the row, and the loaded flag best-effort.
+- **Recipe 2's three variables get the same documentation homes as Recipe 1's mount variable.** `eng/docker-compose/README.md`, the tracked `eng/docker-compose/.env.example` as commented-out entries carrying the same `:?`-rationale note, and the `.env.*` files the plugin end-to-end test uses; an operator who composes the fetch overlay in and meets three `:?` failures with nothing documented is in the position that entry exists to prevent.
+- **The host-side package-address variable carries no vendor prefix.** Revision 9 introduced it with one, and it is now `PLUGIN_PACKAGE_URL` at all eight occurrences, matching `PLUGIN_PACKAGE_SHA256` and `PLUGIN_NAME`, which never carried one; the container-side key and the host-side variable now share a name, which is ordinary Compose interpolation rather than a collision, and that is said where the overlay appears.
+
+One finding was examined and **refuted**, and is recorded so it is not re-raised.
+That BusyBox `unzip` cannot take a wildcard member list, which would have made Recipe 2's extraction step silently wrong, is false for the image family the recipe pins.
+Probed on `alpine:3.20`, whose BusyBox is 1.36.1: `unzip -q` with a `contentFiles/any/any/<name>/*` member list matches recursively, honours `-d`, and exits zero.
+A `PLUGIN_NAME` matching nothing also exits zero and leaves an empty directory, and the chained `mv` then fails and `sh -ec` propagates it, so a wrong name still fails the service loudly rather than quietly producing an empty plugin root.
+No fallback recipe is added and the overlay is unchanged; the probe is recorded beside the `unzip` line so the question is not re-raised.
+
+It specifies the shared plugin mechanism: how third-party code reaches a stock DMS or CMS image, how it is verified, how it is loaded, and the two points in startup at which it may contribute.
+It does not specify the per-type contracts.
+Those are companion documents written after this one is approved, and tickets are filed only after those are approved in turn.
+
+DMS-1462 names three plugin types: Secrets Manager, Custom Validation, Identity Validation.
+They are not one shape.
+The central claim is that a single **delivery** mechanism serves all three, on both hosts, provided the **composition** shapes stay distinct.
+
+- [README.md](./README.md) - spike manifest, story index, filing gate
+- [ods-precedent.md](./ods-precedent.md) - the Ed-Fi ODS/API survey this design draws on and departs from
+- Jira: [DMS-1462](https://edfi.atlassian.net/browse/DMS-1462)
+- Consuming epics: [DMS-1345](https://edfi.atlassian.net/browse/DMS-1345) Custom Validation, [DMS-1412](https://edfi.atlassian.net/browse/DMS-1412) Identity Management, [DMS-1414](https://edfi.atlassian.net/browse/DMS-1414) UniqueId Validation
+
+**Citation convention.**
+Unprefixed paths are relative to the repository root.
+`Program.cs`, `Infrastructure/`, and `Content/` are relative to `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/`.
+`Config.Frontend/` names `src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/`.
+Anything under `src/dms/core/` or `src/dms/clis/` is written in full, because the frontend carries folders of the same name.
+References to `design.md` without a directory mean `reference/design/custom-validation-DMS-1345/design.md`.
+ODS/API citations live in [ods-precedent.md](./ods-precedent.md), not here.
+
+---
+
+## Table of Contents
+
+- [Goals and Non-Goals](#goals-and-non-goals)
+- [Problem Statement](#problem-statement)
+- [Design](#design)
+  - [Decision: drop-in delivery into a stock image](#decision-drop-in-delivery-into-a-stock-image)
+  - [The Unit of Delivery](#the-unit-of-delivery)
+  - [Acquisition](#acquisition)
+  - [Discovery](#discovery)
+  - [Load Isolation](#load-isolation)
+  - [The Plugin Contract](#the-plugin-contract)
+  - [The Two Composition Phases](#the-two-composition-phases)
+  - [Contract Cardinality](#contract-cardinality)
+  - [Trust Model and Verification](#trust-model-and-verification)
+  - [Startup Failure Semantics](#startup-failure-semantics)
+  - [Observability](#observability)
+  - [Configuration Surface](#configuration-surface)
+  - [What the Stock Image Must Ship](#what-the-stock-image-must-ship)
+  - [The Secrets Spike](#the-secrets-spike)
+  - [Applicability to the Configuration Service](#applicability-to-the-configuration-service)
+- [Where the Code Lives](#where-the-code-lives)
+- [Divergence from the Custom Validation Epic](#divergence-from-the-custom-validation-epic)
+- [Rejected Alternatives](#rejected-alternatives)
+- [Out of Scope and Deferred](#out-of-scope-and-deferred)
+- [Testing Strategy](#testing-strategy)
+- [Level of Effort](#level-of-effort)
+- [Cross-References](#cross-references)
+
+---
+
+## Goals and Non-Goals
+
+### Goals
+
+- One delivery mechanism serving all three plugin types, so a second plugin type does not mean a second loader.
+- An implementer builds and versions a plugin against published Ed-Fi contract packages and a published per-release host assembly manifest, with no DMS source tree and no DMS build.
+- An operator adds a plugin to a **published stock image** at deploy time. No image is derived, rebuilt, or re-derived on a DMS release.
+- Both composition moments DMS needs are served: contributing configuration before configuration is read, and contributing services before the container is built.
+- A plugin can displace neither a host assembly nor a host service registration, and shared type identity is structural rather than a list somebody has to maintain.
+- Acquiring a plugin from a published package at deploy time is a documented recipe that needs no DMS code, with the integrity step stated and mandatory.
+- A plugin the operator asked for that did not load stops the process rather than degrading it silently.
+
+### Non-Goals
+
+- Sandboxing or privilege reduction. A loaded plugin runs with full process trust; see [Trust Model and Verification](#trust-model-and-verification).
+- Hot reload. Plugins load once at startup; adding, removing, or upgrading one is a restart.
+- Unifying a plugin's dependency closure with the host's. The design isolates what it can and shares what it must.
+- An Ed-Fi catalog, vetting process, or signing authority for third-party plugins.
+- The per-type contracts. This document fixes their cardinality and their loading, not their members.
+
+---
+
+## Problem Statement
+
+Three epics have arrived at the same blocked step, and the same missing thing blocks each.
+
+**Custom validation** (DMS-1345) shipped a public contract in DMS-1432 and specified compiled-in composition in DMS-1434: "the deployment adds one call to that extension at DMS's composition root."
+That sentence assumes a deployment that builds DMS.
+
+**Identity management** (DMS-1412) records the requirement as "Swagger is set already and the API portion is a placeholder - the clients actually create the implementation via plugin."
+The word plugin is load-bearing and has no DMS referent today.
+
+**UniqueId validation** (DMS-1414) is documentation-shaped and depends on whatever custom validation ships, so it inherits the same assumption.
+
+**Secrets** has no epic and is not designed here.
+DMS reads `ConfigurationServiceSettings:ClientSecret` and `ConfigurationServiceSettings:EncryptionKey` from its own configuration and obtains every data store connection string from the Configuration Service, decrypting it with that shared key (`src/dms/core/EdFi.DataManagementService.Core/Configuration/DmsConnectionStringProvider.cs`, `src/dms/core/EdFi.DataManagementService.Core/Configuration/ConnectionStringDecryptionService.cs`).
+CMS reads four more from `Config.Frontend/appsettings.json`.
+An operator who keeps those in a secret store has no seam to reach today.
+Secrets is named here because it is the type that proves the mechanism must serve **two** lifecycle moments rather than one, and because a mechanism designed around validators alone would not.
+Its contracts, and everything multi-tenant about them, go to a separate spike; see [The Secrets Spike](#the-secrets-spike).
+
+**The distribution model is what makes compiled-in composition the wrong default.**
+DMS is not distributed as a source tree an operator builds.
+`src/dms/Dockerfile` publishes `--self-contained false` into `/app/Frontend`, and the released image, `src/dms/Nuget.Dockerfile`, does not build at all: it downloads the `EdFi.Api` package from the Ed-Fi Azure Artifacts feed and unzips it into `/app`.
+An operator running DMS has an image and a configuration file.
+Telling that operator to add a line to `Infrastructure/WebApplicationBuilderExtensions.cs` is telling them to acquire and maintain a DMS build they do not have, and to repeat it on every DMS release.
+No document in the repository describes how to do that, because it has never been a supported path.
+
+So the problem is not how DMS invokes third-party code.
+Three epics already know how to invoke it.
+The problem is **how third-party code gets into a process the operator did not build**, and nothing in DMS answers that.
+
+---
+
+## Design
+
+### Decision: drop-in delivery into a stock image
+
+An implementer publishes a plugin as a directory of assemblies compiled against published Ed-Fi contract packages.
+An operator gets that directory into a **published stock image** at deploy time, names it in an allowlist, and restarts.
+The host discovers it, loads it into an isolated assembly load context, and invokes its contribution hooks at the two points in startup where contributions are possible.
+
+Compiling a plugin into the host is not withdrawn as a capability, and the in-repo test fixtures use it.
+What changes is that it stops being the documented route.
+
+**Two things are ruled out by constraint, not by preference.**
+
+A **derived image** is the obvious alternative and it is the one this design exists to avoid.
+`FROM edfialliance/ed-fi-api:8.0.0` plus `COPY ./plugin /app/plugins/` needs no loader, no acquisition code, and no allowlist.
+It also means every implementation owns an image, re-derives it on every DMS release, and inherits responsibility for a base image it did not build.
+The requirement is a stock image per deployment, not a derived one per implementation, so acquisition happens at **deploy time**, outside the image, and the image is never rebuilt.
+
+**Compiled-in composition** is ruled out by the distribution model above.
+
+### The Unit of Delivery
+
+A plugin is a **directory**, not a DLL.
+
+```text
+/app/plugins/
+  Acme.Dms.Identity/
+    Acme.Dms.Identity.dll          <- entry assembly, named for the directory
+    Acme.Dms.Identity.deps.json    <- dependency manifest, produced by dotnet publish
+    Acme.Http.Client.dll           <- the plugin's own closure
+```
+
+The directory name is the **plugin name** and the entry assembly is `<PluginName>.dll` inside it.
+No new manifest format is introduced: the `.deps.json` that `dotnet publish` already emits is the dependency manifest, and the directory name carries identity.
+
+The csproj `AssemblyName` is the plugin name.
+The directory, the entry assembly file, the loaded assembly's own `AssemblyName`, and the `Name` property must all equal it, and each mismatch is fatal on its own.
+All four are checked, and the loaded assembly's `AssemblyName` is checked because it is the one of the four that the file name does not prove: a csproj can set `AssemblyName` to one thing and be published under a file named for something else, and the resulting plugin would satisfy every other check.
+Every one of these comparisons is **ordinal**, and the plugin name is compared to the directory name case-sensitively, because a plugin's identity must not depend on which filesystem the image happened to be built on; see [Trust Model and Verification](#trust-model-and-verification) for what that leaves exposed.
+
+Ownership of the closure is therefore unambiguous.
+Every file under `Acme.Dms.Identity/` belongs to that plugin and to nothing else, which is what makes both per-plugin isolation and per-plugin verification possible.
+
+The implementer's workflow is an ordinary publish:
+
+```shell
+dotnet publish Acme.Dms.Identity.csproj --no-self-contained -o out/Acme.Dms.Identity
+```
+
+`--no-self-contained` keeps the shared framework out of the plugin's output.
+A self-contained publish would be survivable under host-first resolution, because the host wins every assembly it can resolve, but it bloats the directory with hundreds of assemblies that will never be used, so it is rejected at load and the implementer finds out immediately rather than shipping it; see [Startup Failure Semantics](#startup-failure-semantics) for the row and the discriminator.
+
+### Acquisition
+
+**There is one mechanism, and it is a directory.**
+The loader reads a plugin root and cannot tell how the bytes got there.
+**DMS ships no fetcher.**
+Getting a plugin directory into the root is a deployment step, it happens before the process starts, and it is documented as two recipes rather than built as a feature.
+`Plugins:Allowed` says which directories under the root may load; nothing in the host configuration says where their bytes come from.
+
+```json
+"Plugins": {
+  "Directory": "/app/plugins",
+  "Allowed": "Sea.Dms.StudentIdValidator,Acme.Dms.Identity"
+}
+```
+
+**`Allowed` is a comma-delimited ordered list of plugin names.**
+Whitespace around each name is trimmed, and the order is the invocation order for both phases, contractual for Phase A exactly as it would be for an array.
+
+```text
+Plugins__Allowed=Sea.Dms.StudentIdValidator,Acme.Dms.Identity
+```
+
+**The delimited string is a convention, not a parser.**
+ASP.NET Core's own `AllowedHosts` is a delimited string in the very `appsettings.json` DMS ships (`src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/appsettings.json:2`), and DMS already binds a comma-delimited configuration string of its own: `AppSettings:AllowIdentityUpdateOverrides` is declared as a `string` (`src/dms/core/EdFi.DataManagementService.Core/Configuration/AppSettings.cs:24`) and split where it is used (`src/dms/core/EdFi.DataManagementService.Core/ApiService.cs:253`).
+Here the split happens once, in .NET, where the section is bound: trim, split, reject duplicates.
+An indexed array would bind cleanly from JSON and badly from the environment, which is where Compose `environment:` blocks and Kubernetes `env[].name` set it, and a dictionary keyed by name would enumerate alphabetically and lose the order Phase A depends on.
+
+**Recipe 1, a pre-populated root.**
+The operator publishes plugin directories on the host and bind-mounts the tree read-only.
+
+```yaml
+# eng/docker-compose/plugins-dms.yml
+services:
+  dms:
+    volumes:
+      - ${DMS_PLUGINS_MOUNT_SOURCE:?set the host path holding the plugin directories}:/app/plugins:ro
+```
+
+This is the shape `eng/docker-compose/bootstrap-dms.yml:9` already uses for ApiSchema and `eng/docker-compose/published-config.yml:61` already uses for additional claim sets.
+Docker creates the mount target inside the container, the loader finds a populated directory, and nothing else happens.
+
+**The mount lives in its own overlay file, and that is a decision rather than a filing convention.**
+`published-dms.yml` and `local-dms.yml` declare no `volumes:` block on the DMS service today, and adding one unconditionally would make Docker materialize an empty, root-owned `./plugins` beside every deployment that never asked for a plugin, which is a directory an operator then has to explain.
+Compose has no way to make a bind mount conditional inside one file, so the mount goes in `eng/docker-compose/plugins-dms.yml`, an overlay a deployment adds with `-f` exactly as `bootstrap-dms.yml` and `local-dms-diagnostics.yml` are already added when their feature is in use.
+`DMS_PLUGINS_MOUNT_SOURCE` is declared with `:?` rather than a default for the same reason: a deployment that composed the overlay in meant to supply a path, and a silent default would recreate the empty directory the overlay exists to avoid.
+The base compose files are therefore unchanged, which is the same property [What the Stock Image Must Ship](#what-the-stock-image-must-ship) claims for the image.
+
+**Recipe 2, a pinned package fetched by the deployment.**
+A deployment that would rather pull a published package than provision a host volume does so in a step that runs before DMS and owns nothing DMS owns: an init container on Kubernetes, a one-shot service Compose's `depends_on: condition: service_completed_successfully` orders ahead of DMS.
+The step downloads the `.nupkg`, verifies it against a digest the operator pinned, extracts the plugin directory out of it into a volume, and exits; DMS then mounts that volume read-only exactly as in Recipe 1.
+
+```yaml
+# eng/docker-compose/plugins-fetch-dms.yml
+services:
+  fetch-plugins:
+    # Pinned by digest, as every third-party image in eng/docker-compose/ already is
+    # (postgresql.yml:8 pins postgres:16.8-alpine by digest). The committed file carries a
+    # real, pullable alpine 3 digest, chosen when the implementing story lands; the
+    # 3.XX@sha256:<digest> written here is a placeholder of this design sketch only, since a
+    # digest chosen now would be stale by then. An operator may re-pin to an image they have
+    # approved; a mutable tag would leave the step that verifies the package digest running
+    # on bytes nobody pinned.
+    image: alpine:3.XX@sha256:<digest>
+    environment:
+      PLUGIN_PACKAGE_URL: ${PLUGIN_PACKAGE_URL:?set the .nupkg download address}
+      PLUGIN_PACKAGE_SHA256: ${PLUGIN_PACKAGE_SHA256:?set the SHA-256 of the pinned .nupkg}
+      PLUGIN_NAME: ${PLUGIN_NAME:?set the plugin directory name inside the package}
+    volumes:
+      - plugins:/out
+    command: >
+      sh -ec '
+        wget -qO /tmp/plugin.nupkg "$$PLUGIN_PACKAGE_URL" &&
+        echo "$$PLUGIN_PACKAGE_SHA256  /tmp/plugin.nupkg" | sha256sum -c - &&
+        rm -rf "/out/$$PLUGIN_NAME" &&
+        unzip -q /tmp/plugin.nupkg "contentFiles/any/any/$$PLUGIN_NAME/*" -d /tmp/x &&
+        mv "/tmp/x/contentFiles/any/any/$$PLUGIN_NAME" /out/'
+  dms:
+    depends_on:
+      fetch-plugins:
+        condition: service_completed_successfully
+    volumes:
+      - plugins:/app/plugins:ro
+volumes:
+  plugins:
+```
+
+The `unzip` line's wildcard member list is deliberate and its support was probe-verified on `alpine:3.20`, whose BusyBox 1.36.1 `unzip` matches `contentFiles/any/any/$PLUGIN_NAME/*` recursively, honours `-d`, and exits zero; a `PLUGIN_NAME` matching nothing also exits zero with an empty directory, and the chained `mv` is what fails the service loudly under `sh -ec`.
+
+`PLUGIN_PACKAGE_URL` is the package's download address in the feed's `PackageBaseAddress` form, `<base>/<id>/<version>/<id>.<version>.nupkg` in lower case, where `<base>` is what the feed's `index.json` publishes for that resource; it differs between feed hosts, which is one more reason the URL belongs to the deployment and not to DMS.
+The container-side key and the host-side variable share the name, as the other two already do, which is ordinary Compose interpolation and not a collision: the left-hand side names an environment key inside `fetch-plugins` and the right-hand side is looked up on the host or in the `.env` file before the container exists.
+No variable in either recipe carries a vendor prefix, since a name an operator sets should read as the recipe's own and not as one example plugin's.
+**All three deployment-supplied values are environment variables declared with `:?`**, for the reason Recipe 1's `DMS_PLUGINS_MOUNT_SOURCE` is: the package address, its SHA-256, and the plugin directory name inside it are facts about one operator's plugin, and a committed file that carried any of them as a literal could not be run by a second deployment without being edited.
+That is what lets the end-to-end tiers in [Testing Strategy](#testing-strategy) run the committed file itself, supplying the three values as environment, rather than a copy a test rewrote.
+The Kubernetes form is the same four commands in an `initContainers` entry writing to an `emptyDir` the DMS container mounts `readOnly: true`.
+The two overlay files under `eng/docker-compose/` **are** the Compose form of the recipes, and `docs/OPERATIONS.md` carries them verbatim beside the Kubernetes form.
+The direction of that equality matters for the tests: the end-to-end tiers in [Testing Strategy](#testing-strategy) run the committed overlay files, and the documentation story asserts separately that `docs/OPERATIONS.md` embeds them unchanged, so the two can never drift without something failing.
+Recipe 2's overlay carries the whole `fetch-plugins` service, the named volume, and the DMS service's mount, so it is an alternative to Recipe 1's overlay rather than an addition to it: `/app/plugins` is one mount target and two overlays cannot both claim it.
+A deployment picks one recipe per DMS service, which is why the end-to-end proof runs the two recipes as two deployments.
+
+Three properties of this recipe are why it is the recipe rather than a DMS feature.
+It keeps the plugin root **read-only to the runtime identity** in every deployment, so Control 1 in [Trust Model and Verification](#trust-model-and-verification) holds without exception, and it is compatible with `readOnlyRootFilesystem`, which a fetcher writing into `/app/plugins` on the container filesystem is not.
+Feed credentials, proxies, and mirrors are the deployment's business, so a private feed works the day an operator needs one, with the same secret-mounting facilities they already use for everything else.
+And the integrity step, `sha256sum -c` against a value the operator wrote down, is exactly the control a DMS-owned fetcher would have implemented, minus the code.
+
+**Clearing `<PluginRoot>/<Name>/` before extracting** is part of the recipe rather than tidiness, and the recipe above does it.
+It is what makes the digest a statement about what is **on disk** rather than only about what was downloaded.
+Without it, changing a pinned version would leave files from the previous version sitting beside the new ones, covered by no digest and referenced by no `.deps.json`, and the next operator to read that directory would have no way to tell which version they were looking at.
+
+**A plugin package is asset-only.**
+It carries an already-published directory under `contentFiles/any/any/<PluginName>/` and contains no `lib/` or `ref/` entries, mirroring the rule the ApiSchema package shape already states.
+A conventional library package declares dependencies and expects a restore to resolve them, and nothing on the deploy path runs a restore.
+Flattening a dependency graph into a runnable directory is what `dotnet publish` does, and the implementer is the party who should run it: they own the closure, they can see the conflicts, and they can test the result.
+The package is transport for a directory that was already proven to run, and `unzip` is all it takes to get it back out.
+
+**A DMS-owned fetcher was designed and is deferred, not rejected.**
+[Rejected Alternatives](#rejected-alternatives) records the shape it would take, a name-keyed `Plugins:Packages` map beside `Allowed` served by a generalized `ApiSchemaDownloader`, and the reasons it does not ship in the first release: the recipe above delivers the same pinned, verified acquisition with no DMS code, the fetcher is the only foundation story that would change a shipped load-bearing CLI, and its two advantages over the recipe, one fewer container and one fewer place to write the digest, are real and small.
+[Out of Scope and Deferred](#out-of-scope-and-deferred) states what would bring it back.
+
+### Discovery
+
+For each name in `Plugins:Allowed`, in order, the loader resolves `<PluginRoot>/<Name>/<Name>.dll`, verifies it, loads it, and reflects over its public exported types for an `EdFiApiPlugin` subclass.
+
+Discovery is driven by the **allowlist**, not by a directory scan for what to load.
+ODS scans a folder and filters what it finds by marker interface.
+Driving from the allowlist means a directory nobody asked for is never opened, never probed, and never has its metadata read, and it converts "the operator misspelled the directory name" from a silent skip into a named startup failure.
+
+Only the entry assembly is reflected over.
+Naming it by convention removes the question ODS answers with a throwaway probe context and a forced garbage collection.
+
+### Load Isolation
+
+Each plugin loads into **its own non-collectible `AssemblyLoadContext`**, backed by an `AssemblyDependencyResolver` over the plugin's `.deps.json`.
+Resolution is **host-first**: any assembly the host itself carries is served from the default context, and the plugin's own copy is used only for assemblies the host does not have.
+
+**Host-first resolution asks by simple name, and compares versions itself.**
+This is the one place the design cannot delegate to the default binder, and a probe settled why.
+`AssemblyLoadContext.Default.LoadFromAssemblyName` throws `FileNotFoundException` in **both** of the cases that need opposite treatment: when the host does not carry the assembly at all, and when the host carries an *older* version than the plugin's reference declares.
+Measured on `net10.0`: a request for `System.Runtime, Version=99.0.0.0` against a host carrying `10.0.0.0` throws `FileNotFoundException`, with or without the public key token, and so does a request for a non-strong-named `HostLib, Version=2.0.0.0` against a host carrying `1.0.0.0`.
+A `catch (FileNotFoundException)` that falls through to the resolver therefore hands a version-skewed plugin its private copy silently, which is precisely the identity split host-first exists to prevent.
+A `catch (FileLoadException)` arm beside it never runs.
+
+So the loader asks the default context by **simple name only**, which carries no version constraint and cannot fail on version grounds, and then compares what came back against what the plugin asked for.
+
+```csharp
+internal sealed class PluginLoadContext(string pluginName, string entryAssemblyPath)
+    : AssemblyLoadContext(pluginName, isCollectible: false)
+{
+    private readonly AssemblyDependencyResolver _resolver = new(entryAssemblyPath);
+
+    protected override Assembly? Load(AssemblyName assemblyName)
+    {
+        // Ask by simple name so the default binder's own version check cannot turn
+        // "the host carries an older copy" into "the host does not have it".
+        Assembly? hostAssembly = TryLoadFromHost(assemblyName.Name!);
+
+        if (hostAssembly is null)
+        {
+            // Genuinely plugin-private: the host carries nothing by this name.
+            string? path = _resolver.ResolveAssemblyToPath(assemblyName);
+            return path is null ? null : LoadFromAssemblyPath(path);
+        }
+
+        Version? hostVersion = hostAssembly.GetName().Version;
+        if (assemblyName.Version is { } requested && hostVersion is not null && hostVersion < requested)
+        {
+            // The host has this assembly and carries less than the plugin asked for.
+            // Falling through to the plugin's private copy is the identity split
+            // host-first exists to prevent.
+            // Name is the base class's own copy of pluginName; reading the primary-constructor
+            // parameter here instead would capture it a second time (CS9107, an error under
+            // this repository's TreatWarningsAsErrors).
+            throw new PluginVersionSkewException(Name!, assemblyName.Name!, requested, hostVersion);
+        }
+
+        // Anything the host can serve wins, so every type the host and the plugin
+        // exchange has one identity.
+        return hostAssembly;
+    }
+
+    private static Assembly? TryLoadFromHost(string simpleName)
+    {
+        try
+        {
+            return Default.LoadFromAssemblyName(new AssemblyName(simpleName));
+        }
+        catch (FileNotFoundException)
+        {
+            return null;
+        }
+    }
+
+    protected override IntPtr LoadUnmanagedDll(string unmanagedDllName)
+    {
+        // ResolveUnmanagedDllToPath returns a path; the override returns a handle,
+        // so the path has to go through LoadUnmanagedDllFromPath.
+        string? path = _resolver.ResolveUnmanagedDllToPath(unmanagedDllName);
+        return path is null ? IntPtr.Zero : LoadUnmanagedDllFromPath(path);
+    }
+}
+```
+
+**A version the host cannot serve is fatal, not a fallback**, and the fatal names the plugin, the assembly, the version requested, and the version the host carries.
+The host's copy is served whenever it is greater than or equal to what the plugin declared, which is the direction the upgrade story needs and the direction the default binder would have allowed anyway.
+`Microsoft.Extensions.*` assemblies keep a stable assembly version across a major, so this bites on major skew - a plugin built against 11.x packages running in a 10.x host - which is the expected case when DMS lags a major and a vendor does not.
+
+**The check runs eagerly, before any type is loaded, and the `Load` override is the backstop.**
+`Load` is called lazily, when a type resolution first needs an assembly, so a skewed dependency a hook happens not to touch would otherwise be discovered on a request rather than at startup, and "fatal at load" would be a promise the design does not keep.
+The loader therefore runs a **preflight** over the plugin's `.deps.json` before constructing the plugin: for every `runtime` entry it declares, it reads the entry's `assemblyVersion`, asks the host for that simple name, and applies the same comparison.
+Reading `runtime` entries alone is enough, and that is a measured property of the file rather than an assumption.
+A library with RID-specific managed assets carries them under `runtimeTargets` with `"assetType": "runtime"`, and those entries repeat the simple name and the `assemblyVersion` of the library's own top-level `runtime` entry: measured on a framework-dependent publish of `Microsoft.Data.SqlClient` 6.0.2, both the `unix` and the `win` `runtimeTargets` rows carry `assemblyVersion` `6.0.0.0`, exactly as the `runtime` entry does.
+`"assetType": "native"` entries carry no `assemblyVersion` at all and are the known native gap below.
+What is left uncovered is the **shared framework**, a RID-specific managed asset with no `runtime` counterpart, and a satellite or resource assembly, and the `Load` override is the backstop for all three as it is for anything else the manifest did not name.
+The shared framework is the largest of the three and the one worth stating outright rather than leaving inside "anything else".
+A framework-dependent publish records no shared-framework assembly in its `.deps.json` at all: measured on `net10.0`, a class library carrying `<FrameworkReference Include="Microsoft.AspNetCore.App" />` and naming `IServiceCollection` and `IConfiguration` in its own public signatures published `--no-self-contained` to a `.deps.json` whose only library entry was the plugin itself, so neither of the two abstractions in the hook signatures appeared there.
+A plugin that takes those abstractions from the shared framework rather than from packages therefore gets no preflight coverage for them, and skew on one of them is caught by the `Load` override at first use rather than at load.
+Preflight and override share one comparison, so there is one rule and two moments at which it fires.
+
+**Throwing from inside `Load` is wrapped, and the loader unwraps it.**
+Measured: an exception raised inside the `Load` override reaches the caller as a `FileLoadException` naming the assembly, with the thrown exception preserved as its `InnerException`.
+Measured on `net10.0`, the outer message is "Could not load file or assembly 'HostLib, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null'. General Exception (0x80131500)", which names the version the host carries and says nothing about the version the plugin asked for.
+The loader unwraps that chain when it reports, so an operator reads "plugin 'Acme.Dms.Identity' requires HostLib >= 2.0.0.0, host carries 1.0.0.0" instead.
+
+**Unmanaged dependencies are supported, and their failure is lazy by construction.**
+A plugin carrying a cloud SDK or a database client carries `runtimes/<rid>/native/` assets, and nothing in the managed `Load` override reaches them.
+`PluginLoadContext` therefore also overrides `LoadUnmanagedDll`, as the sketch above shows: the resolver answers with a **path**, the override has to return a **handle**, so the path goes through `LoadUnmanagedDllFromPath` and a resolver that has no answer returns `IntPtr.Zero`, which is how the override says "fall back to the default probing".
+DMS's own image already ships a `runtimes/` tree for `Microsoft.Data.SqlClient` (`src/dms/Dockerfile:81`), so this is ordinary rather than exotic, and declaring it unsupported would rule out the SDKs the three plugin types are most likely to use.
+Host-first does not apply: a native library has no assembly identity to split, and each plugin's context resolves its own.
+What the design does **not** do is verify at load that a declared native asset exists for the image's RID, because `.deps.json` describes native assets per RID and the runtime resolves them lazily; a missing one surfaces as a `DllNotFoundException` on first use, and [Startup Failure Semantics](#startup-failure-semantics) records that as a known gap rather than implying a check that does not exist.
+
+**Host-first is not a preference. An enumerated set of shared assemblies does not work, and the failure is not exotic.**
+
+The natural alternative is to unify a named list - the Ed-Fi contracts plus the abstractions that appear in the hook signatures - and let the resolver serve everything else from the plugin directory.
+That alternative was built and run.
+A `net10.0` class library referencing `Microsoft.Extensions.Options.ConfigurationExtensions` and `Microsoft.Extensions.Configuration`, published `--no-self-contained`, emits its own copies of seven assemblies:
+
+```text
+Microsoft.Extensions.Configuration.Abstractions.dll      Microsoft.Extensions.Options.ConfigurationExtensions.dll
+Microsoft.Extensions.Configuration.Binder.dll            Microsoft.Extensions.Options.dll
+Microsoft.Extensions.Configuration.dll                   Microsoft.Extensions.Primitives.dll
+Microsoft.Extensions.DependencyInjection.Abstractions.dll
+```
+
+Only the two Abstractions assemblies are in the hook signatures.
+`Microsoft.Extensions.Primitives` is not, and it holds `IChangeToken`, which is the return type of `IConfiguration.GetReloadToken()` and `IConfigurationProvider.GetReloadToken()`.
+Unifying the Abstractions while isolating Primitives splits `IChangeToken` into two identities across an interface the host calls.
+Running the same plugin under both strategies:
+
+```text
+enumerated set / Phase A -> TypeLoadException: Method 'GetReloadToken' in type
+                            'Microsoft.Extensions.Configuration.Memory.MemoryConfigurationProvider'
+                            does not have an implementation.
+enumerated set / Phase B -> TypeLoadException: Method 'GetReloadToken' in type
+                            'Microsoft.Extensions.Configuration.ConfigurationSection'
+                            does not have an implementation.
+host-first     / Phase A -> configuration value supplied by the plugin, read back correctly
+host-first     / Phase B -> service registered by the plugin, resolved, options bound correctly
+```
+
+The plugin **loads cleanly** in every case and fails when the hook runs.
+The plugin that fails is the most ordinary one possible: it reads configuration and binds options, which all three plugin types do.
+An enumerated set would therefore have to grow to cover the whole `Microsoft.Extensions.*` surface plus anything a future hook signature touches, and every omission is a `TypeLoadException` an implementer hits and DMS has to diagnose.
+Host-first states the intent directly and has no list to maintain.
+
+**What this keeps and what it gives up.**
+A plugin still gets its own copy of anything the host does not carry, which is where real collisions live: two vendors shipping different versions of an HTTP client, a cloud SDK, or a serializer.
+What it gives up is a plugin overriding a version of an assembly the host **does** have.
+That is the correct trade: a plugin cannot silently displace a host **assembly**, which was the standing objection to drop-in loading in the first place, and the host's version is the one the host was tested against.
+Displacing a host **service** is a different question with a different answer, and [Contract Cardinality](#contract-cardinality) closes it.
+
+**The consequence is that the host's whole assembly closure is part of the compatibility surface, and it is published as such.**
+A plugin is compiled against the contract packages, but under host-first it is *served* every assembly the host carries, whether or not that assembly appears in a hook signature, and a request for a higher version of any of them is fatal.
+That closure changes with every DMS release and no contract package announces it.
+Think of a guest cooking in someone else's kitchen: they may bring any gadget the kitchen lacks, but if the kitchen already owns a knife they use the kitchen's knife, so they need to know what the kitchen owns before they pack.
+Each DMS release therefore publishes a **host assembly manifest**: the assembly name and version of every managed assembly the host can serve, attached to the GitHub release beside the SBOM, with the contract versions that release carries stated at the top.
+
+**The manifest is generated from the built runtime image, not from the build stage's `.deps.json`.**
+Two facts rule the obvious approach out.
+`src/dms/Dockerfile:56-57` publishes `--self-contained false`, so the produced `.deps.json` omits every `Microsoft.NETCore.App` and `Microsoft.AspNetCore.App` assembly - including `Microsoft.Extensions.Configuration.Abstractions` and `Microsoft.Extensions.DependencyInjection.Abstractions`, the two in the hook signatures - and a manifest built from it would omit exactly what an implementer most needs.
+And `/app/Frontend` exists only in the build stage: the runtime stage copies into `/app` (`src/dms/Dockerfile:75-86`), the NuGet-based image downloads the `EdFi.Api` package, unzips it at `:22`, and copies its `DataManagementService/` folder into `/app` at `:23` (`src/dms/Nuget.Dockerfile:21-25`), and the release artifact carries that same folder.
+**The image it runs against is the released one, and that is not `src/dms/Dockerfile`.**
+The image an operator actually pulls is the one the `IMAGE_NAME` repository variable names (`.github/workflows/on-prerelease.yml:20`), `edfialliance/ed-fi-api` in the published registry, and it is built from `src/dms/Nuget.Dockerfile` by the prerelease workflow (`:542-552`), which names it at `:549` as `file:` against the `src/dms` context at `:545` and gives it the release version as a build argument.
+`src/dms/Dockerfile` builds a `local/ed-fi-api` image for development and for the repository's own end-to-end tiers.
+A manifest generated from the wrong one would state a shared-framework section no released image carries, and the two are not interchangeable today: `src/dms/Dockerfile:61` pins `aspnet:10.0.9-alpine3.23@sha256:f03685b2...` while `src/dms/Nuget.Dockerfile:6` pins `aspnet:10.0.3-alpine3.23@sha256:258b939d...`.
+That divergence is a real inconsistency in the repository and it is named here rather than fixed here, because nothing in this design turns on it and changing a base image pin is somebody else's release decision.
+
+**The generator runs after the image is pushed, in a job of its own, and that ordering is a `needs:` edge rather than an assumption.**
+`.github/workflows/on-prerelease.yml` builds and pushes the released image in `docker-publish-dms` (`:495`, whose only `needs:` is `publish-package-dms` and which carries no `if:`), and attaches the release assets in the sibling `attach-dms-artifacts-to-release` (`:381`), which needs the two pack, two SBOM, and two provenance jobs and has no edge to `docker-publish-dms` at all.
+The two therefore run concurrently, so a manifest step added to the attach job could inspect an image that has not been pushed yet.
+The manifest is generated and uploaded in a **new** job that declares `needs: docker-publish-dms`, pulls the tag that job pushed, runs the generator, and uploads the result to the `vX.Y.Z` release resolved exactly as `attach-dms-artifacts-to-release` resolves it (`:394-403`, read at `:436`).
+The two gates differ, and the difference is stated rather than left to be discovered: `docker-publish-dms` has no `if:`, so it also runs for an alpha prerelease and pushes the `pre` tag, while the new job carries the same `startsWith(tag_name, 'dms-') && !contains(tag_name, 'alpha')` gate the attach job carries, because an alpha prerelease has no `vX.Y.Z` release to attach an asset to.
+An alpha therefore publishes an image and no manifest, which is already what happens to the SBOM and the provenance.
+
+The generator runs against the **released** image and emits three sections: every managed assembly at the top level of `/app` with its `AssemblyVersion`; the two shared frameworks the app's `runtimeconfig.json` names, each with the version the image actually carries and every assembly in its shared-framework directory; and, at the top, the runtime base image reference and digest `Nuget.Dockerfile` pins, since that is what fixes the second section.
+
+**The sweep is scoped to top-level `/app/*.dll`, not to everything under `/app`.**
+`/app/ApiSchemaDownloader/` is a second, separately published application that `src/dms/run.sh:53` invokes as its own process, packed into the `EdFi.Api` package as a sibling folder (`src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.nuspec:16`) and copied into the local image at `src/dms/Dockerfile:87`.
+Its assemblies are never in the DMS process, so the host's default context never probes them and a plugin can never be served one.
+A recursive sweep would list them as though it could be, which is the one thing a compatibility manifest must not do.
+
+**`/app/runtimes/` is excluded on a different ground, and the difference is stated because the `ApiSchemaDownloader` reason does not carry over.**
+`src/dms/Dockerfile:78-81` copies the publish output's `runtimes/` tree into the image and its own comment records why: `Microsoft.Data.SqlClient`, reached through the MSSQL backend, ships RID-specific assets and its Linux implementation loads from `runtimes/unix/`.
+That tree holds RID-specific **managed** assemblies and not only native ones, and they are in the DMS process, so "never loaded by this process" is false for them.
+They are excluded because the top-level sweep already carries their identity: by the measured `runtimeTargets` invariant in [Load Isolation](#load-isolation), a RID-specific managed asset repeats the simple name and the `assemblyVersion` of the library's own top-level `runtime` entry, and that top-level copy is the one sitting in `/app` that the sweep lists.
+For the image as it ships, the manifest therefore omits nothing that the default context can serve, and widening the sweep would repeat one identity two or three times and invite a reader to treat per-RID rows as separate compatibility facts.
+What the scope does leave uncovered is the latent case [Load Isolation](#load-isolation) already names: a RID-specific managed asset with **no** top-level `runtime` counterpart, which would be absent from the manifest and still resolvable in the process.
+No dependency in the image is shaped that way today; it is recorded here as a known gap rather than answered by a scan-scope change.
+
+The implementer guide states that the compatibility surface is the contract packages **plus** that manifest, and that a plugin targeting a dependency newer than the manifest lists will be refused: at load for anything the plugin's own `.deps.json` declares, and at first use through the `Load` backstop for the manifest's shared-framework section, which a framework-dependent `.deps.json` cannot declare and the preflight therefore cannot see.
+It states the check's actual reach in the same breath, because the manifest lists `AssemblyVersion`s and the loader compares `AssemblyVersion`s: `Microsoft.Extensions.*` holds that version stable across a major, so the refusal fires on **major** skew and a plugin built against a newer minor of an assembly the host also carries loads without complaint.
+That is a real limit rather than a hedge, it is the same limit stated in the host-first paragraphs above, and an implementer who reads only the manifest would otherwise expect a check the loader does not perform.
+The inventory event in [Observability](#observability) records the same substitutions after the fact; the manifest is what lets an implementer avoid them before deploying.
+
+**Contract versioning follows from host-first and is why the contract is a class.**
+A plugin compiled against `EdFi.Api.Plugins` 1.0 running in a host carrying 1.1 binds against the host's copy.
+See [The Plugin Contract](#the-plugin-contract) for why that is safe.
+
+**The cost is that plugin types are invisible to name-based resolution.**
+Anything that takes a type name and searches the default context will not find a type a plugin brought.
+This design does not bump into that, because the host holds the instance the loader constructed and calls methods on it directly, but any future contributor surface has to respect the same constraint.
+
+Contexts are non-collectible because nothing unloads them.
+
+One consequence of routing through `Default.LoadFromAssemblyName` is that any `AssemblyLoadContext.Default.Resolving` handler the host registers will also run for a plugin's requests.
+DMS registers none today; if one is ever added, it becomes part of the host-first surface and must not resolve into a plugin directory.
+
+### The Plugin Contract
+
+Shipped from `EdFi.Api.Plugins`, following the naming DMS-1432 established for `EdFi.Api.CustomValidation`.
+The base class is named for the package prefix rather than for DMS, because CMS hosts the same loader and the same contract, and a type named for one of the two hosts would be wrong on the other.
+The name is unchangeable once the package is published, so it is settled here rather than during implementation.
+
+```csharp
+public abstract class EdFiApiPlugin
+{
+    /// Must equal the plugin directory name. Verified at load; a mismatch is fatal.
+    public abstract string Name { get; }
+
+    /// Phase A. Override to contribute configuration sources before configuration is read.
+    /// Not in the first published contract; added by the secrets foundation stories.
+    /// See The Two Composition Phases.
+    public virtual void ContributeConfiguration(
+        IConfigurationBuilder configurationBuilder, IConfiguration bootstrapConfiguration) { }
+
+    /// Phase B. Override to contribute service registrations before the container is built.
+    public virtual void ContributeServices(
+        IServiceCollection services, IConfiguration configuration) { }
+}
+```
+
+`bootstrapConfiguration` is the read-only companion to Phase A's builder: it is the operator configuration already layered at the moment the hook runs, so a plugin can read the settings it needs to do its job, its own vault address being the motivating case, without the parameter offering it any way to mutate what it read.
+
+**An abstract class with virtual no-ops, rather than a marker interface plus optional contributor interfaces.**
+Three things follow, and the first is the reason.
+
+The host calls both phases unconditionally.
+There is no `is IConfigurationContributor` test, no per-phase discovery, and no way for a plugin to be allowlisted and silently contribute nothing to a phase the operator expected.
+
+The implementer overrides one method.
+A secrets plugin that injects a configuration source and registers a resolver overrides both; a validator plugin overrides one and never sees Phase A.
+
+**Adding a phase later is binary-compatible with plugins already published.**
+This is the decisive property under host-first resolution.
+A third-party plugin is compiled against one version of the contract and then binds against whatever version the host carries, and those versions will differ, because the whole point is that the operator upgrades DMS without rebuilding the plugin.
+Adding an abstract member to an **interface**, or a member without a body, breaks every implementation compiled against the previous version: the type no longer satisfies the interface and fails to load.
+Adding a virtual method with a no-op body to a **base class** breaks nothing, and neither does adding a **default interface method** with a body, which C# has supported since version 8.
+The two shapes are therefore equally capable of additive evolution, and the class is chosen as a preference rather than a necessity: it has one way to add a member, it needs no explicit-implementation rule for an implementer to get wrong, and the host calls the member on a concrete instance without the interface-dispatch caveats a default method carries.
+What is a necessity is the **policy**, and it binds the per-type contracts as much as this one.
+
+The stated compatibility policy is additive-only **for the life of the package**: new virtual members with no-op bodies, never a new abstract member, never a signature change, never a removal.
+Not "within a major version".
+The loader compares `AssemblyVersion`s and the default binder binds a reference to `1.3.0.0` against a loaded `2.0.0.0` without complaint, so a 2.0 that removed or changed a virtual would load a 1.x plugin cleanly and fail with `MissingMethodException` inside a hook, which is exactly the raw error the check below exists to prevent.
+A major-must-match check would close that, at the cost of forcing every vendor to rebuild on every contract major, which is the rebuild the design exists to remove.
+So a breaking change to this contract is not a version bump; it is a **new package id**, with a new base class the loader discovers alongside the old one for as long as both are supported.
+The contract is one base class with no-op virtuals, so there is no realistic pressure toward a breaking change, and "never" is a commitment the shape can keep.
+That makes an **older plugin on a newer host** supported by construction across any number of releases, which is the direction the upgrade story needs.
+The reverse direction is not supported and is not silently attempted: a plugin compiled against a contract package N+1 cannot run on a host carrying N, because a member it overrides may not exist.
+The loader reads the entry assembly's references to every declared contract assembly before it loads a single type out of it, so that case is a named fatal, "plugin requires EdFi.Api.Plugins >= X, host carries Y", rather than a raw type-load error an implementer has to interpret.
+
+**The same policy applies to every per-type contract a plugin implements, and those are interfaces.**
+`ICustomResourceValidator` ships in `EdFi.Api.CustomValidation` and is resolved host-first exactly like `EdFiApiPlugin`, so a member added to it without a body would break every published validator in the same way.
+Each companion document inherits this rule as a constraint on its contract's shape: a member added to a plugin-implemented interface after first publication carries a default implementation, and a member that cannot be defaulted is a new package id.
+The rule is stated here once so that no companion document rediscovers it, and the implementer guide states it to implementers.
+
+**The skew preflight covers every contract package, not only `EdFi.Api.Plugins`.**
+The named fatal below reads the entry assembly's references, and it reads all of them that name a declared contract **assembly**.
+That set is derived by code rather than written down: it is the assembly that declares `EdFiApiPlugin`, which is `EdFi.Api.Plugins` and is always in it, plus `typeof(T).Assembly.GetName().Name` for every contract type the host's cardinality registry declares.
+For DMS today that is `EdFi.Api.Plugins` plus `EdFi.DataManagementService.CustomValidation`, the assembly that declares `ICustomResourceValidator` and that packs under the id `EdFi.Api.CustomValidation`, and each per-type contract joins the set as its companion document adds a registry entry.
+Deriving it has two consequences worth stating.
+A contract added to the registry is covered by the preflight with no change in the loader and no second list to keep in step, and `EdFi.Api.Plugins` cannot drop out of the set on a day when the registry happens to declare no contract types.
+And the derivation yields **assembly names**, which is what an assembly reference actually carries: a package id is what an implementer writes in a `PackageReference`, and [Contract Cardinality](#contract-cardinality) states why the two must never be written interchangeably.
+Without that, a validator compiled against a newer `EdFi.Api.CustomValidation` would load cleanly on an older host and fail with a `MissingMethodException` on the first matching write, which is the raw error the check exists to prevent.
+
+**Every contract package is versioned on its own, not on the DMS release.**
+The skew check reads an `AssemblyVersion`, so that version has to mean something: it must move when the contract surface moves and must **not** move when it does not.
+Tying it to the DMS release version fails the second half.
+`build-dms.ps1` regenerates `src/dms/Directory.Build.props` with `VersionPrefix` equal to the release version (`SetDMSAssemblyInfo`), so every assembly under `src/dms/` carries the release as its `AssemblyVersion`.
+Under that scheme a vendor compiling against the contract shipped with 8.4 would be refused by an 8.3 host whose contract surface is identical, and the fatal would name two versions that differ in nothing an implementer can act on.
+
+`EdFi.Api.Plugins` therefore carries its own semantic version, `1.0.0` for the first published contract and `1.1.0` when `ContributeConfiguration` lands, declared in `src/plugins/Directory.Build.props` and deliberately outside `SetDMSAssemblyInfo`'s reach.
+
+**`EdFi.Api.CustomValidation` needs the same treatment, and today it does not have it.**
+It is packed with `-p:PackageVersion=$DMSVersion` (`build-dms.ps1:1832`) and inherits its `AssemblyVersion` from the regenerated `src/dms/Directory.Build.props`, so a plugin compiled against the 8.4 contract would be refused by an 8.3 host over a surface that never changed.
+The argument that produced the independent version for `EdFi.Api.Plugins` applies unchanged to every package a plugin compiles against, so it applies here.
+The project stays where it is - it is merged, it is referenced by Core, and moving it would reopen a shipped story for no gain - and instead declares `Version`, `AssemblyVersion`, and `FileVersion` in its own csproj, which wins over the imported `Directory.Build.props`, with the pack target using the project's version rather than `$DMSVersion`.
+`EdFi.Api.CustomValidation` starts at `1.0.0`, matching the surface DMS-1432 shipped.
+The [divergence ledger](#divergence-from-the-custom-validation-epic) records this as an amendment to a merged story, and the publishing story owns it.
+Moving it off `$DMSVersion` is five call sites rather than one, because the release version is threaded through the package's file name as well as through the pack argument: beside the `-p:PackageVersion=$DMSVersion` at `build-dms.ps1:1832`, `:1818` composes the expected package path from `$DMSVersion` and `:1835` throws when a file by that name is absent, `.github/workflows/on-dms-pullrequest.yml:376` names the same file for the assertion script, and `:387` passes the same version into `eng/verification/Invoke-CustomValidationConsumerCheck.ps1`, which feeds the exact pin at `eng/verification/CustomValidationConsumer/CustomValidationConsumer.csproj:43`.
+
+**Declaring the version in the csproj is necessary and, on its own, not sufficient: one build lane overrides it.**
+A csproj-declared `AssemblyVersion` beats the imported `Directory.Build.props`, whichever shape that file is in, because the props file is imported above the csproj's own property group.
+Measured on `net10.0`: with `src/dms/Directory.Build.props` in its committed shape, which declares `AssemblyVersion` outright, and in the shape `SetDMSAssemblyInfo` regenerates, which declares `VersionPrefix`, a contract project declaring `1.0.0` publishes as `1.0.0.0` while the application beside it publishes as the release version.
+A **global** property does beat it, and one lane supplies one.
+`src/dms/Dockerfile` accumulates `/p:AssemblyVersion=$ASSEMBLY_VERSION /p:FileVersion=$ASSEMBLY_VERSION` into the publish arguments whenever `ASSEMBLY_VERSION` is non-empty (`:49-55`) and expands them into both `dotnet publish` calls as `"$@"` (`:56-59`), fed from the `ASSEMBLY_VERSION` build argument that `build-dms.ps1:1962-1970` always supplies, since `$DMSVersion` defaults to `8.0.0`.
+A global property overrides the project's own value and propagates to every project reference: measured, the same contract project that publishes as `1.0.0.0` under the release lane publishes as `8.4.0.0` under `/p:AssemblyVersion=8.4.0.0`.
+That is the same contract assembly carrying two different `AssemblyVersion`s in two images, and the skew preflight compares exactly that value.
+
+**So the Dockerfile lane stops stamping `AssemblyVersion` on the command line, and nothing replaces it.**
+`src/dms/Dockerfile`'s publish drops `/p:AssemblyVersion` and `/p:FileVersion` and the `ASSEMBLY_VERSION` build argument that feeds them (`:45`, `:53-54`), and every project in the locally built image then takes the `AssemblyVersion` the committed `src/dms/Directory.Build.props` declares, which is `8.0.0` (`:3-4`), while a contract project that declares its own version keeps it.
+`/p:Version` and `/p:InformationalVersion` stay, because they are measured **not** to reach an explicitly declared `AssemblyVersion`: publishing the same contract project under `/p:Version=8.4.0` still produced `1.0.0.0`.
+
+**Teaching `build-dms.ps1`'s `DockerBuild` to run `SetDMSAssemblyInfo` first was the obvious replacement, and it is rejected, because that helper's side effects are not ones a development image justifies.**
+`SetDMSAssemblyInfo` regenerates the **tracked** `src/dms/Directory.Build.props` into a different file (`build-dms.ps1:210-241`): it drops `AssemblyVersion`, `FileVersion`, and `InformationalVersion`, adds `Copyright` and an empty `VersionSuffix`, and declares `VersionPrefix` in their place.
+It rewrites that file on every run, and the conclusion does not rest on the mechanism: the write goes through `Invoke-RegenerateFile` (`eng/build-helpers.psm1:6-22`), whose change guard compares an undefined `$new_content` against the file's current contents while the parameter it was handed is `$NewContent` (`:17`), so it never suppresses a write; and the regenerated shape differs from the committed one regardless, so the file would still be rewritten on every run if that guard were repaired.
+Its only caller today is `BuildAndPublish`, through `Invoke-SetAssemblyInfo` (the call is `build-dms.ps1:1871` inside the function declared at `:1868`, invoked from the command at `:2006`).
+`DockerBuild` itself regenerates nothing: it assembles build arguments and runs `docker buildx build` (`:1960-1976`, the build at `:1974`), and the Dockerfile consumes the committed props file it copies at `:13`.
+`DockerBuild` is reached from the `E2ETest` command (`:2011` to `E2ETests` at `:1127` to `Start-DockerEnvironment` at `:870-871`) and from `StartEnvironment` (`:2033` to `Start-BootstrapDockerEnvironment` at `:976-977`) unless `-SkipDockerBuild` is passed, besides the `DockerBuild` command itself (`:2030`), so wiring the helper in would rewrite a tracked file and dirty `git status` on every local end-to-end run.
+`InstanceE2ETest` never reaches `DockerBuild`: it delegates to `src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1` (`:1697`, `:1715-1716`), forwarding `-SkipDockerBuild` only when it was given (`:1712-1714`), and that script rebuilds the image on its own path instead, by passing `-r` to `start-local-dms.ps1` (`setup-local-dms.ps1:355-364`).
+It would also run nowhere anyone watches: every CI end-to-end leg passes `-SkipDockerBuild`, and the image CI builds is produced by `docker/build-push-action` with no build arguments at all (`.github/workflows/on-dms-pullrequest.yml:696-707`, `:1510-1522`), so the new stamping path would execute only on developer machines.
+And it would not stamp what the lane stamps today: `Convert-ToAssemblyVersion` maps `8.4.0-pre.0.4` to `8.4.0.4` (`package-helpers.psm1:165-190`), whereas `VersionPrefix` stamping yields `8.4.0.0`, so the build height the `ASSEMBLY_VERSION` argument carries would be silently dropped in exchange.
+
+**What the removal costs is stated rather than discovered.**
+In the locally built `local/ed-fi-api` image every DMS assembly carries `AssemblyVersion` and `FileVersion` `8.0.0` from the committed props, whichever `-DMSVersion` the build was given, rather than the release version it carries today.
+That is accepted: the local image is a development and test artifact, no check in this design or elsewhere reads a DMS assembly's version out of it, and `Version` and `InformationalVersion` still record the version it was built for.
+The versions that *are* load-bearing, each contract project's own declared value, are exactly the ones the removal protects.
+The release lane is untouched, which is the other half of the accounting: `BuildAndPublish` still calls `Invoke-SetAssemblyInfo` (`build-dms.ps1:2006`), the `EdFi.Api` package is still stamped with the release version, and the image an operator pulls is still built from `src/dms/Nuget.Dockerfile` out of that package.
+And no tracked file is rewritten by an image build, which is a property the rejected replacement could not offer.
+
+**Two pre-existing `build-dms.ps1` defects surfaced while establishing the above, recorded here as observations and not fixed on this branch**, the same treatment this document gives the CMS `HashingIterations` pair in [Applicability to the Configuration Service](#applicability-to-the-configuration-service).
+The first is `Invoke-RegenerateFile`'s dead change guard (`eng/build-helpers.psm1:17`), which compares `$new_content` against the file while the parameter is `$NewContent`, so every regenerated file is rewritten whether or not its content changed; the content written is correct (`:20` writes `$NewContent`), only the change detection is dead.
+The second is the PowerShell subexpression `${(Get-Date).year)}`, which is not a subexpression at all and renders empty, in two places: `build-dms.ps1:224` puts it in the `Copyright` element of the regenerated `src/dms/Directory.Build.props`, and `build-dms.ps1:1760` assigns it to `$copyrightYear`, which feeds the `$year$` token in `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.nuspec:9`, so the shipped `EdFi.Api` package's copyright carries no year either.
+Both are worth tickets of their own, and neither changes any decision above: the dirty-tree conclusion holds on the regenerated shape alone.
+
+The other alternative considered was to leave the lane alone and have the skew preflight compare the package version recorded in `.deps.json` rather than `AssemblyVersion`; it is rejected because host-first resolution itself keys on `AssemblyVersion`, so a check that compared something else would be checking a different thing from the one the loader enforces, and the manifest would still have to state one truthful value.
+The host-integration story owns **this** Dockerfile change, dropping the publish command line's version stamping together with the `ASSEMBLY_VERSION` build-argument pair that feeds it in `build-dms.ps1`'s `DockerBuild` (`:1962-1970`), because it is the story whose skew preflight one contract assembly carrying two `AssemblyVersion`s would break.
+The other build-stage change, teaching the build stage about `src/plugins/`, belongs to the contract-package story for a different reason; see [What the Stock Image Must Ship](#what-the-stock-image-must-ship).
+
+For each contract package, `AssemblyVersion`, `FileVersion`, and `PackageVersion` are one value in every lane that produces the assembly, and the pack lane asserts the packed assembly's `AssemblyVersion` equals the package version.
+The common .NET convention of holding `AssemblyVersion` at `major.0.0.0` is ruled out for the same reason: under it a plugin built against 1.3 records a reference to `1.0.0.0`, a 1.0 host satisfies it, and the missing member surfaces as a `MissingMethodException` inside a hook.
+Without the pack-lane assertion the check is silently blind and nothing else in the design notices.
+
+**An independent version and a per-release publish lane meet at a policy, and the policy is publish when absent, skip when unchanged, fail when changed.**
+`.github/workflows/on-prerelease.yml` fires on every prerelease, and a contract version that moves only when its surface moves will sit unchanged across many of them.
+A publish job that refused to run when its version was already on the feed would therefore fail every prerelease after the first, and `build-dms.ps1:1948` pushes with no `--skip-duplicate` to soften it.
+Refusing outright is also the wrong instinct: the case it exists to catch is not a republish, it is a contract whose surface changed without its version moving, and only a content comparison can tell those apart.
+So each contract's publish job asks the feed for that id and version first.
+Absent, it packs and pushes.
+Present, it downloads the published package and compares **three** things against the one just packed, each normalized before comparison: the assembly's public surface, the XML documentation file, and the nuspec's declared dependency list.
+Identical on all three is a clean skip that logs "already published, unchanged", and a difference in any one is a **failure** naming the id, the version, which of the three differed, and the instruction to bump the contract's version.
+The surface half is an extension of the exported-type assertion the pack lane already runs; the other two are load-bearing rather than thorough, because both contracts ship their rules in `///` comments and both declare dependencies an implementer inherits, so a rule rewritten in a comment or a dependency range widened at an unchanged version is a changed contract that a surface-only comparison would call unchanged.
+The packed readme is deliberately **not** in the comparison, since it is prose an implementer reads rather than something they compile or resolve against, and a documentation fix should not force a contract version bump.
+Comparing the `.nupkg` bytes is deliberately not the check either, because a nupkg is not byte-reproducible across runners and a hash mismatch would fail on packaging noise rather than on a surface change.
+This is the additive-only policy stated as a build step: the version is the contract's identity, so the same version has to mean the same surface, and the lane is where that stops being an intention.
+
+**Promoting a contract on release is a three-way question, and "absent" is not the same answer twice.**
+`.github/workflows/on-release.yml` promotes Azure Artifacts packages from the prerelease view into the release view through `Invoke-Promote`, which derives the version to promote from the release tag (`package-helpers.psm1:79`, `$version = $ReleaseRef -replace "v", ""`), and a contract version deliberately does not move with the release, so each contract's step has to pass its own version explicitly.
+An earlier revision had that step skip when the version was not in the prerelease view, and that conflates two different states: a version already promoted by an earlier release is absent from the prerelease view, and so is a version that was never published at all.
+So the step asks the **release** view first.
+Present there, the contract is already promoted and the step logs so and exits zero, which is the case that keeps every release after the first from failing on a version that has not moved.
+Absent there and present in the prerelease view, it promotes.
+Absent from both, it **fails**, naming the package id and the version it looked for, because that is a contract that never reached the feed and silence would hide it until an implementer could not restore it.
+
+The release notes for each DMS version state which contract versions that version carries, and the host assembly manifest states them at the top, which is the one fact an implementer needs to pick a target.
+
+The direction the binder allows is the direction the design needs.
+The default context binds a reference to `1.0.0.0` against a loaded `1.3.0.0` without complaint, so an older plugin on a newer host still loads, and a reference to `1.3.0.0` against a loaded `1.0.0.0` is refused, which is the case the loader turns into the named fatal.
+
+The entry assembly must expose exactly one public non-abstract `EdFiApiPlugin` subclass with a public parameterless constructor.
+Zero is fatal, because the operator allowlisted a directory that contributes nothing.
+More than one is fatal, because choosing between them would be arbitrary.
+
+Inside the hooks a plugin writes ordinary registration code, the same code DMS-1434 already asked implementers to write, called by the loader instead of by a composition root:
+
+```csharp
+public override void ContributeServices(IServiceCollection services, IConfiguration configuration)
+{
+    services.Configure<AcmeOptions>(configuration.GetSection("Acme"));
+    services.TryAddEnumerable(
+        ServiceDescriptor.Transient<ICustomResourceValidator, StudentIdentityValidator>());
+}
+```
+
+### The Two Composition Phases
+
+DMS needs contributions at two moments, and a mechanism offering only one cannot serve secrets at all.
+
+**Phase A, configuration contribution.**
+A plugin that supplies configuration values must supply them before anything reads configuration, and no DI extensibility reaches that point.
+That must happen after `WebApplication.CreateBuilder(args)` and before `builder.AddServices()`, which is the first thing that reads a plugin-resolvable configuration value: `AddServices` calls `ConfigureLogging()` on its first line (`Infrastructure/WebApplicationBuilderExtensions.cs:38`), which reads the `Serilog` section.
+
+One key is read earlier and is deliberately out of Phase A's reach.
+`Program.cs:30-33` reads `AppSettings:StartupStatusFilePath` to construct the bootstrap status signal, before plugin loading has happened at all, and it must: that signal is how a loader fatal is reported, so it cannot depend on anything a plugin contributed.
+`docs/CONFIGURATION.md` states the exception rather than leaving an operator to discover that one key ignores a plugin source.
+
+**Phase B, service contribution.**
+Validators, identity services, secret resolvers, and secret hashers are DI registrations, contributed while `IServiceCollection` is still open.
+
+Both phases run inside `Program.cs` before `builder.Build()`, so **one load serves both**.
+
+**Phase A is decided here and built with the secrets foundations, not with this spike's stories.**
+Nothing on this spike's table consumes it: custom validation and identity are Phase B.
+The reason it is designed now is that the secrets spike (DMS-1503) must build on a mechanism that is *decided*, and a design that settled only Phase B would have to be amended, along with its in-flight stories, the moment secrets needed configuration.
+That argument needs the design to exist; it does not need the code to exist.
+And the base class was chosen precisely so that a phase added later is binary-compatible with every plugin already published, so shipping Phase A code ahead of its first consumer would spend the property the class shape buys for no consumer.
+Concretely: the first published `EdFi.Api.Plugins` carries `Name` and `ContributeServices` only.
+The secrets spike's first foundation story adds `ContributeConfiguration` as the first exercise of the additive policy, together with the loader's Phase A invocation, the source placement below the operator's explicit sources, the additive `Sources` guard, the Contribute row of the cardinality table, the `docs/CONFIGURATION.md` precedence order, and the Phase A rows of the test plan.
+The member is withheld rather than shipped uninvoked because a virtual the host never calls is a hook a plugin can override to no effect, which is the silent no-op this design refuses everywhere else.
+Every Phase A statement in this document is therefore a decision the secrets spike inherits, and the [Level of Effort](#level-of-effort) table marks the rows it owns.
+
+The sketch below is the **end state**, after the secrets foundation story has added Phase A.
+The host-integration story in this spike ships everything in it except the `ContributeConfiguration` line.
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+var bootstrapStartupStatusSignal = new FileStartupStatusSignal(
+    builder.Configuration.GetValue<string>("AppSettings:StartupStatusFilePath"), Console.Error);
+
+RunBootstrapPhase(
+    DmsStartupPhases.LoadPlugins,
+    "Loading plugins.", "Loaded plugins.",
+    "Loading plugins failed before the application host was built.",
+    () =>
+    {
+        // The contract assembly set is the host's, not the loader's, and it is
+        // derived rather than written down: the assembly that declares EdFiApiPlugin
+        // plus the declaring assembly of every contract type in the cardinality
+        // registry. A per-type contract added later is covered by the skew
+        // preflight without a change in the loader.
+        loadedPlugins = PluginLoader.Load(
+            builder.Configuration, DmsPluginContracts.Registry.ContractAssemblyNames);
+        // Added by the secrets foundation story, together with the member it calls.
+        // The aggregate-level hook takes one argument where the contract's takes two,
+        // the way LoadedPlugins.ContributeServices already differs from the contract's:
+        // builder.Configuration is a ConfigurationManager, which implements both
+        // IConfigurationBuilder and IConfiguration, so the aggregate passes it as the
+        // configurationBuilder and as the bootstrapConfiguration of each plugin's hook.
+        loadedPlugins.ContributeConfiguration(builder.Configuration);
+    });
+
+RunBootstrapPhase(DmsStartupPhases.ConfigureServices, /* ... */, () =>
+{
+    builder.Services.AddHttpClient();
+    builder.AddServices(loadedPlugins);
+});
+```
+
+**Diagnostics do not depend on a logger, and the loader does not depend on DMS's bootstrap scaffolding.**
+Plugin loading runs before the logger exists.
+Serilog's static API is not available as a fallback: DMS configures Serilog through `webAppBuilder.Logging.AddSerilog(configureLogging, dispose: true)` (`Infrastructure/WebApplicationBuilderExtensions.cs:125`) without assigning the static `Log.Logger`, so a `Log.Warning` at load time would write nowhere.
+The loader therefore writes its own outcomes to `Console.Error` and throws on failure, which needs nothing from either host.
+DMS additionally wraps the call in `RunBootstrapPhase`, inheriting the structured, machine-readable, CI-collected startup record it already produces (`Program.cs:443`).
+Load outcomes are re-emitted through the real logger once it exists.
+This is what makes [Applicability to the Configuration Service](#applicability-to-the-configuration-service) cheap: the wrapper is a host's choice, not the loader's requirement.
+
+**Phase A is deliberately narrower than the ODS equivalent.**
+ODS hands a plugin the whole `IHostBuilder`, which lets it replace the service provider factory, add hosted services, and reconfigure logging, none of which is the stated purpose.
+DMS hands it an `IConfigurationBuilder`, so a Phase A plugin can reach configuration and nothing else.
+Anything a plugin wants to register belongs in Phase B, where it is visible to the startup guard.
+
+**Handing over an `IConfigurationBuilder` buys configuration-only. It does not buy additive-only.**
+`IConfigurationBuilder.Sources` is a mutable list, so a plugin holding the builder can remove or reorder sources it did not add.
+Control 4 in [Trust Model and Verification](#trust-model-and-verification) holds regardless, because `Plugins` was consumed to decide what loads before Phase A ran, so no removal or reordering can reach the allowlist.
+What is exposed is everything else: a plugin that drops the `appsettings.json` source, or lifts its own source above another plugin's, changes how the whole host resolves configuration and leaves no trace of having done it.
+The loader therefore snapshots `Sources` before each Phase A call and compares it after, and it is **fatal** if any pre-existing source was removed or moved, naming the plugin.
+Adding is the only operation the guard permits, and what the guard detects is removal and reordering of the source objects it snapshotted.
+Mutation of a pre-existing source object is undetectable at this seam and is a documented trust assumption rather than a control.
+`EnvironmentVariablesConfigurationSource.Prefix` and `JsonConfigurationSource.Path` both have public setters, so a plugin can repoint or re-prefix a source the loader is still holding by reference.
+Probe-measured on `net10.0`: a plugin that set the unprefixed environment source's `Prefix` to a value nothing matches left the snapshot comparison reporting an unchanged list, and once the loader's own placement step rebuilt the provider set, a key the operator had set in the environment resolved to nothing.
+That sits inside the full-process-trust statement in [Trust Model and Verification](#trust-model-and-verification), and the guard is still worth its cost because removal and reordering are the mistakes an honest plugin actually makes.
+This guard, like everything else in Phase A, is built by the secrets foundation story rather than by this spike's stories.
+
+**An operator's explicit override outranks a plugin, and there are two explicit surfaces, not one.**
+A plugin calling `configurationBuilder.Add(source)` appends, which would place its source above **both** of the operator's explicit surfaces, so `Plugins__Allowed` is not the only thing at stake; a deployment that starts the host as `dotnet EdFi.DataManagementService.Frontend.AspNetCore.dll --AppSettings:Foo=bar` would lose that argument to a plugin as well.
+The command-line surface is the conditional one: `src/dms/run.sh:118` starts the stock container with no arguments, so no command-line source exists there at all, and the rule below is written to hold whether or not one does.
+Re-adding the environment source after Phase A, which was the earlier decision here, restores one surface and forgets the other.
+
+**Where a plugin's source has to sit is an empirical question, and the answer is not where an obvious reading of `CreateBuilder` suggests.**
+`WebApplication.CreateBuilder(args)` (`Program.cs:29`) does not install five sources.
+Measured on `net10.0`, it installs **ten** when the host is started with no arguments, in this order, later winning over earlier:
+
+```text
+[0]  Memory                                    [5]  Json  appsettings.{Environment}.json
+[1]  EnvironmentVariables  prefix ASPNETCORE_  [6]  Json  <assembly>.settings.json
+[2]  Memory                                    [7]  Json  <assembly>.settings.{Environment}.json
+[3]  EnvironmentVariables  prefix DOTNET_      [8]  EnvironmentVariables  no prefix
+[4]  Json  appsettings.json                    [9]  Chained (the host's own configuration)
+```
+
+**Ten is the shipped container's number; twelve is the number when the host is started with arguments.**
+`CreateBuilder` installs a `CommandLine` source only when `args` is non-empty, and the stock image passes none: `src/dms/run.sh:118` is `dotnet EdFi.DataManagementService.Frontend.AspNetCore.dll` with nothing after it.
+Measured on `net10.0` with one argument supplied, two `CommandLine` sources appear, at `[4]` just above `appsettings.json` and at `[10]` just above the unprefixed environment source, and the list is twelve long.
+Everything below turns on the **last environment variable source**, the unprefixed one, which is `[8]` in the ten-source list and `[9]` in the twelve-source one, so the placement rule reads the same in both and does not depend on the count.
+In a Development environment a user-secrets source sits immediately below that source.
+The two host-level sources at `[1]` and `[3]` are prefix-filtered and sit **below** `appsettings.json`, and so does the host's own command-line source when there is one.
+The operator-facing environment surface is the unprefixed source; the operator-facing command-line surface exists only in a deployment that starts the host with arguments, which the stock container does not.
+Placing a plugin's sources "immediately below the first environment variable source" would put them at index `[1]`, under `appsettings.json`, where the empty `ConfigurationServiceSettings:ClientSecret` and `:EncryptionKey` that `appsettings.json` ships would shadow the values a vault plugin supplied.
+That is the exact inversion of the commitment this section makes.
+
+The loader therefore places plugin sources rather than trusting where `Add` put them.
+After each Phase A hook returns and the additive guard above has passed, the loader moves the sources that plugin appended to sit **immediately below the last environment variable source** that `CreateBuilder` installed, the unprefixed one, preserving their relative order.
+"Last environment variable source" is the rule rather than an index, because the count varies with the environment and the runtime is free to add sources; the loader finds the highest-indexed `EnvironmentVariablesConfigurationSource` present when Phase A began and inserts there.
+Among plugin sources, later still wins; all of them sit above every JSON source; and none of them sits above the operator's environment or command-line source, because those two were never moved.
+Probe-verified end to end on `net10.0`: with that placement, a key set only by the plugin resolves to the plugin's value even when `appsettings.json` carries an empty string for it, a key also set in the environment resolves to the environment's, and a key also passed on the command line resolves to the command line's.
+
+The loader adds no source of its own, and nothing waits for the `AddEnvironmentVariables()` call inside `AddServices` (`Infrastructure/WebApplicationBuilderExtensions.cs:46`), which sits eight lines after `ConfigureLogging()` has already read the `Serilog` section (`:38`) and would have left one section resolved under a different precedence than every other.
+That call appends one more environment source above everything, an eleventh in the shipped container, so in DMS as shipped the unprefixed environment already outranks the command line for every key read after `AddServices` has run; the placement above does not depend on it and does not change it.
+The reordering guard applies to plugins and not to the loader: the loader is host code, it moves only what the plugin just added, and the sources that were there before the hook keep their positions and their order.
+
+The rationale is operational.
+An operator who sets a value in the environment or on the command line must not find it silently stopped working because they installed a plugin for an unrelated purpose.
+It is also the more secure default, since those are the surfaces the deployment controls and a plugin source is the surface third-party code controls.
+The accepted trade is that a value present in the environment beats the vault, which is the correct reading of "explicit override": an operator who wants the vault to supply a value does not also set that value in the environment.
+`docs/CONFIGURATION.md` states the resulting order - environment variables, then command-line arguments, then plugin sources in allowlist order, then `appsettings.json` and the other JSON sources - rather than leaving it to be discovered, and states that DMS's own `AddEnvironmentVariables()` at `Infrastructure/WebApplicationBuilderExtensions.cs:46` is why the environment sits above the command line rather than below it.
+
+### Contract Cardinality
+
+Each plugin contract declares one of three cardinalities, and cardinality is metadata the **host** holds about each contract, not something a plugin declares, so a plugin cannot opt out of being counted.
+
+| Cardinality | Meaning | Contracts | Registration | Conflict |
+| --- | --- | --- | --- | --- |
+| **Fan-in** | N implementations, all invoked | `ICustomResourceValidator`, shipped in DMS-1432 | `TryAddEnumerable`, transient | None; more is more |
+| **Replace** | 0 or 1, displacing a host default | identity service (DMS-1412); secret resolver and `IClientSecretHasher` come from the secrets spike | A single registration made with a plain `Add`, never a `TryAdd` | **Fatal.** Two claims aborts startup, whether they come from two plugins or from one plugin registering twice |
+| **Contribute** | N configuration sources, order declared | Phase A sources | Placed in allowlist order below the operator's explicit sources | None; later wins among plugin sources, and the order is the operator's. Command-line arguments and environment variables sit above all of them |
+
+**Attribution is a snapshot and a diff, taken around one hook at a time.**
+The loader snapshots the real collection before each plugin's `ContributeServices` and compares it after.
+Descriptors present afterwards and not before, compared by reference, are that plugin's additions; descriptors present before and not afterwards are its removals; a service type appearing in both lists is a replacement.
+Hooks run one at a time in allowlist order, so every diff belongs to exactly one plugin.
+An earlier revision rejected diffing on the grounds that a diff cannot say which plugin added what once more than one has run, and that is true only of a diff taken once at the end; taken around each hook it is exact, and it needs no per-call bookkeeping at all.
+
+**The wrapper survives, and it is a pass-through.**
+The loader still hands each plugin an `IServiceCollection` implementation rather than the real collection, for one reason the diff cannot supply: the removal rules below have to fire **before** a call reaches the real collection rather than after, so something has to sit in front of it.
+That is its whole job.
+Every read member delegates unchanged, every write member applies the removal rule and then delegates, and nothing is hidden, reordered, or projected.
+The plugin writes ordinary code and every extension method works unchanged, because they all extend `IServiceCollection` and the wrapper behaves exactly as the collection behind it does.
+
+**A declined `TryAdd` is invisible at this seam, and the design says so rather than promising otherwise.**
+An earlier revision had the wrapper record every `TryAdd`-family call that declined, with the service type and implementation involved.
+A probe showed that is not implementable.
+`ServiceCollectionDescriptorExtensions.TryAdd` reads `Count` and the indexer, compares the candidate's `ServiceType` against what it finds, and returns without ever handing the candidate to the collection, so a declined `TryAddSingleton<IFoo, Foo2>` reaches the wrapper as an anonymous scan and `Foo2` is never seen at all.
+`TryAddEnumerable` sweeps the whole collection the same way, so even the service type under consideration is ambiguous.
+No wrapper over `IServiceCollection` can recover that information, and a design that claimed to would have shipped an acceptance criterion nothing could satisfy.
+
+**Masking replace-cardinality descriptors from a plugin's view was the previous answer, and it is withdrawn as unsound.**
+The idea was that if the host hid every descriptor for a replace contract, a `TryAdd` against one could never find a match, would always fall through to `Add`, and would always land attributed.
+It does not survive contact with the helpers a plugin actually calls.
+`ServiceCollectionDescriptorExtensions.RemoveAll<T>` and `Replace` walk the collection **by index**, `for (i = Count - 1; i >= 0; i--)`, reading through the masked view and then calling `RemoveAt(i)` with an index the real collection interprets differently.
+Measured on `net10.0` against a real collection holding `[IReplaceContract, IB, IC]` with the first descriptor masked, `RemoveAll<IC>()` removed `IReplaceContract` and `IB` and left `IC` in place: the exact opposite of what was asked.
+A wrapper could translate every index back through the projection, and that repairs this call at the cost of a projection layer whose correctness has to be re-argued for every `IList<ServiceDescriptor>` member and every helper anyone writes against it.
+The design refuses that trade.
+A wrapper that lies about the collection is a wrapper every future reader has to reason about; a pass-through is not.
+
+**The replace-cardinality rule is a registration rule instead, and it is stated to implementers.**
+A plugin claiming a replace-cardinality contract registers it with a plain `Add`, never with a `TryAdd`.
+`PLUGINS.md` states that as the rule for that cardinality, alongside `TryAddEnumerable` for fan-in, and the reason is one sentence: a replace contract has one claimant, so there is nothing to try.
+The guard then counts, for each replace contract, the descriptors the per-hook diffs attribute to plugins, and attributes each one to the plugin whose diff carried it.
+The count deliberately excludes a pre-existing host default: a replace contract exists to displace one, so a host default plus one plugin claimant is two descriptors on the real collection and exactly one claim, which is the case that must pass.
+Two claims, whether from two plugins or from one plugin registering twice, are all named in the fatal.
+
+**A plugin that used `TryAdd` anyway is not silently wrong.**
+Its call declines, it adds no descriptor of its own, and it therefore registers no declared plugin contract, which is already a fatal below that names the plugin and lists what it did register.
+So the decline the seam cannot observe still surfaces, one check downstream, with a message an implementer can act on.
+That is the whole reason the no-contract-registered rule is worth its own row: it is the backstop for every way a plugin can run and contribute nothing, and an invisible decline is one of them.
+
+**That backstop covers the invisible decline only when the decline was the plugin's one contribution, and the residual is recorded rather than left to be discovered.**
+The no-contract-registered rule is a conjunction: it fires when a plugin registers no declared contract **and** contributes no configuration source.
+So a plugin that `TryAdd`s a replace contract, has the call decline, and also registers some other declared contract or contributes a Phase A source passes every check the design has.
+The replace-conflict count does not catch it either, because it counts descriptors the per-hook diffs attribute to plugins and the declined call added none, so that contract shows zero plugin claims rather than two.
+The host default survives, the activation probe resolves it, and the substitution the operator believed they had installed never happens and nothing says so.
+No check is added for it, because there is nothing at this seam to key one on: cardinality is host metadata, the plugin's intent is not expressed anywhere the host can read, and the candidate a declining `TryAdd` was carrying is exactly what the measurement above shows the wrapper never sees.
+What the design does instead is put the registration rule in `PLUGINS.md` as an implementer obligation and record this hole here, so the no-contract-registered row is not read as full coverage of the decline.
+
+**The wrapper's one rule is about removals, and removing a host-owned descriptor the plugin did not add is fatal.**
+`IServiceCollection` is an `IList<ServiceDescriptor>`, so `Remove`, `RemoveAt`, `Clear`, and the indexer setter are on the interface, and `services.Replace(...)`, `RemoveAll<T>()`, and their relatives are extension methods that call them.
+This is the rule the diff cannot carry, and that is why a wrapper exists at all: a diff taken after the hook returns would see `services.Replace(ServiceDescriptor.Singleton<IDocumentStoreRepository, Mine>())` as a removal and an add, both already applied to the real collection, and the host default would be gone by the time anything noticed.
+A plugin has no legitimate reason to remove a host-owned descriptor: it contributes registrations, it does not edit the host's.
+So the wrapper makes any call that removes or overwrites a descriptor **that was present before the plugin's hook began and whose `ServiceType` is declared in a host assembly** fatal, naming the plugin and the service type, before the call reaches the real collection.
+`Clear` is always fatal because it necessarily removes such descriptors.
+
+The rule is scoped twice, and both scopes exist so that it never rejects a legitimate plugin.
+
+It is scoped to **pre-existing descriptors** because a plugin editing its own registrations is ordinary work.
+An earlier revision justified this by asserting that framework and vendor registration helpers call `Replace` and `RemoveAll` internally, and a metadata sweep refuted it.
+Across `Microsoft.Extensions.Http`, `Microsoft.Extensions.Options`, `Microsoft.Extensions.Options.ConfigurationExtensions`, and `Microsoft.Extensions.Azure` 1.11.0, the only `ServiceCollectionDescriptorExtensions` members referenced at all are `TryAdd`, `TryAddSingleton`, `TryAddTransient`, and `TryAddEnumerable`, beside `AddSingleton`, `AddTransient`, `AddOptions`, and `Configure`.
+`AddHttpClient` does not call `Replace`, options builders do not call `RemoveAll`, and `AddAzureClients` does neither.
+The one framework caller in that set is `Microsoft.Extensions.Logging`, whose `LoggingBuilderExtensions.ClearProviders` is a real `ServiceCollectionDescriptorExtensions.RemoveAll<ILoggerProvider>()`, and the carve-out below makes exactly that call fatal rather than exempt.
+What the exemption is for is a plugin's own explicit `Replace` over a descriptor it registered a few lines earlier.
+So the scope is kept, on the honest ground: a plugin that removes what it added is doing routine work, the per-hook diff already knows what it added, and "did this plugin add it" is a lookup.
+What the scope is **not** is protection against a vendor SDK nobody has enumerated, because the measurement says the SDKs do not do this.
+
+It is scoped to **host-owned service types** because DMS cannot enumerate in advance every framework or vendor descriptor a legitimate plugin might replace, and the cost of being wrong is rejecting a legitimate plugin, which is the outcome this section's bar forbids.
+Removals and overwrites of pre-existing **non-host** descriptors are therefore permitted and **recorded**: each one appears in the per-plugin inventory event in [Observability](#observability) with the service type and the implementation it displaced, which is the same treatment the displacement check below gives to a plugin registering `IHostedService` or `IConfigureOptions<T>`, and for the same reason.
+
+**The logging pipeline is the one carve-out from that permission, and it is a fatal.**
+An earlier revision named `ClearProviders` as the legitimate framework call the exemption exists for.
+That is backwards, and the reason is where DMS wires its logging.
+Serilog is added inside `AddServices`, at `Infrastructure/WebApplicationBuilderExtensions.cs:125`, and Phase B runs after `AddServices`' own registrations, so by the time a plugin's hook is called the host's only logging provider is a pre-existing descriptor.
+Measured on `net10.0`, `LoggingBuilderExtensions.ClearProviders` is exactly `Services.RemoveAll<ILoggerProvider>()`: against a collection built by `AddLogging(b => b.AddConsole())` it removed the one `ILoggerProvider` descriptor and left `ILoggerFactory` and `ILogger<>` untouched.
+A plugin calling it therefore silences every DMS log line and the plugin inventory event that would have been the only record of what that plugin did, and "permitted and recorded" would mean recording the removal into the channel the removal just deleted.
+
+So removing, replacing, or overwriting a pre-existing descriptor whose `ServiceType` is in the **logging pipeline set** is **fatal**, naming the plugin and the service type.
+That set is written as service type names rather than as an assembly or namespace rule, because it has to cover the types whose descriptors carry the process's logging and nothing else in `Microsoft.Extensions.*`.
+It is four names, all declared in `Microsoft.Extensions.Logging.Abstractions`: `Microsoft.Extensions.Logging.ILoggerProvider`, `Microsoft.Extensions.Logging.ILoggerFactory`, `Microsoft.Extensions.Logging.ILogger`, and the open generic `Microsoft.Extensions.Logging.ILogger<>`.
+The set is deliberately inclusive rather than minimal, and non-generic `ILogger` is the reason to say so: measured on `net10.0`, neither `AddLogging` nor `AddSerilog` registers a descriptor for it, so no removal can match it in DMS as shipped.
+It is listed anyway because the rule is about what a plugin may remove rather than about what the host happens to register, the check costs a name comparison, and a host or an earlier plugin that did register one would otherwise be outside the carve-out for no stated reason.
+A plugin that wants its own sink **adds** a provider, which is untouched by this rule; nothing legitimate needs to remove the host's.
+Everything else in the exemption stands: a plugin removing its own descriptors is routine work, and a plugin removing some other pre-existing framework or vendor descriptor is permitted and recorded.
+
+The fatal is reportable, and that is a property of where it fires rather than luck.
+The wrapper refuses the call **before** it reaches the real collection, so the host's provider descriptors are still in place when the message is written, and the loader's own channel is `Console.Error`, which [Observability](#observability) requires precisely because it depends on no logging pipeline at all.
+
+The recording-wrapper story's acceptance criteria run the real helpers a plugin will call, `AddHttpClient`, `AddOptions<T>().Bind(...)`, `AddLogging`, and at least one cloud SDK's `Add*Clients` registration, through the wrapper after the host's own `AddServices` has populated it, and assert none is rejected; that is a test against the libraries as shipped, not against a fixture that imitates them.
+Because none of those four is measured to remove anything, the criterion that exercises the pre-existing scope is a separate one: a plugin that registers a descriptor and then explicitly `Replace`s it, which is the routine work the scope exists to allow.
+The criterion that exercises the carve-out is a plugin calling `logging.ClearProviders()`, which is fatal and names the plugin and `ILoggerProvider`.
+
+**A plugin that registers no declared plugin contract is fatal.**
+The same reasoning that makes zero `EdFiApiPlugin` subclasses fatal applies one level down.
+A plugin whose hooks ran and registered only its own types has contributed nothing the host will ever call, and the operator who allowlisted it believes otherwise.
+The realistic way this happens is not carelessness but the wrong host: a DMS validator plugin allowlisted on CMS.
+CMS carries no `EdFi.DataManagementService.CustomValidation` assembly - the assembly published as the package `EdFi.Api.CustomValidation` - so host-first serves the plugin's private copy and `ICustomResourceValidator` registers against a type identity nothing in CMS consumes.
+On CMS that private copy still carries the assembly name `EdFi.DataManagementService.CustomValidation`, which the host-owned predicate below matches on name alone, so the registration trips the displacement fatal there rather than this one; on a host that declares the contract, the declared-contract exemption admits it and a plugin that registered nothing else lands here.
+Either way the plugin does not load silently inert, which is the property this row exists for, and both messages name the plugin.
+The per-hook diff already holds every descriptor the plugin added and the host already holds the contract set, so the check is an intersection, and a plugin that contributed only Phase A sources satisfies it through the Contribute row rather than through a Phase B registration.
+This is also where a declined `TryAdd` on a replace contract lands, as [Contract Cardinality](#contract-cardinality) explains above: the plugin added nothing, so it registered no contract, so it is named here - but only when the decline was the plugin's one contribution, which is the coverage hole that section records.
+
+**Replace conflicts are fatal rather than last-wins, and that is a deliberate divergence from ODS**, which resolves the same situation by ordering modules on a three-value rank and letting the last one win.
+The rank is `ICustomModule` implementations last, then classes whose name begins `Override`, then everything else, and `OrderBy` is stable, so two vendor plugin modules both implementing `ICustomModule` tie.
+The tie is broken by the enumeration order of `AppDomain.CurrentDomain.GetAssemblies()`, which is to say by which vendor's assembly happened to load first.
+So which vendor's identity service is live is decided neither by the operator nor by anything either vendor can see, which is a stronger reason to refuse the rule than the class-name reading that this section previously gave.
+Two plugins claiming one replace-contract is an operator error and the operator is the only party who can resolve it.
+See [ods-precedent.md](./ods-precedent.md) for the citation.
+
+**A host service type is not a plugin's to claim.**
+The host already holds the set of plugin contracts, because cardinality is host-held metadata, so it can also tell a plugin contract apart from anything else a plugin registers.
+Every descriptor a plugin adds shows up in that plugin's own diff, so the check needs nothing that is not already collected: a registration whose `ServiceType` is declared in a host assembly - any assembly whose **assembly name** begins `EdFi.DataManagementService.` or `EdFi.DmsConfigurationService.` - and is not a declared plugin contract is **fatal**, naming the plugin and the service type.
+
+**The predicate keys on assembly identity, and that is not the same as package identity anywhere in this design.**
+`ICustomResourceValidator` is declared in the assembly `EdFi.DataManagementService.CustomValidation`, which the csproj packs under the id `EdFi.Api.CustomValidation` (`src/dms/core/EdFi.DataManagementService.CustomValidation/EdFi.DataManagementService.CustomValidation.csproj:8`).
+So the contract's own service type *does* match the host-owned predicate, and it is admitted only because the declared-contract exemption is checked first.
+`EdFiApiPlugin`'s assembly is named `EdFi.Api.Plugins`, matching its package id, and does not match the predicate at all.
+Wherever this document says a package id, it means the thing an implementer writes in a `PackageReference`; wherever a check reasons about what code is host-owned, it means the assembly name, and the two are written out separately for exactly this reason.
+`services.AddSingleton<IDocumentStoreRepository, Mine>()` is the case this catches.
+It compiles, it is legal DI, the diff sees it land, and without the check the host would silently run a third-party document store that no contract and no cardinality row ever admitted.
+Types the plugin itself owns are unrestricted, and so are BCL and `Microsoft.Extensions.*` types, because options, `HttpClient`, and their like are how a plugin does ordinary work.
+"Types the plugin itself owns" carries one condition, and the implementer guide states it as a rule: a plugin must not name its own assemblies with either Ed-Fi host prefix, because the predicate keys on the assembly name and nothing else, so an assembly a plugin ships as `EdFi.DataManagementService.Acme` is treated as host-owned and every type in it is refused.
+The check lives in the plugin startup guard, fed by the same per-plugin records as the replace-conflict check; [Where the Code Lives](#where-the-code-lives) says why that guard is a separate startup task from DMS-1434's.
+
+**This is a guardrail against an implementer misreading the contract, not an isolation property, and it should not be described or extended as one.**
+Under the trust model below a plugin has full process trust, so a party that wants to run its own document store can do so by means no wrapper sees.
+What the check catches is the honest mistake: an implementer who read "contribute services" as "register whatever DMS resolves" and would otherwise learn about it from a production defect.
+Host-first resolution protects assembly identity because a plugin cannot choose to be served a different host assembly; nothing here protects DI identity in that sense, and the design does not claim to.
+Every wrapper and guard check in this section is a mistake-detector, and the bar for adding another is that it catches a plausible implementer error and never rejects a legitimate plugin.
+**Two** of the fatal rules key on one test, whether a `ServiceType` is declared in a host assembly: host-owned removal and overwrite, which fires at the wrapper, and host-owned displacement, which fires in the guard.
+The other two use it not at all.
+The replace-conflict rule counts claims against the host's own cardinality registry, which is a closed list the host writes, and the no-contract-registered rule intersects a plugin's additions with that same registry, so both reason about declared contracts rather than about who declared a type.
+If a future revision finds itself adding a third rule keyed on the host-owned test, or widening that test, that is the signal it has become a policy engine over a party it cannot actually constrain, and the answer is the inventory event, not another fatal row.
+
+**What that exemption leaves open, stated so nobody reads more into the check than it does.**
+`IHostedService`, `IStartupFilter`, `IConfigureOptions<T>` over any framework options type, and `IHttpMessageHandlerBuilderFilter` are all `Microsoft.Extensions.*` or framework service types, and a plugin registering any of them reshapes the host through ordinary, permitted DI: a background task, a middleware pipeline change, a Kestrel or JSON setting, a handler on every outbound request.
+`IServiceCollection` itself belongs on that list and is the sharpest example, because a guard in DMS was once specified to read the collection out of DI.
+DMS-1434's guard reads the final descriptor set through a collection Core hands it (custom validation design.md, "Core's own contribution is the guard, not the registration"), and an earlier draft of that story had Core capture it as `services.AddSingleton<IServiceCollection>(services)` for the guard to resolve back out of DI.
+`IServiceCollection` is declared in `Microsoft.Extensions.DependencyInjection.Abstractions`, so a plugin registering its own is an ordinary permitted registration, and it would have displaced the collection that audit reads.
+The disclaimer below applies to it as it does to the rest: a plugin has full process trust, so this was not a hole an isolation claim has to plug.
+That exposure is what changed the mechanism rather than merely being noted: the custom validation composition story now **requires** the guard to close over the collection it was handed and to register no `IServiceCollection` service at all, which cannot be displaced.
+`IServiceCollection` stays on this list because a plugin may still register it and the exemption still permits it; it is here as the example that produced that rule rather than as a live gap in DMS.
+The check protects **DMS-owned service identity** and nothing wider.
+Restricting those types would break the ordinary work the exemption exists for, and under the stated trust model, full process trust, forbidding them would protect nothing an attacker could not do another way.
+What the design owes instead is a record: every service type a plugin registers, not only the plugin contracts, appears in the per-plugin inventory event in [Observability](#observability), so an operator can see that a validator plugin also registered a hosted service without reading its source.
+
+### Trust Model and Verification
+
+**A loaded plugin runs with full process trust.**
+It can read every connection string, every decrypted secret, every request body, and every token.
+.NET has no code-access security, does not verify strong names on `LoadFromAssemblyPath`, and does not check Authenticode signatures at load on any platform.
+An `AssemblyLoadContext` isolates assembly identity; it is not a security boundary.
+Every control below is about **integrity of what gets loaded**, not about containing it once loaded.
+
+**Write access to the plugin root is equivalent to code execution as the host process.**
+That sentence is the threat model, and because DMS ships no fetcher, the posture is the same for every deployment: **the runtime identity never writes the plugin root.**
+Both acquisition recipes in [Acquisition](#acquisition) end with the root mounted read-only into the DMS container, and whatever wrote it, an operator's publish step or a one-shot fetch step, ran as a different identity in a different container before DMS started.
+
+**Control 1, filesystem permissions.**
+The plugin root must be writable by the deployment identity and not by the runtime identity, and the `:ro` mount both recipes use is how a container deployment states that.
+`docs/OPERATIONS.md` states this as a requirement rather than a recommendation.
+DMS cannot verify it and does not claim to.
+
+**Control 2, allowlist.**
+`Plugins:Allowed` names each plugin directory, and no directory outside the plugin root is composed or probed.
+The claim is about directories and not about files: the entry assembly, the `.deps.json`, and every dependency inside a plugin directory may themselves be symbolic links pointing anywhere, and the loader does not resolve them, because a file inside an allowlisted directory is trusted as the operator placed it; see the trust statement above.
+That holds because of a rule rather than by construction: `Path.Combine(root, name)` discards `root` entirely when `name` is rooted, and `<root>/../x/x.dll` resolves outside it, so an allowlist entry is required to be a single path segment matching `^[A-Za-z0-9][A-Za-z0-9._-]*$` and the composed path is separately checked to sit under the root.
+Both are fatal rows in [Startup Failure Semantics](#startup-failure-semantics).
+
+**The containment check resolves symbolic links, because `Path.GetFullPath` does not.**
+An earlier revision used `Path.GetFullPath` on both sides and asked for a symlink-escape test to prove it, which is a test that cannot pass.
+`GetFullPath` normalizes **lexically**: it collapses `.` and `..` and makes the path absolute, and it never touches the filesystem.
+Measured on `net10.0`, a directory link at `<root>/Escape` pointing at a directory outside the root produces a composed path that starts with the root, so the check says contained and the assembly loaded is the one outside.
+The loader therefore **canonicalizes the root first and composes against the canonical root**, and that ordering is the whole of the fix.
+It resolves the root once with `Directory.ResolveLinkTarget(root, returnFinalTarget: true)`, falling back to the root itself when the call returns `null`, which is what it returns for anything that is not a link; it composes `<resolvedRoot>/<Name>`; it resolves that path's final component the same way; and it requires the result to start with the resolved root plus a directory separator.
+An earlier revision resolved each side's final component but composed against the **configured** root, and that rejects every plugin under a symbolically linked root.
+Probe-measured on `net10.0` with a root `app-plugins` that is a link to a sibling `realplugins`: the earlier algorithm produced a resolved root of `.../realplugins` and a composed path of `.../app-plugins/Acme.Good`, which does not sit under it, so an ordinary plugin came out contained-`False`.
+The algorithm above was measured across all four combinations of a plain or linked root with a legitimate or escaping plugin directory: the two legitimate plugins came out contained-`True` and both escaping links contained-`False`, including the escaping link under the linked root.
+Resolving only each side's final component is enough, because the composed path is built from the already-resolved root, so both sides share the same canonical prefix by construction.
+One ordering constraint falls out of it: `Directory.ResolveLinkTarget` throws `DirectoryNotFoundException` for a path that does not exist, measured, so the missing-directory row in [Startup Failure Semantics](#startup-failure-semantics) is checked before this one rather than after.
+It costs one syscall for the root plus one per allowlisted name, and it makes the symlink-escape test a test that can pass without making the symlinked-root test one that cannot, which is why it is preferred over dropping the claim and declaring operator-placed links trusted.
+
+**Name comparison is ordinal, and the duplicate check is case-folded.**
+Every comparison this design makes between a plugin name, a directory name, an assembly name, and an allowlist entry is `StringComparison.Ordinal`, so a plugin's identity does not depend on a culture or on which filesystem the image was built on.
+The one deliberate exception is the duplicate check over `Plugins:Allowed`, which folds case with `OrdinalIgnoreCase`: two entries differing only in case are the same directory on Windows and on a default macOS volume and different directories on the Linux image, and treating that as an ambiguous allowlist is the answer that is right in both places.
+The production image is Linux and case-sensitive, so the exposure this leaves is a developer's machine resolving `Acme.Dms.Identity` to a directory named `acme.dms.identity` where the image would not; `docs/OPERATIONS.md` states the name rule as case-sensitive so nobody relies on that.
+This is a completeness control, not an integrity one: it stops an unintended directory from loading and stops nothing an attacker with write access to the configuration can do, since such an attacker can simply add a legitimate name.
+
+**Control 3, the package digest, verified by the deployment.**
+Recipe 2 pins a SHA-256 over the **`.nupkg` bytes** and refuses to extract on a mismatch, with `sha256sum -c` against a value the operator wrote down.
+It is the identical control a DMS-owned fetcher would have implemented, and it sits where the download happens rather than in DMS, so the bytes that reach the plugin root are bytes the operator approved whether or not DMS was ever involved.
+A feed that serves package hashes does not substitute for the pinned value: the point of pinning is that the **operator** approved these bytes, not that the feed vouches for them.
+
+Digesting the package rather than the extracted directory is deliberate.
+A `.nupkg` is a single file with a natural digest an operator computes with `shasum -a 256` and a build system emits for free.
+Digesting a directory instead would mean specifying a content-manifest algorithm - path ordering, separator normalization, symlinks, case-insensitive filesystems - that every operator and every build tool would have to reimplement identically, to verify an artifact derived from one that already had a digest.
+
+This **strengthens the shipped precedent**.
+`SCHEMA_PACKAGES` pins a name, a version, and a feed, and verifies no digest at all (`src/dms/run.sh:46-54`).
+
+**Control 4, the allowlist's own provenance.**
+The allowlist governs what may execute, so it must not be readable from a source the plugin root controls.
+`Plugins` is read from the host's own configuration, which at that moment is exactly the set of sources `WebApplication.CreateBuilder(args)` installed and nothing else.
+An earlier revision named three of them; the loader binds an `IConfiguration` and therefore reads every one of them, the ten that [The Two Composition Phases](#the-two-composition-phases) lists for a container started with no arguments and the twelve for a host started with some.
+The property is not which sources those are, it is that **a plugin controls none of them**: Phase A runs after the allowlist has already been consumed to decide what loads, so no plugin has contributed a source, removed one, or reordered one at the moment `Plugins` is read.
+This ordering is a security property, not an implementation detail, and is asserted by test.
+
+**What this does not protect against**, stated so it is not rediscovered:
+
+- A supply-chain compromise of a package the operator deliberately pinned. The digest proves the bytes did not change; it says nothing about what they do.
+- An operator with write access to both the plugin root and the configuration, who updates a directory and its digest together.
+- Anything a plugin does after it loads. No capability restriction, no resource limit, no audit beyond the load inventory.
+- A plugin that hangs. Both hooks are synchronous and unbounded, so a plugin that blocks hangs startup. This is deliberate: a timeout would mean continuing without a plugin the operator required, which [Startup Failure Semantics](#startup-failure-semantics) refuses. What the design owes an operator instead is attribution, and [Observability](#observability) supplies it: the loader announces each hook before entering it, so the last line written names the plugin and the phase it hung in.
+
+Stated as a whole: the bar is that an attacker must already be able to write where only the deployment identity can write, or substitute bytes matching an operator-pinned digest.
+No combination of controls available in .NET lowers it further.
+
+### Startup Failure Semantics
+
+**An allowlisted plugin that does not load is fatal.**
+
+| Condition | Outcome |
+| --- | --- |
+| Plugin root missing and `Plugins:Allowed` empty or absent | Continue silently. No plugins were asked for |
+| Plugin root missing, `Plugins:Allowed` non-empty | **Fatal.** Plugins were asked for and cannot be delivered |
+| Allowlisted directory missing, or entry assembly missing | **Fatal**, naming the expected path |
+| A name repeated in `Plugins:Allowed`, before or after trimming | **Fatal**. The allowlist is ambiguous about what the operator approved |
+| A name in `Plugins:Allowed` that is not a single path segment: rooted, containing `/` or `\\`, equal to `.` or `..`, or otherwise outside `^[A-Za-z0-9][A-Za-z0-9._-]*$` | **Fatal**, naming the entry and the rule. Checked before the path is composed, because `Path.Combine(root, "/etc")` discards the root entirely and `<root>/../x/x.dll` resolves outside it |
+| A composed plugin path that does not sit under the plugin root once symbolic links are resolved | **Fatal**, naming the entry and both resolved paths. A second, belt-and-braces check, so the containment claim in [Trust Model and Verification](#trust-model-and-verification) rests on a comparison rather than on the name rule alone. `Path.GetFullPath` alone does not satisfy it: it normalizes lexically and never reads the filesystem, so a directory link out of the root passes it. The root is resolved once with `Directory.ResolveLinkTarget(path, returnFinalTarget: true)`, the plugin path is composed **against the resolved root**, and that path's final component is resolved the same way; composing against the configured root instead rejects every plugin under a symbolically linked root. Checked after the missing-directory row above, because `ResolveLinkTarget` throws for a path that does not exist |
+| Entry assembly fails to load | **Fatal**, with the load exception |
+| Entry assembly references a newer version of any declared contract assembly than the host carries | **Fatal**, naming the plugin, the contract, the version required, and the version the host carries. Read from the entry assembly's references before any type is loaded, so it never surfaces as a raw type-load error. The declared set is derived from the host's cardinality registry plus the assembly declaring `EdFiApiPlugin`, and it is a set of assembly names, not package ids |
+| The plugin's `.deps.json` declares a higher `assemblyVersion` for an assembly the host also carries | **Fatal**, naming the plugin, the assembly, the version declared, and the version the host carries. Detected by the preflight, before the plugin is constructed. Serving the plugin's private copy would split the type identity host-first exists to keep |
+| A managed assembly the plugin requests at run time resolves to a host copy older than the reference declares | **Fatal when that first use falls inside startup**, from the `Load` override, naming the same four things: the runtime wraps the refusal in a `FileLoadException`, and the loader unwraps it before reporting. This is the backstop for a reference the `.deps.json` preflight did not cover. What refusal means once startup has completed is stated rather than implied: a request-path assembly can be first touched on a request thread, and there is then no loader frame above the failure, because the unwrapping and the `Console.Error` report live in `PluginLoader.Load`. The `FileLoadException` travels up the request pipeline as repeated 500s, with no process abort and no unwrapped message. Recorded here as a known gap, the same way the unmanaged-library row below is |
+| Plugin `.deps.json` declares a `runtimepack` library, which a self-contained publish produces | **Fatal**, naming the plugin. The discriminator is the library entry, not a runtime identifier in `runtimeTarget`: `dotnet publish -r <rid> --no-self-contained` also names the RID there, and a RID-specific framework-dependent publish is legitimate and is how a plugin ships native assets |
+| An unmanaged library a plugin declares cannot be resolved | **Not detected at load.** Native resolution is lazy by construction, so it surfaces as a `DllNotFoundException` on first use. Recorded here as a known gap rather than implied to be checked |
+| Plugin directory has no `.deps.json` | **Fatal**, naming the plugin. Its private closure would not resolve, failing at first use rather than at load |
+| Entry assembly exposes zero or multiple `EdFiApiPlugin` subclasses | **Fatal**, naming what was found |
+| `EdFiApiPlugin.Name` does not match the directory name | **Fatal**, naming both. Compared ordinally |
+| The entry assembly's own `AssemblyName` does not match the directory name | **Fatal**, naming both. The fourth of the four equalities [The Unit of Delivery](#the-unit-of-delivery) requires, and the one the file name does not prove |
+| A contributor hook throws | **Fatal**, naming the plugin and the composition phase. The bootstrap phase it fails is the one that invoked it: `LoadPlugins` for Phase A, and `ConfigureServices` for Phase B, because `AddServices` invokes Phase B and the host already runs `AddServices` inside `ConfigureServices` (`Program.cs:37-45`). `RunBootstrapPhase` writes the phase it was given (`Program.cs:443-462`), so the startup status file names that one |
+| A Phase A hook removes or reorders a configuration source it did not add | **Fatal**, naming the plugin. The `Sources` list is snapshotted before each call and compared after; adding is the only permitted operation |
+| Two plugins register the same replace-cardinality contract | **Fatal**, naming both plugins and the contract |
+| A plugin removes, replaces, or overwrites a host-owned service descriptor that was present before its hook began | **Fatal**, naming the plugin and the service type, before the call reaches the real collection. Plugins contribute registrations; they do not edit the host's. Removing or replacing a descriptor the plugin itself added is permitted, because that is routine registration work, and removing some other pre-existing framework or third-party descriptor is permitted and recorded in the inventory event, with the logging pipeline the one carve-out below |
+| A plugin removes, replaces, or overwrites a pre-existing descriptor whose `ServiceType` is `Microsoft.Extensions.Logging.ILoggerProvider`, `ILoggerFactory`, `ILogger`, or `ILogger<>` | **Fatal**, naming the plugin and the service type, before the call reaches the real collection. `logging.ClearProviders()` is exactly `RemoveAll<ILoggerProvider>()` and lands on this row. DMS wires Serilog inside `AddServices` (`Infrastructure/WebApplicationBuilderExtensions.cs:125`) and Phase B runs after it, so the host's providers are pre-existing descriptors by then and clearing them silences DMS and the plugin inventory event alike. Adding a provider is untouched. Because the refusal happens at the wrapper the descriptors are still in place when it is reported, and the loader reports on `Console.Error`, which does not depend on the logging pipeline |
+| A plugin registers no declared plugin contract and contributes no configuration source | **Fatal**, naming the plugin and listing what it did register. It ran and contributed nothing the host will call; the likeliest causes are a plugin allowlisted on the wrong host and a replace-contract claim made with `TryAdd`, which declines invisibly and adds nothing. This row reaches that second cause only when the decline was the plugin's one contribution; [Contract Cardinality](#contract-cardinality) records the residual for a plugin that also contributed something else |
+| A plugin registers a service type declared in a host assembly that is not a declared plugin contract | **Fatal**, naming the plugin and the service type. A guardrail against an implementer misreading the contract, not an isolation property; see [Contract Cardinality](#contract-cardinality) |
+| A registration of a declared plugin contract cannot be constructed | **Fatal**, via the plugin startup guard, which resolves every declared-contract registration once from a throwaway scope. Scoped and transient instances are discarded with the scope; a singleton resolved inside it is cached in the root container and remains the instance production uses, which is measured rather than assumed and is why the probe is an activation check and not a disposal boundary. This is the plugin guard's own activation probe, not the per-contract one: DMS-1434's guard activates `ICustomResourceValidator` because that contract's own story asked it to, and a contract added later would otherwise arrive with no activation at all |
+| A directory under the plugin root that is not allowlisted | Warn and ignore. It was never opened |
+
+**Fail-fatal diverges from ODS**, which catches, logs, and continues when a module cannot be constructed or registered, degrading a broken extension to silently absent.
+design.md already refused that for custom validation and this document keeps the refusal.
+
+Skip-and-continue is right when a missing plugin degrades a capability whose absence the operator can see.
+For these three types the absence is invisible and what goes quiet is correctness or security posture:
+
+- A **secrets** plugin that fails to load means the values it would have supplied are absent, so the host falls back to whatever `appsettings.json` holds. In the best case that is a startup failure somewhere less obvious; in the worst case it is a development default.
+- An **identity** plugin that fails to load means the Identity API endpoints answer as though no identity system is configured.
+- A **validation** plugin that fails to load means business rules stop being enforced while writes keep succeeding. This is the worst of the three, because nothing surfaces and the data is wrong afterwards.
+
+**The startup guard becomes more valuable, not less.**
+DMS-1434 argues for a post-container guard because "the implementer is exactly the party the guard exists to check."
+Under drop-in delivery the implementer's code was compiled somewhere else entirely.
+The guard's lifetime and descriptor-shape audit is the only thing between a third-party registration mistake and a captive-dependency defect in production, and its post-container placement is what makes it work regardless of contribution order.
+It transfers unchanged, and the plugin mechanism adds four checks beside it that it did not need when the registrations were first-party: the replace-conflict check, the host-service displacement check, the no-contract-registered check, and the declared-contract activation probe, all fed by the per-plugin records, while the recording wrapper rejects host-owned removals and overwrites before they reach the collection.
+Those four live in a startup task of their own; [Where the Code Lives](#where-the-code-lives) says why they cannot live in Core's.
+
+### Observability
+
+The trust model admits this design cannot contain a plugin.
+That makes the record of what loaded an **audit record** rather than a convenience: an incident responder has to be able to say which third-party code was available to the process, at what version, from which bytes.
+
+**The log is the inventory of what the plugin brought, and it says which of it had loaded at the moment the inventory event was emitted.**
+Those are two different questions and an earlier revision answered only the second while claiming to answer the first.
+It collected the set by enumerating the plugin's `AssemblyLoadContext.Assemblies` after both hooks returned, and called the result the authoritative statement of exactly which third-party code was in the process.
+It is not.
+Assemblies load lazily: a plugin's HTTP client, its serializer, and every assembly reached only from a request-path code path are absent from that enumeration and present in the process ten seconds later, and native libraries never appear in it at all.
+An inventory that goes quiet exactly where the interesting code lives is worse than one that admits its edges.
+
+So the inventory is built from the **declaration**, not from the enumeration.
+Once the logger exists, one structured `Information` event per loaded plugin, with named properties rather than one concatenated string: the plugin name, the entry assembly's version, and one row per file the plugin's `.deps.json` declares, carrying the file name, the declared `AssemblyVersion`, the SHA-256 computed over that file in the plugin directory, and a flag saying whether it had been loaded into the plugin's context at the moment the event is emitted, which is immediately after the container is built and before any startup task runs.
+The capture point is that moment and not an earlier one, because an assembly first touched inside a `ContributeServices` hook loads after Phase B has returned; reading the flags when the event is written is the latest point at which the record is still taken once, and the flags are therefore read from each plugin's context at emit time rather than frozen when loading finished.
+The `.deps.json` is already parsed, in full, by the skew preflight, and the files are already on disk under a directory nothing may write, so this costs a hash per file and no new parsing.
+The declared set is the complete set of managed files the plugin shipped, so a responder can match a running process to a published artifact whether or not a given assembly had been touched yet, and the loaded flag still answers the narrower question the enumeration used to answer.
+
+Three edges are stated rather than papered over.
+Native assets are declared in `.deps.json` as `runtimeTargets` with `"assetType": "native"`, so they are hashed and listed like everything else, but they carry no assembly version and the runtime resolves them lazily, so their loaded flag is best-effort.
+The entry assembly's own row has the same gap on the version, for a different reason: measured on `net10.0`, the root `project` entry a framework-dependent publish writes carries no `assemblyVersion` at all, so the declared version for that one row is null and the inventory reports the entry assembly's version as read from the loaded assembly instead, labelled as such.
+And an assembly a plugin loads at run time by a path or a byte array of its own making appears nowhere in `.deps.json` and is therefore in neither list; under the trust model below nothing prevents that, and the inventory says what the plugin declared rather than pretending to bound what it can do.
+The event also carries what the plugin actually contributed, which is the question operators ask most and which costs almost nothing here: **every** service type it registered, plugin contracts and everything else alike, comes from the same per-hook diff of the service collection that [Contract Cardinality](#contract-cardinality) already needs for conflict detection, and the Phase A contribution comes from the matching diff of `IConfigurationBuilder.Sources` around the call.
+Listing the non-contract registrations is not decoration: it is the only visibility the design offers into a plugin registering a hosted service or an options configurator, which the displacement check deliberately permits.
+
+The event carries two more things.
+First, every assembly the host served where the plugin's `.deps.json` declared a different version, as a name, the version the plugin declared, and the version the host carries.
+Host-first substitution is silent and almost always correct, which is exactly why it needs a record.
+This is the diagnostic for the one report that would otherwise arrive with no evidence behind it, "it works on my machine and not in DMS."
+Second, every pre-existing non-host descriptor the plugin removed or overwrote, as the service type and the implementation it displaced, since [Contract Cardinality](#contract-cardinality) permits those and this event is the only trace they leave.
+
+**The startup status file records the phase, not the inventory, and that is a property of the file rather than a choice.**
+`FileStartupStatusSignal.Write` calls `File.WriteAllText` (`Infrastructure/StartupStatusSignal.cs`), so the file holds exactly one document and the `LoadPlugins` record is replaced by the next phase's write milliseconds later.
+It is the right place for **why startup failed**, because `WriteFailed` captures the exception type and message and the file then persists in that state since the process stops.
+It is the wrong place for **what loaded**, and nothing should be built that parses an inventory out of it.
+
+**Before the logger exists, `Console.Error`.**
+Plugin loading necessarily runs before logging is configured, and it is the only channel CMS has without the bootstrap scaffolding DMS carries.
+The loader writes one line per allowlisted name, in allowlist order, whether it succeeded or not, and the fatal reason when it did not.
+It also writes `invoking <phase> on <plugin>` **before** each hook, not only the outcome after it.
+That extra line is what makes a hang diagnosable.
+[Trust Model and Verification](#trust-model-and-verification) accepts that a plugin blocking in a hook hangs startup with no timeout, so the last line on the channel has to name the plugin and the phase it was entered with, rather than leaving an operator with a silent process and a list of plugins.
+Everything on that channel is re-emitted through the real logger once it exists, so an operator collecting only application logs still sees the full inventory.
+
+**Configuration values are never logged.**
+A Phase A plugin exists to carry secrets into configuration, so a loader that logged what it contributed would be a loader that logged secrets.
+The Phase A record names the **source types** a plugin added and nothing else: not the keys, not the values.
+This is a rule rather than an implementation detail, and it is asserted by test.
+
+**No queryable endpoint, deliberately.**
+`/health`, `/health/document-cache`, and Discovery are all unauthenticated, and a plugin inventory served there would tell any caller precisely which third-party code with full process trust is loaded and at which version.
+The ODS precedent does not argue otherwise: its `VersionController` at `[Route("")]` exposes `dataModels` built from the domain model's schemas, so a plugin-contributed extension appears as a data model because a client needs to know which data models the API serves.
+It exposes no assembly, version, or plugin identity.
+None of the three types here contributes anything to the client contract, so there is nothing a caller needs and nothing to publish.
+If a later plugin type does contribute something client-visible, it belongs in Discovery as part of the contract, still not as an inventory of loaded code.
+
+**Not logged per request.**
+Validators run on every write, and logging which plugin handled which request would put a real cost on the write path for information the startup inventory already gives once.
+
+### Configuration Surface
+
+One host-owned section, shared by every plugin type:
+
+```json
+"Plugins": {
+  "Directory": "/app/plugins",
+  "Allowed": "Sea.Dms.StudentIdValidator,Acme.Dms.Identity"
+}
+```
+
+This is the **only** configuration surface for plugins, and it says what may load and nothing about where the bytes came from.
+Acquisition has no configuration in DMS because DMS does not acquire; see [Acquisition](#acquisition).
+
+The illustration above shows two names because an empty one shows nothing; the shipped default is different.
+`appsettings.json` ships `"Plugins": { "Directory": "/app/plugins", "Allowed": "" }`, following the convention `AppSettings:AllowIdentityUpdateOverrides` already sets for a delimited list with no entries (`src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/appsettings.json:4`).
+An empty `Allowed` is the continue-silently row in [Startup Failure Semantics](#startup-failure-semantics), so a deployment that adopts nothing boots exactly as it does today, and every populated `Allowed` in this document is an example rather than a default.
+
+`Directory` defaults to `/app/plugins` and is resolved against `AppContext.BaseDirectory` when relative.
+`Allowed` is a comma-delimited list of plugin names with surrounding whitespace trimmed, each of which must be a single path segment, and its order is the invocation order for both phases.
+It is contractual for Phase A, where a later plugin's configuration sources win over an earlier plugin's, and where the environment variable and command-line sources sit above all of them; see [The Two Composition Phases](#the-two-composition-phases).
+For Phase B it is deterministic but deliberately not contractual: it does determine fan-in invocation order, and the custom validation design already declares the observable consequence out of contract, since each validator sees its own deep clone and "message order is therefore explicitly not part of this contract and a client must not depend on it" (design.md, "Failure Surfacing").
+The whole section is bindable from environment variables in the standard way, `Plugins__Allowed=...`, which is how the container deployment sets it.
+
+**This diverges from DMS-1434 and should not be papered over.**
+That story stated, before this spike narrowed it, that "there is no DMS-owned configuration section for this feature and no switch that turns it on or off."
+The sentence is gone from the story now; it is quoted here because it is what the divergence is a divergence from.
+Under drop-in delivery a validator runs if and only if its directory is named in `Plugins:Allowed`, so the allowlist is a switch and `docs/CONFIGURATION.md` gains a section, which also states the Phase A precedence order.
+What survives is the narrower claim: there is no *per-feature* switch, no `CustomValidation:Enabled`, and the only question ever asked is whether a plugin was allowlisted.
+
+### What the Stock Image Must Ship
+
+The no-rebuild promise is about **implementer** rebuilds and is delivered by a one-time **Ed-Fi** image change.
+Those are different things and the distinction belongs in the operations documentation.
+
+This requires one DMS release.
+No image published today contains a loader, so "stock image" means the next stock image, not an existing one.
+
+| File | Change |
+| --- | --- |
+| `src/dms/run.sh` | **none** |
+| `src/dms/Dockerfile` | **build stage only**, and in two separate stories. It must see `src/plugins/`, which the contract-package story does because it creates the tree; and it must stop stamping `AssemblyVersion` on the publish command line, with nothing put in its place, which the host-integration story does because its skew preflight is what one contract assembly carrying two `AssemblyVersion`s would break |
+| `src/dms/Nuget.Dockerfile` | **none** |
+| `src/dms/frontend/.../EdFi.DataManagementService.Frontend.AspNetCore.nuspec` | **none** |
+
+`src/dms/run.sh` is unchanged.
+`src/dms/Dockerfile:82` does create an `/app/ApiSchema`, by copying the bundled schemas out of the build stage, and `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.nuspec:15` packs `**` from the publish directory into `DataManagementService/`, which is the glob that folder rides inside into the `EdFi.Api` package the released image unzips; what neither Dockerfile creates is a directory for downloaded schema packages, which `src/dms/run.sh:44` makes with `mkdir -p` against `$AppSettings__ApiSchemaPath` inside the `UseApiSchemaPath` and non-empty-`SCHEMA_PACKAGES` branches.
+The plugin root needs less than that, because a bind mount creates its own target and a missing root with an empty allowlist is the continue-silently row.
+
+**The Dockerfile is not unchanged, and an earlier revision was wrong to say it was.**
+`src/dms/Dockerfile` builds from an explicit per-project list: it copies each project's `.csproj` and `packages.lock.json` (`:15-26`), runs `dotnet restore --locked-mode` (`:28-29`), then copies each project's sources (`:31-42`).
+Its build context is `src/dms/` with `src/` available as the named context `parentdir` (`eng/docker-compose/local-dms.yml:11-13`), and `WORKDIR` is `/source`, so `src/plugins/` is outside the tree the build stage currently assembles and the frontend's project reference into it would not resolve.
+The **contract-package story**, the one that creates `src/plugins/`, therefore changes the build stage so that the plugins tree sits beside the DMS tree exactly as `src/plugins` sits beside `src/dms`, with the repository's shared `Directory.Packages.props`, `nuget.config`, and `.editorconfig` at their common parent rather than only inside `/source`, and adds each new project's `.csproj` and `packages.lock.json` to the restore pass and its sources to the second pass.
+
+**That assignment is a decision about merge order, not about tidiness.**
+The frontend does not reference `EdFi.Api.Plugins.Hosting` today, and something has to add that `ProjectReference`; the first story whose code the frontend must see is the recording-wrapper story, whose plugin guard is a frontend-owned `IDmsStartupTask`, so that story adds it.
+The moment it lands, `src/dms/Dockerfile` has to be able to restore a frontend project that references a tree outside its build context, and `.github/workflows/on-dms-pullrequest.yml` builds that Dockerfile in nine places on a relevant pull request: one shared CI image build at `:696` when prebuilt images are in use, and eight matrix legs from `:1510` to `:2864` when they are not.
+Putting the build-stage change in the story that creates the tree rather than in the one that consumes it means no merge order can leave the frontend pointing at a tree the image build cannot reach.
+The alternative considered was to give the reference and the build-stage change to the recording-wrapper story together; it is rejected because it makes the story that creates `src/plugins/` the one story that never proves the image can build with `src/plugins/` in it.
+Both production projects must carry committed lock files or `--locked-mode` fails the build, which is the failure this change is most likely to produce and the reason it is called out rather than left to be discovered in CI.
+Nothing in the runtime stage changes: the publish output already carries the two new assemblies, `:77` copies `/app/Frontend/*.dll` into `/app`, and the `EdFi.Api` nuspec packs the whole publish directory into `DataManagementService/`, which is the folder `src/dms/Nuget.Dockerfile:21-25` unzips out of the package and copies into `/app`.
+
+**The other build-stage change is a removal, and it belongs to the host-integration story.**
+`src/dms/Dockerfile:44-59` accepts an `ASSEMBLY_VERSION` build argument and publishes with `/p:AssemblyVersion` and `/p:FileVersion`, which [The Plugin Contract](#the-plugin-contract) shows is a global property that overrides a contract project's own declared version.
+The argument and the two properties come out and **nothing replaces them**: the image takes whatever `AssemblyVersion` the committed `src/dms/Directory.Build.props` declares, which the Dockerfile already copies at `:13`, and `DockerBuild` is deliberately not taught to regenerate that file, because `SetDMSAssemblyInfo` rewrites a tracked file on every local end-to-end run and drops the build height besides; see [The Plugin Contract](#the-plugin-contract).
+It is a build-stage change like the other one and it changes no image layout, and it is in the host-integration story because that is the story whose skew preflight one contract assembly carrying two `AssemblyVersion`s would break; the matching removal of the `ASSEMBLY_VERSION` build-argument pair in `build-dms.ps1`'s `DockerBuild` (`:1962-1970`) travels with it.
+
+The loader ships as ordinary host code in `EdFi.Api.Plugins.Hosting.dll`, and the contract it and every plugin share ships in `EdFi.Api.Plugins.dll`.
+The image change is therefore two assemblies in the application's own publish output and nothing in the image's shell or runtime layout, which is what keeps the stock-image claim checkable: the runtime stage, `run.sh`, the entry point, and the base compose files are all untouched, and a deployment that wants plugins adds one overlay compose file.
+
+`EdFi.DataManagementService.ApiSchemaDownloader` is **not** generalized.
+It keeps its hard-coded content root (`src/dms/clis/EdFi.DataManagementService.ApiSchemaDownloader/Services/ApiSchemaDownloader.cs:21`), its four command-line options, and its single caller in `src/dms/run.sh:53`, and the regression obligation that generalizing it would have carried does not exist.
+If the deferred fetcher in [Out of Scope and Deferred](#out-of-scope-and-deferred) is ever brought back, generalizing the downloader rather than writing a second client is still the recommendation, for the reasons recorded there.
+
+### The Secrets Spike
+
+**The Secrets Manager plugin type is not designed here.**
+All of it goes to its own spike, and that spike must cover two things together:
+
+1. **The Secrets Manager plugin type itself** - its contracts, lifetimes, caching behavior, multi-tenant dimension, and the `IClientSecretHasher` relocation CMS would need.
+2. **The DMS equivalent of [external configuration of ODS connection strings](https://docs.ed-fi.org/reference/ed-fi-api/platform-dev-guide/configuration/external-configuration-of-ods-connection-strings/)** - an operator supplying data store connection strings from outside the application's own configuration.
+
+They are one spike because in ODS they are one mechanism.
+**In DMS they cannot be**, and that is the single most important thing this spine hands over.
+This spine designs only the mechanism that spike will build on.
+
+**The spike starts when this one merges. Its tickets wait for the foundations.**
+The secrets spike is design work and needs a mechanism that is *decided*, not one that is *running*, so it can begin as soon as this document merges and proceed in parallel with the foundation stories.
+What it cannot do is deliver: every ticket it produces depends on the full plugin foundations being in place, because a secrets plugin is a plugin.
+
+That split is why [The Two Composition Phases](#the-two-composition-phases) keeps Phase A even though nothing in this spike consumes it.
+The secrets spike designs against this document while the foundations are mid-implementation.
+A Phase B-only mechanism would put it in the position of having to amend a merged design and its in-flight stories, which is the rework cycle the filing gate exists to prevent.
+
+This section records what that spike inherits, so it does not rediscover it.
+The findings are the reason the deferral is sound rather than merely convenient: the obvious precedent does not transfer, and following it would have produced a design that cannot work here.
+
+**Tenants are runtime data in both hosts, not configuration.**
+
+- CMS resolves a tenant from a `Tenant` request header and validates it against `ITenantRepository`, gated on `AppSettings:MultiTenancy` (`Config.Frontend/Middleware/TenantResolutionMiddleware.cs`). Tenants are created and removed through `/v3/tenants` while the process runs.
+- DMS validates a tenant against `IDataStoreProvider`'s cache and reloads from the Configuration Service on a miss (`Content/TenantValidator.cs`), so the tenant set is not stable even within one process lifetime.
+- Per-tenant connection strings never pass through `IConfiguration`. `DmsConnectionStringProvider.GetConnectionString(long dataStoreId, string? tenant)` reads them from the Configuration Service at runtime (`src/dms/core/EdFi.DataManagementService.Core/Configuration/DmsConnectionStringProvider.cs`).
+
+**The ODS answer does not transfer, and the spike should not start from it.**
+ODS solves per-tenant secrets by injecting `Tenants:<name>:OdsInstances:<id>:ConnectionString` into `IConfiguration` before the host is built.
+That works because in ODS the tenant set **is** configuration.
+Here it is not, so a startup-time configuration source keyed by tenant is stale the moment a tenant is added.
+ODS remains the right precedent for the *loading seam*, which this design adopts and narrows as Phase A.
+It is the wrong precedent for the *data shape*.
+
+**And the capability lands in CMS, not DMS.**
+The linked ODS page is about an operator supplying connection strings from outside the application, and in this architecture DMS does not hold them: CMS does, encrypted under `DatabaseSettings:EncryptionKey`, and DMS fetches and decrypts them at runtime.
+An operator who wants those values to come from a vault therefore needs **CMS** to resolve them, not DMS.
+The spike's primary host is CMS even though the capability is described against an API that has no separate configuration service.
+
+**What Phase A can serve here is the process-global secrets, and that is worth having on its own.**
+DMS's `ConfigurationServiceSettings:ClientSecret` and `:EncryptionKey`, and CMS's four, are singular values read once at startup.
+A Phase A plugin backed by a vault serves all six with no tenant dimension at all.
+
+**What a per-tenant contract would have to look like.**
+Inputs to the spike, not decisions taken here:
+
+- A Phase B service, not a Phase A configuration source, because it must be callable after tenant resolution rather than before configuration is read.
+- Taking the tenant as an argument rather than reading ambient state, because a plugin instance is loaded once per process and outlives any tenant.
+- Async and cache-aware, because a vault round trip per request is not viable on the write path.
+- Replace cardinality, so the fatal two-claimant rule already specified applies unchanged.
+
+**Nothing in this spine precludes it.**
+Phase B registrations may use any lifetime, including scoped.
+The DMS-1434 guard's transient-only audit is specific to `ICustomResourceValidator` and does not generalize; what every declared contract gets from the plugin guard is the activation probe, which resolves each registration once and would catch a secrets resolver with an unsatisfiable dependency.
+A lifetime rule for a per-tenant secrets contract, if that contract wants one, is the secrets spike's to state and its story's to enforce, the same way custom validation stated its own.
+A tenant-parameterized contract is an ordinary interface in an ordinary package, and the mechanism does not need to know that it is tenant-aware.
+
+### Applicability to the Configuration Service
+
+The loader is host-agnostic, so CMS can have it for very little.
+**No consuming epic drives it today**, though: with secrets deferred to its own spike, custom validation and identity are both DMS-side, and CMS's own candidate contract is a secrets contract.
+This section is therefore an applicability analysis showing the mechanism generalizes, not scheduled work.
+The [Level of Effort](#level-of-effort) table marks both CMS rows deferred.
+
+CMS also owns a **replace**-cardinality contract already: `IClientSecretHasher`, the PBKDF2 hasher behind every client secret CMS stores, which an operator with a mandated KDF would want to substitute.
+Its iteration count is **not** a live configuration key today, and this section names no key as one.
+`src/config/backend/EdFi.DmsConfigurationService.Backend.OpenIddict/Services/ClientSecretHasher.cs:38` and `:97` read `IdentityOptions.HashingIterations`, whose model default is `210000` (`src/config/backend/EdFi.DmsConfigurationService.Backend.OpenIddict/Models/IdentityOptions.cs:73`), and the repository's only `services.Configure<IdentityOptions>` (`src/config/backend/EdFi.DmsConfigurationService.Backend.OpenIddict/Extensions/OpenIddictServiceCollectionExtensions.cs:26`) assigns a list of `IdentitySettings` keys that does not include it.
+So the hasher always uses the model default, and both keys an operator would reach for are unbound: `IdentitySettings__HashingIterations`, which `eng/docker-compose/published-config.yml:54` and `eng/docker-compose/local-config.yml:58` both set, and `IdentitySettings:ClientSecretHashingIterations`, which `src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/appsettings.json:45` declares.
+That pair is a pre-existing CMS defect, recorded here as an observation and worth a ticket of its own; this design fixes no code and nothing in the plugin mechanism turns on which key is live.
+What the contract needs from configuration is the secrets companion document's question, and it has to name a key that actually binds rather than inheriting either of these.
+Making it a plugin contract requires moving it, because it lives in `EdFi.DmsConfigurationService.Backend.OpenIddict` and is registered in four places: `Config.Frontend/Infrastructure/WebApplicationBuilderExtensions.cs:203`, `src/config/backend/EdFi.DmsConfigurationService.Backend.Mssql/OpenIddict/MssqlOpenIddictServiceExtensions.cs:35`, and `src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/OpenIddict/PostgresOpenIddictServiceExtensions.cs` at both `:37` and `:93`.
+A contract a plugin compiles against cannot ship from an assembly named for one identity provider, so relocating it to a neutral CMS contract package is prerequisite work for that type.
+This belongs in the secrets companion document.
+
+**CMS lacks the bootstrap scaffolding DMS has.**
+`Config.Frontend/Program.cs` is a plain minimal-API startup: `CreateBuilder` at line 14, `AddServices()` at line 16, `Build()` at line 53.
+There is no `FileStartupStatusSignal`, no `RunBootstrapPhase`, and no `StartupPhaseExecutor`.
+This costs nothing, because the loader reports its own outcomes to `Console.Error` and throws.
+CMS calls the loader directly and gets fail-loud behavior; porting a phase wrapper is a later choice, not a prerequisite.
+
+CMS's image needs nothing either.
+Because acquisition is a deployment step rather than an image feature, the fact that CMS ships no NuGet client is irrelevant: both recipes in [Acquisition](#acquisition) end in a read-only mount, and `published-config.yml:60` already declares a `volumes:` block for that mount to join.
+The image asymmetry that a DMS-owned fetcher would have created between the two hosts does not arise.
+
+---
+
+## Where the Code Lives
+
+Two production projects and one test project under a new `src/plugins/`, which sits beside `src/dms` and `src/config` under the `src/Directory.Packages.props` that already governs both.
+
+| Project | Packaged as | Referenced by |
+| --- | --- | --- |
+| `EdFi.Api.Plugins` | `EdFi.Api.Plugins`, published | Third-party plugins, and `EdFi.Api.Plugins.Hosting` by project reference. Nothing else |
+| `EdFi.Api.Plugins.Hosting` | not packaged | Both host frontends, by project reference. **Not** `EdFi.DataManagementService.Core` |
+| `EdFi.Api.Plugins.Hosting.Tests.Unit` | not packaged | Nothing references it; it references both production projects. Added by the loader story rather than by the contract-package story, because a test project with nothing to test is an empty shell |
+
+The cardinality registry lives in `EdFi.Api.Plugins.Hosting` as a value the **host** passes to the loader: a set of `(Type contract, Cardinality cardinality)` entries, one per declared plugin contract, which the plugin startup guard consults for the replace-conflict, displacement, no-contract, and activation checks, and from which the contract assembly names the host passes to `PluginLoader.Load` for the skew preflight are computed: the declaring assembly of every entry's contract type, plus the assembly declaring `EdFiApiPlugin`, so there is no second list to keep in step with this one.
+Each host supplies its own set, DMS's naming `ICustomResourceValidator` today, and each companion document adds its contract as one entry there; the registry is never read from configuration or from a plugin.
+
+**Two names for that registry appear in this document and both are real, because one is the type and the other is DMS's instance of it.**
+`PluginContractRegistry` is the host-agnostic type in `EdFi.Api.Plugins.Hosting` that holds the entries and exposes `ContractAssemblyNames`, and it belongs to the recording-wrapper story, which is where the registry and its derivation land.
+`DmsPluginContracts` is a frontend-owned static holding DMS's one instance of that type, which is what `Program.cs` reads as `DmsPluginContracts.Registry.ContractAssemblyNames`, and it belongs to the host-integration story, because a DMS-specific value belongs on the DMS side of the seam.
+CMS gets its own equivalent when CMS integration is taken up, and neither name is a rename of the other.
+
+**`PluginLoader.Load` returns a `LoadedPlugins`, and the loader story is the one that introduces it.**
+It is a sealed aggregate over `IReadOnlyList<LoadedPlugin>` rather than the bare list, because both composition phases hang off it - `ContributeServices` from the recording-wrapper story and `ContributeConfiguration` from the secrets foundation story - and a bare list would leave the loader story returning one type and a later story inventing another for the same value.
+`LoadedPlugin`, singular, is the per-plugin record the aggregate holds: the plugin's name and instance, its declared-file rows, and its host-first substitutions.
+The aggregate also exposes a static `LoadedPlugins.Empty`, which is the value `Load` itself returns for a missing root with an empty or absent allowlist, and it is what makes the two successive `AddServices` diffs well defined.
+The recording-wrapper story invokes `ContributeServices` over `LoadedPlugins.Empty` from inside `AddServices` and does not change that method's signature; the host-integration story replaces `Empty` with the aggregate `PluginLoader.Load` returned, and the signature change is the one it owns.
+
+**The plugin guard is a second startup task, in the frontend, and Core never sees `src/plugins/`.**
+DMS-1434's guard is an `IDmsStartupTask` in Core (`src/dms/core/EdFi.DataManagementService.Core/Startup/IDmsStartupTask.cs:21`), and Core is the wrong home for the plugin checks: they read the per-plugin records that `EdFi.Api.Plugins.Hosting` produces, and giving Core a project reference into `src/plugins/` would invert the dependency, drag the contract assembly into every Core consumer, and widen the Dockerfile change above from the frontend to Core.
+So the four plugin checks are a separate `IDmsStartupTask` implementation owned by the **DMS frontend**.
+The frontend already references Core; it does **not** reference `EdFi.Api.Plugins.Hosting`, because neither project exists yet, and adding that `ProjectReference` is work this design assigns rather than assumes.
+It goes to the recording-wrapper story, the first story whose code the frontend has to see, and the `src/dms/Dockerfile` build-stage change that lets an image build with a `src/plugins/` reference in it is assigned earlier, to the story that creates the tree; see [What the Stock Image Must Ship](#what-the-stock-image-must-ship) for why that ordering is load-bearing.
+`EdFi.Api.Plugins.Hosting` stays host-agnostic and knows nothing about `IDmsStartupTask`: it exposes the per-plugin records and a pure audit function over them and the contract registry, returning findings, and the frontend's task calls it and takes the existing fatal path.
+
+**The seam that carries the records across `builder.Build()` is a singleton instance the frontend registers, and it is the shape DMS-1434's own guard already uses.**
+The per-plugin records are produced during Phase B, inside `AddServices`, while the task that reads them is resolved after `builder.Build()`, so something has to hold them in between, and a task resolved from the container cannot reach back into a local variable in `AddServices`.
+So the invoker returns them: `LoadedPlugins.ContributeServices(...)` hands back a `PluginAuditInput`, which is the per-plugin records plus the contract registry the audit needs, and `AddServices` then calls `services.AddSingleton(auditInput)` and registers the task beside it, exactly once and unconditionally, at the same call site DMS-1434's Core-owned extension is called from.
+The task takes `PluginAuditInput` by constructor and calls the pure audit function; nothing resolves the service collection, and registering an instance rather than a type means the container activates nothing.
+One property falls out of the ordering and is worth naming: the host registers `PluginAuditInput` **after** every hook has already run, so a plugin that registered its own cannot displace it, since the host's is the last registration for that service type and a single-service resolve takes the last.
+That is the same displacement-proofness closure capture now gives DMS-1434's guard, reached by a different route: this seam has to hand a value across `builder.Build()` and therefore has to register something, so it relies on registering last rather than on registering nothing.
+Neither side leaves a plugin anything to displace, which is why [Contract Cardinality](#contract-cardinality) can list `IServiceCollection` as a permitted registration without that permission costing either audit its reading.
+With no plugins allowlisted the invoker returns an empty record set, the singleton is still registered, and the task runs and finds nothing, so the seam does not depend on a plugin existing.
+The task's `Order` sits in the same 200-299 band as DMS-1434's guard and above it, so both run inside the same executed window and the plugin checks see a collection the validator audit has already accepted.
+
+**That ordering costs one thing, and the inventory event is what pays it back.**
+DMS-1434's validator audit runs first, so a plugin validator registered with the wrong lifetime is reported by that audit, which knows the offending `ICustomResourceValidator` implementation type and knows nothing about plugins, and the message names the type alone.
+Attribution stays recoverable, and by construction rather than by luck: the per-plugin inventory event carries **every** service type each plugin registered, and it is logged before any startup task runs.
+DMS's own `Program.cs` fixes that ordering already - the host is built at `Program.cs:123-129`, `app.Logger` is first used at `:131`, and the startup-task executor is not entered until the `RunFatalAsync` calls at `:156`, `:163`, `:170`, and `:177` - so the plugin-to-service-type mapping is in the log above any audit failure that needs it.
+The `RunByOrderRangeAsync` calls at `:315`, `:329`, and `:341` are not the ordering evidence, because they sit in local-function bodies declared below `await app.RunAsync()` at `:256`; the invocations at `:156-184` are what actually run, and they run after `:131`.
+Emitting the inventory before the startup tasks run is therefore an acceptance criterion of the host-integration story rather than an incidental placement, and lowering the plugin guard's `Order` below DMS-1434's was rejected: it would make the plugin checks read a collection the validator audit had not yet accepted, which is the property the higher `Order` exists for.
+CMS gets the same shape when CMS integration is taken up: its own thin task over the same audit function, or a direct call, since CMS has no startup-task machinery today.
+
+The contract package and the loader are separate assemblies deliberately.
+Under host-first resolution the contract assembly is shared with every plugin, so its public surface is a compatibility commitment to third parties forever; the loader's is not, and it must never become one.
+The contract references only `Microsoft.Extensions.Configuration.Abstractions` and `Microsoft.Extensions.DependencyInjection.Abstractions`, keeping the closure an implementer inherits minimal.
+
+`EdFi.Api.*` is the correct prefix for a package both hosts consume: CMS already publishes as `EdFi.Api.ConfigurationService`, so the prefix names the Ed-Fi API platform rather than DMS specifically.
+
+`src/plugins/` needs its own `Directory.Build.props`.
+There is no `src/Directory.Build.props`; `src/dms/` and `src/config/` each carry their own, so a third top-level folder inherits nothing from them.
+What `src/dms/Directory.Build.props` actually carries is narrower than an earlier revision claimed: `AssemblyVersion`, `FileVersion`, `InformationalVersion`, `Product`, `Authors`, `Company`, `TreatWarningsAsErrors`, `ErrorLog`, `RestorePackagesWithLockFile`, and two analyzer `PackageReference`s.
+The target framework, `Nullable`, `ImplicitUsings`, and `GenerateDocumentationFile` are per-csproj in this repository, and the license-header and formatting conventions come from `.editorconfig` and csharpier rather than from any props file.
+So `src/plugins/Directory.Build.props` copies the version-metadata, `Product`/`Authors`/`Company`, `TreatWarningsAsErrors`, `ErrorLog`, `RestorePackagesWithLockFile`, and analyzer items, and the two csproj files declare their own `TargetFramework`, `Nullable`, and `GenerateDocumentationFile` the way every project under `src/dms/` already does.
+`src/dms/Directory.Build.targets` is **not** copied: it exists to materialize the bundled ApiSchema manifest and has no counterpart under `src/plugins/`.
+`src/plugins/Directory.Build.props` also carries the contract's own version, hand-maintained and **not** regenerated by `build-dms.ps1`'s `SetDMSAssemblyInfo`, which stamps the release version onto `src/dms/Directory.Build.props` and must not reach this file.
+[The Plugin Contract](#the-plugin-contract) explains why: the newer-plugin-on-older-host check compares assembly versions, so the contract's `AssemblyVersion` must move with its surface and only with its surface, and the pack lane asserts it equals the package version.
+`EdFi.Api.Plugins.Hosting` is not packaged and is referenced by project, so it inherits the same file and its version is irrelevant.
+
+DMS and CMS have separate solutions (`src/dms/EdFi.DataManagementService.sln`, `src/config/EdFi.DmsConfigurationService.sln`), so all three new projects are added to both.
+A project present in one solution and missing from another is a known failure mode in this repository, and `--locked-mode` does not catch a missing project entry.
+
+`src/dms/EdFi.DataManagementService-Docker.sln` is deliberately **not** updated.
+It carries five projects against the main solution's thirty-eight, omitting `EdFi.DataManagementService.CustomValidation` and `Core.External` among others, and nothing in the repository builds it: `build-dms.ps1:165` knows only `EdFi.DataManagementService.sln`, and no workflow names it.
+Adding entries to a solution nothing builds would produce bookkeeping that cannot go stale detectably, which is the opposite of the failure mode the paragraph above is guarding against.
+If that solution is ever revived, it needs the projects it is already missing before it needs these two.
+
+---
+
+## Divergence from the Custom Validation Epic
+
+DMS-1462's frame allows revising the custom validation composition decision and requires that any divergence be flagged rather than absorbed.
+`DMS-1432` is merged and stays merged; every other row is an open story.
+
+| Ticket | Status | Effect | Why |
+| --- | --- | --- | --- |
+| **DMS-1432** Abstractions contract, its six public types | Done | **Unchanged.** The six public types stand exactly as shipped | `EdFiApiPlugin` lands in `EdFi.Api.Plugins`, not in `EdFi.Api.CustomValidation`. The contract keeps no dependency on the delivery mechanism |
+| **DMS-1432** Contract version scheme | Done | **Amended.** `EdFi.Api.CustomValidation` gets its own semantic version, starting at `1.0.0`, declared in its csproj and packed at that version rather than at `$DMSVersion`, across all five places that thread `$DMSVersion` into its package name or pack argument | The loader's newer-plugin-on-older-host preflight compares `AssemblyVersion`s across every contract package. Under the release-stamped scheme it would refuse a validator built against the 8.4 contract on an 8.3 host whose surface is identical. Owned by draft 06, which is also where the packed-`AssemblyVersion` assertion lands |
+| **DMS-1432** Contract `AssemblyVersion` in the Docker build lane | Done | **Amended.** `src/dms/Dockerfile` stops publishing with `/p:AssemblyVersion` and `/p:FileVersion`, and `build-dms.ps1`'s `DockerBuild` drops the `ASSEMBLY_VERSION` build argument that fed them, with nothing put in their place | A command-line global property overrides a csproj-declared `AssemblyVersion` and propagates to every project reference, so the contract that publishes as `1.0.0.0` in the released package publishes as the release version inside a locally built image. One contract assembly cannot carry two `AssemblyVersion`s when a skew check compares exactly that value. The locally built image's own DMS assemblies then carry the committed `src/dms/Directory.Build.props` version, which is load-bearing for nothing, and `DockerBuild` is deliberately not taught to regenerate that tracked file. Owned by draft 04, which already changes both files. Draft 04's proof asserts on `EdFi.Api.Plugins.dll` only, because that is the only contract carrying a declared version at that point; `EdFi.DataManagementService.CustomValidation.dll` declares none until draft 06, which extends the same assertion to it |
+| **DMS-1432** `ICustomResourceValidator` XML documentation | Done | **Corrected.** Two sentences become false when this mechanism ships | `src/dms/core/EdFi.DataManagementService.CustomValidation/ICustomResourceValidator.cs:16-17` tells an implementer the interface "is compiled into the host deployment and registered into DMS's composition; it is not loaded from a dropped-in assembly at runtime", and that text ships inside the nupkg and shows in an implementer's IDE. Owned by draft 04, the story that makes it false; the implementer guide restates the corrected version |
+| **DMS-1432** Publishing deferral | Done | **Stands.** Publishing is release-gated, not a prerequisite | The per-PR lane already packs the contract and compiles a scratch consumer against the packed nupkg (`.github/workflows/on-dms-pullrequest.yml:357-388`), with package source mapping so the local artifact cannot be substituted. Every internal story proves the packaged path with no feed. Publishing is what an **external** implementer needs, and it lands when the epic is ready to be consumed |
+| **DMS-1433** Fan-in pipeline step | Open | **Unchanged** | The step resolves `IEnumerable<ICustomResourceValidator>` from the request scope and does not care how entries got there |
+| **DMS-1434** Composition seam | Open | **Partially superseded.** The seam changes; the guard does not | "One call at DMS's composition root" becomes "the loader invokes `ContributeServices`." The guard, its post-container placement, its `Order` in 200-299, and its lifetime audit all transfer unchanged and matter more. One thing inside the guard does change: it closes over the service collection it was handed rather than registering it as a service, because this spine permits a plugin to register `IServiceCollection` |
+| **DMS-1434** No config section | Open | **Superseded.** `Plugins` is a host-owned section and the allowlist is a switch | See [Configuration Surface](#configuration-surface). The narrower claim that survives is that there is no per-feature toggle |
+| **DMS-1435** Implementer guide | Open | **Rewritten and narrowed.** Authoring a validator and registering it inside a plugin hook, with packaging, layout, acquisition, and the trust model linked out to `PLUGINS.md` rather than restated. Because those links must land on real content and the plugin contract story creates `PLUGINS.md` as a placeholder, the story is sequenced after the plugin spine's **documentation** story as well as after host integration | The audience changes from someone who builds DMS to someone who does not, and the delivery half of the subject now belongs to a guide that serves every plugin type rather than one |
+| **DMS-1436** End-to-end proof | Open | **Widened.** The fixture validator is packaged from the two packed contracts, published into a plugin directory, allowlisted, and loaded by a real `WebApplicationFactory<Program>` host, with the custom-validation 400 asserted over HTTP | Proving the compiled-in path proves a path no implementer will take. The pulled stock image is deliberately **not** this story's: that proof is the spine's own post-release ticket, which reuses this fixture as its payload |
+
+**The contract survived the delivery reversal intact.**
+design.md's "Rejected Alternatives" predicted it, promising a runtime-loading stream would "inherit this contract, the fan-in step, the failure surfacing, and the startup guard unchanged, and add only a discovery-and-registration path that feeds the same collection."
+This document is that stream and the prediction held.
+The separation that made it hold, a contract package naming only BCL types and its own, is worth preserving in the identity and secrets contracts too.
+
+**Publishing is the epic's last step, not its first.**
+Drop-in delivery makes the published package the only thing an **external** implementer can compile against, which is a real change from compiled-in delivery.
+It does not make publishing a prerequisite for building the mechanism.
+`build-dms.ps1` already packs `EdFi.Api.CustomValidation` and the per-PR lane already compiles a scratch consumer against that packed nupkg from a local folder feed, so the packaged consumption path is proven on every pull request without a feed and without burning a package id.
+`EdFi.Api.Plugins` follows the same lane for the same reason.
+Both are published together once the epic is ready to be consumed, and the [Level of Effort](#level-of-effort) table treats that as a leaf that everything blocks and that blocks nothing.
+
+---
+
+## Rejected Alternatives
+
+| Alternative | Disposition | Reason |
+| --- | --- | --- |
+| Per-plugin directory, isolated context, allowlist-driven, two phases, acquisition as a deploy-time recipe rather than a DMS feature | **Adopted** | Serves all three types and both phases from one load, keeps a stock image, keeps the plugin root read-only to the runtime in every deployment, and isolates what can be isolated without splitting shared type identity |
+| **A derived image per implementation**, `FROM edfialliance/ed-fi-api` plus `COPY` | **Rejected by constraint** | Simplest possible mechanism and needs no loader at all, but every implementation then owns an image and re-derives it on every DMS release. The requirement is a stock image per deployment, not a derived one per implementation |
+| Compiled-in composition as the documented route | **Demoted, not removed** | Presumes a deployment that builds DMS, which the distribution model contradicts. Survives as the in-repo fixture route |
+| **An enumerated set of shared assemblies**, isolating everything else | **Rejected, and probe-refuted** | Splits `IChangeToken` identity and throws `TypeLoadException` on the most ordinary plugin there is. See [Load Isolation](#load-isolation) |
+| Load into the default context, as ODS does | Rejected | First-wins by simple name, ordering that `Directory.GetFiles` does not define, and a shadowed host assembly surfacing as an unrelated failure later. Isolation costs one class |
+| One load context for all plugins | Rejected | Cheaper, but reintroduces conflicts between two plugins carrying different versions of one dependency, the likeliest real collision once more than one vendor ships |
+| Collectible contexts, to support unloading | Rejected | Unload is a non-goal, and collectibility adds indirection and a class of lifetime bugs for a capability nothing asks for |
+| **A marker interface plus optional contributor interfaces** | Rejected | The host would have to test each plugin for each contributor interface, so a plugin could be allowlisted, pass every load check, and silently contribute nothing to a phase the operator expected. A base class with virtual no-ops is called unconditionally, with no `is` test and no per-phase discovery. Additive evolution is *not* the discriminator and an earlier rationale here was wrong to say so: a default interface method with a body is as additive as a virtual with a body, as [The Plugin Contract](#the-plugin-contract) records |
+| A `plugin.json` manifest per plugin | Rejected | `.deps.json` already carries the dependency graph and the directory name already carries identity. A second format needs its own versioning and its own validation errors |
+| Scan the plugin root and filter, rather than drive from the allowlist | Rejected | Reading metadata from a directory nobody named is work done on an attacker's behalf, and it turns a misspelled entry into a silent skip |
+| Last-wins for replace contracts, as ODS does by module ordering | Rejected | ODS ranks modules `ICustomModule` last, then `Override`-prefixed names, then the rest, and `OrderBy` is stable, so two vendor plugin modules tie and the winner is decided by `AppDomain` assembly enumeration order. The operator installed both and is the only one who can say which was intended |
+| **Diffing `IServiceCollection` around each hook** for attribution | **Adopted at the second panel review**, having been rejected on a false premise | The premise was that a diff cannot say which plugin added what once two have run. That is true of one diff taken at the end and false of a diff taken around each hook, and hooks run one at a time in allowlist order. A wrapper still sits in front of the collection, because the removal rules have to fire before a call lands, but attribution needs no per-call bookkeeping |
+| **Recording declined `TryAdd` calls** in the wrapper, to detect two claimants on a replace contract | **Rejected, and probe-refuted at panel review.** It was the earlier decision here | `TryAdd` reads `Count` and the indexer, compares, and returns without ever handing the candidate descriptor to the collection, so the wrapper sees an anonymous scan and never sees the implementation type; `TryAddEnumerable` sweeps the whole collection, so even the service type is ambiguous. No `IServiceCollection` wrapper can recover it. A plugin claims a replace contract with a plain `Add` instead, and a decline surfaces one check downstream as a plugin that registered no declared contract |
+| **Masking replace-cardinality descriptors from a plugin's view**, so a `TryAdd` claim can never silently decline | **Rejected, probe-refuted at the second panel review.** It was the previous decision here | `RemoveAll<T>` and `Replace` walk the collection by index, reading through the masked view and calling `RemoveAt(i)` against the real one. Measured on `net10.0` over `[IReplaceContract, IB, IC]` with the first masked, `RemoveAll<IC>()` removed the two it was not asked to remove and kept the one it was. Translating every index back through the projection repairs that one call and leaves a projection layer whose correctness must be re-argued for every `IList<ServiceDescriptor>` member. The wrapper is a pass-through and the claim rule is `Add` |
+| **Masking every contract, not only replace contracts**, from a plugin's view | Rejected, and moot once masking is withdrawn | `TryAddEnumerable`'s deduplication by implementation type is behaviour a fan-in registration legitimately relies on, so masking could never have been widened to fan-in even on its own terms |
+| **A DMS-owned fetcher**: a generalized `ApiSchemaDownloader` invoked from `run.sh`, driven by a name-keyed `Plugins:Packages` map beside `Allowed`, each entry carrying `Version`, `FeedUrl`, and a mandatory `Sha256`, with a digest-matched `.nupkg` cache and a fatal cross-check against `Allowed` | **Deferred**, fully designed | This was the earlier decision here and its shape is recorded so it can return without redesign. It does not ship first because Recipe 2 in [Acquisition](#acquisition) delivers the identical pinned, verified acquisition with no DMS code; because it is the only foundation story that changes a shipped, load-bearing CLI and so carries a regression obligation to the ApiSchema path; because it writes into `/app/plugins` on the container filesystem, which breaks `readOnlyRootFilesystem` hardening and forces the trust posture to become per-entry rather than uniform; because its cache claim, that a feed outage does not block a restart, is only true with persistent storage most pod restarts do not have; and because a secrets plugin fetched from a private feed would need that feed's credential in plain configuration, a circularity the deployment-side recipe does not have. Its two advantages over the recipe, one fewer container and one fewer place to write the digest, are real and small |
+| **A separate `PLUGIN_PACKAGES` acquisition list**, mirroring `SCHEMA_PACKAGES`, if the fetcher returns | Rejected | Not because acquisition and enablement must be one structure, but because they must be one **section** read once. A separate variable is read by `run.sh` before the process exists and by nothing inside it, so the two can genuinely diverge across a restart and the digest ends up outside the surface that governs execution. ApiSchema has no allowlist for its package list to drift against, so the shapes were never parallel |
+| **An indexed array of allowlist objects**, `Allowed: [{ Name, ... }]` | Rejected | Binds cleanly from JSON and badly from the environment, which is where deployments set it. Every plugin becomes `Plugins__Allowed__0__Name` and up, the operator tracks free indexes, and Compose and Kubernetes both surface that form. A delimited list reads at a glance |
+| **A dictionary keyed by plugin name** | Rejected | `IConfiguration` enumerates a section's children in alphabetical order, so Phase A invocation order would become a function of plugin names rather than of the operator's intent. Phase A order is contractual, so the ordered list has to be an ordered list |
+| **Plugin configuration sources last, above environment variables and command-line arguments** | Rejected | It is what an external secret store would prefer, and it was the first decision here. It means an operator's explicit override silently stops taking effect once an unrelated plugin is installed, which is both the more surprising rule and the less secure one, since the environment and the command line are the surfaces the deployment controls. See [The Two Composition Phases](#the-two-composition-phases) |
+| **Placing plugin sources below the *first* environment variable source** | **Rejected, probe-refuted at panel review.** It was the third decision here | `CreateBuilder` installs ten sources on `net10.0` in the shipped container and twelve when the host is started with arguments, and the first two environment sources are prefix-filtered and sit *below* `appsettings.json`. The placement would have put a vault's `ConfigurationServiceSettings:ClientSecret` under the empty string `appsettings.json` ships, inverting the precedence this design commits to. The rule is the *last* environment variable source |
+| **An unconditional `volumes:` mount in `published-dms.yml` and `local-dms.yml`** | Rejected at panel review | Compose cannot make a bind mount conditional inside one file, so Docker would materialize an empty root-owned `./plugins` beside every deployment that never asked for a plugin. The mount goes in an overlay file added with `-f`, following `bootstrap-dms.yml` |
+| **Adding the new projects to `EdFi.DataManagementService-Docker.sln`** | Rejected at panel review | Nothing in the repository builds it and it already omits projects the Docker build needs, so an entry there could go stale with nothing to notice. See [Where the Code Lives](#where-the-code-lives) |
+| **Generating the host assembly manifest from the published `.deps.json`** | Rejected at panel review | A `--self-contained false` publish omits every shared-framework assembly, including both abstractions in the hook signatures, and `/app/Frontend` exists only in the build stage. The manifest is generated against a built runtime image |
+| **Generating the host assembly manifest against the image `src/dms/Dockerfile` builds** | Rejected at the second panel review | That image is `local/ed-fi-api`, built for development and for the repository's own test tiers. The image an operator pulls is the one `on-prerelease.yml:20`'s `IMAGE_NAME` repository variable names, `edfialliance/ed-fi-api` in the published registry, and it is built from `src/dms/Nuget.Dockerfile` at `on-prerelease.yml:542-552`; the two pin different `aspnet` base digests today, so the shared-framework section would state a version no released image carries |
+| **Attaching the host assembly manifest from `on-prerelease.yml`'s `attach-dms-artifacts-to-release` job** | **Rejected at the fourth panel review.** It was the previous decision here | That job needs the pack, SBOM, and provenance jobs and has no `needs:` edge on `docker-publish-dms`, the sibling that builds and pushes the image the generator has to inspect, so the two run concurrently and the step could have run against an image that did not exist. The manifest gets a job that declares `needs: docker-publish-dms`, and the gate divergence is stated: the publish job has no `if:` and the manifest job keeps the release-asset gate, so an alpha publishes an image and no manifest |
+| **Driving the acquisition recipes out of `docs/OPERATIONS.md`** in the end-to-end tiers | **Rejected at the fourth panel review.** It was the previous decision here | It read the dependency backwards: the host-integration story creates and runs the overlay files while the story that writes the chapter comes after it, so the tier would have had to parse a chapter that did not exist yet. The committed overlay files are the artifact, the tiers run them unedited, and the documentation story asserts the chapter equal to them. A test that pasted a recipe out of Markdown would prove the Markdown rather than the file an operator composes with `-f` |
+| **Skipping a contract's release promotion when its version is absent from the prerelease view** | **Rejected at the fourth panel review.** It was the previous decision here | A version that was never published is absent from that view too, so the skip would have reported "already promoted, nothing to do" for a contract that never reached the feed. The step queries the release view first, promotes from the prerelease view, and fails when the version is in neither |
+| **Sweeping every managed assembly under `/app`** for the manifest | Rejected at the second panel review | `/app/ApiSchemaDownloader` is a second application invoked as its own process by `run.sh:53`; the DMS process never loads it and a plugin can never be served one of its assemblies. Listing them would tell an implementer they were part of the compatibility surface. `/app/runtimes/` (`src/dms/Dockerfile:78-81`) is excluded on a different ground, since it *is* in the DMS process: every RID-specific managed asset repeats the simple name and `assemblyVersion` of its library's top-level `runtime` entry, which the sweep already lists, so per-RID rows would add no compatibility fact. The sweep is top-level `/app/*.dll`, with the RID-specific-asset-without-a-top-level-counterpart case recorded as a known gap |
+| **Having the frontend's plugin task resolve the per-plugin records from DI by type, or re-derive them after `Build()`** | Rejected at the fourth panel review | The records exist only inside `AddServices`, where Phase B runs, and nothing after `Build()` can re-derive them: the per-hook diffs are gone and the collection has been consumed. The invoker returns a `PluginAuditInput` and `AddServices` registers it as a singleton **instance** in the same call, which activates nothing and, because it is registered after every hook, cannot be displaced by a plugin registering the same type |
+| **Putting the plugin attribution checks in Core's startup guard** | Rejected at panel review | Core would need a project reference into `src/plugins/` to read the per-plugin records, inverting the dependency and dragging the contract assembly into every Core consumer. A second `IDmsStartupTask` in the frontend reads them and calls a pure audit function in the hosting assembly |
+| **Re-adding the environment variable source after Phase A** to restore operator precedence | Rejected | It was the second decision here. It restores the environment and forgets the command line, which `CreateBuilder(args)` installs above the environment whenever the host is started with arguments, so `--AppSettings:Foo=bar` would still lose to a plugin in any deployment that passes one. Moving the plugin's sources below both is one list operation and reads the environment once |
+| **Recording only the descriptors a plugin adds** | Rejected | `services.Replace(...)` and `RemoveAll<T>()` are ordinary extension methods over the `IList<ServiceDescriptor>` members, so a plugin could displace a host default while the wrapper saw a plain add or nothing. Removals and overwrites of pre-existing host-owned descriptors are fatal at the wrapper |
+| **Making every removal fatal**, including a plugin's own descriptors | Rejected | A plugin that removes or replaces a descriptor it registered a few lines earlier is doing routine work, and the per-hook diff already knows what it added, so scoping the rule to pre-existing descriptors is a lookup. The earlier rationale, that framework and vendor helpers do this internally, is withdrawn: a metadata sweep of `Microsoft.Extensions.Http`, `Options`, `Options.ConfigurationExtensions`, and `Microsoft.Extensions.Azure` 1.11.0 found only `TryAdd*`, `Add*`, `AddOptions`, and `Configure` |
+| **Making every removal of a pre-existing descriptor fatal**, whatever its service type | Rejected at approval review, rationale corrected twice | DMS cannot enumerate every framework or vendor descriptor a legitimate plugin might replace, and rejecting a legitimate plugin is the outcome this section's bar forbids. The fatal is scoped to host-owned service types, which the displacement check already identifies by assembly, and everything else is recorded in the inventory event. Two earlier rationales for the scope are withdrawn: that vendor registration helpers call `Replace` and `RemoveAll` internally, measured false; and that `ClearProviders` is the legitimate framework call the exemption exists for, which the row below reverses. What actually exercises the exemption is a plugin's own explicit `Replace` |
+| **Permitting `ClearProviders()` under the non-host-descriptor exemption** | **Rejected at the third panel review.** It was the previous decision here | `ClearProviders` is `RemoveAll<ILoggerProvider>()`, measured, and DMS wires Serilog inside `AddServices` while Phase B runs after it, so the providers it removes are the host's own. Permitting it silences every DMS log line and the plugin inventory event that was the only record of the removal, which is recording an event into the channel the event describes destroying. The four logging-pipeline service types are a named fatal; adding a provider is untouched |
+| **Having `build-dms.ps1`'s `DockerBuild` run `SetDMSAssemblyInfo` before the image build**, so the local image stamps through `Directory.Build.props` the way the release lane does | **Rejected at the fourth panel review.** It was the previous decision here | `SetDMSAssemblyInfo` regenerates the **tracked** `src/dms/Directory.Build.props` into a different shape on every run, while `DockerBuild` is reached from the `E2ETest` and `StartEnvironment` commands unless `-SkipDockerBuild` is passed, so every local end-to-end run of those would dirty `git status`. It would also execute only on developer machines, since every CI end-to-end leg passes `-SkipDockerBuild` and CI's own image comes from `docker/build-push-action` with no build arguments. And it stamps a different value from the argument it replaces: `Convert-ToAssemblyVersion` maps `8.4.0-pre.0.4` to `8.4.0.4` while `VersionPrefix` stamping yields `8.4.0.0`. The stamping is removed and nothing replaces it; the local image's DMS assemblies carry the committed props version |
+| **Versioning `EdFi.Api.Plugins` on the DMS release**, regenerated by `SetDMSAssemblyInfo` like every `src/dms/` assembly | Rejected at approval review | The skew check would then refuse a plugin built against the 8.4 contract on an 8.3 host whose contract surface is identical, naming two versions that differ in nothing an implementer can act on. The contract carries its own semantic version, moving only when its surface moves |
+| **Declaring the contract's version in its csproj and leaving `src/dms/Dockerfile` stamping `/p:AssemblyVersion`** | **Rejected, probe-refuted at the second panel review.** It was the previous decision here | A csproj-declared `AssemblyVersion` beats the imported props file and loses to a command-line global property, which also propagates to every project reference. Measured: the same contract project publishes as `1.0.0.0` under the release lane and `8.4.0.0` under `/p:AssemblyVersion=8.4.0.0`. The Dockerfile lane stops stamping it and lets the committed `Directory.Build.props` supply the value |
+| **Comparing the package version recorded in `.deps.json`** rather than `AssemblyVersion`, to sidestep the two-lane skew | Rejected at the second panel review | Host-first resolution itself keys on `AssemblyVersion`, so a preflight comparing anything else would check a different thing from the one the loader enforces, and the host assembly manifest would still have to state one truthful value. Fixing the lane fixes both |
+| **`Path.GetFullPath` alone for the containment check** | **Rejected, probe-refuted at the second panel review.** It was the previous decision here | `GetFullPath` normalizes lexically and never reads the filesystem, so a directory link out of the plugin root produces a path that starts with the root and the check passes. It also made the symlink-escape test the design asked for unsatisfiable. The root is resolved with `Directory.ResolveLinkTarget(path, returnFinalTarget: true)` first, at one syscall per allowlisted name |
+| **Resolving both sides' final components but composing the plugin path against the *configured* root** | **Rejected, probe-refuted at the third panel review.** It was the previous decision here | `ResolveLinkTarget` returns `null` for anything that is not a link, so the configured root's own prefix stays unresolved in the composed path while the resolved root does not. Measured on `net10.0` with a root `app-plugins` linked to a sibling `realplugins`, an ordinary plugin came out contained-`False`: a symbolically linked plugin root rejected every plugin under it. The composition happens against the resolved root |
+| **Trusting operator-placed symbolic links** and dropping the containment claim | Rejected at the second panel review | It is the other way to make the failing test go away, and it trades a stated control for an assumption at no saving: resolving the link is one call the loader is already positioned to make |
+| **Enumerating the plugin context's `Assemblies` as the load inventory** | **Rejected, refuted at the second panel review.** It was the previous decision here | Assemblies load lazily, so every request-path assembly and every native library is absent from that enumeration at the moment startup ends, while the document called the result an authoritative statement of what was in the process. The inventory is built from what the `.deps.json` declares, hashed on disk, with a flag for what had loaded |
+| **Refusing to publish a contract whose version is already on the feed** | **Rejected at the second panel review.** It was the previous decision here | `on-prerelease.yml` fires on every prerelease and the contract version deliberately does not move with the release, so this would fail every prerelease after the first, and `build-dms.ps1:1948` pushes with no `--skip-duplicate`. It also refuses the wrong thing: the case worth catching is a changed surface at an unchanged version, which only a content comparison separates from a routine re-run |
+| **Treating a plugin that registers no plugin contract as loaded** | Rejected | It ran and contributed nothing the host will call, most plausibly because it was allowlisted on the wrong host. Zero `EdFiApiPlugin` subclasses is already fatal for the same reason one level up |
+| **Falling back to the plugin's private copy when the host cannot serve a version** | Rejected | It produces the split type identity host-first exists to prevent, discovered later as a `TypeLoadException` inside a hook. Named fatal instead |
+| **Distinguishing "host lacks it" from "host refused the version" by exception type**, `FileNotFoundException` versus `FileLoadException` | **Rejected, probe-refuted at panel review.** It was the earlier decision here | Measured on `net10.0`: `Default.LoadFromAssemblyName` throws `FileNotFoundException` in both cases, strong-named or not, so the `FileLoadException` arm never runs and a `catch (FileNotFoundException)` silently serves the private copy. The loader asks by simple name and compares versions itself |
+| **Relying on the lazy `Load` override alone** for version-skew detection | Rejected | `Load` fires when a type resolution first needs an assembly, so a skewed dependency no hook happens to touch would surface on a request rather than at startup, and "fatal at load" would not be true. An eager `.deps.json` preflight runs first and the override is the backstop |
+| **Declaring native assets unsupported** and refusing a plugin that carries `runtimes/` | Rejected | The cloud SDKs and database clients these plugin types will carry ship native assets, DMS's own image already carries a `runtimes/` tree for `Microsoft.Data.SqlClient`, and `AssemblyDependencyResolver` already answers the question. A `LoadUnmanagedDll` override is three lines |
+| **Keying the self-contained check on a runtime identifier in `runtimeTarget`** | **Rejected, probe-refuted at panel review** | `dotnet publish -r osx-arm64 --no-self-contained` also produces `".NETCoreApp,Version=v10.0/osx-arm64"`, so the check would refuse the legitimate RID-specific framework-dependent publish that native assets require. A `runtimepack` library entry is the discriminator that separates the two |
+| **Trusting Phase A's narrow surface to keep it additive** | Rejected | `IConfigurationBuilder.Sources` is mutable, so the surface delivers configuration-only and not additive-only. A snapshot comparison around each call costs one list copy |
+| **Letting a plugin register host-owned service types unchecked** | Rejected | An implementer who misreads "contribute services" can displace a host default through ordinary DI and learn about it from a production defect. The host already holds the contract set and the recording wrapper already sees every descriptor, so the guardrail is nearly free. It is a mistake-detector, not an isolation boundary, and is framed as such |
+| **A directory content-manifest digest** in the recipe | Rejected | Requires specifying path ordering, separator normalization, symlink, and case-sensitivity rules that every operator and build tool must reimplement identically, to verify an artifact derived from one that already has a natural digest |
+| Consume a conventional library package with `lib/`, resolving at deploy time | Rejected | Puts NuGet restore, version unification, and conflict resolution on the deploy path, and out of reach of `unzip`. Flattening a closure is what `dotnet publish` does and the implementer can see and test the result |
+| Out-of-process plugins over gRPC or HTTP | Rejected | Real process isolation, and the only option that would actually contain a plugin, but it needs a wire contract per type, a latency budget on the write path, service-to-service auth, and a second deployable per plugin. Revisit only against a stated isolation requirement |
+| Ship the mechanism and keep the trust model implicit | Rejected | Drop-in loading is the one thing here that changes the security posture, and leaving what it does and does not protect against unstated is a wrong answer to a question operators will ask |
+
+---
+
+## Out of Scope and Deferred
+
+| Item | Status | What would bring it back |
+| --- | --- | --- |
+| The per-type contracts | Companion documents | This document fixes only their cardinality and their loading |
+| **Per-tenant secret resolution, and secrets contracts generally** | **A separate spike** | Nothing. It is deferred by decision, not by dependency. See [The Secrets Spike](#the-secrets-spike) |
+| `IClientSecretHasher` relocation out of `Backend.OpenIddict` | The secrets spike | It is a secrets contract, and moving it is prerequisite work for that type rather than for this mechanism |
+| **A DMS-owned fetcher** driven by a `Plugins:Packages` map, see [Rejected Alternatives](#rejected-alternatives) for the recorded shape | Deferred | A deployment target that cannot run an init container or a one-shot service ahead of DMS, and evidence that operators are hitting it. Compose and Kubernetes both can, so the trigger is a platform this design has not met |
+| NuGet package **signature** verification | Deferred | A policy requiring author or repository provenance beyond an operator-pinned digest. The pinned digest already proves the operator approved these bytes |
+| Plugins that add HTTP endpoints | Deferred | A plugin type that owns a route. DMS-1412 states the Identity API surface is DMS-owned with the plugin supplying the implementation behind it. Adding it later is a third virtual on `EdFiApiPlugin` |
+| Hot reload and unloading | Out of scope | Nothing; a restart is the supported path |
+| Plugin-to-plugin dependencies | Out of scope | Each closure is its own; two plugins exchange types only through host contracts |
+| A capability or permission model for plugins | Out of scope | Nothing available in .NET delivers it in-process |
+| An Ed-Fi signing authority or plugin catalog | Out of scope | A governance decision, not a technical one |
+| Migrating the ODS plugin format | Out of scope | An ODS plugin is not a DMS plugin; no source or binary compatibility is attempted |
+| Logging sinks | Out of scope | DMS and CMS remain complete applications for logging, with structured console and file output and the built-in OTLP exporter. Nothing here changes how a sink is chosen or configured |
+
+---
+
+## Testing Strategy
+
+The loader is testable without a host and the host integration is testable without a real plugin, so the expensive combination is needed only for the end-to-end proof.
+
+**Unit, over the loader.**
+Fixture plugin directories built as test assets: a well-formed plugin; one with no `EdFiApiPlugin` subclass; one with two; one whose `Name` disagrees with its directory; one whose entry assembly is corrupt; one published self-contained, whose `.deps.json` therefore carries a `runtimepack` library; one published `-r <rid> --no-self-contained`, whose `runtimeTarget` names a RID and which must load, since that is how a plugin ships native assets; one carrying a private copy of the contract assembly, which asserts sharing actually happens rather than merely being intended; and two plugins carrying different major versions of one third-party dependency, which asserts isolation still works for what the host does not have.
+Allowlist entries that are rooted, contain a separator, or are `..` each get a case asserting the entry is rejected before any path is composed.
+Separately, a plugin directory that is a symbolic link to a directory outside the root is asserted fatal, which is the case the name rule cannot see and which a lexical `Path.GetFullPath` comparison passes.
+Beside it, and just as load-bearing, an ordinary plugin directory under a plugin root that is **itself** a symbolic link is asserted to load, which is the case a containment check that composes against the configured root rather than the resolved one rejects; the escape case and the linked-root case are asserted together, since an implementation that passes either one alone is a plausible wrong answer.
+Each fatal row in [Startup Failure Semantics](#startup-failure-semantics) gets a case that asserts the failure is fatal rather than logged.
+
+**Unit, over load isolation specifically.**
+A plugin that reads configuration and binds options through `IOptions<T>` is the regression test for the `IChangeToken` split.
+It fails with `TypeLoadException` under an enumerated shared set and passes under host-first, so it pins the decision rather than restating it.
+A second case asserts a plugin compiled against contract version N still loads against contract version N+1 carrying an added virtual member.
+The reverse direction gets its own case: a plugin whose entry assembly references contract version N+1 on a host carrying N is fatal with both versions named, and the assertion is that the failure came from reading the assembly's references rather than from loading a type, since a type-load error would prove the check ran too late.
+A third case covers version skew on a shared assembly: a plugin declaring a higher version of an assembly the host carries is fatal **before the plugin is constructed**, from the `.deps.json` preflight, naming the assembly and both versions, and it is asserted not to have silently loaded the plugin's private copy.
+A fourth covers the backstop: a reference the preflight could not see resolves through the `Load` override, and the test asserts the loader reports the named skew rather than the runtime's `FileLoadException` wrapper, by asserting on the message an operator would read.
+A probe test records what `Default.LoadFromAssemblyName` actually does on that skew, so the policy is pinned by measurement rather than by an assumed exception type; the measurement this design was written against is that it throws `FileNotFoundException` for both "absent" and "older", which is why the loader asks by simple name.
+A fifth asserts a plugin carrying a native asset resolves it through `LoadUnmanagedDll` and calls into it.
+
+**Unit, over binding the `Plugins` section.**
+`Allowed` is parsed from a delimited string with surrounding whitespace, empty elements, and a single name, and the resulting order is asserted to be the order written rather than any sorted order, since Phase A order is contractual.
+A name repeated in `Allowed`, including a repeat that only appears after trimming, is fatal.
+`Plugins__Allowed` set as an environment variable binds to the same ordered list as the JSON form, which is the form deployments actually use.
+
+Phase A cases throughout this section land with the secrets foundation story that adds the phase, not with this spike's stories.
+
+**Unit, over attribution and the recording wrapper.**
+Two plugins claiming one replace-contract with `Add` are both named in the failure, and a single plugin registering two descriptors for one replace-contract is fatal on its own, naming the plugin and the contract, proven both with two `Add` calls in one hook and with an `Add` in each of two plugins.
+A plugin that claims a replace contract with `TryAdd` while another plugin already holds it **and contributes nothing else** is asserted to fail as having registered no declared contract, with the message naming the plugin, which is the design's answer to a decline the seam cannot see and the assertion that keeps that answer honest.
+Two tests assert the design's own limits rather than capabilities: a declined `TryAdd` is not recorded anywhere and the inventory does not claim it was, so nobody later builds a check on information the seam does not carry; and a plugin that declines on a replace contract while also registering a declared contract is asserted to boot successfully with the host default still resolved and no finding naming the declined claim, which pins the coverage hole [Contract Cardinality](#contract-cardinality) records.
+The wrapper is asserted to be a pass-through: a plugin enumerating the collection during its hook sees exactly what the real collection holds, in the same order, including every replace-contract descriptor the host registered, and `Count`, the indexer, `IndexOf`, and `Contains` agree with it.
+The regression test that pins why is the measured one: `RemoveAll<T>()` called from inside a hook removes the descriptors for `T` and nothing else, which is the assertion any reintroduction of a masking projection fails.
+A plugin that registers `IDocumentStoreRepository`, a host-owned service type that is not a declared plugin contract, is fatal and names both the plugin and the type, while a plugin that registers its own types, `Microsoft.Extensions.*` options, and an `IHostedService` alongside a declared contract loads unaffected, which is what keeps the check from being a blanket ban on registering anything, and its inventory event is asserted to list the hosted service.
+A plugin that calls `services.Replace(...)` on a host default, one that calls `RemoveAll<T>()` over a host type, and one that assigns through the indexer over a pre-existing host-owned slot are each fatal at the wrapper, naming the plugin and the service type, and the real collection is asserted unchanged.
+A plugin whose hook calls `logging.ClearProviders()`, which is a real `RemoveAll<ILoggerProvider>()` over descriptors the host registered before the hook, is asserted **fatal** at the wrapper, naming the plugin and `ILoggerProvider`, with the real collection asserted unchanged and the fatal asserted to have been written on `Console.Error`; a plugin that only **adds** an `ILoggerProvider` is asserted to load unaffected, which is what keeps the carve-out from being a ban on plugin logging.
+A plugin that removes a pre-existing non-host descriptor outside the logging pipeline set loads unaffected and its inventory event is asserted to list the removal with the displaced implementation type, which is the exemption the carve-out is carved out of.
+A plugin that registers a descriptor and then explicitly `Replace`s it, and one that calls the real `AddHttpClient`, `AddOptions<T>().Bind(...)`, `AddLogging`, and a real cloud SDK client registration against a collection the host's own `AddServices` has already populated, each load unaffected, which pins the rule to pre-existing descriptors and proves it against the helpers as shipped rather than against imitations.
+The four helpers are measured not to remove anything, so they prove the wrapper does not reject ordinary registration work; the plugin's own `Replace` is what proves the pre-existing scope.
+A plugin whose Phase B hook registers only its own types and whose Phase A hook adds nothing is fatal as contributing no plugin contract, and the same plugin with one Phase A source added is not, which pins the rule that a Contribute-only plugin satisfies the check.
+A Phase A plugin that removes a pre-existing configuration source, and one that reorders it, are each fatal and named, while one that only appends is unaffected.
+One test asserts a Phase A plugin cannot influence `Plugins:Allowed`, which is the security property from [Trust Model and Verification](#trust-model-and-verification) rather than an implementation detail.
+
+**Unit, over observability.**
+A plugin whose Phase A source carries a value that looks like a secret is loaded, and the captured log output is asserted to contain the source **type** and to contain neither the key nor the value.
+That is the [Observability](#observability) rule stated as a test rather than as a convention, and it is the one that silently stops holding if someone later "improves" the diagnostics.
+A second case asserts the per-plugin event carries the registered service types, which proves the recording wrapper feeds the log and not only the conflict check.
+A third asserts that a plugin whose `.deps.json` declares an older version of an assembly the host carries loads successfully and that the inventory event lists that assembly with both versions, which is the only evidence a host-first substitution ever leaves.
+A fourth pins the inventory's shape against the enumeration it replaced: a plugin carrying a private assembly that no hook touches is asserted to appear in the inventory with its digest and a loaded flag of false, which an inventory built from the context's `Assemblies` would have omitted entirely.
+The loader is also asserted to write its `invoking <phase> on <plugin>` line before the hook runs, by having the fixture hook throw and asserting the announcement is already on the channel, since a line written only after the hook is worthless for a hang.
+
+**Integration, over host startup.**
+A `WebApplicationFactory<Program>` boot with a real fixture plugin directory, asserting an observable effect of both phases: a configuration value only the Phase A hook could have supplied, and a resolvable service only the Phase B hook could have registered.
+Fatal cases assert on the exception escaping host creation, because plugin loading happens before the container exists.
+`RunBootstrapPhase` writes the failed phase to the startup status file and rethrows (`Program.cs:443-462`), so a loader fatal propagates out of the `WebApplicationFactory` host build; `IStartupProcessExit` is DI-registered (`Infrastructure/WebApplicationBuilderExtensions.cs:79`) and is not resolved until after `builder.Build()`, where `Program.cs:130` resolves `StartupPhaseExecutor` and that type receives it through its primary constructor (`Infrastructure/StartupPhaseExecutor.cs:33-37`), so substituting it would prove nothing about this phase.
+The assertion is therefore the escaping exception plus the failed `LoadPlugins` record in the status file, and the `IStartupProcessExit` double stays where it belongs, on the post-container guard checks that DMS-1434 and the plugin startup task run.
+One test asserts a key supplied both by a Phase A source and by an environment variable resolves to the environment value, which is a precedence rule from [The Two Composition Phases](#the-two-composition-phases) and one an operator would otherwise discover by outage.
+The matching command-line assertion is a **unit** test rather than an integration one, over a `ConfigurationManager` carrying the same source list the host installs, with the placement step applied to it.
+`WebApplicationFactory` starts the host through its own entry point and a test cannot add configuration keys to the arguments it passes, so an integration test that claimed to assert command-line precedence would be asserting nothing; and the stock container has no command-line source at all, since `src/dms/run.sh:118` passes no arguments, so the rule is about deployments that do rather than about the shipped image.
+A third asserts the loader added no source of its own: the set of non-plugin sources in `Sources` after Phase A is the set that was there before it, so the earlier re-add approach cannot creep back in.
+One test asserts the startup status file carries a `LoadPlugins` phase record.
+CMS gets the equivalent for its own `Program` **when CMS host integration is taken up**, asserting fail-loud behavior without a phase wrapper.
+No draft in this spike carries it, because no consuming epic drives CMS plugin loading; the [Level of Effort](#level-of-effort) table marks that row deferred and this obligation travels with it.
+
+**End-to-end, the load-bearing one.**
+A fixture plugin is published `--no-self-contained`, packed asset-only, pinned by digest, and loaded by a **pulled** `edfialliance/ed-fi-api` image that this test never builds.
+Both recipes are proven, in **two** deployments rather than one.
+They cannot share a deployment: each ends with a mount at `/app/plugins`, and one container has one mount target, so a single Compose project would have to merge them into something neither document publishes.
+So the tier runs the Recipe 1 overlay in one deployment with a plugin pre-placed under a bind-mounted root, tears it down, and runs the Recipe 2 overlay in a second with the plugin delivered by the one-shot `fetch-plugins` service, then a third time with a deliberately wrong `PLUGIN_PACKAGE_SHA256` to assert the service fails and DMS never starts.
+
+**Recipe 2's feed is served over HTTP by the harness, and that is what keeps the recipe verbatim.**
+Every other packaged path in this design consumes a nupkg from a local **folder** feed, and Recipe 2 cannot: `fetch-plugins` mounts only the output volume, its BusyBox `wget` speaks http, https, and ftp, and `PLUGIN_PACKAGE_URL` is a `PackageBaseAddress` address rather than a path.
+The harness therefore lays the packed nupkg out as `<id>/<version>/<id>.<version>.nupkg` in lower case, serves that directory over HTTP from a pinned static-file container in the test's own Compose overlay, and points `PLUGIN_PACKAGE_URL` at it.
+The published overlay is unchanged and is run exactly as committed; what the test adds is a feed and the three `:?`-required values the file declares, one of which is the SHA-256 the harness computes over the nupkg it just packed, which is the deployment's side of the recipe in every real deployment too.
+Each tier drives the committed overlay files themselves, and the documentation story's doc-versus-file equality assertion is what makes those files the same text `docs/OPERATIONS.md` prints.
+That split is deliberate: a test that pasted a recipe out of a Markdown file would prove the Markdown and not the artifact, while the documentation story cannot run the recipe at all, so the file is run in one story and pinned to the prose in another.
+The assertion is that a stock published image runs third-party code with no image derived and no DMS rebuilt.
+That is the whole claim of this design and the one assertion that fails if the claim is wrong.
+
+This tier cannot run before the first published image carries the loader, so it is its own post-release ticket rather than a note attached to another story, and the [Level of Effort](#level-of-effort) table carries it as such.
+Until it runs, the tier below it proves the same mechanism against a locally built image, which tests everything except the one word "stock".
+
+**Consumer proof.**
+The per-PR lane already packs `EdFi.Api.CustomValidation` and compiles a scratch consumer against the produced nupkg (`eng/verification/CustomValidationConsumer/`).
+The same lane extends to `EdFi.Api.Plugins`, and the fixture plugin is built against the packed nupkgs rather than project references, so CI exercises the packaged path an implementer takes.
+The lane gains one assertion neither package needed before, applied to **both**: the `AssemblyVersion` of the assembly inside each packed nupkg equals that package's version.
+It is the assertion that keeps the newer-plugin-on-older-host check from going blind, and it is the kind of thing that breaks when someone tidies a props file.
+`EdFi.Api.CustomValidation` needs it too now that it carries its own version, and the same lane asserts that running the build with an explicit `-DMSVersion` leaves both packed versions untouched, which is what proves `SetDMSAssemblyInfo` no longer reaches either contract.
+
+---
+
+## Level of Effort
+
+Spine only.
+Per-type contracts, their pipeline or endpoint wiring, and their documentation are costed in the companion documents.
+
+| Work | Size | Notes |
+| --- | --- | --- |
+| `EdFi.Api.Plugins` contract package, packed and consumer-verified | Small | One base class; follows the DMS-1432 pack-and-assert lane exactly |
+| `EdFi.Api.Plugins.Hosting`: discovery, load contexts, `.deps.json` skew preflight, Phase B hook invocation, recording wrapper, load inventory | Medium | The load context is the only genuinely subtle code, and its decisions - resolve host-first by simple name, compare versions explicitly, fatal when the host carries less - are probe-pinned by tests. The inventory is nearly free: the per-hook diff already tracks contributions for conflict detection, and both the file list and the version-skew list fall out of the `.deps.json` the preflight already reads |
+| New `src/plugins/` folder: its own `Directory.Build.props` carrying the contract's independent version, the two production projects into the two solutions CI builds and the loader story's test project after them, `src/plugins` added to the pull-request relevance filters and the merge trigger, and the `src/dms/Dockerfile` build-stage change that lets the image build see the tree | Small | `src/` has no shared props file, so a third top-level folder inherits nothing. The Dockerfile change is mechanical but load-bearing: two more `COPY` pairs, the shared props at the trees' common parent, and two committed lock files, or `--locked-mode` fails the image build. It sits here rather than with host integration so that no later story can add the frontend's `ProjectReference` into a build stage that cannot reach the tree. `AssemblyVersion` must track the contract version, not the release, or the contract-skew check is either blind or noisy. A missing project entry is a known failure mode here and `--locked-mode` does not catch it. The relevance filters at `.github/workflows/on-dms-pullrequest.yml:136` and `on-config-pullrequest.yml:116` and the `paths:` trigger at `on-dms-merge-or-tag.yml:13-14` name `src/dms` and `src/config` and would skip a pull request touching only `src/plugins` |
+| Independent version for `EdFi.Api.CustomValidation`, in its csproj and its pack target | Small | The same argument that gave `EdFi.Api.Plugins` its own version. Touches a merged story's project without touching its types |
+| DMS host integration: one `LoadPlugins` constant, both call sites, the `PluginAuditInput` singleton the frontend's startup task reads, the inventory event before the startup tasks run, and removing the Docker lane's command-line version stamping | Small | `RunBootstrapPhase` and the `DmsStartupPhases` constants (`Program.cs:443-462` and `Infrastructure/StartupPhaseExecutor.cs:23-30`) already exist, and `app.Logger` is available at `Program.cs:131` where the inventory event goes. Dropping `/p:AssemblyVersion`, `/p:FileVersion`, and the `ASSEMBLY_VERSION` argument is a removal of about five lines with nothing put in their place, and it is what keeps one contract assembly from carrying two versions across two images. The build-stage change that lets the image see `src/plugins/` is the row above, not this one |
+| CMS host integration | Small, **deferred** | The loader reports its own outcomes, so there is no scaffolding to port. With secrets deferred, no consuming epic drives CMS plugin loading; see [Applicability to the Configuration Service](#applicability-to-the-configuration-service) |
+| Replace-conflict, host-service displacement, no-contract-registered, and declared-contract activation checks in a frontend-owned startup task fed by a `PluginAuditInput` singleton; `PluginContractRegistry` and its derived `ContractAssemblyNames`; host-owned removal and overwrite rejection plus the logging-pipeline carve-out in the pass-through recording wrapper, attribution by snapshot-and-diff around each hook, other removals inventoried; and the frontend's `ProjectReference` into `EdFi.Api.Plugins.Hosting` | Small | Runs beside the DMS-1434 guard rather than inside it, because Core cannot see the hosting assembly's per-plugin records. The checks need the host contract set the cardinality metadata already holds, and the records reach the task as a singleton instance the frontend registers inside `AddServices`. This is the first story the frontend has to reference, which is why the reference lands here and the Dockerfile build-stage change lands two stories earlier |
+| Phase A: `ContributeConfiguration` on the contract, its invocation, plugin sources placed below the environment and command-line sources, the additive `Sources` guard, and the Contribute-only exemption in the no-contract check | Small, **owned by the secrets foundations** | Decided here, built there; see [The Two Composition Phases](#the-two-composition-phases). One list move in the loader plus the Phase A test cases |
+| Pulled-stock-image end-to-end proof | Small, **post-release** | Its own ticket, not a note on another story, because it cannot run until the first published image carries the loader. Blocked by that release and blocking nothing |
+| Publish `EdFi.Api.Plugins` and `EdFi.Api.CustomValidation` | Small | **Release-gated leaf.** Blocked by every other row and blocking none of them. Burns two package ids permanently, so it wants its own review |
+| Test assets, including the deliberately broken, contract-skewed, and dependency-version-skewed fixtures | Medium | Building broken assemblies as test assets is fiddly, and the two skew fixtures have to be built against versions the host does not carry |
+| `docs/CONFIGURATION.md`, `docs/OPERATIONS.md` with both acquisition recipes verbatim, the two overlay compose files, the plugin implementer guide, host assembly manifest generated and attached by the release lane | Medium | `PLUGINS.md` is the plugin-delivery guide; the DMS-1435 rewrite is the validator-authoring one and links to it. The recipes are load-bearing documentation: the end-to-end tiers run the committed overlay files and this row asserts `docs/OPERATIONS.md` embeds them unchanged. The manifest is one script run against the released image, the one `Nuget.Dockerfile` produces, plus one new `on-prerelease.yml` job that needs `docker-publish-dms` so the image exists before it is inspected |
+
+No row changes shipped behavior on a path DMS already ships.
+Deferring the fetcher removed the only one that did, and with it the regression obligation to the ApiSchema path.
+The one risk worth naming is the ordering of the end-to-end proof, and it is handled by sequencing rather than by mitigation.
+The stock-image claim can only be proven in full against an image that already contains the loader, so the pulled-image tier is a post-release ticket of its own.
+Until it runs the mechanism is proven against a locally built image, which tests everything except the one word "stock".
+
+---
+
+## Cross-References
+
+- [ods-precedent.md](./ods-precedent.md) - the ODS/API survey, its two seams, and what this design refuses
+- `reference/design/custom-validation-DMS-1345/design.md` - the contract, fan-in step, failure surfacing, and startup guard this design inherits; its "Rejected Alternatives" predicted this document
+- `reference/design/custom-validation-DMS-1345/03-add-custom-validator-composition-seam-and-startup-guard.md` - the guard that transfers unchanged and the seam that does not
+- `src/dms/run.sh:31-54` - the `SCHEMA_PACKAGES` block, which pins no digest and which this design does not extend, and its `__` environment binding at `:35`
+- `src/dms/clis/EdFi.DataManagementService.ApiSchemaDownloader/` - the shipped NuGet client this design leaves unchanged, and the one the deferred fetcher would generalize
+- `build-dms.ps1:210-241`, `SetDMSAssemblyInfo` - regenerates the tracked `src/dms/Directory.Build.props` with `VersionPrefix` equal to the release version, called only from `BuildAndPublish`, through `Invoke-SetAssemblyInfo` (call at `:1871`, function declared at `:1868`, command at `:2006`); it must **not** reach `src/plugins/Directory.Build.props`, whose version is the contract's own, and it is deliberately not called from `DockerBuild`
+- `eng/build-helpers.psm1:6-22`, `Invoke-RegenerateFile` - the write path `SetDMSAssemblyInfo` uses; its change guard at `:17` compares an undefined `$new_content` against the file rather than the `$NewContent` parameter, so it rewrites on every run
+- `build-dms.ps1:1960-1976`, `DockerBuild` - assembles build arguments and runs `docker buildx build` (`:1974`) and regenerates nothing; the Dockerfile consumes the committed props it copies at `src/dms/Dockerfile:13`
+- `build-dms.ps1:870-871`, `:976-977`, `package-helpers.psm1:165-190` - the two paths that reach `DockerBuild` unless `-SkipDockerBuild` is passed, from the `E2ETest` command (`:2011`, `E2ETests` at `:1127`) and from `StartEnvironment` (`:2033`), and `Convert-ToAssemblyVersion`, which maps a prerelease version to a build height that `VersionPrefix` stamping would drop
+- `build-dms.ps1:1697`, `:1712-1716` - `InstanceE2ETest` delegates to `src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1` and never reaches `DockerBuild`; that script rebuilds the image itself by passing `-r` to `start-local-dms.ps1` (`setup-local-dms.ps1:355-364`)
+- `build-dms.ps1:1818,:1832,:1835` and `.github/workflows/on-dms-pullrequest.yml:376,:387` - the five places the release version is threaded through `EdFi.Api.CustomValidation`'s package name or pack argument, all of which the independent-version amendment has to move
+- `build-dms.ps1:1948` - `dotnet nuget push` with no `--skip-duplicate`, which is why the publish policy is stated rather than assumed
+- `build-dms.ps1:1962-1970`, `src/dms/Dockerfile:44-59` - the `ASSEMBLY_VERSION` argument and the `/p:AssemblyVersion` publish, the global property that overrides a contract project's own version and the one this design removes
+- `src/dms/Nuget.Dockerfile:6,:21-25` and `.github/workflows/on-prerelease.yml:542-552` - the lane that builds the image an operator pulls, and the base pin that differs from `src/dms/Dockerfile:61`
+- `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Infrastructure/WebApplicationBuilderExtensions.cs:38,:46` - the first configuration read, which fixes where Phase A has to run, and the `AddEnvironmentVariables()` call that appends one more source above everything, an eleventh in the shipped container, which is why the environment outranks the command line in DMS as shipped
+- `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Program.cs:29-33` - `CreateBuilder(args)`, whose ten sources in the shipped container fix what "operator override" has to mean, and the bootstrap status signal's read of `AppSettings:StartupStatusFilePath`, the one key Phase A cannot supply
+- `src/dms/run.sh:118` - the entry point's `dotnet EdFi.DataManagementService.Frontend.AspNetCore.dll`, passed no arguments, which is why the stock container has no command-line configuration source
+- `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Program.cs:443-462` - `RunBootstrapPhase`, which writes the failed phase and rethrows, so a loader fatal escapes host creation rather than reaching `IStartupProcessExit`
+- `src/dms/Dockerfile:15-29,:56-57,:75-86` - the per-project `COPY` list and `--locked-mode` restore the build stage change has to extend, the framework-dependent publish that keeps the shared framework out of the `.deps.json`, and the runtime stage that copies into `/app`
+- `src/dms/core/EdFi.DataManagementService.Core/Startup/IDmsStartupTask.cs:21` - the Core interface both startup guards implement, and the reason the plugin guard lives in the frontend rather than in Core
+- `eng/verification/CustomValidationConsumer/` - the packed-package consumer proof this design extends
+- `eng/docker-compose/bootstrap-dms.yml`, `eng/docker-compose/published-config.yml` - the existing `:ro` mount convention
+- `.github/workflows/on-dms-pullrequest.yml:136`, `.github/workflows/on-config-pullrequest.yml:116`, `.github/workflows/on-dms-merge-or-tag.yml:13-14` - the pull-request relevance filters and the merge trigger, none of which names `src/plugins` today
+- `eng/docker-compose/.env.example` - the tracked example environment file the mount variable and the three Recipe 2 variables are documented in
+- `docs/CONFIGURATION.md`, `docs/OPERATIONS.md` - gain the `Plugins` section and the plugin-root permission requirement

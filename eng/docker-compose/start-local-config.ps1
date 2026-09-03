@@ -27,14 +27,33 @@ param (
     $IdentityProvider="self-contained"
 )
 
-Import-Module ./env-utility.psm1 -Force
+Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force
+Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
 $datastore = if ($envValues["DMS_CONFIG_DATASTORE"]) { $envValues["DMS_CONFIG_DATASTORE"] } else { "postgresql" }
 $databaseComposeFile = if ($datastore -eq "mssql") { "mssql.yml" } else { "postgresql.yml" }
+$useMssqlTmpfs = [string]::Equals(
+    (Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "MSSQL_USE_TMPFS" -DefaultValue "false"),
+    "true",
+    [System.StringComparison]::OrdinalIgnoreCase
+)
+$mssqlTmpfsComposeFile = "mssql-tmpfs.yml"
+if ($useMssqlTmpfs -and $datastore -eq "mssql") {
+    $mssqlTmpfsSize = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "MSSQL_TMPFS_SIZE" -DefaultValue "4g"
+    $mssqlContainerMemory = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "MSSQL_CONTAINER_MEMORY" -DefaultValue "10g"
+    Write-Output "Using SQL Server tmpfs data directory (MSSQL_TMPFS_SIZE=$mssqlTmpfsSize, MSSQL_CONTAINER_MEMORY=$mssqlContainerMemory)."
+}
 
 $files = @(
     "-f",
-    $databaseComposeFile,
+    $databaseComposeFile
+)
+
+if ($useMssqlTmpfs -and $datastore -eq "mssql") {
+    $files += @("-f", $mssqlTmpfsComposeFile)
+}
+
+$files += @(
     "-f",
     "local-config.yml",
     "-f",
@@ -68,6 +87,44 @@ else {
             throw "Failed to build images. Exit code $LASTEXITCODE"
         }
     }
+
+    function Wait-MssqlReady {
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'The SA password is read as plaintext from the environment file and handed to sqlcmd via the SQLCMDPASSWORD environment variable on docker exec; SecureString adds no protection across that boundary.')]
+        param(
+            [Parameter(Mandatory)]
+            [string]
+            $ContainerName,
+
+            [Parameter(Mandatory)]
+            [string]
+            $Password,
+
+            [int]
+            $TimeoutSeconds = 120
+        )
+
+        $deadline = [datetime]::UtcNow.AddSeconds($TimeoutSeconds)
+        while ([datetime]::UtcNow -lt $deadline) {
+            $remainingSeconds = [math]::Max(1, [math]::Ceiling(($deadline - [datetime]::UtcNow).TotalSeconds))
+            $probeTimeoutSeconds = [math]::Min(10, $remainingSeconds)
+            $probeArguments = @(
+                "exec", "-e", "SQLCMDPASSWORD=$Password", $ContainerName,
+                "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost", "-U", "sa",
+                "-Q", "SELECT 1", "-C", "-b"
+            )
+            if (Test-NativeCommandWithTimeout -FilePath "docker" -ArgumentList $probeArguments -TimeoutSeconds $probeTimeoutSeconds) {
+                Write-Output "SQL Server is ready."
+                return
+            }
+
+            if ([datetime]::UtcNow -lt $deadline) {
+                Start-Sleep -Seconds ([math]::Min(3, [math]::Max(1, [math]::Floor(($deadline - [datetime]::UtcNow).TotalSeconds))))
+            }
+        }
+
+        throw "SQL Server ($(Format-LogSafeText $ContainerName)) did not become ready within $TimeoutSeconds seconds."
+    }
+
     # Identity provider configuration
     $identityClientSecrets = Resolve-IdentityClientSecretConfiguration -EnvValues $envValues
     $env:DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider
@@ -86,18 +143,27 @@ else {
         $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
     }
 
-    Write-Output "Starting locally-built DMS config service"
+    if ($datastore -eq "mssql") {
+        Write-Output "Starting SQL Server..."
+        docker compose $files --env-file $EnvironmentFile -p cs-local up $upArgs db
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to start SQL Server. Exit code $LASTEXITCODE"
+        }
 
-    docker compose $files --env-file $EnvironmentFile -p cs-local up $upArgs
+        $mssqlSaPassword = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
+        Wait-MssqlReady -ContainerName "dms-mssql" -Password $mssqlSaPassword
+    }
+
+    Write-Output "Starting locally-built DMS config service"
+    $configServices = if ($datastore -eq "mssql") { @("keycloak", "config") } else { @() }
+    docker compose $files --env-file $EnvironmentFile -p cs-local up $upArgs $configServices
 
     if ($LASTEXITCODE -ne 0) {
         throw "Unable to start local Docker environment, with exit code $LASTEXITCODE."
     }
 
-    # Database readiness is enforced by the compose healthcheck (the config service
-    # depends_on the db with condition service_healthy, and `docker compose up`
-    # does not return until that dependency is satisfied). This sleep only covers
-    # Keycloak and config-service warmup before the setup scripts run.
+    # SQL Server readiness is explicitly polled before the config service starts.
+    # This sleep covers Keycloak and config-service warmup before the setup scripts run.
     Start-Sleep 25
     # The two role names CMS enforces are supported overrides: local-config.yml maps
     # IdentitySettings:ConfigServiceRole / :ClientRole from DMS_CONFIG_IDENTITY_SERVICE_ROLE /

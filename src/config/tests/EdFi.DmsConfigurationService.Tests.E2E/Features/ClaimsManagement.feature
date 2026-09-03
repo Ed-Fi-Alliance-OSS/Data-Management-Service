@@ -24,20 +24,18 @@ Feature: ClaimsManagement endpoints
              When a POST request is made to "/management/upload-claims" with
                   """
                   {
-                      "claims": {
-                          "claimSets": [{"claimSetName": "TestUploadSet", "isSystemReserved": false}],
-                          "claimsHierarchy": [
-                              {
-                                  "name": "http://ed-fi.org/identity/claims/test",
-                                  "claimSets": [
-                                      {
-                                          "name": "TestUploadSet",
-                                          "actions": [{"name": "Read"}]
-                                      }
-                                  ]
-                              }
-                          ]
-                      }
+                      "claimSets": [{"claimSetName": "TestUploadSet", "isSystemReserved": false}],
+                      "claimsHierarchy": [
+                          {
+                              "name": "http://ed-fi.org/identity/claims/test",
+                              "claimSets": [
+                                  {
+                                      "name": "TestUploadSet",
+                                      "actions": [{"name": "Read"}]
+                                  }
+                              ]
+                          }
+                      ]
                   }
                   """
              Then it should respond with 200
@@ -69,11 +67,22 @@ Feature: ClaimsManagement endpoints
              When a POST request is made to "/management/upload-claims" with
                   """
                   {
-                      "claims": {
-                          "claimSets": [{"invalidProperty": "test"}],
-                          "claimsHierarchy": []
-                      }
+                      "claimSets": [{"invalidProperty": "test"}],
+                      "claimsHierarchy": []
                   }
                   """
              Then it should respond with 400
               And the response body contains validation errors
+
+        # Covers the download-then-upload round trip: the GET response body is posted back unchanged.
+        # Tagged for the SQL Server representative lane because it re-uploads the whole document over
+        # persisted claim sets, exercising the claim-set re-insert path on that engine too.
+        @MssqlRepresentative
+        Scenario: 06 Current claims can be uploaded unchanged
+            Given the current claims response is captured
+             When the captured claims response is uploaded unchanged
+             Then it should respond with 200
+              And the response body contains a new reload ID
+             When a GET request is made to "/management/current-claims"
+             Then it should respond with 200
+              And the response body matches the captured claims response

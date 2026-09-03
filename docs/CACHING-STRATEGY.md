@@ -57,16 +57,32 @@ built-in stampede protection
 
 **Cache Structure:**
 
-- **Key:** `ApplicationContext_{clientId}` (e.g., `ApplicationContext_my-api-client`)
+- **Key:** scoped to the requesting tenant:
+  - Single tenant: `ApplicationContext:single:{clientId}`
+    (e.g., `ApplicationContext:single:my-api-client`)
+  - Multi-tenant: `ApplicationContext:tenant:{tenant.ToLowerInvariant()}:{clientId}`
+    (e.g., `ApplicationContext:tenant:tenant-a:my-api-client`)
 - **Value:** Single `ApplicationContext` record containing:
   - `Id` - API client database ID
   - `ApplicationId` - Parent application ID
   - `ClientId` - Client identifier string
   - `ClientUuid` - Client UUID
   - `DataStoreIds` - List of authorized data store IDs
+  - `CreatorOwnershipTokenId` - Ownership token assigned to documents this
+    client creates, or null when the client has none
+  - `OwnershipTokenIds` - Ownership tokens this client is authorized against
 
-**Multi-Tenancy Support:** No - one cache entry per API client, not per tenant.
-Each client's `DataStoreIds` determine which data they can access.
+**Multi-Tenancy Support:** Yes - the tenant is part of the cache key, so the
+same API client resolves and caches an independent context per tenant. Each
+client's `DataStoreIds` determine which data they can access.
+
+**Dependency Scope:** Every authenticated resource request path that runs
+`ProfileResolutionMiddleware` requires a resolvable application context, because
+profile resolution needs the `ApplicationId`. This is broader than the
+ownership-gated operations alone. With a cold or missing cache entry, a CMS
+outage or a malformed CMS response makes those requests fail closed with
+`503 Service Unavailable`. A `NotFound` context still maps to
+`401 Unauthorized` as an invalid token.
 
 **TTL:** 10 minutes (configurable via `CacheSettings:ApplicationContextCacheExpirationSeconds`)
 
@@ -232,12 +248,15 @@ connection pooling and avoid connection string parsing overhead.
 - `src/dms/backend/.../Postgresql/NpgsqlDataSourceCache.cs`
 - `src/dms/backend/.../Postgresql/NpgsqlDataSourceProvider.cs`
 
-**Implementation:** `ConcurrentDictionary<string, NpgsqlDataSource>` (singleton)
+**Implementation:** `Dictionary<string, entry>` guarded by a lock (singleton). Every entry carries
+its data source, a lease count, and a retirement flag; the public surface is leased-only, so a data
+source cannot be obtained without also holding the claim that keeps it alive.
 
 **Cache Structure:**
 
-- **Key:** Database connection string (e.g., `"Host=localhost;Database=edfi;..."`)
-- **Value:** `NpgsqlDataSource` instance - manages its own internal connection pool
+- **Key:** Configured connection string (e.g., `"Host=localhost;Database=edfi;..."`)
+- **Value:** `NpgsqlDataSource` instance - manages its own internal connection pool - plus its lease
+  count and retirement state
 
 **Connection Pool Settings:**
 
@@ -248,24 +267,29 @@ csb.AutoPrepareMinUsages = 3;        // Auto-prepare after 3 uses
 csb.MaxAutoPrepare = 256;            // Max prepared statements
 ```
 
-**TTL:** Application lifetime (disposed on shutdown)
+**TTL:** None. An entry lives while the Configuration Service still names its connection string or
+any lease on it is outstanding.
 
 **Architecture:**
 
 - **Singleton Cache:** Shared across all requests, keyed by connection string
-- **Scoped Provider:** Per-request access with instance-level caching
+- **Scoped Provider:** Per-request access holding one lazily taken lease for the request's
+  write-once effective target
 
 **Cache Operations:**
 
-| Operation  | Method                 | Description                 |
-| ---------- | ---------------------- | --------------------------- |
-| Get/Create | `GetOrCreate(connStr)` | Creates or retrieves source |
-| Dispose    | `Dispose()`            | Disposes all cached sources |
+| Operation | Method                                | Description                                           |
+| --------- | ------------------------------------- | ----------------------------------------------------- |
+| Lease     | `AcquireLease(connStr)`               | Builds or reuses the source, counting a claim on it   |
+| Open      | `OpenLeasedConnectionAsync(connStr)`  | Leases and opens a connection, transferring both      |
+| Reconcile | `Reconcile(snapshot)`                 | Retires entries no configuration names any more       |
+| Dispose   | `Dispose()`                           | Disposes all remaining sources at shutdown            |
 
 **Invalidation Strategy:**
 
-- No runtime invalidation
-- All data sources disposed on application shutdown
+- Configuration reconciliation: when a data-store publication stops naming a connection string, the
+  entry is retired and its data source disposed once the last lease is released
+- All remaining data sources disposed on application shutdown as a backstop
 - Implements `IDisposable` for proper cleanup
 
 ---
@@ -397,13 +421,15 @@ Configuration Service during cache expiration under high load.
 | Application Context            | Yes                | HybridCache.GetOrCreateAsync   |
 | Configuration Service Token    | Yes                | HybridCache.GetOrCreateAsync   |
 | Compiled Schemas               | No*                | ConcurrentDictionary.GetOrAdd  |
-| NpgsqlDataSource               | No*                | ConcurrentDictionary.GetOrAdd  |
+| NpgsqlDataSource               | No*                | Single-winner publish under lock |
 | data stores                  | No                 | Direct assignment on startup   |
 | OIDC Metadata                  | Yes                | ConfigurationManager (built-in)|
 
-*These caches use `ConcurrentDictionary.GetOrAdd()` which provides atomic
-factory execution but not waiting behavior - concurrent requests may execute
-the factory multiple times, though only one result is stored.
+*These caches provide no waiting behavior - concurrent requests may execute
+the factory multiple times, though only one result is stored. Compiled Schemas
+uses `ConcurrentDictionary.GetOrAdd()`; the data-source cache builds outside
+its lock, publishes a single winner under it, and disposes the losing
+candidate.
 
 ### Configuration
 
@@ -424,12 +450,82 @@ Per-cache TTL is configured via `CacheSettings`:
     "TokenCacheExpirationSeconds": 1500,
     "ProfileCacheExpirationSeconds": 1800,
     "DataStoreCacheRefreshEnabled": true,
-    "DataStoreCacheExpirationSeconds": 600
+    "DataStoreCacheExpirationSeconds": 600,
+    "DerivativeValidationCacheExpirationSeconds": 600
   }
 }
 ```
 
-Default values: ClaimSets, AppContext, and data store = 10 minutes; Token = 25 minutes; Profile = 30 minutes.
+Default values: ClaimSets, AppContext, data store, and derivative validation = 10 minutes; Token = 25 minutes; Profile = 30 minutes.
+
+### Derivative validation cache expiration
+
+`CacheSettings.DerivativeValidationCacheExpirationSeconds` sets how long a validation verdict for a
+read replica or snapshot database stays cached.
+
+| Configured value | Effective value | Logged |
+| ---------------- | --------------- | ------ |
+| absent           | `600`           | no     |
+| `1`–`3600`       | as configured   | no     |
+| `0` or negative  | `600`           | warning naming the configured and effective value |
+| above `3600`     | `3600`          | warning naming the configured and effective value |
+
+**A non-positive value means "use the default", not "never expire."** That inverts the convention of
+`DataStoreCacheExpirationSeconds` in the same section, where `0` or a negative value keeps the cached
+configuration until an explicit reload. The inversion is deliberate and there is no way to opt out of
+expiry: a derivative is a database an operator can rebuild or repoint without telling DMS, so a
+verdict about one that never expired would outlive the database it describes.
+
+**The resolved value is further bounded by the data store cache TTL.** A derivative's connection
+string comes from the cached data store configuration, so when `DataStoreCacheRefreshEnabled` is
+`true` and `DataStoreCacheExpirationSeconds` is positive, the effective expiration is the smaller of
+the two, and a verdict never outlives the connection string it was reached for. When refresh is
+disabled, or `DataStoreCacheExpirationSeconds` is `0` or negative, that configuration is held until an
+explicit reload; there is no shorter lifetime to bound by, so the resolved value is used as is. The
+result is bounded in every case, because the resolved value already is.
+
+---
+
+### 8. Validation caches
+
+Two in-process caches hold what DMS has concluded about a database: `DatabaseFingerprintProvider`
+caches the `dms.EffectiveSchema` fingerprint, and `ResourceKeyValidationCacheProvider` caches the
+resource-key seed verdict. Both are `ConcurrentDictionary` singletons in the DMS process, not
+distributed, so each instance in a multi-instance deployment validates independently.
+
+Both are keyed by `(policy class, configured connection string)`. The connection string is the one
+configured in the Configuration Service, never a provider-realized form, so cache identity needs no
+connection-string parsing and a value no provider could open still has a stable identity.
+
+The policy class is `Primary` for a parent's own database and `Derivative` for a read replica or
+snapshot. Including it in the key is what keeps a primary and a derivative apart when their configured
+text happens to be identical — otherwise one of them would inherit the other's lifetime.
+
+The key deliberately carries no data store id and no tenant. Two data stores configured with the same
+connection string are the same database, so they share one entry and one verdict; that is the point of
+keying on what is being validated rather than on who asked for it. A verdict is likewise not per
+tenant: a database two tenants can reach is validated once.
+
+| Policy class | Successful verdict | Negative verdict (unprovisioned, wrong hash, key mismatch) | Fault |
+| --- | --- | --- | --- |
+| `Primary` | cached for the process lifetime | cached for the process lifetime | evicted, except a malformed-fingerprint failure, which is retained |
+| `Derivative` | cached until `CacheSettings.DerivativeValidationCacheExpirationSeconds` elapses, bounded by the data store cache TTL | dropped by the request that read it | evicted |
+
+The asymmetry is deliberate. Repairing a primary requires an operator and a service restart either
+way, so re-probing per request buys nothing. A derivative can be rebuilt, reseeded, or repointed
+underneath a running service with nothing telling DMS, so a verdict about one must not outlive the
+request that found it unusable.
+
+Two mechanisms enforce that. Faults are evicted by the cache entry itself, naming exactly the entry
+whose production failed. Negative verdicts are dropped by the middleware that interpreted them —
+a missing `dms.EffectiveSchema` row, a schema-hash mismatch, and a resource-key mismatch are all
+successful reads of a bad answer rather than exceptions, so only the reader can classify them — using
+a token that names exactly the entry it observed. Every removal, expiry included, is version-exact:
+a late verdict from a superseded entry can never delete the replacement.
+
+Startup validation (`ValidateStartupInstancesTask`) uses `Primary` keys only. It does not enumerate,
+probe, or prime any derivative, because a derivative may be intentionally offline between extraction
+windows; the first request routed to one is what reaches it.
 
 ---
 
@@ -437,13 +533,15 @@ Default values: ClaimSets, AppContext, and data store = 10 minutes; Token = 25 m
 
 | Cache        | Mechanism    | Scope | TTL    | Tenant | Stampede | Invalidation |
 | ------------ | ------------ | ----- | ------ | ------ | -------- | ------------ |
-| App Context  | HybridCache  | Sing. | 10 min | No     | Yes      | Manual + TTL |
+| App Context  | HybridCache  | Sing. | 10 min | Yes    | Yes      | Manual + TTL |
 | ClaimSets    | HybridCache  | Sing. | 10 min | Yes    | Yes      | Manual + TTL |
 | Comp. Schema | ConcurDict   | Sing. | None   | No     | No       | Reload ID    |
 | CMS Token    | HybridCache  | Sing. | 25 min | No     | Yes      | TTL only     |
-| NpgsqlDS     | ConcurDict   | Sing. | None   | N/A    | No       | Shutdown     |
+| NpgsqlDS     | Dict + lock  | Sing. | None   | N/A    | No       | Reconcile + Shutdown |
 | data store | ConcurDict   | Sing. | Configurable (CacheSettings.DataStoreCacheExpirationSeconds) | Yes    | No       | TTL + Restart      |
 | OIDC Meta    | ConfigMgr    | Sing. | 60 min | No     | Yes      | Auto-refresh |
+| Fingerprint  | ConcurDict   | Sing. | Primary: none. Derivative: CacheSettings.DerivativeValidationCacheExpirationSeconds, bounded by the data store TTL | No: keyed by policy class + configured connection string, so data stores and tenants sharing a connection string share one entry | Yes | TTL + reader token + fault eviction |
+| Resource key | ConcurDict   | Sing. | Primary: none. Derivative: same as above | No: same key as above | Yes | TTL + reader token + fault eviction |
 
 ## Cache Invalidation Patterns
 
@@ -490,10 +588,12 @@ Requires `EnableClaimsetReload: true` in configuration.
 
 ### 4. Lifetime-Based (Application Shutdown)
 
-Used by: NpgsqlDataSource, data stores
+Used by: data stores; NpgsqlDataSource as a backstop only
 
 Cache persists for the entire application lifetime and is only cleared on
-shutdown. Suitable for rarely-changing configuration data.
+shutdown. Suitable for rarely-changing configuration data. For NpgsqlDataSource
+the shutdown disposal is the last resort: entries are ordinarily retired by
+configuration reconciliation and disposed when their last lease is released.
 
 ## Design Patterns
 
@@ -537,7 +637,8 @@ schemas on-demand only when first requested.
     "TokenCacheExpirationSeconds": 1500,
     "ProfileCacheExpirationSeconds": 1800,
     "DataStoreCacheRefreshEnabled": true,
-    "DataStoreCacheExpirationSeconds": 600
+    "DataStoreCacheExpirationSeconds": 600,
+    "DerivativeValidationCacheExpirationSeconds": 600
   },
   "JwtAuthentication": {
     "RefreshIntervalMinutes": 60,

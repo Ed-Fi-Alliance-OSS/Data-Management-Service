@@ -127,10 +127,21 @@ internal sealed class ValidateStartupInstancesTask(
         string sanitizedName = LoggingSanitizer.SanitizeForLogging(instance.Name);
         string sanitizedTenant = LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)");
 
+        // Startup validates the parent data store's own database and nothing else. Derivatives are
+        // optional and may be intentionally offline between extraction windows, so none is enumerated,
+        // validated, or pooled here; a derivative is first reached only when a request selects it.
+        EffectiveDataStoreTarget primaryTarget = EffectiveDataStoreTarget.Primary(connectionString);
+
+        // Startup keys everything it caches as Primary, so its verdicts are the permanent ones the
+        // request path then reuses. Its tokens are no-ops for the same reason, and are deliberately
+        // ignored below rather than held: a startup verdict is not dropped by the request that reads
+        // it next.
+        ValidationCacheKey primaryKey = ValidationCacheKey.For(primaryTarget);
+
         try
         {
             // Phase 1: Fingerprint validation — populates the fingerprint cache
-            var fingerprint = await fingerprintProvider.GetFingerprintAsync(connectionString);
+            var fingerprint = await fingerprintProvider.ReadFingerprint(primaryKey, primaryTarget).Value;
 
             if (fingerprint == null)
             {
@@ -176,18 +187,20 @@ internal sealed class ValidateStartupInstancesTask(
 
             // Phase 2: Resource key seed validation — populates the validation cache
 
-            var result = await resourceKeyValidationCacheProvider.GetOrValidateAsync(
-                connectionString,
-                () =>
-                    resourceKeyValidator.ValidateAsync(
-                        fingerprint,
-                        effectiveSchema.ResourceKeyCount,
-                        [.. effectiveSchema.ResourceKeySeedHash],
-                        effectiveSchema.ResourceKeysInIdOrder.ToResourceKeyRows(),
-                        connectionString,
-                        cancellationToken
-                    )
-            );
+            var result = await resourceKeyValidationCacheProvider
+                .Read(
+                    primaryKey,
+                    () =>
+                        resourceKeyValidator.ValidateAsync(
+                            fingerprint,
+                            effectiveSchema.ResourceKeyCount,
+                            [.. effectiveSchema.ResourceKeySeedHash],
+                            effectiveSchema.ResourceKeysInIdOrder.ToResourceKeyRows(),
+                            primaryTarget,
+                            cancellationToken
+                        )
+                )
+                .Value;
 
             if (result is ResourceKeyValidationResult.ValidationFailure failure)
             {
@@ -229,16 +242,22 @@ internal sealed class ValidateStartupInstancesTask(
         {
             // Transient errors are evicted from caches so the middleware will
             // retry on first request. Log but don't fail startup.
+            // Only the exception's type, never the exception itself and never its message: this is
+            // the catch that sees the instance's database connection fail, and a provider exception
+            // from parsing or opening a connection string can quote its values back.
+            // S6667 asks for the caught exception to be passed to the logger. That is the right
+            // default and the wrong thing here, for the reason above.
+#pragma warning disable S6667
             logger.LogCritical(
-                ex,
-                "Startup validation failed for data store "
-                    + "{DataStoreId} ({Name}) tenant {Tenant}: {ErrorMessage}. "
+                "Startup validation failed with {ExceptionType} for data store "
+                    + "{DataStoreId} ({Name}) tenant {Tenant}. "
                     + "Requests routed to this instance will be retried on first access",
+                ex.GetType().Name,
                 instance.Id,
                 sanitizedName,
-                sanitizedTenant,
-                LoggingSanitizer.SanitizeForLogging(ex.Message)
+                sanitizedTenant
             );
+#pragma warning restore S6667
             return false;
         }
 

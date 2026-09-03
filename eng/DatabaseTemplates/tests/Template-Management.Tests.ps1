@@ -983,6 +983,7 @@ Describe "Add-TemplateDataStore engine dispatch" {
                 $AccessToken -eq "cms-token" -and
                 $PostgresCredential -eq $credential -and
                 $PostgresDbName -eq "template_db" -and
+                $DatabaseEngine -eq "mssql" -and
                 $ConnectionString -eq "mssql-connection-string"
             }
         }
@@ -1012,6 +1013,7 @@ Describe "Add-TemplateDataStore engine dispatch" {
                 $AccessToken -eq "cms-token" -and
                 $PostgresCredential -eq $credential -and
                 $PostgresDbName -eq "template_db" -and
+                $DatabaseEngine -eq "postgresql" -and
                 [string]::IsNullOrWhiteSpace($ConnectionString)
             }
         }

@@ -15,7 +15,7 @@ namespace EdFi.DataManagementService.Backend.Postgresql;
 
 internal sealed class PostgresqlDocumentCacheReadLookupAdapter : DocumentCacheReadLookupAdapterBase
 {
-    private readonly Func<string, CancellationToken, Task<NpgsqlConnection>> _openConnectionAsync;
+    private readonly Func<string, CancellationToken, Task<LeasedNpgsqlConnection>> _openConnectionAsync;
     private readonly IRelationalWriteExceptionClassifier _writeExceptionClassifier;
     private readonly IDocumentCacheProviderCommandTimeoutClassifier _providerCommandTimeoutClassifier;
     private readonly ILogger<PostgresqlDocumentCacheReadLookupAdapter> _logger;
@@ -40,7 +40,7 @@ internal sealed class PostgresqlDocumentCacheReadLookupAdapter : DocumentCacheRe
     }
 
     internal PostgresqlDocumentCacheReadLookupAdapter(
-        Func<string, CancellationToken, Task<NpgsqlConnection>> openConnectionAsync,
+        Func<string, CancellationToken, Task<LeasedNpgsqlConnection>> openConnectionAsync,
         IRelationalWriteExceptionClassifier writeExceptionClassifier,
         IDocumentCacheProviderCommandTimeoutClassifier providerCommandTimeoutClassifier,
         ILogger<PostgresqlDocumentCacheReadLookupAdapter> logger,
@@ -80,12 +80,14 @@ internal sealed class PostgresqlDocumentCacheReadLookupAdapter : DocumentCacheRe
             command.Parameters.Count
         );
 
-        await using NpgsqlConnection connection = await OpenTargetConnectionAsync(
+        // The lease travels with the connection and is released with it, so the data source cannot be
+        // disposed while this lookup is still reading.
+        await using LeasedNpgsqlConnection leased = await OpenTargetConnectionAsync(
                 targetContext.ConnectionInput.Value,
                 cancellationToken
             )
             .ConfigureAwait(false);
-        await using NpgsqlCommand dbCommand = connection.CreateCommand();
+        await using NpgsqlCommand dbCommand = leased.Connection.CreateCommand();
         dbCommand.CommandText = command.CommandText;
 
         AddParameters(dbCommand, command.Parameters);
@@ -106,7 +108,7 @@ internal sealed class PostgresqlDocumentCacheReadLookupAdapter : DocumentCacheRe
                 && _writeExceptionClassifier.IsTransientFailure(dbException);
     }
 
-    private async Task<NpgsqlConnection> OpenTargetConnectionAsync(
+    private async Task<LeasedNpgsqlConnection> OpenTargetConnectionAsync(
         string connectionString,
         CancellationToken cancellationToken
     )
@@ -132,17 +134,16 @@ internal sealed class PostgresqlDocumentCacheReadLookupAdapter : DocumentCacheRe
         }
     }
 
-    private static Func<string, CancellationToken, Task<NpgsqlConnection>> OpenConnectionFromCacheAsync(
+    private static Func<string, CancellationToken, Task<LeasedNpgsqlConnection>> OpenConnectionFromCacheAsync(
         NpgsqlDataSourceCache dataSourceCache
     )
     {
         ArgumentNullException.ThrowIfNull(dataSourceCache);
 
-        return async (connectionString, cancellationToken) =>
-        {
-            NpgsqlDataSource dataSource = dataSourceCache.GetOrCreate(connectionString);
-            return await dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        };
+        // The lease travels with the connection: the caller disposes both together, so the data
+        // source cannot be disposed while a lookup is still reading from it.
+        return (connectionString, cancellationToken) =>
+            dataSourceCache.OpenLeasedConnectionAsync(connectionString, cancellationToken);
     }
 
     private static bool IsExpectedConnectionAcquisitionFailure(Exception exception) =>

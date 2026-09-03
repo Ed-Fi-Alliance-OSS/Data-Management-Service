@@ -24,6 +24,7 @@ using EdFi.DataManagementService.CustomValidation;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -65,6 +66,47 @@ public class PipelineOrderingTests
         return GetSteps(apiService, factoryMethodName).Select(step => step.GetType()).ToList();
     }
 
+    /// <summary>
+    /// The steps that decide whether the request names a real project namespace and resource. None of
+    /// them opens a database connection.
+    /// </summary>
+    private static readonly Type[] EndpointValidationPhase =
+    [
+        typeof(ApiSchemaValidationMiddleware),
+        typeof(ProvideApiSchemaMiddleware),
+        typeof(ValidateEndpointMiddleware),
+    ];
+
+    /// <summary>
+    /// The steps that read the selected database, in dependency order.
+    /// </summary>
+    private static readonly Type[] DatabaseValidationPhase =
+    [
+        typeof(ValidateDatabaseFingerprintMiddleware),
+        typeof(ValidateResourceKeySeedMiddleware),
+        typeof(ResolveMappingSetMiddleware),
+    ];
+
+    private static int FirstIndexOfPhase(List<Type> stepTypes, Type[] phase)
+    {
+        int first = phase
+            .Select(stepType => stepTypes.IndexOf(stepType))
+            .Where(index => index >= 0)
+            .DefaultIfEmpty(-1)
+            .Min();
+
+        first.Should().BeGreaterThanOrEqualTo(0, "the phase must be present to be ordered");
+        return first;
+    }
+
+    private static int LastIndexOfPhase(List<Type> stepTypes, Type[] phase)
+    {
+        int last = phase.Select(stepType => stepTypes.IndexOf(stepType)).Max();
+
+        last.Should().BeGreaterThanOrEqualTo(0, "the phase must be present to be ordered");
+        return last;
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_The_Query_Pipeline : PipelineOrderingTests
@@ -96,7 +138,13 @@ public class PipelineOrderingTests
             );
             services.AddSingleton(appSettingsOptions);
             services.AddSingleton<IDatabaseFingerprintReader, NullDatabaseFingerprintReader>();
+            services.TryAddSingleton(TimeProvider.System);
+            services.TryAddSingleton(new CacheSettings());
             services.AddSingleton<DatabaseFingerprintProvider>();
+            services.AddTransient<
+                IEffectiveTargetSelectionResponseFactory,
+                DefaultEffectiveTargetSelectionResponseFactory
+            >();
             services.AddTransient<ValidateDatabaseFingerprintMiddleware>();
             services.AddTransient<ILogger<ValidateDatabaseFingerprintMiddleware>>(_ =>
                 NullLogger<ValidateDatabaseFingerprintMiddleware>.Instance
@@ -177,18 +225,17 @@ public class PipelineOrderingTests
         }
 
         [Test]
-        public void It_places_fingerprint_validation_before_the_first_schema_dependent_step()
+        public void It_places_fingerprint_validation_after_the_endpoint_validation_phase()
         {
+            var validateEndpointIndex = _stepTypes.IndexOf(typeof(ValidateEndpointMiddleware));
             var fingerprintIndex = _stepTypes.IndexOf(typeof(ValidateDatabaseFingerprintMiddleware));
-            var apiSchemaValidationIndex = _stepTypes.IndexOf(typeof(ApiSchemaValidationMiddleware));
 
-            fingerprintIndex.Should().BeGreaterThanOrEqualTo(0);
-            apiSchemaValidationIndex.Should().BeGreaterThanOrEqualTo(0);
+            validateEndpointIndex.Should().BeGreaterThanOrEqualTo(0);
             fingerprintIndex
                 .Should()
-                .BeLessThan(
-                    apiSchemaValidationIndex,
-                    "ValidateDatabaseFingerprintMiddleware must run before schema-dependent middleware"
+                .BeGreaterThan(
+                    validateEndpointIndex,
+                    "an unroutable request must receive its endpoint 404 rather than a database availability error"
                 );
         }
 
@@ -214,18 +261,17 @@ public class PipelineOrderingTests
         }
 
         [Test]
-        public void It_places_resource_key_validation_before_the_first_schema_dependent_step()
+        public void It_places_resource_key_validation_after_the_endpoint_validation_phase()
         {
+            var validateEndpointIndex = _stepTypes.IndexOf(typeof(ValidateEndpointMiddleware));
             var resourceKeyIndex = _stepTypes.IndexOf(typeof(ValidateResourceKeySeedMiddleware));
-            var apiSchemaValidationIndex = _stepTypes.IndexOf(typeof(ApiSchemaValidationMiddleware));
 
-            resourceKeyIndex.Should().BeGreaterThanOrEqualTo(0);
-            apiSchemaValidationIndex.Should().BeGreaterThanOrEqualTo(0);
+            validateEndpointIndex.Should().BeGreaterThanOrEqualTo(0);
             resourceKeyIndex
                 .Should()
-                .BeLessThan(
-                    apiSchemaValidationIndex,
-                    "ValidateResourceKeySeedMiddleware must run before schema-dependent middleware"
+                .BeGreaterThan(
+                    validateEndpointIndex,
+                    "an unroutable request must receive its endpoint 404 rather than a resource-key seed error"
                 );
         }
 
@@ -251,19 +297,34 @@ public class PipelineOrderingTests
         }
 
         [Test]
-        public void It_places_resolve_mapping_set_before_the_first_schema_dependent_step()
+        public void It_places_resolve_mapping_set_after_the_endpoint_validation_phase()
         {
+            var validateEndpointIndex = _stepTypes.IndexOf(typeof(ValidateEndpointMiddleware));
             var mappingSetIndex = _stepTypes.IndexOf(typeof(ResolveMappingSetMiddleware));
-            var apiSchemaValidationIndex = _stepTypes.IndexOf(typeof(ApiSchemaValidationMiddleware));
 
-            mappingSetIndex.Should().BeGreaterThanOrEqualTo(0);
-            apiSchemaValidationIndex.Should().BeGreaterThanOrEqualTo(0);
+            validateEndpointIndex.Should().BeGreaterThanOrEqualTo(0);
             mappingSetIndex
                 .Should()
-                .BeLessThan(
-                    apiSchemaValidationIndex,
-                    "ResolveMappingSetMiddleware must run before schema-dependent middleware"
+                .BeGreaterThan(
+                    validateEndpointIndex,
+                    "an unroutable request must receive its endpoint 404 rather than a mapping-set error"
                 );
+        }
+
+        /// <summary>
+        /// Endpoint validation reads only IApiSchemaProvider.IsSchemaValid, the startup-built effective
+        /// schema documents, and the parsed path, so hoisting it ahead of the database phase gives it no
+        /// database dependency. Pinning that here keeps a future step from acquiring one silently.
+        /// </summary>
+        [Test]
+        public void It_places_the_whole_endpoint_phase_before_the_whole_database_phase()
+        {
+            _stepTypes.Should().ContainInOrder(EndpointValidationPhase);
+            _stepTypes.Should().ContainInOrder(DatabaseValidationPhase);
+
+            LastIndexOfPhase(_stepTypes, EndpointValidationPhase)
+                .Should()
+                .BeLessThan(FirstIndexOfPhase(_stepTypes, DatabaseValidationPhase));
         }
     }
 
@@ -378,7 +439,13 @@ public class PipelineOrderingTests
             );
             services.AddSingleton(appSettingsOptions);
             services.AddSingleton<IDatabaseFingerprintReader, NullDatabaseFingerprintReader>();
+            services.TryAddSingleton(TimeProvider.System);
+            services.TryAddSingleton(new CacheSettings());
             services.AddSingleton<DatabaseFingerprintProvider>();
+            services.AddTransient<
+                IEffectiveTargetSelectionResponseFactory,
+                DefaultEffectiveTargetSelectionResponseFactory
+            >();
             services.AddTransient<ValidateDatabaseFingerprintMiddleware>();
             services.AddTransient<ILogger<ValidateDatabaseFingerprintMiddleware>>(_ =>
                 NullLogger<ValidateDatabaseFingerprintMiddleware>.Instance
@@ -529,7 +596,13 @@ public class PipelineOrderingTests
         );
         services.AddSingleton(appSettingsOptions);
         services.AddSingleton<IDatabaseFingerprintReader, NullDatabaseFingerprintReader>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton(new CacheSettings());
         services.AddSingleton<DatabaseFingerprintProvider>();
+        services.AddTransient<
+            IEffectiveTargetSelectionResponseFactory,
+            DefaultEffectiveTargetSelectionResponseFactory
+        >();
         services.AddTransient<ValidateDatabaseFingerprintMiddleware>();
         services.AddTransient<ILogger<ValidateDatabaseFingerprintMiddleware>>(_ =>
             NullLogger<ValidateDatabaseFingerprintMiddleware>.Instance
@@ -550,6 +623,17 @@ public class PipelineOrderingTests
         services.AddTransient<ProfileWritePipelineMiddleware>();
         services.AddTransient<ILogger<ProfileWritePipelineMiddleware>>(_ =>
             NullLogger<ProfileWritePipelineMiddleware>.Instance
+        );
+
+        // The two pipelines that read the database without resolving a routed resource are built from
+        // this same service provider, so every pipeline that selects a target can be compared here.
+        services.AddSingleton(A.Fake<ITokenInfoRelationalMappingSetResolver>());
+        services.AddSingleton(A.Fake<IClaimSetProvider>());
+        services.AddTransient<GetTokenInfoHandler>();
+        services.AddTransient<ILogger<GetTokenInfoHandler>>(_ => NullLogger<GetTokenInfoHandler>.Instance);
+        services.AddTransient<AvailableChangeVersionsHandler>();
+        services.AddTransient<ILogger<AvailableChangeVersionsHandler>>(_ =>
+            NullLogger<AvailableChangeVersionsHandler>.Instance
         );
 
         configureServices?.Invoke(services);
@@ -648,10 +732,393 @@ public class PipelineOrderingTests
         }
     }
 
+    /// <summary>
+    /// The endpoint phase decides whether the request names a real resource and needs no database; the
+    /// database phase reads the selected database. Every pipeline that performs both must run them in
+    /// that order, so an unroutable request answers its endpoint 404 rather than whichever database
+    /// validation would have failed first. Asserting it per factory rather than once keeps a newly
+    /// added or recomposed pipeline from quietly reverting the dependency.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Pipeline_That_Performs_Both_Validation_Phases : PipelineOrderingTests
+    {
+        private const string Reason =
+            "endpoint validation opens no database connection, so it must answer before the database phase";
+
+        [TestCase("CreateGetByIdPipeline")]
+        [TestCase("CreateQueryPipeline")]
+        [TestCase("CreateGetPartitionsPipeline")]
+        [TestCase("CreateUpsertPipeline")]
+        [TestCase("CreateUpdatePipeline")]
+        [TestCase("CreateDeleteByIdPipeline")]
+        [TestCase("CreateGetTrackedChangesPipeline")]
+        public void It_places_the_whole_endpoint_phase_before_the_whole_database_phase(
+            string factoryMethodName
+        )
+        {
+            var stepTypes = GetRoutedResourcePipelineStepTypes(factoryMethodName);
+
+            LastIndexOfPhase(stepTypes, EndpointValidationPhase)
+                .Should()
+                .BeLessThan(FirstIndexOfPhase(stepTypes, DatabaseValidationPhase), Reason);
+        }
+
+        [TestCase("CreateGetByIdPipeline")]
+        [TestCase("CreateQueryPipeline")]
+        [TestCase("CreateGetPartitionsPipeline")]
+        [TestCase("CreateUpsertPipeline")]
+        [TestCase("CreateUpdatePipeline")]
+        [TestCase("CreateDeleteByIdPipeline")]
+        [TestCase("CreateGetTrackedChangesPipeline")]
+        public void It_keeps_the_endpoint_phase_in_its_declared_order(string factoryMethodName)
+        {
+            GetRoutedResourcePipelineStepTypes(factoryMethodName)
+                .Should()
+                .ContainInOrder(EndpointValidationPhase);
+        }
+
+        [TestCase("CreateGetByIdPipeline")]
+        [TestCase("CreateQueryPipeline")]
+        [TestCase("CreateGetPartitionsPipeline")]
+        [TestCase("CreateUpsertPipeline")]
+        [TestCase("CreateUpdatePipeline")]
+        [TestCase("CreateDeleteByIdPipeline")]
+        [TestCase("CreateGetTrackedChangesPipeline")]
+        public void It_keeps_the_database_phase_in_dependency_order(string factoryMethodName)
+        {
+            GetRoutedResourcePipelineStepTypes(factoryMethodName)
+                .Should()
+                .ContainInOrder(DatabaseValidationPhase);
+        }
+
+        /// <summary>
+        /// Path parsing supplies the components endpoint validation reads, so it stays ahead of both
+        /// phases on the pipelines that perform it.
+        /// </summary>
+        [TestCase("CreateGetByIdPipeline", typeof(ParsePathMiddleware))]
+        [TestCase("CreateQueryPipeline", typeof(ParsePathMiddleware))]
+        [TestCase("CreateGetPartitionsPipeline", typeof(ParsePathMiddleware))]
+        [TestCase("CreateUpsertPipeline", typeof(ParsePathMiddleware))]
+        [TestCase("CreateUpdatePipeline", typeof(ParsePathMiddleware))]
+        [TestCase("CreateDeleteByIdPipeline", typeof(ParsePathMiddleware))]
+        [TestCase("CreateGetTrackedChangesPipeline", typeof(ParseTrackedChangePathMiddleware))]
+        public void It_parses_the_path_before_the_endpoint_phase(string factoryMethodName, Type pathStep)
+        {
+            var stepTypes = GetRoutedResourcePipelineStepTypes(factoryMethodName);
+            var pathIndex = stepTypes.IndexOf(pathStep);
+
+            pathIndex.Should().BeGreaterThanOrEqualTo(0);
+            pathIndex
+                .Should()
+                .BeLessThan(
+                    FirstIndexOfPhase(stepTypes, EndpointValidationPhase),
+                    "endpoint validation resolves the project namespace and resource from the parsed path"
+                );
+        }
+    }
+
+    /// <summary>
+    /// Every pipeline that reads a database chooses which one before the database phase, and does so
+    /// under the routing policy its endpoint declares. The policy lives on the constructed step, so
+    /// these assertions read the instance the factory produced rather than only its type.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Pipeline_That_Selects_A_Target : PipelineOrderingTests
+    {
+        private static readonly string[] ReadFactories =
+        [
+            "CreateGetByIdPipeline",
+            "CreateQueryPipeline",
+            "CreateGetPartitionsPipeline",
+            "CreateGetTrackedChangesPipeline",
+            "CreateGetAvailableChangeVersionsPipeline",
+        ];
+
+        private static readonly string[] MutationFactories =
+        [
+            "CreateUpsertPipeline",
+            "CreateUpdatePipeline",
+            "CreateDeleteByIdPipeline",
+        ];
+
+        private static DerivativeRoutingPolicy PolicyOf(string factoryMethodName)
+        {
+            var steps = GetSteps(BuildRoutedResourceApiService(), factoryMethodName);
+            var selectionSteps = steps.OfType<SelectEffectiveDataStoreTargetMiddleware>().ToList();
+
+            selectionSteps
+                .Should()
+                .HaveCount(1, "a request must be routed to exactly one database, exactly once");
+
+            var policyField = typeof(SelectEffectiveDataStoreTargetMiddleware)
+                .GetFields(BindingFlags.NonPublic | BindingFlags.Instance)
+                .SingleOrDefault(info => info.FieldType == typeof(DerivativeRoutingPolicy));
+
+            policyField.Should().NotBeNull("the selection step is configured with a routing policy");
+
+            return (DerivativeRoutingPolicy)policyField!.GetValue(selectionSteps[0])!;
+        }
+
+        [TestCase("CreateGetByIdPipeline")]
+        [TestCase("CreateQueryPipeline")]
+        [TestCase("CreateGetPartitionsPipeline")]
+        [TestCase("CreateGetTrackedChangesPipeline")]
+        [TestCase("CreateUpsertPipeline")]
+        [TestCase("CreateUpdatePipeline")]
+        [TestCase("CreateDeleteByIdPipeline")]
+        [TestCase("CreateGetTokenInfoPipeline")]
+        [TestCase("CreateGetAvailableChangeVersionsPipeline")]
+        public void It_selects_a_target_before_the_database_phase(string factoryMethodName)
+        {
+            var stepTypes = GetRoutedResourcePipelineStepTypes(factoryMethodName);
+            var selectionIndex = stepTypes.IndexOf(typeof(SelectEffectiveDataStoreTargetMiddleware));
+
+            selectionIndex.Should().BeGreaterThanOrEqualTo(0);
+            selectionIndex
+                .Should()
+                .BeLessThan(
+                    FirstIndexOfPhase(stepTypes, DatabaseValidationPhase),
+                    "database validation must describe the database the request is served from"
+                );
+        }
+
+        /// <summary>
+        /// Selection needs the resolved parent and reads no schema of its own, so it belongs after the
+        /// endpoint phase: an unroutable request still answers its endpoint 404.
+        /// </summary>
+        [TestCase("CreateGetByIdPipeline")]
+        [TestCase("CreateQueryPipeline")]
+        [TestCase("CreateGetPartitionsPipeline")]
+        [TestCase("CreateGetTrackedChangesPipeline")]
+        [TestCase("CreateUpsertPipeline")]
+        [TestCase("CreateUpdatePipeline")]
+        [TestCase("CreateDeleteByIdPipeline")]
+        public void It_selects_a_target_after_the_endpoint_phase(string factoryMethodName)
+        {
+            var stepTypes = GetRoutedResourcePipelineStepTypes(factoryMethodName);
+
+            stepTypes
+                .IndexOf(typeof(SelectEffectiveDataStoreTargetMiddleware))
+                .Should()
+                .BeGreaterThan(LastIndexOfPhase(stepTypes, EndpointValidationPhase));
+        }
+
+        /// <summary>
+        /// A write that asks for a snapshot is rejected before route semantics, so the answer names the
+        /// reason the client can act on rather than a second method complaint about the same request.
+        /// </summary>
+        [TestCase("CreateUpsertPipeline")]
+        [TestCase("CreateUpdatePipeline")]
+        [TestCase("CreateDeleteByIdPipeline")]
+        public void It_selects_a_target_before_route_semantics_on_a_mutation(string factoryMethodName)
+        {
+            var stepTypes = GetRoutedResourcePipelineStepTypes(factoryMethodName);
+
+            stepTypes
+                .IndexOf(typeof(SelectEffectiveDataStoreTargetMiddleware))
+                .Should()
+                .BeLessThan(stepTypes.IndexOf(typeof(ValidateRouteSemanticsMiddleware)));
+        }
+
+        [TestCase("CreateGetByIdPipeline")]
+        [TestCase("CreateQueryPipeline")]
+        [TestCase("CreateGetPartitionsPipeline")]
+        [TestCase("CreateGetTrackedChangesPipeline")]
+        [TestCase("CreateGetAvailableChangeVersionsPipeline")]
+        public void It_gives_a_read_the_snapshot_and_replica_eligible_policy(string factoryMethodName)
+        {
+            PolicyOf(factoryMethodName)
+                .Should()
+                .Be(
+                    new DerivativeRoutingPolicy(
+                        DatabaseAccessIntent.ReadOnly,
+                        SnapshotEligibility.Allowed,
+                        ReplicaEligibility.Allowed
+                    )
+                );
+        }
+
+        [TestCase("CreateUpsertPipeline")]
+        [TestCase("CreateUpdatePipeline")]
+        [TestCase("CreateDeleteByIdPipeline")]
+        public void It_gives_a_mutation_the_snapshot_rejecting_policy(string factoryMethodName)
+        {
+            PolicyOf(factoryMethodName)
+                .Should()
+                .Be(
+                    new DerivativeRoutingPolicy(
+                        DatabaseAccessIntent.ReadWrite,
+                        SnapshotEligibility.RejectedAsMutation,
+                        ReplicaEligibility.NotApplicable
+                    )
+                );
+        }
+
+        /// <summary>
+        /// Token introspection reads the database, but neither derivative applies to it: a snapshot of
+        /// client configuration is not something a client asks for, and the read is not one a replica
+        /// is meant to serve.
+        /// </summary>
+        [Test]
+        public void It_gives_token_introspection_the_primary_only_policy()
+        {
+            PolicyOf("CreateGetTokenInfoPipeline")
+                .Should()
+                .Be(
+                    new DerivativeRoutingPolicy(
+                        DatabaseAccessIntent.ReadOnly,
+                        SnapshotEligibility.NotApplicable,
+                        ReplicaEligibility.NotApplicable
+                    )
+                );
+        }
+
+        /// <summary>
+        /// The lists above must between them name every pipeline that runs the database phase, so a
+        /// newly added one cannot go unpoliced.
+        /// </summary>
+        [Test]
+        public void It_covers_every_pipeline_that_performs_database_validation()
+        {
+            string[] policed = [.. ReadFactories, .. MutationFactories, "CreateGetTokenInfoPipeline"];
+
+            var databaseReadingFactories = typeof(ApiService)
+                .GetMethods(BindingFlags.NonPublic | BindingFlags.Instance)
+                .Where(method =>
+                    method.Name.StartsWith("Create", StringComparison.Ordinal)
+                    && method.Name.EndsWith("Pipeline", StringComparison.Ordinal)
+                    && method.GetParameters().Length == 0
+                    && method.ReturnType == typeof(PipelineProvider)
+                )
+                .Select(method => method.Name)
+                .Where(name =>
+                    GetRoutedResourcePipelineStepTypes(name)
+                        .Contains(typeof(ValidateDatabaseFingerprintMiddleware))
+                )
+                .ToList();
+
+            databaseReadingFactories.Should().BeEquivalentTo(policed);
+        }
+    }
+
+    /// <summary>
+    /// A mutation pipeline rejects an invalid route shape before it reads the database, so an invalid
+    /// collection DELETE, collection PUT, or item POST answers its route-semantics 405 rather than a
+    /// database availability error.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Mutation_Pipeline : PipelineOrderingTests
+    {
+        [TestCase("CreateUpsertPipeline")]
+        [TestCase("CreateUpdatePipeline")]
+        [TestCase("CreateDeleteByIdPipeline")]
+        public void It_places_route_semantics_validation_between_the_two_phases(string factoryMethodName)
+        {
+            var stepTypes = GetRoutedResourcePipelineStepTypes(factoryMethodName);
+            var routeSemanticsIndex = stepTypes.IndexOf(typeof(ValidateRouteSemanticsMiddleware));
+
+            routeSemanticsIndex.Should().BeGreaterThanOrEqualTo(0);
+            routeSemanticsIndex.Should().BeGreaterThan(LastIndexOfPhase(stepTypes, EndpointValidationPhase));
+            routeSemanticsIndex
+                .Should()
+                .BeLessThan(
+                    FirstIndexOfPhase(stepTypes, DatabaseValidationPhase),
+                    "an invalid mutation route shape must answer 405 without reading the database"
+                );
+        }
+    }
+
+    /// <summary>
+    /// The two method-not-allowed pipelines answer without reaching a backend, so they carry the
+    /// endpoint phase and none of the database phase. Their terminal is reached only once the endpoint
+    /// is known to exist, which is what reproduces ODS/API's existence-then-method ordering.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Method_Not_Allowed_Pipeline : PipelineOrderingTests
+    {
+        [TestCase("CreateMethodNotAllowedPipeline")]
+        [TestCase("CreateTrackedChangeMethodNotAllowedPipeline")]
+        public void It_performs_no_database_validation(string factoryMethodName)
+        {
+            var stepTypes = GetRoutedResourcePipelineStepTypes(factoryMethodName);
+
+            stepTypes.Should().NotContain(DatabaseValidationPhase);
+        }
+
+        /// <summary>
+        /// These pipelines open no database, so there is nothing to route: adding a selection step
+        /// would assign a target nothing reads, and would make a snapshot request on an unsupported
+        /// method answer the snapshot rejection instead of 405.
+        /// </summary>
+        [TestCase("CreateMethodNotAllowedPipeline")]
+        [TestCase("CreateTrackedChangeMethodNotAllowedPipeline")]
+        public void It_selects_no_target(string factoryMethodName)
+        {
+            GetRoutedResourcePipelineStepTypes(factoryMethodName)
+                .Should()
+                .NotContain(typeof(SelectEffectiveDataStoreTargetMiddleware));
+        }
+
+        [TestCase("CreateMethodNotAllowedPipeline")]
+        [TestCase("CreateTrackedChangeMethodNotAllowedPipeline")]
+        public void It_keeps_the_endpoint_phase_before_the_terminal(string factoryMethodName)
+        {
+            var stepTypes = GetRoutedResourcePipelineStepTypes(factoryMethodName);
+
+            stepTypes.Should().ContainInOrder(EndpointValidationPhase);
+            LastIndexOfPhase(stepTypes, EndpointValidationPhase)
+                .Should()
+                .BeLessThan(
+                    stepTypes.IndexOf(typeof(MethodNotAllowedMiddleware)),
+                    "an unknown resource answers 404 rather than 405"
+                );
+        }
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_The_Routed_Resource_Pipelines : PipelineOrderingTests
     {
+        [TestCase("CreateUpsertPipeline")]
+        [TestCase("CreateGetByIdPipeline")]
+        [TestCase("CreateQueryPipeline")]
+        [TestCase("CreateGetPartitionsPipeline")]
+        [TestCase("CreateUpdatePipeline")]
+        [TestCase("CreateDeleteByIdPipeline")]
+        [TestCase("CreateGetTrackedChangesPipeline")]
+        public void It_places_the_application_context_gate_immediately_after_strategy_selection(
+            string factoryMethodName
+        )
+        {
+            var stepTypes = GetRoutedResourcePipelineStepTypes(factoryMethodName);
+            var authorizationIndex = stepTypes.IndexOf(typeof(ResourceActionAuthorizationMiddleware));
+            var requirementIndex = stepTypes.LastIndexOf(typeof(ApplicationContextRequirementMiddleware));
+
+            authorizationIndex.Should().BeGreaterThanOrEqualTo(0);
+            requirementIndex
+                .Should()
+                .Be(
+                    authorizationIndex + 1,
+                    "the selected strategies must be available before application context is demanded"
+                );
+        }
+
+        [Test]
+        public void It_places_the_POST_demand_after_authentication_and_before_profile_resolution()
+        {
+            var stepTypes = GetRoutedResourcePipelineStepTypes("CreateUpsertPipeline");
+            var authenticationIndex = stepTypes.IndexOf(typeof(JwtAuthenticationMiddleware));
+            var requirementIndex = stepTypes.IndexOf(typeof(ApplicationContextRequirementMiddleware));
+            var profileIndex = stepTypes.IndexOf(typeof(ProfileResolutionMiddleware));
+
+            requirementIndex.Should().BeGreaterThan(authenticationIndex);
+            requirementIndex.Should().BeLessThan(profileIndex);
+        }
+
         [TestCase("CreateUpsertPipeline")]
         [TestCase("CreateUpdatePipeline")]
         [TestCase("CreateDeleteByIdPipeline")]
@@ -829,7 +1296,13 @@ public class PipelineOrderingTests
             );
             services.AddSingleton(appSettingsOptions);
             services.AddSingleton<IDatabaseFingerprintReader, NullDatabaseFingerprintReader>();
+            services.TryAddSingleton(TimeProvider.System);
+            services.TryAddSingleton(new CacheSettings());
             services.AddSingleton<DatabaseFingerprintProvider>();
+            services.AddTransient<
+                IEffectiveTargetSelectionResponseFactory,
+                DefaultEffectiveTargetSelectionResponseFactory
+            >();
             services.AddTransient<ValidateDatabaseFingerprintMiddleware>();
             services.AddTransient<ILogger<ValidateDatabaseFingerprintMiddleware>>(_ =>
                 NullLogger<ValidateDatabaseFingerprintMiddleware>.Instance

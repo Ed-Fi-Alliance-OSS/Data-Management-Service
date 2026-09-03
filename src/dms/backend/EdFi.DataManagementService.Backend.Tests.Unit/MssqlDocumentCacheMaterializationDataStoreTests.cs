@@ -25,10 +25,11 @@ public class Given_MssqlDocumentCacheMaterializationDataStore
         var connection = new RecordingDbConnection(new RecordingDbCommand(CreateReader()));
         string? capturedConnectionString = null;
         var sut = new MssqlDocumentCacheMaterializationDataStore(
-            connectionString =>
+            async (connectionString, cancellationToken) =>
             {
                 capturedConnectionString = connectionString;
-                return connection;
+                await connection.OpenAsync(cancellationToken);
+                return MssqlLeasedConnection.WithoutLease(connection);
             },
             NullLogger<MssqlDocumentCacheMaterializationDataStore>.Instance
         );
@@ -66,10 +67,12 @@ public class Given_MssqlDocumentCacheMaterializationDataStore
         List<string> capturedConnectionStrings = [];
         var selectedTargetConnectionString = initialConnectionString;
         var sut = new MssqlDocumentCacheMaterializationDataStore(
-            connectionString =>
+            async (connectionString, cancellationToken) =>
             {
                 capturedConnectionStrings.Add(connectionString);
-                return connections.Dequeue();
+                RecordingDbConnection next = connections.Dequeue();
+                await next.OpenAsync(cancellationToken);
+                return MssqlLeasedConnection.WithoutLease(next);
             },
             NullLogger<MssqlDocumentCacheMaterializationDataStore>.Instance
         );
@@ -107,10 +110,51 @@ public class Given_MssqlDocumentCacheMaterializationDataStore
     }
 
     [Test]
+    public async Task It_takes_and_releases_a_pool_lease_through_the_acquisition_boundary()
+    {
+        const string targetConnectionString = "Server=target;Database=dms;TrustServerCertificate=true";
+        var connection = new RecordingDbConnection(new RecordingDbCommand(CreateReader()));
+        var poolClearing = new GatedSqlServerPoolClearing();
+        var sut = new MssqlDocumentCacheMaterializationDataStore(
+            new MssqlConnectionAcquisition(
+                poolClearing,
+                NullLogger<MssqlConnectionAcquisition>.Instance,
+                _ => connection
+            ),
+            NullLogger<MssqlDocumentCacheMaterializationDataStore>.Instance
+        );
+
+        var request = sut.BindToTargetDataStore(
+            CreateRequest(targetConnectionString: targetConnectionString)
+        );
+
+        var result = await sut.ExecuteReaderAsync(
+            request,
+            new RelationalCommand("select [Value] from [dms].[TargetProbe]"),
+            async (reader, cancellationToken) =>
+            {
+                await reader.ReadAsync(cancellationToken);
+                return reader.GetRequiredFieldValue<int>("Value");
+            }
+        );
+
+        result.Should().Be(42);
+
+        // The lease was taken against the Primary pool identity - the configured text itself - and
+        // released when the materialization completed; the identity is unowned in this fixture, so
+        // that release is what triggers the exact-pool clear.
+        poolClearing
+            .Cleared.Should()
+            .ContainSingle("the materialization lease was taken through the boundary and released")
+            .Which.Should()
+            .Be(targetConnectionString);
+    }
+
+    [Test]
     public async Task It_rejects_unbound_target_data_store_contexts()
     {
         var sut = new MssqlDocumentCacheMaterializationDataStore(
-            _ => throw new AssertionException("Connection factory should not be called."),
+            (_, _) => throw new AssertionException("Connection opener should not be called."),
             NullLogger<MssqlDocumentCacheMaterializationDataStore>.Instance
         );
 
@@ -129,7 +173,7 @@ public class Given_MssqlDocumentCacheMaterializationDataStore
     public async Task It_rejects_mapping_sets_not_selected_for_the_mssql_target()
     {
         var sut = new MssqlDocumentCacheMaterializationDataStore(
-            _ => throw new AssertionException("Connection factory should not be called."),
+            (_, _) => throw new AssertionException("Connection opener should not be called."),
             NullLogger<MssqlDocumentCacheMaterializationDataStore>.Instance
         );
 
