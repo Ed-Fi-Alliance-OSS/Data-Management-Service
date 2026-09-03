@@ -330,6 +330,50 @@ internal static class OwnershipAuthorizationIntegrationScenario
     }
 
     /// <summary>
+    /// The cap gates reads, updates and deletes, not creates: <c>OwnershipTokenIds</c> authorize a stored
+    /// token, and a create has none to authorize. So the over-cap tenant still creates, and its create is still
+    /// stamped from its creator token. The same tenant's POST of the same identity resolves to an
+    /// upsert-as-update, which the cap fails closed before any DML: the row keeps its token and its name.
+    /// </summary>
+    public static async Task It_creates_over_the_ownership_token_cap_and_fails_closed_for_the_post_as_update(
+        ApiIntegrationHarness harness
+    )
+    {
+        Guid documentId = await CreateAsync(harness, TokenCapTenant, 1701, "ownership-over-cap-create");
+
+        (await ReadStoredOwnershipTokenAsync(harness, documentId)).Should().Be(CreatorToken);
+
+        using HttpResponseMessage postAsUpdateResponse = await PostAsync(
+            harness,
+            TokenCapTenant,
+            1701,
+            "ownership-over-cap-post-as-update"
+        );
+        string postAsUpdateBody = await postAsUpdateResponse.Content.ReadAsStringAsync();
+
+        postAsUpdateResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError, postAsUpdateBody);
+        postAsUpdateResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        JsonObject postAsUpdateProblem = JsonNode.Parse(postAsUpdateBody)!.AsObject();
+        postAsUpdateProblem["type"]!.GetValue<string>().Should().Be(SecurityConfigurationProblemDetails.Type);
+        postAsUpdateProblem["status"]!
+            .GetValue<int>()
+            .Should()
+            .Be(SecurityConfigurationProblemDetails.Status);
+
+        (await ReadStoredOwnershipTokenAsync(harness, documentId)).Should().Be(CreatorToken);
+
+        // The owner still reads the created representation, so the refused upsert-as-update wrote nothing.
+        using HttpResponseMessage ownerGetResponse = await harness.HttpClient.GetAsync(
+            ResourcePath(OwnerTenant, documentId)
+        );
+        string ownerGetBody = await ownerGetResponse.Content.ReadAsStringAsync();
+        ownerGetResponse.StatusCode.Should().Be(HttpStatusCode.OK, ownerGetBody);
+        ownerGetBody.Should().Contain("ownership-over-cap-create");
+        ownerGetBody.Should().NotContain("ownership-over-cap-post-as-update");
+    }
+
+    /// <summary>
     /// GET-many ownership filtering belongs to a later story, so <c>OwnershipBased</c> on a collection read
     /// stays a 501 rather than silently serving an unfiltered page. The 501 names the strategy, which is what
     /// makes the withholding diagnosable rather than mysterious.

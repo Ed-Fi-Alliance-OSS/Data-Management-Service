@@ -119,6 +119,30 @@ public abstract record RelationalAuthorizationPlanOutcome
 }
 
 /// <summary>
+/// How <see cref="RelationalAuthorizationPlanner.Plan"/> treats an enforced <c>OwnershipBased</c> token list
+/// that reaches the defensive limit.
+/// </summary>
+public enum OwnershipTokenCapHandling
+{
+    /// <summary>
+    /// Report <see cref="RelationalAuthorizationPlanOutcome.OwnershipTokenCapExceeded"/> as a planner terminal.
+    /// The default, for every operation whose target is known to exist before planning — GET-by-id, PUT and
+    /// DELETE — so the failure is reported before any session opens and is ranked against the other terminals.
+    /// </summary>
+    FailAtPlanning,
+
+    /// <summary>
+    /// Plan as though the list were under the limit and leave the failure to the caller, who owes it only once
+    /// the target proves to exist. For POST: the check authorizes the stored token, so it is vacuous for a
+    /// create and the over-limit list is never parameterized for one, while a POST that resolves to an
+    /// upsert-as-update fails closed in the ownership slot — after the custom-view and namespace checks,
+    /// before the relationship check and before any DML. With the cap deferred it is not a planning fact, so
+    /// a relationship configuration failure keeps its own precedence rather than yielding to the cap.
+    /// </summary>
+    DeferToTargetResolution,
+}
+
+/// <summary>
 /// Higher-level relational authorization planner. Splits the configured strategy list into a
 /// namespace bucket and a non-namespace bucket, delegates namespace planning to
 /// <see cref="NamespaceAuthorizationPlanner"/>, and uses
@@ -154,7 +178,9 @@ public abstract record RelationalAuthorizationPlanOutcome
 /// AND strategies. That last part needs no index comparison, unlike the namespace-versus-relationship case: an
 /// ownership terminal outranks a relationship one whatever position CMS gave either. It does <em>not</em> outrank a
 /// custom-view configuration failure, which the classifier reports in the same bucket as relationship failures —
-/// see <c>OwnershipCapOutranksClassifierFailure</c>.</item>
+/// see <c>OwnershipCapOutranksClassifierFailure</c>. A caller that resolves its target in-session — POST — asks
+/// for <see cref="OwnershipTokenCapHandling.DeferToTargetResolution"/>, and this terminal is then never
+/// returned: the plan is handed back and the caller fails closed only once the target proves to exist.</item>
 /// <item><see cref="RelationalAuthorizationPlanOutcome.StillUnsupported"/> — the relationship classifier reports a
 /// known-but-not-enabled strategy in the non-namespace bucket (501 NotImplemented, fail closed).</item>
 /// <item><see cref="RelationalAuthorizationPlanOutcome.Plan"/> — everything else.</item>
@@ -179,7 +205,8 @@ public static class RelationalAuthorizationPlanner
         ConcreteResourceModel resource,
         NamespaceAuthorizationOperation operation,
         IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies,
-        RelationalAuthorizationContext context
+        RelationalAuthorizationContext context,
+        OwnershipTokenCapHandling ownershipTokenCapHandling = OwnershipTokenCapHandling.FailAtPlanning
     )
     {
         ArgumentNullException.ThrowIfNull(mappingSet);
@@ -222,8 +249,11 @@ public static class RelationalAuthorizationPlanner
 
         var enforcesCustomViewChecks = EnforcesCustomViewChecks(operation);
 
+        // Deferred, the cap is not a planning fact: a POST that creates never parameterizes the list, so the
+        // caller owes the failure only once the target proves to exist, and no terminal below may consult it.
         var ownershipCapExceeded =
-            ownershipStrategies.Count > 0
+            ownershipTokenCapHandling is OwnershipTokenCapHandling.FailAtPlanning
+            && ownershipStrategies.Count > 0
             && context.OwnershipTokenIds.Count >= OwnershipTokenLimitExceededException.OwnershipTokenLimit;
 
         // Whether the ownership terminal may displace the classifier's security-configuration failure.

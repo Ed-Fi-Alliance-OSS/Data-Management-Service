@@ -9937,6 +9937,128 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             .BeOfType<RelationshipAuthorizationResult.NoClaims>();
     }
 
+    /// <summary>
+    /// A POST cannot know at preflight whether it will create or update, and a create never parameterizes the
+    /// ownership-token list, so an over-limit list must not stop it before the session opens. The planner's
+    /// cap is deferred: the executor receives no ownership parameterization at all, the creator token for the
+    /// create branch, and the security-configuration failure it owes only if the target proves to exist.
+    /// </summary>
+    [Test]
+    public async Task It_defers_a_post_ownership_token_cap_to_target_resolution()
+    {
+        var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet)
+            .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Post over the ownership cap"));
+        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ]);
+        A.CallTo(() => upsertRequest.AuthorizationContext)
+            .Returns(
+                new RelationalAuthorizationContext(
+                    [],
+                    [],
+                    creatorOwnershipTokenId: 42,
+                    ownershipTokenIds: OverCapOwnershipTokenIds()
+                )
+            );
+
+        await _sut.UpsertDocument(upsertRequest);
+
+        var executorInput = _capturedExecutorRequests.Should().ContainSingle().Subject;
+        executorInput.StoredOwnershipAuthorization.Should().BeNull();
+        executorInput.CreatorOwnershipTokenId.Should().Be((short)42);
+        var deferredFailure = executorInput
+            .DeferredStoredOwnershipFailureResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>()
+            .Subject;
+        // The configured count is reportable; a token value never is.
+        deferredFailure.Errors.Should().ContainSingle().Which.Should().Contain("2,000");
+        deferredFailure
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.ProviderOrPlannerFailureKind.Should()
+            .Be(AuthorizationSecurityConfigurationDiagnostics.OwnershipTokenCapExceeded);
+    }
+
+    /// <summary>
+    /// Intentional precedence for the one POST double failure the deferral changes. An unrecognized strategy
+    /// is a relationship configuration failure the classifier reports at preflight; with the cap deferred the
+    /// planner has no cap to rank ahead of it, so that 500 is reported before the target is resolved and the
+    /// executor is never reached. A create would never have reached the cap and the planner cannot know the
+    /// branch, so unlike GET-by-id, PUT and DELETE — where the cap terminal displaces this failure — a POST
+    /// reports the configuration failure it can already prove.
+    /// </summary>
+    [Test]
+    public async Task It_reports_a_post_relationship_configuration_failure_ahead_of_a_deferred_ownership_token_cap()
+    {
+        var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet)
+            .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Post unknown strategy over cap"));
+        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator("AnUnknownAuthorizationStrategy"),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ]);
+        A.CallTo(() => upsertRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([], [], null, OverCapOwnershipTokenIds()));
+
+        var result = await _sut.UpsertDocument(upsertRequest);
+
+        var failure = result.Should().BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>().Subject;
+        failure.Errors.Should().NotContain(error => error.Contains("2,000"));
+        failure
+            .Diagnostics.Should()
+            .NotContain(diagnostic =>
+                diagnostic.ProviderOrPlannerFailureKind
+                == AuthorizationSecurityConfigurationDiagnostics.OwnershipTokenCapExceeded
+            );
+        _capturedExecutorRequests.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// The deferral is POST's alone. A PUT's target must already exist, so its ownership check is never
+    /// vacuous, and the cap stays a planner terminal reported before the executor is reached.
+    /// </summary>
+    [Test]
+    public async Task It_keeps_the_put_ownership_token_cap_as_a_preflight_terminal()
+    {
+        var updateRequest = A.Fake<IUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet)
+            .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody("Put over the ownership cap"));
+        A.CallTo(() => updateRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ]);
+        A.CallTo(() => updateRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([], [], null, OverCapOwnershipTokenIds()));
+
+        var result = await _sut.UpdateDocumentById(updateRequest);
+
+        result
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureSecurityConfiguration>()
+            .Which.Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("2,000");
+        _capturedExecutorRequests.Should().BeEmpty();
+    }
+
     [Test]
     public async Task It_plans_a_custom_view_alongside_relationship_authorization_for_a_post()
     {

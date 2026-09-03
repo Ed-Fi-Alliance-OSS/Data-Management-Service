@@ -258,6 +258,10 @@ internal sealed class CompositeRelationalWriteFirstPhase(
 
         if (
             input.PostRelationshipAuthorizationPlans?.CreateNewImmediateResult is not null
+            // A deferred ownership failure is owed in the ownership slot, ahead of the relationship statement
+            // and the hydration this command would carry, so the request takes the ordered-segments path the
+            // way a create-new immediate result does.
+            || input.DeferredStoredOwnershipFailureResult is not null
             || relationshipDisposition.Disposition
                 is not (StoredRelationshipDisposition.None or StoredRelationshipDisposition.Emitted)
         )
@@ -789,7 +793,8 @@ internal sealed class CompositeRelationalWriteFirstPhase(
     }
 
     /// <summary>
-    /// Runs the ownership check as its own ordered segment against the captured target.
+    /// Runs the ownership check as its own ordered segment against the captured target, or returns the failure
+    /// a POST deferred from preflight in the check's place.
     /// </summary>
     private async Task<RelationalWriteExecutorResult?> ExecuteStandaloneStoredOwnershipAsync(
         RelationalWriteExecutorRequest executionRequest,
@@ -798,6 +803,13 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         CancellationToken cancellationToken
     )
     {
+        // The target exists, so the check preflight could not parameterize would have run here; the request
+        // fails closed in the same slot, with no DML issued.
+        if (executionRequest.DeferredStoredOwnershipFailureResult is { } deferredFailureResult)
+        {
+            return deferredFailureResult;
+        }
+
         if (executionRequest.StoredOwnershipAuthorization is not { } ownershipAuthorization)
         {
             return null;

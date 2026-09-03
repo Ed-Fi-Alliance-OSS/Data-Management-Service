@@ -855,6 +855,16 @@ public sealed record RelationalWriteExecutorRequest
     /// which is why one plan can serve a POST whose branch is not yet known.
     /// </summary>
     public RelationalOwnershipAuthorization? StoredOwnershipAuthorization { get; init; }
+
+    /// <summary>
+    /// The result a POST owes if it resolves to an existing target while its stored ownership check could not
+    /// be parameterized — today only the token cap — or <see langword="null"/>. Returned in the ownership
+    /// slot, after the custom-view and namespace checks and before the relationship check, so no DML is
+    /// issued. A create never sees it: ownership never denies a create, and the over-limit list is never
+    /// parameterized for one. Set only by the POST preflight, and only with
+    /// <see cref="StoredOwnershipAuthorization"/> null.
+    /// </summary>
+    public RelationalWriteExecutorResult? DeferredStoredOwnershipFailureResult { get; init; }
 }
 
 /// <summary>
@@ -976,6 +986,9 @@ public sealed record RelationalWriteExecutorInput
     /// <inheritdoc cref="RelationalWriteExecutorRequest.StoredOwnershipAuthorization"/>
     public RelationalOwnershipAuthorization? StoredOwnershipAuthorization { get; init; }
 
+    /// <inheritdoc cref="RelationalWriteExecutorRequest.DeferredStoredOwnershipFailureResult"/>
+    public RelationalWriteExecutorResult? DeferredStoredOwnershipFailureResult { get; init; }
+
     /// <summary>
     /// Produces the fully resolved executor request for a target the executor observed inside its
     /// write session. All cross-field validation runs in the resolved request's constructor.
@@ -1005,6 +1018,7 @@ public sealed record RelationalWriteExecutorInput
             CustomViewAuthorization = CustomViewAuthorization,
             CreatorOwnershipTokenId = CreatorOwnershipTokenId,
             StoredOwnershipAuthorization = StoredOwnershipAuthorization,
+            DeferredStoredOwnershipFailureResult = DeferredStoredOwnershipFailureResult,
         };
 }
 

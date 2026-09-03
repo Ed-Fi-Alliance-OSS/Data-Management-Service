@@ -1027,6 +1027,71 @@ public class Given_The_Composite_Relational_Write_First_Phase
     }
 
     /// <summary>
+    /// The failure a POST deferred from preflight is owed only to an upsert-as-update, and in the ownership
+    /// slot: after the namespace segment, before the relationship check and the hydration, so no DML follows.
+    /// The request takes the ordered-segments path, which is what keeps the relationship statement and the
+    /// hydration from riding ahead of the failure inside one composite command.
+    /// </summary>
+    [Test]
+    public async Task It_returns_the_deferred_ownership_failure_for_an_existing_post_target_after_the_namespace_segment()
+    {
+        var deferred = RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
+            RelationalWriteOperationKind.Post,
+            ["ownership token cap"]
+        );
+        var target = new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value);
+        var input = CreateInput(RelationalWriteOperationKind.Post) with
+        {
+            StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(),
+            DeferredStoredOwnershipFailureResult = deferred,
+        };
+        var session = new ScriptedWriteSession(
+            CreateCaptureReader(target),
+            CreateReader(CreateAuthorizationTable())
+        );
+
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeSameAs(deferred);
+        resolution.Outcome.Should().BeNull();
+        // Capture, then the namespace segment, then the deferred failure in the ownership slot: no
+        // relationship, reference or hydration command follows it.
+        session.Commands.Should().HaveCount(2);
+        session.Commands[1].CommandText.Should().Contain("namespacePrefixes");
+        session
+            .Commands.Should()
+            .NotContain(command => command.CommandText.Contains("CreatedByOwnershipTokenId"));
+    }
+
+    /// <summary>
+    /// A create never sees the deferred failure: ownership never denies a create, and the over-limit list was
+    /// never parameterized for one, so the write proceeds with no ownership statement or parameter at all.
+    /// </summary>
+    [Test]
+    public async Task It_ignores_the_deferred_ownership_failure_for_a_post_create()
+    {
+        var deferred = RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
+            RelationalWriteOperationKind.Post,
+            ["ownership token cap"]
+        );
+        var input = CreateInput(RelationalWriteOperationKind.Post, includeReadPlan: false) with
+        {
+            DeferredStoredOwnershipFailureResult = deferred,
+        };
+        var session = new ScriptedWriteSession(CreateCaptureReader(target: null));
+
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+        resolution
+            .Outcome!.ExecutionRequest.TargetContext.Should()
+            .BeOfType<RelationalWriteTargetContext.CreateNew>();
+        var commandText = session.Commands.Should().ContainSingle().Subject.CommandText;
+        commandText.Should().NotContain("CreatedByOwnershipTokenId");
+        commandText.Should().NotContain("ownershipTokenIds");
+    }
+
+    /// <summary>
     /// An ownership denial on the co-batched command maps to the operation's own ownership failure rather
     /// than a generic write failure, for both verbs.
     /// </summary>

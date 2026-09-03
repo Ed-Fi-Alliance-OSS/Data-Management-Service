@@ -76,6 +76,12 @@ public sealed class Given_Postgresql_OwnershipAuthorization : PostgresqlApiInteg
         );
 
     [Test]
+    public Task It_creates_over_the_ownership_token_cap_and_fails_closed_for_the_post_as_update() =>
+        OwnershipAuthorizationIntegrationScenario.It_creates_over_the_ownership_token_cap_and_fails_closed_for_the_post_as_update(
+            Harness
+        );
+
+    [Test]
     public Task It_withholds_get_many_from_ownership_with_a_501() =>
         OwnershipAuthorizationIntegrationScenario.It_withholds_get_many_from_ownership_with_a_501(Harness);
 

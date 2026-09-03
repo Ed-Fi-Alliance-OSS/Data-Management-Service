@@ -14,11 +14,14 @@ namespace EdFi.DataManagementService.Backend;
 /// into the security-configuration message and diagnostics a caller wraps in its own result type.
 /// </summary>
 /// <remarks>
-/// Defence in depth rather than the primary gate. The planner returns its own token-cap terminal, which is
-/// what gives the failure correct precedence among the other authorization terminals, so a request that
-/// reaches this preflight is already known to be under the limit. This layer exists so that a caller which
-/// somehow skipped the planner still fails closed with a clean 500 instead of emitting an over-limit
-/// parameter list at the SQL boundary or letting the factory's exception escape as a generic failure.
+/// Defence in depth on GET-by-id, PUT and DELETE, and the gate on POST. On the first three the planner
+/// returns its own token-cap terminal, which is what gives the failure correct precedence among the other
+/// authorization terminals, so a request that reaches this preflight is already known to be under the limit;
+/// this layer exists so that a caller which somehow skipped the planner still fails closed with a clean 500
+/// instead of emitting an over-limit parameter list at the SQL boundary or letting the factory's exception
+/// escape as a generic failure. POST defers the planner's cap to target resolution, so this is where its
+/// over-limit list is caught, and the failure reported here is carried into the write session to be returned
+/// only if the target proves to exist.
 /// </remarks>
 internal static class OwnershipTokenParameterizationPreflight
 {

@@ -1029,6 +1029,71 @@ public class Given_RelationalAuthorizationPlanner
     }
 
     /// <summary>
+    /// A caller that resolves its target in-session — POST — cannot know at planning time whether the cap
+    /// applies, because a create never parameterizes the list. Asked to defer, the planner hands back the plan
+    /// with the ownership check in it instead of the cap terminal; the caller owes the failure only once the
+    /// target proves to exist.
+    /// </summary>
+    [Test]
+    public void It_hands_back_the_plan_when_the_token_cap_is_deferred_to_target_resolution()
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(),
+            ResourceWithoutSecurableElements(),
+            NamespaceAuthorizationOperation.Update,
+            [Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 0)],
+            OverCapOwnershipContext(),
+            OwnershipTokenCapHandling.DeferToTargetResolution
+        );
+
+        outcome
+            .Should()
+            .BeOfType<RelationalAuthorizationPlanOutcome.Plan>()
+            .Which.OwnershipCheck.Should()
+            .Be(new OwnershipAuthorizationCheckSpec(0));
+    }
+
+    /// <summary>
+    /// Deferred, the cap is not a planning fact, so it displaces nothing: a relationship configuration failure
+    /// keeps its own 500 rather than yielding to a cap that a create would never have reached. The intentional
+    /// counterpart of <see cref="It_reports_the_token_cap_ahead_of_a_relationship_configuration_failure"/>,
+    /// and pinned again at the repository level for POST.
+    /// </summary>
+    [Test]
+    public void It_lets_a_relationship_configuration_failure_stand_when_the_token_cap_is_deferred()
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(),
+            ResourceWithoutSecurableElements(),
+            NamespaceAuthorizationOperation.Update,
+            [Strategy("MadeUpStrategy", 0), Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 1)],
+            OverCapOwnershipContext(),
+            OwnershipTokenCapHandling.DeferToTargetResolution
+        );
+
+        outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.SecurityConfigurationError>();
+    }
+
+    /// <summary>
+    /// Deferral changes only how the cap is reported; it cannot open the descriptor boundary. A descriptor
+    /// write asked to defer keeps its 501, because ownership is not enforced there at all.
+    /// </summary>
+    [Test]
+    public void It_keeps_descriptor_ownership_unsupported_when_the_token_cap_is_deferred()
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(ResourceKey(4, "SchoolTypeDescriptor")),
+            DescriptorResource(),
+            NamespaceAuthorizationOperation.Update,
+            [Strategy(AuthorizationStrategyNameConstants.OwnershipBased, 0)],
+            OverCapOwnershipContext(),
+            OwnershipTokenCapHandling.DeferToTargetResolution
+        );
+
+        outcome.Should().BeOfType<RelationalAuthorizationPlanOutcome.StillUnsupported>();
+    }
+
+    /// <summary>
     /// A plan produced for a request with no ownership strategy carries no ownership check — the property
     /// defaults to null rather than to an empty-but-present plan.
     /// </summary>
