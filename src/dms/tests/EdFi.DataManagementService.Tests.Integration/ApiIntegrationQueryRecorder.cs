@@ -15,6 +15,7 @@ public sealed class ApiIntegrationQueryRecorder
 {
     private readonly object _sync = new();
     private readonly List<PageKeysetSpec> _hydrationKeysets = [];
+    private readonly List<RelationalCommand> _relationalCommands = [];
     private int _relationalCommandExecutions;
 
     public IReadOnlyList<PageKeysetSpec> HydrationKeysets
@@ -48,6 +49,22 @@ public sealed class ApiIntegrationQueryRecorder
     public int RelationalCommandExecutions => Volatile.Read(ref _relationalCommandExecutions);
 
     /// <summary>
+    /// The commands issued through <see cref="IRelationalCommandExecutor"/>, in order, with
+    /// their text and bound parameters — the capture surface for reads that never hydrate
+    /// (partition boundaries, descriptor reads), whose replay needs the real bound values.
+    /// </summary>
+    public IReadOnlyList<RelationalCommand> RelationalCommands
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return [.. _relationalCommands];
+            }
+        }
+    }
+
+    /// <summary>
     /// Total database commands observed so far: hydrations plus command-executor commands. The two
     /// seams are disjoint - a document hydrator opens its own connection and runs through
     /// <c>HydrationExecutor</c>, never through <see cref="IRelationalCommandExecutor"/> - so the sum
@@ -63,8 +80,13 @@ public sealed class ApiIntegrationQueryRecorder
         }
     }
 
-    internal void RecordRelationalCommandExecution()
+    internal void RecordRelationalCommandExecution(RelationalCommand command)
     {
+        lock (_sync)
+        {
+            _relationalCommands.Add(command);
+        }
+
         Interlocked.Increment(ref _relationalCommandExecutions);
     }
 
@@ -117,7 +139,7 @@ internal sealed class RecordingRelationalCommandExecutor(
         CancellationToken cancellationToken = default
     )
     {
-        _recorder.RecordRelationalCommandExecution();
+        _recorder.RecordRelationalCommandExecution(command);
 
         return _inner.ExecuteReaderAsync(command, readAsync, cancellationToken);
     }

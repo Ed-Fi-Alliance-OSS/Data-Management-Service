@@ -31,6 +31,28 @@ public static class ReferentialIdentityDerivation
         );
 
     /// <summary>
+    /// The referential identity the generated StudentSchoolAssociation trigger derives: the
+    /// three identity paths in alphabetical order, joined with '#', with the entry date in
+    /// ISO yyyy-MM-dd text on both providers.
+    /// </summary>
+    public static Guid StudentSchoolAssociationReferentialId(
+        string entryDateIso,
+        long schoolId,
+        string studentUniqueId
+    ) =>
+        Uuidv5(
+            EdFiNamespace,
+            PerfFixtureDefinition.ProjectName
+                + "StudentSchoolAssociation"
+                + "$.entryDate="
+                + entryDateIso
+                + "#$.schoolReference.schoolId="
+                + schoolId.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                + "#$.studentReference.studentUniqueId="
+                + studentUniqueId
+        );
+
+    /// <summary>
     /// The referential identity of a descriptor document: the production write path keys
     /// descriptors by the $.descriptor identity path with the URI lowercased, which is how
     /// descriptor references are resolved during reference validation.

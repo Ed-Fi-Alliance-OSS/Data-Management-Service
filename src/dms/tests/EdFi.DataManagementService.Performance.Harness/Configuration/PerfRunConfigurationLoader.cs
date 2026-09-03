@@ -30,36 +30,12 @@ public static class PerfRunConfigurationLoader
             return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
         }
 
-        string? resultsDirectory = Read(PerfEnvironmentVariables.ResultsDirectory);
-        if (resultsDirectory is null)
-        {
-            errors.Add($"{PerfEnvironmentVariables.ResultsDirectory} is required.");
-        }
-        else if (!Path.IsPathFullyQualified(resultsDirectory))
-        {
-            // Merely rooted is not enough: on Windows, drive-relative (C:results) and
-            // root-relative (\results) paths still resolve against ambient process state,
-            // which could scatter evidence artifacts somewhere unintended.
-            errors.Add(
-                $"{PerfEnvironmentVariables.ResultsDirectory} must be a fully qualified absolute path; got '{resultsDirectory}'."
-            );
-        }
-
-        string? runnerCommit = Read(PerfEnvironmentVariables.RunnerCommit);
-        if (runnerCommit is null)
-        {
-            errors.Add($"{PerfEnvironmentVariables.RunnerCommit} is required.");
-        }
-        else if (!IsFortyHexCharacters(runnerCommit))
-        {
-            errors.Add(
-                $"{PerfEnvironmentVariables.RunnerCommit} must be a 40-character hex commit SHA; got '{runnerCommit}'."
-            );
-        }
-        else
-        {
-            runnerCommit = runnerCommit.ToLowerInvariant();
-        }
+        string? resultsDirectory = ReadFullyQualifiedDirectory(
+            PerfEnvironmentVariables.ResultsDirectory,
+            Read,
+            errors
+        );
+        string? runnerCommit = ReadRunnerCommit(Read, errors);
 
         PerfFixtureKind? fixture = null;
         string? fixtureId = Read(PerfEnvironmentVariables.Fixture);
@@ -158,7 +134,54 @@ public static class PerfRunConfigurationLoader
     public static bool IsWithinDeepOffsetBounds(PerfFixtureKind fixture, long deepOffset) =>
         deepOffset >= 0 && deepOffset <= MaximumDeepOffset(fixture);
 
-    private static int ReadIterations(
+    /// <summary>
+    /// Reads a directory variable that must be fully qualified. Merely rooted is not
+    /// enough: on Windows, drive-relative (C:results) and root-relative (\results) paths
+    /// still resolve against ambient process state, which could scatter evidence artifacts
+    /// somewhere unintended.
+    /// </summary>
+    internal static string? ReadFullyQualifiedDirectory(
+        string variableName,
+        Func<string, string?> read,
+        List<string> errors
+    )
+    {
+        string? value = read(variableName);
+        if (value is null)
+        {
+            errors.Add($"{variableName} is required.");
+            return null;
+        }
+
+        if (!Path.IsPathFullyQualified(value))
+        {
+            errors.Add($"{variableName} must be a fully qualified absolute path; got '{value}'.");
+        }
+
+        return value;
+    }
+
+    internal static string? ReadRunnerCommit(Func<string, string?> read, List<string> errors)
+    {
+        string? runnerCommit = read(PerfEnvironmentVariables.RunnerCommit);
+        if (runnerCommit is null)
+        {
+            errors.Add($"{PerfEnvironmentVariables.RunnerCommit} is required.");
+            return null;
+        }
+
+        if (!IsFortyHexCharacters(runnerCommit))
+        {
+            errors.Add(
+                $"{PerfEnvironmentVariables.RunnerCommit} must be a 40-character hex commit SHA; got '{runnerCommit}'."
+            );
+            return runnerCommit;
+        }
+
+        return runnerCommit.ToLowerInvariant();
+    }
+
+    internal static int ReadIterations(
         string variableName,
         int minimum,
         Func<string, string?> read,

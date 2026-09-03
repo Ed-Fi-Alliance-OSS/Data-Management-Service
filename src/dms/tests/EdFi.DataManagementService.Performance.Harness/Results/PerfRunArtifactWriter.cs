@@ -102,7 +102,7 @@ public static class PerfRunArtifactWriter
     /// is reported through <paramref name="errors" /> rather than thrown, so every problem
     /// across the run is listed at once.
     /// </summary>
-    private static IReadOnlyList<string> PlanIndexReferents(
+    internal static IReadOnlyList<string> PlanIndexReferents(
         string indexPath,
         string indexJson,
         List<string> errors

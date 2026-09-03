@@ -38,6 +38,9 @@
         <Using Include="NUnit.Framework" />
     </ItemGroup>
     <ItemGroup>
+        <InternalsVisibleTo Include="EdFi.DataManagementService.Performance.Harness" />
+    </ItemGroup>
+    <ItemGroup>
         <None Update="appsettings.json">
             <CopyToOutputDirectory>Always</CopyToOutputDirectory>
         </None>

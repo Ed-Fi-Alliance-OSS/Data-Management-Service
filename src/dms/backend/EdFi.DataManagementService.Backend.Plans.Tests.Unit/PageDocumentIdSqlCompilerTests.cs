@@ -2398,6 +2398,92 @@ public class Given_PageDocumentIdSqlCompiler
             .Be(ExtractAuthorizationPredicate(plan.PageDocumentIdSql));
     }
 
+    /// <summary>
+    /// A cursor page whose person subject anchors on the ordering column repeats the cursor bounds inside
+    /// the auth-view membership subquery. Bounding only the root row lets PostgreSQL merge-join an unbounded
+    /// auth-view scan and walk every authorized row below the anchor before its first match, so page cost
+    /// grows with cursor depth; the inner bound gives that scan an index condition on both providers.
+    /// </summary>
+    [TestCase(
+        SqlDialect.Pgsql,
+        "r.\"DocumentId\" IN (SELECT t0.\"Student_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToStudentDocumentId\" t0 WHERE t0.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds) AND t0.\"Student_DocumentId\" >= @cursorMin AND t0.\"Student_DocumentId\" <= @cursorMax)"
+    )]
+    [TestCase(
+        SqlDialect.Mssql,
+        "r.[DocumentId] IN (SELECT t0.[Student_DocumentId] FROM [auth].[EducationOrganizationIdToStudentDocumentId] t0 WHERE t0.[SourceEducationOrganizationId] IN (@ClaimEducationOrganizationIds_0) AND t0.[Student_DocumentId] >= @cursorMin AND t0.[Student_DocumentId] <= @cursorMax)"
+    )]
+    public void It_should_bound_a_self_anchored_person_auth_view_subquery_by_the_cursor_anchor(
+        SqlDialect dialect,
+        string expectedAuthorizationFragment
+    )
+    {
+        var (rootTable, subject) = CreatePersonAuthorizationSubjectForPathKind(
+            RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId
+        );
+        var plan = CompilePersonAuthorizationCursorPlan(
+            dialect,
+            rootTable,
+            subject,
+            new PageCandidateMode.Cursor()
+        );
+
+        plan.PageDocumentIdSql.Should().Contain(expectedAuthorizationFragment);
+    }
+
+    /// <summary>
+    /// The inner bound is only correct when the subject anchors on the ordering column itself. A reference
+    /// anchor (<c>Student_DocumentId</c> on StudentSchoolAssociation) ranges over a different key space than
+    /// the root <c>DocumentId</c> cursor, so its subquery must stay exactly as traditional paging emits it.
+    /// </summary>
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_leave_a_reference_anchored_person_auth_view_subquery_unbounded_in_cursor_mode(
+        SqlDialect dialect
+    )
+    {
+        var (rootTable, subject) = CreatePersonAuthorizationSubjectForPathKind(
+            RelationshipAuthorizationPersonSubjectPathKind.DirectRootColumn
+        );
+        var traditionalPlan = CompilePersonAuthorizationPlan(dialect, rootTable, subject);
+        var cursorPlan = CompilePersonAuthorizationCursorPlan(
+            dialect,
+            rootTable,
+            subject,
+            new PageCandidateMode.Cursor()
+        );
+
+        ExtractAuthorizationPredicate(cursorPlan.PageDocumentIdSql)
+            .Should()
+            .Be(ExtractAuthorizationPredicate(traditionalPlan.PageDocumentIdSql));
+    }
+
+    /// <summary>
+    /// A <c>ContentVersion</c> cursor bounds a column the auth view does not expose, so a self-anchored
+    /// subject keeps the traditional subquery: pushing a <c>ContentVersion</c> range onto
+    /// <c>Student_DocumentId</c> would authorize the wrong rows.
+    /// </summary>
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_leave_the_person_auth_view_subquery_unbounded_when_the_cursor_orders_by_content_version(
+        SqlDialect dialect
+    )
+    {
+        var (rootTable, subject) = CreatePersonAuthorizationSubjectForPathKind(
+            RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId
+        );
+        var traditionalPlan = CompilePersonAuthorizationPlan(dialect, rootTable, subject);
+        var cursorPlan = CompilePersonAuthorizationCursorPlan(
+            dialect,
+            rootTable,
+            subject,
+            new PageCandidateMode.Cursor(OrderingMode: PageOrderingMode.ContentVersion)
+        );
+
+        ExtractAuthorizationPredicate(cursorPlan.PageDocumentIdSql)
+            .Should()
+            .Be(ExtractAuthorizationPredicate(traditionalPlan.PageDocumentIdSql));
+    }
+
     [TestCase(
         SqlDialect.Pgsql,
         "r.\"Student_DocumentId\" IN (SELECT t0.\"Student_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToStudentDocumentId\" t0 WHERE t0.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds)) AND r.\"Contact_DocumentId\" IN (SELECT t1.\"Contact_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToContactDocumentId\" t1 WHERE t1.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"
@@ -3379,6 +3465,28 @@ public class Given_PageDocumentIdSqlCompiler
 
     private static int CountOrdinalOccurrences(string value, string text) =>
         value.Split(text, StringSplitOptions.None).Length - 1;
+
+    private static PageDocumentIdSqlPlan CompilePersonAuthorizationCursorPlan(
+        SqlDialect dialect,
+        DbTableName rootTable,
+        PageDocumentIdAuthorizationSubject subject,
+        PageCandidateMode.Cursor cursor
+    ) =>
+        new PageDocumentIdSqlCompiler(dialect).Compile(
+            new PageDocumentIdQuerySpec(
+                RootTable: rootTable,
+                Predicates: [],
+                UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>(),
+                Mode: cursor,
+                Authorization: CreateAuthorizationSpec(
+                    dialect,
+                    CreateAuthorizationStrategy(
+                        AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
+                        subject
+                    )
+                )
+            )
+        );
 
     private static PageDocumentIdSqlPlan CompilePersonAuthorizationPlan(
         SqlDialect dialect,
