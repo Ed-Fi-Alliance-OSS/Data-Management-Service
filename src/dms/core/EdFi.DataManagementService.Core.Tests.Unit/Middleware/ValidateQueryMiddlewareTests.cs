@@ -122,7 +122,7 @@ public class ValidateQueryMiddlewareTests
                 TraceId: new TraceId(""),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontendRequest, RequestMethod.GET, No.ServiceProvider);
+            _requestInfo = new(frontendRequest, RequestMethod.GET, ServiceProviderWithEffectiveTarget());
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -187,7 +187,7 @@ public class ValidateQueryMiddlewareTests
                 TraceId: new TraceId(""),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontendRequest, RequestMethod.GET, No.ServiceProvider);
+            _requestInfo = new(frontendRequest, RequestMethod.GET, ServiceProviderWithEffectiveTarget());
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -247,7 +247,7 @@ public class ValidateQueryMiddlewareTests
 
         private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestInfo docRefContext = new(frontendRequest, method, No.ServiceProvider)
+            RequestInfo docRefContext = new(frontendRequest, method, ServiceProviderWithEffectiveTarget())
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -398,7 +398,7 @@ public class ValidateQueryMiddlewareTests
 
         private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestInfo docRefContext = new(frontendRequest, method, No.ServiceProvider)
+            RequestInfo docRefContext = new(frontendRequest, method, ServiceProviderWithEffectiveTarget())
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -484,7 +484,7 @@ public class ValidateQueryMiddlewareTests
 
         private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestInfo docRefContext = new(frontendRequest, method, No.ServiceProvider)
+            RequestInfo docRefContext = new(frontendRequest, method, ServiceProviderWithEffectiveTarget())
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -563,7 +563,7 @@ public class ValidateQueryMiddlewareTests
 
         private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestInfo docRefContext = new(frontendRequest, method, No.ServiceProvider)
+            RequestInfo docRefContext = new(frontendRequest, method, ServiceProviderWithEffectiveTarget())
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -642,7 +642,7 @@ public class ValidateQueryMiddlewareTests
 
         private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestInfo docRefContext = new(frontendRequest, method, No.ServiceProvider)
+            RequestInfo docRefContext = new(frontendRequest, method, ServiceProviderWithEffectiveTarget())
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -730,7 +730,7 @@ public class ValidateQueryMiddlewareTests
 
         private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestInfo docRefContext = new(frontendRequest, method, No.ServiceProvider)
+            RequestInfo docRefContext = new(frontendRequest, method, ServiceProviderWithEffectiveTarget())
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -829,7 +829,7 @@ public class ValidateQueryMiddlewareTests
 
         private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestInfo docRefContext = new(frontendRequest, method, No.ServiceProvider)
+            RequestInfo docRefContext = new(frontendRequest, method, ServiceProviderWithEffectiveTarget())
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -904,7 +904,7 @@ public class ValidateQueryMiddlewareTests
                 TraceId: new TraceId(""),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontendRequest, RequestMethod.GET, No.ServiceProvider);
+            _requestInfo = new(frontendRequest, RequestMethod.GET, ServiceProviderWithEffectiveTarget());
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -950,7 +950,7 @@ public class ValidateQueryMiddlewareTests
                 TraceId: new TraceId(""),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontendRequest, RequestMethod.GET, No.ServiceProvider);
+            _requestInfo = new(frontendRequest, RequestMethod.GET, ServiceProviderWithEffectiveTarget());
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -1000,7 +1000,7 @@ public class ValidateQueryMiddlewareTests
                 TraceId: new TraceId(""),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontendRequest, RequestMethod.GET, No.ServiceProvider);
+            _requestInfo = new(frontendRequest, RequestMethod.GET, ServiceProviderWithEffectiveTarget());
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -1047,7 +1047,7 @@ public class ValidateQueryMiddlewareTests
 
         private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestInfo docRefContext = new(frontendRequest, method, No.ServiceProvider)
+            RequestInfo docRefContext = new(frontendRequest, method, ServiceProviderWithEffectiveTarget())
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -1123,7 +1123,7 @@ public class ValidateQueryMiddlewareTests
 
         private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestInfo docRefContext = new(frontendRequest, method, No.ServiceProvider)
+            RequestInfo docRefContext = new(frontendRequest, method, ServiceProviderWithEffectiveTarget())
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -1193,7 +1193,7 @@ public class ValidateQueryMiddlewareTests
 
         private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestInfo docRefContext = new(frontendRequest, method, No.ServiceProvider)
+            RequestInfo docRefContext = new(frontendRequest, method, ServiceProviderWithEffectiveTarget())
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -1288,7 +1288,11 @@ public class ValidateQueryMiddlewareTests
                 RouteQualifiers: []
             );
 
-            RequestInfo requestInfo = new(frontendRequest, RequestMethod.GET, No.ServiceProvider)
+            RequestInfo requestInfo = new(
+                frontendRequest,
+                RequestMethod.GET,
+                ServiceProviderWithEffectiveTarget()
+            )
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(

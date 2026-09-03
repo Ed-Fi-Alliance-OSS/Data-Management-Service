@@ -9,11 +9,15 @@ namespace EdFi.DataManagementService.Core.Paging;
 
 /// <summary>
 /// Resolves page-selection ordering for GET-many queries from the request's change-version filter
-/// shape (DMS-1298). Max-bearing windows (min+max or max-only) order by <c>ContentVersion</c> so
-/// the planner can seek the change-version index instead of scanning <c>DocumentId</c> order and
-/// rejecting most of a large table. Min-only windows keep <c>DocumentId</c> ordering: against live
-/// data an update moves a row later within a still-open window, so ContentVersion ordering would
-/// let offset paging return it twice while its departure shifts offsets and skips another row.
+/// shape and the kind of data source serving it. Max-bearing windows (min+max or max-only) order by
+/// <c>ContentVersion</c> so the planner can seek the change-version index instead of scanning
+/// <c>DocumentId</c> order and rejecting most of a large table (DMS-1298). Min-only windows keep
+/// <c>DocumentId</c> ordering <em>against live data</em>: an update moves a row later within a
+/// still-open window, so ContentVersion ordering would let offset paging return it twice while its
+/// departure shifts offsets and skips another row. Nothing moves in a frozen snapshot, so there a
+/// min-only window orders by <c>ContentVersion</c> as well and the planner fix reaches every
+/// windowed shape (DMS-1396). The caller picks the entry point from the effective data-store target;
+/// neither entry point looks at the target itself.
 /// </summary>
 /// <remarks>
 /// What makes a max-bearing window safe is that an update pushes the row past the maximum and out of
@@ -40,8 +44,11 @@ namespace EdFi.DataManagementService.Core.Paging;
 /// <c>internal</c> deliberately: the two paging middlewares are the only callers, and the backend
 /// reads the resolved mode off the request rather than deriving its own. A backend-visible resolver
 /// would be a second place for that one rule to live, and a page selected under one ordering whose
-/// token claims another is a walk that skips rows. Snapshot data sources get their own explicit entry
-/// point when snapshot support lands; do not widen <see cref="ResolveForLiveQuery"/> to cover them.
+/// token claims another is a walk that skips rows. Snapshot data sources resolve through their own
+/// entry point, <see cref="ResolveForSnapshotQuery"/>, rather than through a widened live rule: what
+/// qualifies a source for it is being frozen for the life of the walk, which is what removes the
+/// min-only hazard. A read replica does not qualify — it keeps applying changes, so a row can still
+/// move later within an open window there — and neither does anything else short of frozen.
 /// </para>
 /// </remarks>
 internal sealed class ChangeQueryPageOrderingPolicy(bool useLegacyDocumentIdOrdering)
@@ -59,6 +66,41 @@ internal sealed class ChangeQueryPageOrderingPolicy(bool useLegacyDocumentIdOrde
         }
 
         return changeVersionRange?.MaxChangeVersion is not null
+            ? PageOrderingMode.ContentVersion
+            : PageOrderingMode.DocumentId;
+    }
+
+    /// <summary>
+    /// Resolves the page-selection ordering for a query against a frozen snapshot.
+    /// </summary>
+    /// <remarks>
+    /// Every windowed shape resolves <c>ContentVersion</c>, min-only included. Nothing moves in a
+    /// frozen source, so the duplicate-and-skip hazard that keeps live min-only windows on
+    /// <c>DocumentId</c> cannot occur, while the planner pathology still can: that one is a property
+    /// of the data distribution, which the copy preserves. Min-only is also the natural shape here,
+    /// the newest version in the copy being the implicit maximum.
+    /// <para>
+    /// An unfiltered read keeps <c>DocumentId</c>. With no window predicate there is no pathology to
+    /// fix and nothing to gain, and routing a request to a snapshot must not by itself change the
+    /// order a collection is walked in.
+    /// </para>
+    /// <para>
+    /// Resolution reads the parsed window, not the parameters that produced it, so a bound that was
+    /// blank or failed to parse counts as absent — the same rule
+    /// <see cref="ResolveForLiveQuery"/> follows, and the reason a walk is never anchored on a bound
+    /// the request was rejected for.
+    /// </para>
+    /// </remarks>
+    /// <param name="changeVersionRange">The validated change-version window, if any.</param>
+    /// <returns>The ordering mode page selection must use.</returns>
+    public PageOrderingMode ResolveForSnapshotQuery(ChangeVersionRange? changeVersionRange)
+    {
+        if (useLegacyDocumentIdOrdering)
+        {
+            return PageOrderingMode.DocumentId;
+        }
+
+        return changeVersionRange is { MinChangeVersion: not null } or { MaxChangeVersion: not null }
             ? PageOrderingMode.ContentVersion
             : PageOrderingMode.DocumentId;
     }

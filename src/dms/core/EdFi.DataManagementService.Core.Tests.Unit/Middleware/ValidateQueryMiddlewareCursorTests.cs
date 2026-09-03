@@ -75,7 +75,11 @@ public class ValidateQueryMiddlewareCursorTests
             RouteQualifiers: []
         );
 
-        RequestInfo requestInfo = new(frontendRequest, RequestMethod.GET, No.ServiceProvider)
+        RequestInfo requestInfo = new(
+            frontendRequest,
+            RequestMethod.GET,
+            ServiceProviderWithEffectiveTarget()
+        )
         {
             ApiSchemaDocuments = NewApiSchemaDocuments(),
             PathComponents = new(

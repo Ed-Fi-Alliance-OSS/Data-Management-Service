@@ -691,7 +691,11 @@ public class PipelineOrderingTests
                 TraceId: new TraceId("pipeline-composition"),
                 RouteQualifiers: []
             );
-            RequestInfo requestInfo = new(frontendRequest, RequestMethod.GET, No.ServiceProvider);
+            RequestInfo requestInfo = new(
+                frontendRequest,
+                RequestMethod.GET,
+                TestHelper.ServiceProviderWithEffectiveTarget()
+            );
 
             await validation.Execute(requestInfo, TestHelper.NullNext);
 

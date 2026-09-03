@@ -4,6 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.ChangeQueries;
+using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Paging;
@@ -11,6 +13,7 @@ using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Telemetry;
 using EdFi.DataManagementService.Core.Validation;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
 
@@ -167,7 +170,22 @@ internal class ValidateQueryMiddleware(
 
         // Resolved from the parsed window rather than from parameter presence: '?maxChangeVersion='
         // parses to null, so it is not a max-bearing window and does not move the anchor.
-        PageOrderingMode pageOrderingMode = _orderingPolicy.ResolveForLiveQuery(changeVersionResult.Range);
+        //
+        // The window alone does not decide it. A frozen snapshot cannot move a row later within a
+        // still-open window, so the hazard that keeps a live min-only walk on DocumentId does not
+        // exist there and every windowed shape can take the ContentVersion anchor. Only a snapshot
+        // qualifies: a read replica keeps applying changes, so it stays on the live rule along with
+        // the primary. The target is read, never re-derived - target selection is composed ahead of
+        // this step in every pipeline that reaches it, and GetEffectiveTarget throwing when unset is
+        // the documented behavior, so a pipeline that skipped selection fails loudly here rather than
+        // quietly anchoring a snapshot walk as if it were live.
+        PageOrderingMode pageOrderingMode =
+            requestInfo
+                .ScopedServiceProvider.GetRequiredService<IDataStoreSelection>()
+                .GetEffectiveTarget()
+                .Kind is EffectiveTargetKind.Snapshot
+                ? _orderingPolicy.ResolveForSnapshotQuery(changeVersionResult.Range)
+                : _orderingPolicy.ResolveForLiveQuery(changeVersionResult.Range);
 
         // A faulty window resolves no anchor at all, rather than whichever one its surviving bounds
         // happen to imply. An unparseable maximum parses to null exactly as an empty one does, and an

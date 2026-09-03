@@ -4,12 +4,15 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.ChangeQueries;
+using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Telemetry;
 using EdFi.DataManagementService.Core.Validation;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
 
@@ -188,9 +191,21 @@ internal class ValidatePartitionQueryMiddleware(
         // request rejected by any phase above carries none of them, so a handler cannot act on a
         // filter, a window, an anchor, or a count that this step declined to accept. CollectionPaging
         // is deliberately never assigned on this pipeline: a partitions request has no page.
+        //
+        // The anchor is resolved by the same rule the GET-many walk resolves, and from the same two
+        // inputs: the parsed window and the effective target. Boundaries are handed out as page
+        // tokens carrying the anchor they were cut on, so a partitions request that resolved one
+        // anchor while the walk consuming its tokens resolved the other would hand a client tokens
+        // its own follow-up requests reject.
         requestInfo.QueryElements = ((ResourceQueryFilterResult.Valid)filterResult).QueryElements;
         requestInfo.ChangeVersionRange = changeVersionResult.Range;
-        requestInfo.PageOrderingMode = _orderingPolicy.ResolveForLiveQuery(changeVersionResult.Range);
+        requestInfo.PageOrderingMode =
+            requestInfo
+                .ScopedServiceProvider.GetRequiredService<IDataStoreSelection>()
+                .GetEffectiveTarget()
+                .Kind is EffectiveTargetKind.Snapshot
+                ? _orderingPolicy.ResolveForSnapshotQuery(changeVersionResult.Range)
+                : _orderingPolicy.ResolveForLiveQuery(changeVersionResult.Range);
         requestInfo.RequestedPartitionCount =
             partitionResult.RequestedPartitionCount ?? _defaultPartitionCount;
 
