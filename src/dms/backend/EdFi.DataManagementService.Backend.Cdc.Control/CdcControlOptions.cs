@@ -380,10 +380,32 @@ public sealed class CdcControlOptionsValidator : IValidateOptions<CdcControlOpti
         );
     }
 
+    /// <summary>
+    /// Validates the projection-status credentials only as far as every verb is entitled to demand.
+    /// </summary>
+    /// <remarks>
+    /// These two settings are read in exactly one place — the projection-status collector — and only
+    /// the verbs that correlate the running projector's report reach it: enable, status, and restart.
+    /// Retirement and adoption never read projection status at all.
+    ///
+    /// Requiring them here made them a precondition of resolving the options, which every verb does,
+    /// so a deployment that could not mint an operator token could not retire a binding either. That is
+    /// exactly backwards: retirement matters most when the DMS is already down, which is precisely when
+    /// no token can be obtained. The collector refuses for itself when they are absent, so the verbs
+    /// that need them still fail closed with a message naming them.
+    ///
+    /// A supplied base URL is still shape-checked. A malformed URL is a configuration fault whichever
+    /// verb runs, and catching it on resolution is free; an absent one is simply a deployment that has
+    /// not configured the verbs that would use it.
+    /// </remarks>
     private static void ValidateProjectionStatusAccess(CdcControlOptions options, List<string> failures)
     {
+        if (string.IsNullOrWhiteSpace(options.DmsBaseUrl))
+        {
+            return;
+        }
+
         RequireHttpUri(options.DmsBaseUrl, nameof(CdcControlOptions.DmsBaseUrl), failures);
-        RequireText(options.DmsBearerToken, nameof(CdcControlOptions.DmsBearerToken), failures);
     }
 
     private static void ValidateTimeouts(CdcControlTimeoutOptions timeouts, List<string> failures)

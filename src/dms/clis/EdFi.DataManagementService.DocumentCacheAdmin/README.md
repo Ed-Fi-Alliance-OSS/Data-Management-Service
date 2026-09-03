@@ -104,7 +104,7 @@ The `cdc` verb group carries the deployment-owned CDC binding operations:
 | `cdc status` | Report deployment-owned CDC readiness for one binding. | None | None |
 | `cdc restart` | Restart the binding's connector after affirmative continuity evidence. | None | None |
 | `cdc adopt` | Adopt an operator-supplied binding around a complete governed artifact set. | None | `--binding-json` |
-| `cdc replace-source` | Replace the physical source behind an enabled target. | `cdcSourceReplacement` | `--database-creation-mode`, `--write-admission`, `--previous-generation` |
+| `cdc replace-source` | Not available in this release; the verb refuses. | `cdcSourceReplacement` | `--database-creation-mode`, `--write-admission`, `--previous-generation` |
 | `cdc retire` | Retire a binding and its governed artifacts. | `cdcBindingRetirement` | None |
 
 `cdc enable` requires the target to already be an operator-configured
@@ -119,16 +119,19 @@ the complete binding record `--binding-json` supplies. It is not a first-time en
 path, and adoption never infers a binding from the topics or connector configuration that
 happen to exist.
 
-`cdc replace-source` creates a new binding generation for a target previously enabled
-through `cdc enable`; it names the generation it supersedes explicitly and reuses none of
-that generation's governed artifacts.
+`cdc replace-source` is not available in this release and refuses every invocation with a
+diagnostic saying so. Replacing a physical source means pointing a logical target at a
+different database — a restore, a rollback, or a copy — which requires rotating the source
+identity and cutting the binding over to a new generation. The packaged tool does not yet
+perform that rotation, and the sequence it would otherwise run admits only a source holding
+no rows, which no replacement database does.
 
 Each `cdc` verb writes one shared CDC contract document, selected by the verb rather than
 by the outcome:
 
 | Verb | Shared contract | Reported outcome values |
 | --- | --- | --- |
-| `cdc enable`, `cdc replace-source` | `CdcAdmission` | `admitted`, `notAdmitted`, `unknown` |
+| `cdc enable` | `CdcAdmission` | `admitted`, `notAdmitted`, `unknown` |
 | `cdc status`, `cdc restart` | `CdcStatus` | `ready`, `notReady`, `unknown` |
 | `cdc adopt` | `CdcAdoptionProof` | `completed`, `rejectedNoMutation` |
 | `cdc retire` | `CdcCleanupProof` | `completed`, `incompleteRetryable` |
@@ -141,9 +144,13 @@ credential, or tenant display name appears in either output mode.
 Current packaged production behavior intentionally rejects `activate-offline`,
 `deactivate-offline`, and `recover-cache-ahead` unless a trusted downstream
 publication-history provider reports `internalOnly` for the same target and
-physical-source fingerprint. The default provider reports `unknown` because durable CDC
-binding/history evidence is not available in this product scope. Treat
-`downstreamHistoryPresentOrUnknown` as expected in that default state.
+physical-source fingerprint. This tool registers the CDC control plane, so that provider
+reads the durable binding state store: it reports `internalOnly` only when a complete,
+readable listing for the deployment holds at least one binding, none of them binds this
+target, and no retirement record says one once did. A listing that fails, a record that
+cannot be read, an empty store, and a store with no deployment key configured all report
+`unknown`. Treat `downstreamHistoryPresentOrUnknown` as expected whenever the evidence
+does not positively prove the target was never published.
 
 All commands support `--json`. In JSON mode, stdout contains exactly one shared contract
 document and no prose. Logs, warnings, progress, and sanitized diagnostics go to stderr or
@@ -197,7 +204,7 @@ each one overrides for the current run:
 | `--deployment-key <value>` | Opaque deployment key contributing to governed artifact names. | `DeploymentKey` |
 | `--instance-key <value>` | Opaque instance key contributing to governed artifact names. | `InstanceKey` |
 | `--generation <n>` | Positive binding generation. | `Generation` |
-| `--previous-generation <n>` | Positive generation being replaced; required by `cdc replace-source`. | None; request-only. |
+| `--previous-generation <n>` | Positive generation being replaced; parsed for `cdc replace-source`, which is not available in this release. | None; request-only. |
 | `--kafka-bootstrap-servers <value>` | Kafka bootstrap servers the governed topics are provisioned through. | `KafkaBootstrapServers` |
 | `--connect-base-url <url>` | Base URL of the Kafka Connect REST interface. | `ConnectBaseUri` |
 | `--max-record-bytes <n>` | Largest record the pipeline must carry end to end. | `MaxRecordBytes` |
@@ -211,7 +218,7 @@ values are argument errors, as is a `--durability-profile` outside `local|produc
 unreadable or malformed `--binding-json` document is an argument error too, and no control
 plane operation is attempted.
 
-`cdc enable` and `cdc replace-source` additionally require two exact-token evidence flags,
+`cdc enable` additionally requires two exact-token evidence flags,
 because the control plane never infers either fact for itself:
 
 | Option | Required value |
@@ -295,12 +302,6 @@ Adopt an existing governed-artifact set under a binding record you supply:
 
 ```bash
 dms-document-cache cdc adopt --data-store-id 1 --binding-json ./binding.json --settings ./appsettings.Production.json --environment Production --json
-```
-
-Replace the physical source behind an enabled target, naming the generation being replaced:
-
-```bash
-dms-document-cache cdc replace-source --data-store-id 1 --confirm cdcSourceReplacement --previous-generation 1 --generation 2 --database-creation-mode created-for-initial-cdc-provisioning --write-admission closed-never-opened --settings ./appsettings.Production.json --environment Production --json
 ```
 
 Retire a binding and its governed artifacts:

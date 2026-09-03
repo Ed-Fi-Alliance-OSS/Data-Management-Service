@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using FakeItEasy;
 using FluentAssertions;
+using FluentAssertions.Execution;
 using Microsoft.Extensions.Configuration;
 using NUnit.Framework;
 
@@ -40,6 +41,60 @@ public class Given_CdcDownstreamPublicationHistoryProvider
 
         observation.Status.Should().Be(DocumentCacheDownstreamPublicationStatus.InternalOnly);
         observation.EvidenceGenerationIdentifier.Should().BeNull();
+    }
+
+    /// <summary>
+    /// Retirement deletes the binding record it retires, so a target that was published and then
+    /// retired reads as a deployment binding only other targets — the shape that would otherwise
+    /// report internal-only and admit the destructive commands. The retirement record is what keeps
+    /// that history, and finding one makes the target historical rather than internal-only.
+    /// </summary>
+    [Test]
+    public async Task It_reports_historical_when_the_targets_only_binding_was_retired()
+    {
+        DocumentCacheDownstreamPublicationHistoryObservation observation = await ObserveAsync(
+            Listed(Binding(tenantKey: "default", dataStoreId: "7", CurrentFingerprintValue)),
+            retirementResult: Retired(
+                Retirement(tenantKey: "default", dataStoreId: "1", CurrentFingerprintValue, generation: 4)
+            )
+        );
+
+        using AssertionScope assertions = new();
+        observation.Status.Should().Be(DocumentCacheDownstreamPublicationStatus.Historical);
+        observation.EvidenceGenerationIdentifier.Should().Be("4");
+    }
+
+    /// <summary>
+    /// A retirement of the same source under a different tenant or data store is another target's
+    /// history and must not disqualify this one, or no target could ever be proven internal-only in a
+    /// deployment that has retired anything at all.
+    /// </summary>
+    [Test]
+    public async Task It_reports_internal_only_when_only_another_targets_binding_was_retired()
+    {
+        DocumentCacheDownstreamPublicationHistoryObservation observation = await ObserveAsync(
+            Listed(Binding(tenantKey: "default", dataStoreId: "7", CurrentFingerprintValue)),
+            retirementResult: Retired(
+                Retirement(tenantKey: "default", dataStoreId: "9", CurrentFingerprintValue)
+            )
+        );
+
+        observation.Status.Should().Be(DocumentCacheDownstreamPublicationStatus.InternalOnly);
+    }
+
+    /// <summary>
+    /// The retirement records answer the question the absent binding raised, so a listing that cannot
+    /// be read leaves it unanswered rather than settling it in the permissive direction.
+    /// </summary>
+    [Test]
+    public async Task It_reports_unknown_when_the_retirement_records_cannot_be_listed()
+    {
+        DocumentCacheDownstreamPublicationHistoryObservation observation = await ObserveAsync(
+            Listed(Binding(tenantKey: "default", dataStoreId: "7", CurrentFingerprintValue)),
+            retirementResult: UnreadableRetirements()
+        );
+
+        observation.Status.Should().Be(DocumentCacheDownstreamPublicationStatus.Unknown);
     }
 
     /// <summary>
@@ -358,9 +413,10 @@ public class Given_CdcDownstreamPublicationHistoryProvider
         CdcBindingLifecycleListResult listResult,
         DocumentCacheTargetKey? targetKey = null,
         string? deploymentKey = DeploymentKey,
-        string? currentPhysicalSourceFingerprint = CurrentFingerprintValue
+        string? currentPhysicalSourceFingerprint = CurrentFingerprintValue,
+        CdcRetirementListResult? retirementResult = null
     ) =>
-        await BuildProvider(listResult, deploymentKey)
+        await BuildProvider(listResult, deploymentKey, retirementResult)
             .ObserveAsync(
                 targetKey ?? DocumentCacheTargetKey.Create("default", 1),
                 currentPhysicalSourceFingerprint is null
@@ -370,12 +426,15 @@ public class Given_CdcDownstreamPublicationHistoryProvider
 
     private static CdcDownstreamPublicationHistoryProvider BuildProvider(
         CdcBindingLifecycleListResult listResult,
-        string? deploymentKey
+        string? deploymentKey,
+        CdcRetirementListResult? retirementResult = null
     )
     {
         ICdcBindingLifecycleService bindingLifecycleService = A.Fake<ICdcBindingLifecycleService>();
         A.CallTo(() => bindingLifecycleService.ListBindingsAsync(A<string>._, A<CancellationToken>._))
             .Returns(listResult);
+        A.CallTo(() => bindingLifecycleService.ListRetirementsAsync(A<string>._, A<CancellationToken>._))
+            .Returns(retirementResult ?? Retired());
 
         return new CdcDownstreamPublicationHistoryProvider(
             bindingLifecycleService,
@@ -402,6 +461,42 @@ public class Given_CdcDownstreamPublicationHistoryProvider
             CdcControlPlaneOperationStatus.Succeeded,
             states,
             []
+        );
+
+    private static CdcRetirementListResult Retired(params CdcRetirement[] retirements) =>
+        new(
+            CdcJsonContract.CurrentContractVersion,
+            ObservedAt,
+            CdcControlPlaneOperationStatus.Succeeded,
+            retirements,
+            []
+        );
+
+    private static CdcRetirementListResult UnreadableRetirements() =>
+        new(
+            CdcJsonContract.CurrentContractVersion,
+            ObservedAt,
+            CdcControlPlaneOperationStatus.StateStoreUnavailable,
+            [],
+            []
+        );
+
+    private static CdcRetirement Retirement(
+        string tenantKey,
+        string dataStoreId,
+        string physicalSourceFingerprint,
+        long generation = 1
+    ) =>
+        new(
+            CdcJsonContract.CurrentContractVersion,
+            DeploymentKey,
+            tenantKey,
+            dataStoreId,
+            "instance",
+            generation,
+            physicalSourceFingerprint,
+            ObservedAt,
+            CdcJsonContract.CurrentContractVersion
         );
 
     private static CdcBindingStateContract Binding(

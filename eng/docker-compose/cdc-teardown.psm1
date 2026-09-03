@@ -67,8 +67,25 @@ function Get-CdcRetirableBinding {
         return @()
     }
 
+    # Enumerated with -ErrorAction Stop because the default is non-terminating: a bindings tree this
+    # user cannot descend into would otherwise yield nothing, read as "no bindings", and let the
+    # caller proceed to `down -v` - destroying the governed artifacts the records it could not see
+    # still name. The container writes this store owner-only, so an ownership mismatch on a native
+    # Linux bind mount produces exactly that. Unreadable is not empty, and only one of the two is
+    # safe to act on.
+    $bindingFiles = @()
+    try {
+        $bindingFiles = @(
+            Get-ChildItem -LiteralPath $bindingsRoot -Recurse -File -Filter "*.json" -ErrorAction Stop |
+                Sort-Object -Property FullName
+        )
+    }
+    catch {
+        throw "CDC teardown: the binding state store at '$bindingsRoot' could not be enumerated ($($_.Exception.Message)). It may hold binding records naming live governed artifacts, so the teardown stops rather than removing the stack around them. Retire the bindings from a host account that can read the store, or run the retirement inside the setup container."
+    }
+
     $records = @()
-    foreach ($file in (Get-ChildItem -LiteralPath $bindingsRoot -Recurse -File -Filter "*.json" | Sort-Object -Property FullName)) {
+    foreach ($file in $bindingFiles) {
         $record = $null
         try {
             $record = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json
@@ -162,16 +179,12 @@ function Get-CdcRetireArgument {
         [string]
         $DatabaseEngine,
 
-        [Parameter(Mandatory)]
-        [string]
-        $DmsBearerToken,
-
         [hashtable]
         $ConnectorPrincipal
     )
 
     Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
-    Import-Module (Join-Path $PSScriptRoot "bootstrap-wrapper.psm1") -Force
+    Import-Module (Join-Path $PSScriptRoot "cdc-enable.psm1") -Force
 
     # The database principal the provider teardown runs as - the server's own administrative login,
     # which is the account the compose file creates, matching the enable phase's setup principal.
@@ -187,14 +200,19 @@ function Get-CdcRetireArgument {
         "-f", "cdc-setup.yml",
         "--env-file", $EnvironmentFile,
         "-p", $ComposeProjectName,
-        "run", "--rm", "--build",
-        "-e", "DataManagement__DocumentCache__Cdc__SetupPrincipal=$setupPrincipal",
-        # Retirement reads no projection status, but the control plane's options are validated as a
-        # whole, so the operator credential travels with it - by environment, never on the command
-        # line - exactly as it does for the enable invocation.
-        "-e", "DataManagement__DocumentCache__Cdc__DmsBearerToken=$DmsBearerToken"
+        "run", "--rm", "--build"
     )
-    $composeArguments += Get-WrapperCdcConnectorPrincipalEnvArgument -ConnectorPrincipal $ConnectorPrincipal
+    # Same host-user override the enable phase runs under, so the retirement reads and removes the
+    # store as the account that owns it rather than as root.
+    $composeArguments += Get-CdcContainerUserArgument
+    $composeArguments += @(
+        "-e", "DataManagement__DocumentCache__Cdc__SetupPrincipal=$setupPrincipal"
+        # No operator credential. Retirement reads no projection status, and the control plane no
+        # longer demands the projection-status settings of every verb just to resolve its options -
+        # the collector the reading verbs go through refuses for itself instead. Carrying a token here
+        # would put a credential on a path that never presents it.
+    )
+    $composeArguments += Get-CdcConnectorPrincipalEnvArgument -ConnectorPrincipal $ConnectorPrincipal
     $composeArguments += @(
         "cdc-setup",
         "cdc", "retire",
@@ -270,29 +288,11 @@ function Invoke-CdcDestructiveTeardown {
     Import-Module (Join-Path $PSScriptRoot "../Dms-Management.psm1") -Force
 
     $envValues = ReadValuesFromEnvFile $EnvironmentFile
-    $dmsUrl = (Resolve-DockerLocalDmsBaseUrl -EnvValues $envValues).TrimEnd('/')
-    $identityClientSecrets = Resolve-IdentityClientSecretConfiguration -EnvValues $envValues
     $connectorPrincipal = Get-CdcConnectorPrincipalConfiguration -EnvValues $envValues
 
-    # Minted through the DMS token proxy, as the enable phase does, so the issuer matches the
-    # authority DMS validates against. An unreachable DMS is not a reason to skip the retirement's
-    # ordering, but it is a reason not to attempt it at all: the control plane validates its options
-    # before running any step, so a run without this credential would refuse the whole retirement.
-    $operatorToken = ""
-    try {
-        $operatorToken = Get-DmsToken `
-            -DmsUrl $dmsUrl `
-            -Key $identityClientSecrets.DocumentCacheOperatorClientId `
-            -Secret $identityClientSecrets.DocumentCacheOperatorClientSecret
-    }
-    catch {
-        $operatorToken = ""
-    }
-
-    if ([string]::IsNullOrWhiteSpace($operatorToken)) {
-        Write-Warning "CDC teardown: no DocumentCache operator token could be obtained from $dmsUrl, so $($bindings.Count) binding record(s) under '$BindingStateRoot' were left in place. Retire them against a running stack (dms-document-cache cdc retire) before reusing the state store."
-        return @()
-    }
+    # No operator token is minted. Retirement reads no projection status, and the control plane no
+    # longer requires the projection-status settings of every verb, so a teardown proceeds against a
+    # stack whose DMS is already gone - which is exactly when a teardown runs.
 
     # The setup container mounts the state store from DMS_CDC_BINDING_STATE_PATH, and Compose gives an
     # ambient value precedence over the env file - so the resolved root this teardown was given is the
@@ -310,7 +310,6 @@ function Invoke-CdcDestructiveTeardown {
                 -EnvironmentFile $EnvironmentFile `
                 -BindingRecord $binding `
                 -DatabaseEngine $DatabaseEngine `
-                -DmsBearerToken $operatorToken `
                 -ConnectorPrincipal $connectorPrincipal
 
             $global:LASTEXITCODE = 0

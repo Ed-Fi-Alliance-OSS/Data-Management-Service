@@ -246,8 +246,8 @@ public sealed partial class Given_LocalCdcOptInConfiguration
             Import-Module (Join-Path '{{DockerComposeDirectory().Replace(
                 '\\',
                 '/'
-            )}}' 'bootstrap-wrapper.psm1') -Force
-            Get-WrapperCdcEnableArgument `
+            )}}' 'cdc-enable.psm1') -Force
+            Get-CdcEnableArgument `
                 -ComposeProjectName 'dms-local' `
                 -EnvironmentFile '.env' `
                 -TenantKey '' `
@@ -277,8 +277,7 @@ public sealed partial class Given_LocalCdcOptInConfiguration
                 -ComposeProjectName 'dms-local' `
                 -EnvironmentFile '.env' `
                 -BindingRecord $bindingRecord `
-                -DatabaseEngine '{{databaseEngine}}' `
-                -DmsBearerToken 'operator-token'
+                -DatabaseEngine '{{databaseEngine}}'
             """
         );
 

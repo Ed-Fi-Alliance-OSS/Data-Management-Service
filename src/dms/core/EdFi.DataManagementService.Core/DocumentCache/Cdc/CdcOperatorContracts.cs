@@ -135,6 +135,54 @@ public enum CdcIncidentUnavailableFact
     SchemaHistory,
 }
 
+/// <summary>
+/// The durable trace a retired binding generation leaves behind: this deployment did once publish this
+/// target's projection downstream, under this physical source.
+/// </summary>
+/// <remarks>
+/// A binding record is deleted by retirement, and its absence is therefore not evidence that a target
+/// was never published — only that it is not published now. The E18 offline read-acceleration toggle
+/// turns on exactly the opposite question, so retirement writes this record before it removes the
+/// binding and never removes it afterwards. A crash between the two leaves the retirement record
+/// without its binding, which reads as "was published, is not now" — the same answer a completed
+/// retirement gives, and the conservative one either way.
+///
+/// It carries the identity and the physical source rather than the governed artifact names: the
+/// artifacts are gone by the time it is written, and what outlives them is the fact of publication.
+/// </remarks>
+public sealed record CdcRetirement(
+    [property: JsonRequired] int Version,
+    [property: JsonRequired] string DeploymentKey,
+    [property: JsonRequired] string TenantKey,
+    [property: JsonRequired] string DataStoreId,
+    [property: JsonRequired] string InstanceKey,
+    [property: JsonRequired] long Generation,
+    [property: JsonRequired] string PhysicalSourceFingerprint,
+    [property: JsonRequired] DateTimeOffset RetiredAt,
+    [property: JsonRequired] int ContractVersion
+) : ICdcJsonContract
+{
+    public CdcBindingIdentity ToBindingIdentity() =>
+        new(DeploymentKey, TenantKey, DataStoreId, InstanceKey, Generation);
+
+    public static CdcRetirement FromBinding(CdcBinding binding, DateTimeOffset retiredAt)
+    {
+        ArgumentNullException.ThrowIfNull(binding);
+
+        return new(
+            binding.Version,
+            binding.DeploymentKey,
+            binding.TenantKey,
+            binding.DataStoreId,
+            binding.InstanceKey,
+            binding.Generation,
+            binding.PhysicalSourceFingerprint,
+            retiredAt.ToUniversalTime(),
+            binding.ContractVersion
+        );
+    }
+}
+
 public sealed record CdcBinding(
     [property: JsonRequired] int Version,
     [property: JsonRequired] string DeploymentKey,

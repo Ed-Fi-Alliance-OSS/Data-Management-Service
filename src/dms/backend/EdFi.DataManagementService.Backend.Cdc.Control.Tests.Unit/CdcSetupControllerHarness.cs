@@ -259,6 +259,9 @@ internal sealed class CdcSetupControllerHarness
         A.CallTo(() => Connect.ResumeConnectorAsync(A<string>._, A<CancellationToken>._))
             .ReturnsLazily(() => Task.FromResult(Resume));
 
+        A.CallTo(() => Bindings.ListBindingsAsync(A<string>._, A<CancellationToken>._))
+            .ReturnsLazily(() => Task.FromResult(BindingListing));
+
         A.CallTo(() => Bindings.ImportVerifiedBindingAsync(A<CdcAdoptionProof>._, A<CancellationToken>._))
             .ReturnsLazily(
                 (CdcAdoptionProof proof, CancellationToken _) =>
@@ -419,6 +422,13 @@ internal sealed class CdcSetupControllerHarness
 
     /// <summary>Overrides the result of creating or exact-matching the binding.</summary>
     public CdcBindingLifecycleResult? BindingWrite { get; set; }
+
+    /// <summary>
+    /// What the deployment-wide listing holds, which the enablement and the adoption both read to prove
+    /// no other logical target already binds the physical source. Empty by default: the deployment has
+    /// bound nothing else.
+    /// </summary>
+    public CdcBindingLifecycleListResult BindingListing { get; set; } = ListedBindings();
 
     /// <summary>
     /// The durable state of the generation a source replacement replaces. It is absent by default: the
@@ -783,6 +793,34 @@ internal sealed class CdcSetupControllerHarness
             Now,
             CdcControlPlaneOperationStatus.BindingMissing,
             new(CdcJsonContract.CurrentContractVersion, Now, CdcBindingState.BindingMissing, null, null),
+            []
+        );
+
+    /// <summary>A readable deployment-wide listing holding exactly the given bindings.</summary>
+    public static CdcBindingLifecycleListResult ListedBindings(params CdcBinding[] bindings) =>
+        new(
+            CdcJsonContract.CurrentContractVersion,
+            Now,
+            CdcControlPlaneOperationStatus.Succeeded,
+            [
+                .. bindings.Select(binding => new CdcBindingStateContract(
+                    CdcJsonContract.CurrentContractVersion,
+                    Now,
+                    CdcBindingState.BindingPresent,
+                    binding,
+                    null
+                )),
+            ],
+            []
+        );
+
+    /// <summary>A deployment-wide listing the state store could not produce.</summary>
+    public static CdcBindingLifecycleListResult UnreadableBindingListing() =>
+        new(
+            CdcJsonContract.CurrentContractVersion,
+            Now,
+            CdcControlPlaneOperationStatus.StateStoreUnavailable,
+            [],
             []
         );
 

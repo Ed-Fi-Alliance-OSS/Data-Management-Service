@@ -33,6 +33,14 @@ public sealed record CdcBindingLifecycleListResult(
     [property: JsonRequired] IReadOnlyList<CdcDiagnostic> Diagnostics
 ) : ICdcJsonContract;
 
+public sealed record CdcRetirementListResult(
+    [property: JsonRequired] int ContractVersion,
+    [property: JsonRequired] DateTimeOffset ObservedAt,
+    [property: JsonRequired] CdcControlPlaneOperationStatus Status,
+    [property: JsonRequired] IReadOnlyList<CdcRetirement> Retirements,
+    [property: JsonRequired] IReadOnlyList<CdcDiagnostic> Diagnostics
+) : ICdcJsonContract;
+
 public interface ICdcBindingLifecycleService
 {
     Task<CdcBindingLifecycleResult> CreateBindingIfAbsentAsync(
@@ -51,6 +59,15 @@ public interface ICdcBindingLifecycleService
     );
 
     Task<CdcBindingLifecycleListResult> ListBindingsAsync(
+        string deploymentKey,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Every generation this deployment has retired. Retirement deletes the binding record, so this is
+    /// the only durable trace that a target was once published downstream.
+    /// </summary>
+    Task<CdcRetirementListResult> ListRetirementsAsync(
         string deploymentKey,
         CancellationToken cancellationToken = default
     );

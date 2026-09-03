@@ -180,6 +180,118 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         return new CdcListBindingsStateStoreResult.Listed(states);
     }
 
+    /// <summary>
+    /// Every generation this deployment has retired, so a caller can tell a target that was never
+    /// published from one whose binding record retirement removed.
+    /// </summary>
+    /// <remarks>
+    /// A deployment that has retired nothing has no retirements directory, which lists empty rather
+    /// than failing — the absence of retirements is a real answer, unlike the absence of bindings.
+    /// A record that cannot be read fails the whole listing, because it may be the very retirement
+    /// that would disqualify the target being asked about.
+    /// </remarks>
+    public async Task<CdcListRetirementsStateStoreResult> ListRetirementsAsync(
+        string deploymentKey,
+        CancellationToken cancellationToken
+    )
+    {
+        CdcDeploymentStateStorePathResolution deploymentPath = _pathResolver.ResolveDeploymentPath(
+            deploymentKey
+        );
+        if (!deploymentPath.Succeeded)
+        {
+            return new CdcListRetirementsStateStoreResult.StateStoreFailure(deploymentPath.ToFailure());
+        }
+
+        CdcStateStoreFailure? ancestorFailure = ValidateExistingDeploymentPathAncestors(
+            CdcStateStorePathResolver.RetirementsDirectoryName,
+            deploymentPath.DeploymentKey!,
+            out bool retirementDeploymentDirectoryExists
+        );
+        if (ancestorFailure is not null)
+        {
+            return new CdcListRetirementsStateStoreResult.StateStoreFailure(ancestorFailure);
+        }
+
+        if (!retirementDeploymentDirectoryExists)
+        {
+            return new CdcListRetirementsStateStoreResult.Listed([]);
+        }
+
+        List<CdcRetirement> retirements = [];
+        IReadOnlyList<string>? instanceDirectories = EnumerateFileSystemEntries(
+            deploymentPath.RetirementDeploymentDirectoryPath!,
+            out CdcStateStoreFailure? enumerationFailure
+        );
+        if (enumerationFailure is not null)
+        {
+            return new CdcListRetirementsStateStoreResult.StateStoreFailure(enumerationFailure);
+        }
+
+        foreach (string instanceDirectory in instanceDirectories!.Order(StringComparer.Ordinal))
+        {
+            CdcStateStoreFailure? instanceFailure = ValidateDirectoryEntry(
+                instanceDirectory,
+                "$.instanceKey",
+                "instanceKey"
+            );
+            if (instanceFailure is not null)
+            {
+                return new CdcListRetirementsStateStoreResult.StateStoreFailure(instanceFailure);
+            }
+
+            IReadOnlyList<string>? retirementFiles = EnumerateFileSystemEntries(
+                instanceDirectory,
+                out CdcStateStoreFailure? retirementEnumerationFailure
+            );
+            if (retirementEnumerationFailure is not null)
+            {
+                return new CdcListRetirementsStateStoreResult.StateStoreFailure(retirementEnumerationFailure);
+            }
+
+            foreach (string retirementFile in retirementFiles!.Order(StringComparer.Ordinal))
+            {
+                CdcStateStoreFailure? regularFileFailure = ValidateRegularFile(retirementFile);
+                if (regularFileFailure is not null)
+                {
+                    return new CdcListRetirementsStateStoreResult.StateStoreFailure(regularFileFailure);
+                }
+
+                CdcStateStoreFailure? permissionFailure = ValidateOwnerOnlyFilePermissions(retirementFile);
+                if (permissionFailure is not null)
+                {
+                    return new CdcListRetirementsStateStoreResult.StateStoreFailure(permissionFailure);
+                }
+
+                string json;
+                try
+                {
+                    json = await File.ReadAllTextAsync(retirementFile, cancellationToken);
+                }
+                catch (Exception exception) when (IsFileSystemException(exception))
+                {
+                    return new CdcListRetirementsStateStoreResult.StateStoreFailure(
+                        FileSystemFailure(retirementFile, "read retirement state")
+                    );
+                }
+
+                CdcContractReadResult<CdcRetirement> readResult = CdcJsonContract.Deserialize<CdcRetirement>(
+                    json
+                );
+                if (readResult.Contract is not { } retirement)
+                {
+                    return new CdcListRetirementsStateStoreResult.StateStoreFailure(
+                        CdcStateStoreFailure.InvalidPersistedBinding(readResult.Diagnostics)
+                    );
+                }
+
+                retirements.Add(retirement);
+            }
+        }
+
+        return new CdcListRetirementsStateStoreResult.Listed(retirements);
+    }
+
     public async Task<CdcLatchIncidentStateStoreResult> LatchSourceHistoryLossAsync(
         CdcIncident incident,
         CancellationToken cancellationToken
@@ -415,6 +527,19 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         if (incidentAncestorFailure is not null)
         {
             return new CdcDeleteBindingStateStoreResult.StateStoreFailure(incidentAncestorFailure);
+        }
+
+        // The retirement record goes down before the binding record comes out, so no window exists in
+        // which this deployment has published the target and holds nothing that says so. A crash
+        // between the two leaves a retirement without its binding, which is what a completed
+        // retirement looks like anyway.
+        CdcStateStoreFailure? retirementFailure = await WriteRetirementAsync(
+            readResult.State!.State.Binding,
+            cancellationToken
+        );
+        if (retirementFailure is not null)
+        {
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(retirementFailure);
         }
 
         CdcStateStoreFailure? bindingDeleteFailure = DeleteStateFile(
@@ -1119,6 +1244,13 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             path.InstanceKey!,
         ]);
 
+    private CdcStateStoreFailure? EnsureRetirementDirectory(CdcStateStorePathResolution path) =>
+        EnsureDirectoryTree([
+            CdcStateStorePathResolver.RetirementsDirectoryName,
+            path.DeploymentKey!,
+            path.InstanceKey!,
+        ]);
+
     private CdcStateStoreFailure? EnsureDirectoryTree(IReadOnlyList<string> segments)
     {
         CdcStateStoreFailure? rootFailure = EnsureDirectory(_pathResolver.RootPath);
@@ -1484,6 +1616,54 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
                 path,
                 result.Message ?? "CDC local state directory must not be group- or world-writable."
             );
+    }
+
+    /// <summary>
+    /// Records that this deployment published the given generation, so the fact survives the binding
+    /// record's removal.
+    /// </summary>
+    /// <remarks>
+    /// A retirement record that is already there is success, not a collision. Retirement is retried
+    /// after any failed step, and the second pass writes the same fact about the same generation.
+    /// </remarks>
+    private async Task<CdcStateStoreFailure?> WriteRetirementAsync(
+        CdcBinding binding,
+        CancellationToken cancellationToken
+    )
+    {
+        CdcStateStorePathResolution retirementPath = _pathResolver.ResolveRetirementPath(
+            binding.ToBindingIdentity()
+        );
+        if (!retirementPath.Succeeded)
+        {
+            return retirementPath.ToFailure();
+        }
+
+        CdcStateStoreFailure? directoryFailure = EnsureRetirementDirectory(retirementPath);
+        if (directoryFailure is not null)
+        {
+            return directoryFailure;
+        }
+
+        CdcStateStoreFailure? collisionFailure = CheckPathCaseCollision(
+            CdcStateStorePathResolver.RetirementsDirectoryName,
+            binding.DeploymentKey,
+            binding.InstanceKey,
+            $"{binding.Generation}.json"
+        );
+        if (collisionFailure is not null)
+        {
+            return collisionFailure;
+        }
+
+        LocalContractFilePublishResult publishResult = await PublishContractFileCreateNewAsync(
+            retirementPath.FilePath!,
+            CdcJsonContract.Serialize(CdcRetirement.FromBinding(binding, _timeProvider.GetUtcNow())),
+            "retirement",
+            cancellationToken
+        );
+
+        return publishResult.DestinationAlreadyExists ? null : publishResult.Failure;
     }
 
     private async Task<LocalContractFilePublishResult> PublishContractFileCreateNewAsync(
@@ -2010,12 +2190,14 @@ internal sealed record CdcDeploymentStateStorePathResolution(
     string? DeploymentKey,
     string? BindingDeploymentDirectoryPath,
     string? IncidentDeploymentDirectoryPath,
+    string? RetirementDeploymentDirectoryPath,
     IReadOnlyList<CdcDiagnostic> Diagnostics
 )
 {
     public bool Succeeded =>
         BindingDeploymentDirectoryPath is not null
         && IncidentDeploymentDirectoryPath is not null
+        && RetirementDeploymentDirectoryPath is not null
         && Diagnostics.Count == 0;
 
     public CdcStateStoreFailure ToFailure() =>
@@ -2030,6 +2212,7 @@ internal sealed class CdcStateStorePathResolver
 {
     public const string BindingsDirectoryName = "bindings";
     public const string IncidentsDirectoryName = "incidents";
+    public const string RetirementsDirectoryName = "retirements";
 
     public CdcStateStorePathResolver(string rootPath = LocalCdcBindingStateStore.DefaultRootPath)
     {
@@ -2054,6 +2237,13 @@ internal sealed class CdcStateStorePathResolver
         return ResolveFilePath(identity, IncidentsDirectoryName);
     }
 
+    public CdcStateStorePathResolution ResolveRetirementPath(CdcBindingIdentity identity)
+    {
+        ArgumentNullException.ThrowIfNull(identity);
+
+        return ResolveFilePath(identity, RetirementsDirectoryName);
+    }
+
     public CdcDeploymentStateStorePathResolution ResolveDeploymentPath(string? deploymentKey)
     {
         CdcDiagnosticCollector diagnostics = new();
@@ -2065,7 +2255,7 @@ internal sealed class CdcStateStorePathResolver
         );
         if (diagnostics.HasDiagnostics || validatedDeploymentKey is null)
         {
-            return new(null, null, null, null, diagnostics.Diagnostics);
+            return new(null, null, null, null, null, diagnostics.Diagnostics);
         }
 
         return new(
@@ -2073,6 +2263,7 @@ internal sealed class CdcStateStorePathResolver
             validatedDeploymentKey,
             Path.Combine(RootPath, BindingsDirectoryName, validatedDeploymentKey),
             Path.Combine(RootPath, IncidentsDirectoryName, validatedDeploymentKey),
+            Path.Combine(RootPath, RetirementsDirectoryName, validatedDeploymentKey),
             []
         );
     }

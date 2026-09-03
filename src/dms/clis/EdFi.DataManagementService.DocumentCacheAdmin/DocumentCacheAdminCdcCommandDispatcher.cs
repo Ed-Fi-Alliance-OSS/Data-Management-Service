@@ -262,11 +262,7 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
                     cancellationToken
                 )
                 .ConfigureAwait(false),
-            DocumentCacheAdminCommandSurface.CdcReplaceSourceVerbName => await ReplaceSourceAsync(
-                    invocation,
-                    cancellationToken
-                )
-                .ConfigureAwait(false),
+            DocumentCacheAdminCommandSurface.CdcReplaceSourceVerbName => ReplaceSourceDeferred(invocation),
             DocumentCacheAdminCommandSurface.CdcRetireVerbName => Retire(
                 invocation,
                 await controller
@@ -299,44 +295,34 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
         return Admission(invocation, admission, "cdcEnable");
     }
 
-    private async Task<DocumentCacheAdminCdcCommandResult> ReplaceSourceAsync(
-        Invocation invocation,
-        CancellationToken cancellationToken
-    )
-    {
-        // The surface requires the option, so an absent value here would be a surface defect rather than
-        // operator input; it is still checked, because a replacement that guessed which generation it
-        // supersedes is exactly the inference the design forbids.
-        if (invocation.Request.PreviousGeneration is not { } previousGeneration)
-        {
-            return Refused(
-                invocation.Request.VerbName,
-                "cdcPreviousGenerationMissing",
-                CdcDiagnosticCategory.BindingMismatch,
-                CdcDiagnosticComponent.Binding,
-                "CDC source replacement requires the generation being replaced to be named explicitly.",
-                "absent",
-                timeProvider.GetUtcNow()
-            );
-        }
-
-        CdcAdmission admission = await controller
-            .ReplaceSourceAsync(
-                new CdcReplaceSourceRequest(
-                    invocation.OperationId,
-                    invocation.Request.TargetKey.TenantKey,
-                    invocation.Request.TargetKey.DataStoreId,
-                    invocation.ConnectionString,
-                    previousGeneration,
-                    Evidence(invocation),
-                    invocation.ProviderSetup
-                ),
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        return Admission(invocation, admission, "cdcReplaceSource");
-    }
+    /// <summary>
+    /// Refuses source replacement, which the packaged tool does not yet offer.
+    /// </summary>
+    /// <remarks>
+    /// Replacement exists to move a logical target onto a different physical database — a restore, a
+    /// rollback, or a copy. The controller's implementation reaches that only through the initial
+    /// enablement sequence, which admits a source with no canonical, cache, or work rows; every
+    /// database a replacement would actually be pointed at has rows. It also requires the replacing
+    /// source's identity to have been rotated before the command is issued, rather than rotating it
+    /// through the binding-state operation itself.
+    ///
+    /// So the verb as it stands cannot perform the replacement it names, and the honest answer is to
+    /// refuse rather than to run an enablement under a replacement's name. The refusal lives here, at
+    /// the packaged tool's boundary, so the controller workflow and its tests stay in place for the
+    /// rotation and cutover the design describes.
+    /// </remarks>
+    private DocumentCacheAdminCdcCommandResult ReplaceSourceDeferred(Invocation invocation) =>
+        Refused(
+            invocation.Request.VerbName,
+            "cdcSourceReplacementUnavailable",
+            CdcDiagnosticCategory.UnsupportedOperation,
+            CdcDiagnosticComponent.Binding,
+            "CDC source replacement is not available in this release: replacing a physical source "
+                + "requires the identity rotation and cutover the packaged tool does not yet perform, "
+                + "and the sequence it would otherwise run admits only a source with no existing rows.",
+            "unavailable",
+            timeProvider.GetUtcNow()
+        );
 
     private async Task<DocumentCacheAdminCdcCommandResult> AdoptAsync(
         Invocation invocation,

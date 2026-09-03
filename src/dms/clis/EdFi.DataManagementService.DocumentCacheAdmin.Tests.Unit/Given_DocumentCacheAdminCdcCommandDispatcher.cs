@@ -213,29 +213,31 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
             .MustNotHaveHappened();
     }
 
-    [Test]
-    public async Task It_names_the_replaced_generation_from_the_operator_option()
-    {
-        A.CallTo(() => _controller.ReplaceSourceAsync(A<CdcReplaceSourceRequest>._, A<CancellationToken>._))
-            .Returns(Admission(CdcAdmissionState.Admitted));
-
-        await ExecuteAsync(
-            Request(DocumentCacheAdminCommandSurface.CdcReplaceSourceVerbName, previousGeneration: 4)
-        );
-
-        CapturedRequest<CdcReplaceSourceRequest>(nameof(ICdcSetupController.ReplaceSourceAsync))
-            .PreviousGeneration.Should()
-            .Be(4);
-    }
-
-    [Test]
-    public async Task It_refuses_a_source_replacement_that_does_not_name_the_generation_it_supersedes()
+    /// <summary>
+    /// The packaged tool does not offer source replacement. The controller reaches replacement only
+    /// through the initial enablement sequence, which admits a source with no canonical, cache, or work
+    /// rows — and every database a replacement would be pointed at (a restore, a rollback, a copy) has
+    /// rows. Running that sequence under a replacement's name would be the wrong operation, so the verb
+    /// refuses and the controller is never reached, whether or not the operator named a generation.
+    /// </summary>
+    [TestCase(null)]
+    [TestCase(4L)]
+    public async Task It_refuses_a_source_replacement_the_packaged_tool_does_not_perform(
+        long? previousGeneration
+    )
     {
         DocumentCacheAdminCdcCommandResult result = await ExecuteAsync(
-            Request(DocumentCacheAdminCommandSurface.CdcReplaceSourceVerbName)
+            Request(
+                DocumentCacheAdminCommandSurface.CdcReplaceSourceVerbName,
+                previousGeneration: previousGeneration
+            )
         );
 
+        using var _ = new AssertionScope();
         result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.RejectedNoMutation);
+        result
+            .Diagnostics.Should()
+            .Contain(diagnostic => diagnostic.Category == CdcDiagnosticCategory.UnsupportedOperation);
         A.CallTo(() => _controller.ReplaceSourceAsync(A<CdcReplaceSourceRequest>._, A<CancellationToken>._))
             .MustNotHaveHappened();
     }

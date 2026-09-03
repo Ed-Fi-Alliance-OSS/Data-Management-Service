@@ -768,11 +768,6 @@ public class Given_A_SqlServer_CdcControlReadinessSequence
                 []
             );
 
-        public Task<CdcKafkaBindingTopicPolicies> EnsureBindingTopicsAsync(
-            CoreCdc.CdcArtifactInventory inventory,
-            CancellationToken cancellationToken
-        ) => throw new NotSupportedException("The sequence provisions Kafka through the policy pass.");
-
         public Task<CdcKafkaRecordSizeEvidence> VerifyRecordSizeAsync(
             CoreCdc.CdcArtifactInventory inventory,
             CancellationToken cancellationToken

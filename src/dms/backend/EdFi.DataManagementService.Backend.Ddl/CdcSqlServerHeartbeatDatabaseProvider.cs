@@ -39,6 +39,14 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 
         return
         [
+            // First, because every step after it either creates an artifact or issues a grant, and the
+            // identity doing that is the one fact the request asserts but nothing else verifies.
+            new CdcProviderSetupStep(
+                CdcProviderArtifactKind.SetupPrincipalIdentity,
+                CdcSetupPrincipalIdentity.SafeArtifactName,
+                canCreateInInitialSetup: false,
+                ExecuteSetupPrincipalIdentityAsync
+            ),
             new CdcProviderSetupStep(
                 CdcProviderArtifactKind.SourceFingerprint,
                 CdcSourceFingerprintMetadata.SafeArtifactName,
@@ -109,6 +117,33 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 
         return await CdcSourceFingerprintMetadata
             .ReadAsync(executor, SourceFingerprintSql, CdcProvider.SqlServer, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task<CdcProviderSetupStepResult> ExecuteSetupPrincipalIdentityAsync(
+        CdcProviderSetupStepContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        if (
+            !TryGetExecutor(
+                context,
+                CdcProviderArtifactKind.SetupPrincipalIdentity,
+                out var principalExecutor,
+                out var principalFailure
+            )
+        )
+        {
+            return principalFailure;
+        }
+
+        return await CdcSetupPrincipalIdentity
+            .VerifyAsync(
+                principalExecutor,
+                CdcSetupPrincipalIdentity.SqlServerSql,
+                context.Request.SetupPrincipal.SafePrincipalName,
+                cancellationToken
+            )
             .ConfigureAwait(false);
     }
 

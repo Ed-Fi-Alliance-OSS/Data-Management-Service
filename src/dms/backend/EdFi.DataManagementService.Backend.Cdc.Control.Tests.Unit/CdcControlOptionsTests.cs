@@ -75,7 +75,6 @@ public class Given_CdcControlOptionsTests
             nameof(CdcControlOptions.ConnectOffsetStorageTopic),
             options => options.ConnectOffsetStorageTopic = ""
         );
-        yield return Case(nameof(CdcControlOptions.DmsBearerToken), options => options.DmsBearerToken = "");
     }
 
     [TestCase(0)]
@@ -369,14 +368,30 @@ public class Given_CdcControlOptionsTests
         AssertFailsWith(options, nameof(CdcControlOptions.ConnectorPrincipal));
     }
 
-    [TestCase("")]
-    [TestCase("dms.example.org")]
-    public void It_requires_an_absolute_http_dms_base_url(string dmsBaseUrl)
+    [Test]
+    public void It_requires_a_supplied_dms_base_url_to_be_an_absolute_http_url()
     {
         CdcControlOptions options = ValidOptions();
-        options.DmsBaseUrl = dmsBaseUrl;
+        options.DmsBaseUrl = "dms.example.org";
 
         AssertFailsWith(options, nameof(CdcControlOptions.DmsBaseUrl));
+    }
+
+    /// <summary>
+    /// Projection-status access is a precondition of the verbs that read the running projector's
+    /// report — enable, status, restart — and of nothing else. Requiring it to resolve the options made
+    /// it a precondition of every verb, so a deployment that could not mint an operator token could not
+    /// retire a binding either; and retirement matters most when the DMS that mints the token is gone.
+    /// The collector refuses for itself, so the verbs that need these still fail closed.
+    /// </summary>
+    [Test]
+    public void It_admits_options_that_configure_no_projection_status_access()
+    {
+        CdcControlOptions options = ValidOptions();
+        options.DmsBaseUrl = string.Empty;
+        options.DmsBearerToken = string.Empty;
+
+        new CdcControlOptionsValidator().Validate(Options.DefaultName, options).Failed.Should().BeFalse();
     }
 
     [TestCaseSource(nameof(TimeoutCases))]

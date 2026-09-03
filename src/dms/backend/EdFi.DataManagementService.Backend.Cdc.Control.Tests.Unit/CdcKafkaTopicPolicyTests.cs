@@ -488,8 +488,9 @@ public class Given_CdcKafkaTopicPolicy
             NullLogger<CdcKafkaAdminAdapter>.Instance
         );
 
-        CdcKafkaBindingTopicPolicies policies = await adapter.EnsureBindingTopicsAsync(
+        CdcKafkaBindingTopicPolicies policies = await adapter.BindingTopicsAsync(
             inventory,
+            CdcKafkaProvisioningMode.CreateOrValidate,
             CancellationToken.None
         );
 

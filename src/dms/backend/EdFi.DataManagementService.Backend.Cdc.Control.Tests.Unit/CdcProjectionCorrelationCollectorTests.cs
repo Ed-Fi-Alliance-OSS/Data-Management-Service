@@ -72,6 +72,42 @@ public class Given_CdcProjectionCorrelationCollector
         handler.Requests[0].Authorization.Should().Be($"Bearer {BearerToken}");
     }
 
+    /// <summary>
+    /// The projection-status settings are no longer a precondition of resolving the CDC options, so a
+    /// deployment that configures none of them can still retire a binding. The verbs that DO read the
+    /// projector's report must therefore refuse here instead, naming the setting that is missing rather
+    /// than throwing on a malformed request URI.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_without_attempting_a_request_when_no_dms_base_url_is_configured()
+    {
+        (ICdcProjectionCorrelationCollector collector, StubHttpMessageHandler handler) = Collector(
+            _ => throw new InvalidOperationException("The collector must not issue a request."),
+            configureOptions: options => options.DmsBaseUrl = string.Empty
+        );
+
+        CdcProjectionCorrelationObservation observation = await collector.CollectAsync(Context());
+
+        using AssertionScope assertions = new();
+        observation.CorrelationState.Should().Be(CdcProjectionCorrelationState.Unavailable);
+        handler.Requests.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_refuses_without_attempting_a_request_when_no_bearer_token_is_configured()
+    {
+        (ICdcProjectionCorrelationCollector collector, StubHttpMessageHandler handler) = Collector(
+            _ => throw new InvalidOperationException("The collector must not issue a request."),
+            configureOptions: options => options.DmsBearerToken = string.Empty
+        );
+
+        CdcProjectionCorrelationObservation observation = await collector.CollectAsync(Context());
+
+        using AssertionScope assertions = new();
+        observation.CorrelationState.Should().Be(CdcProjectionCorrelationState.Unavailable);
+        handler.Requests.Should().BeEmpty();
+    }
+
     [Test]
     public async Task It_reports_the_projection_evidence_the_dms_published()
     {
@@ -405,7 +441,8 @@ public class Given_CdcProjectionCorrelationCollector
     private static (ICdcProjectionCorrelationCollector Collector, StubHttpMessageHandler Handler) Collector(
         Func<RecordedRequest, HttpResponseMessage> respond,
         bool neverAnswers = false,
-        TimeSpan? statusEndpointTimeout = null
+        TimeSpan? statusEndpointTimeout = null,
+        Action<CdcControlOptions>? configureOptions = null
     )
     {
         StubHttpMessageHandler handler = new(respond, neverAnswers);
@@ -413,9 +450,12 @@ public class Given_CdcProjectionCorrelationCollector
         A.CallTo(() => httpClientFactory.CreateClient(A<string>._))
             .ReturnsLazily(() => new HttpClient(handler, disposeHandler: false));
 
+        CdcControlOptions controlOptions = ControlOptions(statusEndpointTimeout);
+        configureOptions?.Invoke(controlOptions);
+
         CdcProjectionCorrelationCollector collector = new(
             httpClientFactory,
-            Options.Create(ControlOptions(statusEndpointTimeout)),
+            Options.Create(controlOptions),
             new FixedTimeProvider(ObservedAt),
             NullLogger<CdcProjectionCorrelationCollector>.Instance
         );

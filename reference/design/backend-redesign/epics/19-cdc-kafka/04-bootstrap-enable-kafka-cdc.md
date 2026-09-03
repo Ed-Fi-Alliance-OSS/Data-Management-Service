@@ -146,47 +146,30 @@ controller, its adapters, and the entry points that invoke them.
 
 ### Downstream Publication History for the E18 Administrative Gate
 
-- The E18 offline activation, offline deactivation, and cache-ahead recovery commands are
-  admitted only when the trusted downstream-publication-history abstraction reports
-  `internalOnly` for the same normalized target key and physical-source fingerprint. This
-  story supplies the production implementation of that abstraction from the durable binding
-  state store, replacing the default that always answered `unknown`.
-- A binding record is the deployment's durable commitment that a target's projection is
-  published downstream. It is written before the guarded `Disabled -> Tracking` transition
-  and is immutable for the life of the generation, so its presence — not a connector's
-  current runtime state — is what disqualifies a target. Stopping a connector or removing the
-  target from `DocumentCache:Targets` leaves the record in place, which is why neither erases
-  the history.
-- The provider lists the deployment's bindings and matches on the binding tenant key and
-  data-store id, mapping the E18 empty tenant key to the binding's `default` token first. A
-  binding on the currently resolved physical source reports `active`; one on an earlier
-  physical source for the same target reports `historical`. Only a complete listing that
-  holds at least one readable binding and no binding for the target reports `internalOnly`.
-- Every other outcome reports `unknown` so the gate rejects without mutation: no configured
-  deployment key, a listing the state store could not complete, a listing holding any record
-  that could not be read as a binding — the unreadable record may be the very binding that
-  would disqualify the target — and a listing holding no binding at all.
-- An empty listing rejects rather than proving the target was never published. A fresh
-  volume, a mis-mounted state root, and a root pointed at another deployment all list empty,
-  so an absent binding means something only once a readable one has established that this is
-  the populated, authoritative store for the deployment. The cost is that a deployment which
-  has never enabled CDC for any target cannot admit the offline commands; that is the
-  fail-closed side of the trade, and it matches the rule that no operator assertion may stand
-  in for durable evidence.
-- The bootstrap lifecycle pays that cost in full: it configures exactly one target, so the
-  store is empty before enablement and after retirement and holds only this target's own
-  binding in between. `internalOnly` is therefore unreachable there, and the E18 offline
-  commands stay rejected for the whole of it. That is the trade taken deliberately, not an
-  oversight - `internalOnly` is reachable for a target of a deployment that has bound some
-  other target, which is the only shape in which an absent binding is evidence rather than an
-  empty store. Making it reachable for a single-target deployment would require durable
-  store-initialization evidence the binding state store does not carry.
-- Every observation carries the currently resolved physical-source fingerprint, including the
-  rejecting ones. The E18 evaluator checks the fingerprint before the status, so withholding
-  it would classify each rejection as a source mismatch that was never observed.
+The rule itself — what proves a projection internal-only, what each record means, and which
+observations reject — is owned by
+[Relational CDC and Document Projection](../../design-docs/cdc/cdc-streaming.md) under the
+read-acceleration toggle. It is not restated here.
+
+This story's scope is the production implementation of that rule:
+
+- The `Backend.Cdc.Control` provider replaces the default abstraction that always answered
+  `unknown`, reading the deployment's durable binding and retirement records.
+- Retirement writes its retirement record before it deletes the binding record, so the two
+  are never both absent for a generation this deployment published.
+- The provider is registered by the packaged administrative host ahead of the DocumentCache
+  runtime services, whose registration of the `unknown` default is conditional.
+- Target matching maps the E18 empty tenant key onto the binding `default` token, and every
+  observation carries the currently resolved physical-source fingerprint, including the
+  rejecting ones, because the E18 evaluator checks the fingerprint before the status.
 - The deployment key is read from raw configuration rather than through the bound control
-  options, whose validation the administrative host defers to a `cdc` verb. Binding it here
+  options, whose validation the administrative host defers to a `cdc` verb; binding it here
   would make every DocumentCache command fail on CDC configuration it does not use.
+
+The bootstrap lifecycle configures exactly one target, so its store holds only that target's
+own records. `internalOnly` is therefore unreachable across the bootstrap lifecycle and the
+E18 offline commands stay rejected for the whole of it, which is the fail-closed side of the
+owning rule rather than a gap in this story.
 
 ### Lag and the Metrics Bridge
 

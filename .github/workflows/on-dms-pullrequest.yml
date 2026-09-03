@@ -219,6 +219,7 @@ jobs:
             "eng/docker-compose/tests/BootstrapStandardSchemaSelection.Tests.ps1",
             "eng/docker-compose/tests/BootstrapClaimsGate.Tests.ps1",
             "eng/docker-compose/tests/BootstrapEntryPointWorkflow.Tests.ps1",
+            "eng/docker-compose/tests/BootstrapEnableKafkaCdc.Tests.ps1",
             "eng/docker-compose/tests/BootstrapSchemaDeploymentSafety.Tests.ps1",
             "eng/docker-compose/tests/BootstrapContainerPackaging.Tests.ps1",
             "eng/docker-compose/tests/SchemaPackageUtility.Tests.ps1",

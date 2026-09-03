@@ -130,9 +130,29 @@ internal sealed class CdcProjectionCorrelationCollector(
         return CdcProjectionCorrelationObservationMapper.Map(context, read, timeProvider.GetUtcNow());
     }
 
+    /// <summary>The two settings a projection-status read cannot be attempted without.</summary>
+    internal static readonly string DmsBaseUrlSettingName =
+        $"{CdcControlOptions.SectionName}:{nameof(CdcControlOptions.DmsBaseUrl)}";
+
+    internal static readonly string DmsBearerTokenSettingName =
+        $"{CdcControlOptions.SectionName}:{nameof(CdcControlOptions.DmsBearerToken)}";
+
     internal async Task<CdcProjectionStatusReadResult> ReadAsync(CancellationToken cancellationToken)
     {
         CdcControlOptions controlOptions = options.Value;
+
+        // Checked here rather than when the options are resolved, because only the verbs that reach
+        // this collector need them. Retirement and adoption resolve the same options and read no
+        // projection status, and requiring a bearer token of them would refuse a retirement precisely
+        // when the DMS that mints the token is already gone.
+        if (MissingProjectionStatusAccess(controlOptions) is { } missingSetting)
+        {
+            return Failed(
+                CdcProjectionStatusReadOutcome.Unavailable,
+                $"The DMS DocumentCache status endpoint cannot be read: {missingSetting} is not configured."
+            );
+        }
+
         TimeSpan timeout = controlOptions.Timeouts.StatusEndpoint;
 
         using CancellationTokenSource requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(
@@ -176,6 +196,16 @@ internal sealed class CdcProjectionCorrelationCollector(
                 $"The DMS DocumentCache status endpoint could not be reached: {exception.HttpRequestError}."
             );
         }
+    }
+
+    private static string? MissingProjectionStatusAccess(CdcControlOptions options)
+    {
+        if (string.IsNullOrWhiteSpace(options.DmsBaseUrl))
+        {
+            return DmsBaseUrlSettingName;
+        }
+
+        return string.IsNullOrWhiteSpace(options.DmsBearerToken) ? DmsBearerTokenSettingName : null;
     }
 
     private static CdcProjectionStatusReadResult FailedStatus(HttpStatusCode statusCode)

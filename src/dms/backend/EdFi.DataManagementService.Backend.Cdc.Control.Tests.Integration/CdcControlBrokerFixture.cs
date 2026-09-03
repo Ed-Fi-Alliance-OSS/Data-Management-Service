@@ -168,7 +168,10 @@ internal sealed class CdcControlBrokerFixture : IAsyncDisposable
     public IAdminClient AdminClient =>
         _adminClient ?? throw new InvalidOperationException("The broker fixture has not been started.");
 
-    public ICdcKafkaAdmin KafkaAdmin => BuildKafkaAdmin(ControlOptions);
+    // The concrete adapter rather than ICdcKafkaAdmin: topic and ACL resolution are not on the
+    // production interface, because no control-plane path calls either on its own, and a broker-backed
+    // test that verifies one of them in isolation needs to reach it.
+    public CdcKafkaAdminAdapter KafkaAdmin => BuildKafkaAdmin(ControlOptions);
 
     public ICdcConnectClient Connect => BuildConnectClient(ControlOptions);
 
@@ -238,7 +241,7 @@ internal sealed class CdcControlBrokerFixture : IAsyncDisposable
     /// A Kafka admin adapter over the same broker with one policy value changed, so a fail-closed case
     /// is proven against the deployment's real evidence rather than against a second broker.
     /// </summary>
-    public ICdcKafkaAdmin KafkaAdminWith(Action<CdcControlOptions> configure) =>
+    public CdcKafkaAdminAdapter KafkaAdminWith(Action<CdcControlOptions> configure) =>
         BuildKafkaAdmin(WithControlOptions(configure));
 
     /// <summary>
@@ -692,7 +695,7 @@ internal sealed class CdcControlBrokerFixture : IAsyncDisposable
         return variant;
     }
 
-    private ICdcKafkaAdmin BuildKafkaAdmin(CdcControlOptions controlOptions) =>
+    private CdcKafkaAdminAdapter BuildKafkaAdmin(CdcControlOptions controlOptions) =>
         new CdcKafkaAdminAdapter(
             AdminClient,
             Options.Create(controlOptions),

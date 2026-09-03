@@ -2788,6 +2788,7 @@ internal sealed class RecordingSqlServerCdcExecutor
     private readonly Dictionary<string, RecordingSqlServerCaptureInstance> _captureInstances;
     private readonly RecordingSqlServerConnectorAccess _connectorAccess;
     private readonly string _sourceIdentity;
+    private readonly string _setupPrincipal;
     private readonly IReadOnlyList<CdcSourceTableInventory>? _sourceInventory;
     private readonly CdcSourceTableKind? _omittedSourceInventoryTableKind;
     private readonly string _omittedSourceInventoryColumnName;
@@ -2821,6 +2822,7 @@ internal sealed class RecordingSqlServerCdcExecutor
         bool dropJobsDuringFinalProviderMetadataRefresh = false,
         IReadOnlyList<RecordingSqlServerCaptureInstance>? captureInstances = null,
         RecordingSqlServerConnectorAccess? connectorAccess = null,
+        string setupPrincipal = "setup_principal",
         string sourceIdentity = CdcProviderSetupContractTestData.SourceIdentity,
         IReadOnlyList<CdcSourceTableInventory>? sourceInventory = null,
         CdcSourceTableKind? omittedSourceInventoryTableKind = null,
@@ -2858,6 +2860,7 @@ internal sealed class RecordingSqlServerCdcExecutor
         _dropJobsDuringFinalProviderMetadataRefresh = dropJobsDuringFinalProviderMetadataRefresh;
         _connectorAccess = connectorAccess ?? RecordingSqlServerConnectorAccess.MissingGrants();
         _sourceIdentity = sourceIdentity;
+        _setupPrincipal = setupPrincipal;
         _sourceInventory = sourceInventory;
         _omittedSourceInventoryTableKind = omittedSourceInventoryTableKind;
         _omittedSourceInventoryColumnName = omittedSourceInventoryColumnName;
@@ -3014,6 +3017,10 @@ internal sealed class RecordingSqlServerCdcExecutor
 
         IReadOnlyList<IReadOnlyDictionary<string, string?>> rows = sql switch
         {
+            var text when text.Contains("cdc:sqlserver:setup-principal") =>
+            [
+                Row(("setup_principal", _setupPrincipal)),
+            ],
             var text when text.Contains("cdc:sqlserver:source-fingerprint") =>
             [
                 Row(("source_identity", _sourceIdentity)),

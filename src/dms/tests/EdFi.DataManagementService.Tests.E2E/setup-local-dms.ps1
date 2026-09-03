@@ -146,11 +146,13 @@ try {
     # setup wrapper in-process, so reusing that instance keeps one module serving both.
     Import-Module ./dms-schema-environment.psm1
     if ($EnableKafkaCdc) {
-        # The CDC enable phase, the data-store-id reader, and the runtime-settings key set are the
-        # bootstrap wrapper's own rather than copies: this wrapper builds a different phase sequence,
-        # but the enable itself is one workflow (DMS health -> operator token -> status-endpoint
-        # preflight -> enable) and a second copy would be the copy that misses the next fix.
+        # The CDC phase is enable-kafka-cdc.ps1, invoked below like any other phase command. Only two
+        # things are imported here: the data-store-id reader, which is the bootstrap wrapper's own
+        # reading of a configure result this harness also produces, and the CDC runtime-settings key
+        # set, which belongs to the CDC phase module. Neither is a copy - a second copy would be the
+        # copy that misses the next fix.
         Import-Module ./bootstrap-wrapper.psm1 -Force
+        Import-Module ./cdc-enable.psm1 -Force
     }
 
     $baseEnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path $EnvironmentFile -DockerComposeRoot $dockerComposeDir
@@ -318,7 +320,7 @@ try {
         # (-d -v, through teardown-local-dms.ps1) resolves and retires from.
         $cdcBindingStateRoot = [System.IO.Path]::GetFullPath((Join-Path $dockerComposeDir ".cdc-state"))
 
-        $cdcRuntimeSettings = Get-WrapperCdcRuntimeEnvOverride `
+        $cdcRuntimeSettings = Get-CdcRuntimeEnvOverride `
             -TenantKey $cdcTargetTenantKey `
             -DataStoreId $cdcTargetDataStoreId `
             -BindingStateRootPath $cdcBindingStateRoot
@@ -358,14 +360,16 @@ try {
         # -SourceDatabaseName is the database the provision phase created, named explicitly rather
         # than re-derived: this run provisioned E2E_DATABASE_NAME, not the datastore database name a
         # plain bootstrap run registers, and the connector connects to the source directly.
-        Invoke-WrapperCdcEnablePhase `
+        # The phase command, not an orchestration module's exported function: the same entry point
+        # the bootstrap wrapper invokes, so the two paths cannot drift.
+        & "$dockerComposeDir/enable-kafka-cdc.ps1" `
             -ComposeProjectName "dms-local" `
             -EnvironmentFile $resolvedEnvironmentFile `
             -TenantKey $cdcTargetTenantKey `
             -DataStoreId $cdcTargetDataStoreId `
             -DatabaseEngine $DatabaseEngine `
             -DatabaseCreatedByThisRun $true `
-            -SourceDatabaseName $e2eDatabaseName
+            -SourceDatabaseName $e2eDatabaseName | Out-Null
     }
 
     # Pass the fully resolved environment file (data-standard then engine overlay) so teardown uses the

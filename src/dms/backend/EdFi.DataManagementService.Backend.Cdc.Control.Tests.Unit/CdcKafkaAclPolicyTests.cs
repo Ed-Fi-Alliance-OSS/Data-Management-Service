@@ -9,6 +9,7 @@ using Confluent.Kafka.Admin;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using FakeItEasy;
 using FluentAssertions;
+using FluentAssertions.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
@@ -440,6 +441,54 @@ public class Given_CdcKafkaAclPolicy
             .MustNotHaveHappened();
     }
 
+    /// <summary>
+    /// Kafka authorizes on principal, host, and operation together. A grant naming the right principal
+    /// and operation but only from one host does not admit the connector running anywhere else, so it
+    /// must not stand in for the wildcard grant this control plane creates — and the wildcard grant
+    /// must still be created rather than suppressed by the requirement looking already met.
+    /// </summary>
+    [Test]
+    public async Task It_repairs_a_required_grant_a_host_restricted_grant_does_not_satisfy()
+    {
+        CdcArtifactInventory inventory = Inventory(CdcProvider.Postgresql);
+        List<AclBinding> acls = ConformingAcls(inventory);
+        acls.RemoveAll(binding =>
+            binding.Pattern.Name == inventory.TopicName
+            && binding.Entry.Principal == ConnectorPrincipal
+            && binding.Entry.Operation == AclOperation.Write
+        );
+        acls.Add(
+            Acl(
+                ResourceType.Topic,
+                inventory.TopicName,
+                ConnectorPrincipal,
+                AclOperation.Write,
+                host: "10.0.0.7"
+            )
+        );
+
+        IAdminClient adminClient = Broker(inventory, acls);
+
+        CdcKafkaBindingAclPolicies policies = await RunAclsAsync(adminClient, inventory);
+
+        using var _ = new AssertionScope();
+        policies.PublicTopicAcls.State.Should().Be(CdcKafkaPolicyItemState.Invalid);
+        A.CallTo(() =>
+                adminClient.CreateAclsAsync(
+                    A<IEnumerable<AclBinding>>.That.Matches(created =>
+                        created.Any(binding =>
+                            binding.Pattern.Name == inventory.TopicName
+                            && binding.Entry.Principal == ConnectorPrincipal
+                            && binding.Entry.Operation == AclOperation.Write
+                            && binding.Entry.Host == CdcKafkaAdminAdapter.AnyHost
+                        )
+                    ),
+                    A<CreateAclsOptions>._
+                )
+            )
+            .MustHaveHappened();
+    }
+
     [Test]
     public async Task It_accepts_an_exactly_matching_grant_set_when_only_describing()
     {
@@ -460,7 +509,7 @@ public class Given_CdcKafkaAclPolicy
         bool aclsEnabled = true
     ) =>
         await Adapter(adminClient, inventory, aclsEnabled)
-            .EnsureBindingAclsAsync(inventory, CancellationToken.None);
+            .BindingAclsAsync(inventory, CdcKafkaProvisioningMode.CreateOrValidate, CancellationToken.None);
 
     private static async Task<CdcKafkaPolicyObservation> RunPolicyAsync(
         IAdminClient adminClient,
@@ -562,7 +611,8 @@ public class Given_CdcKafkaAclPolicy
         string principal,
         AclOperation operation,
         ResourcePatternType patternType = ResourcePatternType.Literal,
-        AclPermissionType permission = AclPermissionType.Allow
+        AclPermissionType permission = AclPermissionType.Allow,
+        string host = CdcKafkaAdminAdapter.AnyHost
     ) =>
         new()
         {
@@ -575,7 +625,7 @@ public class Given_CdcKafkaAclPolicy
             Entry = new AccessControlEntry
             {
                 Principal = principal,
-                Host = CdcKafkaAdminAdapter.AnyHost,
+                Host = host,
                 Operation = operation,
                 PermissionType = permission,
             },

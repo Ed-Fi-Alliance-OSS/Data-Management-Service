@@ -304,7 +304,18 @@ Describe "DocumentCache hosted E2E environment isolation" {
 
         $baseValues.ContainsKey("DMS_DOCUMENTCACHE_TARGET_DATA_STORE_ID") | Should -BeFalse
         $baseValues.ContainsKey("DMS_DOCUMENTCACHE_READ_ACCELERATION_ENABLED") | Should -BeFalse
-        $localDmsCompose | Should -Not -Match "DocumentCache__Targets__0"
+        $baseValues.ContainsKey("DMS_CDC_TARGET_DATA_STORE_ID") | Should -BeFalse
+        $baseValues.ContainsKey("DMS_CDC_TARGET_TENANT_KEY") | Should -BeFalse
+
+        # The base stack names the indexed target keys so the DMS container and the cdc-setup
+        # container read the same pair and cannot drift, but it supplies them only from variables
+        # that default to blank. A blank pair binds to no projection target at all, so a shared E2E
+        # run still starts with nothing projected. Asserting the blank default rather than the
+        # absence of the key is what keeps this pinned to the isolation the environment needs.
+        $localDmsCompose |
+            Should -Match 'DataManagement__DocumentCache__Targets__0__TenantKey: \$\{DMS_CDC_TARGET_TENANT_KEY:-\}'
+        $localDmsCompose |
+            Should -Match 'DataManagement__DocumentCache__Targets__0__DataStoreId: \$\{DMS_CDC_TARGET_DATA_STORE_ID:-\}'
     }
 
     It "adds the target, read acceleration, and cache-refresh guard only through the focused overlay" {

@@ -189,7 +189,11 @@ Describe "DMS-1323 bootstrap CDC phase" {
         $script:entryScriptText = Get-Content -LiteralPath $script:entryScriptPath -Raw
 
         Import-Module $script:wrapperPath -Force
+        Import-Module (Join-Path $script:sourceDockerComposeRoot "cdc-enable.psm1") -Force
 
+        # Searches the wrapper and the CDC phase module. The CDC phase's own behavior lives in
+        # cdc-enable.psm1 and the sequencing in bootstrap-wrapper.psm1, and a test that asserts on a
+        # function's text should not have to know which of the two it ended up in.
         function script:Get-WrapperFunctionText {
             param(
                 [Parameter(Mandatory)]
@@ -197,27 +201,34 @@ Describe "DMS-1323 bootstrap CDC phase" {
                 $FunctionName
             )
 
-            $parseErrors = $null
-            $ast = [System.Management.Automation.Language.Parser]::ParseFile(
-                $script:wrapperPath, [ref]$null, [ref]$parseErrors
+            $searchPaths = @(
+                $script:wrapperPath,
+                (Join-Path (Split-Path -Parent $script:wrapperPath) "cdc-enable.psm1")
             )
 
-            if (@($parseErrors).Count -gt 0) {
-                throw "Failed to parse '$script:wrapperPath': $(@($parseErrors)[0].Message)"
+            foreach ($searchPath in $searchPaths) {
+                $parseErrors = $null
+                $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+                    $searchPath, [ref]$null, [ref]$parseErrors
+                )
+
+                if (@($parseErrors).Count -gt 0) {
+                    throw "Failed to parse '$searchPath': $(@($parseErrors)[0].Message)"
+                }
+
+                $functionAst = $ast.FindAll(
+                    { param($node)
+                        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                        $node.Name -eq $FunctionName },
+                    $true
+                ) | Select-Object -First 1
+
+                if ($null -ne $functionAst) {
+                    return $functionAst.Extent.Text
+                }
             }
 
-            $functionAst = $ast.FindAll(
-                { param($node)
-                    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-                    $node.Name -eq $FunctionName },
-                $true
-            ) | Select-Object -First 1
-
-            if ($null -eq $functionAst) {
-                throw "Function '$FunctionName' was not found in '$script:wrapperPath'."
-            }
-
-            return $functionAst.Extent.Text
+            throw "Function '$FunctionName' was not found in $($searchPaths -join ' or ')."
         }
     }
 
@@ -299,7 +310,7 @@ Describe "DMS-1323 bootstrap CDC phase" {
 
     Context "runtime settings written before the DMS start" {
         It "writes the projection target, the status role, and the state root" {
-            $overrides = Get-WrapperCdcRuntimeEnvOverride `
+            $overrides = Get-CdcRuntimeEnvOverride `
                 -TenantKey "district-a" `
                 -DataStoreId 7 `
                 -BindingStateRootPath "C:/state"
@@ -311,7 +322,7 @@ Describe "DMS-1323 bootstrap CDC phase" {
         }
 
         It "keeps the default tenant's blank key" {
-            (Get-WrapperCdcRuntimeEnvOverride -TenantKey "" -DataStoreId 1 -BindingStateRootPath "/state")["DMS_CDC_TARGET_TENANT_KEY"] |
+            (Get-CdcRuntimeEnvOverride -TenantKey "" -DataStoreId 1 -BindingStateRootPath "/state")["DMS_CDC_TARGET_TENANT_KEY"] |
                 Should -BeNullOrEmpty
         }
 
@@ -319,7 +330,7 @@ Describe "DMS-1323 bootstrap CDC phase" {
             # Both settings are read at DMS startup: the target because the enable workflow's first
             # proof is that it is configured, the role because the status endpoint is not mapped
             # without it and the caught-up read would 404.
-            $writeIndex = $script:wrapperText.IndexOf('Get-WrapperCdcRuntimeEnvOverride `')
+            $writeIndex = $script:wrapperText.IndexOf('Get-CdcRuntimeEnvOverride `')
             $dmsStartIndex = $script:wrapperText.IndexOf('$dmsStartArgs = @{')
 
             $writeIndex | Should -BeGreaterThan -1
@@ -335,9 +346,41 @@ Describe "DMS-1323 bootstrap CDC phase" {
     }
 
     Context "phase ordering" {
+        It "keeps the phase's own behavior out of the orchestration wrapper" {
+            # command-boundaries.md gives bootstrap-local-dms.ps1 orchestration only: it sequences
+            # phase commands and forwards parameters, and must not synthesize credentials, inspect
+            # database state, or absorb a concern a phase owns. The CDC enable resolves credentials,
+            # gates on endpoint authorization, and provisions a database principal - all phase work,
+            # and all of it belongs to enable-kafka-cdc.ps1.
+            (Join-Path $script:sourceDockerComposeRoot "enable-kafka-cdc.ps1") | Should -Exist
+
+            $script:wrapperText | Should -Not -Match 'Get-DmsToken'
+            $script:wrapperText | Should -Not -Match 'provision-cdc-principal\.ps1'
+            $script:wrapperText | Should -Not -Match 'cdc-setup\.yml'
+            $script:wrapperText | Should -Not -Match '"cdc", "enable"'
+            $script:wrapperText | Should -Not -Match 'health/document-cache'
+        }
+
+        It "reads the phase result structurally rather than parsing its output" {
+            # The same contract configure-local-data-store.ps1 has with the wrapper: a phase returns
+            # an object, and the caller never scrapes human-readable output to recover it.
+            $script:wrapperText | Should -Match '\$cdcResult = & "\$PSScriptRoot/enable-kafka-cdc\.ps1" @cdcArgs'
+            $script:wrapperText | Should -Match '\$cdcResult\.Status -ne "Enabled"'
+
+            $phaseScriptText = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "enable-kafka-cdc.ps1"
+            ) -Raw
+            $phaseScriptText | Should -Match 'Invoke-CdcEnablePhase'
+
+            $phaseModuleText = Get-Content -LiteralPath (
+                Join-Path $script:sourceDockerComposeRoot "cdc-enable.psm1"
+            ) -Raw
+            $phaseModuleText | Should -Match '(?m)^\s+Status\s+= "Enabled"'
+        }
+
         It "runs the CDC phase after the DMS start and before any seed delivery" {
             $dmsStartIndex = $script:wrapperText.IndexOf('& "$PSScriptRoot/$StartScriptName" @dmsStartArgs')
-            $cdcPhaseIndex = $script:wrapperText.IndexOf('Invoke-WrapperCdcEnablePhase `')
+            $cdcPhaseIndex = $script:wrapperText.IndexOf('& "$PSScriptRoot/enable-kafka-cdc.ps1" @cdcArgs')
             $lastSeedIndex = $script:wrapperText.LastIndexOf('load-dms-seed-data.ps1" @seedArgs')
 
             $dmsStartIndex | Should -BeGreaterThan -1
@@ -346,11 +389,11 @@ Describe "DMS-1323 bootstrap CDC phase" {
         }
 
         It "proves the status endpoint answers for the operator credential before enabling anything" {
-            $phaseText = Get-WrapperFunctionText -FunctionName "Invoke-WrapperCdcEnablePhase"
+            $phaseText = Get-WrapperFunctionText -FunctionName "Invoke-CdcEnablePhase"
 
             $tokenIndex = $phaseText.IndexOf('Get-DmsToken `')
-            $preflightIndex = $phaseText.IndexOf('Assert-WrapperDocumentCacheStatusEndpoint `')
-            $enableIndex = $phaseText.IndexOf('Get-WrapperCdcEnableArgument `')
+            $preflightIndex = $phaseText.IndexOf('Assert-CdcDocumentCacheStatusEndpoint `')
+            $enableIndex = $phaseText.IndexOf('Get-CdcEnableArgument `')
 
             $tokenIndex | Should -BeGreaterThan -1
             $preflightIndex | Should -BeGreaterThan $tokenIndex
@@ -358,7 +401,7 @@ Describe "DMS-1323 bootstrap CDC phase" {
         }
 
         It "names the two configuration faults the preflight can see" {
-            $preflightText = Get-WrapperFunctionText -FunctionName "Assert-WrapperDocumentCacheStatusEndpoint"
+            $preflightText = Get-WrapperFunctionText -FunctionName "Assert-CdcDocumentCacheStatusEndpoint"
 
             $preflightText | Should -Match 'returned 404'
             $preflightText | Should -Match 'RequiredRole did not reach the DMS container'
@@ -366,9 +409,73 @@ Describe "DMS-1323 bootstrap CDC phase" {
         }
     }
 
+    Context "instance-database creation evidence" {
+        It "asserts creation only when the datastore volume did not already exist" {
+            # docker is shadowed inside the module scope so the probe reads this fixture rather than
+            # the developer's real Docker state.
+            InModuleScope -ModuleName "bootstrap-wrapper" -ScriptBlock {
+                Mock docker { $global:LASTEXITCODE = 0; return "" }
+
+                Test-WrapperDataStoreVolumeAbsent `
+                    -DatabaseEngine "postgresql" `
+                    -ComposeProjectName "dms-local" |
+                    Should -BeTrue
+
+                Mock docker { $global:LASTEXITCODE = 0; return "dms-local_dms-postgresql" }
+
+                Test-WrapperDataStoreVolumeAbsent `
+                    -DatabaseEngine "postgresql" `
+                    -ComposeProjectName "dms-local" |
+                    Should -BeFalse
+            }
+        }
+
+        It "withholds the assertion when Docker cannot answer" {
+            InModuleScope -ModuleName "bootstrap-wrapper" -ScriptBlock {
+                Mock docker { $global:LASTEXITCODE = 1; return "" }
+
+                Test-WrapperDataStoreVolumeAbsent `
+                    -DatabaseEngine "postgresql" `
+                    -ComposeProjectName "dms-local" |
+                    Should -BeFalse
+            }
+        }
+
+        It "looks for the major-versioned SQL Server volume the compose file declares" {
+            $mssqlVolumeName = (Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "mssql.yml") -Raw)
+            $mssqlVolumeName | Should -Match '(?m)^volumes:\s*
+?
+  dms-mssql-2025:'
+
+            Get-WrapperFunctionText -FunctionName "Test-WrapperDataStoreVolumeAbsent" |
+                Should -Match 'dms-mssql-2025'
+        }
+
+        It "observes the volume before the stack is started, not after" {
+            # Once the engine container is up the volume exists whichever run created it, so the
+            # observation is worthless unless it is taken ahead of the start phase.
+            $wrapperText = $script:wrapperText
+            $observationIndex = $wrapperText.IndexOf('$cdcDataStoreVolumeWasAbsent = Test-WrapperDataStoreVolumeAbsent')
+            $startIndex = $wrapperText.IndexOf('& "$PSScriptRoot/$StartScriptName" @startArgs')
+
+            $observationIndex | Should -BeGreaterThan 0
+            $startIndex | Should -BeGreaterThan 0
+            $observationIndex | Should -BeLessThan $startIndex
+        }
+
+        It "never derives the creation assertion from the -NoDataStore switch" {
+            # -NoDataStore selects whether CMS metadata is reused; it says nothing about whether a
+            # physical database was created, and -EnableKafkaCdc rejects it outright, so deriving the
+            # assertion from it made the assertion a constant $true.
+            $script:wrapperText | Should -Not -Match '-DatabaseCreatedByThisRun \(-not \$NoDataStore\)'
+            $script:wrapperText | Should -Not -Match 'DatabaseCreatedByThisRun = \(-not \$NoDataStore\)'
+            $script:wrapperText | Should -Match 'DatabaseCreatedByThisRun = \$cdcDataStoreVolumeWasAbsent'
+        }
+    }
+
     Context "cdc enable invocation" {
         BeforeAll {
-            $script:createdRunArguments = Get-WrapperCdcEnableArgument `
+            $script:createdRunArguments = Get-CdcEnableArgument `
                 -ComposeProjectName "dms-local" `
                 -EnvironmentFile "/tmp/.env.derived" `
                 -TenantKey "" `
@@ -408,7 +515,7 @@ Describe "DMS-1323 bootstrap CDC phase" {
         }
 
         It "passes an explicit tenant key when one is configured" {
-            $arguments = Get-WrapperCdcEnableArgument `
+            $arguments = Get-CdcEnableArgument `
                 -ComposeProjectName "dms-local" `
                 -EnvironmentFile "/tmp/.env.derived" `
                 -TenantKey "district-a" `
@@ -426,7 +533,7 @@ Describe "DMS-1323 bootstrap CDC phase" {
                 Should -BeLike "*--database-creation-mode created-for-initial-cdc-provisioning*"
             ($script:createdRunArguments -join " ") | Should -BeLike "*--write-admission closed-never-opened*"
 
-            $reusedArguments = Get-WrapperCdcEnableArgument `
+            $reusedArguments = Get-CdcEnableArgument `
                 -ComposeProjectName "dms-local" `
                 -EnvironmentFile "/tmp/.env.derived" `
                 -TenantKey "" `
@@ -444,7 +551,7 @@ Describe "DMS-1323 bootstrap CDC phase" {
             ($script:createdRunArguments -join " ") |
                 Should -BeLike "*DataManagement__DocumentCache__Cdc__SetupPrincipal=postgres*"
 
-            $mssqlArguments = Get-WrapperCdcEnableArgument `
+            $mssqlArguments = Get-CdcEnableArgument `
                 -ComposeProjectName "dms-local" `
                 -EnvironmentFile "/tmp/.env.derived" `
                 -TenantKey "" `
@@ -479,7 +586,7 @@ Describe "DMS-1323 bootstrap CDC phase" {
         }
 
         It "names the SQL Server catalog property and host for the mssql engine" {
-            $mssqlArguments = Get-WrapperCdcEnableArgument `
+            $mssqlArguments = Get-CdcEnableArgument `
                 -ComposeProjectName "dms-local" `
                 -EnvironmentFile "/tmp/.env.derived" `
                 -TenantKey "" `
@@ -511,10 +618,10 @@ Describe "DMS-1323 bootstrap CDC phase" {
         It "creates the connector database principal before the enable" {
             # Provider setup grants this principal its capture access but never creates it: the SQL
             # Server pass throws outright when it is absent.
-            $phaseText = Get-WrapperFunctionText -FunctionName "Invoke-WrapperCdcEnablePhase"
+            $phaseText = Get-WrapperFunctionText -FunctionName "Invoke-CdcEnablePhase"
 
             $principalIndex = $phaseText.IndexOf('provision-cdc-principal.ps1')
-            $enableIndex = $phaseText.IndexOf('Get-WrapperCdcEnableArgument `')
+            $enableIndex = $phaseText.IndexOf('Get-CdcEnableArgument `')
 
             $principalIndex | Should -BeGreaterThan -1
             $enableIndex | Should -BeGreaterThan $principalIndex
@@ -523,20 +630,20 @@ Describe "DMS-1323 bootstrap CDC phase" {
         It "resolves the captured database from the caller, else the engine's configured datastore name" {
             # An explicit name wins because the E2E wrapper provisions its own database; otherwise
             # it must be the database a plain bootstrap run registered in CMS.
-            Resolve-WrapperCdcSourceDatabaseName `
+            Resolve-CdcSourceDatabaseName `
                 -EnvValues @{ POSTGRES_DB_NAME = "from_env" } `
                 -DatabaseEngine "postgresql" `
                 -SourceDatabaseName "explicit" | Should -Be "explicit"
 
-            Resolve-WrapperCdcSourceDatabaseName `
+            Resolve-CdcSourceDatabaseName `
                 -EnvValues @{ POSTGRES_DB_NAME = "from_env" } `
                 -DatabaseEngine "postgresql" | Should -Be "from_env"
 
-            Resolve-WrapperCdcSourceDatabaseName `
+            Resolve-CdcSourceDatabaseName `
                 -EnvValues @{ MSSQL_DB_NAME = "from_mssql_env" } `
                 -DatabaseEngine "mssql" | Should -Be "from_mssql_env"
 
-            Resolve-WrapperCdcSourceDatabaseName `
+            Resolve-CdcSourceDatabaseName `
                 -EnvValues @{} `
                 -DatabaseEngine "postgresql" | Should -Be "edfi_datamanagementservice"
         }
@@ -642,6 +749,7 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
         # The enable-phase argument builder is compared against the teardown's, so this Describe
         # imports it rather than depending on an earlier one having done so.
         Import-Module (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Force
+        Import-Module (Join-Path $script:sourceDockerComposeRoot "cdc-enable.psm1") -Force
 
         function script:Get-StartScriptFunctionText {
             param(
@@ -980,7 +1088,7 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
             # the compose down removed its artifacts anyway.
             $policy = Get-LocalCdcDeploymentPolicy
 
-            $wrapperArguments = Get-WrapperCdcEnableArgument `
+            $wrapperArguments = Get-CdcEnableArgument `
                 -ComposeProjectName "dms-local" `
                 -EnvironmentFile ".env" `
                 -TenantKey "" `
@@ -999,8 +1107,7 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
                     InstanceKey   = "ds1"
                     Generation    = 1
                 }) `
-                -DatabaseEngine "postgresql" `
-                -DmsBearerToken "token"
+                -DatabaseEngine "postgresql"
 
             foreach ($arguments in @($wrapperArguments, $retireArguments)) {
                 $joined = $arguments -join " "
@@ -1045,8 +1152,34 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
             $script:teardownModuleText | Should -Not -Match 'Remove-Item -LiteralPath \$binding'
         }
 
+        It "refuses the teardown when the binding store cannot be enumerated" {
+            # The container writes the store owner-only, and on a native Linux bind mount a
+            # root-owned bindings/ tree is one the invoking user cannot descend into. Get-ChildItem
+            # errors are non-terminating by default, so that used to yield nothing, read as "no
+            # bindings", and let the caller go on to `down -v` - destroying the governed artifacts the
+            # records it could not see still named.
+            $script:teardownModuleText | Should -Match 'Get-ChildItem[^
+]*-ErrorAction Stop'
+            $script:teardownModuleText | Should -Match 'could not be enumerated'
+        }
+
+        It "runs the one-shot container as the host user on Linux so the store stays readable" {
+            $userArgumentText = Get-WrapperFunctionText -FunctionName "Get-CdcContainerUserArgument"
+
+            $userArgumentText | Should -Match '\$IsLinux'
+            $userArgumentText | Should -Match '"--user"'
+
+            # Both invocation paths, or the enable phase writes records the retirement cannot read.
+            $script:teardownModuleText | Should -Match 'Get-CdcContainerUserArgument'
+            (Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "cdc-enable.psm1") -Raw) |
+                Should -Match '\$composeArguments \+= Get-CdcContainerUserArgument'
+        }
+
         It "leaves the binding record in place when the retirement could not run" {
-            $script:teardownModuleText | Should -Match 'were left in place'
+            # A record this module cannot read, and a retirement the tool refused, both keep the
+            # record: the artifacts it names are still there and only a completed retirement may
+            # remove it.
+            $script:teardownModuleText | Should -Match 'was left in place'
             $script:teardownModuleText | Should -Match 'was retained'
         }
     }
@@ -1148,8 +1281,7 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
                 -ComposeProjectName "dms-local" `
                 -EnvironmentFile "/tmp/.env" `
                 -BindingRecord $script:retireBinding `
-                -DatabaseEngine "postgresql" `
-                -DmsBearerToken "token-value"
+                -DatabaseEngine "postgresql"
         }
 
         It "runs the tool as a one-shot container on the dms network" {
@@ -1202,8 +1334,7 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
                 -ComposeProjectName "dms-local" `
                 -EnvironmentFile "/tmp/.env" `
                 -BindingRecord $tenantBinding `
-                -DatabaseEngine "postgresql" `
-                -DmsBearerToken "token-value") -join " " |
+                -DatabaseEngine "postgresql") -join " " |
                 Should -BeLike "*--tenant-key district-a*"
         }
 
@@ -1232,17 +1363,25 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
                 -ComposeProjectName "dms-local" `
                 -EnvironmentFile "/tmp/.env" `
                 -BindingRecord $script:retireBinding `
-                -DatabaseEngine "mssql" `
-                -DmsBearerToken "token-value") -join " " |
+                -DatabaseEngine "mssql") -join " " |
                 Should -BeLike "*DataManagement__DocumentCache__Cdc__SetupPrincipal=sa*"
         }
 
-        It "hands the operator token to the tool through the environment, not the command line" {
-            $tokenIndex = [array]::IndexOf($script:retireArguments, "DataManagement__DocumentCache__Cdc__DmsBearerToken=token-value")
-
-            $tokenIndex | Should -BeGreaterThan 0
-            $script:retireArguments[$tokenIndex - 1] | Should -Be "-e"
+        It "carries no operator credential at all" {
+            # Retirement reads no projection status. It used to carry a bearer token only because the
+            # control plane validated the projection-status settings for every verb before running any
+            # step; the collector now refuses for itself instead, so the credential has no reader on
+            # this path and putting one here would be handing out a secret for nothing.
+            ($script:retireArguments -join " ") | Should -Not -BeLike "*DmsBearerToken*"
             ($script:retireArguments | Where-Object { $_ -like "--*token*" }) | Should -BeNullOrEmpty
+        }
+
+        It "does not skip retirement when no operator token can be obtained" {
+            # The DMS is normally already gone when a destructive teardown runs, which is exactly when
+            # a token cannot be minted. Skipping there left binding records naming artifacts the very
+            # next `down -v` destroyed.
+            $script:teardownModuleText | Should -Not -Match 'Get-DmsToken'
+            $script:teardownModuleText | Should -Not -Match 'no DocumentCache operator token could be obtained'
         }
     }
 }
@@ -1260,6 +1399,7 @@ Describe "DMS-1323 E2E harness CDC opt-in" {
         ) -Raw
 
         Import-Module (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Force
+        Import-Module (Join-Path $script:sourceDockerComposeRoot "cdc-enable.psm1") -Force
         Import-Module (Join-Path $script:sourceDockerComposeRoot "dms-schema-environment.psm1") -Force
 
         function script:Get-E2ESetupDeclaredParameters {
@@ -1333,7 +1473,7 @@ Describe "DMS-1323 E2E harness CDC opt-in" {
 
     Context "runtime settings before the DMS start, without touching the tracked env file" {
         It "configures the projection target and status role ahead of the DMS phase" {
-            $settingsIndex = $script:e2eSetupText.IndexOf('Get-WrapperCdcRuntimeEnvOverride `')
+            $settingsIndex = $script:e2eSetupText.IndexOf('Get-CdcRuntimeEnvOverride `')
             # LastIndexOf: the .DESCRIPTION block quotes the same phase commands, and the invocation
             # is the later occurrence.
             $dmsStartIndex = $script:e2eSetupText.LastIndexOf('start-local-dms.ps1 -DmsOnly')
@@ -1375,7 +1515,7 @@ Describe "DMS-1323 E2E harness CDC opt-in" {
             # LastIndexOf: the .DESCRIPTION block quotes the same phase commands, and the invocation
             # is the later occurrence.
             $dmsStartIndex = $script:e2eSetupText.LastIndexOf('start-local-dms.ps1 -DmsOnly')
-            $enableIndex = $script:e2eSetupText.IndexOf('Invoke-WrapperCdcEnablePhase `')
+            $enableIndex = $script:e2eSetupText.IndexOf('enable-kafka-cdc.ps1" `')
             $completeIndex = $script:e2eSetupText.IndexOf('DMS E2E environment setup complete!')
 
             $enableIndex | Should -BeGreaterThan $dmsStartIndex
@@ -1389,15 +1529,18 @@ Describe "DMS-1323 E2E harness CDC opt-in" {
             $script:provisionScriptText | Should -Match 'drops if present, then recreates'
 
             $provisionIndex = $script:e2eSetupText.LastIndexOf('provision-e2e-database.ps1')
-            $enableIndex = $script:e2eSetupText.IndexOf('Invoke-WrapperCdcEnablePhase `')
+            $enableIndex = $script:e2eSetupText.IndexOf('enable-kafka-cdc.ps1" `')
 
             $provisionIndex | Should -BeGreaterThan -1
             $enableIndex | Should -BeGreaterThan $provisionIndex
         }
 
-        It "runs the enable workflow the bootstrap wrapper owns rather than a copy" {
-            (Get-Command -Module bootstrap-wrapper -Name Invoke-WrapperCdcEnablePhase -ErrorAction SilentlyContinue) |
-                Should -Not -BeNullOrEmpty
+        It "runs the shared CDC phase command rather than a copy of the workflow" {
+            # command-boundaries.md gives the wrapper orchestration only, so the enable workflow is a
+            # phase command both callers invoke - not a function the E2E harness has to import an
+            # orchestration module to reach.
+            (Join-Path $script:sourceDockerComposeRoot "enable-kafka-cdc.ps1") | Should -Exist
+            $script:e2eSetupText | Should -Match 'enable-kafka-cdc\.ps1'
 
             $script:e2eSetupText | Should -Not -Match 'cdc-setup\.yml'
             $script:e2eSetupText | Should -Not -Match '"cdc", "enable"'
@@ -1487,6 +1630,25 @@ Describe "DMS-1323 operator and story documentation" {
             $script:storyDocText | Should -Match 'MilliSecondsBehindSource'
             $script:storyDocText | Should -Match 'ENABLE_JOLOKIA=true'
             $script:storyDocText | Should -Match 'engine-neutral'
+        }
+
+        It "defers the normative rules to the owning design rather than restating them" {
+            # cdc-streaming.md owns configuration, integration, deployment, readiness and
+            # operations, and says stories must not repeat algorithms, fixed values, readiness
+            # conditions or recovery rules. A second copy here is a second contract: it can drift
+            # from the owner, and a reader cannot tell which one binds. The story records what was
+            # built and links to the rule.
+            $script:storyDocText |
+                Should -Match '(?m)^### Downstream Publication History for the E18 Administrative Gate'
+            $script:storyDocText | Should -Match 'design-docs/cdc/cdc-streaming\.md'
+            $script:storyDocText | Should -Match 'is not restated here'
+
+            # The rule itself lives with its owner.
+            $owningDesignText = Get-Content -LiteralPath (
+                Join-Path $script:sourceRepoRoot "reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md"
+            ) -Raw
+            $owningDesignText | Should -Match 'Internal-only is proved from durable deployment state'
+            $owningDesignText | Should -Match 'Retirement therefore records the generation it'
         }
 
         It "places the section before the acceptance evidence, as the sibling story does" {

@@ -352,6 +352,29 @@ erase that history or authorize clearing. Online compatible cache rebuild remain
 by its own operation above, while CDC containment and baseline-replacing recovery remain
 governed by the contracts below.
 
+Internal-only is proved from durable deployment state, never from an operator assertion, a
+CLI switch, a stopped connector, or a removed `DocumentCache:Targets` entry. The proof is
+the deployment's own CDC records:
+
+- A binding naming the target on its currently resolved physical source proves active
+  downstream publication; one naming the target on an earlier physical source proves
+  historical publication. Either makes the target ineligible.
+- Retirement deletes the binding record it retires, so an absent binding is not on its own
+  proof that a target was never published. Retirement therefore records the generation it
+  retires durably, before the binding record is removed, and never removes that record
+  afterwards. A retirement record naming the target proves historical publication.
+- Internal-only requires a complete, readable listing that holds at least one binding, holds
+  no binding for the target, and holds no retirement record for it. A listing that cannot be
+  completed, a record that cannot be read as a binding, an unconfigured deployment key, and a
+  listing holding no binding at all are all unknown, and unknown rejects without mutation.
+- An empty binding listing is unknown rather than proof, because a fresh volume, a mis-mounted
+  state root, and a root pointed at another deployment are indistinguishable from a deployment
+  that has bound nothing. Retirement records are the exception: a deployment that has retired
+  nothing legitimately holds none, so an empty retirement listing is an answer.
+
+A deployment that registers no CDC control plane has no such records to read and reports
+unknown, which rejects.
+
 ## Projection Health and Deployment-Owned CDC Readiness
 
 Projection exposes two independent DMS-owned signals for each explicit

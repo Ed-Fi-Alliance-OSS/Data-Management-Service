@@ -485,6 +485,24 @@ internal sealed class CdcSetupController(
         // Step 3: the binding record is durable before any external artifact is created, so nothing is
         // ever provisioned that the control plane cannot name afterwards.
         CdcBinding binding = Binding(target, provider, physicalSourceFingerprint, inventory);
+
+        CdcPhysicalSourceConflict conflict = await FindPhysicalSourceConflictAsync(binding, cancellationToken)
+            .ConfigureAwait(false);
+        if (conflict.Blocked)
+        {
+            return Blocked(
+                Step(
+                    "enablePhysicalSourceAlreadyBound",
+                    conflict.Category,
+                    CdcDiagnosticComponent.Binding,
+                    conflict.Message,
+                    conflict.Observed,
+                    timeProvider.GetUtcNow()
+                ),
+                conflict.Diagnostics
+            );
+        }
+
         CdcBindingLifecycleResult bindingWrite = firstAttempt
             ? await bindingLifecycle
                 .CreateBindingIfAbsentAsync(binding, cancellationToken)
@@ -2123,12 +2141,23 @@ internal sealed class CdcSetupController(
             committedOffsets
         );
 
+        // Adoption repairs deployment state around an artifact set that is already publishing, so the
+        // connector and its sole task must both be running. A task count alone does not say that: a
+        // paused, stopped, or failed connector still declares its one task, and adopting it would mint
+        // a binding record asserting a publication that is not happening.
         Verify(
             CdcAdoptionVerificationKind.Connector,
-            connectorStatus.Succeeded && connectorRuntime.TaskCount == 1,
-            "the worker holds the binding's connector running a single task",
             connectorStatus.Succeeded
-                ? $"{connectorRuntime.TaskCount?.ToString(CultureInfo.InvariantCulture) ?? "an unreadable count of"} tasks"
+                && connectorRuntime.ConnectorState == CdcConnectorRuntimeState.Running
+                && connectorRuntime.TaskCount == 1
+                && connectorRuntime.RunningTaskCount == 1
+                && connectorRuntime.SoleTaskState == CdcConnectorRuntimeState.Running,
+            "the worker holds the binding's connector running a single running task",
+            connectorStatus.Succeeded
+                ? $"connector {connectorRuntime.ConnectorState}, "
+                    + $"{connectorRuntime.TaskCount?.ToString(CultureInfo.InvariantCulture) ?? "an unreadable count of"} tasks, "
+                    + $"{connectorRuntime.RunningTaskCount?.ToString(CultureInfo.InvariantCulture) ?? "an unreadable count of"} running, "
+                    + $"sole task {connectorRuntime.SoleTaskState}"
                 : connectorStatus.Outcome.ToString()
         );
 
@@ -2226,6 +2255,25 @@ internal sealed class CdcSetupController(
             "the exact resume position is proved for every required provider source artifact",
             sourceHistory.Observation.Continuity.ToString()
         );
+
+        // Adoption imports a record the operator supplied, so it is the other way a second logical
+        // target can come to bind a physical source this deployment already publishes.
+        CdcPhysicalSourceConflict conflict = await FindPhysicalSourceConflictAsync(binding, cancellationToken)
+            .ConfigureAwait(false);
+        if (conflict.Blocked)
+        {
+            refusals.Add(
+                AdoptionRefused(
+                    conflict.Category,
+                    CdcDiagnosticComponent.Binding,
+                    conflict.Message,
+                    "$.binding",
+                    conflict.Observed,
+                    timeProvider.GetUtcNow()
+                )
+            );
+            refusals.AddRange(conflict.Diagnostics);
+        }
 
         if (refusals.Count != 0)
         {
@@ -3064,6 +3112,105 @@ internal sealed class CdcSetupController(
             CdcTargetValidator.KafkaMurmur2V1PartitionerAlgorithm
         );
 
+    /// <summary>
+    /// Whether some other logical target in this deployment already binds the physical source a
+    /// candidate binding names.
+    /// </summary>
+    /// <remarks>
+    /// Each logical public topic maps to exactly one physical database. The captured rows carry no
+    /// tenant or data-store discriminator, so once two targets publish one database there is nothing
+    /// downstream that can tell their streams apart afterwards. The per-target record read earlier
+    /// cannot see this: two CMS aliases of one database are two different targets with two different
+    /// records, and only a deployment-wide look at what is already bound distinguishes a second alias
+    /// from a first enablement.
+    ///
+    /// Another generation of the same target is not a conflict. That shape is what an enable retry and
+    /// a source replacement both produce, and both are the same logical target continuing to own the
+    /// source rather than a second one arriving at it.
+    ///
+    /// A listing that cannot be read refuses rather than proceeds. The question asked here is whether
+    /// some other target already binds this source, and a store that cannot be enumerated is not an
+    /// answer to it — treating it as one would admit exactly the duplicate the check exists to stop.
+    /// </remarks>
+    private async Task<CdcPhysicalSourceConflict> FindPhysicalSourceConflictAsync(
+        CdcBinding candidate,
+        CancellationToken cancellationToken
+    )
+    {
+        CdcBindingLifecycleListResult listing = await bindingLifecycle
+            .ListBindingsAsync(candidate.DeploymentKey, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (listing.Status != CdcControlPlaneOperationStatus.Succeeded)
+        {
+            return new(
+                true,
+                CdcDiagnosticCategory.LocalStateUnavailable,
+                "CDC enablement could not read the deployment's bindings to prove no other target "
+                    + "already publishes this physical source.",
+                listing.Status.ToString(),
+                listing.Diagnostics
+            );
+        }
+
+        foreach (CdcBindingStateContract state in listing.States)
+        {
+            if (state.Binding is not { } existing)
+            {
+                // A record this build cannot read as a binding may be the very one that binds this
+                // source, so it is no more an answer than an unreadable listing is.
+                return new(
+                    true,
+                    CdcDiagnosticCategory.LocalStateUnavailable,
+                    "CDC enablement found a record it could not read as a binding while proving no "
+                        + "other target already publishes this physical source.",
+                    state.State.ToString(),
+                    []
+                );
+            }
+
+            if (
+                !string.Equals(
+                    existing.PhysicalSourceFingerprint,
+                    candidate.PhysicalSourceFingerprint,
+                    StringComparison.Ordinal
+                ) || IsSameLogicalTarget(existing, candidate)
+            )
+            {
+                continue;
+            }
+
+            return new(
+                true,
+                CdcDiagnosticCategory.SourceMismatch,
+                "CDC enablement never binds a physical source another logical target of this "
+                    + "deployment already publishes.",
+                $"generation {existing.Generation.ToString(CultureInfo.InvariantCulture)} of "
+                    + $"instance {existing.InstanceKey}",
+                []
+            );
+        }
+
+        return CdcPhysicalSourceConflict.None;
+    }
+
+    private static bool IsSameLogicalTarget(CdcBinding existing, CdcBinding candidate) =>
+        string.Equals(existing.TenantKey, candidate.TenantKey, StringComparison.Ordinal)
+        && string.Equals(existing.DataStoreId, candidate.DataStoreId, StringComparison.Ordinal)
+        && string.Equals(existing.InstanceKey, candidate.InstanceKey, StringComparison.Ordinal);
+
+    private readonly record struct CdcPhysicalSourceConflict(
+        bool Blocked,
+        CdcDiagnosticCategory Category,
+        string Message,
+        string Observed,
+        IReadOnlyList<CdcDiagnostic> Diagnostics
+    )
+    {
+        public static CdcPhysicalSourceConflict None { get; } =
+            new(false, CdcDiagnosticCategory.SourceMismatch, string.Empty, string.Empty, []);
+    }
+
     private static CdcBinding Binding(
         CdcValidatedTarget target,
         CoreCdc.CdcProvider provider,
@@ -3086,19 +3233,6 @@ internal sealed class CdcSetupController(
             CdcJsonContract.CurrentContractVersion
         );
 
-    /// <summary>
-    /// Runs one provider-setup pass under <see cref="CdcControlTimeoutOptions.ProviderSetup"/>.
-    /// </summary>
-    /// <remarks>
-    /// A pass that spends its budget returns a failed result rather than propagating a cancellation.
-    /// That is the fail-closed result the step contract promises, and it needs no branch of its own at
-    /// any call site: an exhausted budget is no evidence about the artifacts either way, which is
-    /// exactly what a refused pass already means to each caller — the enablement refuses, the adoption
-    /// refuses, and a status reports the provider evidence as unavailable.
-    ///
-    /// The budget is linked to the caller's token, so a cancellation the caller asked for still
-    /// propagates as one instead of being reported as a provider failure.
-    /// </remarks>
     /// <summary>
     /// Opens the instance-database connection every provider pass runs over, under the same step budget
     /// the passes themselves run under.
@@ -3156,6 +3290,19 @@ internal sealed class CdcSetupController(
         }
     }
 
+    /// <summary>
+    /// Runs one provider-setup pass under <see cref="CdcControlTimeoutOptions.ProviderSetup"/>.
+    /// </summary>
+    /// <remarks>
+    /// A pass that spends its budget returns a failed result rather than propagating a cancellation.
+    /// That is the fail-closed result the step contract promises, and it needs no branch of its own at
+    /// any call site: an exhausted budget is no evidence about the artifacts either way, which is
+    /// exactly what a refused pass already means to each caller — the enablement refuses, the adoption
+    /// refuses, and a status reports the provider evidence as unavailable.
+    ///
+    /// The budget is linked to the caller's token, so a cancellation the caller asked for still
+    /// propagates as one instead of being reported as a provider failure.
+    /// </remarks>
     private async Task<CdcProviderSetupResult> SetupProviderWithinBudgetAsync(
         CdcProviderSetupRequest setupRequest,
         CancellationToken cancellationToken

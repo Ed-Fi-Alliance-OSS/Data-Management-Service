@@ -23,13 +23,21 @@ namespace EdFi.DataManagementService.Backend.Cdc.Control;
 /// toggle. Stopping a connector or removing the target from <c>DocumentCache:Targets</c> leaves the
 /// record in place, which is why neither erases the history.
 ///
-/// Only a completed, fully readable, non-empty listing counts as evidence. A state store that
+/// Retirement does remove it, though, which is why an absent binding is not on its own proof that a
+/// target was never published: retiring one target while another remains would otherwise make the
+/// retired one look internal-only. Retirement writes a retirement record before deleting the binding,
+/// and this provider reads those records whenever no binding names the target. A retirement that
+/// names it reports <c>Historical</c>.
+///
+/// Only a completed, fully readable, non-empty binding listing counts as evidence. A state store that
 /// cannot be listed, that holds a record this build cannot read as a binding, or that holds no
 /// binding at all yields <c>Unknown</c> so the E18 gate rejects without mutation. The empty case
 /// rejects because a fresh volume, a mis-mounted root, and a root pointed at another deployment all
 /// list empty, so an absent binding only means something once a readable one has shown that this is
-/// the populated, authoritative store. The provider never reports <c>Possible</c>: it either reads
-/// the deployment's records or it does not.
+/// the populated, authoritative store. Retirements are the exception to that reasoning: a deployment
+/// that has retired nothing legitimately holds none, so an empty retirement listing is an answer
+/// rather than a gap. The provider never reports <c>Possible</c>: it either reads the deployment's
+/// records or it does not.
 ///
 /// The deployment key is read from raw configuration rather than through <c>CdcControlOptions</c>
 /// on purpose. Those options are validated on first resolution, which the administrative host
@@ -137,12 +145,44 @@ public sealed class CdcDownstreamPublicationHistoryProvider(
 
         if (matchedBinding is null)
         {
+            // No live binding names this target, which is not yet the same as never having published
+            // it: retirement removes the binding record it retires. The retirement records are the
+            // durable trace of that, and they must be read before an absent binding may be read as
+            // proof of an unpublished target.
+            CdcRetirementListResult retirementsResult = await _bindingLifecycleService
+                .ListRetirementsAsync(deploymentKey, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (retirementsResult.Status != CdcControlPlaneOperationStatus.Succeeded)
+            {
+                return Unknown(
+                    targetKey,
+                    currentPhysicalSourceFingerprint,
+                    "The CDC retirement records could not be listed, so downstream publication history is unavailable."
+                );
+            }
+
+            CdcRetirement? matchedRetirement = retirementsResult.Retirements.FirstOrDefault(retirement =>
+                IsSameTarget(retirement, bindingTenantKey, bindingDataStoreId)
+            );
+
+            if (matchedRetirement is not null)
+            {
+                return Observation(
+                    targetKey,
+                    currentPhysicalSourceFingerprint,
+                    DocumentCacheDownstreamPublicationStatus.Historical,
+                    matchedRetirement.Generation.ToString(CultureInfo.InvariantCulture),
+                    "A retired CDC binding published this target downstream, so its projection is not internal-only."
+                );
+            }
+
             return Observation(
                 targetKey,
                 currentPhysicalSourceFingerprint,
                 DocumentCacheDownstreamPublicationStatus.InternalOnly,
                 evidenceGenerationIdentifier: null,
-                "The deployment's CDC bindings name other targets and none binds this one, so its projection was never published downstream."
+                "The deployment's CDC bindings name other targets, none binds this one, and none was ever retired for it, so its projection was never published downstream."
             );
         }
 
@@ -169,6 +209,14 @@ public sealed class CdcDownstreamPublicationHistoryProvider(
         // tenant keys that way. A case difference must not read as "no binding".
         string.Equals(binding.TenantKey, bindingTenantKey, StringComparison.OrdinalIgnoreCase)
         && string.Equals(binding.DataStoreId, bindingDataStoreId, StringComparison.Ordinal);
+
+    private static bool IsSameTarget(
+        CdcRetirement retirement,
+        string bindingTenantKey,
+        string bindingDataStoreId
+    ) =>
+        string.Equals(retirement.TenantKey, bindingTenantKey, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(retirement.DataStoreId, bindingDataStoreId, StringComparison.Ordinal);
 
     private static bool IsSameSource(
         CdcBinding binding,

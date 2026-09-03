@@ -58,6 +58,7 @@ public enum CdcProviderArtifactKind
     Grant,
     SourceFingerprint,
     ProviderHistory,
+    SetupPrincipalIdentity,
 }
 
 public enum CdcProviderArtifactState

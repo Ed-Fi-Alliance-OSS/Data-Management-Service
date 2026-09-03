@@ -67,6 +67,91 @@ public class Given_CdcSetupControllerAdoption
     }
 
     /// <summary>
+    /// Adoption repairs deployment state around an artifact set that is already publishing, so a
+    /// connector the worker is not running is not something to adopt. A task count alone cannot say
+    /// that: a paused, stopped, or failed connector still declares its single task, and adopting one
+    /// would mint a binding record asserting a publication that is not happening.
+    /// </summary>
+    [TestCase("PAUSED", "PAUSED")]
+    [TestCase("STOPPED", "STOPPED")]
+    [TestCase("FAILED", "FAILED")]
+    [TestCase("RUNNING", "FAILED")]
+    [TestCase("PAUSED", "RUNNING")]
+    public async Task It_refuses_a_connector_that_is_not_running_its_single_task(
+        string connectorState,
+        string taskState
+    )
+    {
+        CdcSetupControllerHarness harness = new()
+        {
+            ConnectorStatus = CdcSetupControllerHarness.RunningConnector(connectorState, taskState),
+        };
+
+        CdcContractReadResult<CdcAdoptionProof> adoption = await harness.AdoptAsync();
+
+        using var _ = new AssertionScope();
+        adoption.Succeeded.Should().BeFalse();
+        Refusal(adoption, CdcAdoptionVerificationKind.Connector).Should().NotBeNull();
+        A.CallTo(() =>
+                harness.Bindings.ImportVerifiedBindingAsync(A<CdcAdoptionProof>._, A<CancellationToken>._)
+            )
+            .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// Each logical public topic maps to exactly one physical database, because the captured rows carry
+    /// no tenant or data-store discriminator to tell two logical targets apart downstream. Adoption
+    /// imports a record the operator supplies, so it is one of the two ways a second logical target
+    /// could come to bind a source this deployment already publishes.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_a_record_binding_a_physical_source_another_target_already_publishes()
+    {
+        CdcBinding otherTarget = CdcSetupControllerHarness.Binding() with
+        {
+            DataStoreId = "77",
+            InstanceKey = "ds77",
+        };
+
+        CdcSetupControllerHarness harness = new()
+        {
+            BindingListing = CdcSetupControllerHarness.ListedBindings(otherTarget),
+        };
+
+        CdcContractReadResult<CdcAdoptionProof> adoption = await harness.AdoptAsync();
+
+        using var _ = new AssertionScope();
+        adoption.Succeeded.Should().BeFalse();
+        adoption
+            .Diagnostics.Should()
+            .Contain(diagnostic => diagnostic.Category == CdcDiagnosticCategory.SourceMismatch);
+        A.CallTo(() =>
+                harness.Bindings.ImportVerifiedBindingAsync(A<CdcAdoptionProof>._, A<CancellationToken>._)
+            )
+            .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// Another generation of the same logical target is the target continuing to own its source rather
+    /// than a second target arriving at it, which is what an enable retry and a source replacement both
+    /// leave in the store.
+    /// </summary>
+    [Test]
+    public async Task It_adopts_when_the_only_other_binding_is_an_earlier_generation_of_this_target()
+    {
+        CdcBinding earlierGeneration = CdcSetupControllerHarness.Binding() with { Generation = 1 };
+
+        CdcSetupControllerHarness harness = new()
+        {
+            BindingListing = CdcSetupControllerHarness.ListedBindings(earlierGeneration),
+        };
+
+        CdcContractReadResult<CdcAdoptionProof> adoption = await harness.AdoptAsync();
+
+        adoption.Succeeded.Should().BeTrue();
+    }
+
+    /// <summary>
     /// A live connector holding a configuration that is not the one the supplied record renders is not
     /// the binding's connector, and nothing about that record becomes durable.
     /// </summary>

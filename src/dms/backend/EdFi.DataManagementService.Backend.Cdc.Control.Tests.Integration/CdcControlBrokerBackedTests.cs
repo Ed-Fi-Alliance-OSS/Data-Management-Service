@@ -218,8 +218,9 @@ public sealed class Given_CdcControlBrokerBackedStack
     {
         using CancellationTokenSource cancellation = new(OperationTimeout);
 
-        CdcKafkaBindingTopicPolicies policies = await _fixture.KafkaAdmin.EnsureBindingTopicsAsync(
+        CdcKafkaBindingTopicPolicies policies = await _fixture.KafkaAdmin.BindingTopicsAsync(
             Inventory,
+            CdcKafkaProvisioningMode.CreateOrValidate,
             cancellation.Token
         );
 
@@ -258,8 +259,9 @@ public sealed class Given_CdcControlBrokerBackedStack
     {
         using CancellationTokenSource cancellation = new(OperationTimeout);
 
-        CdcKafkaBindingTopicPolicies policies = await _fixture.KafkaAdmin.EnsureBindingTopicsAsync(
+        CdcKafkaBindingTopicPolicies policies = await _fixture.KafkaAdmin.BindingTopicsAsync(
             Inventory,
+            CdcKafkaProvisioningMode.CreateOrValidate,
             cancellation.Token
         );
 
@@ -320,11 +322,15 @@ public sealed class Given_CdcControlBrokerBackedStack
         CoreCdc.CdcArtifactInventory oversizedInventory = CdcControlBrokerFixture.BuildVariantInventory(
             CdcControlBrokerFixture.OversizedGeneration
         );
-        ICdcKafkaAdmin admin = _fixture.KafkaAdminWith(options =>
+        CdcKafkaAdminAdapter admin = _fixture.KafkaAdminWith(options =>
             options.MaxRecordBytes = CdcControlBrokerFixture.OversizedRecordBytes
         );
 
-        await admin.EnsureBindingTopicsAsync(oversizedInventory, cancellation.Token);
+        await admin.BindingTopicsAsync(
+            oversizedInventory,
+            CdcKafkaProvisioningMode.CreateOrValidate,
+            cancellation.Token
+        );
         CdcKafkaRecordSizeEvidence evidence = await admin.VerifyRecordSizeAsync(
             oversizedInventory,
             cancellation.Token

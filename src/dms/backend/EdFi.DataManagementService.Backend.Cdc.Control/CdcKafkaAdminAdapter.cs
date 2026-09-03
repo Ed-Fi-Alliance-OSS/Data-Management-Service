@@ -44,25 +44,6 @@ public interface ICdcKafkaAdmin
     );
 
     /// <summary>
-    /// Resolves the binding-governed Kafka topics named by <paramref name="inventory"/>, creating each
-    /// when absent and validating the actual partition count, cleanup policy, durability, and explicit
-    /// per-topic overrides against the deployment policy. Repeated execution is idempotent.
-    /// </summary>
-    /// <remarks>
-    /// Broker defaults are never relied on: every governed override must be an explicit topic-level
-    /// value. A topic whose evidence cannot be obtained reports
-    /// <see cref="CdcKafkaPolicyItemState.Unknown"/>, never <see cref="CdcKafkaPolicyItemState.Satisfied"/>.
-    ///
-    /// Exposed for broker-backed verification of topic policy on its own. No control-plane path calls
-    /// it: enablement reaches the same work through <see cref="EnsureBindingKafkaPolicyAsync"/>, which
-    /// composes topics, ACLs, and the record-size budget into one validated observation.
-    /// </remarks>
-    Task<CdcKafkaBindingTopicPolicies> EnsureBindingTopicsAsync(
-        CdcArtifactInventory inventory,
-        CancellationToken cancellationToken
-    );
-
-    /// <summary>
     /// Verifies that the broker request, record-batch, and replica-fetch limits accept the configured
     /// record-size budget, and derives the producer buffer the connector is rendered with.
     /// </summary>
@@ -185,10 +166,6 @@ public sealed record CdcKafkaRecordSizeEvidence(
 );
 
 /// <summary>
-/// Replication and in-sync-replica floors the active deployment durability profile requires of
-/// governed Kafka topics.
-/// </summary>
-/// <summary>
 /// Whether a Kafka policy pass may provision what it finds absent, or must only report it.
 /// </summary>
 internal enum CdcKafkaProvisioningMode
@@ -203,6 +180,10 @@ internal enum CdcKafkaProvisioningMode
     ValidateOnly,
 }
 
+/// <summary>
+/// Replication and in-sync-replica floors the active deployment durability profile requires of
+/// governed Kafka topics.
+/// </summary>
 internal sealed record CdcKafkaDurabilityPolicy(short ReplicationFactor, int MinInSyncReplicas)
 {
     public static CdcKafkaDurabilityPolicy For(CdcDurabilityProfile durabilityProfile) =>
@@ -429,12 +410,26 @@ internal sealed class CdcKafkaAdminAdapter(
         }
     }
 
-    public Task<CdcKafkaBindingTopicPolicies> EnsureBindingTopicsAsync(
-        CdcArtifactInventory inventory,
-        CancellationToken cancellationToken
-    ) => BindingTopicsAsync(inventory, CdcKafkaProvisioningMode.CreateOrValidate, cancellationToken);
-
-    private async Task<CdcKafkaBindingTopicPolicies> BindingTopicsAsync(
+    /// <summary>
+    /// Resolves the binding-governed Kafka topics named by <paramref name="inventory"/>, creating each
+    /// when absent under <see cref="CdcKafkaProvisioningMode.CreateOrValidate"/> and validating the
+    /// actual partition count, cleanup policy, durability, and explicit per-topic overrides against the
+    /// deployment policy. Repeated execution is idempotent.
+    /// </summary>
+    /// <remarks>
+    /// Broker defaults are never relied on: every governed override must be an explicit topic-level
+    /// value. A topic whose evidence cannot be obtained reports
+    /// <see cref="CdcKafkaPolicyItemState.Unknown"/>, never <see cref="CdcKafkaPolicyItemState.Satisfied"/>.
+    ///
+    /// Internal rather than part of <see cref="ICdcKafkaAdmin"/>: no control-plane path resolves topics
+    /// on their own, and every production pass reaches this through
+    /// <see cref="EnsureBindingKafkaPolicyAsync"/> or <see cref="DescribeBindingKafkaPolicyAsync"/>,
+    /// which compose topics, ACLs, and the record-size budget into one validated observation. Keeping it
+    /// on the interface obliged every implementer - including two integration-test fakes - to supply a
+    /// method the control plane never calls. It stays reachable so topic policy can be verified against
+    /// a broker on its own, with the caller naming the provisioning mode it is exercising.
+    /// </remarks>
+    internal async Task<CdcKafkaBindingTopicPolicies> BindingTopicsAsync(
         CdcArtifactInventory inventory,
         CdcKafkaProvisioningMode mode,
         CancellationToken cancellationToken
@@ -1115,17 +1110,14 @@ internal sealed class CdcKafkaAdminAdapter(
     /// broader than the binding owns.
     /// </summary>
     /// <remarks>
-    /// Exposed for verification of ACL policy on its own. No control-plane path calls it: every
-    /// production pass reaches <see cref="BindingAclsAsync"/> through
+    /// Internal rather than part of <see cref="ICdcKafkaAdmin"/>: no control-plane path resolves ACLs on
+    /// their own, and every production pass reaches this through
     /// <see cref="EnsureBindingKafkaPolicyAsync"/> or <see cref="DescribeBindingKafkaPolicyAsync"/>,
-    /// which supply the provisioning mode this wrapper fixes to create-or-validate.
+    /// which compose topics, ACLs, and the record-size budget into one validated observation. It stays
+    /// reachable so ACL policy can be verified on its own, with the caller naming the provisioning mode
+    /// it is exercising.
     /// </remarks>
-    internal Task<CdcKafkaBindingAclPolicies> EnsureBindingAclsAsync(
-        CdcArtifactInventory inventory,
-        CancellationToken cancellationToken
-    ) => BindingAclsAsync(inventory, CdcKafkaProvisioningMode.CreateOrValidate, cancellationToken);
-
-    private async Task<CdcKafkaBindingAclPolicies> BindingAclsAsync(
+    internal async Task<CdcKafkaBindingAclPolicies> BindingAclsAsync(
         CdcArtifactInventory inventory,
         CdcKafkaProvisioningMode mode,
         CancellationToken cancellationToken
@@ -1187,7 +1179,7 @@ internal sealed class CdcKafkaAdminAdapter(
                         ResourceType.Group,
                         consumer.ConsumerGroup,
                         "consumerGroupAcls",
-                        [new(consumer.Principal, AclOperation.Read)],
+                        [new(consumer.Principal, AnyHost, AclOperation.Read)],
                         mode,
                         timeout,
                         observedAt,
@@ -1263,8 +1255,8 @@ internal sealed class CdcKafkaAdminAdapter(
     /// <summary>Connector producer access: write the record and describe the topic it writes to.</summary>
     private static CdcKafkaAclGrant[] ProducerRequirements(CdcControlOptions controlOptions) =>
         [
-            new(controlOptions.ConnectorPrincipal, AclOperation.Write),
-            new(controlOptions.ConnectorPrincipal, AclOperation.Describe),
+            new(controlOptions.ConnectorPrincipal, AnyHost, AclOperation.Write),
+            new(controlOptions.ConnectorPrincipal, AnyHost, AclOperation.Describe),
         ];
 
     /// <summary>
@@ -1277,8 +1269,8 @@ internal sealed class CdcKafkaAdminAdapter(
             .. controlOptions.Consumers.SelectMany(consumer =>
                 new CdcKafkaAclGrant[]
                 {
-                    new(consumer.Principal, AclOperation.Read),
-                    new(consumer.Principal, AclOperation.Describe),
+                    new(consumer.Principal, AnyHost, AclOperation.Read),
+                    new(consumer.Principal, AnyHost, AclOperation.Describe),
                 }
             ),
         ];
@@ -1289,10 +1281,10 @@ internal sealed class CdcKafkaAdminAdapter(
     /// </summary>
     private static CdcKafkaAclGrant[] SchemaHistoryRequirements(CdcControlOptions controlOptions) =>
         [
-            new(controlOptions.ConnectorPrincipal, AclOperation.Read),
-            new(controlOptions.ConnectorPrincipal, AclOperation.Write),
-            new(controlOptions.ConnectorPrincipal, AclOperation.Describe),
-            new(controlOptions.ConnectorPrincipal, AclOperation.DescribeConfigs),
+            new(controlOptions.ConnectorPrincipal, AnyHost, AclOperation.Read),
+            new(controlOptions.ConnectorPrincipal, AnyHost, AclOperation.Write),
+            new(controlOptions.ConnectorPrincipal, AnyHost, AclOperation.Describe),
+            new(controlOptions.ConnectorPrincipal, AnyHost, AclOperation.DescribeConfigs),
         ];
 
     private async Task<CdcKafkaPolicyItemState> EnsureResourceAclsAsync(
@@ -1353,7 +1345,11 @@ internal sealed class CdcKafkaAdminAdapter(
                 continue;
             }
 
-            CdcKafkaAclGrant grant = new(binding.Entry.Principal, binding.Entry.Operation);
+            CdcKafkaAclGrant grant = new(
+                binding.Entry.Principal,
+                binding.Entry.Host,
+                binding.Entry.Operation
+            );
 
             if (binding.Entry.PermissionType != AclPermissionType.Allow || !required.Contains(grant))
             {
@@ -1577,7 +1573,7 @@ internal sealed class CdcKafkaAdminAdapter(
             Entry = new AccessControlEntry
             {
                 Principal = grant.Principal,
-                Host = AnyHost,
+                Host = grant.Host,
                 Operation = grant.Operation,
                 PermissionType = AclPermissionType.Allow,
             },
@@ -2242,6 +2238,25 @@ internal sealed class CdcKafkaAdminAdapter(
                 continue;
             }
 
+            // The host belongs to the grant as much as the principal does. A grant admitting the worker
+            // from one host does not admit the worker running anywhere else, so counting it toward the
+            // required operations would report a satisfied offset store the worker cannot actually
+            // reach. This pass validates and never repairs, so the nonconformance is all it can report.
+            if (!string.Equals(binding.Entry.Host, AnyHost, StringComparison.Ordinal))
+            {
+                invalid = true;
+                diagnostics.Add(
+                    OffsetStoreInvalid(
+                        "$.aclState",
+                        observedAt,
+                        "CDC Connect offset-store grants must admit the Connect worker from any host.",
+                        AnyHost,
+                        binding.Entry.Host
+                    )
+                );
+                continue;
+            }
+
             workerOperations.Add(binding.Entry.Operation);
         }
 
@@ -2743,8 +2758,19 @@ internal sealed class CdcKafkaAdminAdapter(
             observed: observed
         ).WithPath(path);
 
-    /// <summary>One required Allow grant: a principal and the single operation it is granted.</summary>
-    private readonly record struct CdcKafkaAclGrant(string Principal, AclOperation Operation);
+    /// <summary>
+    /// One required Allow grant: a principal, the host the grant admits it from, and the single
+    /// operation it is granted.
+    /// </summary>
+    /// <remarks>
+    /// The host is part of the grant's identity rather than a detail of how it is created. Kafka
+    /// authorizes on the triple, so a grant that names the right principal and operation from one host
+    /// does not admit the connector or consumer running anywhere else. Comparing without it would let a
+    /// host-restricted grant satisfy a requirement this control plane only ever creates as
+    /// <see cref="AnyHost" />, and the missing wildcard grant would never be created because the
+    /// requirement already looked met.
+    /// </remarks>
+    private readonly record struct CdcKafkaAclGrant(string Principal, string Host, AclOperation Operation);
 
     private enum CdcKafkaConfigComparison
     {
