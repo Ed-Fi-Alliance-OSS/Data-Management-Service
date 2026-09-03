@@ -997,6 +997,14 @@ can be moved with `-CdcBindingStatePath`. It holds one immutable binding record 
 generation and is deliberately outside the `.bootstrap/` workspace: a binding record outlives
 any one bootstrap run and lives at least as long as every artifact it governs.
 
+The generation is allocated from that store, not fixed at 1: the enable phase takes one past
+the highest generation the store has ever held for the target, counting retirement records as
+well as live bindings. So a second local cycle — enable, `-d -v`, enable again — binds
+generation 2 and publishes under its own connector, topics, and consumer state. The governed
+names carry the generation, so the public topic moves from
+`edfi.dms.instance.<instanceKey>-g1.documents.v1` to `-g2`; a consumer pinned to the old name
+sees no new records. Delete the store to start over from generation 1.
+
 Teardown is where the distinction matters:
 
 * `./start-local-dms.ps1 -d` (or `./bootstrap-local-dms.ps1 -d`) stops the stack and

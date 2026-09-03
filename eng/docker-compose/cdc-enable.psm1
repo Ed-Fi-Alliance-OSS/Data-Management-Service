@@ -226,6 +226,113 @@ function Get-CdcConnectorEnvArgument {
     return $arguments
 }
 
+function Resolve-CdcHostBindingStateRoot {
+    <#
+    .SYNOPSIS
+        The host path of the durable binding state store the setup container will be given.
+
+    .DESCRIPTION
+        Read the way Compose reads it, because Compose is what turns it into the /state bind mount:
+        an ambient DMS_CDC_BINDING_STATE_PATH wins over the env file's own text, and an absent or
+        blank value falls back to the same ./.cdc-state default cdc-setup.yml declares. A relative
+        value resolves against this directory, which is the compose project directory the mount
+        source is relative to.
+
+        Resolved here rather than taken as a parameter from the phase's callers: the generation this
+        phase allocates has to be read from the very store the container will write to, and the env
+        file plus the ambient environment are the only authorities on which one that is.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [hashtable]
+        $EnvValues
+    )
+
+    Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
+
+    $configured = Get-ComposeResolvedEnvValue `
+        -EnvironmentValues $EnvValues `
+        -Name "DMS_CDC_BINDING_STATE_PATH" `
+        -DefaultValue "./.cdc-state"
+
+    if ([System.IO.Path]::IsPathRooted($configured)) {
+        return [System.IO.Path]::GetFullPath($configured)
+    }
+
+    return [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $configured))
+}
+
+function Get-CdcNextGeneration {
+    <#
+    .SYNOPSIS
+        The generation a new binding for this instance key may be created under.
+
+    .DESCRIPTION
+        One past the highest generation the store has ever held for the instance key, counting the
+        retirement records as well as the live bindings - so the first binding of a target is 1, and
+        a target whose only generation was retired gets 2.
+
+        Both trees are counted because retirement removes the binding record it retires and leaves
+        the retirement record as the only trace. Reading the bindings alone makes a retired
+        generation look unallocated, and this store's root is a deployment path rather than a
+        container volume: it survives the destructive volume removal that destroys the database the
+        generation was bound to, so the next stack would ask for that same generation against a new
+        physical source. That reassigns an existing connector name, topic namespace, and consumer
+        state to a different database, which v1 never does - the control plane refuses it, and
+        without this the refusal would land on every enable after the first teardown.
+
+        A store that cannot be enumerated is fatal rather than empty, for the same reason it is in
+        the teardown module: an unreadable tree read as "no generations" would allocate 1 over
+        records it could not see.
+    #>
+    [CmdletBinding()]
+    [OutputType([long])]
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $BindingStateRoot,
+
+        [Parameter(Mandatory)]
+        [string]
+        $DeploymentKey,
+
+        [Parameter(Mandatory)]
+        [string]
+        $InstanceKey
+    )
+
+    $highest = 0L
+    foreach ($stateKind in @("bindings", "retirements")) {
+        $instanceDirectory = Join-Path (Join-Path (Join-Path $BindingStateRoot $stateKind) $DeploymentKey) $InstanceKey
+        if (-not (Test-Path -LiteralPath $instanceDirectory -PathType Container)) {
+            continue
+        }
+
+        $stateFiles = @()
+        try {
+            $stateFiles = @(Get-ChildItem -LiteralPath $instanceDirectory -File -Filter "*.json" -ErrorAction Stop)
+        }
+        catch {
+            throw "CDC phase: the binding state store at '$instanceDirectory' could not be enumerated ($($_.Exception.Message)). It may hold the generations this target has already published, so the phase stops rather than allocating one over them. Run the enable from a host account that can read the store."
+        }
+
+        foreach ($stateFile in $stateFiles) {
+            $generationName = [System.IO.Path]::GetFileNameWithoutExtension($stateFile.Name)
+            $generation = 0L
+            if (-not [long]::TryParse($generationName, [ref]$generation) -or $generation -lt 1) {
+                throw "CDC phase: '$($stateFile.FullName)' is not named for a binding generation. The store's own layout names each record for the generation it holds, so a generation cannot be allocated without reading it. Repair or remove that file before enabling CDC."
+            }
+
+            if ($generation -gt $highest) {
+                $highest = $generation
+            }
+        }
+    }
+
+    return $highest + 1
+}
+
 function Get-CdcSetupComposeArgument {
     <#
     .SYNOPSIS
@@ -373,6 +480,13 @@ function Get-CdcEnableArgument {
         [string]
         $SourceDatabaseName,
 
+        # Host path of the durable binding state store this run will mount. Required because the
+        # generation is allocated from it: a guess would either collide with a live binding or
+        # reassign one this deployment already retired.
+        [Parameter(Mandatory)]
+        [string]
+        $BindingStateRoot,
+
         [hashtable]
         $ConnectorPrincipal
     )
@@ -406,12 +520,21 @@ function Get-CdcEnableArgument {
         )
     }
 
-    # The keys are opaque and only have to be stable for the binding they name; the generation is 1
-    # because bootstrap only ever creates a target's first binding.
+    # The keys are opaque and only have to be stable for the binding they name. The generation is
+    # allocated from the store rather than fixed at 1: a target's first binding gets 1, and one whose
+    # earlier generation was retired gets the next, because the retirement record outlives the
+    # binding it removed and the control plane never rebinds a retired generation.
+    $deploymentKey = "local"
+    $instanceKey = "ds$DataStoreId"
+    $generation = Get-CdcNextGeneration `
+        -BindingStateRoot $BindingStateRoot `
+        -DeploymentKey $deploymentKey `
+        -InstanceKey $instanceKey
+
     $verbArguments += @(
-        "--deployment-key", "local",
-        "--instance-key", "ds$DataStoreId",
-        "--generation", "1"
+        "--deployment-key", $deploymentKey,
+        "--instance-key", $instanceKey,
+        "--generation", "$generation"
     )
 
     return Get-CdcSetupComposeArgument `
@@ -530,6 +653,7 @@ function Invoke-CdcEnablePhase {
         -DatabaseCreatedByThisRun $DatabaseCreatedByThisRun `
         -DmsBearerToken $operatorToken `
         -SourceDatabaseName $resolvedSourceDatabaseName `
+        -BindingStateRoot (Resolve-CdcHostBindingStateRoot -EnvValues $envValues) `
         -ConnectorPrincipal $connectorPrincipal
 
     Write-Information "CDC phase: enabling CDC for data store $DataStoreId." -InformationAction Continue
@@ -653,6 +777,8 @@ Export-ModuleMember -Function `
     Get-CdcConnectorPrincipalEnvArgument, `
     Get-CdcConnectorEnvArgument, `
     Get-CdcSetupComposeArgument, `
+    Resolve-CdcHostBindingStateRoot, `
+    Get-CdcNextGeneration, `
     Get-CdcEnableArgument, `
     Invoke-CdcEnablePhase, `
     Wait-CdcHttpEndpoint, `

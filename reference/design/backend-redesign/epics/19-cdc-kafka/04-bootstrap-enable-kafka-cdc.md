@@ -272,6 +272,18 @@ owning rule rather than a gap in this story.
 - The durable binding state store is a persistent root outside the bootstrap manifest. The
   manifest is prepared-input handoff, while a binding record outlives any one bootstrap run
   and lives at least as long as every artifact it governs.
+- The enable phase allocates the binding generation from that store rather than fixing it at
+  the target's first. It takes one past the highest generation the store has ever held for the
+  instance key, counting the retirement records as well as the live bindings, because
+  retirement removes the binding record it retires and leaves the retirement record as the
+  only trace of it. Reading the live bindings alone would make a retired generation look
+  unallocated, and this root survives the destructive volume removal that destroys the
+  database the generation was bound to - so the next stack would ask to bind that same
+  generation to a new physical source, which the control plane refuses and v1 never does. The
+  governed names carry the generation, so a second local cycle publishes under its own
+  connector, topics, and consumer state rather than reusing the retired ones. A store that
+  cannot be enumerated, or a record not named for a generation, fails the phase rather than
+  allocating over what it could not read.
 - That root reaches the control-plane container as a host bind mount, and the setup image
   clears the group- and other-write bits from it before the tool runs. Docker Desktop presents
   any bind mount as world-writable whatever the host's own permissions are - including a

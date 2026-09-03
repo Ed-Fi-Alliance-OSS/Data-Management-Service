@@ -194,6 +194,23 @@ Describe "DMS-1323 bootstrap CDC phase" {
         # Searches the wrapper and the CDC phase module. The CDC phase's own behavior lives in
         # cdc-enable.psm1 and the sequencing in bootstrap-wrapper.psm1, and a test that asserts on a
         # function's text should not have to know which of the two it ended up in.
+        function script:New-AbsentStateRoot {
+            <#
+            .SYNOPSIS
+                A binding state store root that does not exist, so a generation is allocated from
+                nothing.
+
+            .DESCRIPTION
+                The enable-argument builder allocates the generation from the store, which would make
+                every assertion about its other arguments depend on what the store happens to hold. A
+                root that is not there is the deterministic "no target has ever been bound" case, and
+                it keeps the developer's real eng/docker-compose/.cdc-state - which may hold records
+                from an actual local run - out of these tests. The tests about the allocation itself
+                create a real root and populate it.
+            #>
+            return Join-Path ([System.IO.Path]::GetTempPath()) "dms-1323-absent-state-$([System.Guid]::NewGuid().ToString('n'))"
+        }
+
         function script:Get-WrapperFunctionText {
             param(
                 [Parameter(Mandatory)]
@@ -492,7 +509,8 @@ Describe "DMS-1323 bootstrap CDC phase" {
                 -DatabaseEngine "postgresql" `
                 -DatabaseCreatedByThisRun $true `
                 -DmsBearerToken "token-value" `
-                -SourceDatabaseName "edfi_datamanagementservice"
+                -SourceDatabaseName "edfi_datamanagementservice" `
+                -BindingStateRoot (New-AbsentStateRoot)
         }
 
         It "runs the tool as a one-shot container on the dms network" {
@@ -523,6 +541,109 @@ Describe "DMS-1323 bootstrap CDC phase" {
             $script:createdRunArguments | Should -Not -Contain "--tenant-key"
         }
 
+        It "allocates the generation past every one the store has held, retirements included" {
+            # The destructive teardown retires the binding and leaves the retirement record as the
+            # only trace of it. Allocating 1 again would ask the control plane to reassign a retired
+            # generation - which it refuses - so every enable after the first teardown would fail.
+            $root = Join-Path ([System.IO.Path]::GetTempPath()) "dms-1323-generation-$([System.Guid]::NewGuid().ToString('n'))"
+            try {
+                $retirements = Join-Path (Join-Path (Join-Path $root "retirements") "local") "ds1"
+                New-Item -ItemType Directory -Force -Path $retirements | Out-Null
+                "{}" | Set-Content -LiteralPath (Join-Path $retirements "1.json") -Encoding utf8
+
+                Get-CdcNextGeneration -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds1" |
+                    Should -Be 2
+
+                # A live binding counts the same way, and the highest across both trees wins.
+                $bindings = Join-Path (Join-Path (Join-Path $root "bindings") "local") "ds1"
+                New-Item -ItemType Directory -Force -Path $bindings | Out-Null
+                "{}" | Set-Content -LiteralPath (Join-Path $bindings "4.json") -Encoding utf8
+
+                Get-CdcNextGeneration -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds1" |
+                    Should -Be 5
+
+                # Another instance key allocates from its own generations, not this one's.
+                Get-CdcNextGeneration -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds7" |
+                    Should -Be 1
+
+                # And the allocated value is what the enable invocation actually carries.
+                $arguments = Get-CdcEnableArgument `
+                    -ComposeProjectName "dms-local" `
+                    -EnvironmentFile "/tmp/.env.derived" `
+                    -TenantKey "" `
+                    -DataStoreId 1 `
+                    -DatabaseEngine "postgresql" `
+                    -DatabaseCreatedByThisRun $true `
+                    -DmsBearerToken "token-value" `
+                    -SourceDatabaseName "edfi_datamanagementservice" `
+                    -BindingStateRoot $root
+
+                ($arguments -join " ") | Should -BeLike "*--instance-key ds1*"
+                ($arguments -join " ") | Should -BeLike "*--generation 5*"
+            }
+            finally {
+                Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "refuses to allocate a generation over a record it cannot read as one" {
+            # The store names each record for the generation it holds, so a file that is not named
+            # for one leaves the allocation unable to tell which generations are taken.
+            $root = Join-Path ([System.IO.Path]::GetTempPath()) "dms-1323-generation-$([System.Guid]::NewGuid().ToString('n'))"
+            try {
+                $bindings = Join-Path (Join-Path (Join-Path $root "bindings") "local") "ds1"
+                New-Item -ItemType Directory -Force -Path $bindings | Out-Null
+                "{}" | Set-Content -LiteralPath (Join-Path $bindings "not-a-generation.json") -Encoding utf8
+
+                {
+                    Get-CdcNextGeneration -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds1"
+                } | Should -Throw -ExpectedMessage "*is not named for a binding generation*"
+            }
+            finally {
+                Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "allocates from the store the setup container will be given, resolved as Compose resolves it" {
+            # The mount source is DMS_CDC_BINDING_STATE_PATH, and an ambient value wins over the env
+            # file's own text - so the generation must be read from that store, not from the default.
+            $root = Join-Path ([System.IO.Path]::GetTempPath()) "dms-1323-generation-$([System.Guid]::NewGuid().ToString('n'))"
+            $previous = [System.Environment]::GetEnvironmentVariable('DMS_CDC_BINDING_STATE_PATH')
+            try {
+                $env:DMS_CDC_BINDING_STATE_PATH = $root
+
+                Resolve-CdcHostBindingStateRoot -EnvValues @{ DMS_CDC_BINDING_STATE_PATH = "./ignored" } |
+                    Should -Be ([System.IO.Path]::GetFullPath($root))
+
+                # An absent key falls back to the same ./.cdc-state default the compose file
+                # declares, as an absolute host path rather than a path relative to the caller.
+                Remove-Item -LiteralPath "Env:DMS_CDC_BINDING_STATE_PATH" -ErrorAction SilentlyContinue
+                $default = Resolve-CdcHostBindingStateRoot -EnvValues @{}
+                [System.IO.Path]::IsPathRooted($default) | Should -BeTrue
+                $default | Should -BeLike "*.cdc-state"
+            }
+            finally {
+                if ($null -eq $previous) {
+                    Remove-Item -LiteralPath "Env:DMS_CDC_BINDING_STATE_PATH" -ErrorAction SilentlyContinue
+                }
+                else {
+                    $env:DMS_CDC_BINDING_STATE_PATH = $previous
+                }
+
+                Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "reads the generation from the store the phase resolves, not from a fixed value" {
+            # The phase is what knows the env file, so it is what resolves the mounted store and
+            # hands it to the argument builder; a hardcoded generation here is the defect this guards.
+            $phaseText = Get-WrapperFunctionText -FunctionName "Invoke-CdcEnablePhase"
+
+            $phaseText | Should -Match '-BindingStateRoot \(Resolve-CdcHostBindingStateRoot -EnvValues \$envValues\)'
+            (Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "cdc-enable.psm1") -Raw) |
+                Should -Not -Match '"--generation", "1"'
+        }
+
         It "passes an explicit tenant key when one is configured" {
             $arguments = Get-CdcEnableArgument `
                 -ComposeProjectName "dms-local" `
@@ -532,7 +653,8 @@ Describe "DMS-1323 bootstrap CDC phase" {
                 -DatabaseEngine "postgresql" `
                 -DatabaseCreatedByThisRun $true `
                 -DmsBearerToken "token-value" `
-                -SourceDatabaseName "edfi_datamanagementservice"
+                -SourceDatabaseName "edfi_datamanagementservice" `
+                -BindingStateRoot (New-AbsentStateRoot)
 
             ($arguments -join " ") | Should -BeLike "*--tenant-key district-a*"
         }
@@ -550,7 +672,8 @@ Describe "DMS-1323 bootstrap CDC phase" {
                 -DatabaseEngine "postgresql" `
                 -DatabaseCreatedByThisRun $false `
                 -DmsBearerToken "token-value" `
-                -SourceDatabaseName "edfi_datamanagementservice"
+                -SourceDatabaseName "edfi_datamanagementservice" `
+                -BindingStateRoot (New-AbsentStateRoot)
 
             $reusedArguments | Should -Not -Contain "--database-creation-mode"
             $reusedArguments | Should -Not -Contain "--write-admission"
@@ -568,7 +691,8 @@ Describe "DMS-1323 bootstrap CDC phase" {
                 -DatabaseEngine "mssql" `
                 -DatabaseCreatedByThisRun $true `
                 -DmsBearerToken "token-value" `
-                -SourceDatabaseName "edfi_datamanagementservice"
+                -SourceDatabaseName "edfi_datamanagementservice" `
+                -BindingStateRoot (New-AbsentStateRoot)
 
             ($mssqlArguments -join " ") |
                 Should -BeLike "*DataManagement__DocumentCache__Cdc__SetupPrincipal=sa*"
@@ -603,7 +727,8 @@ Describe "DMS-1323 bootstrap CDC phase" {
                 -DatabaseEngine "mssql" `
                 -DatabaseCreatedByThisRun $true `
                 -DmsBearerToken "token-value" `
-                -SourceDatabaseName "edfi_datamanagementservice"
+                -SourceDatabaseName "edfi_datamanagementservice" `
+                -BindingStateRoot (New-AbsentStateRoot)
 
             $joined = $mssqlArguments -join " "
 
@@ -793,6 +918,15 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
         # The digest guard is lifted out of the straight-line start script and exercised directly -
         # the same technique the state-root resolver above uses.
         . ([scriptblock]::Create((Get-StartScriptFunctionText -FunctionName "Assert-CdcConnectImagePinnedByDigest")))
+
+        function script:New-AbsentStateRoot {
+            <#
+            .SYNOPSIS
+                A binding state store root that does not exist, so a generation is allocated from
+                nothing. See the sibling definition in the bootstrap CDC phase Describe.
+            #>
+            return Join-Path ([System.IO.Path]::GetTempPath()) "dms-1323-absent-state-$([System.Guid]::NewGuid().ToString('n'))"
+        }
 
         function script:New-BindingRecordFile {
             param(
@@ -1105,7 +1239,8 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
                 -DatabaseEngine "postgresql" `
                 -DatabaseCreatedByThisRun $true `
                 -DmsBearerToken "token" `
-                -SourceDatabaseName "edfi_datamanagementservice"
+                -SourceDatabaseName "edfi_datamanagementservice" `
+                -BindingStateRoot (New-AbsentStateRoot)
             $retireArguments = Get-CdcRetireArgument `
                 -ComposeProjectName "dms-local" `
                 -EnvironmentFile ".env" `
@@ -1196,7 +1331,8 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
                 -DatabaseEngine "postgresql" `
                 -DatabaseCreatedByThisRun $true `
                 -DmsBearerToken "token" `
-                -SourceDatabaseName "edfi_datamanagementservice"
+                -SourceDatabaseName "edfi_datamanagementservice" `
+                -BindingStateRoot (New-AbsentStateRoot)
             $retireArguments = Get-CdcRetireArgument `
                 -ComposeProjectName "dms-local" `
                 -EnvironmentFile ".env" `
