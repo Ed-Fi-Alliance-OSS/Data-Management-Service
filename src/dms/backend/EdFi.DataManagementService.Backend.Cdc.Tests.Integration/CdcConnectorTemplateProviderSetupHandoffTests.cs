@@ -21,6 +21,7 @@ public sealed class Given_PostgresqlProviderSetupToConnectorTemplateHandoff
     private const string SourceIdentity = "f81d4fae-7dec-11d0-a765-00a0c91e6bf6";
     private const string DeploymentKey = "dms";
     private const string InstanceKey = "handoff";
+    private const string SetupPrincipal = "handoff_setup_principal";
     private const string TopicPrefix = "edfi.handoff.documents";
     private static readonly CoreCdc.CdcArtifactInventory BindingArtifacts = BuildCoreArtifactInventory();
     private static readonly string ConnectorName = BindingArtifacts.ConnectorName;
@@ -130,7 +131,7 @@ public sealed class Given_PostgresqlProviderSetupToConnectorTemplateHandoff
             provider: CdcProvider.Postgresql,
             mode: CdcProviderSetupMode.ValidateOnly,
             boundPhysicalSourceFingerprint: sourceFingerprint,
-            setupPrincipal: new CdcSetupPrincipalContext(new CdcSafeName("handoff_setup_principal")),
+            setupPrincipal: new CdcSetupPrincipalContext(new CdcSafeName(SetupPrincipal)),
             connectorPrincipal: new CdcConnectorPrincipal(new CdcSafeName("handoff_connector_principal")),
             artifactNames: artifactNames,
             artifactOutput: new CdcProviderArtifactOutputRequest(IncludeManifestPayload: false),
@@ -248,6 +249,10 @@ public sealed class Given_PostgresqlProviderSetupToConnectorTemplateHandoff
         {
             IReadOnlyList<IReadOnlyDictionary<string, string?>> rows = sql switch
             {
+                var text when text.Contains("cdc:postgresql:setup-principal", StringComparison.Ordinal) =>
+                [
+                    Row(("setup_principal", SetupPrincipal)),
+                ],
                 var text when text.Contains("cdc:postgresql:source-fingerprint", StringComparison.Ordinal) =>
                 [
                     Row(("source_identity", SourceIdentity)),
