@@ -33,9 +33,8 @@ public interface ICustomResourceValidator
     /// without complaint, and an entry matching no resource in the effective schema surfaces as a
     /// startup warning rather than a failure, because an entry may legitimately name an extension
     /// resource a given deployment does not carry. Declaring no entries at all warns for the same
-    /// reason: the validator can never run. A name carrying anything outside letters, digits, dash
-    /// and underscore is reported the same way without being looked up, since no resource name can
-    /// contain such a character.
+    /// reason: the validator can never run. A name outside the ASCII letters and digits that a
+    /// resourceName key is allowed to contain is reported the same way, without being looked up.
     /// </summary>
     IReadOnlyList<ValidatedResource> AppliesTo { get; }
 

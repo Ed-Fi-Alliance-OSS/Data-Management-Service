@@ -7,6 +7,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Startup;
+using EdFi.DataManagementService.Core.Utilities;
 using EdFi.DataManagementService.CustomValidation;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using FluentAssertions;
@@ -105,6 +106,14 @@ public class Given_A_Host_With_The_Custom_Validator_Startup_Guard
         RecordingLoggerProvider LoggerProvider,
         RecordingStartupProcessExit ProcessExit
     );
+
+    /// <summary>
+    /// The guard logs validator type names through the sanitizer, whose allowlist excludes '+', so a
+    /// nested fixture type appears in records without it. Expected messages apply the same
+    /// transformation rather than embedding a hand-copied name.
+    /// </summary>
+    private static string Logged(Type validatorType) =>
+        LoggingSanitizer.SanitizeForLogging(validatorType.FullName);
 
     private TestHost BuildHost(Action<IServiceCollection> configureValidators) =>
         BuildHost(configureValidators, _statusDirectoriesToClean, _disposables);
@@ -240,11 +249,13 @@ public class Given_A_Host_With_The_Custom_Validator_Startup_Guard
     }
 
     /// <summary>
-    /// The ordering-independence case, which only a real host can show: this seam always runs after
-    /// WebApplicationBuilderExtensions.AddServices has already called AddCustomValidationGuard, so a
-    /// validator registered here stands in for a plugin's registration. The guard can only see it
-    /// through the closure-captured collection, never a snapshot fixed at its own call site, since
-    /// nothing was registered when that call ran.
+    /// A validator registered through this seam, which always runs after
+    /// WebApplicationBuilderExtensions.AddServices has already called AddCustomValidationGuard,
+    /// stands in for a plugin's registration. This asserts it is activated and AppliesTo-checked.
+    /// Both assertions read container-resolved effects, so on its own this does not distinguish the
+    /// closure from a snapshot taken at the extension's call site; the abort test below is what
+    /// proves the descriptor sweep sees a late registration, because an offense can only come from
+    /// the sweep.
     /// </summary>
     [Test]
     public async Task It_audits_a_validator_registered_after_the_extension()
@@ -266,7 +277,7 @@ public class Given_A_Host_With_The_Custom_Validator_Startup_Guard
                 record.Category == typeof(CustomValidatorRegistrationGuard).FullName
                 && record.Level == LogLevel.Information
                 && record.Message
-                    == $"ICustomResourceValidator '{typeof(BundledResourceValidator).FullName}' "
+                    == $"ICustomResourceValidator '{Logged(typeof(BundledResourceValidator))}' "
                         + $"AppliesTo entry: ProjectName '{RealProjectName}', ResourceName '{RealResourceName}'"
             );
 
@@ -280,10 +291,13 @@ public class Given_A_Host_With_The_Custom_Validator_Startup_Guard
     }
 
     /// <summary>
-    /// The fatal-path wiring, which only a real host can show: the guard's exception has to travel
-    /// DmsStartupOrchestrator to StartupPhaseExecutor.RunFatalAsync, which signals process exit with
-    /// -1 and then rethrows. What makes each registration shape invalid is covered directly in Core;
-    /// this proves an abort actually terminates startup rather than being logged and swallowed.
+    /// Two things only a real host can show. First, the fatal-path wiring: the guard's exception
+    /// travels DmsStartupOrchestrator to StartupPhaseExecutor.RunFatalAsync, which signals process
+    /// exit with -1 and then rethrows. Second, that the descriptor sweep reads the closure-captured
+    /// collection rather than a snapshot taken at AddCustomValidationGuard's call site: this
+    /// registration is made after that call, and an offense can only be produced by the sweep, so
+    /// replacing the closure with a snapshot makes this test fail. What makes each registration
+    /// shape invalid is covered directly in Core.
     /// </summary>
     [Test]
     public void It_signals_process_exit_when_the_guard_aborts()

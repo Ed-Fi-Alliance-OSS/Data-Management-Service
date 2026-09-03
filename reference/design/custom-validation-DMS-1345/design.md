@@ -357,7 +357,7 @@ That is the whole delivery mechanism.
 Note where the configuration plumbing lives: the deployment's composition root is an ASP.NET Core host that already has the full shared framework, so reading a section there costs nothing, while the implementer's own assembly stays compilable against the abstractions package alone.
 The implementer supplies their own options type and the deployment supplies its values, so **custom validation adds no DMS-owned configuration surface**: there is no section to document in `docs/CONFIGURATION.md` and no option that turns the feature on or off, because a deployment that registered no validators has none.
 
-**Core's own contribution is the guard, not the registration.** Core ships an extension that registers the startup guard specified under [Startup Failure Semantics](#startup-failure-semantics), and the frontend calls it once, unconditionally, the way it already calls `AddJwtAuthentication(this IServiceCollection services, IConfiguration configuration)` (`DmsCoreServiceExtensions.cs:238-241`, called at `Infrastructure/WebApplicationBuilderExtensions.cs:243`).
+**Core's own contribution is the guard, not the registration.** Core ships an extension that registers the startup guard specified under [Startup Failure Semantics](#startup-failure-semantics), and the frontend calls it once, unconditionally, the way it already calls `AddJwtAuthentication(this IServiceCollection services, IConfiguration configuration)` (`DmsCoreServiceExtensions.cs:436-439`, called at `Infrastructure/WebApplicationBuilderExtensions.cs:148`).
 Core is the right home for it because the collection being guarded is Core's own, and hosting it there keeps the guard's internals `internal` rather than forcing new public Core API purely to be callable from the frontend.
 
 **Ordering must not matter, and that is a design constraint rather than a convention.** The implementer's registration call may sit before or after Core's guard call, and an implementer is exactly the party the guard exists to check, so a rule of the form "register the validators before the guard" would be broken by the party it protects and would fail silently.
@@ -430,10 +430,17 @@ It is the swallowing half that this design refuses.
 Fatal conditions: a descriptor that is not transient; a descriptor carrying an `ImplementationFactory`; a keyed descriptor; a registration of `IEnumerable<ICustomResourceValidator>` itself; and a registered validator the container cannot construct.
 An `ImplementationInstance` descriptor is fatal too, but it is not an independent condition: `ServiceDescriptor` only produces one at `Singleton` lifetime, so the lifetime check already catches every such descriptor and a test for it cannot fail while the lifetime test passes.
 
-The last two conditions were found during implementation rather than during design, and both share a shape: a descriptor that carries the right `ServiceType` but is invisible to, or supersedes, the unkeyed collection resolution DMS actually performs.
-A keyed descriptor returns `null` from every unkeyed `Implementation*` accessor instead of throwing, so it breaks none of the other rules, and `GetServices<ICustomResourceValidator>()` never yields it: unrejected it would be audited clean, skip the activation probe, never be `AppliesTo`-checked, and never run, while the guard reported success.
-A registration of the closed `IEnumerable<ICustomResourceValidator>` type is worse. MS DI resolves `GetServices<T>()` through `IEnumerable<T>` and finds an explicit registration of it before synthesizing the collection from the individual descriptors, so such a registration both supplies validators that bypass the audit entirely and stops every correctly registered validator from resolving at all.
-Note that a count check comparing audited descriptors against resolved instances does not catch this, because the two counts can agree while the objects differ.
+**Enumerating the ways a registration can be wrong does not converge, so the guard also asserts invariants.**
+Implementation found four distinct shapes that reach or displace the collection DMS resolves while evading a per-shape rule list: a keyed descriptor, an explicit registration of the closed `IEnumerable<ICustomResourceValidator>`, an open generic registration of `IEnumerable<>`, and a validator registered only under its concrete type or a derived interface.
+Each was found separately, and each looked like the last one needed.
+The guard therefore rests on three checks that do not depend on that list being complete:
+
+1. Every descriptor registered under the contract is transient and unkeyed and carries an implementation type. This is the per-shape audit, and it keeps its specific messages because they are what an implementer can act on.
+2. No type assignable to the contract is registered *only* under some other service type. DMS resolves the contract and nothing else, so such a validator is unreachable. Checked after the descriptor sweep so that also registering the same type under its own name, which is legitimate, is not an offense.
+3. The set of instances the container returns is exactly the set check 1 approved. Anything that substitutes, hides, or displaces the collection fails here whatever shape produced it.
+
+Check 3 has to compare type sets rather than counts: an explicit collection registration can yield the same count as the audit approved while the objects are entirely different.
+With checks 2 and 3 in place the per-shape rejections become defence in depth rather than the only defence, which is why they are kept.
 
 **The operator-facing message will name the wrong phase.**
 An `Order` in the 200s runs inside the `[0, 299]` window that `Program.cs:163-169` labels `InitializeApiSchemas`, whose failure text is "API schema initialization failed. DMS cannot start with invalid schemas." (`:167`).
@@ -455,7 +462,7 @@ The activation half closes a failure MS DI would otherwise defer: constructors r
 
 **Registering an `IDmsStartupTask` is not by itself enough to make it run.**
 The AspNetCore frontend never calls `RunAllAsync` (`Startup/DmsStartupOrchestrator.cs:30`, which has no production caller); it calls `RunByOrderRangeAsync` over `[0, 299]`, `[300, 399]`, and `[400, 499]` (`Program.cs:315-317`, `:329-331`, `:341-343`, bounded by `DmsStartupTaskOrderRanges`, `Startup/IDmsStartupTask.cs:10-14`), so a task whose `Order` falls outside those windows is registered, never executed, and never complained about.
-The guard's `Order` must therefore sit inside an executed window and above `LoadAndBuildEffectiveSchemaTask`'s `Order => 100` (`Startup/LoadAndBuildEffectiveSchemaTask.cs:34`), because the `AppliesTo` warning reads the effective ApiSchema that task builds.
+The guard's `Order` must therefore sit inside an executed window and above `LoadAndBuildEffectiveSchemaTask`'s `Order => 100` (`Startup/LoadAndBuildEffectiveSchemaTask.cs:19`), because the `AppliesTo` warning reads the effective ApiSchema that task builds.
 Any value in 101-299 satisfies both; the 200s is this design's preference, keeping the guard visibly after schema loading.
 DMS's existing registration-validation guards sit lower (`Order => 50` and `Order => 55`, `Startup/ValidateDatabaseFingerprintReaderRegistrationTask.cs:19`, `Startup/ValidateResourceKeyRowReaderRegistrationTask.cs:19`), and this guard deliberately does not join them: both run before `LoadAndBuildEffectiveSchemaTask` (`Order => 100`), whose effective ApiSchema the `AppliesTo` warning reads.
 That preference conflicts with the doc comment labelling 200-299 "Schema processing" (`Startup/IDmsStartupTask.cs:27`), which is introduced as a recommendation (`:25`) and enforced by nothing; the implementation records the mismatch at the `Order` declaration and proves the guard actually executed rather than merely being registered.

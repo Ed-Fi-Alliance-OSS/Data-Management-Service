@@ -3,10 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
+using EdFi.DataManagementService.Core.Utilities;
 using EdFi.DataManagementService.CustomValidation;
 using FakeItEasy;
 using FluentAssertions;
@@ -94,11 +96,19 @@ public class Given_A_Custom_Validator_Registration_Guard
         );
     }
 
+    /// <summary>
+    /// The guard logs validator type names through the sanitizer, whose allowlist excludes '+', so a
+    /// nested fixture type appears in records without it. Expected messages therefore apply the same
+    /// transformation rather than embedding a hand-copied name.
+    /// </summary>
+    private static string Logged(Type validatorType) =>
+        LoggingSanitizer.SanitizeForLogging(validatorType.FullName);
+
     private static string MissWarning(Type validatorType, string projectName, string resourceName) =>
-        $"ICustomResourceValidator '{validatorType.FullName}' AppliesTo entry ProjectName "
+        $"ICustomResourceValidator '{Logged(validatorType)}' AppliesTo entry ProjectName "
         + $"'{projectName}', ResourceName '{resourceName}' matches no resource in the effective "
-        + "ApiSchema and will never run. Expected for an extension resource this deployment lacks; "
-        + "otherwise check for a typo or case mismatch, since matching is exact and ordinal";
+        + "ApiSchema, so it will never run. Matching is exact and ordinal. Expected for an extension "
+        + "resource this deployment does not carry.";
 
     // ---------------------------------------------------------------- descriptor audit
 
@@ -131,10 +141,10 @@ public class Given_A_Custom_Validator_Registration_Guard
             .BeOfType<InvalidOperationException>()
             .Which.Message.Should()
             .Contain("Startup aborted: 1 ICustomResourceValidator registration(s) are invalid.")
-            .And.Contain($"'{typeof(MatchingValidator).FullName}':")
+            .And.Contain($"'{Logged(typeof(MatchingValidator))}':")
             .And.Contain("lifetime is Scoped")
-            .And.NotContain("ImplementationInstance is set")
-            .And.NotContain("ImplementationFactory delegate");
+            .And.NotContain("shared instance")
+            .And.NotContain("factory delegate");
     }
 
     [Test]
@@ -149,8 +159,8 @@ public class Given_A_Custom_Validator_Registration_Guard
         run.Thrown.Should()
             .BeOfType<InvalidOperationException>()
             .Which.Message.Should()
-            .Contain($"'{typeof(MatchingValidator).FullName}':")
-            .And.Contain("registered as a shared instance");
+            .Contain($"'{Logged(typeof(MatchingValidator))}':")
+            .And.Contain("supplies a shared instance rather than an implementation type");
     }
 
     [Test]
@@ -163,8 +173,8 @@ public class Given_A_Custom_Validator_Registration_Guard
         run.Thrown.Should()
             .BeOfType<InvalidOperationException>()
             .Which.Message.Should()
-            .Contain("<factory-based registration with no implementation type>")
-            .And.Contain("ImplementationFactory delegate")
+            .Contain("<registration with no implementation type>")
+            .And.Contain("supplies a factory delegate rather than an implementation type")
             .And.NotContain("lifetime is");
     }
 
@@ -184,9 +194,9 @@ public class Given_A_Custom_Validator_Registration_Guard
         run.Thrown.Should()
             .BeOfType<InvalidOperationException>()
             .Which.Message.Should()
-            .Contain($"'{typeof(MatchingValidator).FullName}':")
-            .And.Contain("registered as a keyed service")
-            .And.NotContain("<factory-based registration with no implementation type>");
+            .Contain($"'{Logged(typeof(MatchingValidator))}':")
+            .And.Contain("it is keyed, and DMS resolves without a key")
+            .And.NotContain("<registration with no implementation type>");
     }
 
     /// <summary>
@@ -248,8 +258,8 @@ public class Given_A_Custom_Validator_Registration_Guard
             .BeOfType<InvalidOperationException>()
             .Which.Message.Should()
             .Contain("Startup aborted: 2 ICustomResourceValidator registration(s) are invalid.")
-            .And.Contain($"'{typeof(MatchingValidator).FullName}':")
-            .And.Contain($"'{typeof(NonexistentResourceValidator).FullName}':");
+            .And.Contain($"'{Logged(typeof(MatchingValidator))}':")
+            .And.Contain($"'{Logged(typeof(NonexistentResourceValidator))}':");
     }
 
     // ---------------------------------------------------------------- activation probe
@@ -313,7 +323,7 @@ public class Given_A_Custom_Validator_Registration_Guard
         run.Records.Should()
             .Contain(record =>
                 record.Message
-                == $"ICustomResourceValidator '{typeof(MatchingValidator).FullName}' AppliesTo entry: "
+                == $"ICustomResourceValidator '{Logged(typeof(MatchingValidator))}' AppliesTo entry: "
                     + $"ProjectName '{CoreProjectName}', ResourceName '{CoreResourceName}'"
             );
     }
@@ -333,6 +343,15 @@ public class Given_A_Custom_Validator_Registration_Guard
 
         run.Thrown.Should().BeNull();
         run.Warnings.Should().BeEmpty();
+
+        // Asserting the entry record, not merely the absence of a warning: without this the test
+        // would also pass if extension entries were skipped entirely rather than matched.
+        run.Records.Should()
+            .Contain(record =>
+                record.Message
+                == $"ICustomResourceValidator '{Logged(typeof(ExtensionMatchingValidator))}' AppliesTo "
+                    + $"entry: ProjectName '{ExtensionProjectName}', ResourceName '{ExtensionResourceName}'"
+            );
     }
 
     [Test]
@@ -381,7 +400,7 @@ public class Given_A_Custom_Validator_Registration_Guard
     /// resource" for the entry "Scho{BEL}ol" would name a resource that demonstrably does exist.
     /// </summary>
     [Test]
-    public async Task It_warns_distinctly_for_an_entry_whose_name_no_resource_can_contain()
+    public async Task It_warns_for_an_entry_whose_name_the_schema_cannot_hold()
     {
         GuardRun run = await RunGuard(services =>
             services.TryAddEnumerable(
@@ -395,9 +414,11 @@ public class Given_A_Custom_Validator_Registration_Guard
         run.Thrown.Should().BeNull();
 
         string warning = run.Warnings.Should().ContainSingle().Subject;
-        warning.Should().Contain("carries a character no resource name can contain");
-        warning.Should().NotContain("check for a typo or case mismatch");
-        warning.Should().NotContain("");
+        warning.Should().Contain("matches no resource in the effective ApiSchema");
+        // The sanitizer strips the control character, so the name shown is a real resource name.
+        // The message must therefore say the shown name was altered, rather than diagnosing a typo.
+        warning.Should().Contain("altered to make them safe to log");
+        warning.Should().NotContain("\u0007");
     }
 
     /// <summary>
@@ -418,7 +439,7 @@ public class Given_A_Custom_Validator_Registration_Guard
         run.Warnings.Should()
             .ContainSingle()
             .Which.Should()
-            .Contain("carries a character no resource name can contain");
+            .Contain("matches no resource in the effective ApiSchema");
     }
 
     /// <summary>
@@ -439,7 +460,7 @@ public class Given_A_Custom_Validator_Registration_Guard
         run.Warnings.Should()
             .ContainSingle()
             .Which.Should()
-            .Contain("carries a character no resource name can contain");
+            .Contain("matches no resource in the effective ApiSchema");
     }
 
     /// <summary>
@@ -477,13 +498,19 @@ public class Given_A_Custom_Validator_Registration_Guard
             .ContainSingle()
             .Which.Should()
             .Be(
-                $"ICustomResourceValidator '{typeof(EmptyAppliesToValidator).FullName}' declares no "
+                $"ICustomResourceValidator '{Logged(typeof(EmptyAppliesToValidator))}' declares no "
                     + "AppliesTo entries, so it can never run for any resource"
             );
     }
 
+    /// <summary>
+    /// design.md "Versioning and Compatibility" relies on reading AppliesTo at startup to surface a
+    /// validator compiled against a different version of the contract, which package resolution
+    /// unifies without failing the restore. Warning instead of aborting would let exactly that
+    /// deployment serve traffic, so a contract violation here is fatal.
+    /// </summary>
     [Test]
-    public async Task It_warns_for_a_validator_whose_applies_to_is_null()
+    public async Task It_aborts_for_a_validator_whose_applies_to_is_null()
     {
         GuardRun run = await RunGuard(services =>
             services.TryAddEnumerable(
@@ -491,14 +518,12 @@ public class Given_A_Custom_Validator_Registration_Guard
             )
         );
 
-        run.Thrown.Should().BeNull();
-        run.Warnings.Should()
-            .ContainSingle()
-            .Which.Should()
-            .Be(
-                $"ICustomResourceValidator '{typeof(NullAppliesToValidator).FullName}' declares no "
-                    + "AppliesTo entries, so it can never run for any resource"
-            );
+        run.Thrown.Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Contain("cannot be used")
+            .And.Contain($"'{Logged(typeof(NullAppliesToValidator))}'")
+            .And.Contain("AppliesTo returned null");
     }
 
     /// <summary>
@@ -507,7 +532,7 @@ public class Given_A_Custom_Validator_Registration_Guard
     /// level down, and the good entry beside it must still be processed.
     /// </summary>
     [Test]
-    public async Task It_warns_for_a_null_applies_to_entry_and_still_processes_the_others()
+    public async Task It_aborts_for_a_null_applies_to_entry()
     {
         GuardRun run = await RunGuard(services =>
             services.TryAddEnumerable(
@@ -515,22 +540,11 @@ public class Given_A_Custom_Validator_Registration_Guard
             )
         );
 
-        run.Thrown.Should().BeNull();
-        run.Warnings.Should()
-            .ContainSingle()
-            .Which.Should()
-            .Be(
-                $"ICustomResourceValidator '{typeof(NullEntryAppliesToValidator).FullName}' declares a "
-                    + "null AppliesTo entry, which names no resource and will never run"
-            );
-
-        // The real entry beside the null one still reached the matching path.
-        run.Records.Should()
-            .Contain(record =>
-                record.Message
-                == $"ICustomResourceValidator '{typeof(NullEntryAppliesToValidator).FullName}' AppliesTo "
-                    + $"entry: ProjectName '{CoreProjectName}', ResourceName '{CoreResourceName}'"
-            );
+        run.Thrown.Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Contain($"'{Logged(typeof(NullEntryAppliesToValidator))}'")
+            .And.Contain("AppliesTo contains a null entry");
     }
 
     /// <summary>
@@ -538,7 +552,7 @@ public class Given_A_Custom_Validator_Registration_Guard
     /// down with an exception naming no registration.
     /// </summary>
     [Test]
-    public async Task It_warns_for_a_validator_whose_applies_to_getter_throws()
+    public async Task It_aborts_for_a_validator_whose_applies_to_getter_throws()
     {
         GuardRun run = await RunGuard(services =>
             services.TryAddEnumerable(
@@ -546,12 +560,12 @@ public class Given_A_Custom_Validator_Registration_Guard
             )
         );
 
-        run.Thrown.Should().BeNull();
-        run.Warnings.Should()
-            .ContainSingle()
-            .Which.Should()
-            .Contain($"'{typeof(ThrowingAppliesToValidator).FullName}'")
-            .And.Contain("AppliesTo could not be read");
+        run.Thrown.Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Contain("cannot be used")
+            .And.Contain($"'{Logged(typeof(ThrowingAppliesToValidator))}'")
+            .And.Contain("reading AppliesTo threw");
     }
 
     [Test]
@@ -593,9 +607,258 @@ public class Given_A_Custom_Validator_Registration_Guard
             );
     }
 
+    /// <summary>
+    /// Registering a validator only under a derived interface leaves it unreachable: DMS resolves
+    /// the contract and nothing else, so the guard would otherwise report "activated 0" and startup
+    /// would succeed with the validator never running.
+    /// </summary>
+    [Test]
+    public async Task It_aborts_for_a_validator_registered_only_under_a_derived_interface()
+    {
+        GuardRun run = await RunGuard(services =>
+            services.TryAddEnumerable(
+                ServiceDescriptor.Transient<IImplementerOwnValidator, DerivedInterfaceValidator>()
+            )
+        );
+
+        run.Thrown.Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Contain($"'{Logged(typeof(DerivedInterfaceValidator))}'")
+            .And.Contain("implements ICustomResourceValidator but is registered only against");
+    }
+
+    [Test]
+    public async Task It_aborts_for_a_validator_registered_only_under_its_concrete_type()
+    {
+        GuardRun run = await RunGuard(services => services.AddTransient<MatchingValidator>());
+
+        run.Thrown.Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Contain($"'{Logged(typeof(MatchingValidator))}'")
+            .And.Contain("registered only against");
+    }
+
+    /// <summary>
+    /// The negative case for the rule above: also registering the concrete type is legitimate, since
+    /// the contract registration makes the validator reachable. Registering both must not be read as
+    /// an offense.
+    /// </summary>
+    [Test]
+    public async Task It_accepts_a_validator_registered_under_both_the_contract_and_its_own_type()
+    {
+        GuardRun run = await RunGuard(services =>
+        {
+            services.TryAddEnumerable(
+                ServiceDescriptor.Transient<ICustomResourceValidator, MatchingValidator>()
+            );
+            services.AddTransient<MatchingValidator>();
+        });
+
+        run.Thrown.Should().BeNull();
+        run.Warnings.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// An open generic registration of the collection type is selected ahead of the collection MS DI
+    /// would synthesize, so it substitutes or empties the set the same way a closed registration
+    /// does, while carrying a service type equal to neither the contract nor its closed collection.
+    /// </summary>
+    [Test]
+    public async Task It_aborts_for_an_open_generic_collection_registration()
+    {
+        GuardRun run = await RunGuard(services =>
+        {
+            services.TryAddEnumerable(
+                ServiceDescriptor.Transient<ICustomResourceValidator, MatchingValidator>()
+            );
+            services.AddTransient(typeof(IEnumerable<>), typeof(EmptyBag<>));
+        });
+
+        run.Thrown.Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Contain("Registering a collection type replaces the collection DMS resolves");
+    }
+
+    /// <summary>
+    /// A validator's Dispose is implementer code. It must not abort startup for a registration that
+    /// broke no rule, and must not be reported as a validator failure.
+    /// </summary>
+    [Test]
+    public async Task It_warns_without_aborting_when_a_validator_dispose_throws()
+    {
+        GuardRun run = await RunGuard(services =>
+            services.TryAddEnumerable(
+                ServiceDescriptor.Transient<ICustomResourceValidator, ThrowingDisposeValidator>()
+            )
+        );
+
+        run.Thrown.Should().BeNull();
+        run.Records.Should()
+            .Contain(record =>
+                record.Message
+                == "Custom validator registration guard audited and activated 1 ICustomResourceValidator registration(s)"
+            );
+        run.Warnings.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("Disposing the ICustomResourceValidator activation scope threw");
+    }
+
+    /// <summary>
+    /// An empty resource name reaches the miss path. The contract's own documentation anticipates an
+    /// empty ValidatedResource, and a message claiming the name "carries" an unusable character would
+    /// be false for a name that carries no character at all.
+    /// </summary>
+    [Test]
+    public async Task It_warns_for_an_empty_resource_name()
+    {
+        GuardRun run = await RunGuard(services =>
+            services.TryAddEnumerable(
+                ServiceDescriptor.Transient<ICustomResourceValidator, EmptyResourceNameValidator>()
+            )
+        );
+
+        run.Thrown.Should().BeNull();
+
+        string warning = run.Warnings.Should().ContainSingle().Subject;
+        warning.Should().Contain("matches no resource in the effective ApiSchema");
+        warning.Should().NotContain("carries");
+        warning.Should().NotContain("altered to make them safe to log");
+    }
+
+    /// <summary>
+    /// The project-name half of the sanitizer requirement. Without a fixture carrying an unsafe
+    /// project name, removing the sanitizer call from that component would leave every test green.
+    /// </summary>
+    [Test]
+    public async Task It_sanitizes_the_project_name_in_its_records()
+    {
+        GuardRun run = await RunGuard(services =>
+            services.TryAddEnumerable(
+                ServiceDescriptor.Transient<ICustomResourceValidator, ControlCharacterProjectNameValidator>()
+            )
+        );
+
+        run.Thrown.Should().BeNull();
+        run.Records.Should()
+            .Contain(record =>
+                record.Message
+                == $"ICustomResourceValidator '{Logged(typeof(ControlCharacterProjectNameValidator))}' "
+                    + $"AppliesTo entry: ProjectName 'EdFi', ResourceName '{CoreResourceName}'"
+            );
+        run.Records.Should().OnlyContain(record => !record.Message.Contains("\u0007"));
+    }
+
+    // ------------------------------------------- invariant 3, tested directly
+
+    /// <summary>
+    /// Every shape known to trip this invariant is rejected by an earlier check, so it cannot be
+    /// reached through IServiceCollection. Tested directly rather than left unfalsifiable, and in
+    /// particular to pin that it compares type sets: a count comparison passes the second case
+    /// below, which is the weaker check that a collection registration defeats.
+    /// </summary>
+    [Test]
+    public void It_accepts_resolved_instances_matching_the_audited_types()
+    {
+        Action verify = () =>
+            CustomValidatorRegistrationGuard.VerifyResolvedMatchesAudited(
+                [new MatchingValidator(), new NonexistentResourceValidator()],
+                [typeof(NonexistentResourceValidator), typeof(MatchingValidator)]
+            );
+
+        verify.Should().NotThrow();
+    }
+
+    [Test]
+    public void It_rejects_resolved_instances_of_the_same_count_but_different_types()
+    {
+        Action verify = () =>
+            CustomValidatorRegistrationGuard.VerifyResolvedMatchesAudited(
+                [new MatchingValidator()],
+                [typeof(NonexistentResourceValidator)]
+            );
+
+        verify
+            .Should()
+            .Throw<InvalidOperationException>()
+            .Which.Message.Should()
+            .Contain("are not the ones its registrations describe")
+            .And.Contain(typeof(MatchingValidator).FullName!)
+            .And.Contain(typeof(NonexistentResourceValidator).FullName!);
+    }
+
+    [Test]
+    public void It_rejects_a_resolved_set_that_is_missing_an_audited_type()
+    {
+        Action verify = () =>
+            CustomValidatorRegistrationGuard.VerifyResolvedMatchesAudited([], [typeof(MatchingValidator)]);
+
+        verify.Should().Throw<InvalidOperationException>();
+    }
+
+    [Test]
+    public void It_rejects_a_resolved_set_carrying_an_unaudited_type()
+    {
+        Action verify = () =>
+            CustomValidatorRegistrationGuard.VerifyResolvedMatchesAudited(
+                [new MatchingValidator(), new NonexistentResourceValidator()],
+                [typeof(MatchingValidator)]
+            );
+
+        verify.Should().Throw<InvalidOperationException>();
+    }
+
     // ---------------------------------------------------------------- fixtures
 
     private interface IServiceNobodyRegisters { }
+
+    /// <summary>
+    /// A derived contract an implementer might define for their own convenience. Registering only
+    /// against this leaves the validator unreachable.
+    /// </summary>
+    private interface IImplementerOwnValidator : ICustomResourceValidator { }
+
+    private sealed class DerivedInterfaceValidator : ValidatorBase, IImplementerOwnValidator
+    {
+        public override IReadOnlyList<ValidatedResource> AppliesTo =>
+            [new ValidatedResource(CoreProjectName, CoreResourceName)];
+    }
+
+    /// <summary>
+    /// An open generic implementing IEnumerable&lt;T&gt; with no constructor dependency on
+    /// IEnumerable&lt;T&gt;, so registering it does not fail on its own the way List&lt;T&gt; does.
+    /// </summary>
+    private sealed class EmptyBag<T> : IEnumerable<T>
+    {
+        public IEnumerator<T> GetEnumerator() => Enumerable.Empty<T>().GetEnumerator();
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    private sealed class ThrowingDisposeValidator : ValidatorBase, IDisposable
+    {
+        public override IReadOnlyList<ValidatedResource> AppliesTo =>
+            [new ValidatedResource(CoreProjectName, CoreResourceName)];
+
+#pragma warning disable S3877 // Throwing from Dispose is the implementer bug under test here
+        public void Dispose() => throw new InvalidOperationException("implementer bug in Dispose");
+#pragma warning restore S3877
+    }
+
+    private sealed class EmptyResourceNameValidator : ValidatorBase
+    {
+        public override IReadOnlyList<ValidatedResource> AppliesTo =>
+            [new ValidatedResource(CoreProjectName, string.Empty)];
+    }
+
+    private sealed class ControlCharacterProjectNameValidator : ValidatorBase
+    {
+        public override IReadOnlyList<ValidatedResource> AppliesTo =>
+            [new ValidatedResource("Ed\u0007Fi", CoreResourceName)];
+    }
 
     private abstract class ValidatorBase : ICustomResourceValidator
     {
@@ -643,7 +906,7 @@ public class Given_A_Custom_Validator_Registration_Guard
     private sealed class ControlCharacterInsideRealNameValidator : ValidatorBase
     {
         public override IReadOnlyList<ValidatedResource> AppliesTo =>
-            [new ValidatedResource(CoreProjectName, "School")];
+            [new ValidatedResource(CoreProjectName, "Scho\u0007ol")];
     }
 
     private sealed class InjectedSelectorValidator : ValidatorBase

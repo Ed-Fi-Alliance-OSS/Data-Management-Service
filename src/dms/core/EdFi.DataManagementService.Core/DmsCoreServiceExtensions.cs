@@ -558,8 +558,8 @@ public static class DmsCoreServiceExtensions
         ));
 
         // Deliberately not done: services.AddSingleton<IServiceCollection>(services).
-        // IServiceCollection is declared in Microsoft.Extensions.DependencyInjection.Abstractions, a
-        // namespace the plugin spine permits a plugin to register into. A guard that resolved
+        // IServiceCollection lives in the Microsoft.Extensions.DependencyInjection namespace, which
+        // the plugin spine permits a plugin to register into. A guard that resolved
         // IServiceCollection from DI would read whichever registration won the race, not necessarily
         // this one. The closure above cannot be displaced that way, so the collection must reach the
         // guard only through it.

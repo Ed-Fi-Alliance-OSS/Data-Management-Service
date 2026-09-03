@@ -13,32 +13,8 @@ custom resource validation to the Ed-Fi Data Management Service.
 > aborts startup if a validator is registered in a shape DMS would not resolve, so a registration
 > mistake fails the process rather than passing silently.
 > Build against it to pin the contract and to compile early, but do not expect a registered
-> validator to execute until a Data Management Service release announces custom-validation support.
-
-## Registering an implementation
-
-A registration is not inert at startup.
-A startup guard inspects every `ICustomResourceValidator` registration that reaches the container
-and terminates the process if one cannot work, rather than letting it fail per request later.
-A registration is accepted only when all of the following hold.
-
-- The lifetime is `Transient`.
-  A validator resolved once and reused would capture whatever request-scoped dependencies it was
-  first built with.
-- It is registered against `ICustomResourceValidator` with an implementation type, as in
-  `services.TryAddEnumerable(ServiceDescriptor.Transient<ICustomResourceValidator, MyValidator>())`.
-- It is not keyed. The collection is resolved without a key, so a keyed registration would never be
-  seen.
-- It supplies neither a pre-built instance nor a factory delegate. Both can hand every request the
-  same object, and neither can be shown not to.
-- `IEnumerable<ICustomResourceValidator>` is not registered directly. Such a registration replaces
-  the whole collection, so it would both bypass these checks and stop every other validator from
-  resolving.
-- Every constructor argument is resolvable from the container. To pass configuration rather than a
-  service, bind an options type and take `IOptions<T>`.
-
-The guard also warns, without failing startup, when a validator declares no `AppliesTo` entries or
-names a resource that no loaded schema contains, since either means it can never run.
+> validator to execute until a Data Management Service release announces custom-validation support,
+> which is also the release that will document how a registration has to be shaped.
 
 ## What is here
 
@@ -66,7 +42,8 @@ service knows about a resource, carrying the fields a validator has a use for an
 
 ## What is not here yet
 
-This document does not yet describe the validation lifecycle or the error-reporting model.
+This document does not yet describe how to register an implementation with a host, the validation
+lifecycle, or the error-reporting model.
 A full implementer guide is planned to accompany the release that adds host support.
 
 ## Dependencies
