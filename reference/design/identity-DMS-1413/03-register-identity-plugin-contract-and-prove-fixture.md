@@ -34,6 +34,8 @@ Before those foundations exist, the Identity API can be implemented and tested o
 - `Incomplete` from any operation except results returns provider-contract-violation `502`.
 - Tokens that need escaping round-trip to the provider unchanged.
 - Exact `.` and `..` tokens return `502` with no `Location`.
+- A fixture-plugin token that exceeds the escaped length ceiling, and one that fits the ceiling but overflows the composed poll path under a tenant and route qualifiers, both return `502` with no `Location` rather than a `202`.
+- Every `202 Location` the fixture plugin produces is followed and reaches the results route, proving the emitted URL is fetchable rather than rejected by the host before routing.
 - The fixture plugin binds each async job to the issuing `Tenant`, `RouteQualifiers`, and `ClientId`, and a token redeemed under a different tenant, qualifier set, or client returns identity-not-found `404` rather than the original job.
 - A fixture-plugin async job either remains pollable after the DMS container restarts, or the fixture documents itself as in-memory only and the test asserts the documented `404`.
 - The fixture plugin is registered with a scoped lifetime and a scoped dependency of its own, proving the host resolves it per request rather than capturing it in the singleton `ApiService`.
@@ -45,6 +47,9 @@ Before those foundations exist, the Identity API can be implemented and tested o
 - Provider `NotFound` returns identity-not-found `404`, distinct from unsupported capability.
 - Enabled with no plugin starts cleanly and answers operation-unsupported `404`.
 - Duplicate-property, malformed-body, wrong-shape, invalid find/search array-entry, unsupported-media-type, provider `InvalidProperties`, missing-payload, provider-contract-violation, and provider-exception upstream-failure cases are covered.
+- The fixture plugin returns `InvalidProperties` in each projection shape - a path on a single-object body, a path on an indexed search item, a blank path, and two messages at one path - and the resulting `400` bodies match the pinned examples in the served OpenAPI document.
+- A get-by-id and a results poll over the fixture plugin leave no UniqueId and no token in the captured logs, in either the structured `Path` property or the rendered message, at both logging layers.
+- A fixture-plugin exception whose message contains person-shaped text does not surface that text in the client response or in the failure-level log entry.
 - Two replacing plugins abort startup with both plugin names in the fatal diagnostic.
 
 ## Tasks

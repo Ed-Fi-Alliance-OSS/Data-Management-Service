@@ -29,8 +29,9 @@ It covers:
 - the use of DMS-1462 replace-cardinality plugin contracts;
 - feature-toggle, Discovery, and OpenAPI behavior;
 - service-claim authorization, the authorization-strategy policy, client-to-tenant binding, and tenant/route-qualifier boundaries;
-- request parsing, duplicate-property rejection, async token handling, and response mapping;
+- request parsing, duplicate-property rejection, async token handling and length limits, validation-error projection, and response mapping;
 - provider lifetime and resolution, async job obligations, and UniqueId issuance constraints;
+- identifier exposure in request logs and cross-origin access to the async `Location` header;
 - an implementation story graph and test strategy;
 - the divergence ledger against ODS/API 7.3 and remaining risks.
 

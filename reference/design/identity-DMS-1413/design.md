@@ -48,7 +48,16 @@ Important DMS source facts:
 
 - `ApiService.GetCommonInitialSteps()` composes request logging, exception logging, tenant syntax validation, JWT authentication, and datastore resolution. Identity reuses the first four and deliberately omits datastore resolution.
 - `TenantValidationMiddleware` checks tenant presence, length, and `^[a-zA-Z0-9_-]+$`; it does not check tenant existence.
-- `TenantValidator.ValidateTenantAsync` checks tenant existence by consulting `IDataStoreProvider.TenantExists` and reloading from Configuration Service on cache miss.
+- `TenantValidator.ValidateTenantAsync` checks tenant existence by consulting `IDataStoreProvider.TenantExists` and reloading data stores from Configuration Service on cache miss. Its `catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)` clause is unreachable twice over: `LoadDataStores` converts every `HttpRequestException` to an `InvalidOperationException` before it can propagate, and the only `HttpRequestException` Core throws for a Configuration Service error is built with the message-only constructor, so `StatusCode` is null regardless.
+- The tenant data-store load decrypts each data store's primary connection string, and an undecryptable primary fails the whole tenant load, so datastore configuration faults are entangled with tenant existence on that path.
+- `IDataStoreProvider.LoadTenants()` already provides a tenant-only lookup: it fetches names from the Configuration Service `v3/tenants/` endpoint, sends no `Tenant` header, reads no data store, and decrypts nothing. CMS exempts `/v3/tenants` from tenant-header resolution, so the `400`-for-unknown-tenant behavior of the header path does not apply to it.
+- `FetchTenants` returns an empty list without throwing when the tenants response deserializes to null, so an empty result is not by itself proof that a tenant is absent.
+- The frontend and Core request logging middlewares both place the resolved request path into a structured `Path` property and into their rendered completion and failure messages. `LoggingSanitizer` neutralizes injection characters and does not redact identifiers.
+- `docs/LOGGING.md` defines `Path` as a collector-contract property, so redaction has to keep it a sanitized path rather than removing or renaming it.
+- The app configures only `MaxRequestBodySize` on Kestrel, leaving `MaxRequestLineSize` at the 8,192-byte default, which bounds the whole request line and therefore the async poll URL.
+- The CORS policy allows the Swagger UI origin with `AllowAnyHeader()` and `AllowAnyMethod()` and declares no exposed response headers; `AllowAnyHeader` governs request headers only.
+- `FailureResponse.CreateBaseJsonObject` serializes a `Dictionary<string, string[]>` onto `validationErrors` and a `string[]` onto `errors`, and `DocumentValidator` builds its keys as `"$." + propertyName`, so DMS's established path syntax is JSONPath.
+- Every `studentUniqueId`, `staffUniqueId`, and `contactUniqueId` declares `"maxLength": 32` in the checked-in core DS 5.2 authoritative schema and in the shipped TPDM and sample extension schemas. The limit belongs to the Data Standard, not to DMS.
 - Existing resource authorization obtains claim sets by calling `IClaimSetProvider.GetAllClaimSets(requestInfo.FrontendRequest.Tenant)`, and the CMS-backed claim-set provider sends that tenant as a Configuration Service `Tenant` header. Identity service-claim authorization therefore must not run before DMS has established that the tenant exists.
 - `AspNetCoreFrontend.ExtractJsonBodyFrom` already parses request bodies and records duplicate-property paths before `JsonNode` collapses duplicates, and it does so before Core is entered; `ParseBodyMiddleware` and `DuplicatePropertiesMiddleware` report what it already computed rather than performing the parse themselves.
 - `JwtValidationService.ValidateAndExtractClientAuthorizationsAsync` takes no tenant, and `JwtAuthenticationOptions` declares a single `Authority` and `Audience`, so one issuer serves every tenant and a token carries no tenant binding.
@@ -291,17 +300,37 @@ Non-cancelled provider exceptions map to identity-upstream-failure `502`; provid
 DMS does not validate UniqueIds on person-resource writes; that is DMS-1414's scope.
 This design still has to state what makes an issued id usable in those writes later, because the contract is published and additive-only, and a constraint omitted now cannot be added afterwards without breaking implementers.
 
-The constraint that is not obvious from the wire type is equality.
-An issued UniqueId becomes part of a person resource's natural key, and the backend redesign gives the two providers different string-identity equality: SQL Server applies DMS's case-insensitive identity collation to every column storing an identity value, with `OrdinalIgnoreCase` runtime comparers, while PostgreSQL stays case-sensitive with `Ordinal` comparers.
+Two constraints are not obvious from the wire type: length and equality.
+
+**Length.** The issued value has to fit the person resources that will carry it.
+The wire type is an unbounded JSON string, so a provider can satisfy every other rule here and still issue ids that no person write can accept.
+The obvious default is the trap: a canonical 36-character GUID (`8-4-4-4-12` with hyphens) does not fit the current limit, while the same GUID in 32-character hyphen-free form fits exactly.
+
+The limit is a property of the deployment's ApiSchema, not of this contract, so the contract states the rule and not the number.
+An issued UniqueId must fit the `maxLength` the deployment's ApiSchema declares for the person resources that will carry it.
+Today that value is **32** everywhere it appears — every `studentUniqueId`, `staffUniqueId`, and `contactUniqueId` in the checked-in core DS 5.2 schema, and in the shipped TPDM and sample extension schemas — so 32 characters is the safe target and implementer documentation states it as such (`src/dms/backend/Fixtures/authoritative/ds-5.2/inputs/ds-5.2-api-schema-authoritative.json:539`).
+Pinning 32 as a contract constant would be the wrong coupling: `EdFi.Api.Identity` carries its own version, independent of the DMS release version and of the Data Standard, and freezing a data-model constant into an additive-only public artifact would make the contract assert something about a model it does not own.
+
+**Equality.** An issued UniqueId becomes part of a person resource's natural key, and the backend redesign gives the two providers different string-identity equality: SQL Server applies DMS's fixed `SQL_Latin1_General_CP1_CI_AS` identity collation to every column storing an identity value, with `OrdinalIgnoreCase` runtime comparers, while PostgreSQL stays case-sensitive with `Ordinal` comparers.
 A provider that treats `ABC` and `abc` as two identities would therefore create two identities that collapse onto one person natural key on SQL Server and remain two on PostgreSQL.
+
+Case-insensitive distinctness is necessary but not sufficient, and this design states the boundary rather than implying a guarantee DMS cannot make.
+`OrdinalIgnoreCase` is documented as an in-process *approximation* of that collation, not an emulator of it (`natural-key-resolution.md:776`), and the redesign's accepted residue records linguistic and Unicode equivalences the collation applies beyond case — `ß` equal to `ss`, width-insensitive matches, and code points unknown to the version-80 collation carrying no weight at all, so distinct raw values can be one SQL Server identity (`natural-key-resolution.md:1469-1483`).
+Two ids can pass an ordinal case-insensitive uniqueness check and still collide in SQL Server.
+
+The contract therefore defines a repertoire in which the approximation is exact, and refuses to promise cross-engine equivalence outside it.
 
 A provider must issue UniqueIds that are:
 
-- unique within the deployment across every tenant and route-qualifier context it serves, since DMS applies no tenant prefix and does not rewrite the value;
-- distinct under case-insensitive comparison, not merely under exact comparison, so the value means the same identity on both providers;
+- no longer than the `maxLength` the deployment's ApiSchema declares for person UniqueIds, which is **32 characters** across the current core and shipped extension schemas;
+- drawn from the **guaranteed repertoire**: ASCII digits `0`-`9` and ASCII letters `A`-`Z` and `a`-`z`. Within this repertoire the collation applies case folding and nothing else, so `OrdinalIgnoreCase` and `SQL_Latin1_General_CP1_CI_AS` agree exactly and the equality rule below is enforceable as stated. This matches how the schema already describes the field — "a unique alphanumeric code";
+- distinct under `OrdinalIgnoreCase` comparison, not merely under exact comparison, so the value means the same identity on both providers;
 - non-empty and free of leading or trailing whitespace, which DMS does not trim;
 - a single URL path segment, because get-by-id carries the value in the route;
 - stable for the life of the identity, because person documents already written reference the value as natural-key data.
+
+A provider that issues values outside the guaranteed repertoire is not rejected by DMS — the identity pipeline performs no ApiSchema validation — but it takes on the uniqueness obligation itself, under each backing store's actual equality rather than under `OrdinalIgnoreCase`, and this contract pins no cross-engine equivalence for those values.
+Implementer documentation must state that consequence rather than presenting the repertoire as advisory styling.
 
 These remain provider responsibilities.
 DMS neither generates nor rewrites the value, and the identity pipeline adds no ApiSchema or relational dependency to enforce them.
@@ -434,15 +463,43 @@ See [Prerequisites](#prerequisites).
 ## Tenant and Route-Qualifier Boundary
 
 `TenantValidationMiddleware` remains responsible for tenant presence and syntax.
-Add a Core identity-only `ValidateTenantExistsMiddleware` that uses the same cache-then-reload behavior as the frontend `TenantValidator`.
-When multitenancy is enabled and the tenant does not exist, it returns `404` without calling the claim-set provider or identity provider.
+Add a Core identity-only `ValidateTenantExistsMiddleware`.
+When multitenancy is enabled and the tenant is confirmed absent, it returns `404` without calling the claim-set provider or identity provider.
 When multitenancy is disabled, it is a pass-through.
 
-It reuses the frontend validator's caching behavior but not its result type.
-`TenantValidator.ValidateTenantAsync` returns a bare `bool` and reaches it through a general exception catch, and its datastore provider wraps transport failures in `InvalidOperationException`, so a Configuration Service outage on a cache miss is indistinguishable from a nonexistent tenant and a cancellation is swallowed on the same path.
-Copying that shape would collapse an upstream failure into a client-facing tenant `404` and would undo this design's distinction between client mistakes and upstream failures.
+It reuses the frontend validator's cache-then-refetch *shape* but neither its result type nor its data source, because that path cannot produce the outcomes this design requires.
 
-The identity check therefore returns three typed outcomes:
+**Why the existing path cannot answer the question.**
+`TenantValidator.ValidateTenantAsync` returns a bare `bool` and reaches it through a general exception catch, so a Configuration Service outage on a cache miss is indistinguishable from a nonexistent tenant and a cancellation is swallowed on the same path.
+
+Its `catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)` clause is unreachable dead code, for two independent reasons: `LoadDataStores` converts every `HttpRequestException` into an `InvalidOperationException` before it can propagate (`Configuration/ConfigurationServiceDataStoreProvider.cs:126`), and `ConfigurationServiceResponseHandler` throws with the message-only constructor, leaving `HttpRequestException.StatusCode` null in any case (`Security/ConfigurationServiceResponseHandler.cs:43`).
+Every outcome therefore lands in the general catch and returns `false`.
+A typed result introduced only at the middleware layer would be a typed result over a single undifferentiated failure.
+
+Its data source is wrong for the question as well.
+`LoadDataStores` decrypts each data store's primary connection string, and an undecryptable primary fails the whole tenant load (`Configuration/ConfigurationServiceDataStoreProvider.cs:525`).
+An unrelated datastore misconfiguration — a rotated encryption key, a corrupt stored connection string — would therefore make an existing tenant read as nonexistent and block identity requests that need no datastore at all.
+That is precisely the coupling `ResolveDataStoreMiddleware`'s omission is meant to remove.
+
+**The lookup this design uses instead.**
+DMS already has a tenant-only path, and identity uses it rather than introducing one.
+`IDataStoreProvider.LoadTenants()` fetches tenant names from the Configuration Service `v3/tenants/` endpoint, which CMS exempts from tenant-header resolution "for tenant management before tenants exist" (`Middleware/TenantResolutionMiddleware.cs:43`); it sends no `Tenant` header and projects nothing but names (`Configuration/ConfigurationServiceDataStoreProvider.cs:414-454`).
+No data store is read and no connection string is decrypted.
+
+That path also carries absence without depending on status plumbing.
+A tenant is confirmed absent when a **successfully fetched** tenant-name list does not contain it, so the absent signal is set membership over a successful response rather than an error status.
+No Configuration Service change and no shared HTTP-client change is required to make the outcomes below derivable.
+
+Three specifics the middleware must get right:
+
+1. **An empty list is evidence of absence only if the fetch genuinely succeeded.** `FetchTenants` returns `[]` without throwing when deserialization yields null (`:447-450`), which would render every tenant absent on a parse failure. The identity lookup must treat a null-deserialized body as `unavailable`, not as an empty tenant set.
+2. **Failures must arrive as an outcome, not an exception.** `LoadTenants` wraps transport and JSON failures in `InvalidOperationException` (`:383`, `:397`). The identity check maps those to `unavailable` rather than letting them escape as a `500`, and lets `OperationCanceledException` for the request's own token propagate untouched.
+3. **The cache is its own.** `TenantExists` reads `_instancesByTenant`, which only `LoadDataStores` populates (`:348`), so it cannot serve as the fast path without reintroducing the datastore dependency this lookup exists to avoid. The identity check keeps its own tenant-name cache fed by `LoadTenants`, in the same cache-then-refetch shape the frontend validator uses.
+
+A by-name existence endpoint on CMS would spare the check a full-list refetch on a cold miss.
+That is an optimization, not a prerequisite, and is recorded as a follow-up rather than pulled into this epic.
+
+The identity check returns three typed outcomes:
 
 | Outcome | Meaning | DMS response |
 | --- | --- | --- |
@@ -452,7 +509,7 @@ The identity check therefore returns three typed outcomes:
 
 Only confirmed absence becomes a `404`.
 `OperationCanceledException` for the request's own cancellation token propagates and is never converted into any of the three outcomes.
-`ApplicationContextResult` is the existing precedent for this shape, and the client-to-tenant binding check uses the same provider, so both checks report absence and unavailability through one mechanism.
+`ApplicationContextResult` is the existing precedent for this shape, and the client-to-tenant binding check already reports through it, so both checks report absence and unavailability through one outcome vocabulary even though they query different Configuration Service resources.
 
 `ResolveDataStoreMiddleware` stays omitted.
 Identity does not select a datastore and does not require `ClientAuthorizations.DataStoreIds`.
@@ -509,6 +566,29 @@ The two outbound protocol checks are:
 1. required values are present for the status returned;
 2. an async request token can be carried in one URL path segment.
 
+### Request Logging and Identifier Exposure
+
+Reusing the existing request logging is correct for trace correlation and wrong as-is for these two routes, because identity is the only DMS surface whose route values are natural-person identifiers and result-set handles rather than opaque resource ids.
+
+Both layers place the resolved request path into a structured `Path` property and into the rendered completion and failure messages: the frontend at `Infrastructure/LoggingMiddleware.cs:27` and again in the `HttpRequestCompleted` / `HttpRequestFailed` message templates, and Core at `Middleware/RequestResponseLoggingMiddleware.cs:31`.
+`GET /identity/v2/identities/605943412` would therefore write a person's UniqueId at `Information` on every successful lookup, and a results poll would write the request token, which is the bearer of that job's result set.
+`LoggingSanitizer` does not prevent this. It exists to stop log injection — it neutralizes control and layout characters — and a UniqueId survives it unchanged, as it must.
+This conflicts with the repository logging policy's "do not log sensitive data" principle (`docs/LOGGING.md:9`).
+
+For identity routes only, both layers log the **route template** in place of the resolved path: `/identity/v2/identities/{id}` and `/identity/v2/identities/results/{token}`, with the tenant and route-qualifier segments retained as literals because they are deployment topology rather than person data.
+
+The substitution is scoped to identity routes rather than applied globally.
+`Path` is a documented collector-contract property defined as "sanitized request path without the query string" (`docs/LOGGING.md:71`), and redacting resource ids across all of DMS would change that contract for every existing consumer.
+Substituting a template keeps `Path` present, a path, and sanitized, so collector rules that filter or group on it continue to work.
+
+Tests must assert the absence of the identifier in **both** the structured `Path` property and the rendered message, at both layers, for a success and a failure response.
+Asserting only the structured property leaves the rendered message — which is where the value is interpolated for the console sink's `RenderedMessage` — unchecked.
+
+The instruction elsewhere in this design to log provider exceptions rather than return them carries the same obligation in the other direction.
+A provider's exception message is upstream text that DMS does not control and may quote a submitted name, birth date, or identifier.
+Identity's exception logging therefore records the exception type, the operation, the trace id, and the provider's stack trace, and records the exception message at `Debug` rather than at the `Error` level used for the request-failure event.
+This keeps the default production log free of upstream-supplied person data while leaving a deliberate, operator-enabled channel for diagnosing a misbehaving provider.
+
 ## Provider Lifetime and Resolution
 
 The plugin architecture permits a contributed registration to use any lifetime, including scoped, so the identity contract must state how the host resolves the provider rather than leaving it to the implementer.
@@ -543,7 +623,9 @@ A usable request token is:
 - contains no control character;
 - is not exactly `.`;
 - is not exactly `..`;
-- compares ordinally equal to `Uri.UnescapeDataString(Uri.EscapeDataString(token))`.
+- compares ordinally equal to `Uri.UnescapeDataString(Uri.EscapeDataString(token))`;
+- **escapes to at most 1024 characters** under `Uri.EscapeDataString`;
+- **composes a poll path that fits the deployment's request-line budget**, evaluated on the fully qualified path DMS is about to emit.
 
 An unusable token is provider contract misuse.
 DMS returns `502` with no `Location` header.
@@ -555,6 +637,25 @@ This pins tokens such as `50%25`, which should arrive at the provider as `50%25`
 The exact dot segments `.` and `..` are excluded even though they escape to themselves and round-trip through `Uri`.
 As path segments, they are relative-path navigation tokens rather than opaque data, so the poll URL is not guaranteed to return as issued through clients and proxies.
 Longer dotted values such as `...`, `a.b`, and `.hidden` are ordinary data and remain valid if they satisfy the other rules.
+
+### Why Length Is a Usability Rule
+
+The character and round-trip rules above constrain what a token *contains* and say nothing about how much of it there is, so a token can satisfy every one of them and still be impossible to poll.
+The failure is not hypothetical: a long ASCII token passes each check, the find or search request returns `202` with a `Location`, and the follow-up `GET` to that exact `Location` is rejected by Kestrel with `414` before any DMS middleware runs, because the composed request line exceeds `MaxRequestLineSize`.
+DMS configures only `MaxRequestBodySize` (`Program.cs:92`) and leaves the request-line limit at the Kestrel default of 8,192 bytes, so the default applies.
+
+Handing a client a `202` whose `Location` cannot be fetched is a worse outcome than refusing the token, because the async job has already been accepted by the provider and the client has no other handle for it.
+Length therefore belongs in the usability rule, where an unusable token is caught before the `202` is written rather than one round trip later.
+
+Two limits are needed because they fail differently:
+
+- The **1024-character escaped ceiling** is the contract's fixed, provider-facing rule. It is stated on the escaped form because that is what occupies the URL, and escaping is expanding: `Uri.EscapeDataString` turns one reserved ASCII character into three characters and one non-BMP character into as many as twelve, so a raw-length rule would not bound the emitted path.
+- The **composed-path check** is the deployment-facing rule, because the ceiling alone cannot be sufficient. The poll path also carries the configured path base, the tenant segment, and every route-qualifier segment, all of which vary per deployment and none of which the provider knows. DMS evaluates the actual composed path, so a token that fits a single-tenant root-path deployment and overflows a multitenant qualified one is refused on the deployment where it overflows.
+
+1024 is chosen to sit far below the default budget with room for a realistic qualified prefix, while remaining well above any opaque job handle a provider needs — a signed handle or base64 blob is comfortably inside it.
+Implementer documentation should additionally recommend keeping escaped tokens at or below 256 characters for maximum interoperability, since intermediate proxies commonly enforce total-URL limits near 2,048 bytes that DMS cannot observe.
+
+Boundary tests must exercise the ceiling and the composed-path check together, not just the ceiling: a token at the limit and one character past it; a token that fits at the root path and overflows under a tenant plus route qualifiers; and a token whose *escaped* form crosses the limit while its raw form does not, which is the case a raw-length implementation would wrongly admit.
 
 ### Async Job Obligations
 
@@ -630,9 +731,58 @@ An implementer whose upstream system offers no such guarantee must say so, becau
 
 The unsupported-operation `404`, tenant-not-found `404`, identity-not-found `404`, and feature-off `404` must be distinguishable by route presence or problem-detail `type` in tests.
 Provider-contract-violation `502` and identity-upstream-failure `502` must also be distinguishable by problem-detail `type`.
+
 The problem-detail namespace is `urn:ed-fi:api:identities:*` rather than `urn:ed-fi:api:identity:*` because DMS already uses `urn:ed-fi:api:identity-conflict` for a document's natural-key identity, an unrelated concept, and `identities` matches this API's route and name.
 The upstream-failure problem title identifies Identity Management as the failing subsystem and omits provider exception details.
 `IdentityError` values are not returned for upstream failures; provider details remain in structured logs.
+
+### Cross-Origin Access to `Location`
+
+The async `202` carries no body, so `Location` is the only channel by which a client learns the poll URL, and the `Incomplete` results response depends on it the same way.
+That makes `Location` load-bearing in a way it is nowhere else in DMS, where it accompanies a resource the client can also address by other means.
+
+The configured CORS policy allows the Swagger UI origin with `AllowAnyHeader()` and `AllowAnyMethod()` and is applied to the whole app (`Program.cs:107`, `Program.cs:205`), but it declares no exposed response headers.
+`AllowAnyHeader` governs *request* headers on the preflight; it has no effect on which response headers script may read.
+Under the Fetch standard a cross-origin response exposes only the CORS-safelisted response headers unless `Access-Control-Expose-Headers` names others, and `Location` is not safelisted.
+Browser JavaScript calling identity from an allowed origin therefore receives the `202`, and reads `null` for `Location`.
+The async flow is unusable from a browser, while every server-side client works, so the defect is invisible to ordinary HTTP integration tests — those read the header off the raw response and never apply the CORS layer at all.
+
+The API surface story adds `Location` to the policy's exposed response headers.
+The corresponding check asserts that a cross-origin request carrying an `Origin` header of the configured origin produces a response whose `Access-Control-Expose-Headers` includes `Location`, and does so on the `202` and on the `Incomplete` results `200`.
+An assertion at that level is sufficient and is what belongs in this suite; it pins the exact header the browser rule turns on without standing up a browser harness for one header.
+
+### Validation Error Projection
+
+`IdentityError` carries a required `Message` and an optional `Path`, and the mapping table above says only that provider errors are "projected" into the `400`.
+That leaves the client-visible half of the contract undefined: whether `Path` is JSONPath or JSON Pointer, how a provider addresses an item in a find or search array, what happens to an error with no path, what happens to two errors at one path, and which problem-detail shape results.
+Search makes this concrete rather than academic — a provider validating a batch needs one agreed way to say "the third request's `FirstName` is malformed", and a client needs to be able to find it.
+
+Identity does not invent a convention. It reuses the one DMS already emits and that the custom-validation design pins for exactly this fan-in (`custom-validation-DMS-1345/design.md:459`), extended for identity's top-level arrays.
+
+`Path` is **JSONPath**, rooted at `$`, matching what `DocumentValidator` already produces for schema violations — keys are built as `"$." + propertyName` (`Validation/DocumentValidator.cs:308,315`) and asserted in that form throughout the existing suites. It is not JSON Pointer; `/firstName` is not a valid `Path`.
+
+The projection is:
+
+| Provider error | Lands in | Key or position |
+| --- | --- | --- |
+| `Path` set, single-object body (create) | `validationErrors` | the path verbatim, e.g. `$.firstName` |
+| `Path` set, array body (find, search) | `validationErrors` | zero-based item index in JSONPath bracket form, e.g. `$[2].firstName` for the third request |
+| `Path` null, empty, or whitespace | `errors` | appended in provider order |
+| Two or more errors at one path | `validationErrors` | one key, messages appended to that key's array in provider order |
+
+`validationErrors` is a `Dictionary<string, string[]>` and `errors` a `string[]` on the existing base problem object (`Response/FailureResponse.cs:52-73`), so both collections always serialize, empty when unused.
+
+The resulting problem detail follows the same selection rule and the same literal `detail` strings `ValidateDocumentMiddleware` uses, so an identity `400` is indistinguishable in shape from a core validation `400` (`Middleware/ValidateDocumentMiddleware.cs:38-54`):
+
+- any error landed in `errors` selects `FailureResponse.ForBadRequest` with `"The request could not be processed. See 'errors' for details."`;
+- otherwise `FailureResponse.ForDataValidation` with `"Data validation failed. See 'validationErrors' for details."`.
+
+DMS does not parse, validate, or rewrite `Path`.
+A provider that emits a syntactically invalid path gets that string back as a `validationErrors` key; the alternative — rejecting the provider's `InvalidProperties` as a contract violation over key syntax — would convert a client's `400` into a `502` and lose the provider's diagnosis.
+The index prefix for array bodies is the provider's to supply, since only the provider knows which request in the batch failed; DMS does not renumber or inject it.
+
+Representative `400` bodies for each row — a create field error, a search item error, a pathless error, and two messages at one path — are pinned as response examples in the served OpenAPI document and asserted by the fixture-plugin story, so the shape is fixed before publication rather than settled by whichever implementation lands first.
+That document is an artifact the epic already produces and already asserts, so pinning the shapes costs no new published artifact.
 
 ## Plugin Architecture
 
@@ -676,7 +826,7 @@ The identity API surface story declares it as a dependency.
 | --- | --- | --- | --- |
 | 01 | Add the Identity Contract Package and Host Default | this design | `EdFi.Api.Identity`, public contract types, XML docs, `NoIdentityService`, solution entry, lock file, Dockerfile copy-list entries |
 | 00 | Send the Tenant Header Per Request in the CMS Claim-Set Provider | this design | per-request `Tenant` and `Authorization` headers in `ConfigurationServiceClaimSetProvider`, concurrent two-tenant cold-miss test. See [Prerequisites](#prerequisites) |
-| 02 | Add the Identity API Surface, Pipeline, Toggle, OpenAPI, and Discovery | 01, 00 | Core identity pipeline, service-claim auth, tenant-existence middleware, client-to-tenant binding, authorization-strategy policy, provider resolution from the request scope, request/response mapping, frontend endpoint module, `EnableIdentityManagement`, compose/env entries, fixed OpenAPI document, metadata listing, Discovery `identity` URL, toggle gating |
+| 02 | Add the Identity API Surface, Pipeline, Toggle, OpenAPI, and Discovery | 01, 00 | Core identity pipeline, service-claim auth, tenant-only existence middleware over the existing `LoadTenants` path, client-to-tenant binding, authorization-strategy policy, provider resolution from the request scope, request/response mapping and validation-error projection, identity-route log redaction, frontend endpoint module, CORS `Location` exposure, `EnableIdentityManagement`, compose/env entries, fixed OpenAPI document, metadata listing, Discovery `identity` URL, toggle gating. Entirely within the DMS solution: no Configuration Service change and no shared HTTP-client change is required |
 | 03 | Register the Identity Plugin Contract and Prove a Fixture Plugin | 02, DMS-1498, DMS-1499 | `Replace` registry entry, assembly-name derivation, runtime image assembly-version assertion, replacement cardinality tests, fixture plugin, sync and async flows, custom property pass-through, enabled-without-plugin, duplicate/body/token/error cases |
 | 04 | Document and Publish `EdFi.Api.Identity` | 03, DMS-1500, DMS-1501 | operator toggle docs, plugin implementer chapter, contract readme, divergence ledger, publish-when-absent, skip-when-unchanged, fail-when-changed package lane |
 
@@ -695,6 +845,9 @@ Unit tests:
 - two existing tenants with identically named claim sets both granting identity access: a token issued for tenant A cannot reach tenant B's identity endpoints, and the identity provider is not called;
 - the client-to-tenant binding runs before service-claim authorization and its unavailable outcome returns `503` rather than `401`;
 - tenant existence returns `503` and not `404` when the existence question cannot be answered, and propagates request cancellation instead of converting it to an outcome;
+- the three tenant-existence outcomes are distinguishable against a Configuration Service stub, with confirmed absence classified from set membership over a successfully fetched tenant-name list rather than from an error status or exception message text;
+- a tenant whose datastore configuration fails to load or decrypt still resolves as existing, so an unrelated datastore fault cannot block identity;
+- a tenants response that deserializes to null is classified `unavailable` rather than as an empty tenant set that would render every tenant absent;
 - a matched identity action whose strategy list is empty, unknown, or a recognized strategy other than `NoFurtherAuthorizationRequired` fails closed as security configuration rather than `403`;
 - a provider registered as scoped, with its own scoped dependency, is resolved once per request from the request scope and the capability check and invocation observe the same instance;
 - enabled with no plugin returns operation-unsupported `404` before POST content-type or body validation;
@@ -705,6 +858,10 @@ Unit tests:
 - provider exception, upstream-failure problem type, and cancellation behavior;
 - token round trip, including `50%25`, reserved characters that survive the round trip, `/`, `\`, control characters, `.`, and `..`;
 - ordinary dotted tokens `...`, `a.b`, and `.hidden` accepted;
+- token escaped-length ceiling at the limit and one past it; a token whose escaped form crosses the ceiling while its raw form does not; a token usable at the root path and unusable under a tenant plus route qualifiers;
+- validation-error projection: a path key verbatim, an indexed `$[n].property` key for an array item, a blank path routed to `errors`, two messages grouped under one key, and the problem-detail selection rule and `detail` literals matching core validation;
+- identity-route logging substitutes the route template at both layers, asserted in the structured `Path` property and the rendered message, on success and failure; a non-identity route still logs its resolved path;
+- provider-exception logging records type, operation, trace id, and stack trace at the failure level and the provider message only at `Debug`;
 - result invariants such as missing payload, both payload and token, neither payload nor token, and token without results capability;
 - `Incomplete` from any operation except results is provider contract misuse;
 - a pending results poll whose payload carries wire `Status` incomplete and no result data returns `200` verbatim, not `502`;
@@ -719,6 +876,8 @@ Integration tests:
 - enabled without plugin starts and returns operation-unsupported `404`;
 - real HTTP routing for `identities/results` and `identities/results/{token}`;
 - async `Location` followed by polling returns the original token to provider;
+- an accepted token's emitted `Location` is fetchable and reaches the results route rather than being rejected by the host before routing;
+- a cross-origin request from the configured origin returns `Access-Control-Expose-Headers` including `Location`, on the async `202` and the `Incomplete` results `200`;
 - served OpenAPI includes route-qualified `servers` and `oauth2_client_credentials` security metadata;
 - content-type/body/duplicate/token/error cases through the real frontend pipeline;
 - multitenant route context with tenant existence and route qualifiers;
@@ -736,7 +895,9 @@ E2E tests:
 - enabled-without-plugin deployment starts cleanly and returns operation-unsupported `404`;
 - Discovery and metadata list include identity only when enabled;
 - a results token issued under one tenant, route-qualifier set, or client cannot be redeemed under another, proving the fixture plugin binds jobs to their issuing context;
-- a fixture-plugin async job remains pollable after the DMS container restarts, or the fixture documents itself as in-memory only and the test asserts the documented `404`.
+- a fixture-plugin async job remains pollable after the DMS container restarts, or the fixture documents itself as in-memory only and the test asserts the documented `404`;
+- fixture-plugin `InvalidProperties` responses in each projection shape match the pinned examples in the served OpenAPI document;
+- a get-by-id and a results poll leave no UniqueId and no token in the stack's captured logs, in either the structured property or the rendered message.
 
 No tests are run by this spike because it changes design documents only.
 
@@ -798,16 +959,17 @@ Open questions with recommended defaults:
 - Tokens containing path separators: keep rejected unless a future story measures deployment behavior and changes the contract.
 - Async results shared across a tenant versus scoped to the issuing client: scope to the issuing client, because loosening later is compatible and tightening later is not.
 - An idempotency key on create: not in v1; require the provider to document its own repeated-create behavior instead.
-- A published conformance test suite for implementers: not in this epic; the served OpenAPI document plus story 04's documented obligations are the v1 answer.
+- A published conformance test suite for implementers: not in this epic; the served OpenAPI document and story 04's documented obligations are the v1 answer.
 
 ## Follow-Up Items Outside Identity Scope
 
 - `AppSettings:EnableManagementEndpoints` appears to be configured but not read by production code.
 - `JwtRoleAuthenticationMiddleware` is registered but not composed into a pipeline.
+- `ConfigurationServiceResponseHandler` discards the HTTP status it just read, throwing `HttpRequestException` with the message-only constructor so `StatusCode` is null for every caller. Combined with `LoadDataStores` rewrapping the exception type, this leaves `TenantValidator`'s not-found catch clause dead. Identity does not require either correction, because its tenant lookup derives absence from set membership on a successful response rather than from a status, so this stays a standalone defect rather than becoming epic scope.
 - Existing fixed-service facade paths pass no request cancellation token.
 - Tenant existence should eventually be unified behind one Core-side helper used by both frontend fixed routes and the identity Core middleware. The frontend validator's bare-`bool` result and general exception catch should be replaced with the typed outcomes this design specifies, so a Configuration Service outage stops reading as a tenant `404` on the existing fixed routes too.
 - JWT validation is not tenant-aware at all: one issuer and audience serve every tenant, and `ValidateAndExtractClientAuthorizationsAsync` takes no tenant. Identity closes the resulting gap with an application-context binding check, but a tenant-scoped token or issuer would close it at the source for every route.
-- A published conformance test package for `IIdentityService` implementers was considered and deferred. Story 04's implementer chapter documents the payload obligations and the served OpenAPI document is the artifact an implementer validates against; a shipped conformance suite would be a new public artifact with its own version, publication lane, and additive-only policy, and belongs to its own story if it is wanted.
+- A published conformance test package for `IIdentityService` implementers was considered and deferred. Story 04's implementer chapter documents the payload obligations and the served OpenAPI document is the artifact an implementer validates against; a shipped conformance suite would be a new public artifact with its own version, publication lane, and additive-only policy, and belongs to its own story if it is wanted. Shipping JSON Schema documents and examples inside the contract package was also considered as a middle option and set aside: the served OpenAPI document already carries the schemas and the pinned example bodies, so embedding a second copy would add a public artifact to keep in sync for no coverage the epic does not already have.
 
 The claim-set provider's cross-tenant header race is no longer listed here.
 It is now a named [prerequisite](#prerequisites) with its own story.

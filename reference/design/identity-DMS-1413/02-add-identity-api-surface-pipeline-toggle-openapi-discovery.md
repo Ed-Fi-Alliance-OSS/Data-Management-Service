@@ -28,6 +28,13 @@ Service-claim authorization calls that provider, so landing this story first wou
 - Tenant existence runs after JWT authentication and before client-to-tenant binding, which runs before service-claim authorization.
 - A valid token plus nonexistent tenant returns `404` without calling `IClaimSetProvider` or `IIdentityService`.
 - Tenant existence returns three typed outcomes; only confirmed absence returns `404`, an unanswerable check returns `503`, and request cancellation propagates rather than being converted into an outcome.
+- The tenant-existence lookup uses the existing `IDataStoreProvider.LoadTenants()` tenant-name path, not the datastore reload, so no data store is read and no connection string is decrypted while answering a tenant-existence question.
+- A tenant that exists but whose datastore configuration cannot be loaded or decrypted still resolves as `exists`, and identity requests for it succeed, proven by test. This is the coupling that omitting `ResolveDataStoreMiddleware` is meant to remove.
+- Confirmed absence is derived from set membership over a successfully fetched tenant-name list, not from an error status, so the outcome requires no Configuration Service change and no change to the shared response handler.
+- A tenants response that deserializes to null is classified `unavailable`; it must not be treated as an empty tenant set, which would render every tenant absent.
+- `LoadTenants`' `InvalidOperationException` wrapping of transport and JSON failures is mapped to `unavailable` rather than escaping as a `500`.
+- The middleware keeps its own tenant-name cache fed by `LoadTenants`; it does not use `TenantExists`, whose backing collection only the datastore reload populates.
+- A test proves the three outcomes are actually distinguishable end to end against a Configuration Service stub: absent tenant returns `404`, a transport failure or null-deserialized body returns `503`, and an existing tenant continues, with no path collapsing absence into unavailability or the reverse.
 - A token whose client does not belong to the URL tenant returns `401` without calling `IClaimSetProvider` or `IIdentityService`, proven with two existing tenants that both have an identically named claim set granting identity access.
 - The binding check resolves application context for the authenticated client in the URL tenant and returns `503` when Configuration Service is unavailable.
 - The binding check reads nothing from the resolved context beyond the fact that it resolved, and a client whose `ApplicationContext.DataStoreIds` is empty passes, proven by test.
@@ -47,8 +54,18 @@ Service-claim authorization calls that provider, so landing this story first wou
 - `Incomplete` from any operation except `ResultsAsync` is provider contract misuse.
 - Provider calls are wrapped by one provider-only exception boundary; cancelled `OperationCanceledException` is rethrown and un-cancelled provider exceptions map to identity-upstream-failure `502`.
 - Provider contract misuse cases map to provider-contract-violation `502`, distinct from identity-upstream-failure `502`.
+- `IdentityError.Path` is projected as a JSONPath key rooted at `$`: a set path becomes a `validationErrors` key verbatim, an item in a find or search array is keyed `$[n].property`, a null or blank path appends to `errors`, and two errors at one path group into that key's array in provider order.
+- The identity `400` uses the same selection rule and the same literal `detail` strings as `ValidateDocumentMiddleware`, so its body shape is indistinguishable from a core validation `400`; DMS does not parse, validate, or rewrite a provider-supplied path, and does not inject or renumber the array index.
+- The served OpenAPI document declares a representative `400` example body for each projection row, and tests assert the emitted responses match them.
 - Provider `IdentityError` values are projected only for `InvalidProperties`; upstream failure diagnostics are logged and not returned to clients.
+- For identity routes, both the frontend request logging middleware and the Core request/response logging middleware log the route template (`/identity/v2/identities/{id}`, `/identity/v2/identities/results/{token}`) in place of the resolved path, so a UniqueId and a results token never reach the logs; tenant and route-qualifier segments are retained as literals.
+- The template substitution is scoped to identity routes and leaves the `Path` property's shape and the documented request-log console contract in `docs/LOGGING.md` unchanged for every other route, proven by a test asserting a resource route still logs its resolved path.
+- Tests assert the identifier is absent from both the structured `Path` property and the rendered message, at both logging layers, on a success and on a failure response. Asserting only the structured property is insufficient.
+- Identity provider-exception logging records exception type, operation, trace id, and stack trace at the failure level, and records the provider's exception message only at `Debug`, because an upstream message is uncontrolled text that can quote submitted person data.
 - Async token usability includes the `/`, `\`, control-character, exact `.`/`..`, blank, and escape/unescape round-trip checks.
+- Async token usability additionally rejects a token whose `Uri.EscapeDataString` form exceeds 1024 characters, and rejects a token whose composed poll path does not fit the deployment's request-line budget; both are evaluated before the `202` is written, and both return provider-contract-violation `502` with no `Location`.
+- Boundary tests cover a token at the escaped ceiling and one character past it; a token that is usable at the root path and unusable under a tenant plus route qualifiers; and a token whose escaped form crosses the ceiling while its raw form does not.
+- A test proves the emitted `Location` for an accepted token is actually fetchable - the follow-up `GET` reaches the results route rather than being rejected by the host with `414` - so the usability rule is validated against the delivery path and not only against the token string.
 
 ### Frontend Endpoints and Feature Toggle
 
@@ -63,6 +80,8 @@ Service-claim authorization calls that provider, so landing this story first wou
 - Every identity endpoint handler passes `HttpContext.RequestAborted` to the corresponding Core identity facade method, for all five operations.
 - Compose and environment files carry `AppSettings__EnableIdentityManagement`, following the existing `AppSettings__EnableManagementEndpoints` entries in `eng/docker-compose/local-dms.yml`, `eng/docker-compose/published-dms.yml`, and `eng/azure-vm/compose/docker-compose.yml`, so a Docker stack can enable the feature.
 - No plugin maps identity HTTP routes.
+- The CORS policy exposes the `Location` response header, because the async `202` has no body and `Location` is the only channel for the poll URL, and `Location` is not a CORS-safelisted response header.
+- A test asserts that a request carrying the configured `Origin` produces a response whose `Access-Control-Expose-Headers` includes `Location`, on both the async `202` and the `Incomplete` results `200`. Ordinary integration tests read the header off the raw response and never apply the CORS layer, so they cannot cover this.
 
 ### OpenAPI, Metadata, and Discovery
 
@@ -87,11 +106,13 @@ Service-claim authorization calls that provider, so landing this story first wou
 
 ## Tasks
 
-1. Add the tenant-existence middleware using the existing `IDataStoreProvider` cache/reload behavior, returning typed exists/absent/unavailable outcomes rather than a bare `bool`.
+1. Add the tenant-existence middleware over the existing `LoadTenants` tenant-name path, with its own cache and typed exists/absent/unavailable outcomes rather than a bare `bool`, including the null-deserialization guard. It reuses the cache-then-refetch shape but not the datastore reload.
 2. Add the client-to-tenant binding middleware over `IApplicationContextProvider`.
 3. Add service-claim authorization for fixed service claims, including the authorization-strategy policy.
 4. Parameterize content-type validation without changing resource write behavior.
 5. Add the identity handler, request-scope provider resolution, and response mapping.
 6. Add frontend configuration binding, endpoint module, route mappings, and Docker/environment toggle entries.
 7. Add the embedded OpenAPI document, metadata endpoint/listing integration, and Discovery integration.
-8. Add unit and integration tests for ordering, authorization, two-tenant client binding, authorization-strategy fail-closed cases, Configuration Service outage classification, scoped-provider resolution, capability gating, route mapping, body handling, token handling, endpoint-level cancellation propagation from `HttpContext.RequestAborted`, status mapping, disabled-route absence, metadata absence, schema/runtime agreement, ODS schema compatibility, headers, problem-detail type values, server URLs, and security metadata.
+8. Add identity-route log redaction at both logging layers and the provider-exception diagnostic contract.
+9. Add `Location` to the CORS policy's exposed response headers.
+10. Add unit and integration tests for ordering, authorization, two-tenant client binding, authorization-strategy fail-closed cases, tenant-existence outcome classification and datastore decoupling, scoped-provider resolution, capability gating, route mapping, body handling, token handling including the length and composed-path boundaries, validation-error projection, log redaction at both layers, CORS `Location` exposure, endpoint-level cancellation propagation from `HttpContext.RequestAborted`, status mapping, disabled-route absence, metadata absence, schema/runtime agreement, ODS schema compatibility, headers, problem-detail type values, server URLs, and security metadata.
