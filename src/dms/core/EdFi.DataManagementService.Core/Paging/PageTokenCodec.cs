@@ -24,9 +24,20 @@ namespace EdFi.DataManagementService.Core.Paging;
 /// <para>
 /// The marker is what makes the bounds interpretable. A token stores no request filters, so without it
 /// the server could not tell a <c>ContentVersion</c> anchor from a <c>DocumentId</c> one when a client
-/// changes <c>maxChangeVersion</c> mid-walk, and would replay the token's bounds against the wrong
-/// column. Every token carries one — there is no unmarked legacy form, because cursor paging and this
-/// marker ship in the same release and tokens are opaque, so nothing holds a two-field token.
+/// changes an input the anchor is resolved from — <c>maxChangeVersion</c>, or the data source the
+/// request asks for — and would replay the token's bounds against the wrong column. Every token
+/// carries one — there is no unmarked legacy form, because cursor paging and this marker ship in
+/// the same release and tokens are opaque, so nothing holds a two-field token.
+/// </para>
+/// <para>
+/// The marker names the anchor, not the window shape. The two coincide against a mutable source,
+/// where only a max-bearing window resolves <c>ContentVersion</c>, which is why marker equality also
+/// rejects a mid-walk <c>maxChangeVersion</c> change there. Against a frozen snapshot every windowed
+/// shape resolves <c>ContentVersion</c>, so the marker matches across such a change and the replay is
+/// served; the token's own bounds go on governing the walk. Restoring a rejection there would take a
+/// third marker value rather than a bounds comparison, because a token's maximum is also how a
+/// partition walk stays inside its slice, so a finite maximum does not imply the request carried
+/// <c>maxChangeVersion</c>. See <c>docs/CURSOR-PAGING.md</c> for the client-facing rule.
 /// </para>
 /// </remarks>
 internal static class PageTokenCodec

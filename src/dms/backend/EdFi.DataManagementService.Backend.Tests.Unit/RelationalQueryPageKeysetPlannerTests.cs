@@ -756,6 +756,39 @@ public class Given_RelationalQueryPageKeysetPlanner
     }
 
     [Test]
+    public void It_should_fold_a_min_only_window_into_a_content_version_cursor_pages_bounds()
+    {
+        // The shape only a frozen snapshot resolves this anchor for, and the one the fold had no
+        // case for. Both halves matter: the window floor still lifts the cursor floor, and an absent
+        // window ceiling contributes no limit of its own, so the token's own maximum is what goes on
+        // bounding the walk - which is what keeps a partition walk inside its slice once the request
+        // stops naming a maximum.
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var cursor = planner.Plan(
+            CreateRootTable(),
+            CreateParityPreprocessingResult(),
+            new CollectionPaging.Cursor(new CursorRange(150L, 250L), new PageSize(25)),
+            changeVersionRange: new ChangeVersionRange(200L, null),
+            orderingMode: PageOrderingMode.ContentVersion
+        );
+
+        cursor.ParameterValues["cursorMin"].Should().Be(200L, "the window floor is the greater of the two");
+        cursor
+            .ParameterValues["cursorMax"]
+            .Should()
+            .Be(250L, "an absent window ceiling contributes no limit, so the token's own stands");
+        cursor
+            .ParameterValues.Keys.Should()
+            .NotContain("minChangeVersion")
+            .And.NotContain("maxChangeVersion");
+
+        cursor.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @cursorMin");
+        cursor.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" <= @cursorMax");
+        cursor.Plan.PageDocumentIdSql.Should().NotContain("@minChangeVersion");
+    }
+
+    [Test]
     public void It_should_clip_an_unbounded_cursor_range_to_the_window_it_folds()
     {
         // A partition's last range runs to long.MaxValue and relies on the window's ceiling to stop it.

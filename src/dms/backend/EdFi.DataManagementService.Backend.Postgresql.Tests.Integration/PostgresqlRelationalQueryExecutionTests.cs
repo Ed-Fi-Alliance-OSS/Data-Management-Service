@@ -845,7 +845,9 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         AssertPageMaterialization(targetSchool.DocumentId);
     }
 
-    // A min-only window still orders by DocumentId, so a cursor page inside it continues normally.
+    // Against current data a min-only window still orders by DocumentId, so a cursor page inside it
+    // continues normally. The snapshot half of the rule is
+    // It_pages_a_min_only_change_version_window_by_content_version above.
     [Test]
     public async Task It_composes_a_min_only_change_version_window_with_the_cursor_range()
     {

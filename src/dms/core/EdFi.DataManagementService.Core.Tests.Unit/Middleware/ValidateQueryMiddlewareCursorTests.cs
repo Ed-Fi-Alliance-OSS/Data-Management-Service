@@ -545,8 +545,10 @@ public class ValidateQueryMiddlewareCursorTests
         }
 
         /// <summary>
-        /// A min-only window keeps the <c>DocumentId</c> anchor, because an update inside a window that
-        /// is open above moves a row past a <c>ContentVersion</c> anchor while it remains eligible.
+        /// Against current data a min-only window keeps the <c>DocumentId</c> anchor, because an update
+        /// inside a window that is open above moves a row past a <c>ContentVersion</c> anchor while it
+        /// remains eligible. Nothing moves in a frozen snapshot, so what this fixture pins is specific
+        /// to the source it runs on.
         /// </summary>
         [Test]
         public async Task It_accepts_an_unwindowed_token_for_a_min_only_request()
@@ -926,6 +928,22 @@ public class ValidateQueryMiddlewareCursorTests
     public class Given_A_Min_Only_Page_Token_Replayed_Against_A_Different_Data_Store
         : ValidateQueryMiddlewareCursorTests
     {
+        /// <summary>
+        /// The accepting half, and the one place the whole snapshot replay contract is pinned. Both
+        /// the window shape and the data source can move the anchor, so this one acceptance covers
+        /// two client mistakes at once: a min-only walk replaying its own token on the source that
+        /// issued it, and a walk that was bounded when the token was cut replaying it with the
+        /// ceiling dropped. On a snapshot both shapes resolve ContentVersion, so the marker matches
+        /// either way and nothing rejects the second case.
+        /// </summary>
+        /// <remarks>
+        /// The range assertion is the load-bearing one. It is what says the token's own ceiling
+        /// still bounds the walk after the request stops naming one - the request window is folded
+        /// into the token's bounds rather than replacing them - so dropping maxChangeVersion
+        /// narrows what the client reads instead of widening it to the newest version in the copy.
+        /// CURSOR-PAGING.md documents that as the behavior clients get, so the two are changed
+        /// together or not at all.
+        /// </remarks>
         [Test]
         public async Task It_accepts_a_content_version_token_against_a_snapshot()
         {
@@ -966,6 +984,33 @@ public class ValidateQueryMiddlewareCursorTests
                     EffectiveTargetKind.Primary,
                     ("pageToken", WindowedToken),
                     ("minChangeVersion", "100")
+                ),
+                CursorRequestValidator.InvalidPageToken
+            );
+        }
+
+        /// <summary>
+        /// The window shape moves the anchor on a snapshot as well, which nothing else here varies
+        /// while holding the target there: every target-varying fixture pins one window, and the
+        /// window-varying overload pins the primary. Replaying a min-only walk's own token with the
+        /// window dropped altogether resolves DocumentId - routing alone must not change the order an
+        /// unfiltered collection is walked in - so the marker stops matching and the token is
+        /// rejected, on the very source that issued it.
+        /// </summary>
+        /// <remarks>
+        /// The complement of It_accepts_a_content_version_token_against_a_snapshot: there the window
+        /// changed shape and the marker still matched, here it changed to the one shape a snapshot
+        /// anchors on DocumentId and it does not. Together they say the marker tracks the anchor,
+        /// not the window and not the source.
+        /// </remarks>
+        [Test]
+        public async Task It_rejects_a_content_version_token_replayed_unwindowed_on_the_same_snapshot()
+        {
+            AssertParameterValidationShell(
+                await Execute(
+                    ValidateQueryMiddlewareTests.Middleware(),
+                    EffectiveTargetKind.Snapshot,
+                    ("pageToken", WindowedToken)
                 ),
                 CursorRequestValidator.InvalidPageToken
             );

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Reflection;
 using EdFi.DataManagementService.Core.ChangeQueries;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -268,6 +269,33 @@ public class Given_Both_ChangeQueryPageOrderingPolicy_Entry_Points
         yield return new TestCaseData(new ChangeVersionRange(null, 0L)).SetName("Max-only at zero");
         yield return new TestCaseData(new ChangeVersionRange(100L, 200L)).SetName("Bounded");
         yield return new TestCaseData(new ChangeVersionRange(200L, 100L)).SetName("Inverted");
+    }
+
+    /// <summary>
+    /// <see cref="EveryWindowShape" /> is written out by hand, and it is exhaustive only because a
+    /// window has exactly two optional bounds. This gate makes that a checked assumption rather than
+    /// a remembered one: a third bound would add shapes the list does not name, and each would take
+    /// whichever branch its minimum and maximum happened to imply, silently.
+    /// <see cref="Given_ChangeQueryPageOrderingPolicy_Resolving_For_A_Data_Store_Kind" /> forces the
+    /// same decision reflectively over the target kinds; this is the window half of it.
+    /// </summary>
+    [Test]
+    public void It_accounts_for_every_window_bound()
+    {
+        typeof(ChangeVersionRange)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(static property => property.PropertyType == typeof(long?))
+            .Select(static property => property.Name)
+            .Should()
+            .BeEquivalentTo(
+                new[]
+                {
+                    nameof(ChangeVersionRange.MinChangeVersion),
+                    nameof(ChangeVersionRange.MaxChangeVersion),
+                },
+                "a new window bound must be added to EveryWindowShape() rather than defaulting into "
+                    + "one of the shapes already listed there"
+            );
     }
 
     [TestCaseSource(nameof(EveryWindowShape))]

@@ -417,9 +417,12 @@ public class ValidatePartitionQueryMiddlewareTests
 
         /// <summary>
         /// The boundary anchor, resolved by the same rule GET-many resolves its page anchor by: a
-        /// max-bearing window balances boundaries by ContentVersion, every other window shape keeps
-        /// DocumentId. Resolved from the parsed window rather than from parameter presence, so a
-        /// present-but-blank maximum is not max-bearing.
+        /// max-bearing window balances boundaries by ContentVersion, and against current data - which
+        /// is the source this fixture holds fixed - every other window shape keeps DocumentId.
+        /// Resolved from the parsed window rather than from parameter presence, so a
+        /// present-but-blank maximum is not max-bearing. A frozen snapshot resolves ContentVersion
+        /// for a min-only window as well; that half of the rule is pinned by the target-varying
+        /// fixtures further down this file.
         /// </summary>
         [TestCase("maxChangeVersion", "200", PageOrderingMode.ContentVersion, TestName = "max only")]
         [TestCase("minChangeVersion", "100", PageOrderingMode.DocumentId, TestName = "min only")]

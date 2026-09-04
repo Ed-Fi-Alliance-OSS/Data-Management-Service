@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Telemetry;
 using FluentAssertions;
@@ -1555,18 +1556,36 @@ public class ValidateQueryMiddlewareTests
             requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
         }
 
+        /// <summary>
+        /// A window this step is about to reject resolves no anchor at all, so an incoming token is
+        /// never compared against one. The client is told what is actually wrong - the maximum it
+        /// typed - and keeps the one piece of state it cannot rebuild.
+        /// </summary>
+        /// <remarks>
+        /// Asserting the reported message is what makes this able to fail, and the ContentVersion
+        /// token is what gives it something to report. The resolved anchor itself is not observable
+        /// on a rejected request: PageOrderingMode is assigned only at the accepting exit, so it
+        /// still carries its DocumentId default here whatever the snapshot rule returned - which is
+        /// why asserting that default proves nothing. A regression that resolved an anchor from the
+        /// faulty window would resolve DocumentId from its surviving bounds, disagree with this
+        /// token, and answer with the invalid-token message instead of the one asserted here.
+        /// </remarks>
         [TestCase("abc", TestName = "snapshot, maximum is not a number")]
         [TestCase("-2", TestName = "snapshot, negative maximum")]
-        public async Task It_rejects_an_unparseable_snapshot_maximum_without_moving_the_anchor(string maximum)
+        public async Task It_reports_an_unparseable_snapshot_maximum_rather_than_the_token(string maximum)
         {
             RequestInfo requestInfo = await Execute(
                 Middleware(),
                 EffectiveTargetKind.Snapshot,
+                ("pageToken", PageTokenCodec.Encode(new CursorRange(7, 42), PageOrderingMode.ContentVersion)),
                 ("maxChangeVersion", maximum)
             );
 
             requestInfo.FrontendResponse.StatusCode.Should().Be(400);
-            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+            requestInfo
+                .FrontendResponse.Body?["errors"]?[0]?.GetValue<string>()
+                .Should()
+                .Be("MaxChangeVersion must be a numeric value greater than or equal to 0.");
         }
 
         /// <summary>

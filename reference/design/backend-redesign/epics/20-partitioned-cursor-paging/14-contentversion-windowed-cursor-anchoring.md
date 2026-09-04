@@ -41,10 +41,16 @@ acceptance gates instead of incorporating it into those gates retroactively.
 ## Implementation Scope
 
 - **Match traditional page selection.** Use `ContentVersion` anchors exactly when traditional
-  paging uses `ContentVersion` ordering: when `maxChangeVersion` is present.
+  paging uses `ContentVersion` ordering: when `maxChangeVersion` is present. The correspondence
+  between the two paging modes still holds; the condition on the right of it was widened by
+  DMS-1396, which added the frozen-snapshot branch noted below.
 - **Keep min-only walks on `DocumentId`.** In an open-ended min-only window, an update moves a
   row past the current `ContentVersion` anchor while the row remains eligible. The walk could
-  then return that row twice. A stable `DocumentId` anchor avoids this duplication.
+  then return that row twice. A stable `DocumentId` anchor avoids this duplication. Superseded by
+  DMS-1396 for a frozen snapshot only: nothing moves there, so the hazard this bullet describes
+  cannot arise and a min-only window takes `ContentVersion`. The bullet stands on every mutable
+  source, a read replica included. The current statement of the rule lives in
+  [`Page-selection ordering`](../../design-docs/change-queries.md#page-selection-ordering).
 - **Treat max-bearing windows as monotonic-escape windows.** An update advances the row beyond
   the maximum, so the row leaves the window instead of moving past the anchor within it.
 - **Assume `ContentVersion` is unique.** Anchors and tokens carry one `ContentVersion`, not a

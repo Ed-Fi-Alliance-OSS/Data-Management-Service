@@ -39,9 +39,10 @@ Traditional `limit`/`offset` paging has two structural problems for bulk consume
 
 Cursor paging replaces "skip `n` rows" with "seek to an anchor value and take `pageSize` rows".
 Because every regular-resource root table and `dms.Descriptor` order collection results by an
-indexed column — the root `DocumentId` primary key, or the indexed `ContentVersion` mirror when the
-request carries a `maxChangeVersion` window — the seek is a range scan whose cost depends on the
-page size, not on how far into the collection the page sits.
+indexed column — the root `DocumentId` primary key, or the indexed `ContentVersion` mirror when
+the request resolves that anchor, per
+[change-queries.md](change-queries.md#page-selection-ordering) — the seek is a range scan whose
+cost depends on the page size, not on how far into the collection the page sits.
 
 `/partitions` complements this by computing balanced, non-overlapping ranges over that same anchor,
 across the filtered, authorized candidate set. Each returned token is a self-contained starting point, so
@@ -786,8 +787,9 @@ existing root, filter, and authorization indexes cannot serve.
   through `QueryDocuments`, whose contract is built around hydrated documents and total count.
   Query success carries the nullable selected anchor maximum, and partition success carries typed
   ranges. SQL planners and executors never parse token strings.
-- **Anchor ownership.** Core resolves the anchor once, from the parsed change-version window plus
-  the legacy ordering setting, and carries it on the request contracts the backend consumes —
+- **Anchor ownership.** Core resolves the anchor once, from the parsed change-version window, the
+  kind of data store serving the request, and the legacy ordering setting, and carries it on the
+  request contracts the backend consumes —
   including the descriptor query and partition request records, which do not travel on those
   contracts and would otherwise have no source for it. The backend never re-resolves it. Two
   resolutions of one rule would be two rules: Core has to know the anchor to validate an incoming
@@ -870,8 +872,13 @@ Cursor paging is not a snapshot protocol:
 - deletes create harmless identity gaps;
 - under a `DocumentId` anchor, updates retain `DocumentId` and do not move between ranges, but can
   change filter, change-version, ownership, namespace, or relationship membership;
-- under a `ContentVersion` anchor, an update advances the row past the window maximum, so the row
-  leaves the window rather than moving to a later range within it — nothing else shifts;
+- under a `ContentVersion` anchor over a max-bearing window, an update advances the row past the
+  window maximum, so the row leaves the window rather than moving to a later range within it —
+  nothing else shifts;
+- under a `ContentVersion` anchor over a min-only window, a shape only a frozen snapshot resolves,
+  nothing moves at all for the life of the walk. That is an independent reason no row can shift to
+  a later range: the freeze does the work the window maximum does above, which is why the anchor
+  is safe here without a ceiling;
 - an item that becomes eligible behind the current lower bound can be missed, while an item that
   becomes ineligible before its page is reached disappears;
 - new documents receive larger identity values and larger change versions, and may appear in the
@@ -1035,6 +1042,22 @@ these invariants independently or the design is not satisfied.
 - A `ContentVersion`-anchored first page over an upper-tail window seeks the change-version index —
   `IX_<Table>_ContentVersion` for a regular resource, `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId`
   for a descriptor — with no dead-run primary-key scan ahead of the first qualifying row.
+- A min-only window — the shape a frozen snapshot resolves this anchor for — reads the same
+  change-version index in anchor order, with no sort operator and no dead-run primary-key scan, at
+  any floor. The ceiling was never what made the access path available: page selection always
+  orders by the anchor and always takes a bounded number of rows, so the index earns its place by
+  supplying the ordering and the row limit stops the read early. Selectivity therefore does not
+  decide this plan, which is requirement 1 holding for the shape — cost follows the page size, not
+  how much of the collection the floor admits. Both floors are pinned on both providers:
+  `It_seeks_the_content_version_index_for_a_regular_resource_min_only_window` for a selective one,
+  `It_reads_the_content_version_index_in_order_for_an_unselective_min_only_floor` for a floor below
+  every row.
+- A regular resource on PostgreSQL is the one provider and root kind whose anchor index does not
+  cover the page key, `IX_<Table>_ContentVersion` being a single column with no `INCLUDE`, so its
+  plan is an index scan with a heap fetch rather than an index-only scan. The fetch is per returned
+  row, not per admitted row, because the row limit bounds the scan. Descriptors are covering on
+  both providers through the trailing `DocumentId` key, and a SQL Server regular resource through
+  the clustered primary key's row locator.
 - Filtered and authorized plans retain applicable existing indexes without repeated full candidate
   scans.
 - A partition plan may scan and sort the candidate set once — that single linear pass is the

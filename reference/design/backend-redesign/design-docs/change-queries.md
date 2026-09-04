@@ -2041,8 +2041,10 @@ ORDER BY r."ContentVersion" ASC
 LIMIT @limit OFFSET @offset;
 ```
 
-Min-only or legacy-ordering requests use `ORDER BY r."DocumentId" ASC`; on that path the core
-`(ResourceKeyId, DocumentId)` index supplies the ordering and `ContentVersion` is residual. Neither
+Requests that resolve the `DocumentId` anchor — unfiltered requests, min-only requests against a
+mutable source, and every request under the legacy-ordering switch — use
+`ORDER BY r."DocumentId" ASC`; on that path the core `(ResourceKeyId, DocumentId)` index supplies
+the ordering and `ContentVersion` is residual. Neither
 ordering path adds a `Discriminator` predicate, and the change-version window adds no
 `dms.Document` join to page selection (only an `?id=` query filter joins `dms.Document` there).
 Hydration may still read response metadata from `dms.Document`.
@@ -2152,8 +2154,10 @@ running with legacy ordering walks and partitions every window shape by `Documen
 database served the request. Because the kill switch governs anchoring as well as ordering, tokens
 issued while it is set stay replayable while it stays set: a deployment running with legacy ordering issues and accepts
 `DocumentId`-marked windowed tokens throughout, instead of breaking walks in progress. Flipping the
-switch mid-walk invalidates tokens already handed out, which is the expected cost of an operator
-escape hatch and the reason it is deployment-wide rather than per-request.
+switch mid-walk invalidates the `ContentVersion`-marked tokens already handed out — the only
+ones whose anchor the flip changes — which is the expected cost of an operator escape hatch and
+the reason it is deployment-wide rather than per-request. `DocumentId`-marked tokens resolve the
+same anchor under either setting and survive the flip.
 
 The rule does not affect `/deletes`, `/keyChanges`, `/availableChangeVersions`, unfiltered GET-many,
 GET-by-id, or writes. The change-query endpoints page traditionally over the tracked-change tables

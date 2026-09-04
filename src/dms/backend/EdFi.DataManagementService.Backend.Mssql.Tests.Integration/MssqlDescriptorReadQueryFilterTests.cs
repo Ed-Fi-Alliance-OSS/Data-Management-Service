@@ -813,7 +813,8 @@ public class Given_A_Mssql_DescriptorRead_Query_Request
         success.HighestSelectedAnchor.Should().NotBeNull();
     }
 
-    // A min-only window keeps DocumentId ordering, so a cursor page inside it continues normally.
+    // Against current data a min-only window keeps DocumentId ordering, so a cursor page inside it
+    // continues normally. A frozen snapshot orders every windowed shape by ContentVersion.
     [Test]
     public async Task It_composes_a_min_only_change_version_window_with_the_descriptor_cursor_range()
     {
