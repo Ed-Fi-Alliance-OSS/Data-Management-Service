@@ -11,9 +11,14 @@ namespace EdFi.DataManagementService.CustomValidation;
 /// A custom, implementer-authored rule to be run against a document on the write path, in addition to
 /// DMS's own core validation.
 /// The write pipeline (POST and PUT) now resolves registered instances of this interface and invokes
-/// those whose <see cref="AppliesTo"/> matches the current request's resource, but no supported
-/// registration seam ships yet: an implementer has no documented way to register one, so in practice
-/// nothing runs today. This declares the shape that support will be built against.
+/// those whose <see cref="AppliesTo"/> matches the current request's resource, and a startup guard
+/// audits those registrations before DMS serves traffic: it aborts startup if a validator is
+/// registered in a shape DMS would not resolve, and warns if a declared <see cref="AppliesTo"/> entry
+/// names no resource in the effective schema.
+/// No supported registration seam ships yet, so an implementer has no documented way to register one
+/// and in practice nothing runs today. This declares the shape that support will be built against.
+/// How an implementation reaches DMS's composition is decided by the plugin work, not by this
+/// contract. See CUSTOM-VALIDATION.md for the registration shape the startup guard accepts.
 /// </summary>
 public interface ICustomResourceValidator
 {
@@ -25,9 +30,11 @@ public interface ICustomResourceValidator
     /// Matching against the current request's resource is exact and ordinal, so a typo'd or
     /// wrong-cased entry never matches and this validator never runs for that resource. An entry is
     /// not otherwise checked here: an empty or malformed <see cref="ValidatedResource"/> constructs
-    /// without complaint, and when host support lands an entry matching no resource in the effective
-    /// schema surfaces as a startup warning rather than a failure, because an entry may legitimately
-    /// name an extension resource a given deployment does not carry.
+    /// without complaint, and an entry matching no resource in the effective schema surfaces as a
+    /// startup warning rather than a failure, because an entry may legitimately name an extension
+    /// resource a given deployment does not carry. Declaring no entries at all warns for the same
+    /// reason: the validator can never run. A name outside the ASCII letters and digits that a
+    /// resourceName key is allowed to contain is reported the same way, without being looked up.
     /// </summary>
     IReadOnlyList<ValidatedResource> AppliesTo { get; }
 

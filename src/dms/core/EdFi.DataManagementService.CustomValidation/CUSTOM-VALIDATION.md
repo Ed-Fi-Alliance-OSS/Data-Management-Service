@@ -9,8 +9,12 @@ custom resource validation to the Ed-Fi Data Management Service.
 > instances and invokes those whose `AppliesTo` matches the current request's resource, but no
 > supported registration seam ships yet.
 > An implementer has no documented way to register one, so in practice nothing runs today.
+> Registering one is not inert at startup, however: a startup guard audits every registration and
+> aborts startup if a validator is registered in a shape DMS would not resolve, so a registration
+> mistake fails the process rather than passing silently.
 > Build against it to pin the contract and to compile early, but do not expect a registered
-> validator to execute until a Data Management Service release announces custom-validation support.
+> validator to execute until a Data Management Service release announces custom-validation support,
+> which is also the release that will document how a registration has to be shaped.
 
 ## What is here
 
@@ -36,10 +40,25 @@ Management Service can change its internal model without that being a breaking c
 compiled against this contract. `ValidatedResourceInfo` in particular is a projection of what the
 service knows about a resource, carrying the fields a validator has a use for and nothing else.
 
+## Registration shape
+
+No host support for loading an implementation has shipped yet, so nothing here can register one.
+When that arrives, the shape below is the one DMS accepts, because a startup guard now audits these
+registrations and terminates the process rather than letting a validator silently never run:
+
+```csharp
+services.TryAddEnumerable(
+    ServiceDescriptor.Transient<ICustomResourceValidator, MyValidator>()
+);
+```
+
+Transient, unkeyed, and an implementation type rather than a shared instance or a factory delegate.
+To supply configuration, bind an options type and take `IOptions<T>` in the constructor.
+
 ## What is not here yet
 
-This document does not yet describe how to register an implementation with a host, the validation
-lifecycle, or the error-reporting model.
+This document does not yet describe the validation lifecycle or the error-reporting model, and the
+registration note above is not a substitute for the full guide.
 A full implementer guide is planned to accompany the release that adds host support.
 
 ## Dependencies

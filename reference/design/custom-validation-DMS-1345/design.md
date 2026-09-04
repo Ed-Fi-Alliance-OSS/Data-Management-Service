@@ -108,7 +108,7 @@ DMS defines four write-path resource-document validator interfaces, all `interna
 Three properties of that set constrain any extension point built next to it.
 All four are `internal`, so nothing outside the Core assembly can implement or replace them.
 All four take the parsed document or a piece of it, `RequestInfo` (which wraps `ParsedBody`) or a raw `JsonNode`, never a typed domain object, and none takes a resource discriminator: the calling middleware supplies the schema, constraints, or path context, and the validator itself is resource-agnostic.
-Each is registered exactly once as the sole implementation of its interface (`DmsCoreServiceExtensions.cs:84-87`), with no `IEnumerable<T>` collection registration anywhere for any validator interface.
+Each is registered exactly once as the sole implementation of its interface (the `AddTransient` chain in `DmsCoreServiceExtensions.cs`), with no `IEnumerable<T>` collection registration anywhere for any validator interface.
 
 Wiring is by hand rather than by container.
 Validator middleware objects are `new`-ed directly inside `ApiService` with the resolved validator passed in: three in the POST (Upsert) pipeline (`ApiService.cs:230`, `:231`, `:233`) and four in the PUT (Update) pipeline (`:323`, `:324`, `:326`, `:327`). Those line numbers are not contiguous because `ProfileWritePipelineMiddleware` sits between them (`:232`, `:325`) and is the one write-path middleware resolved from the container rather than `new`-ed.
@@ -357,7 +357,7 @@ That is the whole delivery mechanism.
 Note where the configuration plumbing lives: the deployment's composition root is an ASP.NET Core host that already has the full shared framework, so reading a section there costs nothing, while the implementer's own assembly stays compilable against the abstractions package alone.
 The implementer supplies their own options type and the deployment supplies its values, so **custom validation adds no DMS-owned configuration surface**: there is no section to document in `docs/CONFIGURATION.md` and no option that turns the feature on or off, because a deployment that registered no validators has none.
 
-**Core's own contribution is the guard, not the registration.** Core ships an extension that registers the startup guard specified under [Startup Failure Semantics](#startup-failure-semantics), and the frontend calls it once, unconditionally, the way it already calls `AddJwtAuthentication(this IServiceCollection services, IConfiguration configuration)` (`DmsCoreServiceExtensions.cs:238-241`, called at `Infrastructure/WebApplicationBuilderExtensions.cs:243`).
+**Core's own contribution is the guard, not the registration.** Core ships an extension that registers the startup guard specified under [Startup Failure Semantics](#startup-failure-semantics), and the frontend calls it once, unconditionally, the way it already calls `AddJwtAuthentication(this IServiceCollection services, IConfiguration configuration)` (`AddJwtAuthentication` in `DmsCoreServiceExtensions.cs`, called from `Infrastructure/WebApplicationBuilderExtensions.cs`).
 Core is the right home for it because the collection being guarded is Core's own, and hosting it there keeps the guard's internals `internal` rather than forcing new public Core API purely to be callable from the frontend.
 
 **Ordering must not matter, and that is a design constraint rather than a convention.** The implementer's registration call may sit before or after Core's guard call, and an implementer is exactly the party the guard exists to check, so a rule of the form "register the validators before the guard" would be broken by the party it protects and would fail silently.
@@ -369,7 +369,7 @@ An earlier revision anchored this audit at "the last statement of the loader's r
 
 ### Lifetime and Resolution
 
-**Transient only.** The four existing internal validators are registered `AddTransient` (`DmsCoreServiceExtensions.cs:84-87`), and `ICustomResourceValidator` implementations follow the same convention, in the collection-shaped `TryAddEnumerable` form.
+**Transient only.** The four existing internal validators are registered `AddTransient` (the `AddTransient` chain in `DmsCoreServiceExtensions.cs`), and `ICustomResourceValidator` implementations follow the same convention, in the collection-shaped `TryAddEnumerable` form.
 Singleton registration is prohibited because a singleton that constructor-injects a scoped host service resolves it once and holds it captive for every later request.
 No type in this contract is scoped, but a validator's constructor can take anything the host registers, so the defect stays reachable through an implementer's own choices.
 
@@ -413,7 +413,9 @@ Ordering the two the other way is not available, because those checks run in the
 
 **Observability.** The request path needs its own logging, because Scenario 1 puts third-party network I/O on the write path with no timeout the contract controls, and per-validator timing is then the only diagnostic a deployment has.
 The step logs, against the request's `TraceId` the way every existing middleware does (for example `Middleware/ValidateDocumentMiddleware.cs:23-26`): at Debug, each applicable validator's type name and elapsed time; and when a validator returns failures, one record naming that validator and its failure count.
-Validator type names originate in implementer code, so they are logged through `LoggingSanitizer.SanitizeForLogging` (`Utilities/LoggingSanitizer.cs:25`), the same treatment `AppliesTo` entries get at startup.
+Validator type names originate in implementer code, so they are filtered rather than interpolated raw.
+They take a narrower filter than `AppliesTo` entries: a type name comes from assembly metadata, where the only hazard for a log record is a control character forging a line, and the allowlist in `LoggingSanitizer.SanitizeForLogging` (`Utilities/LoggingSanitizer.cs`) also removes `+` and backtick, which would leave a nested or generic type name unsearchable in the source it came from.
+Stripping control characters alone defeats the hazard without that cost, and the startup guard does the same.
 Failure *messages* are not logged, because they can quote submitted document values.
 
 **Ordering is pinned mechanically.** `PipelineOrderingTests.cs` reflects into `ApiService`'s private factory methods and inspects the concrete step-type sequence each builds (`Core.Tests.Unit/Pipeline/PipelineOrderingTests.cs:38-59`); the `Given_The_Routed_Resource_Pipelines` fixture already exercises both write pipelines this way (for example `:474-491`), and shipping this step requires an assertion of the same shape.
@@ -427,8 +429,32 @@ This is a deliberate refusal of the ODS precedent for extension registration, wh
 The catch covers only that much: Autofac defers a module's own `Load` body to container build, outside the cited `try`, so a module that throws while performing its registrations is not swallowed but takes the process down.
 It is the swallowing half that this design refuses.
 
-Fatal conditions: a descriptor that is not transient; a descriptor carrying an `ImplementationFactory`; and a registered validator the container cannot construct.
-An `ImplementationInstance` descriptor is fatal too, but it is not an independent condition: `ServiceDescriptor` only produces one at `Singleton` lifetime, so the lifetime check already catches every such descriptor and a test for it cannot fail while the lifetime test passes.
+Fatal conditions, from the registrations: an unkeyed contract descriptor that is not transient; an unkeyed contract descriptor carrying an `ImplementationInstance` or an `ImplementationFactory`; a keyed contract descriptor naming no implementation type; an unkeyed registration of `IEnumerable<ICustomResourceValidator>` itself; a null instance in the collection DMS resolves; a registered validator type that is not among the instances DMS resolves, which is what makes a keyed-only or concrete-type-only registration fatal; and a registered validator the container cannot construct.
+Fatal conditions, from `AppliesTo`: a null list, a null element, and a getter or list that throws when read or walked.
+Each is reported against the validator that produced it, so the abort names a registration rather than a task.
+
+**Enumerating the ways a registration can fail to be reached does not converge, so the guard does not enumerate them.**
+It rests on two checks:
+
+1. **An unkeyed contract descriptor carries a permitted shape.** The properties a `ServiceDescriptor` can hold are finite, so this is closed by construction rather than by enumerating mistakes: transient, and an implementation type rather than an instance or a factory. It keeps specific messages because they are what an implementer can act on. An unkeyed registration of the collection type is rejected here too, since it replaces the collection DMS resolves outright. A keyed contract descriptor is held to one rule instead, below.
+2. **Every validator type a descriptor shows is represented among the instances DMS actually resolves.** This compares intent against the resolution DMS itself performs, so a registration that fails to reach that resolution is caught whatever shape produced it.
+
+Check 1 holds only what resolving cannot answer. A non-transient or factory-shaped descriptor resolves perfectly well, so no comparison against resolved instances would reveal it; a factory descriptor in particular records what a delegate returns, not whether the delegate constructs anything, which makes `sp => capturedInstance` and `sp => new MyValidator(...)` the same shape to any audit and to any number of resolutions.
+Everything else is check 2's, because check 2 is strictly more precise. A keyed descriptor is the worked example: keyed-only is unreachable and check 2 reports it, while a keyed alias beside a valid contract registration is reachable and check 2 accepts it. A shape rule keyed on `IsKeyedService` cannot separate those two and refuses to boot over the second.
+Check 2 can separate them only while the descriptor names an implementation type, which is why a keyed contract descriptor naming none is check 1's one keyed rule.
+A keyed factory shows nothing but its service type, and for a contract registration that is the contract itself, which every resolved validator satisfies; so no comparison against resolved instances can report it, and reading the unkeyed accessors that would catch the same shape unkeyed answers null on a keyed descriptor.
+Check 1 therefore reads no unkeyed accessor on a keyed descriptor at all, which also decouples the guard from the `ServiceDescriptor` behavior of returning null there rather than throwing.
+Check 2 compares against resolved *instances* rather than a list of approved types, which is what lets it accept an alias under an implementer's own interface.
+Standing in for a registered type is assignability only where that type is abstract, interfaces included by metadata, since an abstract type is a contract another type satisfies.
+A concrete class is matched by identity instead: a resolved subclass is a different validator carrying its own `AppliesTo`, so accepting one as evidence would pass a base-class registration that never runs.
+Check 1 aborts before check 2 resolves anything, so a descriptor rejected for its shape is never also described as unreachable.
+
+Two limits are worth stating rather than defending with code.
+A factory registered under a service type unrelated to the contract, through the single-generic-argument overload, shows only that unrelated service type; the two-argument overload does expose the implementation as its delegate's return type, but reading that means trusting a delegate signature rather than a descriptor property, and check 2 already catches the registration whenever the validator resolves nowhere else.
+An open generic registration of `IEnumerable<>` is not a validator-specific hazard at all: it empties every `IEnumerable<T>`, including the `IDmsStartupTask` collection the orchestrator resolves, so no startup task runs and this guard never executes to report anything.
+The `ImplementationInstance` rejection does not change whether startup aborts, since `ServiceDescriptor` only produces one at `Singleton` lifetime and the lifetime rule already aborts on it; it earns its place by naming the actual mistake rather than reporting a lifetime the implementer never chose.
+The null-instance rejection earns its place the same way.
+The collection is typed as holding validators, but a registration of the collection type supplies whatever it yields, and both checks read an instance's type, so rejecting a null where it resolves is what keeps every abort naming a registration instead of surfacing a `NullReferenceException` from a later dereference.
 
 **The operator-facing message will name the wrong phase.**
 An `Order` in the 200s runs inside the `[0, 299]` window that `Program.cs:163-169` labels `InitializeApiSchemas`, whose failure text is "API schema initialization failed. DMS cannot start with invalid schemas." (`:167`).
@@ -437,13 +463,24 @@ The failing task is still named in `DmsStartupOrchestrator`'s own `Critical` rec
 The implementer guide and the guard's own log record carry the accurate wording.
 
 **One guard, running after the container is built.** It is an `IDmsStartupTask`, so it runs through the frontend's existing fatal-startup path: `DmsStartupOrchestrator` catches any non-cancellation exception, logs it at `Critical`, and rethrows it wrapped (`Startup/DmsStartupOrchestrator.cs:93-97`), and `StartupPhaseExecutor.RunFatalAsync` (`Infrastructure/StartupPhaseExecutor.cs:88-116`) logs a fatal failure and calls `IStartupProcessExit.Exit`, implemented in production as `Environment.Exit` (`:13-19`).
-The guard does three things: audits the captured descriptor set for lifetime and shape; resolves the full `IEnumerable<ICustomResourceValidator>` once from a throwaway scope and discards the instances; and logs each validator's `AppliesTo`, warning on entries matching no resource in the effective ApiSchema.
+The guard does four things: audits the captured descriptor set for lifetime and shape; resolves the full `IEnumerable<ICustomResourceValidator>` once from a throwaway scope; checks every validator type the registrations show against what that resolution returned; and logs each validator's `AppliesTo`, warning on entries matching no resource in the effective ApiSchema, before discarding the instances.
+It disposes that scope asynchronously, because a validator implementing only `IAsyncDisposable` is tracked by the scope and a synchronous dispose over one throws from outside the resolution's own error handling.
+
+The `AppliesTo` walk also has to defend against the entry values themselves, since `ProjectSchema.FindResourceSchemaNodeByResourceName` builds its query by interpolating the resource name into a quoted bracket selector.
+A name carrying a control character or a trailing backslash makes that query unparseable, which the lookup raises as an exception; a name embedding a double quote can close the selector and open a second one naming a real resource, so the query parses and returns a match for an entry that could never match at request time, where comparison is exact and ordinal.
+The guard therefore reports any resource name outside ASCII letters and digits, the shape `JsonSchemaForApiSchema.json` requires of a `resourceNameMapping` key, as unmatched without attempting the lookup.
+Request-time matching is exact and ordinal, so a name the lookup cannot hold and a name that is simply absent are the same outcome and carry the same record.
+Where the sanitizer altered the names for logging, a second record says so, because the altered form can name a resource that does exist and would otherwise read as a typo.
+Project names are not gated this way: that lookup compares ordinally against a value read from a fixed path, so it carries no injection or parse hazard, and `JsonSchemaForApiSchema.json` places no pattern on `projectName`.
+`AppliesTo` is implementer code, and so is the list it returns, so a null list, a null element, and a throw from reading the property or walking the list all abort startup, each reported against the validator that produced it rather than with a message naming no registration.
+Sanitization bounds what the guard's own records and abort text carry, not what the log ultimately shows: the wrapped exception travels to `DmsStartupOrchestrator`, which logs the exception object and re-interpolates its message, so implementer-controlled exception text still reaches the log unsanitized. Closing that belongs to the shared startup path rather than to this guard.
+Validator type names take a narrower treatment than `AppliesTo` values: only control characters are stripped, so `+` and backtick survive and a nested or generic type name stays searchable in the source it came from.
 
 The activation half closes a failure MS DI would otherwise defer: constructors resolve lazily, `ValidateOnBuild` is not enabled outside Development, and the fan-in step resolves per request, so an unsatisfiable constructor dependency would otherwise surface as a 500 on the first write, matching or not.
 
 **Registering an `IDmsStartupTask` is not by itself enough to make it run.**
 The AspNetCore frontend never calls `RunAllAsync` (`Startup/DmsStartupOrchestrator.cs:30`, which has no production caller); it calls `RunByOrderRangeAsync` over `[0, 299]`, `[300, 399]`, and `[400, 499]` (`Program.cs:315-317`, `:329-331`, `:341-343`, bounded by `DmsStartupTaskOrderRanges`, `Startup/IDmsStartupTask.cs:10-14`), so a task whose `Order` falls outside those windows is registered, never executed, and never complained about.
-The guard's `Order` must therefore sit inside an executed window and above `LoadAndBuildEffectiveSchemaTask`'s `Order => 100` (`Startup/LoadAndBuildEffectiveSchemaTask.cs:34`), because the `AppliesTo` warning reads the effective ApiSchema that task builds.
+The guard's `Order` must therefore sit inside an executed window and above `LoadAndBuildEffectiveSchemaTask`'s `Order => 100` (`Startup/LoadAndBuildEffectiveSchemaTask.cs:19`), because the `AppliesTo` warning reads the effective ApiSchema that task builds.
 Any value in 101-299 satisfies both; the 200s is this design's preference, keeping the guard visibly after schema loading.
 DMS's existing registration-validation guards sit lower (`Order => 50` and `Order => 55`, `Startup/ValidateDatabaseFingerprintReaderRegistrationTask.cs:19`, `Startup/ValidateResourceKeyRowReaderRegistrationTask.cs:19`), and this guard deliberately does not join them: both run before `LoadAndBuildEffectiveSchemaTask` (`Order => 100`), whose effective ApiSchema the `AppliesTo` warning reads.
 That preference conflicts with the doc comment labelling 200-299 "Schema processing" (`Startup/IDmsStartupTask.cs:27`), which is introduced as a recommendation (`:25`) and enforced by nothing; the implementation records the mismatch at the `Order` declaration and proves the guard actually executed rather than merely being registered.
@@ -686,7 +723,7 @@ This design originally had the contract story publish as well, and every passage
 
 The line is drawn at what can be undone.
 Packing produces an artifact a build throws away, so it costs nothing to be wrong about, and building it now is what proves the csproj metadata, the dependency closure, and the consumer story actually work.
-Publishing burns a package id and a version permanently, and nothing can consume the contract until the fan-in step lands, so a package published now is one no host can run.
+Publishing burns a package id and a version permanently, and the fan-in step landing does not by itself make the contract consumable: without a supported registration seam an implementer still has no way to get a validator into the collection, so a package published now is one no host can run.
 
 Publishing is taken up at the end of the epic, when there is a host that runs validators and an implementer guide to ship inside the package.
 Note also that this epic's delivery mechanism is compiled-in: a deployment adds one call at its own composition root, which means it already builds from source and could reference the contract project directly.
