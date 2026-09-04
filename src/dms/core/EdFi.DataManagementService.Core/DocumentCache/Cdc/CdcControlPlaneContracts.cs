@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -212,6 +212,13 @@ public sealed record CdcSourceHistoryObservationRequest(
     public CdcIncident? LatchedIncident { get; init; }
 
     public CdcSqlServerSchemaHistoryEvidence? SqlServerSchemaHistory { get; init; }
+
+    /// <summary>
+    /// Whether the binding's public topic proves an established stream. Provider-independent, unlike
+    /// <see cref="SqlServerSchemaHistory"/>: every binding has a public topic, and it is what decides
+    /// whether an absent connector offset is a terminal loss or an enablement that has not finished.
+    /// </summary>
+    public CdcPublicTopicPublicationEvidence? PublicTopicPublication { get; init; }
 
     public string? ExpectedConnectSourcePartitionHash { get; init; }
 }

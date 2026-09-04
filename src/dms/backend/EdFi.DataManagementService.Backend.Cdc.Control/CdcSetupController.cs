@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -797,7 +797,7 @@ internal sealed class CdcSetupController(
         }
 
         CdcKafkaPolicyObservation kafkaPolicy = await kafkaAdmin
-            .EnsureBindingKafkaPolicyAsync(context, inventory, cancellationToken)
+            .EnsureBindingKafkaPolicyAsync(context, inventory, binding.PartitionCount, cancellationToken)
             .ConfigureAwait(false);
         evaluation = evaluation with { KafkaPolicy = kafkaPolicy };
         if (!CdcTargetStatusEvaluator.IsKafkaPolicySatisfied(kafkaPolicy))
@@ -1058,6 +1058,9 @@ internal sealed class CdcSetupController(
         // reports unknown continuity without. The phase reported is the first enablement's, so a state
         // that is not yet continuous leaves continuity unknown and latches no incident: the connector
         // writes its history during the snapshot, and this is the run that produced it.
+        CdcPublicTopicPublicationEvidence publication = await kafkaAdmin
+            .ReadPublicTopicPublicationAsync(inventory, cancellationToken)
+            .ConfigureAwait(false);
         CdcSqlServerSchemaHistoryEvidence? schemaHistory = await kafkaAdmin
             .ReadSqlServerSchemaHistoryAsync(
                 inventory,
@@ -1078,6 +1081,7 @@ internal sealed class CdcSetupController(
                 )
                 {
                     SqlServerSchemaHistory = schemaHistory,
+                    PublicTopicPublication = publication,
                     ExpectedConnectSourcePartitionHash = expectedSourcePartitionHash,
                 },
                 cancellationToken
@@ -2661,7 +2665,7 @@ internal sealed class CdcSetupController(
         );
 
         CdcKafkaPolicyObservation kafkaPolicy = await kafkaAdmin
-            .DescribeBindingKafkaPolicyAsync(context, inventory, cancellationToken)
+            .DescribeBindingKafkaPolicyAsync(context, inventory, binding.PartitionCount, cancellationToken)
             .ConfigureAwait(false);
 
         Verify(
@@ -2771,6 +2775,9 @@ internal sealed class CdcSetupController(
         // terminal loss rather than an enablement still in progress. It is reported and refuses the
         // adoption; it is never latched, because there is no binding record to latch it against and a
         // refused adoption changes nothing.
+        CdcPublicTopicPublicationEvidence publication = await kafkaAdmin
+            .ReadPublicTopicPublicationAsync(inventory, cancellationToken)
+            .ConfigureAwait(false);
         CdcSqlServerSchemaHistoryEvidence? schemaHistory = await kafkaAdmin
             .ReadSqlServerSchemaHistoryAsync(
                 inventory,
@@ -2791,6 +2798,7 @@ internal sealed class CdcSetupController(
                 )
                 {
                     SqlServerSchemaHistory = schemaHistory,
+                    PublicTopicPublication = publication,
                     ExpectedConnectSourcePartitionHash = CdcSourcePartitionHashCalculator
                         .Compute(provider, inventory.ConnectorName, sqlServerCatalogName)
                         .Hash,
@@ -3149,6 +3157,23 @@ internal sealed class CdcSetupController(
                 .ConfigureAwait(false);
         if (openedConnection is null)
         {
+            // Containing a loss this deployment has already proved must not depend on reaching the
+            // provider. The incident was read from the binding record above and the governed names
+            // were recovered from it, so the fence has everything it needs here. Without this, a
+            // previous poll whose stop the worker refused would leave the connector publishing
+            // against a source it cannot resume from for as long as the instance database stayed
+            // unreachable: every later status returns at this line, and the fence that follows the
+            // classified continuity is never reached.
+            //
+            // Only on this path. The fence below runs after the connector runtime has been read, so
+            // it can leave a connector already observed stopped alone; here there is no such
+            // observation to hold, and an unread runtime is not evidence that the connector is
+            // fenced - so a request is issued rather than assumed unnecessary.
+            IReadOnlyList<CdcDiagnostic> containment =
+                bindingRead.State.State == CdcBindingState.IncidentLatched
+                    ? await ContainLatchedIncidentAsync(inventory, cancellationToken).ConfigureAwait(false)
+                    : [];
+
             return Blocked(
                 StatusStep(
                     "statusProviderConnectionUnavailable",
@@ -3158,7 +3183,7 @@ internal sealed class CdcSetupController(
                     connectionRefusal ?? "unavailable",
                     timeProvider.GetUtcNow()
                 ),
-                []
+                containment
             );
         }
 
@@ -3214,7 +3239,12 @@ internal sealed class CdcSetupController(
         evaluation = evaluation with
         {
             KafkaPolicy = await kafkaAdmin
-                .DescribeBindingKafkaPolicyAsync(context, inventory, cancellationToken)
+                .DescribeBindingKafkaPolicyAsync(
+                    context,
+                    inventory,
+                    binding.PartitionCount,
+                    cancellationToken
+                )
                 .ConfigureAwait(false),
         };
 
@@ -3307,12 +3337,25 @@ internal sealed class CdcSetupController(
             ),
         };
 
+        // Which phase this binding is in is observed rather than assumed. A durable binding record is
+        // written at step 3, before the artifacts it governs exist and long before the connector
+        // commits anything, so a record is not evidence that the enablement it belongs to finished -
+        // treating every one as admitted turned an enablement interrupted by a timeout into a terminal
+        // history loss on the next status, and the documented retry refuses an incident-latched
+        // binding. The public topic answers it: a stream that has published a record is established,
+        // and one that has not is an enablement still in progress or an evidence read that failed.
+        CdcPublicTopicPublicationEvidence publication = await kafkaAdmin
+            .ReadPublicTopicPublicationAsync(inventory, cancellationToken)
+            .ConfigureAwait(false);
+
         // After initial admission the schema-history states a first enablement leaves unknown are a
         // terminal loss: the run that writes that history has already happened.
         CdcSqlServerSchemaHistoryEvidence? schemaHistory = await kafkaAdmin
             .ReadSqlServerSchemaHistoryAsync(
                 inventory,
-                CdcSqlServerSchemaHistoryEnablementPhase.AfterInitialAdmission,
+                publication.ProvesEstablishedStream
+                    ? CdcSqlServerSchemaHistoryEnablementPhase.AfterInitialAdmission
+                    : CdcSqlServerSchemaHistoryEnablementPhase.BeforeInitialAdmission,
                 HasCommittedStreamingOffset(offsetObservation),
                 cancellationToken
             )
@@ -3329,6 +3372,7 @@ internal sealed class CdcSetupController(
                 )
                 {
                     SqlServerSchemaHistory = schemaHistory,
+                    PublicTopicPublication = publication,
                     ExpectedConnectSourcePartitionHash = expectedSourcePartitionHash,
                     LatchedIncident = bindingRead.State.Incident,
                 },
@@ -3436,6 +3480,55 @@ internal sealed class CdcSetupController(
             "CDC status proved a source-history loss but could not fence the connector that carries it.",
             "the connector stopped so it commits no further offsets against the lost source"
         );
+    }
+
+    /// <summary>
+    /// Stops the connector carrying a source-history loss the binding record already latches, for a
+    /// status that cannot collect the observations the continuity classifier reads.
+    /// </summary>
+    /// <remarks>
+    /// The same obligation <see cref="FenceLostSourceHistoryAsync"/> carries, from the only evidence
+    /// this path holds: a durable incident, which the state store validated against the binding when
+    /// it read it. Latching is idempotent and raises no second candidate, and restart declines a lost
+    /// continuity, so nothing else re-attempts a stop the worker refused - a status that returned
+    /// before the classifier would leave the connector publishing indefinitely.
+    ///
+    /// A refusal is reported as a step diagnostic rather than on the connector runtime, which this
+    /// path never collected; the caller is already composing a blocked status whose binding evidence
+    /// is unavailable, so it costs no evidence that was otherwise readable. A connector the worker
+    /// does not hold answers <c>NotFound</c>, which is not a failure to fence.
+    /// </remarks>
+    private async Task<IReadOnlyList<CdcDiagnostic>> ContainLatchedIncidentAsync(
+        CdcArtifactInventory inventory,
+        CancellationToken cancellationToken
+    )
+    {
+        CdcConnectResult fence = await connectClient
+            .StopConnectorAsync(inventory.ConnectorName, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (fence.Succeeded || fence.Outcome == CdcConnectOutcome.NotFound)
+        {
+            return [];
+        }
+
+        logger.LogDebug(
+            "CDC status could not fence the connector carrying a latched source-history loss: {Outcome}.",
+            fence.Outcome
+        );
+
+        return
+        [
+            StatusStep(
+                "statusIncidentFenceNotApplied",
+                CdcDiagnosticCategory.SourceHistoryLost,
+                CdcDiagnosticComponent.ConnectorRuntime,
+                "CDC status could not fence the connector carrying the source-history loss the binding "
+                    + "record already latches.",
+                fence.Outcome.ToString(),
+                timeProvider.GetUtcNow()
+            ),
+        ];
     }
 
     /// <summary>

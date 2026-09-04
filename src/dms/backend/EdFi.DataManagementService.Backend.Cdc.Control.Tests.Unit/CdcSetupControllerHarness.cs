@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -186,13 +186,20 @@ internal sealed class CdcSetupControllerHarness
                 Kafka.EnsureBindingKafkaPolicyAsync(
                     A<CdcObservationContext>._,
                     A<CdcArtifactInventory>._,
+                    A<int>._,
                     A<CancellationToken>._
                 )
             )
             .ReturnsLazily(
-                (CdcObservationContext context, CdcArtifactInventory inventory, CancellationToken _) =>
+                (
+                    CdcObservationContext context,
+                    CdcArtifactInventory inventory,
+                    int bindingPartitionCount,
+                    CancellationToken _
+                ) =>
                 {
                     ProvisionedInventory = inventory;
+                    VerifiedPartitionCounts.Add(bindingPartitionCount);
 
                     return Task.FromResult(
                         KafkaPolicy ?? ObservedKafkaPolicy(context, inventory, _clock.GetUtcNow())
@@ -203,19 +210,33 @@ internal sealed class CdcSetupControllerHarness
                 Kafka.DescribeBindingKafkaPolicyAsync(
                     A<CdcObservationContext>._,
                     A<CdcArtifactInventory>._,
+                    A<int>._,
                     A<CancellationToken>._
                 )
             )
             .ReturnsLazily(
-                (CdcObservationContext context, CdcArtifactInventory inventory, CancellationToken _) =>
-                    Task.FromResult(
+                (
+                    CdcObservationContext context,
+                    CdcArtifactInventory inventory,
+                    int bindingPartitionCount,
+                    CancellationToken _
+                ) =>
+                {
+                    VerifiedPartitionCounts.Add(bindingPartitionCount);
+
+                    return Task.FromResult(
                         KafkaPolicy ?? ObservedKafkaPolicy(context, inventory, _clock.GetUtcNow())
-                    )
+                    );
+                }
             );
         A.CallTo(() =>
                 Kafka.FindExistingGovernedTopicsAsync(A<CdcArtifactInventory>._, A<CancellationToken>._)
             )
             .ReturnsLazily(() => Task.FromResult(GovernedTopicPresence ?? NoGovernedTopics));
+        A.CallTo(() =>
+                Kafka.ReadPublicTopicPublicationAsync(A<CdcArtifactInventory>._, A<CancellationToken>._)
+            )
+            .ReturnsLazily(() => Task.FromResult(PublicTopicPublication));
         A.CallTo(() =>
                 Kafka.ReadSqlServerSchemaHistoryAsync(
                     A<CdcArtifactInventory>._,
@@ -474,8 +495,30 @@ internal sealed class CdcSetupControllerHarness
     /// </summary>
     public CdcBindingLifecycleResult? PreviousGenerationRead { get; set; }
 
+    /// <summary>
+    /// Whether the binding's public topic proves an established stream. Established by default,
+    /// because the harness's default binding is an enabled one whose connector has published; a case
+    /// that models an enablement interrupted before its first record overrides it.
+    /// </summary>
+    public CdcPublicTopicPublicationEvidence PublicTopicPublication { get; set; } = new(true, true);
+
     /// <summary>The artifact inventory the enablement provisioned the binding's Kafka artifacts for.</summary>
     public CdcArtifactInventory? ProvisionedInventory { get; private set; }
+
+    /// <summary>
+    /// The public-topic partition count each Kafka policy pass was asked to verify against, in the
+    /// order the passes ran. Recorded because it is the caller's to supply: the adapter validates the
+    /// broker's actual count against this rather than against configuration, so a verb that handed it
+    /// the configured value would report a repartitioned topic as conforming.
+    /// </summary>
+    public List<int> VerifiedPartitionCounts { get; } = [];
+
+    /// <summary>
+    /// The partition count this harness configures, which is also what the default binding records. A
+    /// case that needs the two to diverge overrides the binding's, since configuration is what a
+    /// deployment can edit after the binding was written.
+    /// </summary>
+    public const int ConfiguredPartitionCount = 1;
 
     public DocumentCacheAdministrativeCommandResult ActivationResult { get; set; } = Activated();
 
@@ -1267,6 +1310,7 @@ internal sealed class CdcSetupControllerHarness
                 ConnectorOffset = request.ConnectorOffset,
                 ProviderHistory = request.ProviderHistory,
                 SqlServerSchemaHistory = request.SqlServerSchemaHistory,
+                PublicTopicPublication = request.PublicTopicPublication,
                 LatchedIncident = request.LatchedIncident,
                 ExpectedConnectSourcePartitionHash = request.ExpectedConnectSourcePartitionHash,
             }
@@ -1374,7 +1418,7 @@ internal sealed class CdcSetupControllerHarness
             InstanceKey = CdcControlTemplateTestData.InstanceKey,
             TopicPrefix = CdcControlTemplateTestData.TopicPrefix,
             Generation = CdcControlTemplateTestData.BindingGeneration,
-            PartitionCount = 1,
+            PartitionCount = ConfiguredPartitionCount,
             KafkaBootstrapServers = CdcControlTemplateTestData.KafkaBootstrapServers,
             ConnectBaseUri = "http://localhost:8083",
             ConnectWorkerKey = "worker-1",

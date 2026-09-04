@@ -770,10 +770,18 @@ function Invoke-BootstrapWrapper {
         $EnvironmentFile = [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $EnvironmentFile))
     }
 
-    # Captured before Push-Location, for the same reason -EnvironmentFile is normalized above: a
-    # relative -CdcBindingStatePath is the caller's, and (Get-Location).Path becomes
-    # eng/docker-compose once the push below runs.
-    $callerWorkingDirectory = (Get-Location).Path
+    # Same caller-CWD normalization for -CdcBindingStatePath, and it must happen HERE rather than at
+    # the one place the wrapper consumes the value. This parameter is read twice: it is forwarded to
+    # the start phases below, which resolve a relative path against THEIR caller's working directory
+    # - eng/docker-compose once the push runs - and create the directory there, and it is also what
+    # becomes DMS_CDC_BINDING_STATE_PATH, which the CDC phase's compose service bind-mounts as its
+    # state root. Resolving it in two places against two directories would split the binding state
+    # store in two: the start script would create and report one root while Compose mounted another,
+    # which on native Linux Docker creates as root and the host-UID setup container then cannot
+    # write into. Normalizing once, before the push, is what keeps both readers naming one directory.
+    if (-not [string]::IsNullOrWhiteSpace($CdcBindingStatePath) -and -not [System.IO.Path]::IsPathRooted($CdcBindingStatePath)) {
+        $CdcBindingStatePath = [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $CdcBindingStatePath))
+    }
 
     Push-Location $PSScriptRoot
     try {
@@ -1208,15 +1216,15 @@ function Invoke-BootstrapWrapper {
             }
 
             $cdcTargetDataStoreId = [long]$configuredDataStoreIds[0]
+            # Absolute by now whenever it was supplied: a relative value was normalized against the
+            # caller's working directory before the Push-Location above, so this is the same path
+            # the start phases received and created.
             $cdcBindingStateRootPath =
                 if ([string]::IsNullOrWhiteSpace($CdcBindingStatePath)) {
                     [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".cdc-state"))
                 }
-                elseif ([System.IO.Path]::IsPathRooted($CdcBindingStatePath)) {
-                    [System.IO.Path]::GetFullPath($CdcBindingStatePath)
-                }
                 else {
-                    [System.IO.Path]::GetFullPath((Join-Path $callerWorkingDirectory $CdcBindingStatePath))
+                    [System.IO.Path]::GetFullPath($CdcBindingStatePath)
                 }
 
             # The settings are written into this run's own derived env file. If derivation did not

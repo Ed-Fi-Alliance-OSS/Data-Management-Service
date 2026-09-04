@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: Apache-2.0
+﻿# SPDX-License-Identifier: Apache-2.0
 # Licensed to the Ed-Fi Alliance under one or more agreements.
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
@@ -618,9 +618,13 @@ function Get-CdcConnectorPrincipalConfiguration {
         Three places must agree on this and they are in three different files, so it is resolved
         here rather than restated in each: provision-cdc-principal.ps1 creates the principal in the
         instance database, the bootstrap CDC phase passes the name as
-        DataManagement:DocumentCache:Cdc:ConnectorPrincipal and as the connector's own
+        DataManagement:DocumentCache:Cdc:ConnectorDatabasePrincipal and as the connector's own
         database.user, and kafka.yml exposes the password to the Kafka Connect worker under
         PasswordEnvVariable.
+
+        This is the DATABASE identity only. The connector's Kafka identity is a separate control-plane
+        setting in the broker's typed form, required only where an authorizer is enabled, which the
+        local stack's PLAINTEXT broker is not - so nothing here supplies one.
 
         The password is NEVER rendered into the connector configuration. The configuration carries
         the indirect reference '${env:<PasswordEnvVariable>}', which the worker resolves through its

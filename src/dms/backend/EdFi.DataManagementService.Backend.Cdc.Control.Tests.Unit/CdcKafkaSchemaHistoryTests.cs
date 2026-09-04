@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -367,7 +367,7 @@ public class Given_CdcKafkaSchemaHistory
             ConnectOffsetStorageTopic = "connect-offsets",
             DurabilityProfile = CdcControlOptions.LocalDurabilityProfile,
             MaxRecordBytes = 4_194_304,
-            ConnectorPrincipal = "User:connector",
+            ConnectorKafkaPrincipal = "User:connector",
             ConnectWorkerPrincipal = "User:connect-worker",
             DmsBaseUrl = "http://localhost:8080",
             DmsBearerToken = "token",

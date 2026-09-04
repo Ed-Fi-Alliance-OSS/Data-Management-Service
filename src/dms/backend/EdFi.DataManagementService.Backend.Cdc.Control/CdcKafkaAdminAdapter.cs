@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -65,9 +65,16 @@ public interface ICdcKafkaAdmin
     /// ACL verification completes here, before connector registration, and never relies on
     /// consumer-side filtering as an isolation control.
     /// </remarks>
+    /// <param name="bindingPartitionCount">
+    /// The public topic's partition count as the binding record fixes it. Supplied by the caller from
+    /// <see cref="CdcBinding.PartitionCount"/> rather than read from
+    /// <see cref="CdcControlOptions"/> here: configuration determines the count once, when a binding
+    /// is created, and every pass over an existing binding validates against what it recorded.
+    /// </param>
     Task<CdcKafkaPolicyObservation> EnsureBindingKafkaPolicyAsync(
         CdcObservationContext context,
         CdcArtifactInventory inventory,
+        int bindingPartitionCount,
         CancellationToken cancellationToken
     );
 
@@ -100,8 +107,36 @@ public interface ICdcKafkaAdmin
     /// already complete governed-artifact set and is not a first-time enablement path, so a pass that
     /// created what it found absent would turn a refused adoption into a partial provisioning.
     /// </remarks>
+    /// <param name="bindingPartitionCount">
+    /// The public topic's partition count as the binding record fixes it, exactly as
+    /// <see cref="EnsureBindingKafkaPolicyAsync"/> takes it. Reading it from configuration instead
+    /// would let a status, restart, or adoption verification pass over a topic repartitioned away
+    /// from the count its binding was created with, provided configuration had been edited to match
+    /// - which is the one change the recorded value exists to refuse.
+    /// </param>
     Task<CdcKafkaPolicyObservation> DescribeBindingKafkaPolicyAsync(
         CdcObservationContext context,
+        CdcArtifactInventory inventory,
+        int bindingPartitionCount,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// Reports whether the binding's public topic has ever carried a published record, which is what
+    /// separates an established stream from an initial enablement that has not finished.
+    /// </summary>
+    /// <remarks>
+    /// Read from the topic's log-end offsets rather than from a durable marker: a topic that has
+    /// received a record has a log end past zero on some partition, and compaction never moves a log
+    /// end back, so the answer holds under every retention rule the public topic is under. The
+    /// question is deliberately "has ever published" rather than "currently retains", which is the
+    /// question the schema-history read asks of its own topic.
+    ///
+    /// A broker that cannot answer reports <see cref="CdcPublicTopicPublicationEvidence.Readable"/>
+    /// false rather than an unpublished topic: evidence that could not be obtained is never read as
+    /// proof either way, and the classifier withholds its terminal classification without it.
+    /// </remarks>
+    Task<CdcPublicTopicPublicationEvidence> ReadPublicTopicPublicationAsync(
         CdcArtifactInventory inventory,
         CancellationToken cancellationToken
     );
@@ -461,6 +496,7 @@ internal sealed class CdcKafkaAdminAdapter(
     /// </remarks>
     internal async Task<CdcKafkaBindingTopicPolicies> BindingTopicsAsync(
         CdcArtifactInventory inventory,
+        int bindingPartitionCount,
         CdcKafkaProvisioningMode mode,
         CancellationToken cancellationToken
     )
@@ -478,7 +514,7 @@ internal sealed class CdcKafkaAdminAdapter(
             )
         )
         {
-            CdcKafkaTopicSpec publicSpec = PublicTopicSpec(inventory, controlOptions);
+            CdcKafkaTopicSpec publicSpec = PublicTopicSpec(inventory, bindingPartitionCount, controlOptions);
             CdcKafkaTopicSpec progressSpec = ProgressTopicSpec(inventory);
             CdcKafkaTopicSpec? historySpec = SchemaHistoryTopicSpec(inventory);
 
@@ -510,7 +546,7 @@ internal sealed class CdcKafkaAdminAdapter(
         TimeSpan timeout = controlOptions.Timeouts.KafkaAdmin;
 
         CdcKafkaTopicPolicy publicTopic = await EnsureTopicAsync(
-            PublicTopicSpec(inventory, controlOptions),
+            PublicTopicSpec(inventory, bindingPartitionCount, controlOptions),
             durability,
             mode,
             timeout,
@@ -666,11 +702,13 @@ internal sealed class CdcKafkaAdminAdapter(
     public Task<CdcKafkaPolicyObservation> EnsureBindingKafkaPolicyAsync(
         CdcObservationContext context,
         CdcArtifactInventory inventory,
+        int bindingPartitionCount,
         CancellationToken cancellationToken
     ) =>
         BindingKafkaPolicyAsync(
             context,
             inventory,
+            bindingPartitionCount,
             CdcKafkaProvisioningMode.CreateOrValidate,
             cancellationToken
         );
@@ -678,9 +716,16 @@ internal sealed class CdcKafkaAdminAdapter(
     public Task<CdcKafkaPolicyObservation> DescribeBindingKafkaPolicyAsync(
         CdcObservationContext context,
         CdcArtifactInventory inventory,
+        int bindingPartitionCount,
         CancellationToken cancellationToken
     ) =>
-        BindingKafkaPolicyAsync(context, inventory, CdcKafkaProvisioningMode.ValidateOnly, cancellationToken);
+        BindingKafkaPolicyAsync(
+            context,
+            inventory,
+            bindingPartitionCount,
+            CdcKafkaProvisioningMode.ValidateOnly,
+            cancellationToken
+        );
 
     public Task<CdcKafkaGovernedTopicPresence> FindExistingGovernedTopicsAsync(
         CdcArtifactInventory inventory,
@@ -722,6 +767,7 @@ internal sealed class CdcKafkaAdminAdapter(
     private async Task<CdcKafkaPolicyObservation> BindingKafkaPolicyAsync(
         CdcObservationContext context,
         CdcArtifactInventory inventory,
+        int bindingPartitionCount,
         CdcKafkaProvisioningMode mode,
         CancellationToken cancellationToken
     )
@@ -732,7 +778,12 @@ internal sealed class CdcKafkaAdminAdapter(
         CdcControlOptions controlOptions = options.Value;
         DateTimeOffset observedAt = timeProvider.GetUtcNow();
 
-        CdcKafkaBindingTopicPolicies topics = await BindingTopicsAsync(inventory, mode, cancellationToken);
+        CdcKafkaBindingTopicPolicies topics = await BindingTopicsAsync(
+            inventory,
+            bindingPartitionCount,
+            mode,
+            cancellationToken
+        );
         CdcKafkaRecordSizeEvidence recordSize = await VerifyRecordSizeAsync(inventory, cancellationToken);
         CdcKafkaBindingAclPolicies acls = await BindingAclsAsync(inventory, mode, cancellationToken);
 
@@ -799,6 +850,48 @@ internal sealed class CdcKafkaAdminAdapter(
             PolicyState = CdcKafkaPolicyState.Unknown,
             Diagnostics = CdcDiagnostic.NormalizeDiagnostics([.. diagnostics, .. validation.Diagnostics]),
         };
+    }
+
+    public async Task<CdcPublicTopicPublicationEvidence> ReadPublicTopicPublicationAsync(
+        CdcArtifactInventory inventory,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(inventory);
+
+        TimeSpan timeout = options.Value.Timeouts.KafkaAdmin;
+
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (FindTopic(inventory.TopicName, timeout) is not { } topicMetadata)
+            {
+                // A topic that is not there has published nothing. That is a readable answer, and the
+                // narrow one this asks: whether the absent topic is itself a problem belongs to the
+                // policy pass, which reports it on every verb that runs one.
+                return new(true, false);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return await HasEverPublishedAsync(topicMetadata, timeout) is { } hasPublished
+                ? new CdcPublicTopicPublicationEvidence(true, hasPublished)
+                : CdcPublicTopicPublicationEvidence.Unreadable;
+        }
+        catch (KafkaException exception)
+        {
+            // The broker response body is never surfaced verbatim, and no detail is needed here: the
+            // caller withholds the terminal classification for an unreadable answer exactly as it does
+            // for an unpublished topic, and the unavailability is already reported by the offset
+            // evidence the classifier reads beside this.
+            logger.LogDebug(
+                exception,
+                "CDC could not read the public topic's publication evidence from the broker."
+            );
+
+            return CdcPublicTopicPublicationEvidence.Unreadable;
+        }
     }
 
     public async Task<CdcSqlServerSchemaHistoryEvidence?> ReadSqlServerSchemaHistoryAsync(
@@ -908,6 +1001,33 @@ internal sealed class CdcKafkaAdminAdapter(
                 )
             );
         }
+    }
+
+    /// <summary>
+    /// Whether the topic has ever carried a record. Null means the log-end offsets could not be read,
+    /// which is never reported as a topic that has published nothing.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not <see cref="RetainsSchemaHistoryRecordsAsync"/>. That asks what the topic still
+    /// holds, which is the right question for the schema history the connector replays; this asks what
+    /// it has ever held, which is the right one for a COMPACTED topic where every record can be
+    /// compacted away without the stream ever having been unestablished. A log end past zero is
+    /// monotonic evidence that a record was published.
+    /// </remarks>
+    private async Task<bool?> HasEverPublishedAsync(TopicMetadata topicMetadata, TimeSpan timeout)
+    {
+        IReadOnlyDictionary<int, long>? latest = await ReadPartitionOffsetsAsync(
+            topicMetadata,
+            OffsetSpec.Latest(),
+            timeout
+        );
+
+        if (latest is null)
+        {
+            return null;
+        }
+
+        return latest.Values.Any(logEnd => logEnd > 0);
     }
 
     /// <summary>
@@ -1325,8 +1445,8 @@ internal sealed class CdcKafkaAdminAdapter(
     /// <summary>Connector producer access: write the record and describe the topic it writes to.</summary>
     private static CdcKafkaAclGrant[] ProducerRequirements(CdcControlOptions controlOptions) =>
         [
-            new(controlOptions.ConnectorPrincipal, AnyHost, AclOperation.Write),
-            new(controlOptions.ConnectorPrincipal, AnyHost, AclOperation.Describe),
+            new(controlOptions.ConnectorKafkaPrincipal, AnyHost, AclOperation.Write),
+            new(controlOptions.ConnectorKafkaPrincipal, AnyHost, AclOperation.Describe),
         ];
 
     /// <summary>
@@ -1351,10 +1471,10 @@ internal sealed class CdcKafkaAdminAdapter(
     /// </summary>
     private static CdcKafkaAclGrant[] SchemaHistoryRequirements(CdcControlOptions controlOptions) =>
         [
-            new(controlOptions.ConnectorPrincipal, AnyHost, AclOperation.Read),
-            new(controlOptions.ConnectorPrincipal, AnyHost, AclOperation.Write),
-            new(controlOptions.ConnectorPrincipal, AnyHost, AclOperation.Describe),
-            new(controlOptions.ConnectorPrincipal, AnyHost, AclOperation.DescribeConfigs),
+            new(controlOptions.ConnectorKafkaPrincipal, AnyHost, AclOperation.Read),
+            new(controlOptions.ConnectorKafkaPrincipal, AnyHost, AclOperation.Write),
+            new(controlOptions.ConnectorKafkaPrincipal, AnyHost, AclOperation.Describe),
+            new(controlOptions.ConnectorKafkaPrincipal, AnyHost, AclOperation.DescribeConfigs),
         ];
 
     private async Task<CdcKafkaPolicyItemState> EnsureResourceAclsAsync(
@@ -1784,14 +1904,25 @@ internal sealed class CdcKafkaAdminAdapter(
     /// The public instance document topic: compact-only, with the binding's fixed partition count, an
     /// explicit tombstone-retention floor of seven days, and the operational record-size ceiling.
     /// </summary>
+    /// <remarks>
+    /// The partition count is the caller's, taken from the binding record, and never
+    /// <see cref="CdcControlOptions.PartitionCount"/>. It is the generation's fixed partitioning
+    /// contract: the murmur2 partitioner maps a key modulo the count, so changing it moves existing
+    /// keys onto other partitions and breaks both per-key ordering and compaction for everything
+    /// already published. Validating against configuration would report satisfied for a deployment
+    /// that repartitioned the topic and edited its configuration to match - which is the one drift
+    /// the recorded count exists to catch. Configuration determines the count once, where the binding
+    /// record is written.
+    /// </remarks>
     private static CdcKafkaTopicSpec PublicTopicSpec(
         CdcArtifactInventory inventory,
+        int bindingPartitionCount,
         CdcControlOptions controlOptions
     ) =>
         new(
             inventory.TopicName,
             "publicTopic",
-            controlOptions.PartitionCount,
+            bindingPartitionCount,
             CompactCleanupPolicy,
             [
                 new(

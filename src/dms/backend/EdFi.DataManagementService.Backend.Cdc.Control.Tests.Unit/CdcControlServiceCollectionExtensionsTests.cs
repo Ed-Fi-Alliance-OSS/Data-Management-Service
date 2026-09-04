@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -270,7 +270,7 @@ public class Given_CdcControlServiceCollectionExtensionsTests
             [$"{section}:InstanceKey"] = "instance",
             [$"{section}:TopicPrefix"] = "edfi.documents.instance",
             [$"{section}:SetupPrincipal"] = "setup_principal",
-            [$"{section}:ConnectorPrincipal"] = "connector_principal",
+            [$"{section}:ConnectorDatabasePrincipal"] = "connector_principal",
             [$"{section}:Generation"] = "1",
             [$"{section}:PartitionCount"] = "3",
             [$"{section}:KafkaBootstrapServers"] = "localhost:9092",

@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: Apache-2.0
+﻿# SPDX-License-Identifier: Apache-2.0
 # Licensed to the Ed-Fi Alliance under one or more agreements.
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
@@ -159,6 +159,11 @@ function Get-CdcConnectorPrincipalEnvArgument {
     factory refuses any verb without it, because both the create pass and the validate-only pass
     report the grants this principal holds. Emitted from one place so the enable phase and the
     destructive teardown cannot name two different principals.
+
+    The connector's KAFKA principal is a separate control-plane setting and is deliberately not
+    emitted here. It is required only when an authorizer is enabled, which the local stack's broker
+    does not have, and it takes the broker's typed form - `User:dms_connector` - which is not a name
+    any database would accept for the same account.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns an argument list fragment; the plural noun reflects the return shape.')]
     param(
@@ -169,7 +174,7 @@ function Get-CdcConnectorPrincipalEnvArgument {
 
     return @(
         "-e",
-        "DataManagement__DocumentCache__Cdc__ConnectorPrincipal=$($ConnectorPrincipal.PrincipalName)"
+        "DataManagement__DocumentCache__Cdc__ConnectorDatabasePrincipal=$($ConnectorPrincipal.PrincipalName)"
     )
 }
 
@@ -263,10 +268,11 @@ function Resolve-CdcHostBindingStateRoot {
     return [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot $configured))
 }
 
-function Get-CdcNextGeneration {
+function Get-CdcEnableGenerationPlan {
     <#
     .SYNOPSIS
-        The generation this enable must run under for the instance key.
+        The generation this enable must run under for the instance key, and whether running under it
+        resumes a binding the control plane already holds.
 
     .DESCRIPTION
         A live binding record for the instance key is the generation the control plane already holds,
@@ -276,6 +282,13 @@ function Get-CdcNextGeneration {
         rerun a first attempt, which the control plane refuses while the previous generation is still
         live. More than one live binding record for the instance key is a state this phase may not
         choose between, so it stops rather than guessing which one the rerun means.
+
+        `ResumesLiveBinding` reports which of those two the generation came from, because reusing the
+        generation is not on its own enough to make the rerun work: the enable also has to carry the
+        two provisioning tokens, and the caller's only other evidence for them - whether this run
+        created the instance database - is false by construction on any rerun. The two facts are
+        answered together from the one enumeration so nothing downstream has to read the store again
+        or restate its layout.
 
         With no live binding record, the generation is one past the highest the store has ever held
         for the instance key, counting the retirement records as well - so the first binding of a
@@ -296,7 +309,7 @@ function Get-CdcNextGeneration {
         records it could not see.
     #>
     [CmdletBinding()]
-    [OutputType([long])]
+    [OutputType([hashtable])]
     param(
         [Parameter(Mandatory)]
         [string]
@@ -343,7 +356,7 @@ function Get-CdcNextGeneration {
     }
 
     if ($live.Count -eq 1) {
-        return $live[0]
+        return @{ Generation = [long]$live[0]; ResumesLiveBinding = $true }
     }
 
     $highest = 0L
@@ -353,7 +366,7 @@ function Get-CdcNextGeneration {
         }
     }
 
-    return $highest + 1
+    return @{ Generation = [long]($highest + 1); ResumesLiveBinding = $false }
 }
 
 function Get-CdcSetupComposeArgument {
@@ -453,12 +466,15 @@ function Get-CdcEnableArgument {
     database is registered in CMS under its container alias and the broker advertises
     PLAINTEXT://dms-kafka1:9092, so a host-side process is redirected to names it cannot resolve.
 
-    The two exact-token evidence flags are emitted ONLY when this run created the physical
-    database. Bootstrap has no standing to assert either fact about a data store it merely found,
-    and the command surface refuses an enable that omits them - which is the correct outcome,
-    reached here without an assertion this caller cannot support. That refusal is a command-line
+    The two exact-token evidence flags are emitted for exactly two shapes: a run that created the
+    physical database, and the reissue of one - the latter evidenced by the live binding record the
+    generation was taken from, which only an enable already run against this database could have
+    written. Bootstrap has no standing to assert either fact about a data store it merely found and
+    never enabled, and for that shape the command surface refuses the enable, which is the correct
+    outcome reached without an assertion this caller cannot support. That refusal is a command-line
     parse failure, not a control-plane result: the executor is never entered, so the exit code is
-    the parser's and no admission contract reaches stdout.
+    the parser's and no admission contract reaches stdout - which is also why the reissue needs the
+    tokens rather than the reused generation alone.
 
     The connector principal and the connector's own database connection properties travel by
     environment rather than on the command line, alongside the setup principal: they are deployment
@@ -497,6 +513,8 @@ function Get-CdcEnableArgument {
         [string]
         $DatabaseEngine,
 
+        # Whether this run created the instance database. One of the two sources of the provisioning
+        # evidence; the other is a live binding record, which this builder reads for itself.
         [Parameter(Mandatory)]
         [bool]
         $DatabaseCreatedByThisRun,
@@ -540,28 +558,43 @@ function Get-CdcEnableArgument {
         $verbArguments += @("--tenant-key", $TenantKey)
     }
 
-    if ($DatabaseCreatedByThisRun) {
-        $verbArguments += @(
-            "--database-creation-mode", "created-for-initial-cdc-provisioning",
-            "--write-admission", "closed-never-opened"
-        )
-    }
-
     # The keys are opaque and only have to be stable for the binding they name. The generation is
     # allocated from the store rather than fixed at 1: a target's first binding gets 1, and one whose
     # earlier generation was retired gets the next, because the retirement record outlives the
     # binding it removed and the control plane never rebinds a retired generation.
     $deploymentKey = "local"
     $instanceKey = "ds$DataStoreId"
-    $generation = Get-CdcNextGeneration `
+    $generationPlan = Get-CdcEnableGenerationPlan `
         -BindingStateRoot $BindingStateRoot `
         -DeploymentKey $deploymentKey `
         -InstanceKey $instanceKey
 
+    # The two provisioning tokens, emitted for a first run and for the reissue of one. A first run is
+    # evidenced by the instance database not having existed before it started; a reissue is evidenced
+    # by the live binding record the generation was taken from, which only an enable that already ran
+    # against this database could have written. Without the second source the reissue is unreachable:
+    # the volume observation is false by construction on every rerun, the command surface requires
+    # both tokens with exact values, and the parse failure lands before the control plane's retry
+    # classifier is ever entered - so reusing the generation would produce a request that is refused
+    # for the evidence rather than judged on the target's state.
+    #
+    # Neither source is trusted as the verdict. The tokens are what the caller can attest, and the
+    # control plane re-derives the same claim from the live target: an enable carrying them against a
+    # database that holds canonical, cache, or work rows, or one whose projection is resetting,
+    # rebuilding, or cache-ahead latched, is still refused. So a rerun over a target that finished
+    # enabling and was then written to is rejected on what the database shows, not admitted on what
+    # this phase asserted.
+    if ($DatabaseCreatedByThisRun -or $generationPlan.ResumesLiveBinding) {
+        $verbArguments += @(
+            "--database-creation-mode", "created-for-initial-cdc-provisioning",
+            "--write-admission", "closed-never-opened"
+        )
+    }
+
     $verbArguments += @(
         "--deployment-key", $deploymentKey,
         "--instance-key", $instanceKey,
-        "--generation", "$generation"
+        "--generation", "$($generationPlan.Generation)"
     )
 
     return Get-CdcSetupComposeArgument `
@@ -834,7 +867,7 @@ Export-ModuleMember -Function `
     Get-CdcConnectorEnvArgument, `
     Get-CdcSetupComposeArgument, `
     Resolve-CdcHostBindingStateRoot, `
-    Get-CdcNextGeneration, `
+    Get-CdcEnableGenerationPlan, `
     Get-CdcEnableArgument, `
     Invoke-CdcEnablePhase, `
     Wait-CdcHttpEndpoint, `

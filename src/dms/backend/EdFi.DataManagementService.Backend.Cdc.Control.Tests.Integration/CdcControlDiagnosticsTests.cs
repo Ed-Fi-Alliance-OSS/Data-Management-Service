@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -59,6 +59,11 @@ public class Given_CdcControlDiagnosticBoundaries
     private const string InstanceKey = "instance";
     private const string TopicPrefix = "edfi.documents";
     private const long BindingGeneration = 1;
+
+    // The binding record's partition count, which the policy pass validates against. Configuration
+    // carries the same number here: this fixture drives the adapter against endpoints that are not
+    // there, so no topic is ever observed and the two never have to diverge.
+    private const int BindingPartitionCount = 1;
 
     /// <summary>
     /// A port nothing is listening on, so every transport fails and every adapter takes its
@@ -184,6 +189,7 @@ public class Given_CdcControlDiagnosticBoundaries
         CdcKafkaPolicyObservation observation = await adapter.DescribeBindingKafkaPolicyAsync(
             Context(),
             Inventory(),
+            BindingPartitionCount,
             CancellationToken.None
         );
 
@@ -342,7 +348,7 @@ public class Given_CdcControlDiagnosticBoundaries
             InstanceKey = InstanceKey,
             TopicPrefix = TopicPrefix,
             Generation = BindingGeneration,
-            PartitionCount = 1,
+            PartitionCount = BindingPartitionCount,
             KafkaBootstrapServers = $"127.0.0.1:{UnreachablePort}",
             ConnectBaseUri = $"http://127.0.0.1:{UnreachablePort}",
             ConnectMetricsBaseUri = $"http://127.0.0.1:{UnreachablePort}",

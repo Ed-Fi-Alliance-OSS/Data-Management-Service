@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -56,8 +56,8 @@ internal sealed class CdcProviderSetupInputsFactory(
             diagnostics
         );
         RequirePrincipal(
-            controlOptions.ConnectorPrincipal,
-            nameof(CdcControlOptions.ConnectorPrincipal),
+            controlOptions.ConnectorDatabasePrincipal,
+            nameof(CdcControlOptions.ConnectorDatabasePrincipal),
             "$.connectorPrincipal",
             now,
             diagnostics
@@ -127,7 +127,7 @@ internal sealed class CdcProviderSetupInputsFactory(
         return CoreCdc.CdcContractReadResult<CdcProviderSetupInputs>.Success(
             new CdcProviderSetupInputs(
                 controlOptions.SetupPrincipal,
-                controlOptions.ConnectorPrincipal,
+                controlOptions.ConnectorDatabasePrincipal,
                 emission.CdcSourceInventory,
                 emission.CdcDmsManagedTableInventory
             )

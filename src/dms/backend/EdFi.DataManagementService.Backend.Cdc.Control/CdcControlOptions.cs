@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -103,13 +103,30 @@ public sealed class CdcControlOptions
     public string SetupPrincipal { get; set; } = string.Empty;
 
     /// <summary>
-    /// Database principal the connector authenticates as, and the Kafka principal its governed grants
-    /// are written for. Required for every cdc operation like <see cref="SetupPrincipal"/>: the
-    /// provider-setup pass every verb runs grants the source objects to it, so it is required whether
-    /// or not an authorizer is enabled — enabling an authorizer adds the Kafka grants, it is not what
-    /// makes the principal necessary.
+    /// Database principal the connector authenticates as. Required for every cdc operation like
+    /// <see cref="SetupPrincipal"/>: the provider-setup pass every verb runs grants the source objects
+    /// to it, so it is required whether or not an authorizer is enabled.
     /// </summary>
-    public string ConnectorPrincipal { get; set; } = string.Empty;
+    /// <remarks>
+    /// Distinct from <see cref="ConnectorKafkaPrincipal"/> because the two name the same component to
+    /// two authorities that do not share a naming scheme. This one is an ordinary database role or
+    /// login — <c>dms_connector</c> — and reaches the provider as the grantee of a GRANT statement.
+    /// The broker's is typed, <c>User:dms_connector</c>, and a name without its type prefix is not a
+    /// principal the broker can parse. One setting behind both would leave every authorizer-enabled
+    /// deployment unable to configure either boundary without breaking the other.
+    /// </remarks>
+    public string ConnectorDatabasePrincipal { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Kafka principal the connector's governed grants are written for, in the broker's own typed
+    /// form — <c>User:dms_connector</c>. Required only when <see cref="AclsEnabled"/>, like
+    /// <see cref="ConnectWorkerPrincipal"/>, because nothing outside the Kafka grants names it.
+    /// </summary>
+    /// <remarks>
+    /// See <see cref="ConnectorDatabasePrincipal"/> for why the database identity is a separate
+    /// setting rather than this one reused.
+    /// </remarks>
+    public string ConnectorKafkaPrincipal { get; set; } = string.Empty;
 
     /// <summary>
     /// Deployment-supplied instance consumers, each paired with the one consumer group it reads
@@ -256,6 +273,10 @@ public sealed class CdcControlOptions
 /// </summary>
 public sealed class CdcConsumerOptions
 {
+    /// <summary>
+    /// The consumer's Kafka principal, in the broker's typed form — <c>User:reporting</c>. Never a
+    /// database identity: a consumer reads the public topic and is granted nothing on the source.
+    /// </summary>
     public string Principal { get; set; } = string.Empty;
 
     public string ConsumerGroup { get; set; } = string.Empty;
@@ -314,7 +335,11 @@ public sealed class CdcControlOptionsValidator : IValidateOptions<CdcControlOpti
         RequireText(options.InstanceKey, nameof(CdcControlOptions.InstanceKey), failures);
         RequireText(options.TopicPrefix, nameof(CdcControlOptions.TopicPrefix), failures);
         RequireText(options.SetupPrincipal, nameof(CdcControlOptions.SetupPrincipal), failures);
-        RequireText(options.ConnectorPrincipal, nameof(CdcControlOptions.ConnectorPrincipal), failures);
+        RequireText(
+            options.ConnectorDatabasePrincipal,
+            nameof(CdcControlOptions.ConnectorDatabasePrincipal),
+            failures
+        );
 
         if (options.Generation <= 0)
         {
@@ -439,15 +464,66 @@ public sealed class CdcControlOptionsValidator : IValidateOptions<CdcControlOpti
             return;
         }
 
-        // ConnectorPrincipal is required unconditionally, beside SetupPrincipal: the provider-setup
-        // pass grants the source objects to it whether or not the broker has an authorizer, and
-        // CdcProviderSetupInputsFactory refuses every verb without it. Only the worker principal is
-        // ACL-conditional, because nothing outside the Kafka grants names it.
+        // ConnectorDatabasePrincipal is required unconditionally, beside SetupPrincipal: the
+        // provider-setup pass grants the source objects to it whether or not the broker has an
+        // authorizer, and CdcProviderSetupInputsFactory refuses every verb without it. The two Kafka
+        // principals are ACL-conditional, because nothing outside the Kafka grants names either.
         RequireText(
             options.ConnectWorkerPrincipal,
             nameof(CdcControlOptions.ConnectWorkerPrincipal),
             failures
         );
+        RequireText(
+            options.ConnectorKafkaPrincipal,
+            nameof(CdcControlOptions.ConnectorKafkaPrincipal),
+            failures
+        );
+
+        // Every Kafka principal is validated in the broker's own typed form. The names reach
+        // AclBinding verbatim, and a broker parses a principal as "<type>:<name>", so an untyped value
+        // is refused by the authorizer rather than matched against nothing - the failure a deployment
+        // that reused its database role name would otherwise reach only at provisioning time.
+        RequireKafkaPrincipalForm(
+            options.ConnectorKafkaPrincipal,
+            nameof(CdcControlOptions.ConnectorKafkaPrincipal),
+            failures
+        );
+        RequireKafkaPrincipalForm(
+            options.ConnectWorkerPrincipal,
+            nameof(CdcControlOptions.ConnectWorkerPrincipal),
+            failures
+        );
+
+        foreach (CdcConsumerOptions consumer in options.Consumers)
+        {
+            RequireKafkaPrincipalForm(
+                consumer.Principal,
+                $"{nameof(CdcControlOptions.Consumers)}.{nameof(CdcConsumerOptions.Principal)}",
+                failures
+            );
+        }
+    }
+
+    /// <summary>
+    /// A Kafka principal is "&lt;type&gt;:&lt;name&gt;" with both halves non-empty. Blank values are
+    /// left to <see cref="RequireText"/>, so an omitted setting is reported once as missing rather
+    /// than twice.
+    /// </summary>
+    private static void RequireKafkaPrincipalForm(string value, string name, List<string> failures)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return;
+        }
+
+        int separator = value.IndexOf(':', StringComparison.Ordinal);
+        if (separator <= 0 || separator == value.Length - 1)
+        {
+            failures.Add(
+                $"{name} must be a Kafka principal in the broker's typed form, for example "
+                    + "'User:dms_connector'."
+            );
+        }
     }
 
     /// <summary>

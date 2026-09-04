@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -9,6 +9,7 @@ using Confluent.Kafka.Admin;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using FakeItEasy;
 using FluentAssertions;
+using FluentAssertions.Execution;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
@@ -242,6 +243,45 @@ public class Given_CdcKafkaTopicPolicy
     }
 
     [Test]
+    public async Task It_validates_the_public_topic_against_the_binding_count_rather_than_the_configured_one()
+    {
+        // The generation's partitioning is fixed by the binding record, so a deployment that
+        // repartitioned the topic and edited its configuration to match must still be reported
+        // invalid: the murmur2 partitioner maps a key modulo the count, and moving existing keys onto
+        // other partitions breaks per-key ordering and compaction for everything already published.
+        CdcArtifactInventory inventory = Inventory(CdcProvider.Postgresql);
+        Dictionary<string, TopicState> topics = ConformingTopics(inventory);
+
+        // Configuration and the broker both say PartitionCount; the binding recorded one partition.
+        CdcKafkaBindingTopicPolicies drifted = await RunAsync(
+            Broker(topics),
+            inventory,
+            bindingPartitionCount: 1
+        );
+
+        using AssertionScope _ = new();
+        drifted.PublicTopic.State.Should().Be(CdcKafkaPolicyItemState.Invalid);
+        drifted.PublicTopic.PartitionCount.Should().Be(PartitionCount);
+
+        // And the other direction: a topic that still carries the binding's own count is satisfied,
+        // even though configuration has moved on. The record is what is authoritative, not merely
+        // some value other than the configured one.
+        topics[inventory.TopicName] = topics[inventory.TopicName] with
+        {
+            Partitions = 1,
+        };
+
+        CdcKafkaBindingTopicPolicies recorded = await RunAsync(
+            Broker(topics),
+            inventory,
+            bindingPartitionCount: 1
+        );
+
+        recorded.PublicTopic.State.Should().Be(CdcKafkaPolicyItemState.Satisfied);
+        recorded.PublicTopic.PartitionCount.Should().Be(1);
+    }
+
+    [Test]
     public async Task It_rejects_a_progress_topic_with_more_than_one_partition()
     {
         CdcArtifactInventory inventory = Inventory(CdcProvider.Postgresql);
@@ -462,6 +502,7 @@ public class Given_CdcKafkaTopicPolicy
         ).DescribeBindingKafkaPolicyAsync(
             new("operation-1", TargetIdentity(inventory), null),
             inventory,
+            PartitionCount,
             CancellationToken.None
         );
 
@@ -475,10 +516,16 @@ public class Given_CdcKafkaTopicPolicy
             inventory.Provider
         );
 
+    /// <param name="bindingPartitionCount">
+    /// The count the binding record fixes, which is what the pass validates the broker against.
+    /// Defaults to the configured one, which is what a binding created under this configuration
+    /// recorded; a case supplies its own to exercise the two diverging.
+    /// </param>
     private static async Task<CdcKafkaBindingTopicPolicies> RunAsync(
         IAdminClient adminClient,
         CdcArtifactInventory inventory,
-        string durabilityProfile = CdcControlOptions.LocalDurabilityProfile
+        string durabilityProfile = CdcControlOptions.LocalDurabilityProfile,
+        int bindingPartitionCount = PartitionCount
     )
     {
         CdcKafkaAdminAdapter adapter = new(
@@ -490,6 +537,7 @@ public class Given_CdcKafkaTopicPolicy
 
         CdcKafkaBindingTopicPolicies policies = await adapter.BindingTopicsAsync(
             inventory,
+            bindingPartitionCount,
             CdcKafkaProvisioningMode.CreateOrValidate,
             CancellationToken.None
         );
@@ -765,7 +813,7 @@ public class Given_CdcKafkaTopicPolicy
             ConnectOffsetStorageTopic = "connect-offsets",
             DurabilityProfile = durabilityProfile,
             MaxRecordBytes = MaxRecordBytes,
-            ConnectorPrincipal = "User:connector",
+            ConnectorKafkaPrincipal = "User:connector",
             ConnectWorkerPrincipal = "User:connect-worker",
             DmsBaseUrl = "http://localhost:8080",
             DmsBearerToken = "token",

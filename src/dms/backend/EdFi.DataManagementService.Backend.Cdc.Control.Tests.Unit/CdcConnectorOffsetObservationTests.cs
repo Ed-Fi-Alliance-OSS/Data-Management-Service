@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -229,8 +229,14 @@ public class Given_CdcConnectorOffsetObservationMapping
             .Contain(diagnostic => diagnostic.Category == CdcDiagnosticCategory.MalformedPayload);
     }
 
+    /// <summary>
+    /// A query the worker did not answer reports the absence of an answer, not a null offset and not
+    /// an offset the worker says is missing. The two are classified differently — a missing offset can
+    /// be a proved history loss, an unobtained one never is — so mapping both onto the same result let
+    /// an unreachable worker latch a terminal incident.
+    /// </summary>
     [Test]
-    public void It_reports_unavailable_offsets_as_missing_rather_than_as_a_null_offset()
+    public void It_reports_unavailable_offsets_as_unavailable_rather_than_as_missing_or_null()
     {
         CdcConnectorOffsetObservation observation = Mapper()
             .MapOffset(
@@ -241,11 +247,33 @@ public class Given_CdcConnectorOffsetObservationMapping
             );
 
         using var _ = new AssertionScope();
-        observation.SourcePartitionMatchResult.Should().Be(CdcConnectorOffsetMatchResult.Missing);
+        observation.SourcePartitionMatchResult.Should().Be(CdcConnectorOffsetMatchResult.Unavailable);
         observation.IsNull.Should().BeFalse();
         observation
             .Diagnostics.Should()
             .Contain(diagnostic => diagnostic.Code == "connectorOffsetsUnavailable");
+    }
+
+    /// <summary>
+    /// A worker that answers and holds no offset at all is the one shape that reports Missing, which
+    /// is what the continuity classifier may treat as a proved loss for an established stream.
+    /// </summary>
+    [Test]
+    public void It_reports_an_answered_empty_offset_set_as_missing()
+    {
+        CdcConnectorOffsetObservation observation = Mapper()
+            .MapOffset(
+                Context(Ddl.CdcProvider.Postgresql),
+                Binding(Ddl.CdcProvider.Postgresql),
+                null,
+                new(CdcConnectOutcome.Succeeded, new([]), null)
+            );
+
+        using var _ = new AssertionScope();
+        observation.SourcePartitionMatchResult.Should().Be(CdcConnectorOffsetMatchResult.Missing);
+        observation
+            .Diagnostics.Should()
+            .NotContain(diagnostic => diagnostic.Code == "connectorOffsetsUnavailable");
     }
 
     [Test]

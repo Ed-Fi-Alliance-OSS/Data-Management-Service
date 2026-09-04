@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -60,7 +60,15 @@ internal sealed class CdcControlBrokerFixture : IAsyncDisposable
     private const string InstanceKey = "binding";
     private const string TopicPrefix = "edfi.control";
     private const long BindingGeneration = 3;
-    private const int PartitionCount = 3;
+
+    /// <summary>
+    /// The public topic's partition count. Exposed because it is the binding record's value, which the
+    /// policy passes now take from their caller rather than from configuration; the fixture configures
+    /// the same number, so a binding created here records it.
+    /// </summary>
+    internal const int BindingPartitionCount = 3;
+
+    private const int PartitionCount = BindingPartitionCount;
 
     /// <summary>
     /// The record-size budget. Apache Kafka's default <c>replica.fetch.max.bytes</c> is one mebibyte,
@@ -79,7 +87,15 @@ internal sealed class CdcControlBrokerFixture : IAsyncDisposable
     /// </summary>
     internal const long OversizedGeneration = BindingGeneration + 1;
 
-    internal const string ConnectorPrincipal = "User:dms-cdc-connector";
+    /// <summary>
+    /// The connector's Kafka identity, in the broker's typed form. Deliberately unlike the connector's
+    /// DATABASE identity, which this fixture takes from
+    /// <see cref="CdcControlBrokerPinnedImage.ConnectorDatabaseUser"/>: the two authorities name the
+    /// same component differently, and the fixture proves the control plane can be configured for both
+    /// rather than forcing one value to satisfy each.
+    /// </summary>
+    internal const string ConnectorKafkaPrincipal = "User:dms-cdc-connector";
+
     internal const string ConnectWorkerPrincipal = "User:dms-cdc-connect-worker";
     internal const string ConsumerPrincipal = "User:dms-cdc-consumer";
     internal const string ConsumerGroup = "dms-cdc-consumer-group";
@@ -770,7 +786,8 @@ internal sealed class CdcControlBrokerFixture : IAsyncDisposable
             HeartbeatInterval = TimeSpan.FromSeconds(5),
             AclsEnabled = true,
             SetupPrincipal = "postgres",
-            ConnectorPrincipal = ConnectorPrincipal,
+            ConnectorDatabasePrincipal = PinnedImage.ConnectorDatabaseUser,
+            ConnectorKafkaPrincipal = ConnectorKafkaPrincipal,
             ConnectWorkerPrincipal = ConnectWorkerPrincipal,
             Consumers = [new() { Principal = ConsumerPrincipal, ConsumerGroup = ConsumerGroup }],
             ProviderConnectionProperties = new Dictionary<string, string>(StringComparer.Ordinal)

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -64,6 +64,7 @@ public class Given_CdcSetupControllerStatus
                 harness.Kafka.EnsureBindingKafkaPolicyAsync(
                     A<CdcObservationContext>._,
                     A<CdcArtifactInventory>._,
+                    A<int>._,
                     A<CancellationToken>._
                 )
             )
@@ -116,6 +117,7 @@ public class Given_CdcSetupControllerStatus
                 harness.Kafka.EnsureBindingKafkaPolicyAsync(
                     A<CdcObservationContext>._,
                     A<CdcArtifactInventory>._,
+                    A<int>._,
                     A<CancellationToken>._
                 )
             )
@@ -140,10 +142,40 @@ public class Given_CdcSetupControllerStatus
                 harness.Kafka.DescribeBindingKafkaPolicyAsync(
                     A<CdcObservationContext>._,
                     A<CdcArtifactInventory>._,
+                    A<int>._,
                     A<CancellationToken>._
                 )
             )
             .MustHaveHappenedOnceExactly();
+    }
+
+    /// <summary>
+    /// The generation's partitioning is fixed by its binding record. A status that verified the topic
+    /// against configuration would report a repartitioned topic satisfied as soon as the configuration
+    /// was edited to match, which is exactly the drift the recorded count exists to catch.
+    /// </summary>
+    [Test]
+    public async Task It_verifies_the_kafka_policy_against_the_partition_count_the_binding_recorded()
+    {
+        CdcSetupControllerHarness harness = new(CdcProvider.Postgresql)
+        {
+            BindingRead = CdcSetupControllerHarness.Present(
+                CdcSetupControllerHarness.Binding() with
+                {
+                    PartitionCount = CdcSetupControllerHarness.ConfiguredPartitionCount + 4,
+                }
+            ),
+        };
+
+        await harness.StatusAsync();
+
+        harness
+            .VerifiedPartitionCounts.Should()
+            .AllBeEquivalentTo(
+                CdcSetupControllerHarness.ConfiguredPartitionCount + 4,
+                "the binding record fixes the generation's partitioning, not the current configuration"
+            );
+        harness.VerifiedPartitionCounts.Should().NotBeEmpty();
     }
 
     /// <summary>
@@ -347,6 +379,139 @@ public class Given_CdcSetupControllerStatus
             .MustHaveHappenedOnceExactly();
         A.CallTo(() => harness.Connect.StopConnectorAsync(A<string>._, A<CancellationToken>._))
             .MustHaveHappenedTwiceExactly();
+    }
+
+    /// <summary>
+    /// The scenario the loss classification must not claim: an enablement that timed out after
+    /// registering its connector and before it committed its first offset. The binding is durable —
+    /// it is written at step 3, deliberately ahead of the artifacts it governs — but nothing has been
+    /// published, so there is no committed position to have lost. Latching here would be terminal and
+    /// would close the documented retry, which refuses an incident-latched binding.
+    /// </summary>
+    [Test]
+    public async Task It_latches_no_loss_for_an_enablement_interrupted_before_its_first_offset()
+    {
+        CdcSetupControllerHarness harness = EnabledBinding();
+        harness.CommittedOffsets = new(CdcConnectOutcome.Succeeded, new([]), null);
+        harness.PublicTopicPublication = new(true, false);
+
+        CdcStatus status = await harness.StatusAsync();
+
+        using var _ = new AssertionScope();
+        Target(status).SourceHistory.Continuity.Should().Be(CdcSourceHistoryContinuity.Unknown);
+        Target(status).SourceHistory.IncidentLatched.Should().BeFalse();
+        status.Readiness.Should().NotBe(CdcReadiness.Ready);
+
+        // Nothing irreversible: no incident written, and the connector left for the retry to finish.
+        A.CallTo(() => harness.Bindings.LatchSourceHistoryLossAsync(A<CdcIncident>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => harness.Connect.StopConnectorAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// The same absent offset over a stream that HAS published is the terminal loss the design
+    /// describes: a committed position existed and no longer does, and consumers hold state from it.
+    /// </summary>
+    [Test]
+    public async Task It_latches_the_offset_loss_when_the_public_topic_proves_an_established_stream()
+    {
+        CdcSetupControllerHarness harness = EnabledBinding();
+        harness.CommittedOffsets = new(CdcConnectOutcome.Succeeded, new([]), null);
+        harness.PublicTopicPublication = new(true, true);
+
+        CdcStatus status = await harness.StatusAsync();
+
+        using var _ = new AssertionScope();
+        Target(status).SourceHistory.Continuity.Should().Be(CdcSourceHistoryContinuity.Lost);
+        Target(status).SourceHistory.IncidentLatched.Should().BeTrue();
+        A.CallTo(() => harness.Connect.StopConnectorAsync(A<string>._, A<CancellationToken>._))
+            .MustHaveHappened();
+    }
+
+    /// <summary>
+    /// A worker that never answered the offsets query proves nothing about the connector's committed
+    /// position, so no loss is latched however established the stream is.
+    /// </summary>
+    [Test]
+    public async Task It_latches_no_loss_when_the_worker_did_not_answer_the_offsets_query()
+    {
+        CdcSetupControllerHarness harness = EnabledBinding();
+        harness.CommittedOffsets = new(
+            CdcConnectOutcome.Unavailable,
+            null,
+            new(503, "worker unavailable", true)
+        );
+
+        CdcStatus status = await harness.StatusAsync();
+
+        using var _ = new AssertionScope();
+        Target(status).SourceHistory.Continuity.Should().Be(CdcSourceHistoryContinuity.Unknown);
+        Target(status).SourceHistory.IncidentLatched.Should().BeFalse();
+        A.CallTo(() => harness.Bindings.LatchSourceHistoryLossAsync(A<CdcIncident>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// A status that cannot reach the instance database returns before the continuity classifier, so
+    /// nothing on that path re-attempts a stop the worker refused. The incident is already latched in
+    /// the binding record, which this poll did read, so containment is re-attempted from that record
+    /// alone — otherwise a connector with working credentials of its own keeps publishing against the
+    /// lost source for as long as the control plane's own database connection stays down.
+    /// </summary>
+    [Test]
+    public async Task It_fences_a_latched_incident_when_the_provider_connection_cannot_be_opened()
+    {
+        CdcSetupControllerHarness harness = EnabledBinding(CdcProvider.SqlServer);
+        harness.SchemaHistoryState = CdcSqlServerSchemaHistoryState.Missing;
+        harness.Stop = new(CdcConnectOutcome.Unavailable, new(503, "worker unavailable", true));
+
+        // The poll that proves and latches the loss. Its fence is refused, so the connector is still
+        // running and nothing later raises a second incident candidate.
+        await harness.StatusAsync();
+
+        // The instance database is now unreachable, so this poll returns before the classifier.
+        A.CallTo(() => harness.Connection.OpenAsync(A<CancellationToken>._))
+            .Throws(new InvalidOperationException("the instance database is unreachable"));
+
+        CdcStatus status = await harness.StatusAsync();
+
+        using var _ = new AssertionScope();
+        Target(status)
+            .Diagnostics.Should()
+            .Contain(diagnostic => diagnostic.Code == "statusProviderConnectionUnavailable");
+        CdcDiagnostic fence = Target(status)
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic => diagnostic.Code == "statusIncidentFenceNotApplied")
+            .Subject;
+        fence.Component.Should().Be(CdcDiagnosticComponent.ConnectorRuntime);
+        fence.Observed.Should().Be(nameof(CdcConnectOutcome.Unavailable));
+
+        // Asked again on the second poll rather than only on the one that proved the loss.
+        A.CallTo(() => harness.Connect.StopConnectorAsync(A<string>._, A<CancellationToken>._))
+            .MustHaveHappenedTwiceExactly();
+    }
+
+    /// <summary>
+    /// The containment above is scoped to a binding that already carries a latched incident. A status
+    /// blocked on the same unreachable database with nothing latched has proved no loss, and stopping
+    /// a connector on that evidence would fence a healthy stream.
+    /// </summary>
+    [Test]
+    public async Task It_fences_nothing_when_the_provider_connection_fails_and_no_incident_is_latched()
+    {
+        CdcSetupControllerHarness harness = EnabledBinding();
+        A.CallTo(() => harness.Connection.OpenAsync(A<CancellationToken>._))
+            .Throws(new InvalidOperationException("the instance database is unreachable"));
+
+        CdcStatus status = await harness.StatusAsync();
+
+        using var _ = new AssertionScope();
+        Target(status)
+            .Diagnostics.Should()
+            .Contain(diagnostic => diagnostic.Code == "statusProviderConnectionUnavailable");
+        A.CallTo(() => harness.Connect.StopConnectorAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
     }
 
     /// <summary>

@@ -48,9 +48,20 @@ bootstrap workspace with `bootstrap-api-schema-manifest.json`.
 The `cdc` verbs read the deployment's CDC control-plane settings from
 `DataManagement:DocumentCache:Cdc`. Each `cdc` option below overrides one key in that
 section for the current run only. Keys that have no command-line option — topic prefix,
-partition count, the database setup and connector principals, and the Kafka Connect worker
-settings — come only from settings, environment variables, user secrets, or the deployment
-secret provider.
+partition count, the principals, and the Kafka Connect worker settings — come only from
+settings, environment variables, user secrets, or the deployment secret provider.
+
+The connector is named to two authorities that do not share a naming scheme, so it has two
+principal settings and they are not interchangeable. `ConnectorDatabasePrincipal` is the
+database account it authenticates as and the grantee of the source grants, in whatever form
+the engine takes (`dms_connector`); it is required for every `cdc` verb. `ConnectorKafkaPrincipal`
+is its Kafka identity, in the broker's typed form (`User:dms_connector`), and is required only
+when `AclsEnabled`.
+
+Every Kafka principal — that one, `ConnectWorkerPrincipal`, and each `Consumers[].Principal`
+— is validated in the broker's `<type>:<name>` form at options validation, so a database role
+name supplied where a Kafka principal belongs is refused before any artifact is provisioned
+rather than by the authorizer afterwards.
 
 Every invocation targets exactly one DocumentCache target:
 

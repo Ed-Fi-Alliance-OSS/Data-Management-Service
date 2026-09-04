@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: Apache-2.0
+﻿# SPDX-License-Identifier: Apache-2.0
 # Licensed to the Ed-Fi Alliance under one or more agreements.
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
@@ -334,6 +334,34 @@ Describe "DMS-1323 bootstrap CDC phase" {
         }
     }
 
+    Context "binding state root path resolution" {
+        It "normalizes a relative -CdcBindingStatePath before the Push-Location that would reinterpret it" {
+            # The parameter is read twice: forwarded to the start phases, which resolve a relative
+            # path against their OWN caller's working directory and create the directory there, and
+            # written as the DMS_CDC_BINDING_STATE_PATH bind mount. Once Push-Location runs, that
+            # caller directory is eng/docker-compose, so resolving the value afterwards splits the
+            # binding state store in two - one root created and reported, another mounted as /state.
+            $wrapperText = $script:wrapperText
+            $normalizeIndex = $wrapperText.IndexOf('$CdcBindingStatePath = [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $CdcBindingStatePath))')
+            # Anchored on the statement, not the first textual occurrence: the -SeedDataPath
+            # normalization comment above names Push-Location $PSScriptRoot in prose.
+            $pushIndex = [regex]::Match($wrapperText, '(?m)^    Push-Location \$PSScriptRoot\s*$').Index
+
+            $normalizeIndex | Should -BeGreaterThan 0
+            $pushIndex | Should -BeGreaterThan 0
+            $normalizeIndex | Should -BeLessThan $pushIndex
+        }
+
+        It "hands the start phases and the bind mount the same value" {
+            # Both start invocations forward the normalized parameter, and the env-override
+            # resolution is left with only the empty-vs-supplied choice. A second resolution against
+            # a separately captured caller directory is exactly what made the two diverge.
+            $script:wrapperText | Should -Match '\$startArgs\.CdcBindingStatePath = \$CdcBindingStatePath'
+            $script:wrapperText | Should -Match '\$dmsStartArgs\.CdcBindingStatePath = \$CdcBindingStatePath'
+            $script:wrapperText | Should -Not -Match 'callerWorkingDirectory'
+        }
+    }
+
     Context "runtime settings written before the DMS start" {
         It "writes the projection target, the status role, and the state root" {
             $overrides = Get-CdcRuntimeEnvOverride `
@@ -550,12 +578,14 @@ Describe "DMS-1323 bootstrap CDC phase" {
                 New-Item -ItemType Directory -Force -Path $retirements | Out-Null
                 "{}" | Set-Content -LiteralPath (Join-Path $retirements "1.json") -Encoding utf8
 
-                Get-CdcNextGeneration -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds1" |
-                    Should -Be 2
+                $plan = Get-CdcEnableGenerationPlan -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds1"
+                $plan.Generation | Should -Be 2
+                $plan.ResumesLiveBinding | Should -BeFalse
 
                 # Another instance key allocates from its own generations, not this one's.
-                Get-CdcNextGeneration -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds7" |
-                    Should -Be 1
+                $otherPlan = Get-CdcEnableGenerationPlan -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds7"
+                $otherPlan.Generation | Should -Be 1
+                $otherPlan.ResumesLiveBinding | Should -BeFalse
             }
             finally {
                 Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
@@ -576,8 +606,9 @@ Describe "DMS-1323 bootstrap CDC phase" {
                 New-Item -ItemType Directory -Force -Path $bindings | Out-Null
                 "{}" | Set-Content -LiteralPath (Join-Path $bindings "4.json") -Encoding utf8
 
-                Get-CdcNextGeneration -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds1" |
-                    Should -Be 4
+                $plan = Get-CdcEnableGenerationPlan -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds1"
+                $plan.Generation | Should -Be 4
+                $plan.ResumesLiveBinding | Should -BeTrue
 
                 # And the reused value is what the enable invocation actually carries.
                 $arguments = Get-CdcEnableArgument `
@@ -609,7 +640,7 @@ Describe "DMS-1323 bootstrap CDC phase" {
                 "{}" | Set-Content -LiteralPath (Join-Path $bindings "5.json") -Encoding utf8
 
                 {
-                    Get-CdcNextGeneration -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds1"
+                    Get-CdcEnableGenerationPlan -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds1"
                 } | Should -Throw -ExpectedMessage "*live binding records for instance key*"
             }
             finally {
@@ -627,7 +658,7 @@ Describe "DMS-1323 bootstrap CDC phase" {
                 "{}" | Set-Content -LiteralPath (Join-Path $bindings "not-a-generation.json") -Encoding utf8
 
                 {
-                    Get-CdcNextGeneration -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds1"
+                    Get-CdcEnableGenerationPlan -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds1"
                 } | Should -Throw -ExpectedMessage "*is not named for a binding generation*"
             }
             finally {
@@ -689,11 +720,16 @@ Describe "DMS-1323 bootstrap CDC phase" {
             ($arguments -join " ") | Should -BeLike "*--tenant-key district-a*"
         }
 
-        It "supplies the evidence flags only for a database this run created" {
+        It "supplies the evidence flags for a database this run created" {
             ($script:createdRunArguments -join " ") |
                 Should -BeLike "*--database-creation-mode created-for-initial-cdc-provisioning*"
             ($script:createdRunArguments -join " ") | Should -BeLike "*--write-admission closed-never-opened*"
+        }
 
+        It "withholds the evidence flags for a data store this run neither created nor ever enabled" {
+            # Nothing this caller can see supports either claim: the database predates the run and
+            # the store holds no binding record saying an enable ever ran against it. The command
+            # surface refuses the enable, which is the correct outcome.
             $reusedArguments = Get-CdcEnableArgument `
                 -ComposeProjectName "dms-local" `
                 -EnvironmentFile "/tmp/.env.derived" `
@@ -706,6 +742,40 @@ Describe "DMS-1323 bootstrap CDC phase" {
 
             $reusedArguments | Should -Not -Contain "--database-creation-mode"
             $reusedArguments | Should -Not -Contain "--write-admission"
+        }
+
+        It "supplies the evidence flags when the run reissues an enable that already wrote its binding" {
+            # The documented retry after an interrupted initial setup. The volume observation is
+            # false by construction on a rerun - the engine's init hook created the database on the
+            # first one - so without the live binding record as a second source the reissue carries
+            # no tokens, the command surface refuses it at parse time, and the control plane's retry
+            # classifier is never entered. Reusing the generation is not on its own enough.
+            $root = Join-Path ([System.IO.Path]::GetTempPath()) "dms-1323-resume-$([System.Guid]::NewGuid().ToString('n'))"
+            try {
+                $bindings = Join-Path (Join-Path (Join-Path $root "bindings") "local") "ds1"
+                New-Item -ItemType Directory -Force -Path $bindings | Out-Null
+                "{}" | Set-Content -LiteralPath (Join-Path $bindings "3.json") -Encoding utf8
+
+                $resumeArguments = Get-CdcEnableArgument `
+                    -ComposeProjectName "dms-local" `
+                    -EnvironmentFile "/tmp/.env.derived" `
+                    -TenantKey "" `
+                    -DataStoreId 1 `
+                    -DatabaseEngine "postgresql" `
+                    -DatabaseCreatedByThisRun $false `
+                    -SourceDatabaseName "edfi_datamanagementservice" `
+                    -BindingStateRoot $root
+
+                ($resumeArguments -join " ") |
+                    Should -BeLike "*--database-creation-mode created-for-initial-cdc-provisioning*"
+                ($resumeArguments -join " ") | Should -BeLike "*--write-admission closed-never-opened*"
+
+                # Against the binding the record already names, not a second generation.
+                ($resumeArguments -join " ") | Should -BeLike "*--generation 3*"
+            }
+            finally {
+                Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+            }
         }
 
         It "runs the provider setup as the engine's own administrative principal" {
@@ -731,7 +801,7 @@ Describe "DMS-1323 bootstrap CDC phase" {
             # pass and the validate-only pass report the grants this principal holds. It is required
             # whether or not a broker authorizer is enabled.
             ($script:createdRunArguments -join " ") |
-                Should -BeLike "*DataManagement__DocumentCache__Cdc__ConnectorPrincipal=dms_connector*"
+                Should -BeLike "*DataManagement__DocumentCache__Cdc__ConnectorDatabasePrincipal=dms_connector*"
         }
 
         It "supplies every provider connection property the connector template requires" {
@@ -1673,7 +1743,7 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
             # Retirement runs the validate-only provider pass, which reports the grants this
             # principal holds, so the input factory refuses the verb without it.
             ($script:retireArguments -join " ") |
-                Should -BeLike "*DataManagement__DocumentCache__Cdc__ConnectorPrincipal=dms_connector*"
+                Should -BeLike "*DataManagement__DocumentCache__Cdc__ConnectorDatabasePrincipal=dms_connector*"
         }
 
         It "carries no connector source-connection properties" {

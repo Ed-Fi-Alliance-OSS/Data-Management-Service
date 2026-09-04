@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -776,12 +776,14 @@ public class Given_A_SqlServer_CdcControlReadinessSequence
         public Task<CoreCdc.CdcKafkaPolicyObservation> EnsureBindingKafkaPolicyAsync(
             CdcObservationContext context,
             CoreCdc.CdcArtifactInventory inventory,
+            int bindingPartitionCount,
             CancellationToken cancellationToken
         ) => Task.FromResult(SatisfiedPolicy(context, inventory));
 
         public Task<CoreCdc.CdcKafkaPolicyObservation> DescribeBindingKafkaPolicyAsync(
             CdcObservationContext context,
             CoreCdc.CdcArtifactInventory inventory,
+            int bindingPartitionCount,
             CancellationToken cancellationToken
         ) => Task.FromResult(SatisfiedPolicy(context, inventory));
 
@@ -793,6 +795,15 @@ public class Given_A_SqlServer_CdcControlReadinessSequence
             CoreCdc.CdcArtifactInventory inventory,
             CancellationToken cancellationToken
         ) => Task.FromResult(new CdcKafkaGovernedTopicPresence(true, []));
+
+        /// <summary>
+        /// The sequence under test enables and then reads back a target that publishes: the connector
+        /// the readiness steps observe has committed, so the stream is established.
+        /// </summary>
+        public Task<CoreCdc.CdcPublicTopicPublicationEvidence> ReadPublicTopicPublicationAsync(
+            CoreCdc.CdcArtifactInventory inventory,
+            CancellationToken cancellationToken
+        ) => Task.FromResult(new CoreCdc.CdcPublicTopicPublicationEvidence(true, true));
 
         public Task<CoreCdc.CdcSqlServerSchemaHistoryEvidence?> ReadSqlServerSchemaHistoryAsync(
             CoreCdc.CdcArtifactInventory inventory,
@@ -900,9 +911,7 @@ public class Given_A_SqlServer_CdcControlReadinessSequence
     /// </summary>
     private sealed class StubConnectClient(string catalogName, Func<string> currentLsn) : ICdcConnectClient
     {
-        private IReadOnlyDictionary<string, string> _registeredConfig = new Dictionary<string, string>(
-            StringComparer.Ordinal
-        );
+        private IReadOnlyDictionary<string, string>? _registeredConfig;
 
         public string? RegisteredConnectorName { get; private set; }
 
@@ -937,16 +946,33 @@ public class Given_A_SqlServer_CdcControlReadinessSequence
             return Task.FromResult(new CdcConnectResult(CdcConnectOutcome.Succeeded, null));
         }
 
+        /// <summary>
+        /// The worker's own answer, which is <c>NotFound</c> until something registers a connector
+        /// under the name.
+        /// </summary>
+        /// <remarks>
+        /// Modelled rather than always answering successfully, because an unbound enablement asks this
+        /// to establish that it is the first to provision the name and treats every answer but the
+        /// worker's 404 as an artifact that already exists. A stub that reported a connector before
+        /// any registration refused the enablement at that guard, so nothing downstream in this
+        /// sequence ran at all.
+        /// </remarks>
         public Task<CdcConnectResult<IReadOnlyDictionary<string, string>>> GetConnectorConfigAsync(
             string connectorName,
             CancellationToken cancellationToken
         ) =>
             Task.FromResult(
-                new CdcConnectResult<IReadOnlyDictionary<string, string>>(
-                    CdcConnectOutcome.Succeeded,
-                    _registeredConfig,
-                    null
-                )
+                _registeredConfig is { } registeredConfig
+                    ? new CdcConnectResult<IReadOnlyDictionary<string, string>>(
+                        CdcConnectOutcome.Succeeded,
+                        registeredConfig,
+                        null
+                    )
+                    : new CdcConnectResult<IReadOnlyDictionary<string, string>>(
+                        CdcConnectOutcome.NotFound,
+                        null,
+                        new(404, "the worker holds no connector under this name", false)
+                    )
             );
 
         public Task<CdcConnectResult<CdcConnectorStatus>> GetConnectorStatusAsync(

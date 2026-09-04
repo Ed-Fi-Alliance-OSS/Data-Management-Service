@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -54,14 +54,14 @@ public class Given_CdcControlOptionsTests
         yield return Case(nameof(CdcControlOptions.TopicPrefix), options => options.TopicPrefix = "");
         // The two database principals are required whether or not an authorizer is enabled: every cdc
         // verb runs a provider-setup pass as the setup principal, granting the source objects to the
-        // connector principal. Only the Connect worker principal is ACL-conditional.
+        // connector's database principal. Only the Kafka principals are ACL-conditional.
         yield return Case(
             nameof(CdcControlOptions.SetupPrincipal),
             options => options.SetupPrincipal = "   "
         );
         yield return Case(
-            nameof(CdcControlOptions.ConnectorPrincipal),
-            options => options.ConnectorPrincipal = "   "
+            nameof(CdcControlOptions.ConnectorDatabasePrincipal),
+            options => options.ConnectorDatabasePrincipal = "   "
         );
         yield return Case(
             nameof(CdcControlOptions.KafkaBootstrapServers),
@@ -268,7 +268,7 @@ public class Given_CdcControlOptionsTests
     {
         CdcControlOptions options = ValidOptions();
         options.AclsEnabled = true;
-        options.ConnectorPrincipal = "User:connector";
+        options.ConnectorKafkaPrincipal = "User:connector";
         options.ConnectWorkerPrincipal = "User:worker";
         options.Consumers = new List<CdcConsumerOptions>();
 
@@ -333,7 +333,7 @@ public class Given_CdcControlOptionsTests
     {
         CdcControlOptions options = ValidOptions();
         options.AclsEnabled = true;
-        options.ConnectorPrincipal = string.Empty;
+        options.ConnectorKafkaPrincipal = string.Empty;
         options.ConnectWorkerPrincipal = string.Empty;
 
         ValidateOptionsResult result = Validate(options);
@@ -343,29 +343,78 @@ public class Given_CdcControlOptionsTests
     }
 
     /// <summary>
-    /// Only the Connect worker principal is ACL-conditional. The connector principal is named by the
-    /// provider-setup pass every verb runs, so a deployment with no authorizer still requires it —
-    /// which is what <see cref="CdcProviderSetupInputsFactory"/> refuses every verb without.
+    /// Only the two Kafka principals are ACL-conditional. The connector's DATABASE principal is named
+    /// by the provider-setup pass every verb runs, so a deployment with no authorizer still requires
+    /// it — which is what <see cref="CdcProviderSetupInputsFactory"/> refuses every verb without.
     /// </summary>
     [Test]
-    public void It_requires_only_the_worker_principal_conditionally_when_acls_are_disabled()
+    public void It_requires_only_the_kafka_principals_conditionally_when_acls_are_disabled()
     {
         CdcControlOptions options = ValidOptions();
         options.AclsEnabled = false;
         options.ConnectWorkerPrincipal = string.Empty;
+        options.ConnectorKafkaPrincipal = string.Empty;
 
         Validate(options).Succeeded.Should().BeTrue();
     }
 
     [Test]
-    public void It_requires_the_connector_principal_when_acls_are_disabled()
+    public void It_requires_the_connector_database_principal_when_acls_are_disabled()
     {
         CdcControlOptions options = ValidOptions();
         options.AclsEnabled = false;
-        options.ConnectorPrincipal = string.Empty;
+        options.ConnectorDatabasePrincipal = string.Empty;
         options.ConnectWorkerPrincipal = string.Empty;
+        options.ConnectorKafkaPrincipal = string.Empty;
 
-        AssertFailsWith(options, nameof(CdcControlOptions.ConnectorPrincipal));
+        AssertFailsWith(options, nameof(CdcControlOptions.ConnectorDatabasePrincipal));
+    }
+
+    /// <summary>
+    /// The database and Kafka identities of the connector are separate settings because the two
+    /// authorities do not share a naming scheme: a database role is <c>dms_connector</c> and the
+    /// broker's principal for the same component is <c>User:dms_connector</c>. One setting behind both
+    /// left every authorizer-enabled deployment unable to configure either without breaking the other.
+    /// </summary>
+    [Test]
+    public void It_accepts_a_database_principal_that_is_not_a_kafka_principal()
+    {
+        CdcControlOptions options = ValidOptions();
+        options.AclsEnabled = true;
+        options.ConnectorDatabasePrincipal = "dms_connector";
+        options.ConnectorKafkaPrincipal = "User:dms_connector";
+        options.ConnectWorkerPrincipal = "User:dms_connect_worker";
+
+        Validate(options).Succeeded.Should().BeTrue();
+    }
+
+    [Test]
+    [TestCase("dms_connector")]
+    [TestCase(":dms_connector")]
+    [TestCase("User:")]
+    public void It_rejects_a_kafka_principal_that_is_not_in_the_brokers_typed_form(string principal)
+    {
+        // The value reaches AclBinding verbatim, and a broker parses a principal as "<type>:<name>",
+        // so an untyped one is refused by the authorizer rather than matched against nothing. Caught
+        // at options validation instead of at the first provisioning pass.
+        CdcControlOptions options = ValidOptions();
+        options.AclsEnabled = true;
+        options.ConnectorKafkaPrincipal = principal;
+        options.ConnectWorkerPrincipal = "User:worker";
+
+        AssertFailsWith(options, nameof(CdcControlOptions.ConnectorKafkaPrincipal));
+    }
+
+    [Test]
+    public void It_rejects_a_consumer_principal_that_is_not_in_the_brokers_typed_form()
+    {
+        CdcControlOptions options = ValidOptions();
+        options.AclsEnabled = true;
+        options.ConnectorKafkaPrincipal = "User:connector";
+        options.ConnectWorkerPrincipal = "User:worker";
+        options.Consumers = [Consumer("reader", "reader-group")];
+
+        AssertFailsWith(options, nameof(CdcConsumerOptions.Principal));
     }
 
     [Test]
@@ -570,7 +619,7 @@ public class Given_CdcControlOptionsTests
             InstanceKey = "instance",
             TopicPrefix = "edfi.documents.instance",
             SetupPrincipal = "setup_principal",
-            ConnectorPrincipal = "connector_principal",
+            ConnectorDatabasePrincipal = "connector_principal",
             Generation = 7,
             PartitionCount = 3,
             KafkaBootstrapServers = "localhost:9092",

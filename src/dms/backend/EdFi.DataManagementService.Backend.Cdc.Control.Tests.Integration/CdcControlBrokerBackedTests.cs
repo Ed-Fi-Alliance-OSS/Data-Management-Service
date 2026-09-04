@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -220,6 +220,7 @@ public sealed class Given_CdcControlBrokerBackedStack
 
         CdcKafkaBindingTopicPolicies policies = await _fixture.KafkaAdmin.BindingTopicsAsync(
             Inventory,
+            CdcControlBrokerFixture.BindingPartitionCount,
             CdcKafkaProvisioningMode.CreateOrValidate,
             cancellation.Token
         );
@@ -261,6 +262,7 @@ public sealed class Given_CdcControlBrokerBackedStack
 
         CdcKafkaBindingTopicPolicies policies = await _fixture.KafkaAdmin.BindingTopicsAsync(
             Inventory,
+            CdcControlBrokerFixture.BindingPartitionCount,
             CdcKafkaProvisioningMode.CreateOrValidate,
             cancellation.Token
         );
@@ -327,6 +329,7 @@ public sealed class Given_CdcControlBrokerBackedStack
 
         await admin.BindingTopicsAsync(
             oversizedInventory,
+            CdcControlBrokerFixture.BindingPartitionCount,
             CdcKafkaProvisioningMode.CreateOrValidate,
             cancellation.Token
         );
@@ -355,6 +358,7 @@ public sealed class Given_CdcControlBrokerBackedStack
         CdcKafkaPolicyObservation observation = await _fixture.KafkaAdmin.EnsureBindingKafkaPolicyAsync(
             _fixture.ObservationContext,
             Inventory,
+            CdcControlBrokerFixture.BindingPartitionCount,
             cancellation.Token
         );
 
@@ -374,10 +378,10 @@ public sealed class Given_CdcControlBrokerBackedStack
 
         // The grants the authorizer actually holds, located by principal and operation rather than by
         // the order the broker happens to return them in.
-        HasGrant(publicTopicGrants, CdcControlBrokerFixture.ConnectorPrincipal, AclOperation.Write)
+        HasGrant(publicTopicGrants, CdcControlBrokerFixture.ConnectorKafkaPrincipal, AclOperation.Write)
             .Should()
             .BeTrue();
-        HasGrant(publicTopicGrants, CdcControlBrokerFixture.ConnectorPrincipal, AclOperation.Describe)
+        HasGrant(publicTopicGrants, CdcControlBrokerFixture.ConnectorKafkaPrincipal, AclOperation.Describe)
             .Should()
             .BeTrue();
         HasGrant(publicTopicGrants, CdcControlBrokerFixture.ConsumerPrincipal, AclOperation.Read)
@@ -408,6 +412,7 @@ public sealed class Given_CdcControlBrokerBackedStack
             CdcKafkaPolicyObservation observation = await _fixture.KafkaAdmin.EnsureBindingKafkaPolicyAsync(
                 _fixture.ObservationContext,
                 Inventory,
+                CdcControlBrokerFixture.BindingPartitionCount,
                 cancellation.Token
             );
 
@@ -448,6 +453,7 @@ public sealed class Given_CdcControlBrokerBackedStack
             CdcKafkaPolicyObservation observation = await _fixture.KafkaAdmin.EnsureBindingKafkaPolicyAsync(
                 _fixture.ObservationContext,
                 Inventory,
+                CdcControlBrokerFixture.BindingPartitionCount,
                 cancellation.Token
             );
 

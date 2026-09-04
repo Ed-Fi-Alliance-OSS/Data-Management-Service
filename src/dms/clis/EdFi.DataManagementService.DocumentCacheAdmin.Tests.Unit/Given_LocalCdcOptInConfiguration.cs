@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -109,7 +109,7 @@ public sealed partial class Given_LocalCdcOptInConfiguration
                 "a destructive teardown must not fail options validation before it can retire: {0}",
                 validation.FailureMessage ?? string.Empty
             );
-        options.ConnectorPrincipal.Should().NotBeEmpty("every cdc verb runs a provider-setup pass");
+        options.ConnectorDatabasePrincipal.Should().NotBeEmpty("every cdc verb runs a provider-setup pass");
         options
             .ProviderConnectionProperties.Should()
             .BeEmpty("a retirement registers no connector and reads no connection property");

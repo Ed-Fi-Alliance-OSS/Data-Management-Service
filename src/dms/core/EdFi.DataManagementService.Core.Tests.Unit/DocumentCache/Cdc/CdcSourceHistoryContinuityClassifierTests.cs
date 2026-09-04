@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -35,6 +35,87 @@ public class Given_CdcSourceHistoryContinuityClassifier
             .Be(PostgresqlInventory(binding).PostgresqlLogicalSlotName);
         result.Observation.PositionEvidence.LsnProc.Should().Be("0/16B6C51");
         result.Observation.PositionEvidence.RetainedRangeStart.Should().Be("0/16B6C50");
+        ValidateObservation(result.Observation, binding).Succeeded.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// A binding is persisted before the artifacts it governs exist and long before the connector
+    /// commits anything, so a durable record is not evidence that the enablement it belongs to
+    /// finished. Its public topic is: a stream that has published nothing has no committed position to
+    /// have lost and no consumer holding state from it, so an absent connector offset there is an
+    /// enablement still in progress rather than a terminal loss. Latching one would close the
+    /// documented retry, which refuses an incident-latched binding.
+    /// </summary>
+    [Test]
+    public void It_withholds_a_terminal_offset_loss_from_a_stream_that_has_published_nothing()
+    {
+        CdcBinding binding = CdcContinuityFixture.CreateBinding(CdcProvider.Postgresql);
+
+        CdcSourceHistoryClassificationResult result = CdcSourceHistoryContinuityClassifier.Evaluate(
+            CdcContinuityFixture.CreateInput(binding) with
+            {
+                ConnectorOffset = CdcContinuityFixture.ConnectorOffset(
+                    binding,
+                    CdcConnectorOffsetMatchResult.Missing
+                ),
+                PublicTopicPublication = new(true, false),
+            }
+        );
+
+        result.Observation.Continuity.Should().Be(CdcSourceHistoryContinuity.Unknown);
+        result.Observation.IncidentFailureCategory.Should().BeNull();
+        result.IncidentCandidate.Should().BeNull();
+        ValidateObservation(result.Observation, binding).Succeeded.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Evidence that could not be read is not proof that the stream is established, and the
+    /// irreversible action needs proof. Unknown keeps readiness false and automates no start or
+    /// resume, so nothing is admitted on the strength of an unread topic.
+    /// </summary>
+    [Test]
+    public void It_withholds_a_terminal_offset_loss_when_the_publication_evidence_is_unreadable()
+    {
+        CdcBinding binding = CdcContinuityFixture.CreateBinding(CdcProvider.Postgresql);
+
+        CdcSourceHistoryClassificationResult result = CdcSourceHistoryContinuityClassifier.Evaluate(
+            CdcContinuityFixture.CreateInput(binding) with
+            {
+                ConnectorOffset = CdcContinuityFixture.ConnectorOffset(
+                    binding,
+                    CdcConnectorOffsetMatchResult.Missing
+                ),
+                PublicTopicPublication = CdcPublicTopicPublicationEvidence.Unreadable,
+            }
+        );
+
+        result.Observation.Continuity.Should().Be(CdcSourceHistoryContinuity.Unknown);
+        result.IncidentCandidate.Should().BeNull();
+    }
+
+    /// <summary>
+    /// An offsets query the worker never answered proves nothing about the connector's committed
+    /// position, so it is unknown however established the stream is. Only a successful query that
+    /// reports no offset can be a proved loss.
+    /// </summary>
+    [Test]
+    public void It_reports_unknown_for_an_offsets_query_the_worker_did_not_answer()
+    {
+        CdcBinding binding = CdcContinuityFixture.CreateBinding(CdcProvider.Postgresql);
+
+        CdcSourceHistoryClassificationResult result = CdcSourceHistoryContinuityClassifier.Evaluate(
+            CdcContinuityFixture.CreateInput(binding) with
+            {
+                ConnectorOffset = CdcContinuityFixture.ConnectorOffset(
+                    binding,
+                    CdcConnectorOffsetMatchResult.Unavailable
+                ),
+            }
+        );
+
+        result.Observation.Continuity.Should().Be(CdcSourceHistoryContinuity.Unknown);
+        result.Observation.IncidentFailureCategory.Should().BeNull();
+        result.IncidentCandidate.Should().BeNull();
         ValidateObservation(result.Observation, binding).Succeeded.Should().BeTrue();
     }
 
@@ -879,6 +960,10 @@ internal static class CdcContinuityFixture
                         CdcSqlServerSchemaHistoryState.Valid
                     )
                     : null,
+            // An established stream, which is the scope the terminal classifications are given: the
+            // binding has published, so a position it can no longer resume from is a real loss. Cases
+            // that model an enablement which has not finished override it.
+            PublicTopicPublication = new(true, true),
             ExpectedConnectSourcePartitionHash =
                 binding.Provider == CdcProvider.SqlServer ? ExpectedSourcePartitionHash(binding) : null,
         };

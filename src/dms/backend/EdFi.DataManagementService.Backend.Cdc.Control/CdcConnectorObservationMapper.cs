@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -286,12 +286,16 @@ internal sealed class CdcConnectorObservationMapper(
                 )
             );
 
+            // Unavailable rather than Missing: the worker was not asked successfully, so this reports
+            // the absence of an answer instead of claiming the connector holds no offset. The two are
+            // classified differently - a missing offset can be a proved loss, an unobtained one never
+            // is - and mapping both onto Missing let an unreachable worker latch a terminal incident.
             return CompleteOffset(
                 context,
                 binding,
                 observedAt,
                 connectorName,
-                CdcConnectorOffsetMatchResult.Missing,
+                CdcConnectorOffsetMatchResult.Unavailable,
                 expectedHash,
                 observedHash: expectedHash,
                 isSnapshot: false,
