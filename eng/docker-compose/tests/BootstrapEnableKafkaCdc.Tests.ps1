@@ -508,7 +508,6 @@ Describe "DMS-1323 bootstrap CDC phase" {
                 -DataStoreId 1 `
                 -DatabaseEngine "postgresql" `
                 -DatabaseCreatedByThisRun $true `
-                -DmsBearerToken "token-value" `
                 -SourceDatabaseName "edfi_datamanagementservice" `
                 -BindingStateRoot (New-AbsentStateRoot)
         }
@@ -574,7 +573,6 @@ Describe "DMS-1323 bootstrap CDC phase" {
                     -DataStoreId 1 `
                     -DatabaseEngine "postgresql" `
                     -DatabaseCreatedByThisRun $true `
-                    -DmsBearerToken "token-value" `
                     -SourceDatabaseName "edfi_datamanagementservice" `
                     -BindingStateRoot $root
 
@@ -652,7 +650,6 @@ Describe "DMS-1323 bootstrap CDC phase" {
                 -DataStoreId 2 `
                 -DatabaseEngine "postgresql" `
                 -DatabaseCreatedByThisRun $true `
-                -DmsBearerToken "token-value" `
                 -SourceDatabaseName "edfi_datamanagementservice" `
                 -BindingStateRoot (New-AbsentStateRoot)
 
@@ -671,7 +668,6 @@ Describe "DMS-1323 bootstrap CDC phase" {
                 -DataStoreId 1 `
                 -DatabaseEngine "postgresql" `
                 -DatabaseCreatedByThisRun $false `
-                -DmsBearerToken "token-value" `
                 -SourceDatabaseName "edfi_datamanagementservice" `
                 -BindingStateRoot (New-AbsentStateRoot)
 
@@ -690,7 +686,6 @@ Describe "DMS-1323 bootstrap CDC phase" {
                 -DataStoreId 1 `
                 -DatabaseEngine "mssql" `
                 -DatabaseCreatedByThisRun $true `
-                -DmsBearerToken "token-value" `
                 -SourceDatabaseName "edfi_datamanagementservice" `
                 -BindingStateRoot (New-AbsentStateRoot)
 
@@ -726,7 +721,6 @@ Describe "DMS-1323 bootstrap CDC phase" {
                 -DataStoreId 1 `
                 -DatabaseEngine "mssql" `
                 -DatabaseCreatedByThisRun $true `
-                -DmsBearerToken "token-value" `
                 -SourceDatabaseName "edfi_datamanagementservice" `
                 -BindingStateRoot (New-AbsentStateRoot)
 
@@ -783,10 +777,29 @@ Describe "DMS-1323 bootstrap CDC phase" {
         }
 
         It "hands the operator token to the tool through the environment, not the command line" {
-            $tokenIndex = [array]::IndexOf($script:createdRunArguments, "DataManagement__DocumentCache__Cdc__DmsBearerToken=token-value")
+            # By NAME, with no value: `docker compose run -e NAME` forwards what the invoking process
+            # holds, so the token never becomes an argument of the docker client - where any account
+            # on the host can read it out of the process list while the run is in flight.
+            $tokenIndex = [array]::IndexOf($script:createdRunArguments, "DataManagement__DocumentCache__Cdc__DmsBearerToken")
             $tokenIndex | Should -BeGreaterThan 0
             $script:createdRunArguments[$tokenIndex - 1] | Should -Be "-e"
+            ($script:createdRunArguments | Where-Object { $_ -like "*DmsBearerToken=*" }) | Should -BeNullOrEmpty
             ($script:createdRunArguments | Where-Object { $_ -like "--*token*" }) | Should -BeNullOrEmpty
+        }
+
+        It "supplies the token value around the run and puts the variable back afterwards" {
+            # The other half of the same rule: the flag names a variable, so something has to hold
+            # it while the container starts, and nothing may hold it afterwards.
+            $phaseText = Get-WrapperFunctionText -FunctionName "Invoke-CdcEnablePhase"
+
+            $setIndex = $phaseText.IndexOf('SetEnvironmentVariable($script:CdcDmsBearerTokenVariableName, $operatorToken)')
+            $runIndex = $phaseText.IndexOf('& docker @composeArguments')
+            $restoreIndex = $phaseText.IndexOf('SetEnvironmentVariable($script:CdcDmsBearerTokenVariableName, $previousBearerToken)')
+
+            $setIndex | Should -BeGreaterThan -1
+            $runIndex | Should -BeGreaterThan $setIndex
+            $restoreIndex | Should -BeGreaterThan $runIndex
+            $phaseText | Should -Match 'finally \{'
         }
     }
 
@@ -1249,7 +1262,6 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
                 -DataStoreId 1 `
                 -DatabaseEngine "postgresql" `
                 -DatabaseCreatedByThisRun $true `
-                -DmsBearerToken "token" `
                 -SourceDatabaseName "edfi_datamanagementservice" `
                 -BindingStateRoot (New-AbsentStateRoot)
             $retireArguments = Get-CdcRetireArgument `
@@ -1341,7 +1353,6 @@ Describe "DMS-1323 Connect pinning, metrics bridge, and destructive teardown" {
                 -DataStoreId 1 `
                 -DatabaseEngine "postgresql" `
                 -DatabaseCreatedByThisRun $true `
-                -DmsBearerToken "token" `
                 -SourceDatabaseName "edfi_datamanagementservice" `
                 -BindingStateRoot (New-AbsentStateRoot)
             $retireArguments = Get-CdcRetireArgument `

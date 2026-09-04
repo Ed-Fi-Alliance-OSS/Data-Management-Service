@@ -542,15 +542,12 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
             return new CdcDeleteBindingStateStoreResult.StateStoreFailure(retirementFailure);
         }
 
-        CdcStateStoreFailure? bindingDeleteFailure = DeleteStateFile(
-            bindingPath.FilePath!,
-            "delete binding state"
-        );
-        if (bindingDeleteFailure is not null)
-        {
-            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(bindingDeleteFailure);
-        }
-
+        // The incident goes first and the binding record last, because the binding record is what
+        // makes the retirement retryable: a failure or a stop between the two leaves a binding whose
+        // incident is already gone, which the next retirement removes normally. The other order leaves
+        // an incident whose binding is gone, and nothing can finish that. An orphan incident fails the
+        // whole deployment listing - every later enable refuses on a store it cannot read - and the
+        // retirement that would clear it refuses first, on the record that is no longer there.
         CdcStateStoreFailure? incidentDeleteFailure = DeleteStateFileIfPresent(
             incidentPath.FilePath!,
             "delete incident state"
@@ -558,6 +555,15 @@ internal sealed class LocalCdcBindingStateStore : ICdcBindingStateStore
         if (incidentDeleteFailure is not null)
         {
             return new CdcDeleteBindingStateStoreResult.StateStoreFailure(incidentDeleteFailure);
+        }
+
+        CdcStateStoreFailure? bindingDeleteFailure = DeleteStateFile(
+            bindingPath.FilePath!,
+            "delete binding state"
+        );
+        if (bindingDeleteFailure is not null)
+        {
+            return new CdcDeleteBindingStateStoreResult.StateStoreFailure(bindingDeleteFailure);
         }
 
         return new CdcDeleteBindingStateStoreResult.Deleted(completeIdentity);

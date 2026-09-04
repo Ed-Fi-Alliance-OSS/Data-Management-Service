@@ -26,8 +26,6 @@ public class Given_CdcKafkaRecordSize
 {
     private const int MaxRecordBytes = 4_194_304;
     private const int GenerousLimit = 104_857_600;
-    private const int MinimumProducerBufferBytes =
-        CdcConnectorTemplateDeploymentPolicy.MinimumProducerBufferBytes;
 
     private static readonly DateTimeOffset ObservedAt = new(2026, 8, 28, 9, 0, 0, TimeSpan.Zero);
 
@@ -230,38 +228,6 @@ public class Given_CdcKafkaRecordSize
         );
         rendered.Should().NotContain("hunter2");
         rendered.Should().NotContain("broker.internal");
-    }
-
-    [TestCase(1024, MinimumProducerBufferBytes)]
-    [TestCase(MinimumProducerBufferBytes - 1, MinimumProducerBufferBytes)]
-    [TestCase(MinimumProducerBufferBytes, MinimumProducerBufferBytes)]
-    [TestCase(MinimumProducerBufferBytes + 1, MinimumProducerBufferBytes + 1)]
-    public void It_derives_the_producer_buffer_from_the_record_size_budget(
-        int maxRecordBytes,
-        int expectedProducerBufferBytes
-    )
-    {
-        CdcControlOptions options = ControlOptions();
-        options.MaxRecordBytes = maxRecordBytes;
-
-        CdcKafkaAdminAdapter.DeriveProducerBufferBytes(options).Should().Be(expectedProducerBufferBytes);
-    }
-
-    [Test]
-    public void It_keeps_an_operator_supplied_producer_buffer()
-    {
-        CdcControlOptions options = ControlOptions();
-        options.ProducerBufferBytes = MinimumProducerBufferBytes * 2;
-
-        CdcKafkaAdminAdapter.DeriveProducerBufferBytes(options).Should().Be(MinimumProducerBufferBytes * 2);
-    }
-
-    [Test]
-    public async Task It_reports_the_derived_producer_buffer_with_the_policy()
-    {
-        CdcKafkaRecordSizeEvidence evidence = await RunAsync(Broker());
-
-        evidence.ProducerBufferBytes.Should().Be(MinimumProducerBufferBytes);
     }
 
     private static async Task<CdcKafkaRecordSizeEvidence> RunAsync(IAdminClient adminClient)

@@ -110,6 +110,45 @@ public class Given_CdcDownstreamPublicationHistoryProvider
         observation.Status.Should().Be(DocumentCacheDownstreamPublicationStatus.Unknown);
     }
 
+    /// <summary>
+    /// Retiring the deployment's only binding empties the binding tree, so the retirement record is
+    /// the sole trace of what this target published. It is evidence in its own right — it names this
+    /// deployment and this target — and reading it is what keeps a normal retirement from reporting
+    /// the target as one nothing is known about.
+    /// </summary>
+    [Test]
+    public async Task It_reports_historical_when_the_retired_binding_was_the_only_one()
+    {
+        DocumentCacheDownstreamPublicationHistoryObservation observation = await ObserveAsync(
+            Listed(),
+            retirementResult: Retired(
+                Retirement(tenantKey: "default", dataStoreId: "1", CurrentFingerprintValue, generation: 4)
+            )
+        );
+
+        using AssertionScope assertions = new();
+        observation.Status.Should().Be(DocumentCacheDownstreamPublicationStatus.Historical);
+        observation.EvidenceGenerationIdentifier.Should().Be("4");
+    }
+
+    /// <summary>
+    /// A retirement naming some other target says nothing about this one, and an empty binding listing
+    /// still cannot be told apart from an unwritten store. The answer stays unknown rather than
+    /// becoming internal-only, which is the status that admits the destructive commands.
+    /// </summary>
+    [Test]
+    public async Task It_reports_unknown_for_an_empty_store_whose_only_retirement_names_another_target()
+    {
+        DocumentCacheDownstreamPublicationHistoryObservation observation = await ObserveAsync(
+            Listed(),
+            retirementResult: Retired(
+                Retirement(tenantKey: "default", dataStoreId: "9", CurrentFingerprintValue)
+            )
+        );
+
+        observation.Status.Should().Be(DocumentCacheDownstreamPublicationStatus.Unknown);
+    }
+
     [Test]
     public async Task It_reports_active_when_a_binding_matches_the_target_and_the_current_source()
     {

@@ -406,6 +406,28 @@ public class Given_CdcSetupControllerInitialEnable
             .Then(KafkaPolicy(harness).MustHaveHappenedOnceExactly());
     }
 
+    /// <summary>
+    /// A retry finds its own record in the deployment listing, because the interrupted attempt made it
+    /// durable before it stopped. That is the generation being enabled, not a second one, so the rule
+    /// against another live generation of the target does not reach it.
+    /// </summary>
+    [Test]
+    public async Task It_retries_when_the_only_bound_generation_is_the_one_being_enabled()
+    {
+        CdcSetupControllerHarness harness = new()
+        {
+            BindingRead = CdcSetupControllerHarness.Present(CdcSetupControllerHarness.Binding()),
+            BindingListing = CdcSetupControllerHarness.ListedBindings(CdcSetupControllerHarness.Binding()),
+            Eligibility = CdcSetupControllerHarness.Reading(lifecycleStateToken: "Disabled"),
+        };
+
+        CdcAdmission admission = await harness.EnableAsync();
+
+        using var _ = new AssertionScope();
+        admission.AdmissionState.Should().Be(CdcAdmissionState.Admitted);
+        BindingExactMatched(harness).MustHaveHappenedOnceExactly();
+    }
+
     private static void NotAdmitted(CdcAdmission admission) =>
         admission.AdmissionState.Should().NotBe(CdcAdmissionState.Admitted);
 

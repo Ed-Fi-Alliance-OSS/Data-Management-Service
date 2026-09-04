@@ -416,6 +416,10 @@ function Get-CdcSetupComposeArgument {
     return $composeArguments
 }
 
+# The variable the setup container reads the operator token from. Named here because two functions
+# have to agree on it: the argument builder emits the flag, and the enable phase supplies the value.
+$script:CdcDmsBearerTokenVariableName = "DataManagement__DocumentCache__Cdc__DmsBearerToken"
+
 function Get-CdcEnableArgument {
     <#
     .SYNOPSIS
@@ -439,6 +443,11 @@ function Get-CdcEnableArgument {
     them is a secret. The connector reaches the source DIRECTLY - not through the DMS connection
     string the tool resolves from CMS - so its host, port and database are named here in the
     container-internal terms Kafka Connect resolves them in.
+
+    The operator token is emitted by NAME with no value: `docker compose run -e NAME` forwards
+    whatever the invoking process holds under that name, so the token itself never becomes an
+    argument of the docker client - where any account on the host could read it out of the process
+    list for as long as the run lasts. Invoke-CdcEnablePhase is what supplies the value.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns the argument list for one invocation; the plural noun reflects the return shape.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '', Justification = 'No password is passed: the connector password reaches the worker only as the ${env:...} reference this function emits.')]
@@ -469,10 +478,6 @@ function Get-CdcEnableArgument {
         [bool]
         $DatabaseCreatedByThisRun,
 
-        [Parameter(Mandatory)]
-        [string]
-        $DmsBearerToken,
-
         # The instance database the binding captures from, as Kafka Connect must name it. Required
         # because it is a per-run value: the connector's own database property cannot be a compose
         # default without silently capturing the wrong database on a run that named another.
@@ -498,10 +503,9 @@ function Get-CdcEnableArgument {
     }
 
     # The operator token and the connector's own source-connection properties. Both are deployment
-    # facts with no command-line surface, and the password among them is a secret.
-    $environmentArguments = @(
-        "-e", "DataManagement__DocumentCache__Cdc__DmsBearerToken=$DmsBearerToken"
-    )
+    # facts with no command-line surface, and both carry a secret. The token is passed by name only,
+    # so its value travels through the environment the phase populates rather than through argv.
+    $environmentArguments = @("-e", $script:CdcDmsBearerTokenVariableName)
     $environmentArguments += Get-CdcConnectorEnvArgument `
         -DatabaseEngine $DatabaseEngine `
         -SourceDatabaseName $SourceDatabaseName `
@@ -651,14 +655,26 @@ function Invoke-CdcEnablePhase {
         -DataStoreId $DataStoreId `
         -DatabaseEngine $DatabaseEngine `
         -DatabaseCreatedByThisRun $DatabaseCreatedByThisRun `
-        -DmsBearerToken $operatorToken `
         -SourceDatabaseName $resolvedSourceDatabaseName `
         -BindingStateRoot (Resolve-CdcHostBindingStateRoot -EnvValues $envValues) `
         -ConnectorPrincipal $connectorPrincipal
 
     Write-Information "CDC phase: enabling CDC for data store $DataStoreId." -InformationAction Continue
     $global:LASTEXITCODE = 0
-    & docker @composeArguments
+
+    # The token is handed to the container through this process's environment, which the compose
+    # run inherits, rather than through the docker command line - readable by any account on the
+    # host while the run is in flight. Restored to whatever it was, usually absent, however the run
+    # ends; setting it back to $null removes it rather than leaving an empty one behind.
+    $previousBearerToken = [Environment]::GetEnvironmentVariable($script:CdcDmsBearerTokenVariableName)
+    [Environment]::SetEnvironmentVariable($script:CdcDmsBearerTokenVariableName, $operatorToken)
+    try {
+        & docker @composeArguments
+    }
+    finally {
+        [Environment]::SetEnvironmentVariable($script:CdcDmsBearerTokenVariableName, $previousBearerToken)
+    }
+
     if ($LASTEXITCODE -is [int] -and $LASTEXITCODE -ne 0) {
         throw "dms-document-cache cdc enable failed with exit code $LASTEXITCODE."
     }

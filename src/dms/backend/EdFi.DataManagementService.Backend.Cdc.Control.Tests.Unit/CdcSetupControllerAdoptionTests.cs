@@ -133,8 +133,10 @@ public class Given_CdcSetupControllerAdoption
 
     /// <summary>
     /// Another generation of the same logical target is the target continuing to own its source rather
-    /// than a second target arriving at it, which is what an enable retry and a source replacement both
-    /// leave in the store.
+    /// than a second target arriving at it. Adoption is not held to the enablement's rule against a
+    /// second live generation either: it reconstitutes the record of an artifact set that already
+    /// exists and registers nothing, so refusing would block the recovery of a generation this
+    /// deployment had already published.
     /// </summary>
     [Test]
     public async Task It_adopts_when_the_only_other_binding_is_an_earlier_generation_of_this_target()

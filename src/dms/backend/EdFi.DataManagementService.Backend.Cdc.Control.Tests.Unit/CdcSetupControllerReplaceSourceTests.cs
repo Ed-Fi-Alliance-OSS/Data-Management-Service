@@ -374,6 +374,65 @@ public class Given_CdcSetupControllerReplaceSource
             .MustNotHaveHappened();
     }
 
+    /// <summary>
+    /// The generation a replacement replaces is still bound when the replacing one is enabled — the
+    /// outgoing record and its artifacts are retained until an explicit retirement — so the enablement
+    /// admits that one live generation. It is the one this replacement fenced, and the fence is what
+    /// separates it from the second publisher a plain enable is refused for.
+    /// </summary>
+    [Test]
+    public async Task It_enables_the_replacing_generation_while_the_generation_it_fenced_is_still_bound()
+    {
+        CdcSetupControllerHarness harness = new()
+        {
+            PreviousGenerationRead = CdcSetupControllerHarness.Present(
+                CdcSetupControllerHarness.PreviousGenerationBinding()
+            ),
+            BindingListing = CdcSetupControllerHarness.ListedBindings(
+                CdcSetupControllerHarness.PreviousGenerationBinding()
+            ),
+        };
+
+        CdcAdmission admission = await harness.ReplaceSourceAsync();
+
+        admission.AdmissionState.Should().Be(CdcAdmissionState.Admitted);
+    }
+
+    /// <summary>
+    /// Only the generation this replacement named and fenced. A third generation of the same target is
+    /// still live and still publishing, and naming one previous generation says nothing about it.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_a_replacement_while_a_generation_it_did_not_fence_is_still_bound()
+    {
+        CdcSetupControllerHarness harness = new()
+        {
+            PreviousGenerationRead = CdcSetupControllerHarness.Present(
+                CdcSetupControllerHarness.PreviousGenerationBinding()
+            ),
+            BindingListing = CdcSetupControllerHarness.ListedBindings(
+                CdcSetupControllerHarness.PreviousGenerationBinding(),
+                CdcSetupControllerHarness.PreviousGenerationBinding(PreviousGeneration - 1)
+            ),
+        };
+
+        CdcAdmission admission = await harness.ReplaceSourceAsync();
+
+        using var _ = new AssertionScope();
+        admission.AdmissionState.Should().NotBe(CdcAdmissionState.Admitted);
+        admission
+            .Diagnostics.Should()
+            .Contain(diagnostic => diagnostic.Code == "enableTargetGenerationAlreadyLive");
+        A.CallTo(() =>
+                harness.Connect.PutConnectorConfigAsync(
+                    A<string>._,
+                    A<IReadOnlyDictionary<string, string>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
     private static CdcSetupControllerHarness ReplaceableTarget() =>
         new()
         {

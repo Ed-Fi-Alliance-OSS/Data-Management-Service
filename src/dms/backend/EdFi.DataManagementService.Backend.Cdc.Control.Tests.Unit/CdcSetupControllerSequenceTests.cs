@@ -497,6 +497,66 @@ public class Given_CdcSetupControllerInitialReadinessSequence
         harness.SourceHistoryRequest!.SqlServerSchemaHistory.Should().BeNull();
     }
 
+    /// <summary>
+    /// Two generations of one target publish that target's rows twice, from two sources, with nothing
+    /// downstream to tell the streams apart. Moving a target to another physical database is a guarded
+    /// source replacement, which fences the outgoing connector first; a plain enable fences nothing, so
+    /// it refuses. Without this the operator reaches the same end state by repointing the deployment at
+    /// a new empty database and enabling again, which is the fence being bypassed rather than applied.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_an_enable_while_another_generation_of_the_target_is_still_bound()
+    {
+        CdcSetupControllerHarness harness = new()
+        {
+            BindingListing = CdcSetupControllerHarness.ListedBindings(
+                CdcSetupControllerHarness.PreviousGenerationBinding()
+            ),
+        };
+
+        CdcAdmission admission = await harness.EnableAsync();
+
+        using var _ = new AssertionScope();
+        NotAdmitted(admission);
+        Diagnostic(admission, "enableTargetGenerationAlreadyLive").Should().NotBeNull();
+
+        // Refused before anything is durable or registered: the outgoing generation is still the only
+        // publisher of this target when the refusal is reported.
+        A.CallTo(() => harness.Bindings.CreateBindingIfAbsentAsync(A<CdcBinding>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                harness.Connect.PutConnectorConfigAsync(
+                    A<string>._,
+                    A<IReadOnlyDictionary<string, string>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// Another target's binding on another source is neither conflict, so the enablement proceeds: the
+    /// deployment-wide read exists to find the two shapes that are, not to refuse company.
+    /// </summary>
+    [Test]
+    public async Task It_enables_alongside_another_target_bound_to_a_different_source()
+    {
+        CdcSetupControllerHarness harness = new()
+        {
+            BindingListing = CdcSetupControllerHarness.ListedBindings(
+                CdcSetupControllerHarness.PreviousGenerationBinding() with
+                {
+                    DataStoreId = "77",
+                    InstanceKey = "ds77",
+                }
+            ),
+        };
+
+        CdcAdmission admission = await harness.EnableAsync();
+
+        admission.AdmissionState.Should().Be(CdcAdmissionState.Admitted);
+    }
+
     private static void Satisfied(CdcComponent component, string stepName) =>
         component.State.Should().Be(CdcComponentState.Satisfied, "{0} must be satisfied", stepName);
 

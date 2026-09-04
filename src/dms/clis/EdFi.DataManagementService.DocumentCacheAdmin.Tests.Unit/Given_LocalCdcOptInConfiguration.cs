@@ -73,6 +73,12 @@ public sealed partial class Given_LocalCdcOptInConfiguration
                 "${env:",
                 "the connector password reaches the worker as a config-provider reference, never as a secret rendered into the registered configuration"
             );
+        EnvironmentArguments(composeArguments)
+            .Should()
+            .Contain(
+                pair => pair.Key == $"{CdcEnvironmentVariablePrefix}DmsBearerToken" && pair.Value.Length == 0,
+                "the operator token is forwarded from the phase's own environment rather than written into the docker command line"
+            );
     }
 
     /// <summary>
@@ -196,7 +202,12 @@ public sealed partial class Given_LocalCdcOptInConfiguration
     private static string ResolveComposeInterpolation(string composeValue) =>
         ComposeVariableReference().Replace(composeValue, match => match.Groups["default"].Value);
 
-    /// <summary>The <c>KEY=VALUE</c> pairs the phase passes as <c>-e</c> arguments.</summary>
+    /// <summary>
+    /// The environment the phase passes as <c>-e</c> arguments: the <c>KEY=VALUE</c> pairs it states
+    /// outright, and the bare <c>KEY</c> forms whose value compose forwards from the invoking
+    /// process. A pass-through contributes its name with no value, which is what binding sees when
+    /// the invoking process is this test rather than the phase.
+    /// </summary>
     private static IReadOnlyList<(string Key, string Value)> EnvironmentArguments(
         IReadOnlyList<string> composeArguments
     )
@@ -212,7 +223,13 @@ public sealed partial class Given_LocalCdcOptInConfiguration
 
             string pair = composeArguments[index + 1];
             int separator = pair.IndexOf('=', StringComparison.Ordinal);
-            separator.Should().BePositive($"-e argument '{pair}' must be a KEY=VALUE pair");
+            if (separator < 0)
+            {
+                environment.Add((pair, string.Empty));
+                continue;
+            }
+
+            separator.Should().BePositive($"-e argument '{pair}' must name a variable before its value");
             environment.Add((pair[..separator], pair[(separator + 1)..]));
         }
 
@@ -274,7 +291,6 @@ public sealed partial class Given_LocalCdcOptInConfiguration
                 -DataStoreId 1 `
                 -DatabaseEngine '{{databaseEngine}}' `
                 -DatabaseCreatedByThisRun $true `
-                -DmsBearerToken 'operator-token' `
                 -SourceDatabaseName 'edfi_datamanagementservice' `
                 -BindingStateRoot '{{AbsentBindingStateRoot()}}'
             """

@@ -366,11 +366,15 @@ the deployment's own CDC records:
 - Internal-only requires a complete, readable listing that holds at least one binding, holds
   no binding for the target, and holds no retirement record for it. A listing that cannot be
   completed, a record that cannot be read as a binding, an unconfigured deployment key, and a
-  listing holding no binding at all are all unknown, and unknown rejects without mutation.
+  listing that holds no binding at all and no retirement naming the target are all unknown, and
+  unknown rejects without mutation.
 - An empty binding listing is unknown rather than proof, because a fresh volume, a mis-mounted
   state root, and a root pointed at another deployment are indistinguishable from a deployment
-  that has bound nothing. Retirement records are the exception: a deployment that has retired
-  nothing legitimately holds none, so an empty retirement listing is an answer.
+  that has bound nothing. Retirement records are the exception in both directions: a deployment
+  that has retired nothing legitimately holds none, so an empty retirement listing is an answer;
+  and a retirement naming the target is proof in its own right, so it is read before an absent
+  binding is called unknown. Retiring a deployment's only binding empties the binding listing and
+  leaves that retirement as the sole trace of what the target published.
 
 A deployment that registers no CDC control plane has no such records to read and reports
 unknown, which rejects.
@@ -933,7 +937,12 @@ database. Guarded source replacement is supported only for a database previously
 through the v1 new-database path. It fences the old connector, rotates `SourceIdentity`
 through the binding-state operation, and creates a new binding generation, connector,
 public topic, progress topic, SQL Server schema-history topic when applicable, consumer
-state namespace, and snapshot. The old generation is retained or explicitly retired; none
+state namespace, and snapshot. Enablement is the same sequence and is held to the same
+fence: it never starts a generation of a target the deployment already holds a live binding
+for, except the one generation a replacement fenced and named on the way in. Without that,
+repointing a deployment at a new empty database and enabling again would reach a replacement's
+end state with both generations publishing, which is the fence being bypassed rather than
+applied. The old generation is retained or explicitly retired; none
 of its governed artifacts is reused. The new generation reports eventual operational status
 rather than another exact baseline. It cannot clear a published cache-ahead latch or recover
 a binding whose source-history loss is terminal. Removing a target requires explicit

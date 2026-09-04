@@ -100,6 +100,12 @@ controller, its adapters, and the entry points that invoke them.
   default.
 - Destructive verbs require their own exact confirmation token, and `replace-source` names
   the generation it supersedes explicitly rather than inferring it from what exists.
+- `enable` refuses while another generation of the same target is still bound. The enablement
+  sequence is shared, so a replacement enters it naming the generation it just fenced, and that
+  one generation is admitted; every other live generation refuses, and an `enable` entered
+  directly admits none. The deployment-wide read the sequence already makes for the
+  physical-source rule answers this one too. Adoption is not held to it: it reconstitutes the
+  record of an artifact set that already exists and registers nothing.
 - Consumer principals come from configuration, and an empty list is valid: local and
   no-consumer deployments grant no instance-consumer access, and ACL items report
   `NotApplicable` when the broker has no authorizer.
@@ -157,6 +163,9 @@ This story's scope is the production implementation of that rule:
   `unknown`, reading the deployment's durable binding and retirement records.
 - Retirement writes its retirement record before it deletes the binding record, so the two
   are never both absent for a generation this deployment published.
+- The retirement records are read whenever no live binding names the target, including when
+  the deployment holds no binding at all: retiring the only binding empties that listing, and
+  the retirement is then the only record that names what was published.
 - The provider is registered by the packaged administrative host ahead of the DocumentCache
   runtime services, whose registration of the `unknown` default is conditional.
 - Target matching maps the E18 empty tenant key onto the binding `default` token, and every
@@ -222,9 +231,14 @@ owning rule rather than a gap in this story.
   plane, which is the judgement it puts on the operator by name.
 - After the connector, retirement removes the binding's public, progress, and SQL Server
   schema-history topics and their ACLs, then the provider capture artifacts, then the
-  terminal incident state and the binding record last, and only against a validated cleanup
-  proof that accounts for every artifact the record governs. The shared Connect offset store
-  is cluster-scoped and is never removed by per-binding teardown.
+  terminal incident state, and the binding record last of all, and only against a validated
+  cleanup proof that accounts for every artifact the record governs. The record goes last
+  because it is what makes a retirement retryable: an interruption between any two removals
+  leaves a record naming what is still there, while an incident whose binding had already been
+  deleted would fail every listing of that deployment and be retirable by nothing - the
+  retirement refuses on the missing record before it reaches the state that would clear it.
+  The shared Connect offset store is cluster-scoped and is never removed by per-binding
+  teardown.
 - A normal stop retains all of it. Local destructive volume removal is the only workflow
   that may remove a binding record, and only in the same pass that removes every artifact
   the record governs.

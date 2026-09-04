@@ -29,15 +29,18 @@ namespace EdFi.DataManagementService.Backend.Cdc.Control;
 /// and this provider reads those records whenever no binding names the target. A retirement that
 /// names it reports <c>Historical</c>.
 ///
-/// Only a completed, fully readable, non-empty binding listing counts as evidence. A state store that
-/// cannot be listed, that holds a record this build cannot read as a binding, or that holds no
-/// binding at all yields <c>Unknown</c> so the E18 gate rejects without mutation. The empty case
-/// rejects because a fresh volume, a mis-mounted root, and a root pointed at another deployment all
-/// list empty, so an absent binding only means something once a readable one has shown that this is
-/// the populated, authoritative store. Retirements are the exception to that reasoning: a deployment
-/// that has retired nothing legitimately holds none, so an empty retirement listing is an answer
-/// rather than a gap. The provider never reports <c>Possible</c>: it either reads the deployment's
-/// records or it does not.
+/// Evidence is a record that names the target: a readable binding, or a retirement. A state store
+/// that cannot be listed, or that holds a record this build cannot read as a binding, yields
+/// <c>Unknown</c> so the E18 gate rejects without mutation, and so does a store that holds no binding
+/// and no matching retirement — a fresh volume, a mis-mounted root, and a root pointed at another
+/// deployment all list empty, so an absent record only means <c>InternalOnly</c> once a readable
+/// binding has shown that this is the populated, authoritative store. A retirement naming the target
+/// is itself that showing, which is why it is consulted even when no binding is live: retiring the
+/// deployment's only binding leaves the retirement as the sole trace of what was published.
+/// Retirements are also the exception to the empty-listing reasoning in the other direction: a
+/// deployment that has retired nothing legitimately holds none, so an empty retirement listing is an
+/// answer rather than a gap. The provider never reports <c>Possible</c>: it either reads the
+/// deployment's records or it does not.
 ///
 /// The deployment key is read from raw configuration rather than through <c>CdcControlOptions</c>
 /// on purpose. Those options are validated on first resolution, which the administrative host
@@ -94,21 +97,6 @@ public sealed class CdcDownstreamPublicationHistoryProvider(
             );
         }
 
-        if (listResult.States.Count == 0)
-        {
-            // A store holding nothing is indistinguishable from one this deployment has never
-            // written to: a fresh volume, a mis-mounted root, or a root pointed at the wrong
-            // deployment all list empty. Reading that as proof would admit the destructive commands
-            // on exactly the evidence the deployment failed to supply, so at least one readable
-            // binding must establish that the store is the populated, authoritative one before an
-            // absent binding means anything.
-            return Unknown(
-                targetKey,
-                currentPhysicalSourceFingerprint,
-                "The CDC binding state store holds no bindings for this deployment, so it cannot be distinguished from an unwritten store."
-            );
-        }
-
         string bindingTenantKey =
             CdcTargetValidator.MapE18TenantKeyToBindingTenantKey(targetKey.TenantKey) ?? targetKey.TenantKey;
         string bindingDataStoreId = targetKey.DataStoreId.ToString(CultureInfo.InvariantCulture);
@@ -148,7 +136,9 @@ public sealed class CdcDownstreamPublicationHistoryProvider(
             // No live binding names this target, which is not yet the same as never having published
             // it: retirement removes the binding record it retires. The retirement records are the
             // durable trace of that, and they must be read before an absent binding may be read as
-            // proof of an unpublished target.
+            // proof of an unpublished target. That holds when the listing is empty as well as when it
+            // names other targets: retiring the deployment's only binding empties the binding tree and
+            // leaves the retirement behind.
             CdcRetirementListResult retirementsResult = await _bindingLifecycleService
                 .ListRetirementsAsync(deploymentKey, cancellationToken)
                 .ConfigureAwait(false);
@@ -174,6 +164,21 @@ public sealed class CdcDownstreamPublicationHistoryProvider(
                     DocumentCacheDownstreamPublicationStatus.Historical,
                     matchedRetirement.Generation.ToString(CultureInfo.InvariantCulture),
                     "A retired CDC binding published this target downstream, so its projection is not internal-only."
+                );
+            }
+
+            if (listResult.States.Count == 0)
+            {
+                // Nothing readable names this target, and a store holding no binding at all is
+                // indistinguishable from one this deployment has never written to: a fresh volume, a
+                // mis-mounted root, or a root pointed at the wrong deployment all list empty. Reading
+                // that as proof would admit the destructive commands on exactly the evidence the
+                // deployment failed to supply, so at least one readable record - a binding here, since
+                // no retirement matched - must establish that the store is the populated one.
+                return Unknown(
+                    targetKey,
+                    currentPhysicalSourceFingerprint,
+                    "The CDC binding state store holds no bindings for this deployment, so it cannot be distinguished from an unwritten store."
                 );
             }
 

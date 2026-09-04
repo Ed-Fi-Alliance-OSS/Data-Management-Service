@@ -288,7 +288,6 @@ public sealed class Given_CdcControlBrokerBackedStack
         evidence
             .Policy.MaxMessageBytes.Should()
             .BeGreaterThanOrEqualTo(CdcControlBrokerFixture.MaxRecordBytes);
-        evidence.ProducerBufferBytes.Should().Be(33_554_432);
         evidence.Diagnostics.Should().BeEmpty();
     }
 

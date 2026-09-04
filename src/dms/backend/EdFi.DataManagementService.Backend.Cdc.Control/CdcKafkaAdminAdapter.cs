@@ -154,14 +154,11 @@ public sealed record CdcKafkaBindingAclPolicies(
 );
 
 /// <summary>
-/// Record-size policy evidence together with the producer buffer the connector is rendered with.
-/// Deployment must provision Connect worker heap beyond <see cref="ProducerBufferBytes"/>, which Kafka
-/// documents as approximate producer buffer capacity rather than a hard total-memory bound; that is a
-/// deployment obligation the admin client cannot observe.
+/// Record-size policy evidence for one binding: the budget the deployment configured, the effective
+/// message limit the broker reports, and how the two compare.
 /// </summary>
 public sealed record CdcKafkaRecordSizeEvidence(
     CdcKafkaRecordSizePolicy Policy,
-    int ProducerBufferBytes,
     IReadOnlyList<CdcDiagnostic> Diagnostics
 );
 
@@ -527,7 +524,6 @@ internal sealed class CdcKafkaAdminAdapter(
         CdcControlOptions controlOptions = options.Value;
         DateTimeOffset observedAt = timeProvider.GetUtcNow();
         int maxRecordBytes = controlOptions.MaxRecordBytes;
-        int producerBufferBytes = DeriveProducerBufferBytes(controlOptions);
         TimeSpan timeout = controlOptions.Timeouts.KafkaAdmin;
         List<CdcDiagnostic> diagnostics = [];
 
@@ -562,7 +558,6 @@ internal sealed class CdcKafkaAdminAdapter(
 
                 return new(
                     new(CdcKafkaPolicyItemState.Unknown, maxRecordBytes, effectiveMessageMaxBytes),
-                    producerBufferBytes,
                     CdcDiagnostic.NormalizeDiagnostics(diagnostics)
                 );
             }
@@ -613,7 +608,6 @@ internal sealed class CdcKafkaAdminAdapter(
 
             return new(
                 new(state, maxRecordBytes, effectiveMessageMaxBytes),
-                producerBufferBytes,
                 CdcDiagnostic.NormalizeDiagnostics(diagnostics)
             );
         }
@@ -631,7 +625,6 @@ internal sealed class CdcKafkaAdminAdapter(
 
             return new(
                 new(CdcKafkaPolicyItemState.Unknown, maxRecordBytes, null),
-                producerBufferBytes,
                 CdcDiagnostic.NormalizeDiagnostics(diagnostics)
             );
         }
@@ -1593,17 +1586,6 @@ internal sealed class CdcKafkaAdminAdapter(
             ? CdcKafkaPolicyItemState.Unknown
             : current;
     }
-
-    /// <summary>
-    /// The producer buffer the connector is rendered with: the operator's value when supplied,
-    /// otherwise the greater of the fixed minimum and the record-size budget.
-    /// </summary>
-    internal static int DeriveProducerBufferBytes(CdcControlOptions controlOptions) =>
-        controlOptions.ProducerBufferBytes
-        ?? Math.Max(
-            CdcConnectorTemplateDeploymentPolicy.MinimumProducerBufferBytes,
-            controlOptions.MaxRecordBytes
-        );
 
     /// <summary>
     /// The least value each limit takes across every broker, so one under-configured broker cannot be

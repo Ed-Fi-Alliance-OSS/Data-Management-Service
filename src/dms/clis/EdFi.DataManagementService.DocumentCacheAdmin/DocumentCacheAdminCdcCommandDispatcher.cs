@@ -132,19 +132,28 @@ internal static class DocumentCacheAdminCdcCommandRequestBuilder
         request = new DocumentCacheAdminCdcCommandRequest(
             verbName,
             invocationTarget.TargetKey,
-            OptionValue(parseResult, DocumentCacheAdminCommandSurface.DatabaseCreationModeOptionName),
-            OptionValue(parseResult, DocumentCacheAdminCommandSurface.WriteAdmissionOptionName),
-            parseResult.GetValue<long?>(DocumentCacheAdminCommandSurface.PreviousGenerationOptionName),
+            OptionValue<string>(parseResult, DocumentCacheAdminCommandSurface.DatabaseCreationModeOptionName),
+            OptionValue<string>(parseResult, DocumentCacheAdminCommandSurface.WriteAdmissionOptionName),
+            OptionValue<long?>(parseResult, DocumentCacheAdminCommandSurface.PreviousGenerationOptionName),
             bindingJson,
-            parseResult.GetValue<bool>(DocumentCacheAdminCommandSurface.ConnectorAlreadyAbsentOptionName)
+            OptionValue<bool>(parseResult, DocumentCacheAdminCommandSurface.ConnectorAlreadyAbsentOptionName)
         );
         return true;
     }
 
-    private static string? OptionValue(ParseResult parseResult, string optionName) =>
+    /// <summary>
+    /// The value of an option the parsed verb declares, or the type's default when it does not declare
+    /// it or the parser supplied the value implicitly.
+    /// </summary>
+    /// <remarks>
+    /// Read through the option's own result rather than by name, because several of these options are
+    /// scoped to a single verb: asking a verb that does not declare one for its value by name is
+    /// outside the documented contract of that overload, whatever the current implementation returns.
+    /// </remarks>
+    private static T? OptionValue<T>(ParseResult parseResult, string optionName) =>
         parseResult.GetResult(optionName) is OptionResult { Implicit: false } optionResult
-            ? optionResult.GetValueOrDefault<string?>()
-            : null;
+            ? optionResult.GetValueOrDefault<T?>()
+            : default;
 
     private static bool IsExpectedBindingJsonInputFailure(Exception exception) =>
         exception

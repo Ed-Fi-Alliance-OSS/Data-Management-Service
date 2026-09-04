@@ -229,9 +229,23 @@ internal sealed class CdcSetupController(
     /// ends the sequence with what was observed, so an admission is opened by evidence rather than by
     /// elapsed time.
     /// </remarks>
-    public async Task<CdcAdmission> EnableAsync(
+    public Task<CdcAdmission> EnableAsync(
         CdcEnableRequest request,
         CancellationToken cancellationToken = default
+    ) => EnableCoreAsync(request, fencedPreviousGeneration: null, cancellationToken);
+
+    /// <summary>
+    /// The enablement sequence, told which generation of this target the caller has already fenced.
+    /// </summary>
+    /// <param name="fencedPreviousGeneration">
+    /// The generation <see cref="ReplaceSourceAsync"/> stopped before entering the sequence, and the
+    /// one live generation of this target the enablement may run alongside. Null for a plain enable,
+    /// which never starts a second publisher for a target this deployment already binds.
+    /// </param>
+    private async Task<CdcAdmission> EnableCoreAsync(
+        CdcEnableRequest request,
+        long? fencedPreviousGeneration,
+        CancellationToken cancellationToken
     )
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -486,13 +500,17 @@ internal sealed class CdcSetupController(
         // ever provisioned that the control plane cannot name afterwards.
         CdcBinding binding = Binding(target, provider, physicalSourceFingerprint, inventory);
 
-        CdcPhysicalSourceConflict conflict = await FindPhysicalSourceConflictAsync(binding, cancellationToken)
+        CdcBindingConflict conflict = await FindBindingConflictAsync(
+                binding,
+                CdcSecondGenerationRule.RefusedUnlessFenced(fencedPreviousGeneration),
+                cancellationToken
+            )
             .ConfigureAwait(false);
         if (conflict.Blocked)
         {
             return Blocked(
                 Step(
-                    "enablePhysicalSourceAlreadyBound",
+                    conflict.Code,
                     conflict.Category,
                     CdcDiagnosticComponent.Binding,
                     conflict.Message,
@@ -1939,7 +1957,7 @@ internal sealed class CdcSetupController(
             target.Generation
         );
 
-        return await EnableAsync(
+        return await EnableCoreAsync(
                 new CdcEnableRequest(
                     request.OperationId,
                     request.TenantKey,
@@ -1948,6 +1966,7 @@ internal sealed class CdcSetupController(
                     request.ProvisioningEvidence,
                     request.ProviderSetup
                 ),
+                request.PreviousGeneration,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -2305,7 +2324,11 @@ internal sealed class CdcSetupController(
 
         // Adoption imports a record the operator supplied, so it is the other way a second logical
         // target can come to bind a physical source this deployment already publishes.
-        CdcPhysicalSourceConflict conflict = await FindPhysicalSourceConflictAsync(binding, cancellationToken)
+        CdcBindingConflict conflict = await FindBindingConflictAsync(
+                binding,
+                CdcSecondGenerationRule.Allowed,
+                cancellationToken
+            )
             .ConfigureAwait(false);
         if (conflict.Blocked)
         {
@@ -3224,8 +3247,8 @@ internal sealed class CdcSetupController(
         );
 
     /// <summary>
-    /// Whether some other logical target in this deployment already binds the physical source a
-    /// candidate binding names.
+    /// Whether the deployment already holds a binding that refuses a candidate one: some other
+    /// logical target on the same physical source, or another live generation of this same target.
     /// </summary>
     /// <remarks>
     /// Each logical public topic maps to exactly one physical database. The captured rows carry no
@@ -3235,16 +3258,25 @@ internal sealed class CdcSetupController(
     /// records, and only a deployment-wide look at what is already bound distinguishes a second alias
     /// from a first enablement.
     ///
-    /// Another generation of the same target is not a conflict. That shape is what an enable retry and
-    /// a source replacement both produce, and both are the same logical target continuing to own the
-    /// source rather than a second one arriving at it.
+    /// Another live generation of the same logical target is the other conflict, and a different one:
+    /// every governed name carries the generation, so two generations never collide on an artifact —
+    /// they publish one target's rows twice, from two sources, with nothing downstream to separate
+    /// them. Moving a target to another physical database is a guarded source replacement, which
+    /// fences the outgoing connector before the replacing generation is enabled, so the enablement
+    /// admits exactly one other live generation: the one that replacement fenced and named. An enable
+    /// retry names its own generation, which is the same binding rather than a second one.
     ///
-    /// A listing that cannot be read refuses rather than proceeds. The question asked here is whether
-    /// some other target already binds this source, and a store that cannot be enumerated is not an
-    /// answer to it — treating it as one would admit exactly the duplicate the check exists to stop.
+    /// Adoption is held to the physical-source rule only. It reconstitutes the record of an artifact
+    /// set that already exists and registers nothing, so refusing it would block the recovery of a
+    /// generation this deployment had already published rather than stop a second publisher.
+    ///
+    /// A listing that cannot be read refuses rather than proceeds. What is asked here is what the
+    /// deployment already binds, and a store that cannot be enumerated is not an answer to it —
+    /// treating it as one would admit exactly the duplicates the check exists to stop.
     /// </remarks>
-    private async Task<CdcPhysicalSourceConflict> FindPhysicalSourceConflictAsync(
+    private async Task<CdcBindingConflict> FindBindingConflictAsync(
         CdcBinding candidate,
+        CdcSecondGenerationRule secondGeneration,
         CancellationToken cancellationToken
     )
     {
@@ -3256,6 +3288,7 @@ internal sealed class CdcSetupController(
         {
             return new(
                 true,
+                "enableDeploymentBindingsUnreadable",
                 CdcDiagnosticCategory.LocalStateUnavailable,
                 "CDC enablement could not read the deployment's bindings to prove no other target "
                     + "already publishes this physical source.",
@@ -3272,10 +3305,34 @@ internal sealed class CdcSetupController(
                 // source, so it is no more an answer than an unreadable listing is.
                 return new(
                     true,
+                    "enableDeploymentBindingsUnreadable",
                     CdcDiagnosticCategory.LocalStateUnavailable,
                     "CDC enablement found a record it could not read as a binding while proving no "
                         + "other target already publishes this physical source.",
                     state.State.ToString(),
+                    []
+                );
+            }
+
+            if (IsSameLogicalTarget(existing, candidate))
+            {
+                if (
+                    !secondGeneration.RefusesAnother
+                    || existing.Generation == candidate.Generation
+                    || existing.Generation == secondGeneration.FencedGeneration
+                )
+                {
+                    continue;
+                }
+
+                return new(
+                    true,
+                    "enableTargetGenerationAlreadyLive",
+                    CdcDiagnosticCategory.BindingMismatch,
+                    "CDC enablement never starts a second live generation of a target this deployment "
+                        + "already binds. Replacing the physical source behind an enabled target is a "
+                        + "guarded source replacement, which fences the generation it replaces first.",
+                    $"generation {existing.Generation.ToString(CultureInfo.InvariantCulture)}",
                     []
                 );
             }
@@ -3285,7 +3342,7 @@ internal sealed class CdcSetupController(
                     existing.PhysicalSourceFingerprint,
                     candidate.PhysicalSourceFingerprint,
                     StringComparison.Ordinal
-                ) || IsSameLogicalTarget(existing, candidate)
+                )
             )
             {
                 continue;
@@ -3293,6 +3350,7 @@ internal sealed class CdcSetupController(
 
             return new(
                 true,
+                "enablePhysicalSourceAlreadyBound",
                 CdcDiagnosticCategory.SourceMismatch,
                 "CDC enablement never binds a physical source another logical target of this "
                     + "deployment already publishes.",
@@ -3302,7 +3360,7 @@ internal sealed class CdcSetupController(
             );
         }
 
-        return CdcPhysicalSourceConflict.None;
+        return CdcBindingConflict.None;
     }
 
     private static bool IsSameLogicalTarget(CdcBinding existing, CdcBinding candidate) =>
@@ -3310,16 +3368,37 @@ internal sealed class CdcSetupController(
         && string.Equals(existing.DataStoreId, candidate.DataStoreId, StringComparison.Ordinal)
         && string.Equals(existing.InstanceKey, candidate.InstanceKey, StringComparison.Ordinal);
 
-    private readonly record struct CdcPhysicalSourceConflict(
+    /// <summary>
+    /// Whether a live binding of the same logical target at another generation refuses the operation,
+    /// and the one generation exempted from that because the caller fenced it first.
+    /// </summary>
+    private readonly record struct CdcSecondGenerationRule(bool RefusesAnother, long? FencedGeneration)
+    {
+        /// <summary>
+        /// Every generation is admitted. Adoption reconstitutes the record of an artifact set that
+        /// already exists, so a second generation there is state being recovered rather than started.
+        /// </summary>
+        public static CdcSecondGenerationRule Allowed { get; } = new(false, null);
+
+        /// <summary>
+        /// Another live generation refuses the operation, except the one a source replacement fenced
+        /// before entering the enablement sequence. A plain enable fences nothing and passes null.
+        /// </summary>
+        public static CdcSecondGenerationRule RefusedUnlessFenced(long? fencedGeneration) =>
+            new(true, fencedGeneration);
+    }
+
+    private readonly record struct CdcBindingConflict(
         bool Blocked,
+        string Code,
         CdcDiagnosticCategory Category,
         string Message,
         string Observed,
         IReadOnlyList<CdcDiagnostic> Diagnostics
     )
     {
-        public static CdcPhysicalSourceConflict None { get; } =
-            new(false, CdcDiagnosticCategory.SourceMismatch, string.Empty, string.Empty, []);
+        public static CdcBindingConflict None { get; } =
+            new(false, string.Empty, CdcDiagnosticCategory.SourceMismatch, string.Empty, string.Empty, []);
     }
 
     private static CdcBinding Binding(
