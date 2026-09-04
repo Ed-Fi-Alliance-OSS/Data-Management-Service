@@ -322,6 +322,7 @@ The contract therefore defines a repertoire in which the approximation is exact,
 
 A provider must issue UniqueIds that are:
 
+- unique within the deployment across every tenant and route-qualifier context it serves, since DMS applies no tenant prefix and does not rewrite the value;
 - no longer than the `maxLength` the deployment's ApiSchema declares for person UniqueIds, which is **32 characters** across the current core and shipped extension schemas;
 - drawn from the **guaranteed repertoire**: ASCII digits `0`-`9` and ASCII letters `A`-`Z` and `a`-`z`. Within this repertoire the collation applies case folding and nothing else, so `OrdinalIgnoreCase` and `SQL_Latin1_General_CP1_CI_AS` agree exactly and the equality rule below is enforceable as stated. This matches how the schema already describes the field — "a unique alphanumeric code";
 - distinct under `OrdinalIgnoreCase` comparison, not merely under exact comparison, so the value means the same identity on both providers;
@@ -492,7 +493,7 @@ No Configuration Service change and no shared HTTP-client change is required to 
 
 Three specifics the middleware must get right:
 
-1. **An empty list is evidence of absence only if the fetch genuinely succeeded.** `FetchTenants` returns `[]` without throwing when deserialization yields null (`:447-450`), which would render every tenant absent on a parse failure. The identity lookup must treat a null-deserialized body as `unavailable`, not as an empty tenant set.
+1. **An empty list is evidence of absence only if the fetch genuinely succeeded, and the middleware cannot establish that on its own.** `FetchTenants` collapses a null-deserialized body to `[]` and returns it as an ordinary result (`:447-450`), so by the time `LoadTenants` returns, a parse failure is indistinguishable from a genuinely empty tenant set and every tenant would read as absent. The distinction has to be preserved where it is currently discarded, in the loader, and surfaced to the caller; a middleware-only rule cannot recover it. This is a change to `ConfigurationServiceDataStoreProvider`, not only to the identity middleware, and the API-surface story owns it.
 2. **Failures must arrive as an outcome, not an exception.** `LoadTenants` wraps transport and JSON failures in `InvalidOperationException` (`:383`, `:397`). The identity check maps those to `unavailable` rather than letting them escape as a `500`, and lets `OperationCanceledException` for the request's own token propagate untouched.
 3. **The cache is its own.** `TenantExists` reads `_instancesByTenant`, which only `LoadDataStores` populates (`:348`), so it cannot serve as the fast path without reintroducing the datastore dependency this lookup exists to avoid. The identity check keeps its own tenant-name cache fed by `LoadTenants`, in the same cache-then-refetch shape the frontend validator uses.
 
@@ -581,7 +582,12 @@ The substitution is scoped to identity routes rather than applied globally.
 `Path` is a documented collector-contract property defined as "sanitized request path without the query string" (`docs/LOGGING.md:71`), and redacting resource ids across all of DMS would change that contract for every existing consumer.
 Substituting a template keeps `Path` present, a path, and sanitized, so collector rules that filter or group on it continue to work.
 
-Tests must assert the absence of the identifier in **both** the structured `Path` property and the rendered message, at both layers, for a success and a failure response.
+Redacting the two DMS middlewares is necessary and, on its own, ineffective.
+ASP.NET Core's own `Microsoft.AspNetCore.Hosting.Diagnostics` emits request-start and request-finish events carrying the full URL, and the shipped `appsettings.json` sets `Serilog:MinimumLevel:Default` to `Information` with no `Override` for `Microsoft.*`, so those events are emitted by default and would carry the UniqueId or results token regardless of what the DMS middlewares log.
+The feature must therefore cover framework logging as well, and the mechanism must not blind non-identity routes: a blanket `MinimumLevel` override for that category would remove request diagnostics for every route in DMS, which is a worse trade than the one it fixes.
+The story selects the narrowest mechanism that suppresses or rewrites those events for identity routes only.
+
+Tests must assert the absence of the identifier in **both** the structured `Path` property and the rendered message, at both DMS layers **and** in the framework's own request events, for a success and a failure response.
 Asserting only the structured property leaves the rendered message — which is where the value is interpolated for the console sink's `RenderedMessage` — unchecked.
 
 The instruction elsewhere in this design to log provider exceptions rather than return them carries the same obligation in the other direction.
