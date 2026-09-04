@@ -420,8 +420,16 @@ the recorded deviation. Correct same-state behavior outranks the lower count.
 
 `03-persist-and-batch.md` requires revalidating the observed `ContentVersion` before returning a no-op
 success, with stale compares surfaced as a write conflict rather than success. Once the target row is
-held under `FOR UPDATE` / `UPDLOCK, HOLDLOCK` from the observing statement through commit, no other
+held under `FOR UPDATE` / `UPDLOCK, ROWLOCK` from the observing statement through commit, no other
 transaction can change that row in between, so the criterion is satisfied without a second read.
+
+The SQL Server lock is deliberately an exact-key row lock, not a serializable one. The observing
+statement seeks a single existing `DocumentId`, and the no-op criterion only needs that one row pinned;
+`HOLDLOCK` would add key-range locks on the primary key that serialize unrelated concurrent writers and
+were measured as the source of lock convoys and deadlocks under load (DMS-1395). This matches PostgreSQL,
+where `FOR UPDATE` takes no range lock either. Insert-if-absent probes elsewhere (the
+`DocumentProjectionWork` claim, the cache-state singleton) keep `HOLDLOCK` because they do need the
+absent key protected.
 
 This applies only where the lock is provably held in the current session. That is expressed as a type,
 not a flag: a locked-target value is constructible only from the result of the locking statement the
