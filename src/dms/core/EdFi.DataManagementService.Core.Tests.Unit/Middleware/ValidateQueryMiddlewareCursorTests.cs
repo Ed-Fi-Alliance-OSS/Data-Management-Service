@@ -937,11 +937,12 @@ public class ValidateQueryMiddlewareCursorTests
         /// either way and nothing rejects the second case.
         /// </summary>
         /// <remarks>
-        /// The range assertion is the load-bearing one: the request window is folded into the
-        /// token's bounds rather than replacing them, so what bounds the walk after the request
-        /// stops naming a maximum is whatever ceiling the token itself carries. This case pins the
-        /// finite one, which reaches production only from a non-final /partitions token - such a
-        /// walk stays inside its slice. A walk started from an ordinary request carries
+        /// The range assertion is the load-bearing one: this step carries the token's bounds through
+        /// unchanged rather than letting the request window replace them, which is what leaves the
+        /// planner a ceiling to fold against once the request stops naming a maximum. The fold itself
+        /// happens in the planner, not here. The finite ceiling this case carries reaches production
+        /// only from a non-final /partitions token - such a walk stays inside its slice. A walk
+        /// started from an ordinary request carries
         /// long.MaxValue instead, and folding a min-only window into that leaves no ceiling at all,
         /// so it runs on to the newest version in the copy;
         /// RelationalQueryPageKeysetPlannerTests.It_should_leave_a_min_only_window_unbounded_above_on_an_open_cursor_range

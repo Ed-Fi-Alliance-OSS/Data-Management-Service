@@ -12,7 +12,9 @@ namespace EdFi.DataManagementService.Core.External.Model;
 /// <remarks>
 /// The units are anchor-dependent: <c>ContentVersion</c> for a max-bearing change-version window
 /// against any data source, and for any windowed shape served from a frozen snapshot;
-/// <c>DocumentId</c> otherwise. The range itself does not record which — the request's resolved
+/// <c>DocumentId</c> otherwise, and <c>DocumentId</c> throughout while the
+/// <c>UseLegacyDocumentIdOrderingForChangeQueries</c> switch is set. The range itself does not
+/// record which — the request's resolved
 /// <see cref="PageOrderingMode"/> does, and the page token carries a marker so a replayed range
 /// cannot be read against the wrong column.
 /// <para>

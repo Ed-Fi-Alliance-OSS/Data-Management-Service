@@ -32,7 +32,8 @@ namespace EdFi.DataManagementService.Core.Paging;
 /// <para>
 /// The marker names the anchor, not the window shape. The two coincide against a mutable source,
 /// where only a max-bearing window resolves <c>ContentVersion</c>, which is why marker equality also
-/// rejects a mid-walk <c>maxChangeVersion</c> change there. Against a frozen snapshot every windowed
+/// rejects adding or dropping <c>maxChangeVersion</c> mid-walk there — a move to a different ceiling
+/// value leaves the window max-bearing, keeps the anchor, and is served. Against a frozen snapshot every windowed
 /// shape resolves <c>ContentVersion</c>, so the marker matches across such a change and the replay is
 /// served; the token's own bounds go on governing the walk. Restoring a rejection there would take a
 /// third marker value rather than a bounds comparison, because a token's maximum is also how a

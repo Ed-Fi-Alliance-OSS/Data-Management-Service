@@ -154,9 +154,11 @@ result set from that token's position, like any other filter change.
 
 A walk served from a snapshot is a partial exception, because there a min-only
 window and a bounded one are walked in the same change-version order. The
-exception holds only while the window keeps at least one bound: moving between
-`minChangeVersion` alone and `minChangeVersion` with `maxChangeVersion` is served
-rather than rejected. Adding a ceiling to a walk that carried no window at all,
+exception holds only while the window keeps at least one bound, and it covers any
+move between two such windows: `minChangeVersion` alone and `minChangeVersion`
+with `maxChangeVersion`, `maxChangeVersion` alone and either of those, and the
+reverse of each. All are served rather than rejected. Adding a ceiling to a walk
+that carried no window at all,
 and dropping the ceiling from a walk that carried `maxChangeVersion` alone, are
 still rejected there, because each of those leaves the token naming positions in
 a column the new request no longer walks.
@@ -168,7 +170,9 @@ too, and it widens the walk rather than narrowing it — the request no longer
 names a ceiling, and the token does not carry the one the walk started under, so
 the walk runs on to the end of the range the token names. For a walk started from
 an ordinary request that is the newest version in the copy; for a walk started
-from a `/partitions` token it is the end of that segment. You read more than a
+from a `/partitions` token it is the end of that segment — except for the last
+token of the set, whose range is unbounded above, so that walk also runs on to
+the newest version in the copy. You read more than a
 bounded window describes, with nothing in the response to say so. Neither
 direction returns a document twice or skips one. Repeat the window unchanged, as
 above, and neither arises.
@@ -176,7 +180,11 @@ above, and neither arises.
 A rejection of the same kind applies to asking for a snapshot, but only
 for a window of `minChangeVersion` alone. `Use-Snapshot: true` is the
 request header that asks for a point-in-time copy of the data instead of
-current data, where the deployment offers one. Where it does not — where the
+current data, where the deployment offers one. The header is read as a boolean:
+`true` asks for the snapshot, in any casing and with surrounding whitespace
+allowed. Every other value — including `yes`, `1`, and `on` — reads as a request
+for current data, silently and with no error, so send the literal `true`.
+Where the deployment offers none — where the
 data store has no `Snapshot` derivative configured — `Use-Snapshot: true` is
 answered `404` with `Snapshot not found.` before any paging validation runs,
 so none of the rules in this paragraph are reached. A snapshot walks a min-only

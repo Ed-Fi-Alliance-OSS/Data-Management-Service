@@ -151,12 +151,14 @@ internal static class CursorRequestValidator
 
         // Still phase 0: a token whose anchor disagrees with the one this request resolved decodes
         // cleanly but names bounds in the wrong units, which makes it no more replayable than a
-        // malformed one. The window is not the only way the two can disagree: the anchor is resolved
-        // from the window and the data store serving the request, so a min-only token also stops
-        // matching when the request changes data source. The same answer in every direction - a
-        // windowed token replayed without the window, an unwindowed token replayed with one, and a
-        // min-only token replayed against a different source - because a token is opaque and none of
-        // them tells the client anything it could act on beyond "start over".
+        // malformed one. What is compared is the resolved anchor, never the request shape, so a
+        // change that leaves the anchor where it was is served and goes on walking the token's own
+        // range: a move to a different maxChangeVersion value, and on a snapshot a move between any
+        // two windows that each keep a bound. Only a change that flips the anchor is rejected, and
+        // the window is not the only input that can flip it - the anchor is resolved from the window
+        // and the data store serving the request, so a min-only token also stops matching when the
+        // request changes data source. The same answer whichever input moved, because a token is
+        // opaque and none of them tells the client anything it could act on beyond "start over".
         //
         // A request whose window did not parse resolves no anchor, so there is nothing to disagree
         // with and this comparison is skipped. Reporting a perfectly replayable token as invalid

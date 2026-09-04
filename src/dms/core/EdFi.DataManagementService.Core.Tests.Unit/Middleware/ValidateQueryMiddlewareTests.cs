@@ -1567,8 +1567,8 @@ public class ValidateQueryMiddlewareTests
         /// here: this rejection is taken at the change-version parameter-validation exit, which runs
         /// before the PageOrderingMode assignment, so PageOrderingMode still carries its DocumentId
         /// default whatever the snapshot rule would have returned - which is why asserting that
-        /// default proves nothing. That is a
-        /// property of this exit and not of rejection in general: the filter-validation rejections
+        /// default proves nothing. That is a property of this exit and not of rejection in general:
+        /// the filter-validation rejections
         /// below the assignment do carry a resolved anchor. A regression that resolved an anchor
         /// from the faulty window would resolve DocumentId from its surviving bounds, disagree with
         /// this token, and answer with the invalid-token message instead of the one asserted here.

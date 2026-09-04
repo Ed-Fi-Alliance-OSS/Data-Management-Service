@@ -60,8 +60,9 @@ acceptance gates instead of incorporating it into those gates retroactively.
 - **Record the ordering mode in each token.** Tokens do not store the request filters. The server
   infers anchor semantics from the filters that clients repeat on each request. Without an
   ordering marker, changing `maxChangeVersion` mid-walk could reinterpret a `ContentVersion`
-  anchor as a `DocumentId`. Reject a marker/filter mismatch with the standard invalid-token
-  response.
+  anchor as a `DocumentId`. Reject a token whose marker disagrees with the anchor the request
+  resolves — from its change-version window *and* the data store serving it — with the standard
+  invalid-token response. A change that leaves the anchor where it was is served.
 - **Balance windowed partitions by `ContentVersion`.** For a max-bearing `/partitions` request,
   calculate balanced `ContentVersion` subranges across the filtered and authorized candidate
   set. Include the ordering-mode marker in every partition token.
@@ -95,8 +96,9 @@ acceptance gates instead of incorporating it into those gates retroactively.
 ## Acceptance Evidence and Test Expectations
 
 - Token round-trip tests cover the ordering marker and reject mismatches in both directions:
-  replaying a windowed token without `maxChangeVersion`, and replaying a `DocumentId` token with
-  `maxChangeVersion`.
+  replaying a max-bearing token without `maxChangeVersion`, and replaying a `DocumentId` token with
+  `maxChangeVersion`. A min-only token replayed without its window is *not* a mismatch against a
+  mutable source — both shapes resolve `DocumentId` there — so the accepting cases are covered too.
 - PostgreSQL and SQL Server integration tests show that a bounded cursor walk returns every
   member of a stable fixture exactly once. Include concurrent updates that move rows beyond the
   window maximum.

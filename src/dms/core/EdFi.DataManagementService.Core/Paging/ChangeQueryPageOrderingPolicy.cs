@@ -19,7 +19,9 @@ namespace EdFi.DataManagementService.Core.Paging;
 /// min-only window orders by <c>ContentVersion</c> as well and the planner fix reaches every
 /// windowed shape (DMS-1396). Callers resolve through <see cref="ResolveFor"/>, which picks the entry
 /// point from the effective data-store target; the two entry points stay target-blind, so each rule
-/// can be read and tested on its own.
+/// can be read and tested on its own. Every rule below is conditional on the legacy-ordering switch
+/// this type is constructed with: when <c>useLegacyDocumentIdOrdering</c> is set, both entry points
+/// return <c>DocumentId</c> for every window shape on every data store, and none of the rest applies.
 /// </summary>
 /// <remarks>
 /// What makes a max-bearing window safe is that an update pushes the row past the maximum and out of

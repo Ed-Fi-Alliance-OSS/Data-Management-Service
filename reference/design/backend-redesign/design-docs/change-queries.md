@@ -2011,20 +2011,22 @@ The generated SQL used to fulfill a `GET /data/v3/ed-fi/grades?minChangeVersion=
 
 ```sql
 DROP TABLE IF EXISTS "page";
--- Conditional: under a ContentVersion anchor - which this max-bearing window resolves - the keyset
--- also carries a nullable "ContentVersion" column, and the page_ids selection and the insert column
--- list below name it as well. See "Page-selection ordering" below.
-CREATE TEMP TABLE "page" ("DocumentId" bigint PRIMARY KEY) ON COMMIT DROP;
+-- "Ordinal" is unconditional and is emitted on every keyset table, anchored or not.
+-- "ContentVersion" is conditional: it appears under a ContentVersion anchor, which this max-bearing
+-- window resolves, and the page_ids selection and the insert column list below then name it as well.
+-- Under a DocumentId anchor all three lines drop back to "DocumentId" alone plus "Ordinal".
+-- See "Page-selection ordering" below.
+CREATE TEMP TABLE "page" ("DocumentId" bigint PRIMARY KEY, "Ordinal" int NULL, "ContentVersion" bigint NULL) ON COMMIT DROP;
 
 WITH page_ids AS (
-    SELECT r."DocumentId"
+    SELECT r."DocumentId", r."ContentVersion" -- Conditional: the anchor column, see below
     FROM "edfi"."Grade" r
     WHERE r.ContentVersion >= @MinChangeVersion AND r.ContentVersion <= @MaxChangeVersion -- Range filter on ContentVersion
     ORDER BY r."ContentVersion" ASC -- Conditional: see "Page-selection ordering" below
     LIMIT @limit OFFSET @offset
 )
-INSERT INTO "page" ("DocumentId")
-SELECT "DocumentId" 
+INSERT INTO "page" ("DocumentId", "ContentVersion")
+SELECT "DocumentId", "ContentVersion"
 FROM page_ids;
 
 -- The rest of the reconstitution queries are omitted for brevity.
@@ -2035,7 +2037,7 @@ Descriptor GET-many page selection starts from `dms.Descriptor`. For a request t
 authoritative `ResourceKeyId` and reads the mirrored `ContentVersion` from the same table:
 
 ```sql
-SELECT r."DocumentId"
+SELECT r."DocumentId", r."ContentVersion"
 FROM "dms"."Descriptor" r
 WHERE r."ResourceKeyId" = @resourceKeyId
   AND r."ContentVersion" >= @minChangeVersion
@@ -2134,8 +2136,8 @@ Client-visible behavior:
 - A walk of a min-only window belongs to the source that issued its first page. Because the two
   sources anchor that window differently, a continuation token issued by one is not replayable
   against the other, and a client that changes data source mid-walk is answered with the
-  invalid-page-token response exactly as a client that changed its window would be. A client must
-  therefore keep asking for the same data source for the whole walk.
+  invalid-page-token response exactly as a client whose window change flips the anchor would be. A
+  client must therefore keep asking for the same data source for the whole walk.
 - `AppSettings:UseLegacyDocumentIdOrderingForChangeQueries` defaults to `false`. Setting it to
   `true` restores `DocumentId` ordering and `DocumentId` anchoring for all clients in the
   deployment. This setting is an operator escape hatch, not a per-client option.
@@ -2147,8 +2149,10 @@ paging shape: a page hands out a token marked with the anchor it was cut on, and
 resolved a different anchor rejects that token, so a split would break walks the rule itself created.
 A request that resolves the `ContentVersion` anchor orders and anchors all three by that column, and
 the tokens it issues carry `ContentVersion` bounds and are marked as such. A client replaying one
-under a different window — or, for a min-only window, against a different data source — is rejected
-rather than served rows read against the wrong column. See
+under a window that resolves a *different anchor* — or, for a min-only window, against a different
+data source — is rejected rather than served rows read against the wrong column. A change that leaves
+the anchor where it was is served instead: a move to a different `maxChangeVersion` value, and on a
+snapshot a move between any two windows that each keep a bound. See
 [partitioned-cursor-paging.md](partitioned-cursor-paging.md) for the token contract, the anchored
 cursor and partition SQL, and the consistency consequences.
 

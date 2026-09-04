@@ -23,7 +23,10 @@ public enum PageOrderingMode
     /// <summary>
     /// Order page selection by the root table's mirrored <c>ContentVersion</c> column. Selected for a
     /// max-bearing change-version window against any data store, and for every windowed shape —
-    /// min-only included — against a frozen snapshot; see <c>ChangeQueryPageOrderingPolicy</c>.
+    /// min-only included — against a frozen snapshot; see <c>ChangeQueryPageOrderingPolicy</c>. The
+    /// legacy-ordering switch overrides all of it: with
+    /// <c>UseLegacyDocumentIdOrderingForChangeQueries</c> set, every shape resolves
+    /// <see cref="DocumentId" /> on every data store and this member is never selected.
     /// </summary>
     ContentVersion,
 }

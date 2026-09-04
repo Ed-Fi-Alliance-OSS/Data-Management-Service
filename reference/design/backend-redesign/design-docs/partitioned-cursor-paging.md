@@ -199,12 +199,16 @@ parsing. A client that sent `pageSize=` meant to send a page size; it should be 
 **Phase 0 — token decode**
 
 - `pageToken` present and not decodable: `The page token provided was invalid.`
-- `pageToken` decodable, but its ordering marker disagrees with the anchor the request's
-  change-version window resolves: the same message. A token whose bounds are read against the wrong
-  column is no more replayable than a malformed one, and the answer is identical in both directions
-  — a `ContentVersion`-marked token replayed without `maxChangeVersion`, and a `DocumentId`-marked
-  token replayed with it. The token is opaque, so neither direction could tell the client anything
-  it could act on beyond starting the walk over.
+- `pageToken` decodable, but its ordering marker disagrees with the anchor the request resolves —
+  from its change-version window *and* the data store serving it, per
+  [change-queries.md](change-queries.md#page-selection-ordering): the same message. A token whose
+  bounds are read against the wrong column is no more replayable than a malformed one, and the
+  answer is identical in both directions — against a mutable source, a `ContentVersion`-marked token
+  replayed without `maxChangeVersion`, and a `DocumentId`-marked token replayed with it. A change
+  that leaves the anchor where it was is served instead: a move to a different `maxChangeVersion`
+  value, and on a snapshot a move between any two windows that each keep a bound. The token is
+  opaque, so no rejected direction could tell the client anything it could act on beyond starting
+  the walk over.
 
 **Phase 1 — mixed-mode conflicts**
 

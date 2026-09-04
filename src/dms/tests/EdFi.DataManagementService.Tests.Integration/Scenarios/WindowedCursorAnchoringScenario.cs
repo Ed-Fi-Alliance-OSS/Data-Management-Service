@@ -299,8 +299,12 @@ internal static class WindowedCursorAnchoringScenario
 
     /// <summary>
     /// A partition token is walked by the same cursor path a page token is, so it carries the same
-    /// anchor marker and the same replay rule: a windowed token replayed without its window is answered
-    /// with the standard invalid-token response rather than with bounds read against the wrong column.
+    /// anchor marker and the same replay rule: a replay whose request resolves a different anchor than
+    /// the token was cut under is answered with the standard invalid-token response rather than with
+    /// bounds read against the wrong column. This window is max-bearing and this walk is on current
+    /// data, so dropping the window flips the anchor to <c>DocumentId</c> and is rejected. Dropping it
+    /// from a min-only window would not: that shape already resolves <c>DocumentId</c> against a
+    /// mutable source, as <see cref="It_keeps_the_document_id_anchor_for_a_min_only_walk" /> shows.
     /// </summary>
     public static async Task It_rejects_a_windowed_partition_token_replayed_without_the_window(
         ApiIntegrationHarness harness

@@ -153,7 +153,8 @@ internal class RequestInfo(
     /// The window alone does not determine it. The same min-only window resolves DocumentId against
     /// live data, where an update can move a row later within a still-open window, and ContentVersion
     /// against a frozen snapshot, where nothing moves. A read replica is not frozen and keeps the
-    /// live rule.
+    /// live rule. Both inputs are overridden by the UseLegacyDocumentIdOrderingForChangeQueries
+    /// switch, which resolves DocumentId for every window shape on every data store.
     /// </para>
     /// <para>
     /// Only the live GET-many and /partitions pipelines act on it. The Change Query pipeline composes
