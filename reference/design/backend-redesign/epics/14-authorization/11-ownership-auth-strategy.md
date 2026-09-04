@@ -63,3 +63,15 @@ not evaluate `OwnershipTokenIds`, because no stored ownership token exists yet; 
 - PostgreSQL and SQL Server are supported; SQL Server uses parameterized `IN` below 2,000 ownership tokens and fails at 2,000 or more without a TVP.
 
 NOTE: GET-many ownership filtering is implemented by [DMS-1410](https://edfi.atlassian.net/browse/DMS-1410) in `11b-ownership-auth-get-many.md`.
+
+## Implementation Decisions
+
+- Descriptor ownership: stamping is in scope, enforcement is not. Descriptor creates stamp
+  `CreatedByOwnershipTokenId`, but descriptor GET-by-id, POST, PUT, and DELETE configured with
+  `OwnershipBased` stay fail-closed at `501` in DMS-1060.
+- POST create token cap: a POST that resolves to create does not evaluate `OwnershipTokenIds`, because
+  there is no stored ownership token to authorize. The 2,000-token defensive cap applies after target
+  resolution only when POST resolves to update, and then fails closed before DML.
+- GET-by-id batching: GET-by-id runs ownership as one added command ahead of hydration and
+  reconstitution. This is an accepted deviation from sharing the operation's database roundtrip and is
+  recorded in `reference/design/backend-redesign/epics/07-relational-write-path/08-write-roundtrip-batching.md`.
