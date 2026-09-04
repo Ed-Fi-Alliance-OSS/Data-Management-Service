@@ -355,8 +355,10 @@ internal class QueryRequestHandler(
     /// stopped on an empty body would stop early. A page that selected nothing has nothing to anchor a
     /// continuation on. Ordering is no longer a reason to withhold one: the anchor the page was
     /// selected on is stamped on the token, so a ContentVersion-ordered page hands out a range in its
-    /// own units and a client replaying it under a different window is rejected rather than served the
-    /// wrong rows. At <see cref="long.MaxValue"/> there is no next range to name, so the codec reports
+    /// own units and a client whose replay resolves a different anchor — from its change-version
+    /// window or from the data store serving it — is rejected rather than served the wrong rows. A
+    /// replay that resolves the same anchor is served. At <see cref="long.MaxValue"/> there is no next
+    /// range to name, so the codec reports
     /// no token and the header is omitted.
     /// </remarks>
     private static bool TryCreateNextPageToken(

@@ -35,7 +35,8 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// <see cref="External.Model.ChangeVersionRange.None"/> on the relational seam.
 /// </param>
 /// <param name="PageOrderingMode">
-/// The page anchor Core resolved from the change-version window. Required rather than defaulted, and
+/// The page anchor Core resolved from the change-version window and the data store serving the
+/// request. Required rather than defaulted, and
 /// placed ahead of the optional parameters to stay that way: a default would let a construction site
 /// that forgot it keep compiling while anchoring a ContentVersion-ordered page on DocumentId, which
 /// hands out a continuation that skips rows. This is the same rule the descriptor request records

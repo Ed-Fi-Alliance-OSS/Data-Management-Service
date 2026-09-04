@@ -693,7 +693,11 @@ public class PipelineOrderingTests
                 TraceId: new TraceId("pipeline-composition"),
                 RouteQualifiers: []
             );
-            RequestInfo requestInfo = new(frontendRequest, RequestMethod.GET, No.ServiceProvider);
+            RequestInfo requestInfo = new(
+                frontendRequest,
+                RequestMethod.GET,
+                TestHelper.ServiceProviderWithEffectiveTarget()
+            );
 
             await validation.Execute(requestInfo, TestHelper.NullNext);
 
@@ -839,6 +843,21 @@ public class PipelineOrderingTests
             "CreateDeleteByIdPipeline",
         ];
 
+        /// <summary>
+        /// Every zero-argument pipeline factory on <see cref="ApiService" />, found by reflection so
+        /// that a gate over "every pipeline that does X" cannot miss one composed later.
+        /// </summary>
+        private static IEnumerable<string> PipelineFactoryMethodNames() =>
+            typeof(ApiService)
+                .GetMethods(BindingFlags.NonPublic | BindingFlags.Instance)
+                .Where(method =>
+                    method.Name.StartsWith("Create", StringComparison.Ordinal)
+                    && method.Name.EndsWith("Pipeline", StringComparison.Ordinal)
+                    && method.GetParameters().Length == 0
+                    && method.ReturnType == typeof(PipelineProvider)
+                )
+                .Select(method => method.Name);
+
         private static DerivativeRoutingPolicy PolicyOf(string factoryMethodName)
         {
             var steps = GetSteps(BuildRoutedResourceApiService(), factoryMethodName);
@@ -877,6 +896,71 @@ public class PipelineOrderingTests
                 .BeLessThan(
                     FirstIndexOfPhase(stepTypes, DatabaseValidationPhase),
                     "database validation must describe the database the request is served from"
+                );
+        }
+
+        /// <summary>
+        /// The query-validation step resolves the page anchor from the change-version window and the
+        /// effective target, reading the target off the request scope with GetRequiredService. That
+        /// throws when no target has been recorded, so composing validation ahead of selection would
+        /// fault every request these pipelines serve. Pinned structurally because the failure is a
+        /// composition-order mistake, not one any single step's own tests could catch.
+        /// </summary>
+        /// <remarks>
+        /// The set is derived rather than listed, for the same reason
+        /// <see cref="It_covers_every_pipeline_that_performs_database_validation" /> derives its own: a
+        /// pipeline composed later inherits the ordering assertion instead of needing a case remembered
+        /// for it. The database-phase gates do not cover this on their own — a pipeline that validates a
+        /// query without also validating the database is policed by neither of them.
+        /// </remarks>
+        [Test]
+        public void It_selects_a_target_before_query_validation()
+        {
+            Type[] queryValidationSteps =
+            [
+                typeof(ValidateQueryMiddleware),
+                typeof(ValidatePartitionQueryMiddleware),
+            ];
+
+            string[] expectedQueryValidatingFactories =
+            [
+                "CreateQueryPipeline",
+                "CreateGetPartitionsPipeline",
+                "CreateGetTrackedChangesPipeline",
+            ];
+
+            List<string> queryValidatingFactories = [];
+
+            foreach (string factoryMethodName in PipelineFactoryMethodNames())
+            {
+                var stepTypes = GetRoutedResourcePipelineStepTypes(factoryMethodName);
+                var validationIndex = stepTypes.FindIndex(queryValidationSteps.Contains);
+
+                if (validationIndex < 0)
+                {
+                    continue;
+                }
+
+                queryValidatingFactories.Add(factoryMethodName);
+
+                var selectionIndex = stepTypes.IndexOf(typeof(SelectEffectiveDataStoreTargetMiddleware));
+
+                selectionIndex.Should().BeGreaterThanOrEqualTo(0, $"{factoryMethodName} selects a target");
+                selectionIndex
+                    .Should()
+                    .BeLessThan(
+                        validationIndex,
+                        $"{factoryMethodName} resolves the page anchor from the effective target, "
+                            + "which must already be recorded"
+                    );
+            }
+
+            queryValidatingFactories
+                .Should()
+                .BeEquivalentTo(
+                    expectedQueryValidatingFactories,
+                    "the ordering assertion above applies to whatever composes a query-validation step; "
+                        + "this list is what makes a pipeline newly acquiring one visible"
                 );
         }
 
@@ -980,15 +1064,7 @@ public class PipelineOrderingTests
         {
             string[] policed = [.. ReadFactories, .. MutationFactories, "CreateGetTokenInfoPipeline"];
 
-            var databaseReadingFactories = typeof(ApiService)
-                .GetMethods(BindingFlags.NonPublic | BindingFlags.Instance)
-                .Where(method =>
-                    method.Name.StartsWith("Create", StringComparison.Ordinal)
-                    && method.Name.EndsWith("Pipeline", StringComparison.Ordinal)
-                    && method.GetParameters().Length == 0
-                    && method.ReturnType == typeof(PipelineProvider)
-                )
-                .Select(method => method.Name)
+            var databaseReadingFactories = PipelineFactoryMethodNames()
                 .Where(name =>
                     GetRoutedResourcePipelineStepTypes(name)
                         .Contains(typeof(ValidateDatabaseFingerprintMiddleware))

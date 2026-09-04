@@ -32,9 +32,11 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 /// A max-bearing window is a monotonic-escape window: an update pushes a row past the maximum and out
 /// of the window entirely, rather than moving it past the anchor while it remains eligible. That is the
 /// property the anchor rests on, and the mid-walk mutation cases below are what exercise it against a
-/// real database rather than against a described one. The min-only case is its counterpart: an
-/// open-ended window has no escape, so it keeps the <c>DocumentId</c> anchor, and the same mid-walk
-/// update that is safe here would return a row twice there.
+/// real database rather than against a described one. The min-only case is its counterpart against
+/// current data: an open-ended window has no escape there, so it keeps the <c>DocumentId</c> anchor,
+/// and the same mid-walk update that is safe here would return a row twice. A frozen snapshot admits
+/// no such update at all, so it anchors every windowed shape on <c>ContentVersion</c>, min-only
+/// included.
 /// </para>
 /// </summary>
 internal static class WindowedCursorAnchoringScenario
@@ -192,8 +194,9 @@ internal static class WindowedCursorAnchoringScenario
     }
 
     /// <summary>
-    /// A min-only window keeps the <c>DocumentId</c> anchor, and that is what makes a mid-walk update
-    /// safe there. The window is open above, so an update leaves the row eligible; anchored on
+    /// A min-only window keeps the <c>DocumentId</c> anchor against current data, and that is what
+    /// makes a mid-walk update safe there. The window is open above, so an update leaves the row
+    /// eligible; anchored on
     /// <c>ContentVersion</c> the row would move from behind the walk to ahead of it and be returned a
     /// second time, while its <c>DocumentId</c> does not move at all.
     /// </summary>
@@ -296,8 +299,12 @@ internal static class WindowedCursorAnchoringScenario
 
     /// <summary>
     /// A partition token is walked by the same cursor path a page token is, so it carries the same
-    /// anchor marker and the same replay rule: a windowed token replayed without its window is answered
-    /// with the standard invalid-token response rather than with bounds read against the wrong column.
+    /// anchor marker and the same replay rule: a replay whose request resolves a different anchor than
+    /// the token was cut under is answered with the standard invalid-token response rather than with
+    /// bounds read against the wrong column. This window is max-bearing and this walk is on current
+    /// data, so dropping the window flips the anchor to <c>DocumentId</c> and is rejected. Dropping it
+    /// from a min-only window would not: that shape already resolves <c>DocumentId</c> against a
+    /// mutable source, as <see cref="It_keeps_the_document_id_anchor_for_a_min_only_walk" /> shows.
     /// </summary>
     public static async Task It_rejects_a_windowed_partition_token_replayed_without_the_window(
         ApiIntegrationHarness harness

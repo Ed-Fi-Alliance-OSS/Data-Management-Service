@@ -11,9 +11,9 @@ namespace EdFi.DataManagementService.Core.External.Model;
 /// </summary>
 /// <remarks>
 /// Lives in <c>Core.External</c> because both sides of the request need it and there is only one
-/// rule: Core resolves the mode from the change-version window and stamps it on the request and on
-/// the token, and the backend compiles the candidate SQL against the column it names. A Core-side
-/// twin plus a mapping function would be two places for that one rule to drift.
+/// rule: Core resolves the mode from the change-version window and the data store serving it, stamps
+/// it on the request and on the token, and the backend compiles the candidate SQL against the column
+/// it names. A Core-side twin plus a mapping function would be two places for that one rule to drift.
 /// </remarks>
 public enum PageOrderingMode
 {
@@ -21,8 +21,12 @@ public enum PageOrderingMode
     DocumentId,
 
     /// <summary>
-    /// Order page selection by the root table's mirrored <c>ContentVersion</c> column. Selected
-    /// only for max-bearing change-version windows; see <c>ChangeQueryPageOrderingPolicy</c>.
+    /// Order page selection by the root table's mirrored <c>ContentVersion</c> column. Selected for a
+    /// max-bearing change-version window against any data store, and for every windowed shape —
+    /// min-only included — against a frozen snapshot; see <c>ChangeQueryPageOrderingPolicy</c>. The
+    /// legacy-ordering switch overrides all of it: with
+    /// <c>UseLegacyDocumentIdOrderingForChangeQueries</c> set, every shape resolves
+    /// <see cref="DocumentId" /> on every data store and this member is never selected.
     /// </summary>
     ContentVersion,
 }

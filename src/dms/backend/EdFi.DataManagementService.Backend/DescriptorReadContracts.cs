@@ -155,7 +155,9 @@ public sealed record DescriptorQueryRequest
 
     /// <summary>
     /// The paging choice for descriptor GET-many execution: traditional limit/offset, or cursor
-    /// selection over an inclusive DocumentId range.
+    /// selection over an inclusive anchor range. A cursor range is expressed in the units of
+    /// <see cref="PageOrderingMode" />, not in <c>DocumentId</c> units unless that is the anchor the
+    /// request resolved.
     /// </summary>
     public CollectionPaging Paging { get; init; }
 
@@ -191,8 +193,9 @@ public sealed record DescriptorQueryRequest
     /// <summary>
     /// The page anchor: the ordering key descriptor page selection walks, and therefore the units of
     /// this request's cursor bounds and of the continuation token Core issues for its response.
-    /// Resolved by Core from <see cref="ChangeVersionRange" /> and carried here rather than re-derived,
-    /// so descriptor pages and regular-resource pages of the same window anchor identically.
+    /// Resolved by Core from <see cref="ChangeVersionRange" /> and the kind of data store serving the
+    /// request, and carried here rather than re-derived, so descriptor pages and regular-resource
+    /// pages of the same window on the same source anchor identically.
     /// </summary>
     public PageOrderingMode PageOrderingMode { get; init; }
 
@@ -303,8 +306,9 @@ public sealed record DescriptorPartitionRequest
     /// <summary>
     /// The boundary anchor: the ordering key descriptor partitions are ranked, sized, and cut on, and
     /// therefore the units of every range this request returns. Resolved by Core from
-    /// <see cref="ChangeVersionRange" /> by the same rule a page of the same window resolves, so a
-    /// returned range is always replayable as a page.
+    /// <see cref="ChangeVersionRange" /> and the kind of data store serving the request, by the same
+    /// rule a page of the same window and source resolves, so a returned range is always replayable
+    /// as a page.
     /// </summary>
     public PageOrderingMode PageOrderingMode { get; init; }
 

@@ -796,7 +796,8 @@ public class Given_A_Postgresql_DescriptorRead_Query_Request
         success.HighestSelectedAnchor.Should().NotBeNull();
     }
 
-    // A min-only window keeps DocumentId ordering, so a cursor page inside it continues normally.
+    // Against current data a min-only window keeps DocumentId ordering, so a cursor page inside it
+    // continues normally. A frozen snapshot orders every windowed shape by ContentVersion.
     [Test]
     public async Task It_composes_a_min_only_change_version_window_with_the_descriptor_cursor_range()
     {
@@ -837,9 +838,12 @@ public class Given_A_Postgresql_DescriptorRead_Query_Request
         success.HighestSelectedAnchor.Should().BeNull();
     }
 
-    // A max-bearing window leaves a cursor page and a traditional page anchored differently, and the
-    // contrast is observed here on a real descriptor query: the cursor page reports a DocumentId, the
-    // traditional page the window's highest ContentVersion.
+    // The two page shapes are observed in different anchor units on one real descriptor query: the
+    // cursor call leaves PageOrderingMode at its DocumentId default and reports a DocumentId, while
+    // the traditional call passes ContentVersion explicitly and reports the window's highest one. The
+    // window no longer decides that on its own - a max-bearing window resolves ContentVersion for
+    // either page shape - so the contrast here comes from what each call requests, not from the
+    // window they share.
     [Test]
     public async Task It_composes_a_max_bearing_change_version_window_with_the_descriptor_cursor_range()
     {

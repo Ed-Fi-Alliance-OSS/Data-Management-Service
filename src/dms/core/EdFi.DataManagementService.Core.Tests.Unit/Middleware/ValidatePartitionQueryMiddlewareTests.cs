@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
@@ -49,7 +50,13 @@ public class ValidatePartitionQueryMiddlewareTests
             .WithEndProject()
             .ToApiSchemaDocuments();
 
-    private static RequestInfo RequestInfoFor(params (string Key, string Value)[] queryParameters)
+    private static RequestInfo RequestInfoFor(params (string Key, string Value)[] queryParameters) =>
+        RequestInfoFor(EffectiveTargetKind.Primary, queryParameters);
+
+    private static RequestInfo RequestInfoFor(
+        EffectiveTargetKind targetKind,
+        params (string Key, string Value)[] queryParameters
+    )
     {
         FrontendRequest frontendRequest = new(
             Path: "/ed-fi/academicWeeks/partitions",
@@ -65,7 +72,11 @@ public class ValidatePartitionQueryMiddlewareTests
             RouteQualifiers: []
         );
 
-        RequestInfo requestInfo = new(frontendRequest, RequestMethod.GET, No.ServiceProvider)
+        RequestInfo requestInfo = new(
+            frontendRequest,
+            RequestMethod.GET,
+            ServiceProviderWithEffectiveTarget(targetKind)
+        )
         {
             ApiSchemaDocuments = NewApiSchemaDocuments(),
             PathComponents = new(
@@ -351,6 +362,24 @@ public class ValidatePartitionQueryMiddlewareTests
     [Parallelizable]
     public class Given_An_Accepted_Request : ValidatePartitionQueryMiddlewareTests
     {
+        private static async Task<RequestInfo> ExecuteAgainst(
+            EffectiveTargetKind targetKind,
+            bool useLegacyDocumentIdOrdering,
+            params (string Key, string Value)[] queryParameters
+        )
+        {
+            RequestInfo requestInfo = RequestInfoFor(targetKind, queryParameters);
+
+            await new ValidatePartitionQueryMiddleware(
+                NullLogger.Instance,
+                DefaultPartitionCount,
+                NoOpCollectionPagingTelemetry.Instance,
+                useLegacyDocumentIdOrdering
+            ).Execute(requestInfo, NullNext);
+
+            return requestInfo;
+        }
+
         [Test]
         public async Task It_applies_the_client_count_when_one_was_supplied()
         {
@@ -388,9 +417,12 @@ public class ValidatePartitionQueryMiddlewareTests
 
         /// <summary>
         /// The boundary anchor, resolved by the same rule GET-many resolves its page anchor by: a
-        /// max-bearing window balances boundaries by ContentVersion, every other window shape keeps
-        /// DocumentId. Resolved from the parsed window rather than from parameter presence, so a
-        /// present-but-blank maximum is not max-bearing.
+        /// max-bearing window balances boundaries by ContentVersion, and against current data - which
+        /// is the source this fixture holds fixed - every other window shape keeps DocumentId.
+        /// Resolved from the parsed window rather than from parameter presence, so a
+        /// present-but-blank maximum is not max-bearing. A frozen snapshot resolves ContentVersion
+        /// for a min-only window as well; that half of the rule is pinned by the target-varying
+        /// fixtures further down this file.
         /// </summary>
         [TestCase("maxChangeVersion", "200", PageOrderingMode.ContentVersion, TestName = "max only")]
         [TestCase("minChangeVersion", "100", PageOrderingMode.DocumentId, TestName = "min only")]
@@ -434,6 +466,84 @@ public class ValidatePartitionQueryMiddlewareTests
                 NoOpCollectionPagingTelemetry.Instance,
                 _useLegacyDocumentIdOrderingForChangeQueries: true
             ).Execute(requestInfo, NullNext);
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+        }
+
+        /// <summary>
+        /// Boundaries are cut in the same units the walk that consumes them reads, so /partitions
+        /// resolves its anchor by the same two inputs GET-many does. Against a frozen snapshot every
+        /// windowed shape balances on ContentVersion, min-only included; an unfiltered request keeps
+        /// DocumentId, because snapshot routing alone must not change how a collection is walked.
+        /// </summary>
+        [TestCase(
+            "minChangeVersion",
+            "100",
+            PageOrderingMode.ContentVersion,
+            TestName = "snapshot, min only"
+        )]
+        [TestCase(
+            "maxChangeVersion",
+            "200",
+            PageOrderingMode.ContentVersion,
+            TestName = "snapshot, max only"
+        )]
+        [TestCase("maxChangeVersion", "", PageOrderingMode.DocumentId, TestName = "snapshot, blank maximum")]
+        [TestCase("schoolId", "255901", PageOrderingMode.DocumentId, TestName = "snapshot, no window")]
+        public async Task It_resolves_the_boundary_anchor_from_the_window_against_a_snapshot(
+            string parameter,
+            string value,
+            PageOrderingMode expected
+        )
+        {
+            RequestInfo requestInfo = await ExecuteAgainst(
+                EffectiveTargetKind.Snapshot,
+                useLegacyDocumentIdOrdering: false,
+                (parameter, value)
+            );
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(expected);
+        }
+
+        /// <summary>
+        /// Only a frozen source qualifies. A read replica keeps applying changes, so a min-only
+        /// boundary set cut there carries the live anchor exactly as the primary's does.
+        /// </summary>
+        [TestCase(EffectiveTargetKind.Primary, TestName = "primary keeps the live rule")]
+        [TestCase(EffectiveTargetKind.ReadReplica, TestName = "read replica keeps the live rule")]
+        public async Task It_anchors_min_only_boundaries_on_the_document_id_for_an_unfrozen_target(
+            EffectiveTargetKind targetKind
+        )
+        {
+            RequestInfo requestInfo = await ExecuteAgainst(
+                targetKind,
+                useLegacyDocumentIdOrdering: false,
+                ("minChangeVersion", "100")
+            );
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+        }
+
+        /// <summary>
+        /// The kill switch overrides the snapshot branch as well, so a legacy deployment cuts
+        /// DocumentId boundaries whichever database served the request.
+        /// </summary>
+        [TestCase("minChangeVersion", "100", TestName = "legacy switch, snapshot min only")]
+        [TestCase("maxChangeVersion", "200", TestName = "legacy switch, snapshot max only")]
+        [TestCase("schoolId", "255901", TestName = "legacy switch, snapshot unfiltered")]
+        public async Task It_anchors_every_snapshot_window_on_the_document_id_under_legacy_ordering(
+            string parameter,
+            string value
+        )
+        {
+            RequestInfo requestInfo = await ExecuteAgainst(
+                EffectiveTargetKind.Snapshot,
+                useLegacyDocumentIdOrdering: true,
+                (parameter, value)
+            );
 
             requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
             requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);

@@ -756,6 +756,81 @@ public class Given_RelationalQueryPageKeysetPlanner
     }
 
     [Test]
+    public void It_should_fold_a_min_only_window_into_a_content_version_cursor_pages_bounds()
+    {
+        // The shape only a frozen snapshot resolves this anchor for, and the one the fold had no
+        // case for. Both halves matter: the window floor still lifts the cursor floor, and an absent
+        // window ceiling contributes no limit of its own, so the token's own maximum is what goes on
+        // bounding the walk - which is what keeps a partition walk inside its slice once the request
+        // stops naming a maximum.
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var cursor = planner.Plan(
+            CreateRootTable(),
+            CreateParityPreprocessingResult(),
+            new CollectionPaging.Cursor(new CursorRange(150L, 250L), new PageSize(25)),
+            changeVersionRange: new ChangeVersionRange(200L, null),
+            orderingMode: PageOrderingMode.ContentVersion
+        );
+
+        cursor.ParameterValues["cursorMin"].Should().Be(200L, "the window floor is the greater of the two");
+        cursor
+            .ParameterValues["cursorMax"]
+            .Should()
+            .Be(250L, "an absent window ceiling contributes no limit, so the token's own stands");
+        cursor
+            .ParameterValues.Keys.Should()
+            .NotContain("minChangeVersion")
+            .And.NotContain("maxChangeVersion");
+
+        cursor.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @cursorMin");
+        cursor.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" <= @cursorMax");
+        cursor.Plan.PageDocumentIdSql.Should().NotContain("@minChangeVersion");
+    }
+
+    [Test]
+    public void It_should_leave_a_min_only_window_unbounded_above_on_an_open_cursor_range()
+    {
+        // The shape a GET-many walk actually carries, and the one the fold had no case for. A walk
+        // that started from an ordinary request is unbounded above by construction - a first page is
+        // never a cursor page, so the token it hands out is stamped long.MaxValue - and every
+        // continuation inherits that. Fold a min-only window into it and neither side supplies a
+        // ceiling, so the walk runs to the end of the collection rather than stopping where an
+        // earlier request's maxChangeVersion did.
+        //
+        // The companion to It_should_fold_a_min_only_window_into_a_content_version_cursor_pages_bounds,
+        // which pins the same fold on a finite token ceiling. That ceiling reaches production only
+        // from a non-final /partitions token, so the two together say which walks stay bounded when
+        // the request stops naming a maximum and which do not.
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var cursor = planner.Plan(
+            CreateRootTable(),
+            CreateParityPreprocessingResult(),
+            new CollectionPaging.Cursor(new CursorRange(2510L, long.MaxValue), new PageSize(25)),
+            changeVersionRange: new ChangeVersionRange(100L, null),
+            orderingMode: PageOrderingMode.ContentVersion
+        );
+
+        cursor.ParameterValues["cursorMin"].Should().Be(2510L, "the token's floor is the greater of the two");
+        cursor
+            .ParameterValues["cursorMax"]
+            .Should()
+            .Be(
+                long.MaxValue,
+                "neither the token nor a min-only window supplies a ceiling, so the walk is unbounded "
+                    + "above rather than held at the maximum an earlier request named"
+            );
+        cursor
+            .ParameterValues.Keys.Should()
+            .NotContain("minChangeVersion")
+            .And.NotContain("maxChangeVersion");
+
+        cursor.Plan.PageDocumentIdSql.Should().Contain("r.\"ContentVersion\" >= @cursorMin");
+        cursor.Plan.PageDocumentIdSql.Should().NotContain("@maxChangeVersion");
+    }
+
+    [Test]
     public void It_should_clip_an_unbounded_cursor_range_to_the_window_it_folds()
     {
         // A partition's last range runs to long.MaxValue and relies on the window's ceiling to stop it.

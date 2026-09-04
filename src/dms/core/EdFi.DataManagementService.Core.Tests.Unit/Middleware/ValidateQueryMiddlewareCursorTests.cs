@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
@@ -59,7 +60,10 @@ public class ValidateQueryMiddlewareCursorTests
             .WithEndProject()
             .ToApiSchemaDocuments();
 
-    private static RequestInfo RequestInfoFor(params (string Key, string Value)[] queryParameters)
+    private static RequestInfo RequestInfoFor(
+        EffectiveTargetKind targetKind,
+        params (string Key, string Value)[] queryParameters
+    )
     {
         FrontendRequest frontendRequest = new(
             Path: "/ed-fi/academicWeeks",
@@ -75,7 +79,11 @@ public class ValidateQueryMiddlewareCursorTests
             RouteQualifiers: []
         );
 
-        RequestInfo requestInfo = new(frontendRequest, RequestMethod.GET, No.ServiceProvider)
+        RequestInfo requestInfo = new(
+            frontendRequest,
+            RequestMethod.GET,
+            ServiceProviderWithEffectiveTarget(targetKind)
+        )
         {
             ApiSchemaDocuments = NewApiSchemaDocuments(),
             PathComponents = new(
@@ -108,15 +116,25 @@ public class ValidateQueryMiddlewareCursorTests
         );
 
     /// <summary>
+    /// Executes against the primary, which is where every expectation written before the data source
+    /// mattered belongs.
+    /// </summary>
+    private static Task<RequestInfo> Execute(
+        IPipelineStep middleware,
+        params (string Key, string Value)[] queryParameters
+    ) => Execute(middleware, EffectiveTargetKind.Primary, queryParameters);
+
+    /// <summary>
     /// The composition under test is supplied directly by the fixtures that need one this file does not
     /// otherwise build — the deployment running with the page-ordering kill switch on.
     /// </summary>
     private static async Task<RequestInfo> Execute(
         IPipelineStep middleware,
+        EffectiveTargetKind targetKind,
         params (string Key, string Value)[] queryParameters
     )
     {
-        RequestInfo requestInfo = RequestInfoFor(queryParameters);
+        RequestInfo requestInfo = RequestInfoFor(targetKind, queryParameters);
 
         await middleware.Execute(requestInfo, NullNext);
 
@@ -527,8 +545,10 @@ public class ValidateQueryMiddlewareCursorTests
         }
 
         /// <summary>
-        /// A min-only window keeps the <c>DocumentId</c> anchor, because an update inside a window that
-        /// is open above moves a row past a <c>ContentVersion</c> anchor while it remains eligible.
+        /// Against current data a min-only window keeps the <c>DocumentId</c> anchor, because an update
+        /// inside a window that is open above moves a row past a <c>ContentVersion</c> anchor while it
+        /// remains eligible. Nothing moves in a frozen snapshot, so what this fixture pins is specific
+        /// to the source it runs on.
         /// </summary>
         [Test]
         public async Task It_accepts_an_unwindowed_token_for_a_min_only_request()
@@ -780,7 +800,7 @@ public class ValidateQueryMiddlewareCursorTests
         {
             RecordingCollectionPagingTelemetry telemetry = new();
 
-            RequestInfo requestInfo = RequestInfoFor(queryParameters);
+            RequestInfo requestInfo = RequestInfoFor(EffectiveTargetKind.Primary, queryParameters);
             requestInfo.MappingSet = RelationalWriteSeamFixture
                 .Create()
                 .CreateSupportedMappingSet(SqlDialect.Pgsql);
@@ -861,7 +881,11 @@ public class ValidateQueryMiddlewareCursorTests
         public async Task It_counts_nothing_for_a_request_it_accepts()
         {
             RecordingCollectionPagingTelemetry telemetry = new();
-            RequestInfo requestInfo = RequestInfoFor(("schoolId", "1"), ("limit", "25"));
+            RequestInfo requestInfo = RequestInfoFor(
+                EffectiveTargetKind.Primary,
+                ("schoolId", "1"),
+                ("limit", "25")
+            );
 
             await ValidateQueryMiddlewareTests.Middleware(telemetry).Execute(requestInfo, NullNext);
 
@@ -874,7 +898,7 @@ public class ValidateQueryMiddlewareCursorTests
         [Test]
         public async Task It_still_answers_the_rejection_when_recording_throws()
         {
-            RequestInfo requestInfo = RequestInfoFor(("limit", "-1"));
+            RequestInfo requestInfo = RequestInfoFor(EffectiveTargetKind.Primary, ("limit", "-1"));
 
             await ValidateQueryMiddlewareTests
                 .Middleware(new ThrowingCollectionPagingTelemetry())
@@ -885,6 +909,247 @@ public class ValidateQueryMiddlewareCursorTests
                 .FrontendResponse.Body!.ToJsonString()
                 .Should()
                 .Contain("Limit must be omitted or set to a numeric value between 0 and");
+        }
+    }
+
+    /// <summary>
+    /// The token marker names the anchor a page was cut on, and a request resolves its anchor from the
+    /// window <em>and</em> the data store serving it. A min-only walk therefore belongs to the source it
+    /// started against: the same token, replayed with the same window against the other source, names
+    /// bounds in the wrong units and is answered with the standard invalid-token response.
+    /// </summary>
+    /// <remarks>
+    /// This is the pair that fails if the anchor is ever made to depend on paging shape — resolving one
+    /// way for a traditional page and another for a cursor page would make a snapshot min-only page
+    /// hand out a token its own follow-up request rejects, and every ordering test would still pass.
+    /// </remarks>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Min_Only_Page_Token_Replayed_Against_A_Different_Data_Store
+        : ValidateQueryMiddlewareCursorTests
+    {
+        /// <summary>
+        /// The accepting half, and the one place the whole snapshot replay contract is pinned. Both
+        /// the window shape and the data source can move the anchor, so this one acceptance covers
+        /// two client mistakes at once: a min-only walk replaying its own token on the source that
+        /// issued it, and a walk that was bounded when the token was cut replaying it with the
+        /// ceiling dropped. On a snapshot both shapes resolve ContentVersion, so the marker matches
+        /// either way and nothing rejects the second case.
+        /// </summary>
+        /// <remarks>
+        /// The range assertion is the load-bearing one: this step carries the token's bounds through
+        /// unchanged rather than letting the request window replace them, which is what leaves the
+        /// planner a ceiling to fold against once the request stops naming a maximum. The fold itself
+        /// happens in the planner, not here. The finite ceiling this case carries reaches production
+        /// only from a non-final /partitions token - such a walk stays inside its slice. A walk
+        /// started from an ordinary request carries
+        /// long.MaxValue instead, and folding a min-only window into that leaves no ceiling at all,
+        /// so it runs on to the newest version in the copy;
+        /// RelationalQueryPageKeysetPlannerTests.It_should_leave_a_min_only_window_unbounded_above_on_an_open_cursor_range
+        /// pins that half. CURSOR-PAGING.md documents both as the behavior clients get, so the
+        /// three are changed together or not at all.
+        /// </remarks>
+        [Test]
+        public async Task It_accepts_a_content_version_token_against_a_snapshot()
+        {
+            RequestInfo requestInfo = await Execute(
+                ValidateQueryMiddlewareTests.Middleware(),
+                EffectiveTargetKind.Snapshot,
+                ("pageToken", WindowedToken),
+                ("minChangeVersion", "100")
+            );
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.ContentVersion);
+            requestInfo
+                .CollectionPaging.Should()
+                .Be(new CollectionPaging.Cursor(new CursorRange(7, 42), new PageSize(MaximumPageSize)));
+        }
+
+        [Test]
+        public async Task It_rejects_a_document_id_token_against_a_snapshot()
+        {
+            AssertParameterValidationShell(
+                await Execute(
+                    ValidateQueryMiddlewareTests.Middleware(),
+                    EffectiveTargetKind.Snapshot,
+                    ("pageToken", ValidToken),
+                    ("minChangeVersion", "100")
+                ),
+                CursorRequestValidator.InvalidPageToken
+            );
+        }
+
+        [Test]
+        public async Task It_rejects_a_content_version_token_against_the_primary()
+        {
+            AssertParameterValidationShell(
+                await Execute(
+                    ValidateQueryMiddlewareTests.Middleware(),
+                    EffectiveTargetKind.Primary,
+                    ("pageToken", WindowedToken),
+                    ("minChangeVersion", "100")
+                ),
+                CursorRequestValidator.InvalidPageToken
+            );
+        }
+
+        /// <summary>
+        /// The window shape moves the anchor on a snapshot as well, which nothing else here varies
+        /// while holding the target there: every target-varying fixture pins one window, and the
+        /// window-varying overload pins the primary. Replaying a min-only walk's own token with the
+        /// window dropped altogether resolves DocumentId - routing alone must not change the order an
+        /// unfiltered collection is walked in - so the marker stops matching and the token is
+        /// rejected, on the very source that issued it.
+        /// </summary>
+        /// <remarks>
+        /// The complement of It_accepts_a_content_version_token_against_a_snapshot: there the window
+        /// changed shape and the marker still matched, here it changed to the one shape a snapshot
+        /// anchors on DocumentId and it does not. Together they say the marker tracks the anchor,
+        /// not the window and not the source.
+        /// </remarks>
+        [Test]
+        public async Task It_rejects_a_content_version_token_replayed_unwindowed_on_the_same_snapshot()
+        {
+            AssertParameterValidationShell(
+                await Execute(
+                    ValidateQueryMiddlewareTests.Middleware(),
+                    EffectiveTargetKind.Snapshot,
+                    ("pageToken", WindowedToken)
+                ),
+                CursorRequestValidator.InvalidPageToken
+            );
+        }
+
+        /// <summary>
+        /// The client-visible consequence, stated in one place: a min-only walk must keep its data
+        /// source for its whole life, because adding or dropping the snapshot request mid-walk changes
+        /// the order the collection is walked in exactly as changing the window would.
+        /// </summary>
+        [Test]
+        public async Task It_answers_one_token_and_window_differently_by_data_store()
+        {
+            RequestInfo onTheSnapshot = await Execute(
+                ValidateQueryMiddlewareTests.Middleware(),
+                EffectiveTargetKind.Snapshot,
+                ("pageToken", WindowedToken),
+                ("minChangeVersion", "100")
+            );
+            RequestInfo onTheReplica = await Execute(
+                ValidateQueryMiddlewareTests.Middleware(),
+                EffectiveTargetKind.ReadReplica,
+                ("pageToken", WindowedToken),
+                ("minChangeVersion", "100")
+            );
+
+            onTheSnapshot.FrontendResponse.Should().Be(No.FrontendResponse);
+            onTheReplica.FrontendResponse.StatusCode.Should().Be(400);
+        }
+    }
+
+    /// <summary>
+    /// The complement of the fixture above, and the half of the rule a client is most likely to get
+    /// wrong. Every window shape except min-only resolves the same anchor on every data source, so its
+    /// token's marker matches wherever it is replayed and the request is served. A walk that changes
+    /// data source mid-stream is therefore not stopped: it continues against a different database from
+    /// the position the token names.
+    /// </summary>
+    /// <remarks>
+    /// Pinned because what rejects a min-only replay is a marker comparison, not a data-source check:
+    /// <see cref="CursorRequestValidator" /> compares the token's anchor against the one this request
+    /// resolved, and nothing in a token identifies the database that issued it. Making a token carry
+    /// its source, or widening the snapshot rule so it diverged from the live rule on a max-bearing
+    /// window, would break these walks while every ordering test kept passing. CURSOR-PAGING.md
+    /// documents this as the behavior clients get, so the two are changed together or not at all.
+    /// </remarks>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Page_Token_Whose_Anchor_Is_The_Same_On_Every_Data_Store
+        : ValidateQueryMiddlewareCursorTests
+    {
+        [TestCase(EffectiveTargetKind.Primary, TestName = "bounded window, primary")]
+        [TestCase(EffectiveTargetKind.ReadReplica, TestName = "bounded window, read replica")]
+        [TestCase(EffectiveTargetKind.Snapshot, TestName = "bounded window, snapshot")]
+        public async Task It_accepts_a_bounded_window_token_on_every_data_store(
+            EffectiveTargetKind targetKind
+        )
+        {
+            RequestInfo requestInfo = await Execute(
+                ValidateQueryMiddlewareTests.Middleware(),
+                targetKind,
+                ("pageToken", WindowedToken),
+                ("minChangeVersion", "100"),
+                ("maxChangeVersion", "200")
+            );
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.ContentVersion);
+        }
+
+        [TestCase(EffectiveTargetKind.Primary, TestName = "max-only window, primary")]
+        [TestCase(EffectiveTargetKind.ReadReplica, TestName = "max-only window, read replica")]
+        [TestCase(EffectiveTargetKind.Snapshot, TestName = "max-only window, snapshot")]
+        public async Task It_accepts_a_max_only_window_token_on_every_data_store(
+            EffectiveTargetKind targetKind
+        )
+        {
+            RequestInfo requestInfo = await Execute(
+                ValidateQueryMiddlewareTests.Middleware(),
+                targetKind,
+                ("pageToken", WindowedToken),
+                ("maxChangeVersion", "200")
+            );
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.ContentVersion);
+        }
+
+        /// <summary>
+        /// An unwindowed walk keeps <c>DocumentId</c> on every source, snapshot included, because
+        /// routing alone must not change the order a collection is walked in. Its token stays
+        /// replayable everywhere for that reason.
+        /// </summary>
+        [TestCase(EffectiveTargetKind.Primary, TestName = "no window, primary")]
+        [TestCase(EffectiveTargetKind.ReadReplica, TestName = "no window, read replica")]
+        [TestCase(EffectiveTargetKind.Snapshot, TestName = "no window, snapshot")]
+        public async Task It_accepts_an_unwindowed_token_on_every_data_store(EffectiveTargetKind targetKind)
+        {
+            RequestInfo requestInfo = await Execute(
+                ValidateQueryMiddlewareTests.Middleware(),
+                targetKind,
+                ("pageToken", ValidToken)
+            );
+
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.PageOrderingMode.Should().Be(PageOrderingMode.DocumentId);
+        }
+
+        /// <summary>
+        /// The contrast that gives this fixture its point, written as the same shape the min-only
+        /// fixture uses: one token and one window, replayed on the primary and on the snapshot. There,
+        /// the pair is answered differently; here, identically.
+        /// </summary>
+        [Test]
+        public async Task It_answers_a_max_bearing_token_the_same_way_on_both_data_stores()
+        {
+            RequestInfo onThePrimary = await Execute(
+                ValidateQueryMiddlewareTests.Middleware(),
+                EffectiveTargetKind.Primary,
+                ("pageToken", WindowedToken),
+                ("minChangeVersion", "100"),
+                ("maxChangeVersion", "200")
+            );
+            RequestInfo onTheSnapshot = await Execute(
+                ValidateQueryMiddlewareTests.Middleware(),
+                EffectiveTargetKind.Snapshot,
+                ("pageToken", WindowedToken),
+                ("minChangeVersion", "100"),
+                ("maxChangeVersion", "200")
+            );
+
+            onThePrimary.FrontendResponse.Should().Be(No.FrontendResponse);
+            onTheSnapshot.FrontendResponse.Should().Be(No.FrontendResponse);
+            onTheSnapshot.PageOrderingMode.Should().Be(onThePrimary.PageOrderingMode);
         }
     }
 }

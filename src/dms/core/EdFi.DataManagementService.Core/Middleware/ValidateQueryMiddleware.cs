@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.ChangeQueries;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Paging;
@@ -11,6 +12,7 @@ using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Telemetry;
 using EdFi.DataManagementService.Core.Validation;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
 
@@ -45,9 +47,10 @@ internal class ValidateQueryMiddleware(
 ) : IPipelineStep
 {
     /// <summary>
-    /// Resolves the page anchor from the request's change-version window. Core owns that resolution
-    /// because both sides of the request need the anchor and there is only one rule: this step stamps
-    /// it on the request, and the backend compiles page selection against the column it names.
+    /// Resolves the page anchor from the request's change-version window and the effective data-store
+    /// target serving it. Core owns that resolution because both sides of the request need the anchor
+    /// and there is only one rule: this step stamps it on the request, and the backend compiles page
+    /// selection against the column it names.
     /// </summary>
     private readonly ChangeQueryPageOrderingPolicy _orderingPolicy = new(
         _useLegacyDocumentIdOrderingForChangeQueries
@@ -167,7 +170,22 @@ internal class ValidateQueryMiddleware(
 
         // Resolved from the parsed window rather than from parameter presence: '?maxChangeVersion='
         // parses to null, so it is not a max-bearing window and does not move the anchor.
-        PageOrderingMode pageOrderingMode = _orderingPolicy.ResolveForLiveQuery(changeVersionResult.Range);
+        //
+        // The window alone does not decide it. A frozen snapshot cannot move a row later within a
+        // still-open window, so the hazard that keeps a live min-only walk on DocumentId does not
+        // exist there and every windowed shape can take the ContentVersion anchor. Only a snapshot
+        // qualifies: a read replica keeps applying changes, so it stays on the live rule along with
+        // the primary. The target is read, never re-derived - target selection is composed ahead of
+        // this step in every pipeline that reaches it, and GetEffectiveTarget throwing when unset is
+        // the documented behavior, so a pipeline that skipped selection fails loudly here rather than
+        // quietly anchoring a snapshot walk as if it were live.
+        PageOrderingMode pageOrderingMode = _orderingPolicy.ResolveFor(
+            changeVersionResult.Range,
+            requestInfo
+                .ScopedServiceProvider.GetRequiredService<IDataStoreSelection>()
+                .GetEffectiveTarget()
+                .Kind
+        );
 
         // A faulty window resolves no anchor at all, rather than whichever one its surviving bounds
         // happen to imply. An unparseable maximum parses to null exactly as an empty one does, and an
@@ -246,8 +264,8 @@ internal class ValidateQueryMiddleware(
         }
 
         // The window and the anchor it resolves to are assigned together: the anchor is a function of
-        // the window, so a request carrying one without the other would describe a page selection that
-        // cannot exist.
+        // the window and of the data store serving the request, so a request carrying the window
+        // without the anchor it resolved would describe a page selection that cannot exist.
         requestInfo.ChangeVersionRange = changeVersionResult.Range;
         requestInfo.PageOrderingMode = pageOrderingMode;
 
