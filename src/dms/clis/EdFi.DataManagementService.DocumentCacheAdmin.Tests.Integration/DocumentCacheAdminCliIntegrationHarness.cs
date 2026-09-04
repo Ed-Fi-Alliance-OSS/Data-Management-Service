@@ -125,6 +125,29 @@ internal sealed class DocumentCacheAdminCliTarget : IAsyncDisposable
         );
     }
 
+    public static DocumentCacheAdminCliTarget CreateExternalPostgresql(
+        string connectionString,
+        long dataStoreId,
+        string apiSchemaDirectory
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(dataStoreId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(apiSchemaDirectory);
+
+        return new(
+            RelationalProviderToken.Postgresql,
+            RelationalProviderToken.Postgresql.Value,
+            connectionString,
+            apiSchemaDirectory,
+            postgresqlDatabase: null,
+            mssqlLease: null,
+            ownsPostgresqlDatabase: false,
+            ownsMssqlLease: false,
+            dataStoreId: dataStoreId
+        );
+    }
+
     public DocumentCacheAdminCliTarget CreateAlias(
         long dataStoreId,
         string tenantKey,
@@ -326,6 +349,34 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                     cacheAheadRecoveryRequired
                 )
             );
+    }
+
+    public Task AdvanceMssqlChangeVersionSequencePastAsync(long version)
+    {
+        MssqlGeneratedDdlTestDatabase database = RequireMssqlDatabase();
+        ArgumentOutOfRangeException.ThrowIfNegative(version);
+        return database.ExecuteNonQueryAsync(
+            $"ALTER SEQUENCE [dms].[ChangeVersionSequence] RESTART WITH {version}; SELECT NEXT VALUE FOR [dms].[ChangeVersionSequence];"
+        );
+    }
+
+    public async Task<DocumentCacheAdminCliRestampManifest> ReadMssqlRestampManifestAsync(Guid operationId)
+    {
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await RequireMssqlDatabase()
+            .QueryRowsAsync(
+                """
+                SELECT [PreviewDocumentCount], [CommittedDocumentCount], [State]
+                FROM [dms].[RepresentationRestampOperation]
+                WHERE [OperationId] = @operationId;
+                """,
+                new Microsoft.Data.SqlClient.SqlParameter("operationId", operationId)
+            );
+        IReadOnlyDictionary<string, object?> row = rows.Single();
+        return new(
+            Convert.ToInt64(row["PreviewDocumentCount"]),
+            Convert.ToInt64(row["CommittedDocumentCount"]),
+            (string)row["State"]!
+        );
     }
 
     public async Task SetMssqlReadCommittedSnapshotAsync(bool enabled)
@@ -1075,6 +1126,12 @@ internal sealed class DocumentCacheAdminCliStateInspector(
         };
     }
 }
+
+internal sealed record DocumentCacheAdminCliRestampManifest(
+    long PreviewDocumentCount,
+    long CommittedDocumentCount,
+    string State
+);
 
 internal sealed record DocumentCacheAdminCliLifecycleState(
     string ProjectionLifecycleState,

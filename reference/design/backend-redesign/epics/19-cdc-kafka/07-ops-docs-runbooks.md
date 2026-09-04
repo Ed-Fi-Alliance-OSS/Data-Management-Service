@@ -73,6 +73,53 @@ Publish verified operator guidance for the implemented relational CDC capability
   design section instead of reproducing its normative algorithm or value table.
 - Destructive procedures are verified against the implemented guarded operations.
 
+## Representation Restamp and Sensitive-Data Containment
+
+The E18 [representation-restamp utility](../18-document-cache/08-representation-restamp-utility.md)
+corrects canonical representation stamps. Its operational procedure is documented in the
+[DocumentCache runbook](../18-document-cache/07-documentcache-integration-tests-and-runbooks.md#representation-restamp-operations-runbook).
+The normative Kafka boundaries and containment sequence remain owned by
+[Contract Change and Repair Operations](../../design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations).
+
+For a compatible representation correction in lifecycle `Tracking`, a completed restamp
+means canonical work is complete and projection work is queued. After only corrected
+DMS/projector instances start, ordinary projection and connector processing may eventually
+produce a higher-`contentVersion` Kafka v1 state replacement with the same key, topic,
+fields, types, and ordering semantics. The restamp command itself does not drain the queue,
+publish records, verify connector or broker delivery, reset offsets, purge older records,
+or certify an exact replacement baseline. Lifecycle `Disabled` has no Kafka publication
+expectation.
+
+When prior Kafka values contain sensitive information that should never have been
+published and must be removed, same-topic restamp is not a containment procedure. A
+higher-version upsert, tombstone, compaction request, or successful restamp establishes at
+most eventual current state; none proves that superseded bytes were destroyed. Follow the
+[Sensitive-data disclosure correction](../../design-docs/cdc/cdc-streaming.md#sensitive-data-disclosure-correction)
+procedure:
+
+1. Mark the target not ready, fence every affected connector task, and revoke consumer
+   access to the public topic before corrected state can be published.
+2. Correct the materializer and use the offline E18 restamp procedure when needed, while
+   preserving the full writer fence.
+3. Retire the affected binding generation in the governed cleanup order, including the
+   public topic, connector, offsets, ACLs, progress topic, and SQL Server schema-history
+   artifacts where applicable, before removing binding state.
+4. Record the restamp operation ID, binding generation, topic, containment time, deletion
+   request, and broker or managed-platform purge confirmation. A successful delete request,
+   missing metadata, corrective record, tombstone, or compaction request is not purge
+   evidence. Keep the incident open when the deployment cannot obtain the evidence its
+   platform requires.
+5. Do not recreate or restart the old binding or topic. Re-enablement requires the deferred
+   new-generation topic, consumer namespace, fresh snapshot, and publication-barrier
+   workflow. Independently operated consumer stores and exports remain in the deployment's
+   disclosure-response scope.
+
+Treat the restamp manifest's scope, reason, operation identity, and affected UUIDs as
+operational audit data. Do not place them in metric labels or unsanitized logs. Do not put
+credentials, connection strings, document bodies, or response JSON in the manifest,
+reason, diagnostics, examples, or telemetry. The utility's bounded result claims are not
+authorization to restore Kafka access or close a disclosure incident.
+
 ## Not Assigned to This Story
 
 - Cloud-provider-specific instructions and consumer product implementation guidance are

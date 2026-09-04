@@ -116,6 +116,36 @@ public sealed class Given_DocumentCacheAdminServiceRegistration
             .GetType()
             .Name.Should()
             .Be("DocumentCacheGuardedNewEmptyActivationCommand", displayName);
+        ResolveBackendService(serviceProvider, "IRepresentationRestampStore")
+            .GetType()
+            .Name.Should()
+            .Be($"{implementationPrefix}RepresentationRestampStore", displayName);
+        ResolveBackendService(serviceProvider, "IDocumentCacheRepresentationRestampCommand")
+            .GetType()
+            .Name.Should()
+            .Be("RepresentationRestampCommand", displayName);
+
+        // A second resolution of every restamp-adjacent singleton must return the same instance,
+        // and the underlying collection must carry exactly one registration for each: the shared
+        // command runner, its mutex, the write-session factory, and the provider-specific restamp
+        // store must never be duplicated by wiring the representation-restamp command into the CLI host.
+        AssertSingleBackendRegistration(services, "IDocumentCacheAdministrativeCommandRunner", displayName);
+        AssertSingleBackendRegistration(services, "IDocumentCacheAdministrativeMutex", displayName);
+        AssertSingleBackendRegistration(services, "IRelationalWriteSessionFactory", displayName);
+        AssertSingleBackendRegistration(services, "IRepresentationRestampStore", displayName);
+        AssertSingleBackendRegistration(services, "IDocumentCacheRepresentationRestampCommand", displayName);
+
+        object commandRunnerAgain = ResolveBackendService(
+            serviceProvider,
+            "IDocumentCacheAdministrativeCommandRunner"
+        );
+        ResolveBackendService(serviceProvider, "IDocumentCacheAdministrativeCommandRunner")
+            .Should()
+            .BeSameAs(commandRunnerAgain, displayName);
+        object mutexAgain = ResolveBackendService(serviceProvider, "IDocumentCacheAdministrativeMutex");
+        ResolveBackendService(serviceProvider, "IDocumentCacheAdministrativeMutex")
+            .Should()
+            .BeSameAs(mutexAgain, displayName);
 
         serviceProvider
             .GetRequiredService<IOptions<DocumentCacheOptions>>()
@@ -465,16 +495,31 @@ public sealed class Given_DocumentCacheAdminServiceRegistration
 
     private static object ResolveBackendService(IServiceProvider serviceProvider, string serviceTypeName)
     {
-        Type serviceType =
-            typeof(DocumentCacheProjectionSupervisor).Assembly.GetType(
-                $"EdFi.DataManagementService.Backend.{serviceTypeName}"
-            )
-            ?? throw new InvalidOperationException(
-                $"Backend service type '{serviceTypeName}' was not found."
-            );
+        Type serviceType = ResolveBackendServiceType(serviceTypeName);
 
         return serviceProvider.GetRequiredService(serviceType);
     }
+
+    private static void AssertSingleBackendRegistration(
+        IServiceCollection services,
+        string serviceTypeName,
+        string displayName
+    )
+    {
+        Type serviceType = ResolveBackendServiceType(serviceTypeName);
+
+        services
+            .Where(descriptor => descriptor.ServiceType == serviceType)
+            .Should()
+            .ContainSingle(
+                $"the DocumentCache admin CLI host must not create a second '{serviceTypeName}' registration for {displayName}"
+            );
+    }
+
+    private static Type ResolveBackendServiceType(string serviceTypeName) =>
+        typeof(DocumentCacheProjectionSupervisor).Assembly.GetType(
+            $"EdFi.DataManagementService.Backend.{serviceTypeName}"
+        ) ?? throw new InvalidOperationException($"Backend service type '{serviceTypeName}' was not found.");
 
     private sealed class CountingEffectiveSchemaBootstrapper : IEffectiveSchemaBootstrapper
     {

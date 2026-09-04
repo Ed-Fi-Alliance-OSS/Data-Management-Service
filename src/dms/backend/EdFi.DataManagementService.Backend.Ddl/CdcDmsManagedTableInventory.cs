@@ -136,6 +136,7 @@ internal static class CdcDmsManagedTableInventoryBuilder
             DmsTableNames.DocumentProjectionWork,
             EffectiveSchemaTableDefinition.Table,
             DmsTableNames.ReferentialIdentity,
+            DmsTableNames.RepresentationRestampOperation,
             DmsTableNames.ResourceKey,
             DmsTableNames.SchemaComponent,
         ];

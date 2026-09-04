@@ -157,7 +157,12 @@ internal static class DocumentCacheAdminJsonRequestParser
             return false;
         }
 
-        if (!TryValidateRawConfirmationToken(rootElement, contract, out failure))
+        bool isPreview = string.Equals(
+            commandName,
+            DocumentCacheAdminCommandSurface.RestampPreviewCommandName,
+            StringComparison.Ordinal
+        );
+        if (!isPreview && !TryValidateRawConfirmationToken(rootElement, contract, out failure))
         {
             return false;
         }
@@ -187,7 +192,7 @@ internal static class DocumentCacheAdminJsonRequestParser
             return false;
         }
 
-        if (!TryValidateMutatingRequest(contract, sharedRequest, out failure))
+        if (!TryValidateMutatingRequest(contract, sharedRequest, isPreview, out failure))
         {
             return false;
         }
@@ -200,10 +205,39 @@ internal static class DocumentCacheAdminJsonRequestParser
     private static bool TryValidateMutatingRequest(
         DocumentCacheAdminMutatingCommandContract contract,
         object sharedRequest,
+        bool isPreview,
         out string? failure
     )
     {
         failure = null;
+
+        if (isPreview)
+        {
+            if (
+                sharedRequest is not DocumentCacheRepresentationRestampPreviewRequest preview
+                || preview.OfflineWriterAdmission is null
+                || !preview.OfflineWriterAdmission.Confirmed
+                || preview.OfflineWriterAdmission.HasUnrecognizedConfirmation
+                || preview.OfflineWriterAdmission.Confirmation
+                    != DocumentCacheOfflineWriterAdmissionConfirmation.RepresentationRestampWritersClosedAndDrained
+                || !preview.Scope.TryCanonicalize(int.MaxValue, out _)
+            )
+            {
+                failure =
+                    "Request JSON preview requires a valid scope and closedAndDrained offline writer admission.";
+                return false;
+            }
+            return true;
+        }
+
+        if (
+            sharedRequest is DocumentCacheRepresentationRestampExecuteRequest execute
+            && execute.OperationId == Guid.Empty
+        )
+        {
+            failure = "Request JSON property 'operationId' must be a non-empty GUID.";
+            return false;
+        }
 
         DocumentCacheAdministrativeCommandConfirmation? confirmation = contract.ReadConfirmation(
             sharedRequest

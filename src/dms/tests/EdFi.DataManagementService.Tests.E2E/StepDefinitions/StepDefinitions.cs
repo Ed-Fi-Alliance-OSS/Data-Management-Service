@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -960,6 +961,53 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             {
                 _lastModifiedDate = LastModifiedDate(responseJson) ?? string.Empty;
             }
+        }
+
+        [When("the current resource ETag and lastModifiedDate are stored")]
+        public async Task WhenTheCurrentResourceEtagAndLastModifiedDateAreStored()
+        {
+            _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
+                _location,
+                new() { Headers = GetHeaders() }
+            )!;
+
+            _etag = StripEtagQuotes(_apiResponse.Headers["etag"]);
+            _scenarioVariables.Add("restampOriginalEtag", _etag);
+
+            JsonNode responseJson = JsonNode.Parse(await _apiResponse.TextAsync())!;
+            _lastModifiedDate = LastModifiedDate(responseJson)!;
+        }
+
+        [Then("the current resource lastModifiedDate is later than the stored value")]
+        public async Task ThenTheCurrentResourceLastModifiedDateIsLaterThanTheStoredValue()
+        {
+            IAPIResponse response = await _playwrightContext.ApiRequestContext?.GetAsync(
+                _location,
+                new() { Headers = GetHeaders() }
+            )!;
+            JsonNode responseJson = JsonNode.Parse(await response.TextAsync())!;
+            string currentLastModifiedDate = LastModifiedDate(responseJson)!;
+
+            DateTimeOffset
+                .Parse(currentLastModifiedDate, CultureInfo.InvariantCulture)
+                .Should()
+                .BeAfter(DateTimeOffset.Parse(_lastModifiedDate, CultureInfo.InvariantCulture));
+        }
+
+        [When("representation restamp completes for the current resource in tracking mode")]
+        public async Task WhenRepresentationRestampCompletesForTheCurrentResourceInTrackingMode()
+        {
+            await RepresentationRestampE2EHarness.ExecuteTrackingRestampAsync(Guid.Parse(_id));
+        }
+
+        [When("representation restamp completes for document variable {string} in tracking mode")]
+        public async Task WhenRepresentationRestampCompletesForDocumentVariableInTrackingMode(
+            string variableName
+        )
+        {
+            await RepresentationRestampE2EHarness.ExecuteTrackingRestampAsync(
+                Guid.Parse(_scenarioVariables.GetValueByName(variableName))
+            );
         }
 
         [When("a claim set is uploaded to CMS that grants {string} access to {string}")]

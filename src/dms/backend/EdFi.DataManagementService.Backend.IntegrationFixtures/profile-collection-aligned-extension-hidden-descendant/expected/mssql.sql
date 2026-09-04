@@ -366,6 +366,61 @@ CREATE TABLE [dms].[ReferentialIdentity]
     CONSTRAINT [UX_ReferentialIdentity_DocumentId_ResourceKeyId] UNIQUE CLUSTERED ([DocumentId], [ResourceKeyId])
 );
 
+IF OBJECT_ID(N'dms.RepresentationRestampOperation', N'U') IS NULL
+CREATE TABLE [dms].[RepresentationRestampOperation]
+(
+    [OperationId] uniqueidentifier NOT NULL,
+    [ContractVersion] int NOT NULL,
+    [TenantKey] nvarchar(256) NOT NULL,
+    [DataStoreId] int NOT NULL,
+    [PhysicalSourceFingerprint] nvarchar(71) NOT NULL,
+    [ScopeJson] nvarchar(max) NOT NULL,
+    [Reason] nvarchar(1024) NOT NULL,
+    [Mode] nvarchar(8) NOT NULL,
+    [PreRestampBoundary] bigint NOT NULL,
+    [PreviewDocumentCount] bigint NOT NULL,
+    [CommittedDocumentCount] bigint NOT NULL,
+    [State] nvarchar(10) NOT NULL,
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_RepresentationRestampOperation_CreatedAt] DEFAULT (sysutcdatetime()),
+    [UpdatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_RepresentationRestampOperation_UpdatedAt] DEFAULT (sysutcdatetime()),
+    CONSTRAINT [PK_RepresentationRestampOperation] PRIMARY KEY CLUSTERED ([OperationId])
+);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = N'CK_RepresentationRestampOperation_ContractVersion' AND parent_object_id = OBJECT_ID(N'dms.RepresentationRestampOperation')
+)
+ALTER TABLE [dms].[RepresentationRestampOperation]
+ADD CONSTRAINT [CK_RepresentationRestampOperation_ContractVersion] CHECK ([ContractVersion] = 1);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = N'CK_RepresentationRestampOperation_Mode' AND parent_object_id = OBJECT_ID(N'dms.RepresentationRestampOperation')
+)
+ALTER TABLE [dms].[RepresentationRestampOperation]
+ADD CONSTRAINT [CK_RepresentationRestampOperation_Mode] CHECK (([Mode] COLLATE Latin1_General_100_BIN2 = 'Tracking' AND DATALENGTH([Mode]) = 16) OR ([Mode] COLLATE Latin1_General_100_BIN2 = 'Disabled' AND DATALENGTH([Mode]) = 16));
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = N'CK_RepresentationRestampOperation_State' AND parent_object_id = OBJECT_ID(N'dms.RepresentationRestampOperation')
+)
+ALTER TABLE [dms].[RepresentationRestampOperation]
+ADD CONSTRAINT [CK_RepresentationRestampOperation_State] CHECK (([State] COLLATE Latin1_General_100_BIN2 = 'Draft' AND DATALENGTH([State]) = 10) OR ([State] COLLATE Latin1_General_100_BIN2 = 'Incomplete' AND DATALENGTH([State]) = 20) OR ([State] COLLATE Latin1_General_100_BIN2 = 'Completed' AND DATALENGTH([State]) = 18));
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = N'CK_RepresentationRestampOperation_NonNegativeCounts' AND parent_object_id = OBJECT_ID(N'dms.RepresentationRestampOperation')
+)
+ALTER TABLE [dms].[RepresentationRestampOperation]
+ADD CONSTRAINT [CK_RepresentationRestampOperation_NonNegativeCounts] CHECK ([PreRestampBoundary] >= 0 AND [PreviewDocumentCount] >= 0 AND [CommittedDocumentCount] >= 0);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.check_constraints
+    WHERE name = N'CK_RepresentationRestampOperation_CommittedCount' AND parent_object_id = OBJECT_ID(N'dms.RepresentationRestampOperation')
+)
+ALTER TABLE [dms].[RepresentationRestampOperation]
+ADD CONSTRAINT [CK_RepresentationRestampOperation_CommittedCount] CHECK ([CommittedDocumentCount] <= [PreviewDocumentCount]);
+
 IF OBJECT_ID(N'dms.ResourceKey', N'U') IS NULL
 CREATE TABLE [dms].[ResourceKey]
 (

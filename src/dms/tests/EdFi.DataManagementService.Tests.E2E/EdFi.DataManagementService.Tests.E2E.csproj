@@ -48,6 +48,11 @@
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\..\core\EdFi.DataManagementService.Core.External\EdFi.DataManagementService.Core.External.csproj" />
+        <ProjectReference
+            Include="..\..\clis\EdFi.DataManagementService.DocumentCacheAdmin\EdFi.DataManagementService.DocumentCacheAdmin.csproj"
+            ReferenceOutputAssembly="false"
+        />
+        <ProjectReference Include="..\..\clis\EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration\EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.csproj" />
         <!-- Reuse the tested MSSQL database-reset SQL (MssqlDatabaseResetSql) for the engine-aware E2E reset. -->
         <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Tests.Integration.Common\EdFi.DataManagementService.Backend.Tests.Integration.Common.csproj" />
     </ItemGroup>

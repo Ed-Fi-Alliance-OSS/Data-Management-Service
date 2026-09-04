@@ -87,6 +87,8 @@ dms-document-cache status --request-json status-target.json --settings ./appsett
 | `rebuild-online` | Rebuild DocumentCache while canonical writes remain online. | `onlineCacheRebuild` | None |
 | `scrub` | Run the explicit integrity scrub over source/cache/work relationships. | `integrityScrub` | None |
 | `recover-cache-ahead` | Run the proven-internal-only cache-ahead recovery workflow. | `internalCacheAheadRecovery` | `closedAndDrained` |
+| `restamp-preview` | Create an auditable representation-restamp preview. | None | `closedAndDrained` |
+| `restamp-execute` | Execute or resume a representation restamp operation. | `representationRestamp` | `closedAndDrained` |
 
 Current packaged production behavior intentionally rejects `activate-offline`,
 `deactivate-offline`, and `recover-cache-ahead` unless a trusted downstream
@@ -121,6 +123,14 @@ Target and request options:
 | `--tenant-key <value>` | Target tenant key; omitted means the default tenant. |
 | `--request-json <path|->` | Path to a shared JSON request document, or `-` for stdin. |
 
+Representation restamp options are `--mode`, `--reason`, `--project-name`,
+`--resource-name`, `--document-uuid`, and `--operation-id`.
+
+```bash
+dms-document-cache restamp-preview --data-store-id 1 --mode tracking --reason "repair" --project-name Ed-Fi --resource-name Student --offline-writer-admission closedAndDrained
+dms-document-cache restamp-execute --data-store-id 1 --operation-id 00000000-0000-0000-0000-000000000001 --confirm representationRestamp --offline-writer-admission closedAndDrained
+```
+
 Status timeout options:
 
 | Option | Default | Mapped configuration key |
@@ -135,7 +145,7 @@ Mutating command options:
 | `--confirm <token>` | None | Exact command-specific confirmation token. |
 | `--expected-physical-source-fingerprint <value>` | None | Optional `sha256:<lowercase-hex>` guard checked before mutation. |
 | `--command-timeout-seconds <seconds>` | `86400` | Total workflow budget mapped to `DataManagement:DocumentCache:Administration:WorkflowTimeout`. |
-| `--offline-writer-admission closedAndDrained` | None | Required only for `activate-offline`, `deactivate-offline`, and `recover-cache-ahead`. |
+| `--offline-writer-admission closedAndDrained` | None | Required for writer-fenced commands, including representation restamp preview and execute. |
 
 Timeout values are positive numeric seconds. Zero, negative, malformed, overflow, and
 unsupported aliases such as `--timeout`, `--provider-command-timeout`, and
@@ -219,6 +229,162 @@ Writer-fenced JSON requests carry the same offline writer admission token used b
 }
 ```
 
+## Representation Restamp
+
+Use representation restamp only for an offline correction that changes composed API or
+stream representation bytes without changing domain fields, keys, or deletion history.
+The operation advances the existing canonical `ContentVersion` and
+`ContentLastModifiedAt` values and their root or descriptor mirrors. It does not add an
+ETag algorithm, Change Query event type, projection epoch, or Kafka ordering field.
+
+### Offline prerequisites
+
+Before preview, stop and verify all access to the target data store: DMS replicas, API
+readers and writers, projector loops, direct-fill or bulk/seed loaders, administrative
+peers, and external writers. Keep them stopped through execute or every resume attempt.
+Deploy the corrected materializer/composer while the target remains offline. The exact
+`closedAndDrained` token acknowledges this external fence; the CLI does not establish or
+certify it.
+
+Choose the mode from durable DocumentCache state, with
+`CacheAheadRecoveryRequired=false`:
+
+| Mode | Required lifecycle | Completion claim |
+| --- | --- | --- |
+| `tracking` | `Tracking` | Canonical restamp complete and projection work queued (`projectionWorkQueued`). |
+| `disabled` | `Disabled` | Canonical-only restamp complete (`canonicalOnlyComplete`). |
+
+The CLI rejects `Resetting`, `Rebuilding`, a set cache-ahead latch, unavailable lifecycle,
+or a mode/lifecycle mismatch before the next page is stamped. Do not clear a latch or
+change lifecycle merely to bypass rejection; diagnose and recover through the E18
+DocumentCache procedures linked below.
+
+### Preview and inspect
+
+Preview creates the durable operation manifest and returns its opaque operation ID,
+immutable pre-restamp boundary, selected mode, physical-source fingerprint, and selected
+document count. It does not restamp documents or change mirrors, projection work, cache
+rows, or Kafka state.
+
+Preview one resource:
+
+```bash
+dms-document-cache restamp-preview --data-store-id 1 --mode tracking --reason "Recompose Student representations after corrected materializer deployment" --project-name Ed-Fi --resource-name Student --offline-writer-admission closedAndDrained --expected-physical-source-fingerprint sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --settings ./appsettings.Production.json --environment Production --json
+```
+
+The shared request JSON for the same preview is:
+
+```json
+{
+  "targetKey": {
+    "tenantKey": "",
+    "dataStoreId": 1
+  },
+  "offlineWriterAdmission": "closedAndDrained",
+  "mode": "tracking",
+  "reason": "Recompose Student representations after corrected materializer deployment",
+  "scope": {
+    "scopeType": "resource",
+    "projectName": "Ed-Fi",
+    "resourceName": "Student"
+  },
+  "expectedPhysicalSourceFingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+}
+```
+
+Preview a bounded UUID scope by repeating `--document-uuid`, or use this request shape:
+
+```json
+{
+  "targetKey": {
+    "tenantKey": "",
+    "dataStoreId": 1
+  },
+  "offlineWriterAdmission": "closedAndDrained",
+  "mode": "disabled",
+  "reason": "Recompose the identified representations after corrected materializer deployment",
+  "scope": {
+    "scopeType": "documentUuids",
+    "documentUuids": [
+      "11111111-1111-1111-1111-111111111111",
+      "22222222-2222-2222-2222-222222222222"
+    ]
+  },
+  "expectedPhysicalSourceFingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+}
+```
+
+Supply request JSON as the only command DTO input:
+
+```bash
+dms-document-cache restamp-preview --request-json restamp-preview.json --settings ./appsettings.Production.json --environment Production --json
+```
+
+Do not combine `--request-json` with target, scope, mode, reason, confirmation, offline
+admission, or expected-fingerprint options. Inspect the JSON result and retain
+`result.operationId`. Confirm the target, fingerprint, mode, scope summary,
+`preRestampBoundary`, `previewDocumentCount`, and `state` before execute.
+
+### Execute or resume
+
+Execute uses only the previewed target and operation ID. Scope, mode, reason, and boundary
+are immutable manifest values and are not execute inputs:
+
+```bash
+dms-document-cache restamp-execute --data-store-id 1 --operation-id 11111111-1111-1111-1111-111111111111 --confirm representationRestamp --offline-writer-admission closedAndDrained --settings ./appsettings.Production.json --environment Production --json
+```
+
+The shared execute request JSON is:
+
+```json
+{
+  "targetKey": {
+    "tenantKey": "",
+    "dataStoreId": 1
+  },
+  "operationId": "11111111-1111-1111-1111-111111111111",
+  "offlineWriterAdmission": "closedAndDrained",
+  "confirmation": "representationRestamp"
+}
+```
+
+```bash
+dms-document-cache restamp-execute --request-json restamp-execute.json --settings ./appsettings.Production.json --environment Production --json
+```
+
+A completed Tracking result has `result.state` equal to `completed` and
+`result.claimLevel` equal to `projectionWorkQueued`. A completed Disabled result has
+`result.claimLevel` equal to `canonicalOnlyComplete`. These claims are intentionally
+bounded: the utility does not drain projection work, publish records, verify Kafka
+delivery, purge prior Kafka values, or certify a replacement CDC baseline.
+
+If execution is interrupted, times out, exhausts a retry, or loses its mutex session after
+a committed page, preserve the offline fence and manifest. Exit code `12`,
+`status: incompleteRetryable`, or `result.state: incomplete` means to rerun
+`restamp-execute` with the same target and operation ID. A new invocation reacquires the
+mutex and revalidates the target, fingerprint, lifecycle, latch, and immutable manifest
+mode. Never start a new preview to substitute for an incomplete operation, and never retry
+a completed operation ID.
+
+### Verify and restore service
+
+For Tracking, start only corrected DMS/projector instances, allow ordinary queued work to
+catch up, and then verify affected public resources have unchanged domain fields, a higher
+`contentVersion`, a different strong ETag, and a later `_lastModifiedDate`. Verify the
+current resource appears in a later live-resource Change Query window and that no synthetic
+`/deletes` or `/keyChanges` record was created. Observe Kafka separately if configured;
+projection catch-up and the `projectionWorkQueued` claim do not prove Kafka delivery.
+
+For Disabled, start only corrected DMS API instances and verify relational API ETags,
+`_lastModifiedDate`, and Change Query visibility. There is no projection, cache, or Kafka
+publication expectation. A later ordinary activation or rebuild establishes projection
+state through its normal baseline procedure.
+
+If corrected bytes remove or mask sensitive information previously published to Kafka,
+do not treat a higher-version replacement, tombstone, compaction, or successful restamp as
+purge evidence. Follow the E19 sensitive-data containment and destructive binding-
+generation retirement procedure linked below before restoring CDC access.
+
 ## Exit Codes
 
 Exit-code selection is derived from typed result classifications, not message text.
@@ -274,7 +440,8 @@ not reconnect under presumed mutex ownership after cancellation or session loss.
 ## Out of Scope
 
 This CLI does not configure Kafka connectors, create or delete topics, retire source
-bindings, replace a physical source, orchestrate CDC bootstrap, run representation restamp,
-publish release artifacts, own release pipeline work, expose HTTP administration
+bindings, replace a physical source, orchestrate CDC bootstrap, drain restamp projection
+work, publish or verify Kafka records, purge prior Kafka values, certify a replacement CDC
+baseline, publish release artifacts, own release pipeline work, expose HTTP administration
 endpoints, or provide an interactive wizard. Those workflows are owned by the E18/E19
 stories linked above.

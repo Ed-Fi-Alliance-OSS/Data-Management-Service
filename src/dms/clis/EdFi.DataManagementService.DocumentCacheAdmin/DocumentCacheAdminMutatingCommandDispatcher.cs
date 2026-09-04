@@ -22,7 +22,8 @@ internal sealed class DocumentCacheAdminMutatingCommandDispatcher(
     IDocumentCacheOfflineDeactivationCommand offlineDeactivationCommand,
     IDocumentCacheOnlineCacheRebuildCommand onlineCacheRebuildCommand,
     IDocumentCacheExplicitIntegrityScrubCommand explicitIntegrityScrubCommand,
-    IDocumentCacheInternalOnlyCacheAheadRecoveryCommand internalOnlyCacheAheadRecoveryCommand
+    IDocumentCacheInternalOnlyCacheAheadRecoveryCommand internalOnlyCacheAheadRecoveryCommand,
+    IDocumentCacheRepresentationRestampCommand representationRestampCommand
 ) : IDocumentCacheAdminMutatingCommandDispatcher
 {
     public Task<DocumentCacheAdministrativeCommandResult> ExecuteAsync(
@@ -54,6 +55,10 @@ internal sealed class DocumentCacheAdminMutatingCommandDispatcher(
             ),
             DocumentCacheInternalOnlyCacheAheadRecoveryRequest request =>
                 internalOnlyCacheAheadRecoveryCommand.ExecuteAsync(request, cancellationToken),
+            DocumentCacheRepresentationRestampPreviewRequest request =>
+                representationRestampCommand.ExecuteAsync(request, cancellationToken),
+            DocumentCacheRepresentationRestampExecuteRequest request =>
+                representationRestampCommand.ExecuteAsync(request, cancellationToken),
             _ => throw new InvalidOperationException(
                 $"Unsupported DocumentCache mutating request type '{commandRequest.Request.GetType().FullName}'."
             ),

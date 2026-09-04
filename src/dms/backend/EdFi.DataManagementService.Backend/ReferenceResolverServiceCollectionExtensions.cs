@@ -244,6 +244,12 @@ public static class ReferenceResolverServiceCollectionExtensions
             >()
         );
         services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IDocumentCacheRepresentationRestampCommand,
+                RepresentationRestampCommand
+            >()
+        );
+        services.TryAdd(
             ServiceDescriptor.Singleton<IDocumentCacheBaselineSeedDelay, DocumentCacheBaselineSeedDelay>()
         );
         services.TryAdd(

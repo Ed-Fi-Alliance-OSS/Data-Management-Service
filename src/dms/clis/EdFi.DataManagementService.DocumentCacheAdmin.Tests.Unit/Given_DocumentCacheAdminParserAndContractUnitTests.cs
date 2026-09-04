@@ -47,7 +47,9 @@ public sealed class Given_DocumentCacheAdminParserAndContractUnitTests
                 DocumentCacheAdminCommandSurface.DeactivateOfflineCommandName,
                 DocumentCacheAdminCommandSurface.RebuildOnlineCommandName,
                 DocumentCacheAdminCommandSurface.ScrubCommandName,
-                DocumentCacheAdminCommandSurface.RecoverCacheAheadCommandName
+                DocumentCacheAdminCommandSurface.RecoverCacheAheadCommandName,
+                DocumentCacheAdminCommandSurface.RestampPreviewCommandName,
+                DocumentCacheAdminCommandSurface.RestampExecuteCommandName
             );
         OptionNames(rootCommand)
             .Should()
@@ -73,6 +75,14 @@ public sealed class Given_DocumentCacheAdminParserAndContractUnitTests
 
         foreach (Command command in MutatingCommands(rootCommand))
         {
+            if (
+                command.Name
+                is DocumentCacheAdminCommandSurface.RestampPreviewCommandName
+                    or DocumentCacheAdminCommandSurface.RestampExecuteCommandName
+            )
+            {
+                continue;
+            }
             string[] expectedOptions = DocumentCacheAdminCommandSurface.RequiresOfflineWriterAdmission(
                 command.Name
             )

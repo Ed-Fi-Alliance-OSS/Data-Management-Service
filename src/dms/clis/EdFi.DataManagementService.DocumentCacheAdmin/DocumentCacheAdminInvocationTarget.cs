@@ -134,6 +134,12 @@ internal static class DocumentCacheAdminInvocationTargetParser
                 DocumentCacheAdminCommandSurface.ConfirmOptionName,
                 DocumentCacheAdminCommandSurface.OfflineWriterAdmissionOptionName,
                 DocumentCacheAdminCommandSurface.ExpectedPhysicalSourceFingerprintOptionName,
+                DocumentCacheAdminCommandSurface.ModeOptionName,
+                DocumentCacheAdminCommandSurface.ReasonOptionName,
+                DocumentCacheAdminCommandSurface.ProjectNameOptionName,
+                DocumentCacheAdminCommandSurface.ResourceNameOptionName,
+                DocumentCacheAdminCommandSurface.DocumentUuidOptionName,
+                DocumentCacheAdminCommandSurface.OperationIdOptionName,
             },
             optionName => GetSpecifiedOption(parseResult, optionName) is not null
         );

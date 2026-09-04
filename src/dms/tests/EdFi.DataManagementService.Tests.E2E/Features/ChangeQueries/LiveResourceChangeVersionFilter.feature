@@ -11,6 +11,51 @@ Feature: Live resource endpoints filter by change version.
                   | schoolId  | nameOfInstitution    | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
                   | 920100001 | Live Filter School   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
 
+        @e2e-ci-shard-1 @MssqlRepresentative
+        Scenario: A representation restamp admits a current resource into a later live Change Query window without delete or key-change history
+             When a POST request is made to "/ed-fi/students" with
+                  """
+                  {
+                    "studentUniqueId": "1318002",
+                    "birthDate": "2014-08-14",
+                    "firstName": "Change",
+                    "lastSurname": "Query Student"
+                  }
+                  """
+             Then it should respond with 201
+             When the resulting id is stored in the "restampChangeQueryStudentId" variable
+             When a POST request is made to "/ed-fi/students" with
+                  """
+                  {
+                    "studentUniqueId": "1318003",
+                    "birthDate": "2014-08-14",
+                    "firstName": "Change",
+                    "lastSurname": "Query Floor"
+                  }
+                  """
+             Then it should respond with 201
+             When a GET request is made to "/changeQueries/v1/availableChangeVersions"
+             Then it should respond with 200
+              And the response body path "newestChangeVersion" is stored in request variable "restampChangeQueryFloor"
+             When a GET request is made to "/ed-fi/students?studentUniqueId=1318002&minChangeVersion={restampChangeQueryFloor}&totalCount=true"
+             Then it should respond with 200
+              And total of records should be 0
+             When representation restamp completes for document variable "restampChangeQueryStudentId" in tracking mode
+             When a GET request is made to "/changeQueries/v1/availableChangeVersions"
+             Then it should respond with 200
+              And the response body path "newestChangeVersion" is stored in request variable "restampChangeQueryAfter"
+             When a GET request is made to "/ed-fi/students?studentUniqueId=1318002&minChangeVersion={restampChangeQueryFloor}&totalCount=true"
+             Then it should respond with 200
+              And total of records should be 1
+              And the response body path "0.id" should equal request variable "restampChangeQueryStudentId"
+              And the response body path "0.firstName" should have value "Change"
+             When a GET request is made to "/ed-fi/students/deletes?minChangeVersion={restampChangeQueryFloor}&maxChangeVersion={restampChangeQueryAfter}&totalCount=true"
+             Then it should respond with 200
+              And total of records should be 0
+             When a GET request is made to "/ed-fi/students/keyChanges?minChangeVersion={restampChangeQueryFloor}&maxChangeVersion={restampChangeQueryAfter}&totalCount=true"
+             Then it should respond with 200
+              And total of records should be 0
+
         @ods-migrated
         @e2e-ci-shard-3
         @reset-data-before-scenario

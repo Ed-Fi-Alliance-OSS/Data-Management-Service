@@ -119,6 +119,44 @@ internal static class DmsCoreTableDefinitions
         );
     }
 
+    internal static DmsCoreTableDefinition RepresentationRestampOperation(ISqlDialect dialect)
+    {
+        ArgumentNullException.ThrowIfNull(dialect);
+
+        return new DmsCoreTableDefinition(
+            DmsTableNames.RepresentationRestampOperation,
+            [
+                new(Col("OperationId"), dialect.UuidColumnType, IsNullable: false),
+                new(Col("ContractVersion"), dialect.Rules.ScalarTypeDefaults.Int32Type, IsNullable: false),
+                new(Col("TenantKey"), StringType(dialect, 256), IsNullable: false),
+                new(Col("DataStoreId"), dialect.Rules.ScalarTypeDefaults.Int32Type, IsNullable: false),
+                new(Col("PhysicalSourceFingerprint"), StringType(dialect, 71), IsNullable: false),
+                new(Col("ScopeJson"), dialect.JsonColumnType, IsNullable: false),
+                new(Col("Reason"), StringType(dialect, 1024), IsNullable: false),
+                new(Col("Mode"), StringType(dialect, 8), IsNullable: false),
+                new(Col("PreRestampBoundary"), "bigint", IsNullable: false),
+                new(Col("PreviewDocumentCount"), "bigint", IsNullable: false),
+                new(Col("CommittedDocumentCount"), "bigint", IsNullable: false),
+                new(Col("State"), StringType(dialect, 10), IsNullable: false),
+                new(
+                    Col("CreatedAt"),
+                    DateTimeType(dialect),
+                    IsNullable: false,
+                    "DF_RepresentationRestampOperation_CreatedAt",
+                    dialect.CurrentTimestampDefaultExpression
+                ),
+                new(
+                    Col("UpdatedAt"),
+                    DateTimeType(dialect),
+                    IsNullable: false,
+                    "DF_RepresentationRestampOperation_UpdatedAt",
+                    dialect.CurrentTimestampDefaultExpression
+                ),
+            ],
+            [Col("OperationId")]
+        );
+    }
+
     private static DbColumnName Col(string name) => new(name);
 
     private static string StringType(ISqlDialect dialect, int maxLength) =>

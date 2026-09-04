@@ -41,7 +41,8 @@ internal sealed record DocumentCacheAdministrativeCommandRunnerRequest
         DocumentCacheAdministrativeTargetKey targetKey,
         DocumentCachePhysicalSourceFingerprint? expectedPhysicalSourceFingerprint = null,
         DocumentCacheOfflineWriterAdmission? offlineWriterAdmission = null,
-        DocumentCacheAdministrativeCommandConfirmation? confirmation = null
+        DocumentCacheAdministrativeCommandConfirmation? confirmation = null,
+        bool requiresCommandConfirmation = true
     )
     {
         if (!Enum.IsDefined(command))
@@ -58,6 +59,7 @@ internal sealed record DocumentCacheAdministrativeCommandRunnerRequest
         ExpectedPhysicalSourceFingerprint = expectedPhysicalSourceFingerprint;
         OfflineWriterAdmission = offlineWriterAdmission;
         Confirmation = confirmation;
+        RequiresCommandConfirmation = requiresCommandConfirmation;
     }
 
     public DocumentCacheAdministrativeCommand Command { get; }
@@ -69,6 +71,8 @@ internal sealed record DocumentCacheAdministrativeCommandRunnerRequest
     public DocumentCacheOfflineWriterAdmission? OfflineWriterAdmission { get; }
 
     public DocumentCacheAdministrativeCommandConfirmation? Confirmation { get; }
+
+    public bool RequiresCommandConfirmation { get; }
 
     public DocumentCacheOfflineWriterAdmissionConfirmation? AcceptedOfflineWriterAdmissionConfirmation =>
         DocumentCachePreflightClassifier.AcceptedOfflineWriterAdmissionConfirmation(
@@ -160,6 +164,40 @@ internal sealed record DocumentCacheAdministrativeCommandRunnerRequest
             request.ExpectedPhysicalSourceFingerprint,
             request.OfflineWriterAdmission,
             request.Confirmation
+        );
+    }
+
+    public static DocumentCacheAdministrativeCommandRunnerRequest From(
+        DocumentCacheRepresentationRestampPreviewRequest request
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        return new(
+            DocumentCacheAdministrativeCommand.RepresentationRestamp,
+            request.TargetKey,
+            request.ExpectedPhysicalSourceFingerprint,
+            request.OfflineWriterAdmission?.WithCommandSpecificConfirmation(
+                DocumentCacheOfflineWriterAdmissionConfirmation.RepresentationRestampWritersClosedAndDrained
+            ),
+            request.Confirmation,
+            requiresCommandConfirmation: false
+        );
+    }
+
+    public static DocumentCacheAdministrativeCommandRunnerRequest From(
+        DocumentCacheRepresentationRestampExecuteRequest request
+    )
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        return new(
+            DocumentCacheAdministrativeCommand.RepresentationRestamp,
+            request.TargetKey,
+            offlineWriterAdmission: request.OfflineWriterAdmission?.WithCommandSpecificConfirmation(
+                DocumentCacheOfflineWriterAdmissionConfirmation.RepresentationRestampWritersClosedAndDrained
+            ),
+            confirmation: request.Confirmation
         );
     }
 }
@@ -502,11 +540,13 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
         ArgumentNullException.ThrowIfNull(workflow);
 
         DocumentCacheAdministrativeCommandResult? commandConfirmationRejection =
-            DocumentCachePreflightClassifier.ClassifyCommandConfirmation(
-                request.Command,
-                request.TargetKey,
-                request.Confirmation
-            );
+            request.RequiresCommandConfirmation
+                ? DocumentCachePreflightClassifier.ClassifyCommandConfirmation(
+                    request.Command,
+                    request.TargetKey,
+                    request.Confirmation
+                )
+                : null;
         if (commandConfirmationRejection is not null)
         {
             return RecordAdministrativeCommandResult(commandConfirmationRejection);
@@ -784,7 +824,9 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                         LoggingSanitizer.SanitizeForLogging(request.TargetKey.TargetKey.ToString())
                     );
                     classifiedResult = RecordAdministrativeCommandResult(
-                        CreateProviderTimeoutResult(commandContext),
+                        commandTimeout.IsTimeoutExpired
+                            ? CreateWorkflowTimeoutResult(commandContext)
+                            : CreateProviderTimeoutResult(commandContext),
                         commandContext
                     );
                     return classifiedResult;
@@ -1302,7 +1344,8 @@ internal sealed class DocumentCacheAdministrativeCommandRunner(
                 ?? result.CacheAheadRecoveryRequired,
             phaseDiagnostics,
             commandContext.Request.AcceptedOfflineWriterAdmissionConfirmation,
-            commandContext.ElapsedCommandTime
+            commandContext.ElapsedCommandTime,
+            result.RepresentationRestampResult
         );
     }
 

@@ -20,6 +20,7 @@ public enum DocumentCacheAdministrativeCommand
     OnlineCacheRebuild,
     ExplicitIntegrityScrub,
     InternalOnlyCacheAheadRecovery,
+    RepresentationRestamp,
 }
 
 [JsonConverter(typeof(LowerCamelJsonStringEnumConverter<DocumentCacheAdministrativeCommandConfirmation>))]
@@ -31,6 +32,7 @@ public enum DocumentCacheAdministrativeCommandConfirmation
     OnlineCacheRebuild,
     IntegrityScrub,
     InternalCacheAheadRecovery,
+    RepresentationRestamp,
 }
 
 [JsonConverter(typeof(LowerCamelJsonStringEnumConverter<DocumentCacheAdministrativeCommandStatus>))]
@@ -81,6 +83,12 @@ public enum DocumentCacheAdministrativeCommandClassification
     WriterRetryBudgetExhausted,
     PersistentPoison,
     UnexpectedProviderFailure,
+    InvalidRepresentationRestampScope,
+    InvalidRepresentationRestampMapping,
+    InvalidRepresentationRestampMirror,
+    RepresentationRestampOperationNotFound,
+    RepresentationRestampOperationStateMismatch,
+    RepresentationRestampCountReconciliationFailure,
 }
 
 [JsonConverter(typeof(LowerCamelJsonStringEnumConverter<DocumentCacheAdministrativeCommandPhase>))]
@@ -101,6 +109,9 @@ public enum DocumentCacheAdministrativeCommandPhase
     ScrubScan,
     SetCacheAheadLatch,
     Complete,
+    CreateManifest,
+    SelectDocuments,
+    StampDocuments,
 }
 
 [JsonConverter(typeof(LowerCamelJsonStringEnumConverter<DocumentCacheAdministrativeDiagnosticCategory>))]
@@ -147,6 +158,12 @@ public enum DocumentCacheAdministrativeDiagnosticCategory
     PersistentPoison,
     DeterministicInvariantFailure,
     UnexpectedProviderFailure,
+    InvalidRepresentationRestampScope,
+    InvalidRepresentationRestampMapping,
+    InvalidRepresentationRestampMirror,
+    RepresentationRestampOperationNotFound,
+    RepresentationRestampOperationStateMismatch,
+    RepresentationRestampCountReconciliationFailure,
 }
 
 [JsonConverter(typeof(LowerCamelJsonStringEnumConverter<DocumentCacheOfflineWriterAdmissionConfirmation>))]
@@ -155,6 +172,7 @@ public enum DocumentCacheOfflineWriterAdmissionConfirmation
     OfflineActivationWritersClosedAndDrained,
     OfflineDeactivationWritersClosedAndDrained,
     InternalOnlyCacheAheadRecoveryWritersClosedAndDrained,
+    RepresentationRestampWritersClosedAndDrained,
 }
 
 [JsonConverter(typeof(LowerCamelJsonStringEnumConverter<DocumentCacheDownstreamPublicationStatus>))]
@@ -234,6 +252,11 @@ public static class DocumentCacheAdministrativeCommandContracts
             DocumentCacheAdministrativeCommand.InternalOnlyCacheAheadRecovery,
             DocumentCacheAdministrativeCommandConfirmation.InternalCacheAheadRecovery,
             DocumentCacheOfflineWriterAdmissionConfirmation.InternalOnlyCacheAheadRecoveryWritersClosedAndDrained
+        ),
+        [DocumentCacheAdministrativeCommand.RepresentationRestamp] = new(
+            DocumentCacheAdministrativeCommand.RepresentationRestamp,
+            DocumentCacheAdministrativeCommandConfirmation.RepresentationRestamp,
+            DocumentCacheOfflineWriterAdmissionConfirmation.RepresentationRestampWritersClosedAndDrained
         ),
     };
 
@@ -372,7 +395,7 @@ public sealed record DocumentCacheOfflineWriterAdmission
             acceptedClosedAndDrainedToken: true
         );
 
-    internal DocumentCacheOfflineWriterAdmission WithCommandSpecificConfirmation(
+    public DocumentCacheOfflineWriterAdmission WithCommandSpecificConfirmation(
         DocumentCacheOfflineWriterAdmissionConfirmation expectedConfirmation
     )
     {
@@ -711,7 +734,8 @@ public sealed record DocumentCacheAdministrativeCommandResult
         bool? cacheAheadRecoveryRequired = null,
         ImmutableArray<DocumentCacheAdministrativePhaseDiagnostic> phaseDiagnostics = default,
         DocumentCacheOfflineWriterAdmissionConfirmation? offlineWriterAdmission = null,
-        TimeSpan? elapsedCommandTime = null
+        TimeSpan? elapsedCommandTime = null,
+        DocumentCacheRepresentationRestampResult? representationRestampResult = null
     )
     {
         ArgumentNullException.ThrowIfNull(targetKey);
@@ -745,6 +769,7 @@ public sealed record DocumentCacheAdministrativeCommandResult
         OfflineWriterAdmission = offlineWriterAdmission;
         ElapsedCommandTime = elapsedCommandTime;
         DownstreamPublicationStatus = null;
+        RepresentationRestampResult = representationRestampResult;
     }
 
     public DocumentCacheAdministrativeCommandResult(
@@ -833,6 +858,10 @@ public sealed record DocumentCacheAdministrativeCommandResult
 
     [JsonIgnore]
     public DocumentCacheDownstreamPublicationStatus? DownstreamPublicationStatus { get; }
+
+    [JsonPropertyName("result")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DocumentCacheRepresentationRestampResult? RepresentationRestampResult { get; }
 
     [JsonIgnore]
     public ImmutableArray<DocumentCacheAdministrativeDiagnostic> Diagnostics =>

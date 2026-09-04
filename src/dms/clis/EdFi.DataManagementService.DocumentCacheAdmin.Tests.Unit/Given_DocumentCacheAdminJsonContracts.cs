@@ -77,6 +77,67 @@ public sealed class Given_DocumentCacheAdminJsonContracts
     }
 
     [Test]
+    public void It_deserializes_lower_camel_representation_restamp_preview_request_json()
+    {
+        var parseResult = ParseCommand(
+            DocumentCacheAdminCommandSurface.RestampPreviewCommandName,
+            DocumentCacheAdminCommandSurface.RequestJsonOptionName,
+            "-"
+        );
+
+        bool parsed = DocumentCacheAdminInvocationTargetParser.TryParse(
+            parseResult,
+            _ =>
+                $$"""
+                {
+                  "targetKey": { "tenantKey": "", "dataStoreId": 1 },
+                  "offlineWriterAdmission": "closedAndDrained",
+                  "mode": "tracking",
+                  "reason": "representation correction",
+                  "scope": { "scopeType": "resource", "projectName": "Ed-Fi", "resourceName": "Student" }
+                }
+                """,
+            out DocumentCacheAdminInvocationTarget? invocationTarget,
+            out string? failure
+        );
+
+        parsed.Should().BeTrue(failure);
+        invocationTarget!
+            .JsonRequest!.SharedRequest.Should()
+            .BeOfType<DocumentCacheRepresentationRestampPreviewRequest>();
+    }
+
+    [Test]
+    public void It_deserializes_lower_camel_representation_restamp_execute_request_json()
+    {
+        var parseResult = ParseCommand(
+            DocumentCacheAdminCommandSurface.RestampExecuteCommandName,
+            DocumentCacheAdminCommandSurface.RequestJsonOptionName,
+            "-"
+        );
+
+        bool parsed = DocumentCacheAdminInvocationTargetParser.TryParse(
+            parseResult,
+            _ =>
+                """
+                {
+                  "targetKey": { "tenantKey": "", "dataStoreId": 1 },
+                  "operationId": "11111111-1111-1111-1111-111111111111",
+                  "offlineWriterAdmission": "closedAndDrained",
+                  "confirmation": "representationRestamp"
+                }
+                """,
+            out DocumentCacheAdminInvocationTarget? invocationTarget,
+            out string? failure
+        );
+
+        parsed.Should().BeTrue(failure);
+        invocationTarget!
+            .JsonRequest!.SharedRequest.Should()
+            .BeOfType<DocumentCacheRepresentationRestampExecuteRequest>();
+    }
+
+    [Test]
     public void It_rejects_differently_cased_rebuild_online_json_confirmation_before_dispatch()
     {
         var parseResult = ParseCommand(

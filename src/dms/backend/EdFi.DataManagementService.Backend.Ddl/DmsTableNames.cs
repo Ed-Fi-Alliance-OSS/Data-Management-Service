@@ -27,6 +27,10 @@ internal static class DmsTableNames
     public static readonly DbTableName DocumentProjectionWork =
         DocumentCacheInventoryDefinition.DocumentProjectionWork;
     public static readonly DbTableName ReferentialIdentity = new(DmsSchema, "ReferentialIdentity");
+    public static readonly DbTableName RepresentationRestampOperation = new(
+        DmsSchema,
+        "RepresentationRestampOperation"
+    );
     public static readonly DbTableName ResourceKey = new(DmsSchema, "ResourceKey");
     public static readonly DbTableName SchemaComponent = new(DmsSchema, "SchemaComponent");
 

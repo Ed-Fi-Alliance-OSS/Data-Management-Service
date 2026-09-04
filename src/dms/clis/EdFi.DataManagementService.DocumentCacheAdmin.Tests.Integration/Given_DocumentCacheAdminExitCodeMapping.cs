@@ -338,3 +338,167 @@ public sealed class Given_DocumentCacheAdminProviderCommandTimeoutExitCodes
         }
     }
 }
+
+[TestFixture]
+[Category("RepresentationRestamp")]
+public sealed class Given_DocumentCacheAdminRepresentationRestampExitCodes
+{
+    [Test]
+    public async Task It_maps_provider_timeout_after_a_committed_page_to_incomplete_retryable_with_an_incomplete_claim_level()
+    {
+        (int exitCode, string jsonOutput) = await ExecuteRestampExecuteAsync(
+            Result(
+                DocumentCacheAdministrativeCommandStatus.IncompleteRetryable,
+                DocumentCacheAdministrativeCommandClassification.ProviderCommandTimeout,
+                mutated: true,
+                DocumentCacheRepresentationRestampOperationState.Incomplete,
+                DocumentCacheRepresentationRestampClaimLevel.Incomplete
+            )
+        );
+
+        exitCode.Should().Be(DocumentCacheAdminExitCodes.IncompleteRetryable);
+        jsonOutput.Should().Contain("\"command\":\"representationRestamp\"");
+        jsonOutput.Should().Contain("\"status\":\"incompleteRetryable\"");
+        jsonOutput.Should().Contain("\"classification\":\"providerCommandTimeout\"");
+        jsonOutput.Should().Contain("\"mutated\":true");
+        jsonOutput.Should().Contain("\"state\":\"incomplete\"");
+        jsonOutput.Should().Contain("\"claimLevel\":\"incomplete\"");
+    }
+
+    [Test]
+    public async Task It_maps_session_loss_before_a_committed_page_to_failed_no_mutation()
+    {
+        (int exitCode, string jsonOutput) = await ExecuteRestampExecuteAsync(
+            Result(
+                DocumentCacheAdministrativeCommandStatus.FailedNoMutation,
+                DocumentCacheAdministrativeCommandClassification.SessionLossNoMutation,
+                mutated: false,
+                DocumentCacheRepresentationRestampOperationState.Incomplete,
+                DocumentCacheRepresentationRestampClaimLevel.Incomplete
+            )
+        );
+
+        exitCode.Should().Be(DocumentCacheAdminExitCodes.FailedNoMutation);
+        jsonOutput.Should().Contain("\"status\":\"failedNoMutation\"");
+        jsonOutput.Should().Contain("\"classification\":\"sessionLossNoMutation\"");
+        jsonOutput.Should().Contain("\"mutated\":false");
+    }
+
+    [Test]
+    public async Task It_only_maps_success_after_the_operation_reconciles_to_completed()
+    {
+        (int exitCode, string jsonOutput) = await ExecuteRestampExecuteAsync(
+            Result(
+                DocumentCacheAdministrativeCommandStatus.Completed,
+                DocumentCacheAdministrativeCommandClassification.Succeeded,
+                mutated: true,
+                DocumentCacheRepresentationRestampOperationState.Completed,
+                DocumentCacheRepresentationRestampClaimLevel.ProjectionWorkQueued
+            )
+        );
+
+        exitCode.Should().Be(DocumentCacheAdminExitCodes.Success);
+        jsonOutput.Should().Contain("\"status\":\"completed\"");
+        jsonOutput.Should().Contain("\"classification\":\"succeeded\"");
+        jsonOutput.Should().Contain("\"state\":\"completed\"");
+        jsonOutput.Should().Contain("\"claimLevel\":\"projectionWorkQueued\"");
+    }
+
+    private static async Task<(int ExitCode, string JsonOutput)> ExecuteRestampExecuteAsync(
+        DocumentCacheAdministrativeCommandResult result
+    )
+    {
+        ReturningMutatingCommandDispatcher dispatcher = new(result);
+        await using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddSingleton<IDocumentCacheAdminMutatingCommandDispatcher>(dispatcher)
+            .BuildServiceProvider();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+
+        int exitCode = await DocumentCacheAdminCommandExecutor.ExecuteAsync(
+            ParseCommand(
+                DocumentCacheAdminCommandSurface.RestampExecuteCommandName,
+                DocumentCacheAdminCommandSurface.DataStoreIdOptionName,
+                "1",
+                DocumentCacheAdminCommandSurface.OperationIdOptionName,
+                Guid.NewGuid().ToString(),
+                DocumentCacheAdminCommandSurface.ConfirmOptionName,
+                "representationRestamp",
+                DocumentCacheAdminCommandSurface.OfflineWriterAdmissionOptionName,
+                "closedAndDrained",
+                DocumentCacheAdminCommandSurface.JsonOptionName
+            ),
+            InvocationTarget(),
+            serviceProvider,
+            stdout,
+            stderr
+        );
+
+        stderr.ToString().Should().BeEmpty();
+        return (exitCode, stdout.ToString());
+    }
+
+    private static ParseResult ParseCommand(string commandName, params string[] args) =>
+        DocumentCacheAdminCommandSurface.CreateRootCommand().Parse([commandName, .. args]);
+
+    private static DocumentCacheAdminInvocationTarget InvocationTarget() =>
+        new(DocumentCacheTargetKey.Create("", 1));
+
+    private static DocumentCacheAdministrativeCommandResult Result(
+        DocumentCacheAdministrativeCommandStatus status,
+        DocumentCacheAdministrativeCommandClassification classification,
+        bool mutated,
+        DocumentCacheRepresentationRestampOperationState state,
+        DocumentCacheRepresentationRestampClaimLevel claimLevel
+    ) =>
+        new(
+            DocumentCacheAdministrativeCommand.RepresentationRestamp,
+            new DocumentCacheAdministrativeTargetKey("", 1),
+            status,
+            classification,
+            mutated,
+            phaseDiagnostics:
+            [
+                new DocumentCacheAdministrativePhaseDiagnostic(
+                    DocumentCacheAdministrativeCommandPhase.StampDocuments,
+                    DocumentCacheAdministrativeCommandPhase.SelectDocuments,
+                    retryable: status == DocumentCacheAdministrativeCommandStatus.IncompleteRetryable,
+                    classification switch
+                    {
+                        DocumentCacheAdministrativeCommandClassification.SessionLossNoMutation
+                        or DocumentCacheAdministrativeCommandClassification.SessionLossAfterMutation =>
+                            DocumentCacheAdministrativeDiagnosticCategory.SessionLoss,
+                        DocumentCacheAdministrativeCommandClassification.ProviderCommandTimeout =>
+                            DocumentCacheAdministrativeDiagnosticCategory.ProviderCommandTimeout,
+                        _ => DocumentCacheAdministrativeDiagnosticCategory.Cancellation,
+                    },
+                    ImmutableArray<long>.Empty,
+                    "typed representation restamp diagnostic"
+                ),
+            ],
+            representationRestampResult: new DocumentCacheRepresentationRestampResult(
+                Guid.NewGuid(),
+                state,
+                100,
+                5,
+                state == DocumentCacheRepresentationRestampOperationState.Completed ? 5 : 3,
+                state == DocumentCacheRepresentationRestampOperationState.Completed ? null : 2,
+                DocumentCacheRepresentationRestampMode.Tracking,
+                new DocumentCachePhysicalSourceFingerprint($"sha256:{new string('a', 64)}"),
+                claimLevel
+            )
+        );
+
+    private sealed class ReturningMutatingCommandDispatcher(DocumentCacheAdministrativeCommandResult result)
+        : IDocumentCacheAdminMutatingCommandDispatcher
+    {
+        public Task<DocumentCacheAdministrativeCommandResult> ExecuteAsync(
+            DocumentCacheAdminMutatingCommandRequest commandRequest,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(result);
+        }
+    }
+}

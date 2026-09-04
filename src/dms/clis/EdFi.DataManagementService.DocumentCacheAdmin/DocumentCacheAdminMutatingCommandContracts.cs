@@ -245,6 +245,30 @@ internal static class DocumentCacheAdminMutatingCommandContracts
                     confirmation
                 )
         ),
+        [DocumentCacheAdminCommandSurface.RestampPreviewCommandName] = Create(
+            DocumentCacheAdminCommandSurface.RestampPreviewCommandName,
+            DocumentCacheAdministrativeCommand.RepresentationRestamp,
+            (targetKey, expectedPhysicalSourceFingerprint, confirmation, offlineWriterAdmission) =>
+                new DocumentCacheRepresentationRestampPreviewRequest(
+                    targetKey,
+                    offlineWriterAdmission,
+                    DocumentCacheRepresentationRestampMode.Tracking,
+                    "cli",
+                    new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "unknown"),
+                    expectedPhysicalSourceFingerprint
+                )
+        ),
+        [DocumentCacheAdminCommandSurface.RestampExecuteCommandName] = Create(
+            DocumentCacheAdminCommandSurface.RestampExecuteCommandName,
+            DocumentCacheAdministrativeCommand.RepresentationRestamp,
+            (targetKey, expectedPhysicalSourceFingerprint, confirmation, offlineWriterAdmission) =>
+                new DocumentCacheRepresentationRestampExecuteRequest(
+                    targetKey,
+                    Guid.Empty,
+                    offlineWriterAdmission,
+                    confirmation
+                )
+        ),
     };
 
     public static bool TryGet(

@@ -15,6 +15,7 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.DocumentCacheAdmin;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -391,6 +392,9 @@ public sealed class Given_DocumentCacheAdminInProcessCommandRunner
             IDocumentCacheInternalOnlyCacheAheadRecoveryCommand,
             DocumentCacheInternalOnlyCacheAheadRecoveryCommand
         >();
+        services.AddSingleton<IDocumentCacheRepresentationRestampCommand>(
+            A.Fake<IDocumentCacheRepresentationRestampCommand>()
+        );
         services.AddSingleton<
             IDocumentCacheDownstreamPublicationHistoryProvider,
             ThrowingDownstreamPublicationHistoryProvider
@@ -568,6 +572,9 @@ public sealed class Given_DocumentCacheAdminInProcessCommandRunner
                 IDocumentCacheInternalOnlyCacheAheadRecoveryCommand,
                 DocumentCacheInternalOnlyCacheAheadRecoveryCommand
             >();
+            services.AddSingleton<IDocumentCacheRepresentationRestampCommand>(
+                A.Fake<IDocumentCacheRepresentationRestampCommand>()
+            );
             services.AddSingleton<
                 IDocumentCacheAdminMutatingCommandDispatcher,
                 DocumentCacheAdminMutatingCommandDispatcher
