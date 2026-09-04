@@ -247,7 +247,9 @@ public class Given_The_Failure_Hierarchy
         _cases
             .Should()
             .BeEquivalentTo(
-                new[] { typeof(CustomValidationFailure.OnPath), typeof(CustomValidationFailure.OnResource) }
+                new[] { typeof(CustomValidationFailure.OnPath), typeof(CustomValidationFailure.OnResource) },
+                "CustomResourceValidationMiddleware's failure-mapping switch expression has an arm "
+                    + "for each case here and must gain a matching arm if a case is ever added"
             );
     }
 

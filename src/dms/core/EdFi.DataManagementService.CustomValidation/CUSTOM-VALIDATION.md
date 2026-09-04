@@ -3,12 +3,12 @@
 This package defines `ICustomResourceValidator`, the contract a district or vendor implements to add
 custom resource validation to the Ed-Fi Data Management Service.
 
-> **The contract ships ahead of the host support for it.**
+> **The contract ships ahead of a supported way to register against it.**
 >
-> This release carries the types only.
-> The Data Management Service does not yet resolve or invoke `ICustomResourceValidator`, so an
-> implementation compiled against this version will not run: registering one has no effect at
-> runtime.
+> The Data Management Service's write pipeline now resolves registered `ICustomResourceValidator`
+> instances and invokes those whose `AppliesTo` matches the current request's resource, but no
+> supported registration seam ships yet.
+> An implementer has no documented way to register one, so in practice nothing runs today.
 > Build against it to pin the contract and to compile early, but do not expect a registered
 > validator to execute until a Data Management Service release announces custom-validation support.
 

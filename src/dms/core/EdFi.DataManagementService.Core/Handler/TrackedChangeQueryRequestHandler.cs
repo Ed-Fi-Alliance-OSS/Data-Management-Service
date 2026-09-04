@@ -63,7 +63,17 @@ internal sealed class TrackedChangeQueryRequestHandler(
             static _ => false,
             static _ => true,
             async ct => await changeQueryRepository.QueryTrackedChanges(trackedChangeQueryRequest, ct),
-            requestInfo
+            requestInfo,
+            // A read is safe to abandon when the client disconnects: nothing is persisted, so
+            // stopping the retry loop only stops work nobody is waiting for.
+            //
+            // Inert as it stands, unlike the other read handlers: IApiService.GetTrackedChanges
+            // takes no token, so ApiService builds this request's RequestInfo without one and this
+            // is CancellationToken.None. Passed explicitly anyway, because ExecuteWithRetryLogging
+            // defaults to the uncancellable direction that writes need - the opt-in belongs at the
+            // read call sites, and putting it here now means this becomes live the moment a token is
+            // threaded through GetTrackedChanges rather than having to be remembered then.
+            requestInfo.RequestCancellationToken
         );
 
         if (trackedChangeQueryResult.AuthorizationFailure is { } authorizationFailure)

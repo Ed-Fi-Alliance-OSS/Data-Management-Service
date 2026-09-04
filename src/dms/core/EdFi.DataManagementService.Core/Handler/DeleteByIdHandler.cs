@@ -55,7 +55,13 @@ internal class DeleteByIdHandler(ILogger _logger, ResiliencePipeline _resilience
                         AuthorizationStrategyEvaluators = requestInfo.AuthorizationStrategyEvaluators,
                     }
                 ),
-            requestInfo
+            requestInfo,
+            // A delete is a write, so the resilience context must not be abandonable: a delete
+            // abandoned mid-retry can leave the document in place while the client believes it is
+            // gone. Passed explicitly rather than relying on the default, matching UpsertHandler and
+            // UpdateByIdHandler, so all three write handlers keep the durability choice visible at
+            // the call site and none of them changes behaviour if that default is ever flipped.
+            CancellationToken.None
         );
         _logger.LogDebug(
             "Document store DeleteDocumentById returned {DeleteResult}- {TraceId}",

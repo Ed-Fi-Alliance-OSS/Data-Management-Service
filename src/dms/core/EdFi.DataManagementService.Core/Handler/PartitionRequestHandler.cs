@@ -82,7 +82,10 @@ internal class PartitionRequestHandler(
                         CreatePartitionRequest(requestInfo, requestedPartitionCount),
                         ct
                     ),
-                requestInfo
+                requestInfo,
+                // A read is safe to abandon when the client disconnects: nothing is persisted,
+                // so stopping the retry loop only stops work nobody is waiting for.
+                requestInfo.RequestCancellationToken
             );
         }
         catch (OperationCanceledException) when (requestInfo.RequestCancellationToken.IsCancellationRequested)

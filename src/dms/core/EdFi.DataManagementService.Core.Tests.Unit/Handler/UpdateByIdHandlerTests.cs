@@ -18,6 +18,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using Polly;
+using Polly.Retry;
 using static EdFi.DataManagementService.Core.External.Backend.UpdateResult;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
@@ -29,13 +30,18 @@ public class UpdateByIdHandlerTests
 {
     internal static (IPipelineStep handler, IServiceProvider serviceProvider) Handler(
         IDocumentStoreRepository documentStoreRepository
+    ) => Handler(documentStoreRepository, ResiliencePipeline.Empty);
+
+    internal static (IPipelineStep handler, IServiceProvider serviceProvider) Handler(
+        IDocumentStoreRepository documentStoreRepository,
+        ResiliencePipeline resiliencePipeline
     )
     {
         var serviceProvider = A.Fake<IServiceProvider>();
         A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository)))
             .Returns(documentStoreRepository);
 
-        var handler = new UpdateByIdHandler(NullLogger.Instance, ResiliencePipeline.Empty);
+        var handler = new UpdateByIdHandler(NullLogger.Instance, resiliencePipeline);
 
         return (handler, serviceProvider);
     }
@@ -85,6 +91,71 @@ public class UpdateByIdHandlerTests
             ],
             ClaimEducationOrganizationIds: [new EducationOrganizationId(255901)]
         );
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_With_An_Already_Cancelled_Request_Token : UpdateByIdHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public bool WasCalled { get; private set; }
+
+            public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
+            {
+                WasCalled = true;
+                return Task.FromResult<UpdateResult>(
+                    new UpdateSuccess(updateRequest.DocumentUuid, "\"test-etag\"")
+                );
+            }
+        }
+
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
+        private readonly Repository _repository = new();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            using var cancellationTokenSource = new CancellationTokenSource();
+            await cancellationTokenSource.CancelAsync();
+            _requestInfo.RequestCancellationToken = cancellationTokenSource.Token;
+
+            // A resilience pipeline that actually performs retry work (rather than
+            // ResiliencePipeline.Empty) is required here: Polly only honors a resilience
+            // context's cancellation token when a real strategy is present, so this is what
+            // makes the test capable of catching a regression back to seeding the context from
+            // requestInfo.RequestCancellationToken.
+            var resiliencePipeline = new ResiliencePipelineBuilder()
+                .AddRetry(
+                    new RetryStrategyOptions
+                    {
+                        MaxRetryAttempts = 1,
+                        Delay = TimeSpan.Zero,
+                        ShouldHandle = new PredicateBuilder().HandleResult(Utility.IsRetryableResult),
+                    }
+                )
+                .Build();
+            var (updateByIdHandler, serviceProvider) = Handler(_repository, resiliencePipeline);
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+
+            await updateByIdHandler.Execute(_requestInfo, NullNext);
+        }
+
+        /// <summary>
+        /// A client disconnect must not abandon a non-idempotent write that would otherwise have
+        /// been retried and applied, so the write's resilience context is seeded with
+        /// CancellationToken.None rather than the request's own cancellation token. Proven here by
+        /// an already-cancelled request token: if the resilience context were seeded from it
+        /// instead, Polly would throw OperationCanceledException before the operation ever ran.
+        /// This mirrors the identical guard on UpsertHandler; both write handlers opt out, so both
+        /// are pinned.
+        /// </summary>
+        [Test]
+        public void It_still_runs_the_write_operation_to_completion()
+        {
+            _repository.WasCalled.Should().BeTrue();
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(204);
+        }
+    }
 
     [TestFixture]
     [Parallelizable]

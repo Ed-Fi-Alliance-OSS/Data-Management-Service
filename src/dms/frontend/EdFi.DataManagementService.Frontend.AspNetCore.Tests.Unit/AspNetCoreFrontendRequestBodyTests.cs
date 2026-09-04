@@ -48,7 +48,7 @@ public class Given_AspNetCoreFrontend_Request_Body_Extraction
     private static IApiService CreateApiServiceForUpsert(Action<FrontendRequest> captureRequest)
     {
         var apiService = A.Fake<IApiService>();
-        A.CallTo(() => apiService.Upsert(A<FrontendRequest>._))
+        A.CallTo(() => apiService.Upsert(A<FrontendRequest>._, A<CancellationToken>._))
             .Invokes(call => captureRequest(call.GetArgument<FrontendRequest>(0)!))
             .Returns(Task.FromResult<IFrontendResponse>(new FrontendResponse(200, null, [])));
 
@@ -200,5 +200,39 @@ public class Given_AspNetCoreFrontend_Request_Body_Extraction
         capturedRequest.BodyParseErrorMessage.Should().BeNull();
         capturedRequest.DuplicatePropertyPath.Should().BeNull();
         capturedRequest.Form.Should().BeNull();
+    }
+
+    [Test]
+    public async Task It_passes_the_http_context_request_aborted_token_to_upsert()
+    {
+        CancellationToken? capturedCancellationToken = null;
+        var httpContext = CreateHttpContext("""{ "id":"value", "name":"School" }""");
+        using var cancellationTokenSource = new CancellationTokenSource();
+        httpContext.RequestAborted = cancellationTokenSource.Token;
+        var apiService = A.Fake<IApiService>();
+        A.CallTo(() => apiService.Upsert(A<FrontendRequest>._, A<CancellationToken>._))
+            .Invokes(call => capturedCancellationToken = call.GetArgument<CancellationToken>(1))
+            .Returns(Task.FromResult<IFrontendResponse>(new FrontendResponse(200, null, [])));
+
+        await AspNetCoreFrontend.Upsert(httpContext, apiService, "ed-fi/schools", AppSettings());
+
+        capturedCancellationToken.Should().Be(cancellationTokenSource.Token);
+    }
+
+    [Test]
+    public async Task It_passes_the_http_context_request_aborted_token_to_update_by_id()
+    {
+        CancellationToken? capturedCancellationToken = null;
+        var httpContext = CreateHttpContext("""{ "id":"value", "name":"School" }""");
+        using var cancellationTokenSource = new CancellationTokenSource();
+        httpContext.RequestAborted = cancellationTokenSource.Token;
+        var apiService = A.Fake<IApiService>();
+        A.CallTo(() => apiService.UpdateById(A<FrontendRequest>._, A<CancellationToken>._))
+            .Invokes(call => capturedCancellationToken = call.GetArgument<CancellationToken>(1))
+            .Returns(Task.FromResult<IFrontendResponse>(new FrontendResponse(200, null, [])));
+
+        await AspNetCoreFrontend.UpdateById(httpContext, apiService, "ed-fi/schools", AppSettings());
+
+        capturedCancellationToken.Should().Be(cancellationTokenSource.Token);
     }
 }

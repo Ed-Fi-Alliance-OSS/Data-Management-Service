@@ -224,6 +224,20 @@ public static class Utility
     /// <summary>
     /// Executes an operation within a resilience pipeline, handling retry logging.
     /// </summary>
+    /// <param name="resilienceCancellationToken">
+    /// The token the resilience context - and therefore the operation itself - is seeded with.
+    /// Defaults to <see cref="CancellationToken.None" />, so the retry loop is not abandonable
+    /// unless a caller opts in.
+    /// The default is deliberately the conservative direction rather than the convenient one: a
+    /// write handler that forgets to opt out would silently drop a non-idempotent write that would
+    /// otherwise have been retried and applied, while a read handler that forgets to opt in only
+    /// keeps retrying work nobody is waiting for. The failure modes are not symmetric, so the
+    /// default protects the one that loses data.
+    /// Read handlers therefore pass <see cref="RequestInfo.RequestCancellationToken" /> explicitly.
+    /// All three write handlers pass <see cref="CancellationToken.None" /> explicitly rather than
+    /// relying on the default, so the durability choice stays visible at the call site and none of
+    /// them changes behaviour if this default is ever flipped. No call site relies on the default.
+    /// </param>
     internal static async Task<TResult> ExecuteWithRetryLogging<TResult>(
         ResiliencePipeline resiliencePipeline,
         ILogger logger,
@@ -232,12 +246,13 @@ public static class Utility
         Func<TResult, bool> isRetryExhausted,
         Func<TResult, bool> isSuccess,
         Func<CancellationToken, ValueTask<TResult>> operation,
-        RequestInfo requestInfo
+        RequestInfo requestInfo,
+        CancellationToken resilienceCancellationToken = default
     )
         where TResult : class
     {
         int attemptCount = 0;
-        var context = ResilienceContextPool.Shared.Get(requestInfo.RequestCancellationToken);
+        var context = ResilienceContextPool.Shared.Get(resilienceCancellationToken);
         context.Properties.Set(TraceIdKey, traceId.Value);
         context.Properties.Set(OperationNameKey, operationName);
 

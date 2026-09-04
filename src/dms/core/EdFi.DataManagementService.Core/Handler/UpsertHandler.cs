@@ -69,7 +69,10 @@ internal class UpsertHandler(ILogger _logger, ResiliencePipeline _resiliencePipe
                     }
                 );
             },
-            requestInfo
+            requestInfo,
+            // A client disconnect must not abandon a non-idempotent write that would otherwise
+            // have been retried and applied, so the resilience context stays uncancellable here.
+            CancellationToken.None
         );
         _logger.LogDebug(
             "Document store UpsertDocument returned {UpsertResult}- {TraceId}",

@@ -18,6 +18,26 @@ namespace EdFi.DataManagementService.Core.Response;
 /// </summary>
 public static class FailureResponse
 {
+    /// <summary>
+    /// The <c>detail</c> that <see cref="Middleware.ValidateDocumentMiddleware" /> and
+    /// <see cref="Middleware.CustomResourceValidationMiddleware" /> put on the <c>errors</c> arm of a
+    /// write-path 400. Those two share it because custom validation is required to produce a body a
+    /// client cannot tell apart from core schema validation's, and two separate copies of the string
+    /// would let one of them change alone.
+    /// This is deliberately not the codebase-wide source of truth for the literal: other production
+    /// call sites across Core and Backend still spell both write-path 400 detail literals out inline,
+    /// so changing this constant diverges these two from the rest rather than renaming the value
+    /// everywhere.
+    /// </summary>
+    internal const string ErrorsArmDetail = "The request could not be processed. See 'errors' for details.";
+
+    /// <summary>
+    /// The <c>detail</c> a write-path 400 carries on the <c>validationErrors</c> arm. Shared for the
+    /// same reason as <see cref="ErrorsArmDetail" />.
+    /// </summary>
+    internal const string ValidationErrorsArmDetail =
+        "Data validation failed. See 'validationErrors' for details.";
+
     private static readonly string _typePrefix = "urn:ed-fi:api";
     private static readonly string _badRequestTypePrefix = $"{_typePrefix}:bad-request";
     private static readonly string _unauthorizedType = $"{_typePrefix}:unauthorized";
