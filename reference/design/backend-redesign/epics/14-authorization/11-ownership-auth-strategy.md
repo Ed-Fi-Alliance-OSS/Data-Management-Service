@@ -15,7 +15,10 @@ Implement ownership-based authorization for single-record operations per:
 `ApplicationContext`, not JWT claims. DMS resolves and caches this context through
 `GET /v3/apiClients/{clientId}`.
 
-CMS limits assignments to 1,999 ownership tokens; DMS defensively fails at 2,000 or more.
+CMS limits assignments to 1,999 ownership tokens; DMS defensively fails at 2,000 or more when
+`OwnershipTokenIds` is evaluated for an existing stored document. A POST that resolves to create does
+not evaluate `OwnershipTokenIds`, because no stored ownership token exists yet; it stamps
+`CreatorOwnershipTokenId` and proceeds.
 
 ## Acceptance Criteria
 
@@ -29,6 +32,9 @@ CMS limits assignments to 1,999 ownership tokens; DMS defensively fails at 2,000
 - GET-by-id checks the stored token before hydration and reconstitution and returns 403 on null or mismatch.
 - PUT checks the stored token before mutation and never changes it.
 - DELETE checks the stored token before deletion.
+- A POST that resolves to create does not evaluate `OwnershipTokenIds`, so the 2,000-token defensive
+  cap does not deny a true create. A POST that resolves to update applies the cap after target
+  resolution and fails closed before DML.
 - `OwnershipTokenIds` authorizes reads and mutations, while the single `CreatorOwnershipTokenId` is only for creation stamping.
 - Failures use `AUTH1` with the configured strategy index and map to `auth.md` sections 2.13 and 2.14.
 - POST and PUT run the ownership check as a statement in the write's first-phase command, after the
