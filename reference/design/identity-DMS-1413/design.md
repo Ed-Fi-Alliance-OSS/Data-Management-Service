@@ -311,7 +311,7 @@ It declares:
 - request media types `application/json` and `text/json` for all three POST operations;
 - top-level request shapes of object for create, array of string for find, and array of object for search, with the standard identifying fields documented on create/search object schemas;
 - response body schemas per operation, with `additionalProperties: true` on request and response objects so custom fields remain legal;
-- schemas remain property-for-property, type-for-type, and required-list compatible with the pinned ODS 7.3.2 identity OpenAPI document except for differences explicitly named in the divergence ledger;
+- schemas remain property-for-property and type-for-type compatible with the pinned ODS 7.3.2 identity OpenAPI document, whose identity schemas declare no schema-level `required` arrays and no `nullable` keywords; requiredness and nullability are therefore DMS additions rather than matched dimensions, and every such addition is named in the divergence ledger, as is any other difference;
 - client-visible error responses for validation `400`, provider `InvalidProperties` `400`, unsupported-media-type `415` on POST operations, operation-unsupported `404`, identity-not-found `404`, provider-contract-violation `502`, and identity-upstream-failure `502`, with problem-detail schemas or documented problem-detail `type` values where DMS emits problem details;
 - a `servers` array injected with the actual route-qualified runtime base ending in `/identity/v2`;
 - `paths` keys relative to that base, exactly `/identities`, `/identities/{id}`, `/identities/find`, `/identities/search`, and `/identities/results/{id}`, so the `/identity/v2` base appears only in `servers`;
@@ -574,7 +574,8 @@ No tests are run by this spike because it changes design documents only.
 | D-11 | Unsupported media type | MVC binding behavior | explicit `415` | host-owned protocol concern |
 | D-12 | `InvalidProperties` | `400` only on create | `400` on all operations | Jira names it as a standard delegated status |
 | D-13 | Success missing value | can become empty `200` | `502` contract misuse | client cannot use an empty success |
-| D-14 | OpenAPI required fields | identity response schemas declare no required fields | standard response fields are declared required but nullable | providers need a documented success payload contract while still using `null` for unsupported attributes |
+| D-14 | OpenAPI response required lists | identity response schemas declare no `required` arrays | `IdentityResponse` declares the standard identifying attributes and `UniqueId` required, `IdentitySearchResponse` declares `Status` required and `SearchResponses` required only in the `Complete` shape, and each `SearchResponses` entry declares `Responses` required | providers need a documented success payload contract; the `Complete`-only scoping of `SearchResponses` keeps a pending poll legal |
+| D-15 | OpenAPI nullability | identity schemas declare no `nullable` keywords, so the document forbids `null` by OpenAPI 3.0 default | standard identifying attributes are declared `nullable` in both request and response schemas, including `BirthLocation` children | requests use `null` or omission for unknown values and providers represent unsupported response attributes as `null`, which the pinned document's own omission would make illegal |
 
 ## Risks and Open Questions
 

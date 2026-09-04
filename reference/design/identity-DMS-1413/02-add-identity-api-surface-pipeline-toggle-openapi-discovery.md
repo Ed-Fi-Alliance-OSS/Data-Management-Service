@@ -63,7 +63,7 @@ DMS owns these fixed routes and brokers to `IIdentityService`; plugins provide i
 - Request media types are `application/json` and `text/json`.
 - Request schemas are object for create, array of string for find, and array of object for search, with standard identifying properties documented on create/search objects.
 - Success response schemas match the payload obligations in `design.md`, including standard identifying attributes, unsupported-as-null semantics, ordered search-response groups, `BirthDate` as `date-time`, and `Score` as `number`/`double`.
-- Schemas are property-for-property, type-for-type, and required-list compatible with the pinned ODS 7.3.2 identity OpenAPI document except for differences explicitly named in the divergence ledger.
+- Schemas are property-for-property and type-for-type compatible with the pinned ODS 7.3.2 identity OpenAPI document, whose identity schemas declare no schema-level `required` arrays and no `nullable` keywords; requiredness and nullability are DMS additions named in the divergence ledger, and no other difference is permitted unless the ledger names it.
 - Examples include no-match find/search response groups with empty `Responses` arrays.
 - Request and response objects allow additional properties.
 - Provider `InvalidProperties` `400` responses are declared for every operation.
