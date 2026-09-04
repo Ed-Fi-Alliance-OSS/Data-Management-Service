@@ -91,7 +91,7 @@ The namespace is `EdFi.DataManagementService.Identity`, following the custom-val
 The package is public API and is additive-only after publication.
 Because this is a plugin-facing contract assembly, the project declares its own `Version`, `AssemblyVersion`, and `FileVersion`, initially `1.0.0`, independent of the DMS release version.
 Story 01 owns the package assertion proving the nupkg's contained assembly version equals the identity contract package version.
-Story 05 owns the runtime image assertion after DMS-1499, proving the DMS image also carries `EdFi.DataManagementService.Identity.dll` at that same contract assembly version.
+The plugin-registration story owns the runtime image assertion after DMS-1499, proving the DMS image also carries `EdFi.DataManagementService.Identity.dll` at that same contract assembly version.
 The deploy-time replacement story cannot land until the DMS-1462 Docker-lane removal of global `/p:AssemblyVersion` and `/p:FileVersion` stamping is present, because command-line global properties override a contract project's declared version.
 
 The contract project declares its own DTOs and result types so the public package does not depend on DMS internal Core models.
@@ -267,7 +267,7 @@ A find or search request with no matching identity is represented as `Success` w
 DMS does not inspect that runtime shape, but the contract documentation, OpenAPI examples, and fixture tests must model no-match responses this way.
 
 DMS does not read `Score`, does not enforce a score threshold, and does not inspect person data.
-The fixture and OpenAPI stories prove the schema and examples include the standard identifying attributes, unsupported-as-null semantics, ordered search-response groups, and required search confidence scores.
+The API-surface and fixture stories prove the schema and examples include the standard identifying attributes, unsupported-as-null semantics, ordered search-response groups, and required search confidence scores.
 
 Provider success with a missing payload is contract misuse and maps to provider-contract-violation `502`.
 Provider success with a payload whose shape does not match the documented schema is still served verbatim; that is a provider bug, not a host validation failure.
@@ -494,20 +494,16 @@ The DMS-1462 recording wrapper cannot observe a candidate descriptor that `TryAd
 This is documented as an implementer obligation.
 
 No story before the registry/loading prerequisites may claim deploy-time plugin replacement.
-The DMS-owned API stories can use the host default and test doubles.
+The DMS-owned API story can use the host default and test doubles.
 
 ## Story Breakdown
 
 | # | Story | Depends on | Scope |
 | --- | --- | --- | --- |
 | 01 | Add the Identity Contract Package and Host Default | this design | `EdFi.Api.Identity`, public contract types, XML docs, `NoIdentityService`, solution entry, lock file, Dockerfile copy-list entries |
-| 02 | Add the Identity Core Pipeline and Response Mapping | 01 | service-claim auth, tenant-existence middleware, capability gate, pipeline factories, five `IApiService` methods, handler, status mapping, request parsing, token checks |
-| 03 | Add Identity Endpoints and Feature Toggle | 02 | frontend endpoint module, route mapping, `EnableIdentityManagement`, compose/env entries, disabled-route absence |
-| 04 | Publish Identity OpenAPI and Discovery Entries | 03 | `/metadata/identity/v2/swagger.json`, metadata listing, Discovery `identity` URL, response schemas, toggle gating |
-| 05 | Declare the Identity Plugin Contract Registry Entry | 01, DMS-1498, DMS-1499 | `Replace` registry entry, assembly-name derivation, runtime image assembly-version assertion, replacement cardinality tests |
-| 06 | Prove Identity End-to-End Against a Fixture Plugin | 04, 05 | fixture plugin, sync and async flows, custom property pass-through, enabled-without-plugin, duplicate/body/token/error cases |
-| 07 | Document the Identity API and Plugin Contract | 04, 05, DMS-1500 | operator toggle docs, plugin implementer chapter, contract readme, divergence ledger |
-| 08 | Publish `EdFi.Api.Identity` | 01-07, DMS-1501 | publish-when-absent, skip-when-unchanged, fail-when-changed package lane |
+| 02 | Add the Identity API Surface, Pipeline, Toggle, OpenAPI, and Discovery | 01 | Core identity pipeline, service-claim auth, tenant-existence middleware, request/response mapping, frontend endpoint module, `EnableIdentityManagement`, compose/env entries, fixed OpenAPI document, metadata listing, Discovery `identity` URL, toggle gating |
+| 03 | Register the Identity Plugin Contract and Prove a Fixture Plugin | 02, DMS-1498, DMS-1499 | `Replace` registry entry, assembly-name derivation, runtime image assembly-version assertion, replacement cardinality tests, fixture plugin, sync and async flows, custom property pass-through, enabled-without-plugin, duplicate/body/token/error cases |
+| 04 | Document and Publish `EdFi.Api.Identity` | 03, DMS-1500, DMS-1501 | operator toggle docs, plugin implementer chapter, contract readme, divergence ledger, publish-when-absent, skip-when-unchanged, fail-when-changed package lane |
 
 ## Test Strategy
 

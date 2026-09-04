@@ -1,17 +1,22 @@
 ---
 jira: TBD
 source_spike: DMS-1413
-depends_on: 04, 05, DMS-1500
+depends_on: 03, DMS-1500, DMS-1501
 ---
 
-# Story: Document the Identity API and Plugin Contract
+# Story: Document and Publish `EdFi.Api.Identity`
 
 ## Description
 
-Write the operator and implementer documentation for Identity Management.
+Write the operator and implementer documentation for Identity Management and add `EdFi.Api.Identity` to the package publication lane.
+
 This story depends on the plugin documentation foundation so identity docs can link to the shared packaging, delivery, trust, and allowlist guidance.
+It also depends on the package publication foundation because publishing burns the package id and makes the public contract additive-only.
+Documentation can be drafted earlier, but this Jira is not complete until the package publication path is wired and verified.
 
 ## Acceptance Criteria
+
+### Documentation
 
 - `docs/CONFIGURATION.md` documents `AppSettings:EnableIdentityManagement`, default `false`, and what it gates.
 - The plugin documentation has an identity chapter explaining how to implement and register `IIdentityService`.
@@ -31,9 +36,23 @@ This story depends on the plugin documentation foundation so identity docs can l
 - Documentation states the tenant/route-qualifier boundary: DMS validates tenant existence after authentication, route qualifiers pass through as context, and datastore authorization is not part of identity.
 - The packed package README points to the same implementer guidance.
 
+### Package Publication
+
+- The publish lane includes `EdFi.Api.Identity`.
+- Publish behavior is publish-when-absent, skip-when-unchanged, and fail-when-changed.
+- The comparison covers exported public types, XML documentation, and nuspec dependencies.
+- SBOM and provenance artifacts are produced consistently with other DMS packages.
+- Release promotion includes the identity package.
+- A scratch consumer compiles against the published package and implements all interface members.
+- The package README and XML docs are included in the artifact.
+
 ## Tasks
 
 1. Add configuration documentation.
 2. Add identity plugin implementer documentation.
 3. Add contract README content.
 4. Add doc tests or assertions used elsewhere in the repository to keep examples in sync.
+5. Extend package verification scripts.
+6. Extend prerelease and release workflows.
+7. Add scratch consumer verification.
+8. Document the publication order and compatibility policy.
