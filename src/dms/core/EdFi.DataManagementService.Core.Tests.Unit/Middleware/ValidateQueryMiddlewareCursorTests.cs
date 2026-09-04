@@ -937,12 +937,16 @@ public class ValidateQueryMiddlewareCursorTests
         /// either way and nothing rejects the second case.
         /// </summary>
         /// <remarks>
-        /// The range assertion is the load-bearing one. It is what says the token's own ceiling
-        /// still bounds the walk after the request stops naming one - the request window is folded
-        /// into the token's bounds rather than replacing them - so dropping maxChangeVersion
-        /// narrows what the client reads instead of widening it to the newest version in the copy.
-        /// CURSOR-PAGING.md documents that as the behavior clients get, so the two are changed
-        /// together or not at all.
+        /// The range assertion is the load-bearing one: the request window is folded into the
+        /// token's bounds rather than replacing them, so what bounds the walk after the request
+        /// stops naming a maximum is whatever ceiling the token itself carries. This case pins the
+        /// finite one, which reaches production only from a non-final /partitions token - such a
+        /// walk stays inside its slice. A walk started from an ordinary request carries
+        /// long.MaxValue instead, and folding a min-only window into that leaves no ceiling at all,
+        /// so it runs on to the newest version in the copy;
+        /// RelationalQueryPageKeysetPlannerTests.It_should_leave_a_min_only_window_unbounded_above_on_an_open_cursor_range
+        /// pins that half. CURSOR-PAGING.md documents both as the behavior clients get, so the
+        /// three are changed together or not at all.
         /// </remarks>
         [Test]
         public async Task It_accepts_a_content_version_token_against_a_snapshot()

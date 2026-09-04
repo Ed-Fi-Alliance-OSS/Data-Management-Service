@@ -1564,11 +1564,13 @@ public class ValidateQueryMiddlewareTests
         /// <remarks>
         /// Asserting the reported message is what makes this able to fail, and the ContentVersion
         /// token is what gives it something to report. The resolved anchor itself is not observable
-        /// on a rejected request: PageOrderingMode is assigned only at the accepting exit, so it
-        /// still carries its DocumentId default here whatever the snapshot rule returned - which is
-        /// why asserting that default proves nothing. A regression that resolved an anchor from the
-        /// faulty window would resolve DocumentId from its surviving bounds, disagree with this
-        /// token, and answer with the invalid-token message instead of the one asserted here.
+        /// here: this rejection is taken at ValidateQueryMiddleware.cs:255, before the assignment at
+        /// :270, so PageOrderingMode still carries its DocumentId default whatever the snapshot rule
+        /// would have returned - which is why asserting that default proves nothing. That is a
+        /// property of this exit and not of rejection in general: the filter-validation rejections
+        /// below the assignment do carry a resolved anchor. A regression that resolved an anchor
+        /// from the faulty window would resolve DocumentId from its surviving bounds, disagree with
+        /// this token, and answer with the invalid-token message instead of the one asserted here.
         /// </remarks>
         [TestCase("abc", TestName = "snapshot, maximum is not a number")]
         [TestCase("-2", TestName = "snapshot, negative maximum")]

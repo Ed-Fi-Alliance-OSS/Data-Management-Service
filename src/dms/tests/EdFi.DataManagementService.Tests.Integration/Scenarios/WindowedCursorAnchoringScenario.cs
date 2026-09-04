@@ -192,8 +192,9 @@ internal static class WindowedCursorAnchoringScenario
     }
 
     /// <summary>
-    /// A min-only window keeps the <c>DocumentId</c> anchor, and that is what makes a mid-walk update
-    /// safe there. The window is open above, so an update leaves the row eligible; anchored on
+    /// A min-only window keeps the <c>DocumentId</c> anchor against current data, and that is what
+    /// makes a mid-walk update safe there. The window is open above, so an update leaves the row
+    /// eligible; anchored on
     /// <c>ContentVersion</c> the row would move from behind the walk to ahead of it and be returned a
     /// second time, while its <c>DocumentId</c> does not move at all.
     /// </summary>

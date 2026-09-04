@@ -159,7 +159,8 @@ public interface IQueryRequest : IRequestWithMappingSet
     /// cursor bounds and the continuation token Core issues for its response are expressed in.
     /// </summary>
     /// <remarks>
-    /// Resolved by Core from <see cref="ChangeVersionRange" /> and carried here rather than re-derived,
+    /// Resolved by Core from <see cref="ChangeVersionRange" /> and the kind of data store serving the
+    /// request, and carried here rather than re-derived,
     /// because the anchor is needed on both sides of the request: Core stamps it on the outgoing token
     /// and checks an incoming one's marker against it, and the compiler builds page selection against
     /// the column it names. Two derivations of one rule could disagree, and a page selected by one
@@ -216,7 +217,8 @@ public interface IPartitionRequest : IRequestWithMappingSet
     /// the units of every range this request returns.
     /// </summary>
     /// <remarks>
-    /// Resolved by Core from <see cref="ChangeVersionRange" /> by the same rule that resolves a page's
+    /// Resolved by Core from <see cref="ChangeVersionRange" /> and the kind of data store serving the
+    /// request, by the same rule that resolves a page's
     /// anchor, which is what makes a boundary set describe the same ordering a page of the same request
     /// would be selected in. A boundary calculated on one ordering and replayed as a page on another
     /// would return overlapping ranges and leave rows in no partition at all.

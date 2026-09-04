@@ -278,6 +278,12 @@ public class Given_Both_ChangeQueryPageOrderingPolicy_Entry_Points
     /// whichever branch its minimum and maximum happened to imply, silently.
     /// <see cref="Given_ChangeQueryPageOrderingPolicy_Resolving_For_A_Data_Store_Kind" /> forces the
     /// same decision reflectively over the target kinds; this is the window half of it.
+    /// <para>
+    /// Paired with <see cref="It_lists_every_combination_of_the_bounds_it_accounts_for" />, which
+    /// closes the other half: this one says two bounds is still the whole vocabulary, that one says
+    /// the list actually spends it. Either alone leaves a hole - a third bound slips past the
+    /// second, and a deleted <c>yield return</c> slips past the first.
+    /// </para>
     /// </summary>
     [Test]
     public void It_accounts_for_every_window_bound()
@@ -295,6 +301,45 @@ public class Given_Both_ChangeQueryPageOrderingPolicy_Entry_Points
                 },
                 "a new window bound must be added to EveryWindowShape() rather than defaulting into "
                     + "one of the shapes already listed there"
+            );
+    }
+
+    /// <summary>
+    /// Both entry points branch on bound <em>presence</em> alone, so the four presence combinations
+    /// are the decision space every case in this fixture is drawn from. This gate says
+    /// <see cref="EveryWindowShape" /> still spends all four: deleting a <c>yield return</c> would
+    /// otherwise leave the shape it named untested while every remaining case passed, and
+    /// <see cref="It_accounts_for_every_window_bound" /> would not notice because the type it
+    /// inspects has not changed.
+    /// </summary>
+    /// <remarks>
+    /// Presence, not value: the extra cases in the list - a zero bound, an inverted range - exist to
+    /// pin that magnitude does not enter the decision, and they collapse onto the same combinations
+    /// here rather than adding new ones.
+    /// </remarks>
+    [Test]
+    public void It_lists_every_combination_of_the_bounds_it_accounts_for()
+    {
+        EveryWindowShape()
+            .Select(static testCase => (ChangeVersionRange?)testCase.OriginalArguments[0])
+            .Select(static range =>
+                (
+                    HasMinimum: range?.MinChangeVersion is not null,
+                    HasMaximum: range?.MaxChangeVersion is not null
+                )
+            )
+            .Distinct()
+            .Should()
+            .BeEquivalentTo(
+                new[]
+                {
+                    (HasMinimum: false, HasMaximum: false),
+                    (HasMinimum: true, HasMaximum: false),
+                    (HasMinimum: false, HasMaximum: true),
+                    (HasMinimum: true, HasMaximum: true),
+                },
+                "every combination of bound presence must stay represented in EveryWindowShape(), "
+                    + "because that presence is the whole of what either entry point branches on"
             );
     }
 

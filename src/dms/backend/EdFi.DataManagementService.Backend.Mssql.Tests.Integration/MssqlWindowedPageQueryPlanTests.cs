@@ -170,10 +170,10 @@ public class Given_A_Mssql_Windowed_Page_Query_Plan
     /// A floor naming most of the collection is the companion case below, and it resolves the same
     /// way for a reason worth naming here: page selection always carries ORDER BY on the anchor and
     /// a row limit, so the index supplies the ordering and the limit bounds what is read. Selectivity
-    /// therefore does not decide the plan, which is why one assertion covers both floors. A regular
-    /// resource on PostgreSQL is the only provider and root kind whose anchor index does not cover
-    /// the page key - IX_&lt;Table&gt;_ContentVersion is one column with no INCLUDE - so it pays a heap
-    /// fetch, but only for the rows the limit actually returns.
+    /// therefore does not decide the plan, which is why one assertion covers both floors. Reaching
+    /// the page key from the anchor index costs nothing extra on SQL Server: the table is clustered
+    /// on its primary key, so the nonclustered anchor index carries that key as its row locator and
+    /// the seek already has it in hand.
     /// </para>
     /// </remarks>
     [Test]

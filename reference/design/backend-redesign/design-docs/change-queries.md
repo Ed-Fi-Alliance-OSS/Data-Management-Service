@@ -2154,10 +2154,14 @@ running with legacy ordering walks and partitions every window shape by `Documen
 database served the request. Because the kill switch governs anchoring as well as ordering, tokens
 issued while it is set stay replayable while it stays set: a deployment running with legacy ordering issues and accepts
 `DocumentId`-marked windowed tokens throughout, instead of breaking walks in progress. Flipping the
-switch mid-walk invalidates the `ContentVersion`-marked tokens already handed out — the only
-ones whose anchor the flip changes — which is the expected cost of an operator escape hatch and
-the reason it is deployment-wide rather than per-request. `DocumentId`-marked tokens resolve the
-same anchor under either setting and survive the flip.
+switch mid-walk invalidates the `ContentVersion`-marked tokens already handed out, which is the
+expected cost of an operator escape hatch and
+the reason it is deployment-wide rather than per-request. The flip is not safe in the other
+direction either, and for the mirror-image reason: the `DocumentId`-marked windowed tokens a legacy
+deployment issues resolve `ContentVersion` once the switch is cleared, so they are invalidated in
+turn. What survives a flip in either direction is the set of tokens whose anchor the rule never
+varies — every unfiltered walk, and every min-only walk against current data — because those resolve
+`DocumentId` whether the switch is set or not.
 
 The rule does not affect `/deletes`, `/keyChanges`, `/availableChangeVersions`, unfiltered GET-many,
 GET-by-id, or writes. The change-query endpoints page traditionally over the tracked-change tables

@@ -866,8 +866,11 @@ public class Given_A_Postgresql_Relational_Query_With_The_Authoritative_Ds52_Sch
         success.HighestSelectedAnchor.Should().Be(_persistedSchoolsInDocumentOrder[^1].DocumentId);
     }
 
-    // A max-bearing window keeps the DocumentId ordering a cursor page always uses, so the page it
-    // selects can still anchor a continuation. What it must not do is silently order by something else.
+    // The ordering is supplied to the planner here rather than resolved from the window, so what this
+    // pins is composition: a max-bearing window has to narrow the rows a DocumentId-anchored cursor
+    // page selects without silently re-ordering it, and the page must still anchor a continuation in
+    // the units it was planned for. Which anchor a max-bearing window resolves to in production is
+    // ChangeQueryPageOrderingPolicy's decision, not this fixture's.
     [Test]
     public async Task It_composes_a_max_bearing_change_version_window_with_the_cursor_range()
     {
