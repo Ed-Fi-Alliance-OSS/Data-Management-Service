@@ -72,11 +72,12 @@ rule it governs.
    Cursor SQL MUST contain no `OFFSET`, no row-number skip, and no count query.
 2. **No regression to traditional paging.** `DocumentId`-anchored `limit`/`offset` page-selection
    SQL — every request that resolves the `DocumentId` anchor — MUST remain behaviorally and
-   textually unchanged,
-   and its latency MUST NOT regress. A max-bearing change-version window is the stated exception:
-   its traditional page is ordered by `ContentVersion` and projects that column beside `DocumentId`
-   so the page can hand out a continuation, which is the whole of DMS-1394. Traditional response
-   behavior is unchanged under either anchor.
+   textually unchanged, and its latency MUST NOT regress. A request that resolves the
+   `ContentVersion` anchor is the stated exception: its traditional page is ordered by
+   `ContentVersion` and projects that column beside `DocumentId` so the page can hand out a
+   continuation. That is the whole of DMS-1394 for a max-bearing window, and per
+   [change-queries.md](change-queries.md#page-selection-ordering) it reaches any windowed request
+   served from a frozen snapshot. Traditional response behavior is unchanged under either anchor.
 3. **No extra roundtrip.** A cursor page MUST use the existing single-command page-keyset
    hydration architecture and add no database command, transaction, or roundtrip.
 4. **One command for `/partitions`.** The partition endpoint MUST perform exactly one database
@@ -128,9 +129,10 @@ first accessible candidate.
 Emitting `Next-Page-Token` on an ordinary `limit`/`offset` response is a deliberate extension: it
 lets a client enter a cursor walk without a separate call, and it is inert for clients that ignore
 it. The extension reaches every traditional response that selected keys, whichever column selection
-ordered by: a max-bearing change-version window orders by `ContentVersion` and hands out a
-`ContentVersion`-anchored token. The published guidance does not describe the header for traditional
-responses, and the authoritative collection fixtures do not define it as a response header.
+ordered by: a request that resolved the `ContentVersion` anchor orders by that column and hands out
+a `ContentVersion`-anchored token. The published guidance does not describe the header for
+traditional responses, and the authoritative collection fixtures do not define it as a response
+header.
 
 **Ending a walk.** The implementation does not fetch one extra row to predict the terminal page. It
 emits a token whenever cursor page selection returns a non-empty keyset, and completion is normally
@@ -641,10 +643,10 @@ provably the same candidate set.
 
 `DocumentId`-anchored traditional page-selection SQL MUST remain behaviorally and textually
 unchanged. Two things fall outside that textual gate. The collection hydration-batch change described
-next is required to expose selected keys at all. And a max-bearing window's traditional page takes
-the `ContentVersion` anchor like any other page of that window, so it carries the two-column
-projection above — the gate is keyed on the anchor, not on the paging mode. Traditional response
-behavior is unchanged in both cases.
+next is required to expose selected keys at all. And a traditional page of a request that resolved
+the `ContentVersion` anchor takes that anchor like any other page of the same request, so it carries
+the two-column projection above — the gate is keyed on the anchor, not on the paging mode.
+Traditional response behavior is unchanged in both cases.
 
 ### Carrying the selected-keyset boundary
 
@@ -658,10 +660,11 @@ already does (see [flattening-reconstitution.md](flattening-reconstitution.md) �
 When the keyset is `ContentVersion`-anchored, and only then, the keyset temp table gains a nullable
 `ContentVersion` column, the `page_ids` selection and the insert column list carry it, and the
 returning clause names it as a second column. The conditional is keyed on the anchor, so it leaves
-every `DocumentId`-anchored batch, whichever paging shape, byte-identical
-to its pre-cursor form, and widens the batch of a max-bearing window whether that window is paged
-traditionally or by cursor. A zero-size page and the candidate-metadata batch take the same
-treatment, so an empty page keeps the same result-set shape as any other.
+every `DocumentId`-anchored batch, whichever paging shape, byte-identical to its pre-cursor form,
+and widens the batch of every `ContentVersion`-anchored request — a max-bearing window on any
+source, or any windowed request served from a frozen snapshot — whether it is paged traditionally or
+by cursor. A zero-size page and the candidate-metadata batch take the same treatment, so an empty
+page keeps the same result-set shape as any other.
 
 `HydrationExecutor` calculates the anchor maximum from that result set without depending on row
 order, reading the anchor ordinal when the keyset carries one and the `DocumentId` ordinal when it
@@ -924,16 +927,17 @@ newly accessible behind the client's change window. The mitigations recorded in
 [change-queries.md](change-queries.md) continue to apply to those.
 
 **Conditional change-window ordering.** Page selection orders a max-bearing change-version window by
-`ContentVersion`; see "Page-selection ordering" in [change-queries.md](change-queries.md).
+`ContentVersion` on any source, and orders every windowed request served from a frozen snapshot the
+same way; see "Page-selection ordering" in [change-queries.md](change-queries.md).
 
 The first page of a cursor walk uses the same page-selection query as an offset request, so a token
 based on a `DocumentId` boundary would be unsafe whenever that query orders by `ContentVersion`:
 replaying it could skip qualifying rows with a smaller `DocumentId` and a later `ContentVersion`.
 
-Windowed (max-bearing) requests therefore anchor cursor pages, partition boundaries, and
-continuation tokens on `ContentVersion`. **Invariant: the anchor follows the ordering.** A page's
-ordering key, its cursor bounds, and the anchor stamped on the token it hands out are always the
-same column, and the token names which column that was.
+Requests that resolve the `ContentVersion` anchor therefore anchor cursor pages, partition
+boundaries, and continuation tokens on `ContentVersion`. **Invariant: the anchor follows the
+ordering.** A page's ordering key, its cursor bounds, and the anchor stamped on the token it hands
+out are always the same column, and the token names which column that was.
 
 Against a mutable source, min-only and unfiltered walks keep `DocumentId` anchors, and the asymmetry
 is not an omission. A min-only window stays open as data changes: an update moves a row later in
@@ -982,16 +986,18 @@ violates one of these has not implemented this design.
 ### Structural invariants
 
 - Cursor SQL contains no `OFFSET`, no row-number skip, and no count query, and uses an indexed
-  anchor column as a range predicate: the root `DocumentId` key, or `ContentVersion` under a
-  max-bearing window.
+  anchor column as a range predicate: the root `DocumentId` key, or `ContentVersion` for a request
+  that resolves that anchor — a max-bearing window on any source, or any windowed request served
+  from a frozen snapshot.
 - Cursor implementation does not otherwise change traditional `limit`/`offset` page-selection
   SQL. Three explicit exceptions, all three keyed on the resolved anchor rather than on the paging
   mode: the conditional ordering rule; the anchor projected beside `DocumentId` in the candidate
   select list; and the selected-key result set added to collection hydration batches. Each applies
-  exactly when the request resolves the `ContentVersion` anchor, which a max-bearing window does
-  whether it is paged traditionally or by cursor. `DocumentId`-anchored text — every request that resolves that
-  anchor, and every request under the legacy ordering switch — is byte-identical to its pre-cursor
-  form in all three respects.
+  exactly when the request resolves the `ContentVersion` anchor, which a max-bearing window does on
+  any source and any windowed request does against a frozen snapshot, whether either is paged
+  traditionally or by cursor. `DocumentId`-anchored text — every request that resolves that anchor,
+  and every request under the legacy ordering switch — is byte-identical to its pre-cursor form in
+  all three respects.
 - Cursor hydration performs one database command and adds no roundtrip over the existing
   single-command page-keyset architecture.
 - `/partitions` performs one database command for its boundary selection and returns identifiers

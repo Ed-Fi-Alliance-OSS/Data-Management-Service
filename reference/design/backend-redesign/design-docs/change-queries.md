@@ -1317,17 +1317,22 @@ The mirror `ContentVersion` default is a non-null sentinel, not a real change-ve
 
 **`dms.Descriptor` has two ResourceKeyId-leading paging indexes.** Descriptor GET-many page
 selection roots on `dms.Descriptor` and uses `ResourceKeyId` as the authoritative,
-project-qualified resource-type predicate. `DocumentId`-ordered requests—unfiltered and min-only
-requests, plus requests using the legacy-ordering switch—can ride the core-owned
+project-qualified resource-type predicate. Requests that resolve the `DocumentId` anchor—unfiltered
+requests, min-only requests against a mutable source, and every request using the legacy-ordering
+switch—can ride the core-owned
 `IX_Descriptor_ResourceKeyId_DocumentId (ResourceKeyId, DocumentId)` index. Any `ContentVersion`
 bounds on that path are residual predicates because `ContentVersion` is not an index key.
 
-Non-legacy max-bearing requests use `ContentVersion` page ordering and can use the derived
+Requests that resolve the `ContentVersion` anchor—a max-bearing window on any source, and any
+windowed request served from a frozen snapshot, in both cases with legacy ordering disabled—use
+`ContentVersion` page ordering and can use the derived
 `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId (ResourceKeyId, ContentVersion, DocumentId)`
 index for the `ResourceKeyId` equality, `ContentVersion` range, and page ordering. The trailing
 `DocumentId` covers the page key returned by selection. Windowed cursor pages and windowed partition
 boundary calculation anchor on the same column and ride the same index; a cursor bound is one more
-range predicate on the `ContentVersion` key, not a different access path.
+range predicate on the `ContentVersion` key, not a different access path. A min-only window served
+from a snapshot rides it for the same reason a max-bearing window does: the distribution the seek
+exploits is a property of the data, which the copy preserves.
 
 No `Discriminator`-leading index is emitted on the live `dms.Descriptor` table. Shared descriptor
 tracked-change queries may filter their own historical rows by the routing-only `Discriminator`, but
@@ -2012,7 +2017,7 @@ WITH page_ids AS (
     SELECT r."DocumentId"
     FROM "edfi"."Grade" r
     WHERE r.ContentVersion >= @MinChangeVersion AND r.ContentVersion <= @MaxChangeVersion -- Range filter on ContentVersion
-    ORDER BY r."ContentVersion" ASC -- Conditional: see "Page-selection ordering (DMS-1298)" below
+    ORDER BY r."ContentVersion" ASC -- Conditional: see "Page-selection ordering" below
     LIMIT @limit OFFSET @offset
 )
 INSERT INTO "page" ("DocumentId")
@@ -2022,9 +2027,9 @@ FROM page_ids;
 -- The rest of the reconstitution queries are omitted for brevity.
 ```
 
-Descriptor GET-many page selection starts from `dms.Descriptor`. For a max-bearing request when legacy ordering is disabled, the
-page-keyset SQL filters by the authoritative `ResourceKeyId` and reads the mirrored
-`ContentVersion` from the same table:
+Descriptor GET-many page selection starts from `dms.Descriptor`. For a request that resolves the
+`ContentVersion` anchor—see § "Page-selection ordering"—the page-keyset SQL filters by the
+authoritative `ResourceKeyId` and reads the mirrored `ContentVersion` from the same table:
 
 ```sql
 SELECT r."DocumentId"
@@ -2135,9 +2140,10 @@ all three of their paging shapes: traditional `limit`/`offset` pages, `pageToken
 `/partitions` boundary calculation. The three resolve one anchor per request, never one anchor per
 paging shape: a page hands out a token marked with the anchor it was cut on, and a request that
 resolved a different anchor rejects that token, so a split would break walks the rule itself created.
-A max-bearing window orders and anchors all three by `ContentVersion`; the tokens a windowed request issues carry `ContentVersion` bounds and are marked
-as such, so a client replaying one under a different window is rejected rather than served rows read
-against the wrong column. See
+A request that resolves the `ContentVersion` anchor orders and anchors all three by that column, and
+the tokens it issues carry `ContentVersion` bounds and are marked as such. A client replaying one
+under a different window — or, for a min-only window, against a different data source — is rejected
+rather than served rows read against the wrong column. See
 [partitioned-cursor-paging.md](partitioned-cursor-paging.md) for the token contract, the anchored
 cursor and partition SQL, and the consistency consequences.
 
