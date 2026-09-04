@@ -57,7 +57,7 @@ DMS owns these fixed routes and brokers to `IIdentityService`; plugins provide i
 - `/metadata/identity/v2/swagger.json` exists only when the feature is enabled.
 - The metadata listing includes `Other: Identity` only when enabled.
 - Discovery includes the `urls.identity` URL only when enabled.
-- The OpenAPI document declares the five operations under `/identity/v2`.
+- The OpenAPI document declares the five operations with `paths` keys exactly `/identities`, `/identities/{id}`, `/identities/find`, `/identities/search`, and `/identities/results/{id}`, matching the pinned ODS 7.3.2 identity OpenAPI document; the `/identity/v2` base is supplied only by the `servers` entry and never repeated in a path key.
 - The served OpenAPI document injects a `servers` entry ending in the actual route-qualified `/identity/v2` base.
 - The served OpenAPI document injects the same `oauth2_client_credentials` security scheme and root security requirement used by other authenticated DMS OpenAPI documents.
 - Request media types are `application/json` and `text/json`.

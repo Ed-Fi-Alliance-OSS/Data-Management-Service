@@ -314,6 +314,7 @@ It declares:
 - schemas remain property-for-property, type-for-type, and required-list compatible with the pinned ODS 7.3.2 identity OpenAPI document except for differences explicitly named in the divergence ledger;
 - client-visible error responses for validation `400`, provider `InvalidProperties` `400`, unsupported-media-type `415` on POST operations, operation-unsupported `404`, identity-not-found `404`, provider-contract-violation `502`, and identity-upstream-failure `502`, with problem-detail schemas or documented problem-detail `type` values where DMS emits problem details;
 - a `servers` array injected with the actual route-qualified runtime base ending in `/identity/v2`;
+- `paths` keys relative to that base, exactly `/identities`, `/identities/{id}`, `/identities/find`, `/identities/search`, and `/identities/results/{id}`, so the `/identity/v2` base appears only in `servers`;
 - the same OpenAPI 3 `oauth2_client_credentials` security scheme and root `security` requirement DMS injects into other authenticated metadata documents;
 - `202` `Location` headers for async find and search;
 - `200` `Location` for incomplete results, where the value points back to the current poll URL;
