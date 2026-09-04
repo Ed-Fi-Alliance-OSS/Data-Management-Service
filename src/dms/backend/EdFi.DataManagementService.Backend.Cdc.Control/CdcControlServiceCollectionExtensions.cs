@@ -168,18 +168,24 @@ public static class CdcControlServiceCollectionExtensions
     ) => new(provider, serviceProvider.GetRequiredService<ILogger<CdcProviderArtifactTeardown>>());
 
     /// <summary>
-    /// Builds the admin client from the deployment's bootstrap servers and Kafka client security
-    /// properties. Construction is deferred to first resolution so a registration-time graph check
-    /// never opens a broker connection.
+    /// Builds the admin client from the deployment's bootstrap servers and its own admin-client
+    /// security properties. Construction is deferred to first resolution so a registration-time graph
+    /// check never opens a broker connection.
     /// </summary>
+    /// <remarks>
+    /// The connector's <see cref="CdcControlOptions.KafkaClientSecurityProperties"/> are deliberately
+    /// not used here. Those are Java Kafka client properties for the client the rendered connector runs
+    /// inside the Connect worker; this client is librdkafka, which defines none of them and throws on
+    /// an unknown property name when it is built. The two vocabularies are validated separately, and
+    /// <see cref="CdcControlOptions.KafkaAdminClientSecurityProperties"/> is the one that belongs to
+    /// this process.
+    /// </remarks>
     private static IAdminClient BuildAdminClient(IServiceProvider serviceProvider)
     {
         CdcControlOptions options = serviceProvider.GetRequiredService<IOptions<CdcControlOptions>>().Value;
 
         AdminClientConfig config = new() { BootstrapServers = options.KafkaBootstrapServers };
-        foreach (
-            KeyValuePair<string, string> property in options.ToKafkaClientSecurityProperties().Properties
-        )
+        foreach (KeyValuePair<string, string> property in options.KafkaAdminClientSecurityProperties)
         {
             config.Set(property.Key, property.Value);
         }

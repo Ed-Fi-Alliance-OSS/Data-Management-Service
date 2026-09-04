@@ -79,6 +79,28 @@ public sealed class Given_DocumentCacheAdminCdcCommandRequests
         Build(DocumentCacheAdminCommandSurface.CdcRetireVerbName).ConnectorAlreadyAbsent.Should().BeFalse();
     }
 
+    /// <summary>
+    /// The request carries the variable's name, never its value. Reading the environment is the
+    /// dispatcher's, so nothing that passes through the parsed command line holds a connection string.
+    /// </summary>
+    [Test]
+    public void It_builds_the_retire_request_carrying_the_source_connection_variable_name()
+    {
+        DocumentCacheAdminCdcCommandRequest request = Build(
+            DocumentCacheAdminCommandSurface.CdcRetireVerbName,
+            DocumentCacheAdminCommandSurface.SourceConnectionVariableOptionName,
+            "DMS_SUPERSEDED_SOURCE"
+        );
+
+        request.SourceConnectionVariable.Should().Be("DMS_SUPERSEDED_SOURCE");
+    }
+
+    [Test]
+    public void It_leaves_the_source_connection_variable_unnamed_when_retire_omits_the_option()
+    {
+        Build(DocumentCacheAdminCommandSurface.CdcRetireVerbName).SourceConnectionVariable.Should().BeNull();
+    }
+
     [Test]
     public void It_builds_the_adopt_request_from_the_loaded_binding_record()
     {
@@ -103,6 +125,7 @@ public sealed class Given_DocumentCacheAdminCdcCommandRequests
 
         request.PreviousGeneration.Should().BeNull();
         request.ConnectorAlreadyAbsent.Should().BeFalse();
+        request.SourceConnectionVariable.Should().BeNull();
     }
 
     [Test]

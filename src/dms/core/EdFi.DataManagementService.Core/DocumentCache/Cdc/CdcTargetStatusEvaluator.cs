@@ -1103,6 +1103,27 @@ public static class CdcTargetStatusEvaluator
             && observation.AclState == CdcConnectOffsetStoreItemState.Satisfied;
     }
 
+    /// <summary>
+    /// Whether the registered connector's configuration, task count, and every configuration item were
+    /// all found conforming.
+    /// </summary>
+    /// <remarks>
+    /// The same rule <c>EvaluateConnectorConfig</c> applies, exposed for the same reason as its three
+    /// siblings, and for one more: a restart puts a registered connector back to work without
+    /// re-deriving its configuration, so a resume issued over a nonconforming one publishes through it
+    /// and no status composed afterwards can recall what it produced. It answers on the observed states
+    /// alone; the composed status still applies the observation contract's own validation.
+    /// </remarks>
+    public static bool IsConnectorConfigSatisfied(CdcConnectorConfigurationObservation observation)
+    {
+        ArgumentNullException.ThrowIfNull(observation);
+
+        return observation.ConfigurationState == CdcConnectorConfigurationState.Matched
+            && observation.TaskCount == 1
+            && !HasConnectorConfigurationItem(observation, CdcConnectorConfigurationItemState.Invalid)
+            && !HasConnectorConfigurationItem(observation, CdcConnectorConfigurationItemState.Unknown);
+    }
+
     private static bool HasInvalidKafkaItem(CdcKafkaPolicyObservation observation) =>
         KafkaItemStates(observation).Any(state => state == CdcKafkaPolicyItemState.Invalid);
 

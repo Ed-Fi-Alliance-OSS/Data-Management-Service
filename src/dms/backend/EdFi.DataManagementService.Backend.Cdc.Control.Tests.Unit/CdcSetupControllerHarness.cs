@@ -94,6 +94,10 @@ internal sealed class CdcSetupControllerHarness
         CommittedOffsets = CommittedStreamingOffsets(provider);
 
         A.CallTo(() => Probe.Provider).Returns(provider);
+        // Stamped from the advancing clock, not from the frozen `Now`: the production probe stamps its
+        // observation when the database answered, which is always later than the instant the operation
+        // started. Freezing it here would let a caller classify against its own entry clock and still
+        // pass, while the same code refused every real enablement as future-dated.
         A.CallTo(() => Probe.ProbeAsync(A<CdcEligibilityProbeRequest>._, A<CancellationToken>._))
             .ReturnsLazily(
                 (CdcEligibilityProbeRequest request, CancellationToken _) =>
@@ -102,7 +106,7 @@ internal sealed class CdcSetupControllerHarness
                             request.Context,
                             request.Proof,
                             ActivationCompleted ? PostActivationEligibility : Eligibility,
-                            Now
+                            _clock.GetUtcNow()
                         )
                     )
             );
@@ -209,6 +213,10 @@ internal sealed class CdcSetupControllerHarness
                     )
             );
         A.CallTo(() =>
+                Kafka.FindExistingGovernedTopicsAsync(A<CdcArtifactInventory>._, A<CancellationToken>._)
+            )
+            .ReturnsLazily(() => Task.FromResult(GovernedTopicPresence ?? NoGovernedTopics));
+        A.CallTo(() =>
                 Kafka.ReadSqlServerSchemaHistoryAsync(
                     A<CdcArtifactInventory>._,
                     A<CdcSqlServerSchemaHistoryEnablementPhase>._,
@@ -245,9 +253,20 @@ internal sealed class CdcSetupControllerHarness
                     A<CancellationToken>._
                 )
             )
-            .ReturnsLazily(() => Task.FromResult(Registration));
+            .ReturnsLazily(() =>
+            {
+                // The worker holds the connector from here on, which is what the read-back below then
+                // finds - and what an enablement asking whether these names are already taken must
+                // not find before this point.
+                ConnectorRegistered =
+                    ConnectorRegistered || Registration.Outcome == CdcConnectOutcome.Succeeded;
+
+                return Task.FromResult(Registration);
+            });
         A.CallTo(() => Connect.GetConnectorConfigAsync(A<string>._, A<CancellationToken>._))
-            .ReturnsLazily(() => Task.FromResult(ConnectorConfigReadBack));
+            .ReturnsLazily(() =>
+                Task.FromResult(ConnectorHeldByWorker() ? ConnectorConfigReadBack : NoSuchConnector)
+            );
         A.CallTo(() => Connect.GetConnectorOffsetsAsync(A<string>._, A<CancellationToken>._))
             .ReturnsLazily(() => Task.FromResult(CommittedOffsets));
         A.CallTo(() => Connect.GetConnectorStatusAsync(A<string>._, A<CancellationToken>._))
@@ -399,6 +418,18 @@ internal sealed class CdcSetupControllerHarness
 
     /// <summary>Whether the guarded activation has run and completed.</summary>
     public bool ActivationCompleted { get; private set; }
+
+    /// <summary>
+    /// Whether the Kafka Connect worker is holding this binding's connector. Set by a successful
+    /// registration, and settable up front to model a connector that outlived its binding record.
+    /// </summary>
+    public bool ConnectorRegistered { get; set; }
+
+    /// <summary>
+    /// Which of the binding's governed topics the broker already holds. Null leaves the broker
+    /// answering that it holds none of them, which is what a first enablement finds.
+    /// </summary>
+    public CdcKafkaGovernedTopicPresence? GovernedTopicPresence { get; set; }
 
     /// <summary>What the running DMS reported about its projection of the target.</summary>
     public CdcProjectionStatusReadResult ProjectionStatus { get; set; }
@@ -597,8 +628,15 @@ internal sealed class CdcSetupControllerHarness
     /// The complete binding record the operator supplies. It defaults to the one this harness's target
     /// was enabled under, which is what every artifact answers as.
     /// </param>
-    public Task<CdcContractReadResult<CdcAdoptionProof>> AdoptAsync(CdcBinding? binding = null) =>
-        Controller()
+    public Task<CdcContractReadResult<CdcAdoptionProof>> AdoptAsync(CdcBinding? binding = null)
+    {
+        // Adoption's whole premise is the shape the enablement refuses: a complete governed-artifact
+        // set with no binding record naming it. The record is missing here, so the worker must still
+        // be holding the connector - otherwise there would be nothing to adopt. A test modelling a
+        // connector adoption cannot verify sets ConnectorConfigReadBack, which this does not override.
+        ConnectorRegistered = true;
+
+        return Controller()
             .AdoptAsync(
                 AdoptRequest(_provider) with
                 {
@@ -606,6 +644,7 @@ internal sealed class CdcSetupControllerHarness
                 },
                 CancellationToken.None
             );
+    }
 
     public ICdcSetupController Controller() =>
         new CdcSetupController(
@@ -763,6 +802,27 @@ internal sealed class CdcSetupControllerHarness
             ),
             null
         );
+
+    /// <summary>A broker that holds none of the binding's governed topics.</summary>
+    private static CdcKafkaGovernedTopicPresence NoGovernedTopics { get; } = new(true, []);
+
+    /// <summary>The worker's answer for a connector it does not hold.</summary>
+    private static CdcConnectResult<IReadOnlyDictionary<string, string>> NoSuchConnector { get; } =
+        new(CdcConnectOutcome.NotFound, null, null);
+
+    /// <summary>
+    /// Whether the worker would answer a configuration read for this binding's connector.
+    /// </summary>
+    /// <remarks>
+    /// A fixture whose durable binding record is missing is one where nothing was ever provisioned
+    /// under these names, so the worker holds no connector until this run registers one. A fixture that
+    /// starts from a present record models an already-enabled target, whose connector exists from the
+    /// outset. Without the distinction the read-back stub would answer the same way before and after
+    /// registration, and an enablement asking whether these names are already taken would always be
+    /// told they are.
+    /// </remarks>
+    private bool ConnectorHeldByWorker() =>
+        ConnectorRegistered || BindingRead.Status != CdcControlPlaneOperationStatus.BindingMissing;
 
     public static CdcEligibilityReadResult UnreadableDatabase() =>
         new(CdcEligibilityReadOutcome.Unreadable, null, "unreadable");

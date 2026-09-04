@@ -486,6 +486,67 @@ public class Given_CdcControlOptionsTests
     private static ValidateOptionsResult Validate(CdcControlOptions options) =>
         Validator.Validate(name: null, options);
 
+    /// <summary>
+    /// The two Kafka security dictionaries configure different client implementations that do not share
+    /// a configuration vocabulary. The connector's are Java Kafka client properties for the client the
+    /// rendered connector runs inside the Connect worker; the control plane reaches the broker through
+    /// librdkafka, which defines none of them and throws on an unknown property name when the client is
+    /// built. The client is built lazily on first resolution, so without this the deployment starts
+    /// cleanly and fails inside whichever verb happens to touch Kafka first.
+    /// </summary>
+    [TestCase("sasl.jaas.config")]
+    [TestCase("ssl.truststore.location")]
+    [TestCase("ssl.keystore.certificate.chain")]
+    public void It_refuses_an_admin_client_security_property_librdkafka_does_not_define(
+        string javaPropertyName
+    )
+    {
+        CdcControlOptions options = ValidOptions();
+        options.KafkaAdminClientSecurityProperties[javaPropertyName] = "value";
+
+        AssertFailsWith(options, javaPropertyName);
+    }
+
+    [TestCase("security.protocol", "SASL_SSL")]
+    [TestCase("sasl.username", "cdc-control")]
+    [TestCase("sasl.password", "secret")]
+    [TestCase("ssl.ca.location", "/etc/ssl/ca.pem")]
+    public void It_accepts_an_admin_client_security_property_librdkafka_defines(
+        string propertyName,
+        string value
+    )
+    {
+        CdcControlOptions options = ValidOptions();
+        options.KafkaAdminClientSecurityProperties[propertyName] = value;
+
+        Validate(options).Succeeded.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// An empty value is a property librdkafka would be handed as blank, which is not a configuration
+    /// the deployment can have meant.
+    /// </summary>
+    [Test]
+    public void It_refuses_an_empty_admin_client_security_property_value()
+    {
+        CdcControlOptions options = ValidOptions();
+        options.KafkaAdminClientSecurityProperties["sasl.password"] = "   ";
+
+        AssertFailsWith(options, "sasl.password");
+    }
+
+    /// <summary>
+    /// Empty is what every PLAINTEXT deployment uses, which is all of local and E2E.
+    /// </summary>
+    [Test]
+    public void It_accepts_no_admin_client_security_properties_at_all()
+    {
+        CdcControlOptions options = ValidOptions();
+        options.KafkaClientSecurityProperties["sasl.jaas.config"] = "value";
+
+        Validate(options).Succeeded.Should().BeTrue();
+    }
+
     private static void AssertFailsWith(CdcControlOptions options, string settingName)
     {
         ValidateOptionsResult result = Validate(options);

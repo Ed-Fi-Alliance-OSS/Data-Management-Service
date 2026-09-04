@@ -154,6 +154,42 @@ public sealed class Given_DocumentCacheAdminCdcCommandSurface
         }
     }
 
+    /// <summary>
+    /// Only a retirement may run against a database the Configuration Service no longer points at: a
+    /// generation a source replacement superseded is bound to one, and every other verb runs against
+    /// the target's current source by definition.
+    /// </summary>
+    [Test]
+    public void It_exposes_the_source_connection_variable_only_for_retire()
+    {
+        foreach (Command verb in CdcCommand().Subcommands)
+        {
+            IEnumerable<string> optionNames = verb.Options.Select(option => option.Name);
+
+            if (verb.Name == DocumentCacheAdminCommandSurface.CdcRetireVerbName)
+            {
+                optionNames
+                    .Should()
+                    .Contain(DocumentCacheAdminCommandSurface.SourceConnectionVariableOptionName, verb.Name);
+                continue;
+            }
+
+            optionNames
+                .Should()
+                .NotContain(DocumentCacheAdminCommandSurface.SourceConnectionVariableOptionName, verb.Name);
+        }
+    }
+
+    /// <summary>
+    /// The option carries the name of an environment variable, never the connection string itself, so
+    /// no credential reaches the command line or a container argument list. The name says so.
+    /// </summary>
+    [Test]
+    public void It_names_a_variable_rather_than_a_value_on_the_source_connection_option()
+    {
+        DocumentCacheAdminCommandSurface.SourceConnectionVariableOptionName.Should().EndWith("-variable");
+    }
+
     [Test]
     public void It_does_not_expose_secret_bearing_cdc_options()
     {

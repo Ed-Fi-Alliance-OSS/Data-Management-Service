@@ -174,6 +174,49 @@ public class Given_CdcControlServiceCollectionExtensionsTests
             .Be<CdcDownstreamPublicationHistoryProvider>();
     }
 
+    /// <summary>
+    /// The admin client is librdkafka; the connector's security properties are the Java Kafka client's,
+    /// for the client the rendered connector runs inside the Connect worker. Handing the connector's to
+    /// this one makes it throw on an unknown property name as it is built. Each dictionary is bound to
+    /// the deployment separately, and only the admin one belongs to this process.
+    /// </summary>
+    [Test]
+    public void It_binds_the_two_kafka_security_property_sets_separately()
+    {
+        using TempCdcControlStateRoot stateRoot = new();
+        string section = CdcControlOptions.SectionName;
+        IServiceCollection services = new ServiceCollection();
+
+        services.AddLogging();
+        services.Configure<CdcBindingStateStoreOptions>(options => options.RootPath = stateRoot.Path);
+        services.AddSingleton(A.Fake<IDocumentCacheGuardedNewEmptyActivationCommand>());
+        services.AddSingleton(A.Fake<IMappingSetProvider>());
+
+        Dictionary<string, string?> settings = new(StringComparer.Ordinal)
+        {
+            ["AppSettings:Datastore"] = "postgresql",
+            ["CdcBindingStateStore:RootPath"] = stateRoot.Path,
+            [$"{section}:KafkaClientSecurityProperties:sasl.jaas.config"] = "jaas",
+            [$"{section}:KafkaAdminClientSecurityProperties:sasl.username"] = "cdc-control",
+        };
+        foreach (KeyValuePair<string, string?> setting in ValidCdcSettings())
+        {
+            settings.Add(setting.Key, setting.Value);
+        }
+
+        services.AddDmsCdcControl(new ConfigurationBuilder().AddInMemoryCollection(settings).Build());
+
+        using ServiceProvider serviceProvider = services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
+        );
+        CdcControlOptions options = serviceProvider.GetRequiredService<IOptions<CdcControlOptions>>().Value;
+
+        options.KafkaClientSecurityProperties.Should().ContainKey("sasl.jaas.config");
+        options.KafkaClientSecurityProperties.Should().NotContainKey("sasl.username");
+        options.KafkaAdminClientSecurityProperties.Should().ContainKey("sasl.username");
+        options.KafkaAdminClientSecurityProperties.Should().NotContainKey("sasl.jaas.config");
+    }
+
     private static ServiceProvider BuildServiceProvider(string datastore, TempCdcControlStateRoot stateRoot)
     {
         IServiceCollection services = new ServiceCollection();

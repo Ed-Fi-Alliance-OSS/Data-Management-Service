@@ -72,6 +72,26 @@ public interface ICdcKafkaAdmin
     );
 
     /// <summary>
+    /// Reports which of the binding's governed topics already exist on the broker, and nothing about
+    /// whether they conform.
+    /// </summary>
+    /// <remarks>
+    /// Existence is a different question from policy, and the policy observation cannot answer it: in
+    /// validate-only mode an absent topic and a nonconforming one are both reported invalid, which is
+    /// the right answer for a status and the wrong one for an enablement asking whether it is the first
+    /// to provision these names. An unbound enablement needs the narrow question, because the design
+    /// requires it to stop and demand explicit adoption when a governed artifact exists without its
+    /// binding record.
+    ///
+    /// A broker that cannot answer reports <see cref="CdcKafkaGovernedTopicPresence.Readable"/> false
+    /// rather than an empty list: absence that could not be observed is not absence.
+    /// </remarks>
+    Task<CdcKafkaGovernedTopicPresence> FindExistingGovernedTopicsAsync(
+        CdcArtifactInventory inventory,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
     /// Reports the same binding-governed Kafka evidence without provisioning any of it: an absent topic
     /// is reported as absent and a missing grant as missing, rather than being created or repaired.
     /// </summary>
@@ -161,6 +181,19 @@ public sealed record CdcKafkaRecordSizeEvidence(
     CdcKafkaRecordSizePolicy Policy,
     IReadOnlyList<CdcDiagnostic> Diagnostics
 );
+
+/// <summary>
+/// Which of a binding's governed topics the broker already holds.
+/// </summary>
+/// <param name="Readable">
+/// Whether the broker answered at all. False means nothing was established — neither presence nor
+/// absence — and a caller that refuses on presence must refuse on this too.
+/// </param>
+/// <param name="ExistingTopicNames">
+/// The governed topic names found, in inventory order. Empty when the broker holds none of them, which
+/// is only meaningful alongside <paramref name="Readable"/>.
+/// </param>
+public sealed record CdcKafkaGovernedTopicPresence(bool Readable, IReadOnlyList<string> ExistingTopicNames);
 
 /// <summary>
 /// Whether a Kafka policy pass may provision what it finds absent, or must only report it.
@@ -648,6 +681,43 @@ internal sealed class CdcKafkaAdminAdapter(
         CancellationToken cancellationToken
     ) =>
         BindingKafkaPolicyAsync(context, inventory, CdcKafkaProvisioningMode.ValidateOnly, cancellationToken);
+
+    public Task<CdcKafkaGovernedTopicPresence> FindExistingGovernedTopicsAsync(
+        CdcArtifactInventory inventory,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(inventory);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        string[] governedTopicNames = inventory.SchemaHistoryTopicName is { } schemaHistoryTopicName
+            ? [inventory.TopicName, inventory.ProgressTopicName, schemaHistoryTopicName]
+            : [inventory.TopicName, inventory.ProgressTopicName];
+
+        try
+        {
+            // One metadata read for all of them rather than one per name: the broker answers with the
+            // whole cluster either way, and three reads could disagree with each other.
+            Metadata metadata = adminClient.GetMetadata(options.Value.Timeouts.KafkaAdmin);
+            HashSet<string> present =
+            [
+                .. (metadata.Topics ?? [])
+                    .Where(topic => !topic.Error.IsError && topic.Partitions is { Count: > 0 })
+                    .Select(topic => topic.Topic),
+            ];
+
+            return Task.FromResult(
+                new CdcKafkaGovernedTopicPresence(true, [.. governedTopicNames.Where(present.Contains)])
+            );
+        }
+        catch (KafkaException)
+        {
+            // The broker response body is never surfaced verbatim, and the unreadable answer needs no
+            // detail here: the caller refuses on it exactly as it refuses on a topic that exists, and
+            // composes the diagnostic that says so.
+            return Task.FromResult(new CdcKafkaGovernedTopicPresence(false, []));
+        }
+    }
 
     private async Task<CdcKafkaPolicyObservation> BindingKafkaPolicyAsync(
         CdcObservationContext context,
@@ -1441,7 +1511,9 @@ internal sealed class CdcKafkaAdminAdapter(
                     // topics for as long as that lasts. Rejecting the older one would make ordinary
                     // source replacement fail closed on the deployment doing exactly what the design
                     // says it does. What still fails is a grant naming another instance key, any
-                    // progress or schema-history topic, or a non-literal pattern.
+                    // progress or schema-history topic, a non-literal pattern, or - on the retained
+                    // topic itself - any entry that is not the read or describe grant a consumer is
+                    // held to on the current one.
                     alsoPermitted: grantedTopicName =>
                         CdcArtifactNameGenerator.IsTargetPublicTopicName(
                             inventory.TopicPrefix,
@@ -1467,8 +1539,10 @@ internal sealed class CdcKafkaAdminAdapter(
     }
 
     /// <param name="alsoPermitted">
-    /// An additional literal resource name this principal may hold a grant on, decided by name. Absent
-    /// for the consumer group, where the only permitted grant is the one on the group itself.
+    /// An additional literal resource name this principal may hold a grant on, decided by name. The
+    /// grant itself must still be one a consumer may hold — no required-grant pass runs over a
+    /// resource outside this binding's inventory, so its entry is checked here or nowhere. Absent for
+    /// the consumer group, where the only permitted grant is the one on the group itself.
     /// </param>
     private async Task<CdcKafkaPolicyItemState> VerifyConsumerResourceIsolationAsync(
         ResourceType resourceType,
@@ -1516,16 +1590,45 @@ internal sealed class CdcKafkaAdminAdapter(
 
         CdcKafkaPolicyItemState state = CdcKafkaPolicyItemState.Satisfied;
 
-        foreach (ResourcePattern pattern in bindings.Select(binding => binding.Pattern))
+        foreach (AclBinding aclBinding in bindings)
         {
-            if (
-                pattern.ResourcePatternType == ResourcePatternType.Literal
-                && (
-                    string.Equals(pattern.Name, permittedResourceName, StringComparison.Ordinal)
-                    || alsoPermitted?.Invoke(pattern.Name) == true
-                )
-            )
+            ResourcePattern pattern = aclBinding.Pattern;
+            bool literal = pattern.ResourcePatternType == ResourcePatternType.Literal;
+
+            // The grants on the resource this principal is entitled to are checked in full by the
+            // required-grant pass over that same resource, which compares permission, host, and
+            // operation against what the binding requires. Restating the rule here would put it in two
+            // places.
+            if (literal && string.Equals(pattern.Name, permittedResourceName, StringComparison.Ordinal))
             {
+                continue;
+            }
+
+            // A resource permitted by name alone gets no such second pass: no required-grant pass runs
+            // over a retained generation's topics, because they are not in this binding's inventory. So
+            // the entry is checked here or nowhere, and by the same rule the current public topic holds
+            // its consumers to.
+            if (literal && alsoPermitted?.Invoke(pattern.Name) == true)
+            {
+                if (IsPermittedConsumerGrant(aclBinding.Entry))
+                {
+                    continue;
+                }
+
+                state = CdcKafkaPolicyItemState.Invalid;
+                diagnostics.Add(
+                    AclInvalid(
+                        "publicTopicAcls",
+                        pattern.Name,
+                        "$.publicTopicAcls",
+                        observedAt,
+                        "CDC Kafka instance consumer may hold only an allowed read or describe grant "
+                            + "from any host on a retained generation's public topic.",
+                        permittedResourceName,
+                        $"{aclBinding.Entry.PermissionType} {aclBinding.Entry.Operation} "
+                            + $"from {aclBinding.Entry.Host}"
+                    )
+                );
                 continue;
             }
 
@@ -1545,6 +1648,21 @@ internal sealed class CdcKafkaAdminAdapter(
 
         return state;
     }
+
+    /// <summary>
+    /// Whether one ACL entry is a grant an instance consumer may hold on a public topic of this
+    /// target: allowed rather than denied, from any host, and read or describe rather than any other
+    /// operation.
+    /// </summary>
+    /// <remarks>
+    /// The same shape <see cref="PublicTopicRequirements"/> issues to each configured consumer, read
+    /// back rather than restated as a second rule: a consumer that may only read the current
+    /// generation's topic may only read a retained one.
+    /// </remarks>
+    private static bool IsPermittedConsumerGrant(AccessControlEntry entry) =>
+        entry.PermissionType == AclPermissionType.Allow
+        && string.Equals(entry.Host, AnyHost, StringComparison.Ordinal)
+        && entry.Operation is AclOperation.Read or AclOperation.Describe;
 
     private static CdcKafkaBindingAclPolicies BindingAcls(
         CdcArtifactInventory inventory,

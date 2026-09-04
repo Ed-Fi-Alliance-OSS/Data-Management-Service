@@ -799,6 +799,15 @@ public class Given_A_Postgresql_CdcControlReadinessSequence
             CancellationToken cancellationToken
         ) => Task.FromResult(SatisfiedPolicy(context, inventory));
 
+        /// <summary>
+        /// The sequence under test enables a target nothing has provisioned before, so the broker
+        /// holds none of its governed topics.
+        /// </summary>
+        public Task<CdcKafkaGovernedTopicPresence> FindExistingGovernedTopicsAsync(
+            CoreCdc.CdcArtifactInventory inventory,
+            CancellationToken cancellationToken
+        ) => Task.FromResult(new CdcKafkaGovernedTopicPresence(true, []));
+
         public Task<CoreCdc.CdcSqlServerSchemaHistoryEvidence?> ReadSqlServerSchemaHistoryAsync(
             CoreCdc.CdcArtifactInventory inventory,
             CoreCdc.CdcSqlServerSchemaHistoryEnablementPhase enablementPhase,

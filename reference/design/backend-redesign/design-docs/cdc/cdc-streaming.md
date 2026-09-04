@@ -682,6 +682,14 @@ The deployment-owned status has three continuity outcomes:
   and keeps combined readiness false. The latch cannot be cleared by later artifact
   recreation, offset mutation, a healthy-looking lag value, or a snapshot.
 
+Latching and fencing are separate obligations. The latch is written once, from the proof that
+established the loss; a later check that reads it back re-proves nothing and writes nothing. The
+fence follows the classified continuity instead, so every check that finds the continuity lost
+leaves the connector stopped - a stop the worker refused, or a process that exited between the
+durable latch and the stop, would otherwise leave it publishing indefinitely, since no later
+check raises a second proof and restart declines a lost continuity rather than acting on it. A
+connector already observed stopped is left alone.
+
 This latch affects CDC publication readiness only and does not change DMS request routing.
 A failure for one binding does not stop unrelated bindings.
 
@@ -906,7 +914,13 @@ Binding creation and cleanup follow a fail-closed order:
    binding fields.
 3. If any governed artifact exists without its binding record, or differs from the
    record, stop and require explicit adoption or cleanup. Do not infer or overwrite a
-   binding from existing topic names or connector configuration. Explicit adoption
+   binding from existing topic names or connector configuration. An enablement with no
+   binding record of its own therefore establishes that the broker holds none of the
+   binding's governed topics and that the worker holds no connector under its name,
+   before it creates that record; evidence it could not obtain refuses it as an existing
+   artifact does, because absence that was not observed is not absence. An enablement
+   retrying against its own record does not ask, since the artifacts it finds are the ones
+   its earlier attempt created. Explicit adoption
    requires an operator-supplied complete record plus live verification of the physical
    source and every retained artifact. E19's binding-state operation owns guarded atomic
    record creation, and bootstrap owns the live provider, connector, topic, offset, ACL, and
@@ -932,7 +946,13 @@ Binding creation and cleanup follow a fail-closed order:
    deployment's provider and that the connected database is that record's own physical source.
    A retained superseded generation is therefore retirable only against the database it was
    bound to: run against the source that replaced it, every provider artifact would be reported
-   absent, and the proof would certify a cleanup of a database that never held them.
+   absent, and the proof would certify a cleanup of a database that never held them. Deployment
+   configuration names the replacing database once a replacement has run, so the retirement
+   accepts the superseded source's connection as an explicit operator input, supplied by
+   reference to a deployment secret rather than as a literal. That input selects which database
+   is inspected and weakens no proof: the fingerprint comparison above still decides whether the
+   retirement may proceed, and a reference that resolves to nothing is a refusal rather than a
+   fallback to the target's current connection.
 
 The binding record lives at least as long as any governed artifact. Local teardown may
 remove it only in the same destructive volume-removal workflow that removes all of those
@@ -1592,7 +1612,11 @@ retains the generation it supersedes until an operator retires it, so a stable c
 principal holds literal grants on both of that target's public topics for as long as that
 lasts; treating the retained one as foreign would make ordinary source replacement fail closed.
 A grant naming another instance key, any progress or schema-history topic, or a non-literal
-pattern still fails closed.
+pattern still fails closed. The retained topic is exempted by name only: the grant on it must
+still be one an instance consumer may hold, allowed rather than denied, from any host, and read
+or describe. No required-grant pass runs over a topic outside the current binding's inventory,
+so a consumer that may only read the current generation's public topic may only read a retained
+one, and that is enforced where the exemption is granted or nowhere.
 
 The consumer-group grant is the consumer's rather than one generation's. Its name is deployment
 configuration, not a binding-derived artifact name, and the same consumer group reads the

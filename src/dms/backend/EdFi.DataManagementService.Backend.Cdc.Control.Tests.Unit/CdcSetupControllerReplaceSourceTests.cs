@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using FakeItEasy;
 using FluentAssertions;
@@ -431,6 +432,85 @@ public class Given_CdcSetupControllerReplaceSource
                 )
             )
             .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// The binding identity carries no provider, so a record written by a control plane for the other
+    /// engine is readable at these very coordinates. Refused before the artifact-name recovery and well
+    /// before the cutover barrier: this operation's first change to the deployment is fencing that
+    /// generation's connector, and a run that can neither validate nor retire the artifacts left behind
+    /// must not stop it. Retirement and adoption refuse the same mismatch for the same reason.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_a_previous_generation_bound_under_another_provider_before_fencing_it()
+    {
+        CdcSetupControllerHarness harness = new()
+        {
+            PreviousGenerationRead = CdcSetupControllerHarness.Present(
+                CdcSetupControllerHarness.PreviousGenerationBinding(provider: CdcProvider.SqlServer)
+            ),
+        };
+
+        CdcAdmission admission = await harness.ReplaceSourceAsync();
+
+        using var _ = new AssertionScope();
+        AssertRefusedBeforeFencing(harness, admission);
+        Refusal(admission).Category.Should().Be(CdcDiagnosticCategory.ProviderMismatch);
+        Refusal(admission).Component.Should().Be(CdcDiagnosticComponent.Binding);
+        Refusal(admission).Retryable.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// A replacement that made its binding durable and activated tracking before failing at a later
+    /// step is a retry of that generation, not a first attempt at it. Classified as unbound it would be
+    /// refused for the very tracking lifecycle it established — and a direct `cdc enable` cannot rescue
+    /// it either, because the generation this fenced is still bound. The preflight therefore asks the
+    /// classification the enablement itself will run, decided from the replacing generation's own
+    /// record.
+    /// </summary>
+    [Test]
+    public async Task It_resumes_a_replacement_whose_binding_and_tracking_activation_already_committed()
+    {
+        CdcSetupControllerHarness harness = ReplaceableTarget();
+        harness.BindingRead = CdcSetupControllerHarness.Present(CdcSetupControllerHarness.Binding());
+        harness.Eligibility = CdcSetupControllerHarness.Reading(lifecycleStateToken: "Tracking");
+
+        CdcAdmission admission = await harness.ReplaceSourceAsync();
+
+        using var _ = new AssertionScope();
+        admission.AdmissionState.Should().Be(CdcAdmissionState.Admitted);
+        A.CallTo(() => harness.Connect.StopConnectorAsync(A<string>._, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
+
+        // Resumed against the record it already holds rather than created a second time, and the
+        // guarded activation is not re-run over a database that is already tracking.
+        A.CallTo(() => harness.Bindings.ExactMatchBindingAsync(A<CdcBinding>._, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() =>
+                harness.Activation.ExecuteAsync(
+                    A<DocumentCacheGuardedNewEmptyActivationRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// The retry classification is the enablement's own, so a replacing generation whose record exists
+    /// but whose lifecycle the enablement would reject is still refused before the fence.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_a_bound_replacement_whose_lifecycle_the_enablement_would_reject()
+    {
+        CdcSetupControllerHarness harness = ReplaceableTarget();
+        harness.BindingRead = CdcSetupControllerHarness.Present(CdcSetupControllerHarness.Binding());
+        harness.Eligibility = CdcSetupControllerHarness.Reading(lifecycleStateToken: "Rebuilding");
+
+        CdcAdmission admission = await harness.ReplaceSourceAsync();
+
+        using var _ = new AssertionScope();
+        AssertRefusedBeforeFencing(harness, admission);
+        Refusal(admission).Component.Should().Be(CdcDiagnosticComponent.Retry);
     }
 
     private static CdcSetupControllerHarness ReplaceableTarget() =>

@@ -143,6 +143,14 @@ superseded generation is therefore retired against the connection string of the 
 bound to, not the replacement's: retiring it against the replacement would find none of its
 artifacts and certify an absence in a database that never held them.
 
+The Configuration Service names the replacing database once a replacement has run, so
+`--source-connection-variable` supplies the superseded generation's own. It takes the name of an
+environment variable rather than the connection string, so no credential reaches the command line
+or a container argument list, and a variable that is unset or empty is a refusal rather than a
+fallback to the data store's current connection. The physical-source proof above is unchanged: the
+option selects which database is inspected, and the fingerprint comparison still decides whether
+the retirement may proceed.
+
 Each `cdc` verb writes one shared CDC contract document, selected by the verb rather than
 by the outcome:
 
@@ -230,6 +238,7 @@ each one overrides for the current run:
 | `--durability-profile local\|production` | Durability profile governed topics are created with and validated against. | `DurabilityProfile` |
 | `--binding-json <path\|->` | Complete binding record to adopt; required by `cdc adopt` and never inferred. | None; request-only. |
 | `--connector-already-absent` | Assert the connector the record names is already gone, so `cdc retire` may proceed without observing its committed offsets. | None; request-only. |
+| `--source-connection-variable <name>` | Name of an environment variable holding the connection string of the database the generation being retired was bound to. Accepted by `cdc retire` only. The value is read from the environment, never from the command line. | None; request-only. |
 
 `--generation` and `--previous-generation` are positive integers, and
 `--max-record-bytes` is a positive byte count. Zero, negative, malformed, and overflow

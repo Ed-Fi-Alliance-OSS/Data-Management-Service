@@ -67,6 +67,7 @@ internal static class DocumentCacheAdminCommandSurface
     public const string WriteAdmissionOptionName = "--write-admission";
     public const string BindingJsonOptionName = "--binding-json";
     public const string ConnectorAlreadyAbsentOptionName = "--connector-already-absent";
+    public const string SourceConnectionVariableOptionName = "--source-connection-variable";
 
     public const string PostgresqlDatastoreOptionValue = "postgresql";
     public const string SqlServerDatastoreOptionValue = "sqlserver";
@@ -590,6 +591,18 @@ internal static class DocumentCacheAdminCommandSurface
                     Description =
                         "Assert that the connector is already gone; retirement otherwise refuses, because "
                         + "a missing connector leaves its committed source offsets unobservable",
+                }
+            );
+            command.Options.Add(
+                new Option<string?>(SourceConnectionVariableOptionName)
+                {
+                    Description =
+                        "Name of an environment variable holding the connection string of the database "
+                        + "this generation was bound to, for retiring a generation a source replacement "
+                        + "superseded; the Configuration Service now names the replacing database. The "
+                        + "value is read from the environment, never from the command line, and the "
+                        + "retirement still proves the connected database is this generation's own "
+                        + "physical source",
                 }
             );
         }

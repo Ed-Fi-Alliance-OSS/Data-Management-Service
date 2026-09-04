@@ -256,10 +256,16 @@ internal sealed class CdcSetupController(
 
         CdcControlOptions controlOptions = options.Value;
 
-        // When the sequence started. It seeds the admission and the classifier inputs, and it stamps
-        // the steps that run before the first await. A step diagnostic raised after one is stamped
-        // with a fresh read instead: the waiting steps here are budgeted in minutes, and a diagnostic
-        // that named this instant would report an observation the step had not yet made.
+        // When the sequence started. It seeds the admission and stamps the steps that run before the
+        // first await. A step diagnostic raised after one is stamped with a fresh read instead: the
+        // waiting steps here are budgeted in minutes, and a diagnostic that named this instant would
+        // report an observation the step had not yet made.
+        //
+        // It is deliberately NOT the classifier inputs' clock. Every classifier input carries evidence
+        // read after this instant - the durable binding state and the eligibility observation are both
+        // stamped by their own live reads - and the contract validators reject a timestamp later than
+        // the `nowUtc` they are given. Classifying against this instant would report freshly collected
+        // evidence as future-dated and refuse the enablement on evidence that is in fact current.
         DateTimeOffset now = timeProvider.GetUtcNow();
         CoreCdc.CdcProvider provider = eligibilityProbe.Provider;
         string dataStoreId = request.DataStoreId.ToString(CultureInfo.InvariantCulture);
@@ -437,6 +443,13 @@ internal sealed class CdcSetupController(
             PhysicalSourceFingerprint = eligibility.PhysicalSourceFingerprint,
         };
 
+        // The classification's own clock, read after the evidence it classifies rather than at the
+        // sequence's start. The probe stamps its observation when the database answered, and the
+        // binding read stamps its state when the store answered; both are later than `now`, and the
+        // shared validators reject an observation later than the `nowUtc` they are handed. Source
+        // replacement reads its own clock in the same position for the same reason.
+        DateTimeOffset probedAt = timeProvider.GetUtcNow();
+
         CdcRetryClassification? retryClassification = null;
         if (firstAttempt)
         {
@@ -444,8 +457,8 @@ internal sealed class CdcSetupController(
                 CdcInitialEnableRetryClassifier.EvaluatePreBindingEligibility(
                     new(
                         request.OperationId,
-                        now,
-                        now,
+                        probedAt,
+                        probedAt,
                         target.ToTargetIdentity(),
                         eligibility.PhysicalSourceFingerprint,
                         provisioningProof,
@@ -465,8 +478,8 @@ internal sealed class CdcSetupController(
             CdcRetry retry = CdcInitialEnableRetryClassifier.EvaluateRetry(
                 new(
                     request.OperationId,
-                    now,
-                    now,
+                    probedAt,
+                    probedAt,
                     target.ToTargetIdentity(),
                     eligibility.PhysicalSourceFingerprint,
                     provisioningProof,
@@ -520,6 +533,48 @@ internal sealed class CdcSetupController(
                 ),
                 conflict.Diagnostics
             );
+        }
+
+        // An unbound attempt must be the first to provision these names. Nothing downstream can hold
+        // that line: the topic pass creates what is absent and accepts what already matches, and the
+        // registration is a configuration PUT that overwrites whatever the worker was holding under
+        // this name. So a deployment that lost its binding state store and enabled a fresh database
+        // would attach it to the previous life's topics and its consumers' committed offsets, and
+        // report a clean enablement of artifacts it had silently adopted.
+        //
+        // Only the unbound attempt asks. A retry legitimately finds the artifacts its own earlier run
+        // created, and a source replacement is unbound at a generation whose every governed name is
+        // new. Recovering deployment state around an artifact set that already exists is what `cdc
+        // adopt` is for, and it verifies each artifact against an operator-supplied record rather than
+        // inferring one from the names it finds.
+        if (firstAttempt)
+        {
+            CdcKafkaGovernedTopicPresence topicPresence = await kafkaAdmin
+                .FindExistingGovernedTopicsAsync(inventory, cancellationToken)
+                .ConfigureAwait(false);
+            CdcConnectResult<IReadOnlyDictionary<string, string>> existingConnector = await connectClient
+                .GetConnectorConfigAsync(inventory.ConnectorName, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (
+                UnboundGovernedArtifactRefusal(inventory, topicPresence, existingConnector) is
+                { } unboundRefusal
+            )
+            {
+                return Blocked(
+                    Step(
+                        "enableGovernedArtifactAlreadyExists",
+                        unboundRefusal.Category,
+                        CdcDiagnosticComponent.Binding,
+                        "CDC enablement never infers a binding from artifacts it finds. A governed "
+                            + "artifact that exists without its binding record requires explicit "
+                            + "adoption or cleanup.",
+                        unboundRefusal.Observed,
+                        timeProvider.GetUtcNow()
+                    ),
+                    []
+                );
+            }
         }
 
         CdcBindingLifecycleResult bindingWrite = firstAttempt
@@ -1161,6 +1216,42 @@ internal sealed class CdcSetupController(
             );
         }
 
+        // The artifacts a connector publishes through, proved before it is put back to work. These are
+        // the same four the enablement sequence requires before it will register a connector at all,
+        // read from the observations this collection already made rather than re-collected here. A
+        // restart re-derives none of them: a resume issued over a mismatched transform configuration,
+        // a nonconforming shared offset store, a missing grant, or a provider capture artifact that no
+        // longer conforms starts publishing through it immediately, and the unhealthy status this would
+        // compose afterwards cannot recall what was already produced. `cdc-streaming.md` requires a
+        // post-admission restart to exact-match the binding and validate existing artifacts; this is
+        // that validation.
+        if (UnsatisfiedRestartPrerequisite(collected.Evaluation) is { } prerequisite)
+        {
+            logger.LogDebug(
+                "CDC restart did not start the connector: {Component} is not satisfied.",
+                prerequisite.Component
+            );
+
+            return Compose(
+                collected.Evaluation with
+                {
+                    StateStoreDiagnostics =
+                    [
+                        StatusStep(
+                            CdcRestartDiagnosticCodes.NotAttempted,
+                            prerequisite.Category,
+                            prerequisite.Component,
+                            "CDC restart issued no connector request: the artifacts the connector "
+                                + "publishes through are proved before it is started, never after.",
+                            prerequisite.Observed,
+                            timeProvider.GetUtcNow()
+                        ),
+                        .. collected.Evaluation.StateStoreDiagnostics,
+                    ],
+                }
+            );
+        }
+
         // A connector the worker is holding fenced is resumed rather than restarted. STOPPED and
         // PAUSED are target states the worker owns, and a restart clears neither: it re-creates the
         // connector and task instances, and a stopped connector has no tasks to re-create. Resuming is
@@ -1226,6 +1317,81 @@ internal sealed class CdcSetupController(
             )
         );
     }
+
+    /// <summary>
+    /// The first artifact prerequisite a restart may not proceed without, or null when all of them are
+    /// satisfied.
+    /// </summary>
+    /// <remarks>
+    /// One entry per gate the enablement sequence applies before it registers a connector, in the order
+    /// that sequence proves them: the provider capture artifacts, the shared Connect offset store, the
+    /// binding's own Kafka topics and grants, and the registered connector configuration. An absent
+    /// observation is unsatisfied rather than skipped — a prerequisite that could not be observed is
+    /// not one that was proved.
+    /// </remarks>
+    private static CdcRestartPrerequisite? UnsatisfiedRestartPrerequisite(
+        CdcTargetStatusEvaluationInput evaluation
+    )
+    {
+        if (
+            evaluation.ProviderSetup is not { } providerSetup
+            || !CdcTargetStatusEvaluator.IsProviderSetupSatisfied(providerSetup)
+        )
+        {
+            return new(
+                CdcDiagnosticComponent.ProviderSetup,
+                CdcDiagnosticCategory.ProviderSetupInvalid,
+                evaluation.ProviderSetup?.SetupOutcome.ToString() ?? "unobserved"
+            );
+        }
+
+        if (
+            evaluation.ConnectOffsetStore is not { } connectOffsetStore
+            || !CdcTargetStatusEvaluator.IsConnectOffsetStorePolicySatisfied(connectOffsetStore)
+        )
+        {
+            return new(
+                CdcDiagnosticComponent.ConnectOffsetStore,
+                CdcDiagnosticCategory.ConnectOffsetStoreInvalid,
+                evaluation.ConnectOffsetStore is { } observed
+                    ? $"{observed.PolicyState} / {observed.AclState}"
+                    : "unobserved"
+            );
+        }
+
+        if (
+            evaluation.KafkaPolicy is not { } kafkaPolicy
+            || !CdcTargetStatusEvaluator.IsKafkaPolicySatisfied(kafkaPolicy)
+        )
+        {
+            return new(
+                CdcDiagnosticComponent.KafkaPolicy,
+                CdcDiagnosticCategory.KafkaPolicyInvalid,
+                evaluation.KafkaPolicy?.PolicyState.ToString() ?? "unobserved"
+            );
+        }
+
+        if (
+            evaluation.ConnectorConfig is not { } connectorConfig
+            || !CdcTargetStatusEvaluator.IsConnectorConfigSatisfied(connectorConfig)
+        )
+        {
+            return new(
+                CdcDiagnosticComponent.ConnectorConfig,
+                CdcDiagnosticCategory.ConnectorConfigInvalid,
+                evaluation.ConnectorConfig?.ConfigurationState.ToString() ?? "unobserved"
+            );
+        }
+
+        return null;
+    }
+
+    /// <summary>The component that refused a restart, and what it was observed to be.</summary>
+    private readonly record struct CdcRestartPrerequisite(
+        CdcDiagnosticComponent Component,
+        CdcDiagnosticCategory Category,
+        string Observed
+    );
 
     /// <summary>
     /// Retires one binding generation and every governed artifact it owns.
@@ -1898,6 +2064,27 @@ internal sealed class CdcSetupController(
             );
         }
 
+        // The record names the provider its artifacts were created under, and this deployment's
+        // adapters are for one provider only. The binding identity carries no provider, so a record
+        // written under the other engine is readable at these very coordinates. Checked here, before
+        // the artifact-name recovery below and well before the cutover barrier: this operation's first
+        // change to the deployment is fencing that generation's connector, and a replacement run by a
+        // control plane that can neither validate nor retire the artifacts left behind must not stop
+        // it. Retirement and adoption refuse the same mismatch for the same reason.
+        if (previousBinding.Provider != provider)
+        {
+            return Refused(
+                request.OperationId,
+                targetIdentity,
+                CdcDiagnosticCategory.ProviderMismatch,
+                CdcDiagnosticComponent.Binding,
+                "CDC source replacement requires the binding record of the generation it replaces to "
+                    + "name this deployment's provider.",
+                previousBinding.Provider.ToString(),
+                []
+            );
+        }
+
         if (
             previousRead.State.State == CdcBindingState.IncidentLatched
             || previousRead.State.Incident is not null
@@ -1944,6 +2131,30 @@ internal sealed class CdcSetupController(
                 "CDC source replacement never reuses a governed artifact of the generation it replaces.",
                 sharedName,
                 []
+            );
+        }
+
+        // The durable state of the generation this creates, read before the probe below so its own
+        // stamp precedes the clock the classification runs against. A replacement that made its
+        // binding durable and activated tracking before failing at a later step is a retry of that
+        // generation rather than a first attempt at it, and only this record can tell the two apart.
+        CdcBindingLifecycleResult replacementRead = await bindingLifecycle
+            .ReadBindingAsync(target.ToBindingIdentity(), cancellationToken)
+            .ConfigureAwait(false);
+        if (
+            replacementRead.Status
+            is CdcControlPlaneOperationStatus.StateStoreUnavailable
+                or CdcControlPlaneOperationStatus.InvalidOperation
+        )
+        {
+            return Refused(
+                request.OperationId,
+                targetIdentity,
+                CdcDiagnosticCategory.LocalStateUnavailable,
+                CdcDiagnosticComponent.StateStore,
+                "CDC source replacement could not read the durable state of the generation it creates.",
+                replacementRead.Status.ToString(),
+                replacementRead.Diagnostics
             );
         }
 
@@ -2032,8 +2243,42 @@ internal sealed class CdcSetupController(
         // refused either way — and refusing it here is what keeps a replacement that cannot proceed
         // from stopping the outgoing generation's publication first. The enablement still classifies
         // for itself, because it is also entered directly.
-        CdcInitialEnablePreBindingEligibilityResult preBinding =
-            CdcInitialEnableRetryClassifier.EvaluatePreBindingEligibility(
+        //
+        // Which of the two classifications is the one the enablement will run, decided from the
+        // replacing generation's own record rather than assumed to be the unbound one. A replacement
+        // that reached step 4 and then failed has activated tracking on the replacing source, and the
+        // unbound classifier rejects exactly that as `RejectUnboundTracking` — so a preflight fixed on
+        // it would refuse the reissue of a replacement that is merely unfinished, while a direct
+        // `cdc enable` cannot rescue it either: the generation this fenced is still bound, which is
+        // what `CdcSecondGenerationRule` refuses. The retry classification is the enablement's own,
+        // over the same record it will read for itself once the fence is applied.
+        bool replacementFirstAttempt =
+            replacementRead.Status == CdcControlPlaneOperationStatus.BindingMissing;
+
+        bool canBind;
+        string classificationObserved;
+        IReadOnlyList<CdcDiagnostic> classificationDiagnostics;
+        if (replacementFirstAttempt)
+        {
+            CdcInitialEnablePreBindingEligibilityResult preBinding =
+                CdcInitialEnableRetryClassifier.EvaluatePreBindingEligibility(
+                    new(
+                        request.OperationId,
+                        probedAt,
+                        probedAt,
+                        targetIdentity,
+                        eligibility.PhysicalSourceFingerprint,
+                        provisioningProof,
+                        eligibility
+                    )
+                );
+            canBind = preBinding.CanCreateBinding;
+            classificationObserved = ClassificationObserved(preBinding.Rejection);
+            classificationDiagnostics = preBinding.Rejection?.Diagnostics ?? preBinding.Diagnostics;
+        }
+        else
+        {
+            CdcRetry retry = CdcInitialEnableRetryClassifier.EvaluateRetry(
                 new(
                     request.OperationId,
                     probedAt,
@@ -2041,10 +2286,16 @@ internal sealed class CdcSetupController(
                     targetIdentity,
                     eligibility.PhysicalSourceFingerprint,
                     provisioningProof,
-                    eligibility
+                    eligibility,
+                    replacementRead.State
                 )
             );
-        if (!preBinding.CanCreateBinding)
+            canBind = retry.Action == CdcRetryAction.Proceed;
+            classificationObserved = ClassificationObserved(retry);
+            classificationDiagnostics = retry.Diagnostics;
+        }
+
+        if (!canBind)
         {
             return Refused(
                 request.OperationId,
@@ -2052,10 +2303,8 @@ internal sealed class CdcSetupController(
                 CdcDiagnosticCategory.InvalidObservation,
                 CdcDiagnosticComponent.Retry,
                 "CDC source replacement requires a replacing source the enablement sequence can bind.",
-                preBinding.Rejection is { } rejection
-                    ? $"{rejection.RetryClassification} / {rejection.Action}"
-                    : "rejected",
-                preBinding.Rejection?.Diagnostics ?? preBinding.Diagnostics
+                classificationObserved,
+                classificationDiagnostics
             );
         }
 
@@ -2148,6 +2397,67 @@ internal sealed class CdcSetupController(
             )
             .ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// What a refused replacement classification was observed to be. Both classifiers can decline
+    /// without naming a rejection, which is reported as the refusal it is rather than as an absence.
+    /// </summary>
+    private static string ClassificationObserved(CdcRetry? rejection) =>
+        rejection is { } retry ? $"{retry.RetryClassification} / {retry.Action}" : "rejected";
+
+    /// <summary>
+    /// Why an unbound enablement may not create its binding, or null when the broker and the worker
+    /// both answered and neither holds a governed external artifact of this inventory.
+    /// </summary>
+    /// <remarks>
+    /// Evidence that could not be obtained refuses exactly as an artifact that exists does. A broker or
+    /// worker that did not answer establishes neither presence nor absence, and silently adopting an
+    /// artifact set is the outcome this guard exists to prevent — so the unreadable answer is the
+    /// refusing one. Only the worker's own 404 proves the connector is absent: every other outcome
+    /// either found it or failed to look.
+    ///
+    /// The provider capture artifacts are deliberately not asked about here. They are governed too, but
+    /// the provider pass creates or exact-matches them against the binding this enablement is about to
+    /// write, which is the design's own first-enablement rule for them, and they live in the database
+    /// the eligibility observation has already classified.
+    /// </remarks>
+    private static CdcUnboundArtifactRefusal? UnboundGovernedArtifactRefusal(
+        CdcArtifactInventory inventory,
+        CdcKafkaGovernedTopicPresence topicPresence,
+        CdcConnectResult<IReadOnlyDictionary<string, string>> connector
+    )
+    {
+        if (!topicPresence.Readable)
+        {
+            return new(
+                CdcDiagnosticCategory.KafkaPolicyInvalid,
+                "the broker could not prove the governed topics are absent"
+            );
+        }
+
+        if (topicPresence.ExistingTopicNames.Count != 0)
+        {
+            return new(CdcDiagnosticCategory.UnexpectedArtifact, topicPresence.ExistingTopicNames[0]);
+        }
+
+        if (connector.Outcome == CdcConnectOutcome.Succeeded)
+        {
+            return new(CdcDiagnosticCategory.UnexpectedArtifact, inventory.ConnectorName);
+        }
+
+        if (connector.Outcome != CdcConnectOutcome.NotFound)
+        {
+            return new(
+                CdcDiagnosticCategory.ConnectorConfigInvalid,
+                $"the worker could not prove the connector is absent: {connector.Outcome}"
+            );
+        }
+
+        return null;
+    }
+
+    /// <summary>The category and observation of a refused unbound enablement.</summary>
+    private readonly record struct CdcUnboundArtifactRefusal(CdcDiagnosticCategory Category, string Observed);
 
     /// <summary>
     /// The first governed artifact name the replacing generation would share with the generation it
@@ -2788,6 +3098,28 @@ internal sealed class CdcSetupController(
             return new(evaluation);
         }
 
+        // The same mismatch retirement, adoption, and source replacement refuse, refused here too and
+        // for a sharper reason: the artifact names below are recovered under the record's provider,
+        // while the provider-setup input built from them is selected by this deployment's. A record
+        // naming the other engine leaves the names this provider needs absent, and composing a setup
+        // request from them throws out of an operation whose whole contract is to observe and report
+        // what it found. Answered before the instance connection is opened, so no database this
+        // control plane could not inspect anyway is reached.
+        if (binding.Provider != provider)
+        {
+            return Blocked(
+                StatusStep(
+                    "statusProviderMismatch",
+                    CdcDiagnosticCategory.ProviderMismatch,
+                    CdcDiagnosticComponent.Binding,
+                    "CDC status requires the binding record to name this deployment's provider.",
+                    binding.Provider.ToString(),
+                    now
+                ),
+                []
+            );
+        }
+
         CdcArtifactNameResult artifactNames = CdcArtifactNameGenerator.RecoverFromBinding(binding);
         if (artifactNames.Inventory is not { } inventory)
         {
@@ -3005,14 +3337,23 @@ internal sealed class CdcSetupController(
             .ConfigureAwait(false);
         evaluation = evaluation with { SourceHistory = sourceHistory.Observation };
 
+        // The latch is written once, from the classifier's own candidate, which it raises only for a
+        // loss it proved and never for one it read back from the record.
         if (sourceHistory.IncidentCandidate is { } incidentCandidate)
         {
-            evaluation = await LatchSourceHistoryLossAsync(
-                    evaluation,
-                    incidentCandidate,
-                    inventory,
-                    cancellationToken
-                )
+            evaluation = await LatchSourceHistoryLossAsync(evaluation, incidentCandidate, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        // The fence follows the continuity, not the candidate. Latching is idempotent by design - a
+        // poll that reads an already-latched incident deliberately raises no second candidate - so
+        // fencing from the candidate would give the connector exactly one chance to be stopped. A
+        // worker that refused that stop, or a process that exited between the durable latch and the
+        // stop, would leave it publishing indefinitely with nothing re-attempting it: no later status
+        // raises a candidate, and restart declines a lost continuity rather than acting on it.
+        if (sourceHistory.Observation.Continuity == CdcSourceHistoryContinuity.Lost)
+        {
+            evaluation = await FenceLostSourceHistoryAsync(evaluation, inventory, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -3039,15 +3380,72 @@ internal sealed class CdcSetupController(
     }
 
     /// <summary>
-    /// Latches a proved source-history loss durably and fences the connector that carries it, so it
-    /// commits no further offsets against a source it can no longer resume from exactly.
+    /// Fences the connector that carries a lost source history, so it commits no further offsets
+    /// against a source it can no longer resume from exactly.
     /// </summary>
     /// <remarks>
-    /// The latch is written from the classifier's own incident candidate, which it raises only for a
-    /// loss it proved and never for one it read back from the binding record — so repeated status polls
-    /// latch once. A fence the worker did not apply is reported on the connector runtime: the loss is
-    /// latched either way, and a status that reported a contained incident while the connector still
-    /// committed offsets would leave nothing behind saying so.
+    /// Driven by the classified continuity rather than by the incident candidate that latches it. The
+    /// classifier raises a candidate only for a loss it proved and never for one it read back from the
+    /// binding record, which is what keeps latching idempotent; fencing on that same signal would give
+    /// the connector exactly one chance to be stopped. A worker that refused the stop, or a process
+    /// that exited between the durable latch and the stop, would leave it publishing indefinitely with
+    /// nothing re-attempting it: a later status raises no candidate, and restart declines a lost
+    /// continuity rather than acting on it.
+    ///
+    /// A connector already observed <c>STOPPED</c> is left alone — that is the state this asks for, and
+    /// a status should not issue a request whose answer it already holds. Every other state is asked
+    /// again, including one this poll could not read, because an unreadable runtime is not evidence
+    /// that the connector is fenced. A connector the worker does not hold answers <c>NotFound</c>,
+    /// which is not a failure to fence.
+    ///
+    /// A fence the worker did not apply is reported on the connector runtime: the loss is latched
+    /// either way, and a status that reported a contained incident while the connector still committed
+    /// offsets would leave nothing behind saying so.
+    /// </remarks>
+    private async Task<CdcTargetStatusEvaluationInput> FenceLostSourceHistoryAsync(
+        CdcTargetStatusEvaluationInput evaluation,
+        CdcArtifactInventory inventory,
+        CancellationToken cancellationToken
+    )
+    {
+        if (evaluation.ConnectorRuntime?.ConnectorState == CdcConnectorRuntimeState.Stopped)
+        {
+            return evaluation;
+        }
+
+        CdcConnectResult fence = await connectClient
+            .StopConnectorAsync(inventory.ConnectorName, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (fence.Succeeded || fence.Outcome == CdcConnectOutcome.NotFound)
+        {
+            return evaluation;
+        }
+
+        logger.LogDebug(
+            "CDC status could not fence the connector carrying a lost source history: {Outcome}.",
+            fence.Outcome
+        );
+
+        return WithUnappliedConnectorAction(
+            evaluation,
+            inventory,
+            fence,
+            "statusIncidentFenceNotApplied",
+            CdcDiagnosticCategory.SourceHistoryLost,
+            "CDC status proved a source-history loss but could not fence the connector that carries it.",
+            "the connector stopped so it commits no further offsets against the lost source"
+        );
+    }
+
+    /// <summary>
+    /// Latches a proved source-history loss durably in the binding record.
+    /// </summary>
+    /// <remarks>
+    /// Written from the classifier's own incident candidate, which it raises only for a loss it proved
+    /// and never for one it read back from the binding record — so repeated status polls latch once.
+    /// Fencing the connector belongs to <see cref="FenceLostSourceHistoryAsync"/>, which runs on every
+    /// poll that classifies the continuity as lost rather than only on the poll that latched it.
     ///
     /// A latch that could not be written is reported in the status's state-store diagnostics, which is
     /// what the binding state is evaluated as unavailable from: the loss is terminal and the record that
@@ -3055,13 +3453,12 @@ internal sealed class CdcSetupController(
     /// Restart is refused for the same poll without depending on those diagnostics — the classifier
     /// raises an incident candidate only from a proved loss, so the continuity this collection reports
     /// is <c>Lost</c> whenever a latch was attempted at all, and the restart gate admits only
-    /// <c>Healthy</c>. The connector stays fenced, and the operator is left an error naming the
-    /// unwritten latch to retry against.
+    /// <c>Healthy</c>. The connector is fenced from that same continuity either way, and the operator is
+    /// left an error naming the unwritten latch to retry against.
     /// </remarks>
     private async Task<CdcTargetStatusEvaluationInput> LatchSourceHistoryLossAsync(
         CdcTargetStatusEvaluationInput evaluation,
         CdcSourceHistoryIncidentCandidate incidentCandidate,
-        CdcArtifactInventory inventory,
         CancellationToken cancellationToken
     )
     {
@@ -3069,27 +3466,6 @@ internal sealed class CdcSetupController(
             .LatchSourceHistoryLossAsync(incidentCandidate.ToIncident(), cancellationToken)
             .ConfigureAwait(false);
         logger.LogDebug("CDC status latched a source-history continuity loss: {Status}.", latch.Status);
-
-        CdcConnectResult fence = await connectClient
-            .StopConnectorAsync(inventory.ConnectorName, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (!fence.Succeeded && fence.Outcome != CdcConnectOutcome.NotFound)
-        {
-            logger.LogDebug(
-                "CDC status could not fence the connector carrying a latched source-history loss: {Outcome}.",
-                fence.Outcome
-            );
-            evaluation = WithUnappliedConnectorAction(
-                evaluation,
-                inventory,
-                fence,
-                "statusIncidentFenceNotApplied",
-                CdcDiagnosticCategory.SourceHistoryLost,
-                "CDC status latched a source-history loss but could not fence the connector that carries it.",
-                "the connector stopped so it commits no further offsets against the lost source"
-            );
-        }
 
         if (latch.Status == CdcControlPlaneOperationStatus.Succeeded)
         {

@@ -124,7 +124,36 @@ public sealed class CdcControlOptions
     public IDictionary<string, string> ProviderConnectionProperties { get; set; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Security properties for the Kafka client the rendered connector runs, in the Java client's own
+    /// property names. They are validated against the connector template's allow-list and reach the
+    /// connector configuration as <c>producer.override.*</c>.
+    /// </summary>
+    /// <remarks>
+    /// Never given to this process's own admin client. The connector runs inside a Java Kafka Connect
+    /// worker and these are Java Kafka client properties — <c>sasl.jaas.config</c>,
+    /// <c>ssl.truststore.location</c>, and the rest — while the control plane talks to the broker
+    /// through librdkafka, which does not know any of those names and refuses to build a client
+    /// carrying one. <see cref="KafkaAdminClientSecurityProperties"/> is the control plane's own.
+    /// </remarks>
     public IDictionary<string, string> KafkaClientSecurityProperties { get; set; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Security properties for the admin client this control plane uses to reach the broker, in
+    /// librdkafka's property names.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="KafkaClientSecurityProperties"/> because the two clients are different
+    /// implementations that do not share a configuration vocabulary, and neither dictionary's names are
+    /// usable by the other: librdkafka authenticates SASL with <c>sasl.username</c> and
+    /// <c>sasl.password</c>, which the connector allow-list refuses, and it has no
+    /// <c>sasl.jaas.config</c> or Java keystore properties at all. One dictionary feeding both would
+    /// leave a secured deployment unable to configure either side without breaking the other.
+    ///
+    /// Empty is valid and is what a PLAINTEXT broker uses, which is every local and E2E deployment.
+    /// </remarks>
+    public IDictionary<string, string> KafkaAdminClientSecurityProperties { get; set; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
 
     /// <summary>Base URL of the running DMS whose projector supplies caught-up evidence.</summary>
@@ -179,6 +208,46 @@ public sealed class CdcControlOptions
 
     public CdcKafkaClientSecurityProperties ToKafkaClientSecurityProperties() =>
         new(new Dictionary<string, string>(KafkaClientSecurityProperties, StringComparer.Ordinal));
+
+    /// <summary>
+    /// The librdkafka security properties an admin client may be configured with, from the pinned
+    /// client version's CONFIGURATION.md: enough to select a protocol, authenticate over SASL, and
+    /// establish TLS trust and a client identity.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not the Java names in the connector's own allow-list. The overlap between the two
+    /// vocabularies is `security.protocol` and `sasl.mechanism`; everything else that looks similar
+    /// means something different or does not exist on the other side, which is why one dictionary
+    /// cannot serve both.
+    /// </remarks>
+    public static IReadOnlySet<string> AdminClientSecurityPropertyNames { get; } =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            "security.protocol",
+            "sasl.mechanism",
+            "sasl.mechanisms",
+            "sasl.username",
+            "sasl.password",
+            "sasl.kerberos.service.name",
+            "sasl.kerberos.principal",
+            "sasl.kerberos.keytab",
+            "sasl.oauthbearer.config",
+            "sasl.oauthbearer.method",
+            "sasl.oauthbearer.client.id",
+            "sasl.oauthbearer.client.secret",
+            "sasl.oauthbearer.token.endpoint.url",
+            "sasl.oauthbearer.scope",
+            "ssl.ca.location",
+            "ssl.ca.pem",
+            "ssl.certificate.location",
+            "ssl.certificate.pem",
+            "ssl.key.location",
+            "ssl.key.pem",
+            "ssl.key.password",
+            "ssl.keystore.location",
+            "ssl.keystore.password",
+            "ssl.endpoint.identification.algorithm",
+        };
 }
 
 /// <summary>
@@ -232,6 +301,7 @@ public sealed class CdcControlOptionsValidator : IValidateOptions<CdcControlOpti
         ValidateRecordSize(options, failures);
         ValidateIntervals(options, failures);
         ValidateAcls(options, failures);
+        ValidateAdminClientSecurity(options, failures);
         ValidateProjectionStatusAccess(options, failures);
         ValidateTimeouts(options.Timeouts, failures);
 
@@ -398,6 +468,57 @@ public sealed class CdcControlOptionsValidator : IValidateOptions<CdcControlOpti
     /// verb runs, and catching it on resolution is free; an absent one is simply a deployment that has
     /// not configured the verbs that would use it.
     /// </remarks>
+    /// <summary>
+    /// Refuses an admin-client security property librdkafka does not define, at options validation
+    /// rather than at the first broker call.
+    /// </summary>
+    /// <remarks>
+    /// The failure this catches is otherwise silent until something reaches the broker: librdkafka
+    /// throws on an unknown property name when the client is built, and the client is built lazily on
+    /// first resolution, so a deployment misconfigured this way starts cleanly and fails inside
+    /// whichever verb happens to touch Kafka first. The likeliest such misconfiguration is a Java
+    /// property name copied across from <see cref="CdcControlOptions.KafkaClientSecurityProperties"/>,
+    /// which is exactly what this names.
+    ///
+    /// The allow-list is librdkafka's own security-related configuration for a SASL or TLS client, from
+    /// the pinned client version's CONFIGURATION.md. It is deliberately narrow: an admin client needs
+    /// to authenticate and establish trust, and nothing here should be a channel for arbitrary client
+    /// tuning.
+    /// </remarks>
+    private static void ValidateAdminClientSecurity(CdcControlOptions options, List<string> failures)
+    {
+        foreach (
+            string propertyName in options
+                .KafkaAdminClientSecurityProperties.Keys.Where(propertyName =>
+                    !CdcControlOptions.AdminClientSecurityPropertyNames.Contains(propertyName)
+                )
+                .Order(StringComparer.Ordinal)
+        )
+        {
+            failures.Add(
+                $"{nameof(CdcControlOptions.KafkaAdminClientSecurityProperties)} does not support "
+                    + $"`{propertyName}`. The control plane reaches the broker through librdkafka, whose "
+                    + "property names differ from the Java client names the connector is configured "
+                    + $"with in {nameof(CdcControlOptions.KafkaClientSecurityProperties)}."
+            );
+        }
+
+        foreach (
+            string propertyName in options
+                .KafkaAdminClientSecurityProperties.Where(property =>
+                    string.IsNullOrWhiteSpace(property.Value)
+                )
+                .Select(property => property.Key)
+                .Order(StringComparer.Ordinal)
+        )
+        {
+            failures.Add(
+                $"{nameof(CdcControlOptions.KafkaAdminClientSecurityProperties)} `{propertyName}` must "
+                    + "not be empty."
+            );
+        }
+    }
+
     private static void ValidateProjectionStatusAccess(CdcControlOptions options, List<string> failures)
     {
         if (string.IsNullOrWhiteSpace(options.DmsBaseUrl))

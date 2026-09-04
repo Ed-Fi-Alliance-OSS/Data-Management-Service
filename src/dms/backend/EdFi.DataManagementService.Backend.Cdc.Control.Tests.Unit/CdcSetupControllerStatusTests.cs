@@ -317,6 +317,96 @@ public class Given_CdcSetupControllerStatus
         Target(status).SourceHistory.IncidentLatched.Should().BeFalse();
     }
 
+    /// <summary>
+    /// Latching is idempotent by design — a poll that reads an already-latched incident raises no
+    /// second candidate — so a fence driven by the candidate would give the connector exactly one
+    /// chance to be stopped. Here the first stop is refused, and the connector is still running when
+    /// the next poll arrives; that poll must ask again rather than report a contained incident over a
+    /// connector that is still committing offsets against the lost source.
+    /// </summary>
+    [Test]
+    public async Task It_fences_again_on_a_later_poll_when_the_first_stop_was_refused()
+    {
+        CdcSetupControllerHarness harness = EnabledBinding(CdcProvider.SqlServer);
+        harness.SchemaHistoryState = CdcSqlServerSchemaHistoryState.Missing;
+        harness.Stop = new(CdcConnectOutcome.Unavailable, new(503, "worker unavailable", true));
+
+        await harness.StatusAsync();
+
+        // The worker is reachable again, but nothing has changed about the connector: it is still
+        // running, and the loss is still latched.
+        harness.Stop = new(CdcConnectOutcome.Succeeded, null);
+
+        CdcStatus status = await harness.StatusAsync();
+
+        using var _ = new AssertionScope();
+        Target(status).SourceHistory.Continuity.Should().Be(CdcSourceHistoryContinuity.Lost);
+
+        // Latched once across both polls, fenced on both.
+        A.CallTo(() => harness.Bindings.LatchSourceHistoryLossAsync(A<CdcIncident>._, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() => harness.Connect.StopConnectorAsync(A<string>._, A<CancellationToken>._))
+            .MustHaveHappenedTwiceExactly();
+    }
+
+    /// <summary>
+    /// A connector the worker already reports STOPPED is the state the fence asks for, so the poll does
+    /// not reissue a request whose answer it is already holding.
+    /// </summary>
+    [Test]
+    public async Task It_issues_no_fence_for_a_lost_source_history_whose_connector_is_already_stopped()
+    {
+        CdcSetupControllerHarness harness = EnabledBinding(CdcProvider.SqlServer);
+        harness.SchemaHistoryState = CdcSqlServerSchemaHistoryState.Missing;
+        harness.ConnectorStatus = CdcSetupControllerHarness.RunningConnector(
+            connectorState: "STOPPED",
+            taskState: "STOPPED"
+        );
+
+        CdcStatus status = await harness.StatusAsync();
+
+        using var _ = new AssertionScope();
+        Target(status).SourceHistory.Continuity.Should().Be(CdcSourceHistoryContinuity.Lost);
+        A.CallTo(() => harness.Bindings.LatchSourceHistoryLossAsync(A<CdcIncident>._, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
+        A.CallTo(() => harness.Connect.StopConnectorAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// A status collected against a binding record naming the other engine reports a provider mismatch
+    /// rather than throwing. The governed names are recovered under the record's provider while the
+    /// provider-setup input is selected by this deployment's, so composing one from the other engine's
+    /// inventory dereferences artifact names that are absent by construction — out of an operation
+    /// whose contract is to observe and report what it found.
+    /// </summary>
+    [Test]
+    public async Task It_reports_a_provider_mismatch_rather_than_failing_to_compose_the_provider_inputs()
+    {
+        CdcSetupControllerHarness harness = new(CdcProvider.SqlServer)
+        {
+            BindingRead = CdcSetupControllerHarness.Present(
+                CdcSetupControllerHarness.Binding(CdcProvider.Postgresql)
+            ),
+        };
+
+        CdcStatus status = await harness.StatusAsync();
+
+        using var _ = new AssertionScope();
+        status.Readiness.Should().NotBe(CdcReadiness.Ready);
+
+        CdcDiagnostic mismatch = Target(status)
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic => diagnostic.Code == "statusProviderMismatch")
+            .Subject;
+        mismatch.Category.Should().Be(CdcDiagnosticCategory.ProviderMismatch);
+        mismatch.Component.Should().Be(CdcDiagnosticComponent.Binding);
+
+        // Refused before the instance connection is opened, so no database this control plane could not
+        // have inspected anyway is reached.
+        A.CallTo(() => harness.Connections.Create(A<CdcProvider>._, A<string>._)).MustNotHaveHappened();
+    }
+
     internal static CdcSetupControllerHarness EnabledBinding(CdcProvider provider = CdcProvider.Postgresql) =>
         new(provider)
         {
@@ -599,6 +689,94 @@ public class Given_CdcSetupControllerRestart
             .Target(status)
             .Diagnostics.Should()
             .NotContain(candidate => candidate.Code == "restartNotApplied");
+    }
+
+    /// <summary>
+    /// Source-history continuity is not the only thing proved before a connector is put back to work.
+    /// A restart re-derives none of the artifacts the connector publishes through, so a resume issued
+    /// over a nonconforming one starts publishing through it immediately — and the unhealthy status the
+    /// verb would compose afterwards cannot recall what was already produced. These are the same four
+    /// gates the enablement sequence applies before it will register a connector at all.
+    /// </summary>
+    /// <remarks>
+    /// The component is not asserted here, unlike the three cases below. The only provider-setup
+    /// nonconformance this harness can express - a validate-only pass reporting that it created
+    /// something - also leaves the provider history unreadable, so the continuity gate reaches it
+    /// first. Both gates refuse and neither issues a request, which is the property that matters; which
+    /// one reports it is not.
+    /// </remarks>
+    [Test]
+    public async Task It_issues_no_connector_request_against_a_nonconforming_provider_setup()
+    {
+        CdcSetupControllerHarness harness = Given_CdcSetupControllerStatus.EnabledBinding();
+        harness.ValidateOnlyProviderSetupOutcome = Ddl.CdcProviderSetupOutcome.CreatedOrMatched;
+
+        await AssertRestartWasNotAttempted(harness);
+    }
+
+    [Test]
+    public async Task It_issues_no_connector_request_against_a_nonconforming_shared_offset_store()
+    {
+        CdcSetupControllerHarness harness = Given_CdcSetupControllerStatus.EnabledBinding();
+        harness.OffsetStorePolicy = Given_CdcSetupControllerStatus.NonconformingOffsetStore();
+
+        await AssertRestartWasNotAttempted(harness, CdcDiagnosticComponent.ConnectOffsetStore);
+    }
+
+    [Test]
+    public async Task It_issues_no_connector_request_against_a_nonconforming_binding_kafka_policy()
+    {
+        CdcSetupControllerHarness harness = Given_CdcSetupControllerStatus.EnabledBinding();
+        harness.KafkaPolicyState = CdcKafkaPolicyState.Invalid;
+
+        await AssertRestartWasNotAttempted(harness, CdcDiagnosticComponent.KafkaPolicy);
+    }
+
+    /// <summary>
+    /// The connector configuration the worker is actually holding, which is the one a resume would put
+    /// back to work. A transform or converter the binding no longer matches is exactly the case a
+    /// restart must not paper over.
+    /// </summary>
+    [Test]
+    public async Task It_issues_no_connector_request_against_a_mismatched_connector_configuration()
+    {
+        CdcSetupControllerHarness harness = Given_CdcSetupControllerStatus.EnabledBinding();
+        harness.ConnectorConfigReadBack = CdcSetupControllerHarness.RenderedConnectorConfig(drift: config =>
+            config["transforms"] = "somethingElse"
+        );
+
+        await AssertRestartWasNotAttempted(harness, CdcDiagnosticComponent.ConnectorConfig);
+    }
+
+    /// <summary>
+    /// The prerequisite gate reports the component that refused and leaves the deployment untouched:
+    /// no restart, no resume, and the same <c>restartNotAttempted</c> code the continuity gate uses,
+    /// which the dispatcher maps onto a rejection rather than a success.
+    /// </summary>
+    private static async Task AssertRestartWasNotAttempted(
+        CdcSetupControllerHarness harness,
+        CdcDiagnosticComponent? expectedComponent = null
+    )
+    {
+        CdcStatus status = await harness.RestartAsync();
+
+        using var _ = new AssertionScope();
+        status.Readiness.Should().NotBe(CdcReadiness.Ready);
+
+        CdcDiagnostic notAttempted = Given_CdcSetupControllerStatus
+            .Target(status)
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic => diagnostic.Code == CdcRestartDiagnosticCodes.NotAttempted)
+            .Subject;
+        if (expectedComponent is { } component)
+        {
+            notAttempted.Component.Should().Be(component);
+        }
+
+        A.CallTo(() => harness.Connect.RestartConnectorAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() => harness.Connect.ResumeConnectorAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
     }
 
     /// <summary>

@@ -853,8 +853,119 @@ public class Given_CdcKafkaAclPolicy
             inventory.Provider
         );
 
+    /// <summary>
+    /// A guarded source replacement retains the generation it supersedes until an operator retires it,
+    /// and a stable consumer principal holds a literal grant on both public topics for as long as that
+    /// lasts. Rejecting the older one would make ordinary source replacement fail closed.
+    /// </summary>
+    [Test]
+    public async Task It_accepts_a_consumer_read_grant_on_a_retained_generations_public_topic()
+    {
+        CdcArtifactInventory inventory = Inventory(CdcProvider.Postgresql);
+        List<AclBinding> acls = ConformingAcls(inventory);
+        acls.Add(
+            Acl(ResourceType.Topic, RetainedPublicTopicName(inventory), ReaderPrincipal, AclOperation.Read)
+        );
+        IAdminClient adminClient = Broker(inventory, acls);
+
+        CdcKafkaBindingAclPolicies policies = await RunAclsAsync(adminClient, inventory);
+
+        policies.PublicTopicAcls.State.Should().Be(CdcKafkaPolicyItemState.Satisfied);
+    }
+
+    /// <summary>
+    /// The retained topic is permitted by name, but the grant itself must still be one a consumer may
+    /// hold. No required-grant pass runs over a topic outside this binding's inventory, so its entry is
+    /// checked in the isolation sweep or nowhere — and a consumer that may only read the current
+    /// generation's topic may only read a retained one.
+    /// </summary>
+    [Test]
+    public async Task It_rejects_a_consumer_write_grant_on_a_retained_generations_public_topic()
+    {
+        CdcArtifactInventory inventory = Inventory(CdcProvider.Postgresql);
+        List<AclBinding> acls = ConformingAcls(inventory);
+        acls.Add(
+            Acl(ResourceType.Topic, RetainedPublicTopicName(inventory), ReaderPrincipal, AclOperation.Write)
+        );
+        IAdminClient adminClient = Broker(inventory, acls);
+
+        CdcKafkaBindingAclPolicies policies = await RunAclsAsync(adminClient, inventory);
+
+        using var _ = new AssertionScope();
+        policies.PublicTopicAcls.State.Should().Be(CdcKafkaPolicyItemState.Invalid);
+        policies
+            .Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.ArtifactKind == "publicTopicAcls"
+                && diagnostic.Message.Contains("retained generation", StringComparison.Ordinal)
+            );
+    }
+
+    [Test]
+    public async Task It_rejects_a_denied_consumer_grant_on_a_retained_generations_public_topic()
+    {
+        CdcArtifactInventory inventory = Inventory(CdcProvider.Postgresql);
+        List<AclBinding> acls = ConformingAcls(inventory);
+        acls.Add(
+            Acl(
+                ResourceType.Topic,
+                RetainedPublicTopicName(inventory),
+                ReaderPrincipal,
+                AclOperation.Read,
+                permission: AclPermissionType.Deny
+            )
+        );
+        IAdminClient adminClient = Broker(inventory, acls);
+
+        CdcKafkaBindingAclPolicies policies = await RunAclsAsync(adminClient, inventory);
+
+        policies.PublicTopicAcls.State.Should().Be(CdcKafkaPolicyItemState.Invalid);
+    }
+
+    /// <summary>
+    /// A host-scoped grant is not the any-host grant the binding issues, and a consumer reachable only
+    /// from one host on the retained topic is a grant nothing in this design created.
+    /// </summary>
+    [Test]
+    public async Task It_rejects_a_host_scoped_consumer_grant_on_a_retained_generations_public_topic()
+    {
+        CdcArtifactInventory inventory = Inventory(CdcProvider.Postgresql);
+        List<AclBinding> acls = ConformingAcls(inventory);
+        acls.Add(
+            Acl(
+                ResourceType.Topic,
+                RetainedPublicTopicName(inventory),
+                ReaderPrincipal,
+                AclOperation.Read,
+                host: "10.0.0.7"
+            )
+        );
+        IAdminClient adminClient = Broker(inventory, acls);
+
+        CdcKafkaBindingAclPolicies policies = await RunAclsAsync(adminClient, inventory);
+
+        policies.PublicTopicAcls.State.Should().Be(CdcKafkaPolicyItemState.Invalid);
+    }
+
+    /// <summary>
+    /// The public topic of an earlier generation of this same target, which is what a guarded source
+    /// replacement leaves behind.
+    /// </summary>
+    private static string RetainedPublicTopicName(CdcArtifactInventory inventory) =>
+        CdcArtifactNameGenerator
+            .Render(
+                new(
+                    inventory.DeploymentKey,
+                    inventory.TopicPrefix,
+                    inventory.InstanceKey,
+                    inventory.Generation - 1,
+                    inventory.Provider
+                )
+            )
+            .Inventory!.TopicName;
+
     private static CdcArtifactInventory Inventory(CdcProvider provider) =>
-        CdcArtifactNameGenerator.Render(new("dms-local", "edfi.dms", "data-store-1", 1, provider)).Inventory!;
+        CdcArtifactNameGenerator.Render(new("dms-local", "edfi.dms", "data-store-1", 2, provider)).Inventory!;
 
     private static CdcControlOptions ControlOptions(CdcArtifactInventory inventory, bool aclsEnabled) =>
         new()

@@ -325,6 +325,118 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
             .BeTrue();
     }
 
+    /// <summary>
+    /// After a guarded source replacement the data store's connection string is the replacing
+    /// database's, while the superseded generation's provider artifacts are still in the database it
+    /// was bound to — and retirement refuses any database that is not the binding's own physical
+    /// source. Without a route to that database the retained generation could never be retired.
+    /// </summary>
+    [Test]
+    public async Task It_retires_against_the_source_connection_the_named_environment_variable_holds()
+    {
+        const string VariableName = "DMS_TEST_SUPERSEDED_SOURCE";
+        const string SupersededConnectionString = "Host=superseded.internal;Username=dms;Password=other";
+
+        A.CallTo(() => _controller.RetireAsync(A<CdcTargetOperationRequest>._, A<CancellationToken>._))
+            .Returns(CdcContractReadResult<CdcCleanupProof>.Success(CleanupProof()));
+
+        Environment.SetEnvironmentVariable(VariableName, SupersededConnectionString);
+        try
+        {
+            await ExecuteAsync(
+                Request(
+                    DocumentCacheAdminCommandSurface.CdcRetireVerbName,
+                    sourceConnectionVariable: VariableName
+                )
+            );
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(VariableName, null);
+        }
+
+        CapturedRequest<CdcTargetOperationRequest>(nameof(ICdcSetupController.RetireAsync))
+            .ConnectionString.Should()
+            .Be(SupersededConnectionString);
+
+        // The Configuration Service's own answer is not consulted at all: falling back to it would run
+        // the teardown against the replacing database, which is the mistake the override prevents.
+        A.CallTo(() => _connectionStrings.GetConnectionString(A<long>._, A<string?>._))
+            .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// An unset variable is a refusal rather than a fallback, for the same reason.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_a_retirement_whose_named_source_connection_variable_is_unset()
+    {
+        DocumentCacheAdminCdcCommandResult result = await ExecuteAsync(
+            Request(
+                DocumentCacheAdminCommandSurface.CdcRetireVerbName,
+                sourceConnectionVariable: "DMS_TEST_VARIABLE_THAT_IS_NOT_SET"
+            )
+        );
+
+        result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.RejectedNoMutation);
+
+        CdcDiagnostic refusal = result
+            .Diagnostics.Should()
+            .ContainSingle(diagnostic => diagnostic.Code == "cdcSourceConnectionVariableUnresolved")
+            .Subject;
+
+        // The variable is what the operator must act on, and the code survives the diagnostic's own
+        // sanitizer so it stays matchable.
+        refusal.Observed.Should().Contain("DMS_TEST_VARIABLE_THAT_IS_NOT_SET");
+        A.CallTo(_controller).MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// The value is a connection string; only the variable's name — the operator's own invocation
+    /// argument — may appear in a diagnostic.
+    /// </summary>
+    [Test]
+    public async Task It_publishes_no_source_connection_value_in_a_refusal()
+    {
+        const string VariableName = "DMS_TEST_SUPERSEDED_SOURCE_SECRET";
+        const string SupersededConnectionString = "Host=superseded.internal;Password=not-published";
+
+        A.CallTo(() => _controller.RetireAsync(A<CdcTargetOperationRequest>._, A<CancellationToken>._))
+            .Returns(
+                CdcContractReadResult<CdcCleanupProof>.Failure([
+                    new CdcDiagnostic(
+                        CdcDiagnosticCategory.SourceMismatch,
+                        DateTimeOffset.UnixEpoch,
+                        "$.binding.physicalSourceFingerprint",
+                        "CDC retirement requires the connected database to be this binding's own source."
+                    ),
+                ])
+            );
+
+        Environment.SetEnvironmentVariable(VariableName, SupersededConnectionString);
+        DocumentCacheAdminCdcCommandResult result;
+        try
+        {
+            result = await ExecuteAsync(
+                Request(
+                    DocumentCacheAdminCommandSurface.CdcRetireVerbName,
+                    sourceConnectionVariable: VariableName
+                )
+            );
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(VariableName, null);
+        }
+
+        result
+            .Diagnostics.Should()
+            .NotContain(diagnostic =>
+                diagnostic.Message.Contains("not-published", StringComparison.Ordinal)
+                || (diagnostic.Observed ?? string.Empty).Contains("not-published", StringComparison.Ordinal)
+            );
+    }
+
     [Test]
     public async Task It_reports_a_partial_retirement_as_incomplete_and_retryable()
     {
@@ -420,7 +532,8 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
                 null,
                 null,
                 null,
-                false
+                false,
+                null
             )
         );
 
@@ -613,7 +726,8 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
         string? writeAdmission = null,
         long? previousGeneration = null,
         string? bindingJson = null,
-        bool connectorAlreadyAbsent = false
+        bool connectorAlreadyAbsent = false,
+        string? sourceConnectionVariable = null
     ) =>
         new(
             verbName,
@@ -622,7 +736,8 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
             writeAdmission,
             previousGeneration,
             bindingJson,
-            connectorAlreadyAbsent
+            connectorAlreadyAbsent,
+            sourceConnectionVariable
         );
 
     private static CdcControlOptions ControlOptions() =>

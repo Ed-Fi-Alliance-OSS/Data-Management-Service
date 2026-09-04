@@ -24,7 +24,8 @@ internal sealed record DocumentCacheAdminCdcCommandRequest(
     string? WriteAdmission,
     long? PreviousGeneration,
     string? BindingJson,
-    bool ConnectorAlreadyAbsent
+    bool ConnectorAlreadyAbsent,
+    string? SourceConnectionVariable
 );
 
 /// <summary>
@@ -136,7 +137,11 @@ internal static class DocumentCacheAdminCdcCommandRequestBuilder
             OptionValue<string>(parseResult, DocumentCacheAdminCommandSurface.WriteAdmissionOptionName),
             OptionValue<long?>(parseResult, DocumentCacheAdminCommandSurface.PreviousGenerationOptionName),
             bindingJson,
-            OptionValue<bool>(parseResult, DocumentCacheAdminCommandSurface.ConnectorAlreadyAbsentOptionName)
+            OptionValue<bool>(parseResult, DocumentCacheAdminCommandSurface.ConnectorAlreadyAbsentOptionName),
+            OptionValue<string>(
+                parseResult,
+                DocumentCacheAdminCommandSurface.SourceConnectionVariableOptionName
+            )
         );
         return true;
     }
@@ -206,6 +211,7 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
 
         DateTimeOffset now = timeProvider.GetUtcNow();
         CdcProvider provider = sourcePositions.Provider;
+        string connectionString;
 
         // Before the connection string is read, because the read alone cannot produce one: an
         // unloaded tenant answers exactly as an absent data store does.
@@ -214,13 +220,51 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
             return loadRefusal;
         }
 
-        if (
+        // Which database this invocation runs against. Normally the Configuration Service's own answer
+        // for the target; for a retirement the operator may name an environment variable holding a
+        // different one instead, because a generation a source replacement superseded is bound to a
+        // database the data store no longer points at.
+        if (request.SourceConnectionVariable is { Length: > 0 } sourceConnectionVariable)
+        {
+            // The operator named a variable, so the Configuration Service's answer is not consulted at
+            // all: falling back to it would silently run the teardown against the replacing database,
+            // which is the very mistake the override exists to prevent. An unset or empty variable is a
+            // refusal rather than a fallback.
+            //
+            // The refusal names the variable, never its contents: the name is the operator's own
+            // invocation argument and is what they need in order to act, while the value is a
+            // connection string that never leaves this method. A name that itself reads as a secret is
+            // redacted by the diagnostic's own sanitizer, which is the safe direction to fail in.
+            if (
+                Environment.GetEnvironmentVariable(sourceConnectionVariable)
+                is not { Length: > 0 } overriddenConnectionString
+            )
+            {
+                return Refused(
+                    request.VerbName,
+                    "cdcSourceConnectionVariableUnresolved",
+                    CdcDiagnosticCategory.SourceMismatch,
+                    CdcDiagnosticComponent.ProviderSetup,
+                    "CDC operation could not read the instance database from the environment variable "
+                        + "the operator named.",
+                    $"{sourceConnectionVariable} is unset or empty",
+                    now
+                );
+            }
+
+            connectionString = overriddenConnectionString;
+        }
+        else if (
             connectionStringProvider.GetConnectionString(
                 request.TargetKey.DataStoreId,
                 NullableTenant(request.TargetKey.TenantKey)
-            )
-            is not { Length: > 0 } connectionString
+            ) is
+            { Length: > 0 } resolvedConnectionString
         )
+        {
+            connectionString = resolvedConnectionString;
+        }
+        else
         {
             // The identifiers are the operator's own invocation arguments and the surrogate is already
             // the safe form of them, so naming the target here publishes nothing new.
