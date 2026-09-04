@@ -7105,13 +7105,14 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_fails_closed_when_a_custom_view_is_composed_with_OwnershipBased()
+    public async Task It_composes_the_ownership_filter_with_a_custom_view_and_the_relationship_or_group_for_query()
     {
-        // DMS-1410 owns GET-many OwnershipBased support. Even alongside a resolved custom view and a
-        // relationship strategy, GET-many must fail closed rather than emit an ownership filter: DMS-1060
-        // ships the stamping and the single-record check, not the page filter, which is a different shape of
-        // query and not this ticket's to emit.
+        // Three shapes in one page: the custom view and the ownership filter are AND terms, the relationship
+        // strategy is the OR group. Ownership executes last among the AND terms whatever position CMS gave
+        // it, so in the SQL it follows the custom view and precedes the OR group.
+        List<string> capturedValidationSql = [];
         var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
         var queryRequest = CreateQueryRequest(
             mappingSet,
             [],
@@ -7124,25 +7125,40 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
                 CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
             ],
-            claimEducationOrganizationIds: [255901L]
+            claimEducationOrganizationIds: [255901L],
+            ownershipTokenIds: [7]
         );
 
-        var result = await _sut.QueryDocuments(queryRequest);
-
-        result
-            .Should()
-            .BeOfType<QueryResult.QueryFailureNotImplemented>()
-            .Which.FailureMessage.Should()
-            .Contain(AuthorizationStrategyNameConstants.OwnershipBased);
         A.CallTo(() =>
-                _documentHydrator.HydrateAsync(
-                    A<ResourceReadPlan>._,
-                    A<PageKeysetSpec>._,
-                    A<HydrationExecutionOptions>._,
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
                     A<CancellationToken>._
                 )
             )
-            .MustNotHaveHappened();
+            .Invokes(call => capturedValidationSql.Add(call.GetArgument<RelationalCommand>(0)!.CommandText))
+            .Returns(Task.FromResult(true));
+        var capturedKeyset = StubEmptyHydrationAndCaptureKeyset(readPlan, totalCount: false);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QuerySuccess>();
+        capturedValidationSql
+            .Should()
+            .ContainSingle(sql => sql.Contains("SchoolWithCustomAuthorization", StringComparison.Ordinal));
+
+        var pageSql = capturedKeyset().Plan.PageDocumentIdSql;
+        var customViewIndex = pageSql.IndexOf("SchoolWithCustomAuthorization", StringComparison.Ordinal);
+        var ownershipIndex = pageSql.IndexOf(OwnershipPredicateSql, StringComparison.Ordinal);
+        var relationshipIndex = pageSql.IndexOf(
+            "EducationOrganizationIdToEducationOrganizationId",
+            StringComparison.Ordinal
+        );
+
+        pageSql.Should().Contain(OwnershipDocumentJoinSql);
+        customViewIndex.Should().BeGreaterThan(-1);
+        ownershipIndex.Should().BeGreaterThan(customViewIndex);
+        relationshipIndex.Should().BeGreaterThan(ownershipIndex);
     }
 
     [Test]
@@ -7267,11 +7283,118 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             );
     }
 
-    [Test]
-    public async Task It_fails_closed_for_ownership_only_queries()
+    private const string OwnershipDocumentJoinSql =
+        "INNER JOIN \"dms\".\"Document\" doc ON doc.\"DocumentId\" = r.\"DocumentId\"";
+    private const string OwnershipPredicateSql =
+        "doc.\"CreatedByOwnershipTokenId\" IS NOT NULL AND doc.\"CreatedByOwnershipTokenId\" = ANY(@ownershipTokenIds)";
+
+    /// <summary>
+    /// Stubs hydration to return an empty page, so a proceeding query completes without materializing any
+    /// document, and returns an accessor for the keyset the repository handed to hydration. The keyset is
+    /// where the compiled page SQL and its bound values are observable from outside the repository.
+    /// </summary>
+    private Func<PageKeysetSpec.Query> StubEmptyHydrationAndCaptureKeyset(
+        ResourceReadPlan readPlan,
+        bool totalCount
+    )
     {
-        // OwnershipBased GET-many support belongs to DMS-1410, so GET-many keeps the known-but-not-enabled
-        // 501 rather than silently returning an empty page.
+        PageKeysetSpec.Query? capturedKeyset = null;
+
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => capturedKeyset = call.GetArgument<PageKeysetSpec>(1) as PageKeysetSpec.Query)
+            .Returns(new HydratedPage(totalCount ? 0L : null, [], [], []));
+        A.CallTo(() => _readMaterializer.MaterializePage(A<RelationalReadPageMaterializationRequest>._))
+            .Returns([]);
+
+        return () =>
+            capturedKeyset
+            ?? throw new AssertionException(
+                "The relational query should have hydrated through PageKeysetSpec.Query."
+            );
+    }
+
+    [Test]
+    public async Task It_applies_the_ownership_filter_to_the_page_query_for_an_ownership_only_configuration()
+    {
+        // The highest-risk shape: no relationship strategy, so the relationship planner reports "no
+        // authorization required". Before the ownership filter existed that composed to an unauthorized
+        // page; now the filter alone must reach the SQL, on both the page and the total-count statement.
+        var mappingSet = CreateQuerySupportedMappingSet(_schoolResourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: true,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ],
+            ownershipTokenIds: [7, 3]
+        );
+        var capturedKeyset = StubEmptyHydrationAndCaptureKeyset(readPlan, totalCount: true);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QuerySuccess>().Which.TotalCount.Should().Be(0);
+
+        var keyset = capturedKeyset();
+        keyset.Plan.PageDocumentIdSql.Should().Contain(OwnershipDocumentJoinSql);
+        keyset.Plan.PageDocumentIdSql.Should().Contain(OwnershipPredicateSql);
+        keyset.Plan.TotalCountSql.Should().NotBeNull();
+        keyset.Plan.TotalCountSql!.Should().Contain(OwnershipDocumentJoinSql);
+        keyset.Plan.TotalCountSql.Should().Contain(OwnershipPredicateSql);
+        keyset
+            .ParameterValues["ownershipTokenIds"]
+            .Should()
+            .BeAssignableTo<IReadOnlyList<short>>()
+            .Which.Should()
+            .Equal((short)3, (short)7);
+        keyset
+            .Plan.PageParametersInOrder.Select(static parameter => parameter.ParameterName)
+            .Should()
+            .Contain("ownershipTokenIds");
+    }
+
+    [Test]
+    public async Task It_applies_the_ownership_filter_when_NoFurtherAuthorizationRequired_accompanies_OwnershipBased()
+    {
+        // NoFurtherAuthorizationRequired is a no-op the relationship planner passes through; it must not
+        // read as "no authorization" for the page when ownership is configured beside it.
+        var mappingSet = CreateQuerySupportedMappingSet(_schoolResourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                ),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ],
+            ownershipTokenIds: [7]
+        );
+        var capturedKeyset = StubEmptyHydrationAndCaptureKeyset(readPlan, totalCount: false);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QuerySuccess>();
+        capturedKeyset().Plan.PageDocumentIdSql.Should().Contain(OwnershipPredicateSql);
+    }
+
+    [Test]
+    public async Task It_returns_an_empty_page_without_executing_the_page_query_when_the_caller_has_no_ownership_tokens()
+    {
+        // No token can match any document, so the page is empty and the count is zero: the same result the
+        // relationship no-claims arm produces, and never a 403 or an unfiltered page.
         var queryRequest = CreateQueryRequest(
             CreateQuerySupportedMappingSet(_schoolResourceInfo),
             [],
@@ -7279,16 +7402,16 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
-            ]
+            ],
+            ownershipTokenIds: []
         );
 
         var result = await _sut.QueryDocuments(queryRequest);
 
-        result
-            .Should()
-            .BeOfType<QueryResult.QueryFailureNotImplemented>()
-            .Which.FailureMessage.Should()
-            .Contain(AuthorizationStrategyNameConstants.OwnershipBased);
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+        success.EdfiDocs.Should().BeEmpty();
+        success.TotalCount.Should().Be(0);
+        success.SelectionSkipped.Should().BeTrue();
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
@@ -7301,20 +7424,21 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_validates_a_custom_view_configured_before_the_ownership_terminal()
+    public async Task It_validates_a_custom_view_before_returning_the_empty_page_for_a_caller_with_no_ownership_tokens()
     {
-        // Custom view first: it executes ahead of the OwnershipBased 501, so a missing or non-conforming
-        // auth view must surface its own error rather than being masked by the terminal.
+        // Every custom view executes ahead of ownership, so a missing or non-conforming auth view must still
+        // surface its own error rather than being masked by the empty page.
         List<string> capturedValidationSql = [];
         var queryRequest = CreateQueryRequest(
             CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo),
             [],
-            totalCount: true,
+            totalCount: false,
             authorizationStrategyEvaluators:
             [
-                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
-            ]
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+            ],
+            ownershipTokenIds: []
         );
 
         A.CallTo(() =>
@@ -7329,14 +7453,10 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.QueryDocuments(queryRequest);
 
-        result.Should().BeOfType<QueryResult.QueryFailureNotImplemented>();
+        result.Should().BeOfType<QueryResult.QuerySuccess>().Which.SelectionSkipped.Should().BeTrue();
         capturedValidationSql
             .Should()
-            .ContainSingle(sql =>
-                sql.Contains("LIMIT 0", StringComparison.Ordinal)
-                && sql.Contains("SchoolWithCustomAuthorization", StringComparison.Ordinal)
-                && sql.Contains("DocumentId", StringComparison.Ordinal)
-            );
+            .ContainSingle(sql => sql.Contains("SchoolWithCustomAuthorization", StringComparison.Ordinal));
         A.CallTo(() =>
                 _documentHydrator.HydrateAsync(
                     A<ResourceReadPlan>._,
@@ -7349,21 +7469,125 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_validates_a_custom_view_configured_after_the_ownership_terminal()
+    public async Task It_returns_the_ownership_token_cap_security_configuration_500_for_query_after_validating_every_custom_view()
+    {
+        // 2,000 tokens reach the defensive cap. The custom view is configured after OwnershipBased and is
+        // still validated first, because ownership executes last among the AND strategies whatever position
+        // CMS gave it.
+        List<string> capturedValidationSql = [];
+        var queryRequest = CreateQueryRequest(
+            CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo),
+            [],
+            totalCount: false,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+            ],
+            ownershipTokenIds: [.. Enumerable.Range(1, 2000).Select(static value => (short)value)]
+        );
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => capturedValidationSql.Add(call.GetArgument<RelationalCommand>(0)!.CommandText))
+            .Returns(Task.FromResult(true));
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        var failure = result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>().Subject;
+        failure
+            .Errors.Should()
+            .Equal(OwnershipAuthorizationSecurityConfigurationMessages.TokenCapExceeded(2000));
+        failure
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.ProviderOrPlannerFailureKind.Should()
+            .Be("OwnershipAuthorization.TokenCapExceeded");
+        capturedValidationSql
+            .Should()
+            .ContainSingle(sql => sql.Contains("SchoolWithCustomAuthorization", StringComparison.Ordinal));
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_validates_a_custom_view_configured_before_the_ownership_filter()
+    {
+        // Custom view first: it executes ahead of the ownership filter, so a missing or non-conforming auth
+        // view surfaces its own error before any page runs. Here it conforms, so the page runs with both.
+        List<string> capturedValidationSql = [];
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [],
+            totalCount: true,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ],
+            ownershipTokenIds: [7]
+        );
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => capturedValidationSql.Add(call.GetArgument<RelationalCommand>(0)!.CommandText))
+            .Returns(Task.FromResult(true));
+        var capturedKeyset = StubEmptyHydrationAndCaptureKeyset(readPlan, totalCount: true);
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result.Should().BeOfType<QueryResult.QuerySuccess>();
+        capturedValidationSql
+            .Should()
+            .ContainSingle(sql =>
+                sql.Contains("LIMIT 0", StringComparison.Ordinal)
+                && sql.Contains("SchoolWithCustomAuthorization", StringComparison.Ordinal)
+                && sql.Contains("DocumentId", StringComparison.Ordinal)
+            );
+
+        var pageSql = capturedKeyset().Plan.PageDocumentIdSql;
+        pageSql.Should().Contain("SchoolWithCustomAuthorization");
+        pageSql.Should().Contain(OwnershipPredicateSql);
+    }
+
+    [Test]
+    public async Task It_validates_a_custom_view_configured_after_the_ownership_filter()
     {
         // The inverse configured order of the sibling above, with the same outcome: OwnershipBased executes
         // last per auth.md "Execution order" no matter where the CMS placed it, so the custom view is still
-        // validated ahead of the 501.
+        // validated first and still precedes the ownership filter in the SQL.
         List<string> capturedValidationSql = [];
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
         var queryRequest = CreateQueryRequest(
-            CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo),
+            mappingSet,
             [],
             totalCount: true,
             authorizationStrategyEvaluators:
             [
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
                 CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
-            ]
+            ],
+            ownershipTokenIds: [7]
         );
 
         A.CallTo(() =>
@@ -7375,14 +7599,11 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             )
             .Invokes(call => capturedValidationSql.Add(call.GetArgument<RelationalCommand>(0)!.CommandText))
             .Returns(Task.FromResult(true));
+        var capturedKeyset = StubEmptyHydrationAndCaptureKeyset(readPlan, totalCount: true);
 
         var result = await _sut.QueryDocuments(queryRequest);
 
-        result
-            .Should()
-            .BeOfType<QueryResult.QueryFailureNotImplemented>()
-            .Which.FailureMessage.Should()
-            .Contain(AuthorizationStrategyNameConstants.OwnershipBased);
+        result.Should().BeOfType<QueryResult.QuerySuccess>();
         capturedValidationSql
             .Should()
             .ContainSingle(sql =>
@@ -7390,15 +7611,12 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
                 && sql.Contains("SchoolWithCustomAuthorization", StringComparison.Ordinal)
                 && sql.Contains("DocumentId", StringComparison.Ordinal)
             );
-        A.CallTo(() =>
-                _documentHydrator.HydrateAsync(
-                    A<ResourceReadPlan>._,
-                    A<PageKeysetSpec>._,
-                    A<HydrationExecutionOptions>._,
-                    A<CancellationToken>._
-                )
-            )
-            .MustNotHaveHappened();
+
+        var pageSql = capturedKeyset().Plan.PageDocumentIdSql;
+        pageSql
+            .IndexOf("SchoolWithCustomAuthorization", StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(pageSql.IndexOf(OwnershipPredicateSql, StringComparison.Ordinal));
     }
 
     [Test]
@@ -7880,10 +8098,12 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_returns_not_implemented_when_OwnershipBased_is_mixed_with_people_relationship_authorization()
+    public async Task It_composes_the_ownership_filter_with_people_relationship_authorization_for_query()
     {
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
         var queryRequest = CreateQueryRequest(
-            CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo),
+            mappingSet,
             [],
             totalCount: false,
             authorizationStrategyEvaluators:
@@ -7893,16 +8113,23 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
                 ),
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
             ],
-            claimEducationOrganizationIds: [255901L]
+            claimEducationOrganizationIds: [255901L],
+            ownershipTokenIds: [7]
         );
+        var capturedKeyset = StubEmptyHydrationAndCaptureKeyset(readPlan, totalCount: false);
 
         var result = await _sut.QueryDocuments(queryRequest);
 
-        result
+        result.Should().BeOfType<QueryResult.QuerySuccess>();
+
+        var pageSql = capturedKeyset().Plan.PageDocumentIdSql;
+        pageSql.Should().Contain(OwnershipPredicateSql);
+        pageSql
+            .IndexOf(OwnershipPredicateSql, StringComparison.Ordinal)
             .Should()
-            .BeOfType<QueryResult.QueryFailureNotImplemented>()
-            .Which.FailureMessage.Should()
-            .Contain(AuthorizationStrategyNameConstants.OwnershipBased);
+            .BeLessThan(
+                pageSql.IndexOf("EducationOrganizationIdToEducationOrganizationId", StringComparison.Ordinal)
+            );
     }
 
     [Test]
@@ -8254,30 +8481,26 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
 
         var result = await _sut.QueryDocuments(queryRequest);
 
-        // Two independent configuration problems are reported: OwnershipBased is known but not enabled,
-        // and CustomAuthorizationStrategy is not a recognized strategy at all.
+        // Only the invalid strategy is a configuration problem: OwnershipBased is a supported page filter for
+        // GET-many, so it is no longer reported as unavailable, and the invalid relationship strategy keeps
+        // its 500 ahead of any ownership outcome.
         var failure = result.Should().BeOfType<QueryResult.QueryFailureSecurityConfiguration>().Subject;
-        failure.Errors.Should().HaveCount(2);
         failure
             .Errors.Should()
-            .ContainSingle(error => error.Contains("OwnershipBased", StringComparison.Ordinal));
-        failure
-            .Errors.Should()
-            .Contain(
+            .Equal(
                 SecurityConfigurationFailureMessages.UnknownAuthorizationStrategies([
                     "CustomAuthorizationStrategy",
                 ])
             );
-        failure.Diagnostics.Should().NotBeNull().And.HaveCount(2);
+        failure.Diagnostics.Should().NotBeNull().And.HaveCount(1);
         failure
             .Diagnostics!.SelectMany(static diagnostic => diagnostic.ConfiguredStrategyNames ?? [])
             .Should()
-            .BeEquivalentTo(AuthorizationStrategyNameConstants.OwnershipBased, "CustomAuthorizationStrategy");
+            .Equal("CustomAuthorizationStrategy");
         failure
             .Diagnostics!.SelectMany(static diagnostic => diagnostic.ConfiguredStrategyIndexes ?? [])
-            .Order()
             .Should()
-            .Equal(0, 1);
+            .Equal(1);
         failure
             .Diagnostics!.Select(static diagnostic => diagnostic.ProviderOrPlannerFailureKind)
             .Should()
@@ -8775,12 +8998,14 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_fails_closed_for_query_when_ownership_is_configured_alongside_namespace()
+    public async Task It_composes_the_ownership_filter_with_the_namespace_filter_for_query()
     {
-        // The namespace prefixes are authorized, so no namespace terminal precedes Ownership; the
-        // unsupported Ownership term is what fails the request closed.
+        // The namespace prefixes are authorized, so no namespace terminal precedes ownership; both AND
+        // filters reach the page, namespace first because ownership executes last among the AND strategies.
+        var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
         var queryRequest = CreateQueryRequest(
-            CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo),
+            mappingSet,
             [],
             totalCount: false,
             authorizationStrategyEvaluators:
@@ -8788,31 +9013,36 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
             ],
-            namespacePrefixes: ["uri://ed-fi.org/"]
+            namespacePrefixes: ["uri://ed-fi.org/"],
+            ownershipTokenIds: [7]
         );
+        var capturedKeyset = StubEmptyHydrationAndCaptureKeyset(readPlan, totalCount: false);
 
         var result = await _sut.QueryDocuments(queryRequest);
 
-        result
+        result.Should().BeOfType<QueryResult.QuerySuccess>();
+
+        var keyset = capturedKeyset();
+        keyset.Plan.PageDocumentIdSql.Should().Contain("LIKE ANY(@namespacePrefixes)");
+        keyset.Plan.PageDocumentIdSql.Should().Contain(OwnershipPredicateSql);
+        keyset
+            .Plan.PageDocumentIdSql.IndexOf("LIKE ANY(@namespacePrefixes)", StringComparison.Ordinal)
             .Should()
-            .BeOfType<QueryResult.QueryFailureNotImplemented>()
-            .Which.FailureMessage.Should()
-            .Contain(AuthorizationStrategyNameConstants.OwnershipBased);
-        A.CallTo(() =>
-                _documentHydrator.HydrateAsync(
-                    A<ResourceReadPlan>._,
-                    A<PageKeysetSpec>._,
-                    A<HydrationExecutionOptions>._,
-                    A<CancellationToken>._
-                )
-            )
-            .MustNotHaveHappened();
+            .BeLessThan(
+                keyset.Plan.PageDocumentIdSql.IndexOf(OwnershipPredicateSql, StringComparison.Ordinal)
+            );
+        keyset
+            .ParameterValues["ownershipTokenIds"]
+            .Should()
+            .BeAssignableTo<IReadOnlyList<short>>()
+            .Which.Should()
+            .Equal((short)7);
     }
 
     [Test]
     public async Task It_returns_the_namespace_terminal_when_it_precedes_ownership()
     {
-        // A namespace terminal configured ahead of Ownership still wins: the Ownership 501 must not
+        // A namespace terminal configured ahead of Ownership still wins: the ownership filter must not
         // displace the no-prefixes 403.
         var queryRequest = CreateQueryRequest(
             CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo),
@@ -14329,9 +14559,11 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     /// <summary>
-    /// Asserts no ownership authorization round trip was made. While the ReadSingle enablement gate is
-    /// closed no operation plans an ownership check, so the wiring must stay inert: an unconditional call
-    /// here would be an extra command per read and, once the gate opens, a check running out of order.
+    /// Asserts no ownership authorization round trip was made. The executor carries only the single-record
+    /// ownership check that ReadSingle, Update, and Delete plan when <c>OwnershipBased</c> is configured. A
+    /// request without that strategy, and every GET-many — whose ownership is a page filter compiled into
+    /// the page SQL rather than an executor round trip — must leave the wiring inert: an unconditional call
+    /// here would be an extra command per read, or a check running out of order.
     /// </summary>
     private void AssertOwnershipAuthorizationWasNotExecuted() =>
         A.CallTo(() =>
@@ -16300,7 +16532,8 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         ChangeVersionRange? changeVersionRange = null,
         PaginationParameters? paginationParameters = null,
         CollectionPaging? paging = null,
-        PageOrderingMode pageOrderingMode = PageOrderingMode.DocumentId
+        PageOrderingMode pageOrderingMode = PageOrderingMode.DocumentId,
+        IReadOnlyList<short>? ownershipTokenIds = null
     )
     {
         authorizationStrategyEvaluators ??= [];
@@ -16329,7 +16562,12 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         A.CallTo(() => queryRequest.QueryElements).Returns(queryElements);
         A.CallTo(() => queryRequest.AuthorizationContext)
             .Returns(
-                new RelationalAuthorizationContext(claimEducationOrganizationIds, namespacePrefixes ?? [])
+                new RelationalAuthorizationContext(
+                    claimEducationOrganizationIds,
+                    namespacePrefixes ?? [],
+                    creatorOwnershipTokenId: null,
+                    ownershipTokenIds ?? []
+                )
             );
         A.CallTo(() => queryRequest.AuthorizationStrategyEvaluators).Returns(authorizationStrategyEvaluators);
         A.CallTo(() => queryRequest.Paging)

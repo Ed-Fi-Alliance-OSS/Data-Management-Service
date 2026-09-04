@@ -334,7 +334,10 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
     }
 
-    public async Task<UpsertResult> CreateSchoolAsync(QuerySchoolSeed seed)
+    public async Task<UpsertResult> CreateSchoolAsync(
+        QuerySchoolSeed seed,
+        short? creatorOwnershipTokenId = null
+    )
     {
         return await UpsertAsync(
             "ed-fi",
@@ -344,7 +347,8 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
                 seed.NameOfInstitution
             ),
             seed.DocumentUuid,
-            $"seed-school-{seed.SchoolId}"
+            $"seed-school-{seed.SchoolId}",
+            creatorOwnershipTokenId: creatorOwnershipTokenId
         );
     }
 
@@ -370,14 +374,18 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
     }
 
-    public async Task<UpsertResult> CreateAuthorizationRootChildAsync(AuthorizationRootChildSeed seed)
+    public async Task<UpsertResult> CreateAuthorizationRootChildAsync(
+        AuthorizationRootChildSeed seed,
+        short? creatorOwnershipTokenId = null
+    )
     {
         return await UpsertAsync(
             "authz",
             "AuthorizationRootChildResource",
             RelationalQueryAuthorizationRequestBodies.CreateAuthorizationRootChildRequestBody(seed),
             seed.DocumentUuid,
-            $"seed-auth-root-child-{seed.AuthorizationRootChildId}"
+            $"seed-auth-root-child-{seed.AuthorizationRootChildId}",
+            creatorOwnershipTokenId: creatorOwnershipTokenId
         );
     }
 
@@ -455,14 +463,18 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
     /// authorization strategies configured, so any stored namespace value can be established without
     /// first passing namespace authorization.
     /// </summary>
-    public async Task<UpsertResult> CreateAuthorizationNamespaceAsync(AuthorizationNamespaceSeed seed)
+    public async Task<UpsertResult> CreateAuthorizationNamespaceAsync(
+        AuthorizationNamespaceSeed seed,
+        short? creatorOwnershipTokenId = null
+    )
     {
         return await UpsertAsync(
             "authz",
             RelationshipAuthorizationCrudTestSupport.NamespaceResourceName,
             RelationalQueryAuthorizationRequestBodies.CreateAuthorizationNamespaceRequestBody(seed),
             seed.DocumentUuid,
-            $"seed-auth-namespace-{seed.AuthorizationNamespaceId}"
+            $"seed-auth-namespace-{seed.AuthorizationNamespaceId}",
+            creatorOwnershipTokenId: creatorOwnershipTokenId
         );
     }
 
@@ -1433,7 +1445,9 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         int? offset = null,
         bool totalCount = true,
         ChangeVersionRange? changeVersionRange = null,
-        IReadOnlyList<string>? namespacePrefixes = null
+        IReadOnlyList<string>? namespacePrefixes = null,
+        IReadOnlyList<short>? ownershipTokenIds = null,
+        CollectionPaging? paging = null
     )
     {
         ResetRecorder();
@@ -1446,7 +1460,9 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             ResourceInfo: resourceHandle.ResourceInfo,
             AuthorizationContext: new RelationalAuthorizationContext(
                 claimEducationOrganizationIds,
-                namespacePrefixes ?? []
+                namespacePrefixes ?? [],
+                creatorOwnershipTokenId: null,
+                ownershipTokenIds ?? []
             ),
             MappingSet: MappingSet,
             QueryElements: [],
@@ -1458,14 +1474,15 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
                     FilterOperator.And
                 )),
             ],
-            Paging: new CollectionPaging.Traditional(
-                new PaginationParameters(
-                    Limit: limit,
-                    Offset: offset,
-                    TotalCount: totalCount,
-                    MaximumPageSize: MaximumPageSize
-                )
-            ),
+            Paging: paging
+                ?? new CollectionPaging.Traditional(
+                    new PaginationParameters(
+                        Limit: limit,
+                        Offset: offset,
+                        TotalCount: totalCount,
+                        MaximumPageSize: MaximumPageSize
+                    )
+                ),
             TraceId: new TraceId($"{resourceName}-authorization-query"),
             PageOrderingMode: PageOrderingMode.DocumentId,
             ChangeVersionRange: changeVersionRange
@@ -1474,6 +1491,52 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         return await scope
             .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
             .QueryDocuments(request);
+    }
+
+    public async Task<PartitionResult> QueryPartitionsAsync(
+        string projectEndpointName,
+        string resourceName,
+        IReadOnlyList<long> claimEducationOrganizationIds,
+        IReadOnlyList<string> strategyNames,
+        int requestedPartitionCount,
+        long minimumPartitionSize,
+        IReadOnlyList<string>? namespacePrefixes = null,
+        IReadOnlyList<short>? ownershipTokenIds = null
+    )
+    {
+        ResetRecorder();
+        var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
+
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        SetSelectedInstance(scope.ServiceProvider);
+
+        var request = new RelationalPartitionRequest(
+            ResourceInfo: resourceHandle.ResourceInfo,
+            AuthorizationContext: new RelationalAuthorizationContext(
+                claimEducationOrganizationIds,
+                namespacePrefixes ?? [],
+                creatorOwnershipTokenId: null,
+                ownershipTokenIds ?? []
+            ),
+            MappingSet: MappingSet,
+            QueryElements: [],
+            AuthorizationStrategyEvaluators:
+            [
+                .. strategyNames.Select(static strategyName => new AuthorizationStrategyEvaluator(
+                    strategyName,
+                    [],
+                    FilterOperator.And
+                )),
+            ],
+            RequestedPartitionCount: requestedPartitionCount,
+            MinimumPartitionSize: minimumPartitionSize,
+            TraceId: new TraceId($"{resourceName}-authorization-partitions"),
+            PageOrderingMode: PageOrderingMode.DocumentId
+        );
+
+        return await scope
+            .ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>()
+            .QueryPartitions(request);
     }
 
     public async Task<GetResult> GetByIdAsync(
@@ -1868,7 +1931,8 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         IReadOnlyList<long>? claimEducationOrganizationIds = null,
         IReadOnlyList<string>? strategyNames = null,
         string? ifMatch = null,
-        BackendProfileWriteContext? backendProfileWriteContext = null
+        BackendProfileWriteContext? backendProfileWriteContext = null,
+        short? creatorOwnershipTokenId = null
     )
     {
         var resourceHandle = GetResourceHandle(projectEndpointName, resourceName);
@@ -1892,7 +1956,14 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             BackendProfileWriteContext: backendProfileWriteContext
         )
         {
-            AuthorizationContext = new RelationalAuthorizationContext(claimEducationOrganizationIds ?? []),
+            // The creator token is stamped onto dms.Document by every create regardless of the configured
+            // strategies, which is how a fixture seeds the ownership a later GET-many filters on.
+            AuthorizationContext = new RelationalAuthorizationContext(
+                claimEducationOrganizationIds ?? [],
+                [],
+                creatorOwnershipTokenId,
+                []
+            ),
             AuthorizationStrategyEvaluators =
             [
                 .. (strategyNames ?? []).Select(static strategyName => new AuthorizationStrategyEvaluator(

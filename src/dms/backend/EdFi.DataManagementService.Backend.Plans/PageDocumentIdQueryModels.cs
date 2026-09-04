@@ -144,13 +144,21 @@ public sealed record PageDocumentIdAuthorizationCustomViewCheck(
 /// Custom view-based authorization checks. Each is emitted as an AND predicate, ordered against
 /// <paramref name="NamespaceChecks" /> by <c>RawConfiguredIndex</c> as described above.
 /// </param>
+/// <param name="OwnershipTokenParameterization">
+/// Dialect-specific ownership-token parameterization for the <c>OwnershipBased</c> page filter, shared by SQL
+/// emission and runtime binding. When present, the compiler joins <c>dms.Document</c> once and emits the
+/// <c>CreatedByOwnershipTokenId</c> membership predicate as the last AND filter: after every namespace and
+/// custom-view filter whatever position CMS configured <c>OwnershipBased</c> at, and before the relationship
+/// OR group. Page and total-count SQL share it. Null when <c>OwnershipBased</c> is not configured.
+/// </param>
 public sealed record PageDocumentIdAuthorizationSpec(
     IReadOnlyList<PageDocumentIdAuthorizationStrategy> Strategies,
     AuthorizationClaimEducationOrganizationIdParameterization? ClaimEducationOrganizationIdParameterization =
         null,
     IReadOnlyList<NamespaceAuthorizationCheckSpec>? NamespaceChecks = null,
     NamespacePrefixParameterization? NamespacePrefixParameterization = null,
-    IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck>? CustomViewChecks = null
+    IReadOnlyList<PageDocumentIdAuthorizationCustomViewCheck>? CustomViewChecks = null,
+    OwnershipTokenParameterization? OwnershipTokenParameterization = null
 );
 
 /// <summary>

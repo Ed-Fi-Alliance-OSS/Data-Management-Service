@@ -205,8 +205,12 @@ internal static class PlannedQueryParameterBinder
         {
             IReadOnlyList<long> int64Values => int64Values.ToArray(),
             IReadOnlyList<string> stringValues => stringValues.ToArray(),
+            // Ownership tokens are smallint. A short[] lets Npgsql infer smallint[], so the ownership
+            // membership predicate compares smallint to smallint and keeps the index on
+            // dms.Document.CreatedByOwnershipTokenId; widening the list would cost that index.
+            IReadOnlyList<short> int16Values => int16Values.ToArray(),
             _ => throw new InvalidOperationException(
-                $"{parameterDescription} '{parameterName}' requires an IReadOnlyList<long> or IReadOnlyList<string> runtime value."
+                $"{parameterDescription} '{parameterName}' requires an IReadOnlyList<long>, IReadOnlyList<short>, or IReadOnlyList<string> runtime value."
             ),
         };
 

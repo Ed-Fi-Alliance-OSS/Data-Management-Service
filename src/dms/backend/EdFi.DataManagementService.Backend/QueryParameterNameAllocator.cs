@@ -52,13 +52,20 @@ internal static class QueryParameterNameAllocator
     }
 
     /// <summary>
-    /// Collects the concrete SQL parameter names emitted by the namespace-prefix and claim-EdOrg
-    /// authorization parameterizations on <paramref name="authorization"/>. Query filter parameter
-    /// allocation reserves these alongside the paging names so a query field whose sanitized name
+    /// Collects the concrete SQL parameter names emitted by the namespace-prefix, claim-EdOrg, and
+    /// ownership-token authorization parameterizations on <paramref name="authorization"/>. Query filter
+    /// parameter allocation reserves these alongside the paging names so a query field whose sanitized name
     /// matches an authorization parameter is disambiguated with a suffix instead of colliding. An
     /// unreserved collision is rejected downstream as a duplicate filter parameter, surfacing as an
     /// UnknownFailure instead of a filtered result.
     /// </summary>
+    /// <remarks>
+    /// The ownership names are reserved from the parameterization's declared names rather than from what a
+    /// statement binds. On PostgreSQL the array parameter is declared even for an empty token list, so its
+    /// base name is reserved although the constant-false predicate never mentions it; reserving it only
+    /// suffixes a colliding query field. On SQL Server an empty list declares no scalar names, so nothing is
+    /// reserved and nothing needs to be: the SQL binds no ownership parameter either.
+    /// </remarks>
     public static IReadOnlyList<string> CollectAuthorizationParameterNames(
         PageDocumentIdAuthorizationSpec? authorization
     )
@@ -78,6 +85,11 @@ internal static class QueryParameterNameAllocator
         if (authorization.NamespacePrefixParameterization is { } namespacePrefixParameterization)
         {
             reservedNames.AddRange(namespacePrefixParameterization.ParameterNamesInOrder);
+        }
+
+        if (authorization.OwnershipTokenParameterization is { } ownershipTokenParameterization)
+        {
+            reservedNames.AddRange(ownershipTokenParameterization.ParameterNamesInOrder);
         }
 
         return reservedNames;
