@@ -716,7 +716,7 @@ This design originally had the contract story publish as well, and every passage
 
 The line is drawn at what can be undone.
 Packing produces an artifact a build throws away, so it costs nothing to be wrong about, and building it now is what proves the csproj metadata, the dependency closure, and the consumer story actually work.
-Publishing burns a package id and a version permanently, and nothing can consume the contract until the fan-in step lands, so a package published now is one no host can run.
+Publishing burns a package id and a version permanently, and the fan-in step landing does not by itself make the contract consumable: without a supported registration seam an implementer still has no way to get a validator into the collection, so a package published now is one no host can run.
 
 Publishing is taken up at the end of the epic, when there is a host that runs validators and an implementer guide to ship inside the package.
 Note also that this epic's delivery mechanism is compiled-in: a deployment adds one call at its own composition root, which means it already builds from source and could reference the contract project directly.
