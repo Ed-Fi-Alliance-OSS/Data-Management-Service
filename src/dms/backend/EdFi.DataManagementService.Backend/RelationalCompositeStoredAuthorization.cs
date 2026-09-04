@@ -66,6 +66,14 @@ internal sealed record StoredCustomViewStatementPlan(
     IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> PlannedChecks
 );
 
+/// <summary>What an emitted stored ownership check needs in order to map its provider failure back.</summary>
+/// <remarks>
+/// Only the planned check, because attribution is an equality test against its configured index rather than
+/// a lookup into a list: ownership emits exactly one check per operation. The caller's ownership tokens are
+/// deliberately absent — no ownership response discloses a token value, so nothing downstream needs them.
+/// </remarks>
+internal sealed record StoredOwnershipStatementPlan(OwnershipAuthorizationCheckSpec Check);
+
 /// <summary>The stored relationship check's decoded success row.</summary>
 internal sealed record StoredRelationshipAuthorizationRow(int AuthorizationResult, long ContentVersion);
 
@@ -87,6 +95,9 @@ internal abstract record StoredAuthorizationDenial
     public sealed record CustomViewNotAuthorized(CustomViewAuthorizationFailure Failure)
         : StoredAuthorizationDenial;
 
+    public sealed record OwnershipNotAuthorized(OwnershipAuthorizationFailure Failure)
+        : StoredAuthorizationDenial;
+
     public sealed record RelationshipNotAuthorized(RelationshipAuthorizationFailure Failure)
         : StoredAuthorizationDenial;
 
@@ -97,27 +108,29 @@ internal abstract record StoredAuthorizationDenial
 }
 
 /// <summary>
-/// Co-batches the stored namespace and stored relationship <c>AUTH1</c> checks against a captured target,
-/// and classifies the provider failure a denial raises.
+/// Co-batches the stored custom view-based, namespace, ownership, and relationship <c>AUTH1</c> checks
+/// against a captured target, and classifies the provider failure a denial raises.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Statement order is precedence order: a command aborts at its first <c>AUTH1</c>, so emitting namespace
-/// before relationship is what makes a namespace denial win. Every write verb that authorizes stored values
-/// against a locked target shares this one implementation, so that precedence — and the failure
-/// classification the caller renders — cannot drift between the write executor's first phase and the delete
-/// command.
+/// Statement order is precedence order: a command aborts at its first <c>AUTH1</c>, so emitting the custom
+/// views and namespace before ownership, and ownership before relationship, is what decides which denial
+/// wins. Every write verb that authorizes stored values against a locked target shares this one
+/// implementation, so that precedence — and the failure classification the caller renders — cannot drift
+/// between the write executor's first phase and the delete command.
 /// </para>
 /// <para>
-/// Both checks are written to be vacuous when the capture observed nothing: the namespace checks carry the
-/// carrier's row guard, and the relationship check's own target CTE yields no row. A command must serve both
-/// branches, because choosing per branch would require knowing the target before the command runs.
+/// Every check is written to be vacuous when the capture observed nothing: the custom-view, namespace and
+/// ownership checks carry the carrier's row guard, and the relationship check's own target CTE yields no
+/// row. A command must serve both branches, because choosing per branch would require knowing the target
+/// before the command runs.
 /// </para>
 /// </remarks>
 internal static class RelationalCompositeStoredAuthorization
 {
     public const string NamespaceLabel = "stored-namespace-authorization";
     public const string CustomViewLabel = "stored-custom-view-authorization";
+    public const string OwnershipLabel = "stored-ownership-authorization";
     public const string RelationshipLabel = "stored-relationship-authorization";
 
     /// <summary>
@@ -355,6 +368,122 @@ internal static class RelationalCompositeStoredAuthorization
     }
 
     /// <summary>
+    /// Appends the stored ownership check behind the carrier's row guard, or reports that it does not fit
+    /// this command's remaining parameter budget so the caller can select ordered segments instead.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Appended after the namespace and custom-view statements and before the relationship one, because
+    /// statement order is precedence order in a command that aborts at its first <c>AUTH1</c>, and auth.md
+    /// places <c>OwnershipBased</c> last among the AND strategies and ahead of the relationship OR group.
+    /// Its configured index attributes a denial; it does not order the statement.
+    /// </para>
+    /// <para>
+    /// Unlike the custom-view run, a non-fit is reported rather than thrown. On SQL Server the token list
+    /// binds one scalar per token, so a large list genuinely can exhaust the budget, and running ownership
+    /// as an ordered segment after this command preserves its order relative to every other AND filter —
+    /// they all precede it either way. That is exactly what makes the degradation safe here and unsafe for a
+    /// custom-view run, which may be configured before the namespace check.
+    /// </para>
+    /// </remarks>
+    public static bool TryAppendOwnership(
+        RelationalCompositeCommandBuilder builder,
+        IRelationalCompositeTargetCarrier carrier,
+        MappingSet mappingSet,
+        RelationalOwnershipAuthorization? ownershipAuthorization,
+        out StoredOwnershipStatementPlan? statementPlan
+    )
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(carrier);
+        ArgumentNullException.ThrowIfNull(mappingSet);
+
+        if (ownershipAuthorization is null)
+        {
+            statementPlan = null;
+            return true;
+        }
+
+        var command = BuildCoBatchedOwnershipCommand(mappingSet, ownershipAuthorization, carrier);
+
+        if (
+            !builder.Fits(
+                CountParametersAfterSubstitution(
+                    command,
+                    OwnershipAuthorizationSqlSpecDefaults.DocumentIdParameterName
+                )
+            )
+        )
+        {
+            statementPlan = null;
+            return false;
+        }
+
+        var rewritten = RelationalCompositeStatementRewriter.Rewrite(
+            command,
+            builder.Allocator,
+            builder.NextOrdinal,
+            BuildCarrierSubstitutions(
+                carrier,
+                OwnershipAuthorizationSqlSpecDefaults.DocumentIdParameterName,
+                carrier.CapturedTargetIdExpression
+            )
+        );
+
+        builder.Append(
+            OwnershipLabel,
+            rewritten.Sql,
+            rewritten.Parameters,
+            RelationalCompositeResultShape.Rows,
+            (reader, readCancellation) =>
+                RelationalCompositeResultSetSpan.ConsumeAsync(reader, 1, readCancellation),
+            1
+        );
+
+        statementPlan = new StoredOwnershipStatementPlan(ownershipAuthorization.Check);
+        return true;
+    }
+
+    /// <summary>
+    /// Builds the co-batched stored ownership command, carrying the carrier's row guard so the check is
+    /// vacuous when the capture observed no target.
+    /// </summary>
+    /// <remarks>
+    /// Private, and the carrier is required, because the command it produces is only safe co-batched. Its
+    /// <c>DocumentId</c> is bound to a placeholder that <see cref="TryAppendOwnership"/> rewrites into the
+    /// carrier's captured-id expression before execution — the same placeholder the namespace and
+    /// relationship builders bind — so executing it as its own command would authorize document id 0. An
+    /// ordered-segment caller runs <see cref="OwnershipAuthorizationExecutor"/> against the observed target
+    /// id instead, exactly as the namespace and custom-view segments do.
+    /// </remarks>
+    private static RelationalCommand BuildCoBatchedOwnershipCommand(
+        MappingSet mappingSet,
+        RelationalOwnershipAuthorization ownershipAuthorization,
+        IRelationalCompositeTargetCarrier carrier
+    )
+    {
+        var sqlPlan = new OwnershipAuthorizationSqlCompiler(mappingSet.Key.Dialect).Compile(
+            new OwnershipAuthorizationSqlSpec(
+                ownershipAuthorization.Check,
+                ownershipAuthorization.OwnershipTokenParameterization,
+                OwnershipAuthorizationSqlSpecDefaults.DocumentIdParameterName,
+                RowGuardPredicateSql: carrier.CapturedTargetPresentPredicate
+            )
+        );
+
+        return OwnershipAuthorizationExecutor.BuildCommand(
+            sqlPlan,
+            new OwnershipAuthorizationExecutionRequest(
+                mappingSet,
+                // Rewritten to the carrier's captured-id expression by the caller; never executed as bound.
+                DocumentId: 0L,
+                ownershipAuthorization.Check,
+                ownershipAuthorization.OwnershipTokenParameterization
+            )
+        );
+    }
+
+    /// <summary>
     /// Appends the stored relationship check when its disposition is
     /// <see cref="StoredRelationshipDisposition.Emitted"/> and it fits, and reports whether it did.
     /// </summary>
@@ -483,7 +612,8 @@ internal static class RelationalCompositeStoredAuthorization
         int emittedAuth1Index,
         IRelationshipAuthorizationProviderFailureExtractor providerFailureExtractor,
         ILogger logger,
-        StoredCustomViewStatementPlan? customViewPlan = null
+        StoredCustomViewStatementPlan? customViewPlan,
+        StoredOwnershipStatementPlan? ownershipPlan
     )
     {
         ArgumentNullException.ThrowIfNull(exception);
@@ -536,6 +666,42 @@ internal static class RelationalCompositeStoredAuthorization
                         customViewPlan.PlannedChecks
                     )
                 );
+            }
+        }
+
+        // Ownership is consulted ahead of namespace deliberately, and this is the one place arm order does
+        // carry weight today. The ownership mapper claims only own1-discriminated payloads, malformed ones
+        // included, whereas the namespace mapper still treats an undecodable payload it cannot identify as
+        // its own invalid-metadata failure. Namespace additionally yields on an own1-prefixed payload, so
+        // the two guards are independent: either alone attributes a malformed ownership payload correctly.
+        if (
+            OwnershipAuthorizationProviderFailureMapper.TryMapOwnershipAuthorizationFailure(
+                dialect,
+                exception,
+                providerFailureExtractor,
+                ownershipPlan?.Check.RawConfiguredIndex,
+                out var ownershipResult
+            )
+        )
+        {
+            switch (ownershipResult)
+            {
+                case OwnershipAuthorizationExecutionResult.NotAuthorized notAuthorized:
+                    return new StoredAuthorizationDenial.OwnershipNotAuthorized(notAuthorized.Failure);
+
+                case OwnershipAuthorizationExecutionResult.StaleTarget:
+                    return new StoredAuthorizationDenial.StaleTarget();
+
+                case OwnershipAuthorizationExecutionResult.InvalidAuthorizationFailure invalidFailure:
+                    return new StoredAuthorizationDenial.SecurityConfiguration(
+                        [invalidFailure.FailureMessage],
+                        invalidFailure.Diagnostics
+                    );
+
+                default:
+                    throw new InvalidOperationException(
+                        $"Unsupported stored ownership authorization result '{ownershipResult!.GetType().Name}'."
+                    );
             }
         }
 

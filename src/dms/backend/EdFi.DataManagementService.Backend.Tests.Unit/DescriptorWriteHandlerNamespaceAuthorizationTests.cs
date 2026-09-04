@@ -287,6 +287,131 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
         sessionFactory.Session.CommitCallCount.Should().Be(1);
     }
 
+    /// <summary>
+    /// A descriptor create stamps <c>CreatedByOwnershipTokenId</c> exactly as a regular-resource create does.
+    /// Ownership <em>enforcement</em> for descriptors remains a 501 for this ticket, but stamping is
+    /// unconditional and does not wait for it: an unstamped descriptor could never be reached by ownership
+    /// authorization once it is enabled.
+    /// </summary>
+    [TestCase(SqlDialect.Pgsql, "\"CreatedByOwnershipTokenId\"")]
+    [TestCase(SqlDialect.Mssql, "[CreatedByOwnershipTokenId]")]
+    public async Task It_stamps_the_creator_ownership_token_on_a_descriptor_create(
+        SqlDialect dialect,
+        string quotedColumn
+    )
+    {
+        var sessionFactory = await InsertDescriptorWithOwnershipContextAsync(
+            dialect,
+            new RelationalAuthorizationContext(
+                [],
+                ["uri://ed-fi.org/"],
+                creatorOwnershipTokenId: 42,
+                ownershipTokenIds: []
+            )
+        );
+
+        var insert = DescriptorDocumentInsert(sessionFactory, quotedColumn);
+        insert
+            .Parameters.Should()
+            .ContainSingle(parameter => parameter.Name == "@createdByOwnershipTokenId")
+            .Which.Value.Should()
+            .Be((short)42);
+    }
+
+    [TestCase(SqlDialect.Pgsql, "\"CreatedByOwnershipTokenId\"")]
+    [TestCase(SqlDialect.Mssql, "[CreatedByOwnershipTokenId]")]
+    public async Task It_stamps_null_on_a_descriptor_create_when_the_client_has_no_creator_token(
+        SqlDialect dialect,
+        string quotedColumn
+    )
+    {
+        var sessionFactory = await InsertDescriptorWithOwnershipContextAsync(
+            dialect,
+            new RelationalAuthorizationContext(
+                [],
+                ["uri://ed-fi.org/"],
+                creatorOwnershipTokenId: null,
+                ownershipTokenIds: [7]
+            )
+        );
+
+        var insert = DescriptorDocumentInsert(sessionFactory, quotedColumn);
+        insert
+            .Parameters.Should()
+            .ContainSingle(parameter => parameter.Name == "@createdByOwnershipTokenId")
+            .Which.Value.Should()
+            .BeNull();
+    }
+
+    /// <summary>
+    /// The SQL Server insert captures the insert-time <c>ContentVersion</c> through
+    /// <c>OUTPUT ... INTO</c>, and that capture must keep working with the added column — an added column is
+    /// exactly the kind of change that would silently break an <c>OUTPUT</c> clause's column list if the two
+    /// were coupled.
+    /// </summary>
+    [Test]
+    public async Task It_keeps_the_sql_server_content_version_capture_alongside_the_ownership_column()
+    {
+        var sessionFactory = await InsertDescriptorWithOwnershipContextAsync(
+            SqlDialect.Mssql,
+            new RelationalAuthorizationContext(
+                [],
+                ["uri://ed-fi.org/"],
+                creatorOwnershipTokenId: 42,
+                ownershipTokenIds: []
+            )
+        );
+
+        var insert = DescriptorDocumentInsert(sessionFactory, "[CreatedByOwnershipTokenId]");
+        insert
+            .CommandText.Should()
+            .Contain("OUTPUT INSERTED.[ContentVersion] INTO @insertedContentVersion ([ContentVersion])");
+    }
+
+    private static async Task<RecordingNamespaceWriteSessionFactory> InsertDescriptorWithOwnershipContextAsync(
+        SqlDialect dialect,
+        RelationalAuthorizationContext authorizationContext
+    )
+    {
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PostResult = new RelationalWriteTargetLookupResult.CreateNew(_documentUuid),
+        };
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(dialect);
+        sessionFactory.Session.Executor.NamespaceResults.Enqueue(
+            new NamespaceAuthorizationExecutionResult.Authorized()
+        );
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateContentVersionRow()]);
+        var sut = CreateSut(sessionFactory, targetLookupService);
+
+        var request = new DescriptorWriteRequest(
+            CreateMappingSet(dialect),
+            _descriptorResource,
+            CreateDescriptorRequestBody("uri://ed-fi.org/SchoolTypeDescriptor", "Charter"),
+            _documentUuid,
+            new ReferentialId(Guid.Parse("11111111-2222-3333-4444-555555555555")),
+            new TraceId("descriptor-post-ownership-stamp"),
+            [NamespaceStrategy()],
+            authorizationContext
+        );
+
+        var result = await sut.HandlePostAsync(request);
+
+        result.Should().BeOfType<UpsertResult.InsertSuccess>();
+        return sessionFactory;
+    }
+
+    private static RelationalCommand DescriptorDocumentInsert(
+        RecordingNamespaceWriteSessionFactory sessionFactory,
+        string quotedOwnershipColumn
+    ) =>
+        sessionFactory
+            .Session.Executor.Commands.Should()
+            .ContainSingle(command =>
+                command.CommandText.Contains(quotedOwnershipColumn, StringComparison.Ordinal)
+            )
+            .Subject;
+
     [Test]
     public async Task It_returns_namespace_403_not_precondition_failed_when_descriptor_post_create_under_stale_if_match_has_a_proposed_namespace_denial()
     {
@@ -1710,6 +1835,75 @@ public class Given_Descriptor_Write_Handler_Namespace_Authorization
 
         request.AuthorizationStrategyEvaluators.Should().BeEmpty();
         request.RelationalAuthorizationContext.NamespacePrefixes.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Descriptor ownership enforcement is out of scope for DMS-1060, so a descriptor write configured with
+    /// OwnershipBased fails closed with 501 even when NamespaceBased is configured alongside it and the
+    /// client has no namespace prefixes. Reporting the namespace 403 first would answer as though the
+    /// caller's prefixes refused a check that was never enforced.
+    /// </summary>
+    [Test]
+    public async Task It_returns_not_implemented_for_descriptor_post_with_ownership_when_the_client_has_no_prefixes()
+    {
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(sessionFactory);
+
+        var result = await sut.HandlePostAsync(
+            CreatePostRequest(
+                namespacePrefixes: [],
+                authorizationStrategies:
+                [
+                    NamespaceStrategy(),
+                    UnsupportedStrategy(AuthorizationStrategyNameConstants.OwnershipBased),
+                ]
+            )
+        );
+
+        result.Should().BeOfType<UpsertResult.UpsertFailureNotImplemented>();
+        sessionFactory.CreateAsyncCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_returns_not_implemented_for_descriptor_put_with_ownership_when_the_client_has_no_prefixes()
+    {
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(sessionFactory);
+
+        var result = await sut.HandlePutAsync(
+            CreatePutRequest(
+                namespacePrefixes: [],
+                authorizationStrategies:
+                [
+                    NamespaceStrategy(),
+                    UnsupportedStrategy(AuthorizationStrategyNameConstants.OwnershipBased),
+                ]
+            )
+        );
+
+        result.Should().BeOfType<UpdateResult.UpdateFailureNotImplemented>();
+        sessionFactory.CreateAsyncCallCount.Should().Be(0);
+    }
+
+    [Test]
+    public async Task It_returns_not_implemented_for_descriptor_delete_with_ownership_when_the_client_has_no_prefixes()
+    {
+        var sessionFactory = new RecordingNamespaceWriteSessionFactory(SqlDialect.Pgsql);
+        var sut = CreateSut(sessionFactory);
+
+        var result = await sut.HandleDeleteAsync(
+            CreateDeleteRequest(
+                namespacePrefixes: [],
+                authorizationStrategies:
+                [
+                    NamespaceStrategy(),
+                    UnsupportedStrategy(AuthorizationStrategyNameConstants.OwnershipBased),
+                ]
+            )
+        );
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureNotImplemented>();
+        sessionFactory.CreateAsyncCallCount.Should().Be(0);
     }
 
     private static System.Text.Json.Nodes.JsonNode CreateDescriptorRequestBody(

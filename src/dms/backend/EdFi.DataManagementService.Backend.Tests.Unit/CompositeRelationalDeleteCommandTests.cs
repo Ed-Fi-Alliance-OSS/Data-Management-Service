@@ -114,7 +114,7 @@ public class Given_The_Composite_Relational_Delete_Command
     {
         var session = CreateSession(
             dialect,
-            DeleteReader(rootDeleteOrdinal: 2, deleted: true, namespaceCheckCount: 1)
+            DeleteReader(rootDeleteOrdinal: 2, deleted: true, authorizationResultSetCount: 1)
         );
         var request = CreateRequest(dialect) with
         {
@@ -144,7 +144,7 @@ public class Given_The_Composite_Relational_Delete_Command
             DeleteReader(
                 rootDeleteOrdinal: 3,
                 deleted: true,
-                namespaceCheckCount: 1,
+                authorizationResultSetCount: 1,
                 includeRelationshipRow: true
             )
         );
@@ -219,7 +219,7 @@ public class Given_The_Composite_Relational_Delete_Command
     {
         var session = CreateSession(
             dialect,
-            DeleteReader(rootDeleteOrdinal: 2, deleted: true, namespaceCheckCount: 1)
+            DeleteReader(rootDeleteOrdinal: 2, deleted: true, authorizationResultSetCount: 1)
         );
         var request = CreateRequest(dialect) with
         {
@@ -296,7 +296,7 @@ public class Given_The_Composite_Relational_Delete_Command
     {
         var session = CreateSession(
             SqlDialect.Pgsql,
-            DeleteReader(rootDeleteOrdinal: 3, deleted: true, namespaceCheckCount: 2)
+            DeleteReader(rootDeleteOrdinal: 3, deleted: true, authorizationResultSetCount: 2)
         );
         var request = CreateRequest(SqlDialect.Pgsql) with
         {
@@ -322,7 +322,7 @@ public class Given_The_Composite_Relational_Delete_Command
         // its view may be validated only once that check has passed, and the deletes wait for both.
         var session = CreateSession(
             SqlDialect.Pgsql,
-            CaptureOnlyReader(captured: true, namespaceCheckCount: 1),
+            CaptureOnlyReader(captured: true, authorizationResultSetCount: 1),
             NamespaceCheckReader(checkCount: 1),
             SegmentDeleteReader(deleted: true)
         );
@@ -379,7 +379,7 @@ public class Given_The_Composite_Relational_Delete_Command
         // after follows as a segment, and the deletes wait for that segment.
         var session = CreateSession(
             SqlDialect.Pgsql,
-            CaptureOnlyReader(captured: true, namespaceCheckCount: 2),
+            CaptureOnlyReader(captured: true, authorizationResultSetCount: 2),
             NamespaceCheckReader(checkCount: 1),
             SegmentDeleteReader(deleted: true)
         );
@@ -484,7 +484,7 @@ public class Given_The_Composite_Relational_Delete_Command
         // never be enforced on this delete.
         var session = CreateSession(
             SqlDialect.Pgsql,
-            CaptureOnlyReader(captured: true, namespaceCheckCount: 1),
+            CaptureOnlyReader(captured: true, authorizationResultSetCount: 1),
             NamespaceCheckReader(checkCount: 1),
             new FakeDbException("AUTH1", "AUTH1")
         );
@@ -532,7 +532,7 @@ public class Given_The_Composite_Relational_Delete_Command
         // the relationship check is never issued at all.
         var session = CreateSession(
             SqlDialect.Pgsql,
-            CaptureOnlyReader(captured: true, namespaceCheckCount: 1),
+            CaptureOnlyReader(captured: true, authorizationResultSetCount: 1),
             new FakeDbException("AUTH1", "AUTH1")
         );
         var request = CreateRequest(SqlDialect.Pgsql) with
@@ -618,6 +618,248 @@ public class Given_The_Composite_Relational_Delete_Command
 
         result.Should().BeOfType<DeleteResult.DeleteFailureNamespaceNotAuthorized>();
         validationExecutor.ExecutedCommands.Should().BeEmpty();
+    }
+
+    // ----- Ownership --------------------------------------------------------
+
+    /// <summary>
+    /// The production call-site order, which the helper-level fixture cannot prove: the ownership statement
+    /// lands after the namespace one and before both deletes. Statement order is precedence order because
+    /// the command aborts at its first AUTH1, so a denial ahead of the deletes is what keeps the row.
+    /// </summary>
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_emits_the_ownership_statement_after_namespace_and_before_both_deletes(
+        SqlDialect dialect
+    )
+    {
+        // One result set for the namespace check and one for the ownership check, then the two deletes.
+        var session = CreateSession(
+            dialect,
+            DeleteReader(rootDeleteOrdinal: 3, deleted: true, authorizationResultSetCount: 2)
+        );
+        var request = CreateRequest(dialect) with
+        {
+            StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(dialect),
+            StoredOwnershipAuthorization = CreateStoredOwnershipAuthorization(dialect),
+        };
+
+        var result = await CreateSut().ExecuteAsync(request, session);
+
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        var commandText = session.Commands.Should().ContainSingle().Subject.CommandText;
+        // Not NamespaceCheckMarker: the ownership statement is also a SELECT CASE, so that marker matches
+        // whichever check came first and the comparison below would hold either way. The prefix parameter is
+        // emitted only by the namespace check.
+        var namespaceIndex = commandText.IndexOf("namespacePrefixes", StringComparison.Ordinal);
+        var ownershipIndex = commandText.IndexOf(OwnershipCheckMarker(dialect), StringComparison.Ordinal);
+        namespaceIndex.Should().BePositive();
+        ownershipIndex.Should().BePositive();
+        namespaceIndex.Should().BeLessThan(ownershipIndex);
+        ownershipIndex.Should().BeLessThan(IndexOfRootDelete(session, dialect));
+        ownershipIndex.Should().BeLessThan(IndexOfDocumentDelete(session, dialect));
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_denies_a_delete_on_an_ownership_token_mismatch_and_leaves_the_row(SqlDialect dialect)
+    {
+        var session = CreateSession(dialect, new FakeDbException("AUTH1", "AUTH1"));
+        var request = CreateRequest(dialect) with
+        {
+            StoredOwnershipAuthorization = CreateStoredOwnershipAuthorization(dialect),
+        };
+
+        var result = await CreateSut(
+                new StubProviderFailureExtractor("AUTH1", OwnershipDenialPayload(dialect))
+            )
+            .ExecuteAsync(request, session);
+
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch);
+        // The deletes rode the same command, so the abort rolled them back with it: the row survives.
+        session.Commands.Should().ContainSingle();
+    }
+
+    /// <summary>
+    /// An uninitialized stored token is auth.md 2.14 and reaches the caller as its own failure kind, not
+    /// collapsed into the 2.13 mismatch the sibling test covers.
+    /// </summary>
+    [Test]
+    public async Task It_denies_a_delete_whose_stored_ownership_token_was_never_assigned()
+    {
+        var session = CreateSession(SqlDialect.Pgsql, new FakeDbException("AUTH1", "AUTH1"));
+        var request = CreateRequest(SqlDialect.Pgsql) with
+        {
+            StoredOwnershipAuthorization = CreateStoredOwnershipAuthorization(SqlDialect.Pgsql),
+        };
+
+        var result = await CreateSut(
+                new StubProviderFailureExtractor(
+                    "AUTH1",
+                    OwnershipDenialPayload(
+                        SqlDialect.Pgsql,
+                        OwnershipAuthorizationAuth1FailureKind.StoredOwnershipTokenUninitialized
+                    )
+                )
+            )
+            .ExecuteAsync(request, session);
+
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized);
+    }
+
+    /// <summary>
+    /// A namespace denial still wins over an ownership one. Both statements ride the command and the command
+    /// aborts at the first, so the emitted order is what decides — which is why the ownership statement is
+    /// appended after the namespace one rather than at its configured position.
+    /// </summary>
+    [Test]
+    public async Task It_reports_a_namespace_denial_over_an_ownership_check_configured_before_it()
+    {
+        var session = CreateSession(SqlDialect.Pgsql, new FakeDbException("AUTH1", "AUTH1"));
+        var request = CreateRequest(SqlDialect.Pgsql) with
+        {
+            StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(SqlDialect.Pgsql),
+            // Configured ahead of NamespaceBased, and still executed after it.
+            StoredOwnershipAuthorization = CreateStoredOwnershipAuthorization(
+                SqlDialect.Pgsql,
+                rawConfiguredIndex: 0
+            ),
+        };
+
+        var result = await CreateSut(new StubProviderFailureExtractor("AUTH1", NamespaceDenialPayload()))
+            .ExecuteAsync(request, session);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureNamespaceNotAuthorized>();
+    }
+
+    /// <summary>
+    /// When a check configured ahead of ownership owes an ordered segment, ownership must not ride the
+    /// opening command either — it executes after that check — and the deletes must be withheld so nothing
+    /// is removed before the ownership decision.
+    /// </summary>
+    [Test]
+    public async Task It_withholds_the_deletes_when_ownership_must_run_as_a_segment()
+    {
+        var session = CreateSession(
+            SqlDialect.Pgsql,
+            CaptureOnlyReader(captured: true, authorizationResultSetCount: 1),
+            // The custom-view segment, then the ownership segment, then the withheld deletes.
+            NamespaceCheckReader(checkCount: 1),
+            NamespaceCheckReader(checkCount: 1),
+            SegmentDeleteReader(deleted: true)
+        );
+        var request = CreateRequest(SqlDialect.Pgsql) with
+        {
+            StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(SqlDialect.Pgsql),
+            // A view configured after NamespaceBased always takes a segment, which pushes ownership out too.
+            CustomViewAuthorization = CreateStoredCustomViewAuthorization(("SchoolWithALateTag", 1)),
+            StoredOwnershipAuthorization = CreateStoredOwnershipAuthorization(SqlDialect.Pgsql),
+        };
+
+        var result = await CreateSut().ExecuteAsync(request, session);
+
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        session.Commands.Should().HaveCount(4);
+        // The opening command carries the namespace check but neither the ownership statement nor the deletes.
+        session
+            .Commands[0]
+            .CommandText.Should()
+            .Contain("namespacePrefixes")
+            .And.NotContain(OwnershipCheckMarker(SqlDialect.Pgsql))
+            .And.NotContain("DELETE FROM");
+        session.Commands[1].CommandText.Should().Contain("SchoolWithALateTag");
+        // Ownership runs after the custom-view segment and before the deletes.
+        session.Commands[2].CommandText.Should().Contain(OwnershipCheckMarker(SqlDialect.Pgsql));
+        session.Commands[3].CommandText.Should().Contain("DELETE FROM");
+    }
+
+    /// <summary>
+    /// The case the sibling test cannot reach: ownership alone does not fit the command's parameter budget,
+    /// with no custom-view segment owed. The deletes must still be withheld, or the row would be removed by
+    /// the opening command before the ownership check that runs afterwards could deny it.
+    /// </summary>
+    [Test]
+    public async Task It_withholds_the_deletes_when_only_ownership_does_not_fit_the_command()
+    {
+        var session = CreateSession(
+            SqlDialect.Mssql,
+            CaptureOnlyReader(captured: true),
+            // The ownership segment, then the withheld deletes.
+            NamespaceCheckReader(checkCount: 1),
+            SegmentDeleteReader(deleted: true)
+        );
+        var request = CreateRequest(SqlDialect.Mssql) with
+        {
+            // SQL Server binds one scalar per token, so three tokens cannot fit beside the capture's own
+            // parameter in a two-slot budget.
+            StoredOwnershipAuthorization = CreateStoredOwnershipAuthorization(
+                SqlDialect.Mssql,
+                ownershipTokenIds: [3, 5, 7]
+            ),
+        };
+
+        var result = await CreateSut(
+                commandBudget: new RelationalCommandBudget(
+                    MaxParametersPerCommand: 2,
+                    MaxRowsPerStatement: 1000
+                )
+            )
+            .ExecuteAsync(request, session);
+
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        session.Commands.Should().HaveCount(3);
+        session
+            .Commands[0]
+            .CommandText.Should()
+            .NotContain(OwnershipCheckMarker(SqlDialect.Mssql))
+            .And.NotContain("DELETE FROM");
+        session.Commands[1].CommandText.Should().Contain(OwnershipCheckMarker(SqlDialect.Mssql));
+        session.Commands[2].CommandText.Should().Contain("DELETE FROM");
+    }
+
+    private static RelationalOwnershipAuthorization CreateStoredOwnershipAuthorization(
+        SqlDialect dialect,
+        int rawConfiguredIndex = 1,
+        IReadOnlyList<short>? ownershipTokenIds = null
+    ) =>
+        new(
+            new OwnershipAuthorizationCheckSpec(rawConfiguredIndex),
+            OwnershipTokenParameterizationFactory.Create(
+                dialect,
+                ownershipTokenIds ?? [11],
+                "ownershipTokenIds"
+            )
+        );
+
+    /// <summary>
+    /// The ownership check's emitted shape, which no other delete statement produces: only it reads
+    /// CreatedByOwnershipTokenId.
+    /// </summary>
+    private static string OwnershipCheckMarker(SqlDialect dialect) =>
+        dialect is SqlDialect.Pgsql ? "\"CreatedByOwnershipTokenId\"" : "[CreatedByOwnershipTokenId]";
+
+    private static string OwnershipDenialPayload(
+        SqlDialect dialect,
+        OwnershipAuthorizationAuth1FailureKind failureKind =
+            OwnershipAuthorizationAuth1FailureKind.OwnershipTokenMismatch,
+        int configuredStrategyIndex = 1
+    )
+    {
+        var payload = OwnershipAuthorizationAuth1FailurePayloadCodec.Encode(
+            new OwnershipAuthorizationAuth1FailurePayload(configuredStrategyIndex, failureKind)
+        );
+
+        return dialect is SqlDialect.Mssql
+            ? $"{OwnershipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode} - {payload}"
+            : payload;
     }
 
     private static string NamespaceDenialPayload() =>
@@ -832,7 +1074,7 @@ public class Given_The_Composite_Relational_Delete_Command
     {
         var session = CreateSession(
             SqlDialect.Mssql,
-            CaptureOnlyReader(captured: true, namespaceCheckCount: 1),
+            CaptureOnlyReader(captured: true, authorizationResultSetCount: 1),
             RelationshipRowReader(),
             SegmentDeleteReader(deleted: true)
         );
@@ -1267,7 +1509,7 @@ public class Given_The_Composite_Relational_Delete_Command
     /// </summary>
     private static ScriptedDbDataReader CaptureOnlyReader(
         bool captured,
-        int namespaceCheckCount = 0,
+        int authorizationResultSetCount = 0,
         bool includeRelationshipRow = false
     )
     {
@@ -1288,7 +1530,7 @@ public class Given_The_Composite_Relational_Delete_Command
             ["DocumentId", "ContentVersion", "DocumentUuid", "CapturedToken"],
         ];
 
-        for (var check = 0; check < namespaceCheckCount; check++)
+        for (var resultSet = 0; resultSet < authorizationResultSetCount; resultSet++)
         {
             resultSets.Add([
                 [1],
@@ -1356,15 +1598,20 @@ public class Given_The_Composite_Relational_Delete_Command
         );
 
     /// <summary>
-    /// The composite command's declared result-set stream: the capture row, one row set per namespace check,
-    /// the relationship row when one is co-batched, the root delete's sentinel echoing its own ordinal, and
-    /// the <c>dms.Document</c> delete's returned id.
+    /// The composite command's declared result-set stream: the capture row, one row set per co-batched
+    /// authorization statement, the relationship row when one is co-batched, the root delete's sentinel
+    /// echoing its own ordinal, and the <c>dms.Document</c> delete's returned id.
     /// </summary>
+    /// <param name="authorizationResultSetCount">
+    /// How many single-row authorization statements the command carries. Namespace and ownership checks emit
+    /// the same shape, so one counter serves both — a command with a namespace check and an ownership check
+    /// declares two.
+    /// </param>
     private static ScriptedDbDataReader DeleteReader(
         int rootDeleteOrdinal,
         bool deleted,
         bool captured = true,
-        int namespaceCheckCount = 0,
+        int authorizationResultSetCount = 0,
         bool includeRelationshipRow = false
     )
     {
@@ -1386,7 +1633,7 @@ public class Given_The_Composite_Relational_Delete_Command
             ["DocumentId", "ContentVersion", "DocumentUuid", "CapturedToken"],
         ];
 
-        for (var check = 0; check < namespaceCheckCount; check++)
+        for (var resultSet = 0; resultSet < authorizationResultSetCount; resultSet++)
         {
             resultSets.Add([
                 [1],

@@ -275,6 +275,14 @@ the creator token in the read/modify collection.
 An ownership token may be assigned to multiple API clients within the same tenant. Sharing a token
 grants those clients access to documents stamped with that token.
 
+### Descriptors
+
+Descriptors: stamping is in scope, enforcement is not. Descriptor creates stamp
+`CreatedByOwnershipTokenId` like any other create, but descriptor GET-by-id, POST, PUT, and DELETE
+configured with `OwnershipBased` remain fail-closed at `501` in DMS-1060. Ownership enforcement for
+descriptors is not implemented in this story. The GET-by-id, PUT, and DELETE statements above
+therefore describe relationally stored resources.
+
 ## CMS Persistence Contract
 
 CMS will add the following PostgreSQL and SQL Server structures.
@@ -689,9 +697,13 @@ The approved handoff:
 2. adds the CMS application-context paragraphs above to both tickets: DMS-1060 consumes both
    ownership fields for POST stamping and single-record authorization, while DMS-1410 consumes
    `OwnershipTokenIds` for GET-many filtering only;
-3. retains DMS-1060's POST stamping and single-record authorization ProblemDetails, batching, and
+3. retains DMS-1060's POST stamping, single-record authorization ProblemDetails, and
    database-provider acceptance criteria, while assigning GET-many filtering and removal of the
-   temporary GET-many 501 only to DMS-1410; and
+   temporary GET-many 501 only to DMS-1410. Batching is not restated here: the accepted batching
+   deviations, including GET-by-id ownership running as one added command ahead of hydration, are
+   owned by the [DMS-1060 story mirror](../epics/14-authorization/11-ownership-auth-strategy.md)
+   and recorded in
+   [`08-write-roundtrip-batching.md`](../epics/07-relational-write-path/08-write-roundtrip-batching.md); and
 4. retains the defensive SQL Server failure at 2,000 or more tokens for both consumers.
 
 ## Acceptance Criteria Traceability

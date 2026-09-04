@@ -56,6 +56,13 @@ public abstract record DeleteResult
         : DeleteResult();
 
     /// <summary>
+    /// A failure because stored ownership-based authorization denied the delete. Carries the ownership
+    /// failure metadata so Core can build the §2.13/§2.14 ProblemDetails response.
+    /// </summary>
+    public record DeleteFailureOwnershipNotAuthorized(OwnershipAuthorizationFailure OwnershipFailure)
+        : DeleteResult();
+
+    /// <summary>
     /// A failure because the requested delete operation is intentionally not implemented.
     /// </summary>
     /// <param name="FailureMessage">A message providing failure information</param>

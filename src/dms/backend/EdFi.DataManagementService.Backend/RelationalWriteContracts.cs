@@ -830,6 +830,41 @@ public sealed record RelationalWriteExecutorRequest
     /// selection inside the executor's write session.
     /// </summary>
     internal PostRelationshipAuthorizationPlans? PostRelationshipAuthorizationPlans { get; init; }
+
+    /// <summary>
+    /// The API client's <c>CreatorOwnershipTokenId</c>, stamped onto <c>dms.Document</c> when this write
+    /// creates a document. Null when the client has no creator token, which stamps null.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Not an authorization input. This value is only ever written; ownership authorization reads the client's
+    /// <c>OwnershipTokenIds</c> against the stored column instead. A create is therefore never denied by
+    /// ownership, whatever this value is.
+    /// </para>
+    /// <para>
+    /// Carried on every write regardless of configured strategies, because stamping is unconditional. It is
+    /// ignored for a write that resolves to an existing target: no <c>UPDATE</c> statement mentions the
+    /// column, which is what preserves the stored token across PUT and upsert-as-update.
+    /// </para>
+    /// </remarks>
+    public short? CreatorOwnershipTokenId { get; init; }
+
+    /// <summary>
+    /// The ownership check planned for this write, or <see langword="null"/> when <c>OwnershipBased</c> is
+    /// not configured. It authorizes the stored token, so it decides an update and is vacuous for a create —
+    /// which is why one plan can serve a POST whose branch is not yet known.
+    /// </summary>
+    public RelationalOwnershipAuthorization? StoredOwnershipAuthorization { get; init; }
+
+    /// <summary>
+    /// The result a POST owes if it resolves to an existing target while its stored ownership check could not
+    /// be parameterized — today only the token cap — or <see langword="null"/>. Returned in the ownership
+    /// slot, after the custom-view and namespace checks and before the relationship check, so no DML is
+    /// issued. A create never sees it: ownership never denies a create, and the over-limit list is never
+    /// parameterized for one. Set only by the POST preflight, and only with
+    /// <see cref="StoredOwnershipAuthorization"/> null.
+    /// </summary>
+    public RelationalWriteExecutorResult? DeferredStoredOwnershipFailureResult { get; init; }
 }
 
 /// <summary>
@@ -945,6 +980,15 @@ public sealed record RelationalWriteExecutorInput
     /// <inheritdoc cref="RelationalWriteExecutorRequest.PostRelationshipAuthorizationPlans"/>
     internal PostRelationshipAuthorizationPlans? PostRelationshipAuthorizationPlans { get; init; }
 
+    /// <inheritdoc cref="RelationalWriteExecutorRequest.CreatorOwnershipTokenId"/>
+    public short? CreatorOwnershipTokenId { get; init; }
+
+    /// <inheritdoc cref="RelationalWriteExecutorRequest.StoredOwnershipAuthorization"/>
+    public RelationalOwnershipAuthorization? StoredOwnershipAuthorization { get; init; }
+
+    /// <inheritdoc cref="RelationalWriteExecutorRequest.DeferredStoredOwnershipFailureResult"/>
+    public RelationalWriteExecutorResult? DeferredStoredOwnershipFailureResult { get; init; }
+
     /// <summary>
     /// Produces the fully resolved executor request for a target the executor observed inside its
     /// write session. All cross-field validation runs in the resolved request's constructor.
@@ -972,6 +1016,9 @@ public sealed record RelationalWriteExecutorInput
         {
             PostRelationshipAuthorizationPlans = PostRelationshipAuthorizationPlans,
             CustomViewAuthorization = CustomViewAuthorization,
+            CreatorOwnershipTokenId = CreatorOwnershipTokenId,
+            StoredOwnershipAuthorization = StoredOwnershipAuthorization,
+            DeferredStoredOwnershipFailureResult = DeferredStoredOwnershipFailureResult,
         };
 }
 
@@ -989,6 +1036,25 @@ internal sealed record PostRelationshipAuthorizationPlans(
 public sealed record RelationalWriteNamespaceAuthorization(
     IReadOnlyList<NamespaceAuthorizationCheckSpec> Checks,
     NamespacePrefixParameterization NamespacePrefixParameterization
+);
+
+/// <summary>
+/// Ownership authorization inputs threaded from a repository preflight into execution.
+/// </summary>
+/// <param name="Check">
+/// The single planned ownership check. A value rather than a list: ownership reads one column against one
+/// token list, so it evaluates once per operation however many times <c>OwnershipBased</c> is configured.
+/// </param>
+/// <param name="OwnershipTokenParameterization">The dialect-specific ownership-token parameterization.</param>
+/// <remarks>
+/// The check's <c>RawConfiguredIndex</c> is the configured position the AUTH1 payload carries, used to
+/// attribute a denial back to this check. It deliberately does not order execution: ownership always runs
+/// last among the AND-combined strategies whatever position it is configured at, so unlike the custom-view
+/// checks it is never partitioned around <c>NamespaceBased</c> by configured index.
+/// </remarks>
+public sealed record RelationalOwnershipAuthorization(
+    OwnershipAuthorizationCheckSpec Check,
+    OwnershipTokenParameterization OwnershipTokenParameterization
 );
 
 /// <summary>

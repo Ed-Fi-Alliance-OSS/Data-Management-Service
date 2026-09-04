@@ -116,6 +116,15 @@ internal class GetByIdHandler(ILogger _logger, ResiliencePipeline _resiliencePip
                 Headers: [],
                 ContentType: "application/problem+json"
             ),
+            GetFailureOwnershipNotAuthorized notAuthorized => new FrontendResponse(
+                StatusCode: 403,
+                Body: OwnershipAuthorizationFailureResponse.ForFailure(
+                    notAuthorized.OwnershipFailure,
+                    requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: [],
+                ContentType: "application/problem+json"
+            ),
             UnknownFailure failure => CreateUnknownFailureResponse(
                 _logger,
                 requestInfo,

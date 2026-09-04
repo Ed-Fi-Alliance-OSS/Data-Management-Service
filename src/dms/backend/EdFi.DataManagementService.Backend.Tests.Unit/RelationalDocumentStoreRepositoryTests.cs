@@ -95,6 +95,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         null!;
     private INamespaceAuthorizationExecutor _namespaceAuthorizationExecutor = null!;
     private ICustomViewAuthorizationExecutor _customViewAuthorizationExecutor = null!;
+    private IOwnershipAuthorizationExecutor _ownershipAuthorizationExecutor = null!;
     private RelationalWriteExecutorInput _capturedExecutorRequest = null!;
     private List<RelationalWriteExecutorInput> _capturedExecutorRequests = null!;
 
@@ -122,6 +123,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             A.Fake<ISingleRecordRelationshipAuthorizationExecutor>();
         _namespaceAuthorizationExecutor = A.Fake<INamespaceAuthorizationExecutor>();
         _customViewAuthorizationExecutor = A.Fake<ICustomViewAuthorizationExecutor>();
+        _ownershipAuthorizationExecutor = A.Fake<IOwnershipAuthorizationExecutor>();
         _capturedExecutorRequests = [];
         A.CallTo(() => _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorInput>._, A<CancellationToken>._))
             .Invokes(call =>
@@ -180,6 +182,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -205,6 +208,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -232,6 +236,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: readAccelerationCoordinator
         );
@@ -729,6 +734,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -1118,6 +1124,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         result.Should().BeOfType<GetResult.GetSuccess>();
         authorizationOrder.Should().Be(1);
         hydrationOrder.Should().Be(2);
+        AssertOwnershipAuthorizationWasNotExecuted();
         capturedAuthorizationRequest.MappingSet.Should().BeSameAs(mappingSet);
         capturedAuthorizationRequest.DocumentId.Should().Be(345L);
         capturedAuthorizationRequest.EmittedAuth1Index.Should().Be(0);
@@ -1336,8 +1343,11 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_returns_not_implemented_before_get_by_id_target_lookup_when_authorization_includes_known_out_of_scope_strategies()
+    public async Task It_composes_get_by_id_ownership_with_a_supported_relationship_strategy()
     {
+        // OwnershipBased is the only strategy in the relationship classifier's known-but-not-enabled set, so
+        // once ReadSingle is enforced this composition plans instead of returning a 501. Ownership is an AND
+        // filter and runs before the relationship OR group; a denial there ends the read.
         var documentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-2222-3333-4444-cfcfcfcfcfcf"));
         var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
         var getRequest = CreateGetRequest(
@@ -1351,23 +1361,40 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
                 ),
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
             ],
-            claimEducationOrganizationIds: [255901L]
+            claimEducationOrganizationIds: [255901L],
+            ownershipTokenIds: [11]
+        );
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
+        GivenOwnershipAuthorizationReturns(
+            new OwnershipAuthorizationExecutionResult.NotAuthorized(
+                CreateOwnershipFailure(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch, 1)
+            )
         );
 
         var result = await _sut.GetDocumentById(getRequest);
 
-        var failure = result.Should().BeOfType<GetResult.GetFailureNotImplemented>().Subject;
-        failure.FailureMessage.Should().Contain(AuthorizationStrategyNameConstants.OwnershipBased);
-        AssertSupportedRelationshipStrategyNames(failure.FailureMessage);
-        A.CallTo(() =>
-                _readTargetLookupService.ResolveForGetByIdAsync(
-                    A<MappingSet>._,
-                    A<QualifiedResourceName>._,
-                    A<DocumentUuid>._,
-                    A<CancellationToken>._
-                )
-            )
-            .MustNotHaveHappened();
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.ConfiguredStrategyIndex.Should()
+            .Be(1);
+        // The relationship OR group follows the AND filters, so an ownership denial stops the read before it.
         A.CallTo(() =>
                 _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
                     A<SingleRecordRelationshipAuthorizationExecutionRequest>._,
@@ -1375,15 +1402,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
                 )
             )
             .MustNotHaveHappened();
-        A.CallTo(() =>
-                _documentHydrator.HydrateAsync(
-                    A<ResourceReadPlan>._,
-                    A<PageKeysetSpec>._,
-                    A<HydrationExecutionOptions>._,
-                    A<CancellationToken>._
-                )
-            )
-            .MustNotHaveHappened();
+        AssertGetByIdHydrationWasNotAttempted();
     }
 
     [Test]
@@ -1800,6 +1819,40 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
+    public async Task It_validates_a_read_acceleration_get_by_id_custom_view_configured_before_a_namespace_no_prefixes_terminal()
+    {
+        // The same terminal as the plain-path sibling above, reached through the read-acceleration entry
+        // point instead. That path used to return the terminal's result without probing the views ahead of
+        // it, so a missing or non-conforming view lost its own 500 depending on nothing but which entry
+        // point served the read. It matters most for the terminals carrying every configured view, such as
+        // the ownership token cap.
+        var readAccelerationCoordinator = new RecordingReadAccelerationCoordinator();
+        UseReadAccelerationCoordinator(readAccelerationCoordinator);
+        var capturedValidationSql = GivenCustomViewValidationIsRecorded();
+        var getRequest = CreateGetRequest(
+            new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-aaaaaaaaaa0a")),
+            CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo),
+            _schoolResourceInfo,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(CustomViewStrategyName),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+            ],
+            namespacePrefixes: []
+        );
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        readAccelerationCoordinator.GetByIdAttempts.Should().Be(1);
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureNamespaceNotAuthorized>()
+            .Which.NamespaceFailure.FailureKind.Should()
+            .Be(NamespaceAuthorizationFailureKind.NoPrefixesConfigured);
+        capturedValidationSql.Should().ContainSingle().Which.Should().Contain(CustomViewStrategyName);
+    }
+
+    [Test]
     public async Task It_does_not_validate_a_get_by_id_custom_view_configured_after_a_namespace_no_prefixes_terminal()
     {
         // The run would have aborted at the namespace position, so a view configured after it never executes
@@ -1952,10 +2005,10 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_validates_a_get_by_id_custom_view_configured_before_an_ownership_based_terminal()
+    public async Task It_validates_a_get_by_id_custom_view_configured_before_an_ownership_token_cap_terminal()
     {
         // OwnershipBased executes last per auth.md regardless of configured position, so every resolved view
-        // runs before its 501.
+        // runs before its terminal. The cap is a planner terminal, reported before any target lookup.
         var capturedValidationSql = GivenCustomViewValidationIsRecorded();
         var getRequest = CreateGetRequest(
             new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-aaaaaaaaaa03")),
@@ -1966,16 +2019,100 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
                 CreateAuthorizationStrategyEvaluator(CustomViewStrategyName),
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
             ],
-            namespacePrefixes: ["uri://ed-fi.org/"]
+            namespacePrefixes: ["uri://ed-fi.org/"],
+            ownershipTokenIds: OverCapOwnershipTokenIds()
         );
 
         var result = await _sut.GetDocumentById(getRequest);
 
-        result
-            .Should()
-            .BeOfType<GetResult.GetFailureNotImplemented>()
-            .Which.FailureMessage.Should()
-            .Contain(AuthorizationStrategyNameConstants.OwnershipBased);
+        var failure = result.Should().BeOfType<GetResult.GetFailureSecurityConfiguration>().Subject;
+        // The configured count is reportable; a token value never is.
+        failure.Errors.Should().ContainSingle().Which.Should().Contain("2,000");
+        capturedValidationSql.Should().ContainSingle().Which.Should().Contain(CustomViewStrategyName);
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    A<MappingSet>._,
+                    A<QualifiedResourceName>._,
+                    A<DocumentUuid>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// The caller's cancellation token has to reach the custom-view validation a GET-by-id terminal runs.
+    /// A terminal has already decided to refuse the request, so this is DB work whose result only feeds a
+    /// response that may never be read — dropping the token leaves an abandoned request holding a
+    /// connection to validate views for it.
+    /// </summary>
+    /// <remarks>
+    /// The ownership token cap is the terminal used here because it carries every resolved view rather than
+    /// only those configured before some index, so it is the terminal most likely to run this validation.
+    /// A token from a live source, not <see cref="CancellationToken.None"/>: a dropped token binds to
+    /// <c>None</c>, so only a distinguishable one can fail when it is dropped.
+    /// </remarks>
+    [Test]
+    public async Task It_passes_the_caller_cancellation_token_to_get_by_id_terminal_custom_view_validation()
+    {
+        CancellationToken observedValidationToken = default;
+
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => observedValidationToken = call.GetArgument<CancellationToken>(2))
+            .Returns(Task.FromResult(true));
+
+        var getRequest = CreateGetRequest(
+            new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-aaaaaaaaaa22")),
+            CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo),
+            _schoolResourceInfo,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(CustomViewStrategyName),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ],
+            namespacePrefixes: ["uri://ed-fi.org/"],
+            ownershipTokenIds: OverCapOwnershipTokenIds()
+        );
+
+        using var cancellationTokenSource = new CancellationTokenSource();
+        var cancellationToken = cancellationTokenSource.Token;
+
+        var result = await _sut.GetDocumentById(getRequest, cancellationToken);
+
+        result.Should().BeOfType<GetResult.GetFailureSecurityConfiguration>();
+        observedValidationToken.Should().Be(cancellationToken);
+    }
+
+    /// <summary>
+    /// A view configured after OwnershipBased still runs before the cap terminal. Ownership executes last
+    /// among the AND strategies whatever position it holds, so no configured view can follow it.
+    /// </summary>
+    [Test]
+    public async Task It_validates_a_get_by_id_custom_view_configured_after_ownership_before_the_cap_terminal()
+    {
+        var capturedValidationSql = GivenCustomViewValidationIsRecorded();
+        var getRequest = CreateGetRequest(
+            new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-aaaaaaaaaa0b")),
+            CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo),
+            _schoolResourceInfo,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                CreateAuthorizationStrategyEvaluator(CustomViewStrategyName),
+            ],
+            namespacePrefixes: ["uri://ed-fi.org/"],
+            ownershipTokenIds: OverCapOwnershipTokenIds()
+        );
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result.Should().BeOfType<GetResult.GetFailureSecurityConfiguration>();
         capturedValidationSql.Should().ContainSingle().Which.Should().Contain(CustomViewStrategyName);
     }
 
@@ -2014,6 +2151,76 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             ReadableSecurableElements: ["School"],
             Hint: "You may need a School with A Tag."
         );
+
+    private void GivenOwnershipAuthorizationReturns(OwnershipAuthorizationExecutionResult result) =>
+        A.CallTo(() =>
+                _ownershipAuthorizationExecutor.ExecuteAsync(
+                    A<OwnershipAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(Task.FromResult(result));
+
+    /// <summary>
+    /// A GET-by-id request whose target resolves, with the given strategies configured and the given
+    /// ownership tokens held by the caller.
+    /// </summary>
+    private IGetRequest GivenAResolvableOwnershipGetByIdTarget(
+        DocumentUuid documentUuid,
+        MappingSet mappingSet,
+        AuthorizationStrategyEvaluator[] authorizationStrategyEvaluators,
+        IReadOnlyList<short>? ownershipTokenIds = null
+    )
+    {
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            _schoolResourceInfo,
+            authorizationStrategyEvaluators: authorizationStrategyEvaluators,
+            namespacePrefixes: ["uri://ed-fi.org/"],
+            ownershipTokenIds: ownershipTokenIds ?? [11]
+        );
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                )
+            );
+
+        return getRequest;
+    }
+
+    private void AssertGetByIdHydrationWasNotAttempted() =>
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+
+    /// <summary>
+    /// One more ownership token than the defensive limit allows, so the planner reports the cap terminal.
+    /// </summary>
+    private static IReadOnlyList<short> OverCapOwnershipTokenIds() =>
+        [
+            .. Enumerable
+                .Range(1, OwnershipTokenLimitExceededException.OwnershipTokenLimit)
+                .Select(static tokenId => (short)tokenId),
+        ];
 
     private void GivenCustomViewAuthorizationReturns(CustomViewAuthorizationExecutionResult result) =>
         A.CallTo(() =>
@@ -3005,22 +3212,192 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             .MustNotHaveHappened();
     }
 
-    [Test]
-    public async Task It_fails_closed_when_ownership_is_configured_alongside_namespace()
+    /// <summary>
+    /// Ownership runs after NamespaceBased even when configured before it. auth.md places OwnershipBased
+    /// last among the AND strategies whatever position it holds, which is the one place configured order and
+    /// execution order diverge on purpose.
+    /// </summary>
+    [TestCase(0)]
+    [TestCase(1)]
+    public async Task It_runs_get_by_id_ownership_after_namespace_whichever_order_they_are_configured_in(
+        int ownershipConfiguredIndex
+    )
     {
         var documentUuid = new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-cccccccccccc"));
         var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
+        AuthorizationStrategyEvaluator[] evaluators =
+            ownershipConfiguredIndex == 0
+                ?
+                [
+                    CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                    CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                ]
+                :
+                [
+                    CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                    CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                ];
+        var getRequest = GivenAResolvableOwnershipGetByIdTarget(documentUuid, mappingSet, evaluators);
+
+        var order = 0;
+        var namespaceOrder = 0;
+        var ownershipOrder = 0;
+
+        A.CallTo(() =>
+                _namespaceAuthorizationExecutor.ExecuteAsync(
+                    A<NamespaceAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(() => namespaceOrder = ++order)
+            .Returns(
+                Task.FromResult<NamespaceAuthorizationExecutionResult>(
+                    new NamespaceAuthorizationExecutionResult.Authorized()
+                )
+            );
+        A.CallTo(() =>
+                _ownershipAuthorizationExecutor.ExecuteAsync(
+                    A<OwnershipAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(() => ownershipOrder = ++order)
+            .Returns(
+                Task.FromResult<OwnershipAuthorizationExecutionResult>(
+                    new OwnershipAuthorizationExecutionResult.NotAuthorized(
+                        CreateOwnershipFailure(
+                            OwnershipAuthorizationFailureKind.OwnershipTokenMismatch,
+                            ownershipConfiguredIndex
+                        )
+                    )
+                )
+            );
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result.Should().BeOfType<GetResult.GetFailureOwnershipNotAuthorized>();
+        namespaceOrder.Should().Be(1);
+        ownershipOrder.Should().Be(2);
+        AssertGetByIdHydrationWasNotAttempted();
+    }
+
+    /// <summary>
+    /// The caller's cancellation token has to reach every GET-by-id AND-filter executor. All three support
+    /// cancellation, so a dropped token means an abandoned request keeps its connection busy running
+    /// authorization SQL for a response nobody will read.
+    /// </summary>
+    /// <remarks>
+    /// A token from a live source rather than <see cref="CancellationToken.None"/>: the defect this pins was
+    /// the chain calling these executors with defaulted tokens, and a default token compares equal to
+    /// <c>None</c>, so only a distinguishable token can fail when it is dropped. All three executors are
+    /// asserted in one test because they are reached through one call chain, and the ownership one is the
+    /// last link — the chain has to stay threaded end to end for it to observe the token.
+    /// </remarks>
+    [Test]
+    public async Task It_passes_the_caller_cancellation_token_to_every_get_by_id_and_filter_executor()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-cccccccccc21"));
+        var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
+        var getRequest = GivenAResolvableOwnershipGetByIdTarget(
+            documentUuid,
+            mappingSet,
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                CreateAuthorizationStrategyEvaluator(CustomViewStrategyName),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ]
+        );
+
+        using var cancellationTokenSource = new CancellationTokenSource();
+        var cancellationToken = cancellationTokenSource.Token;
+
+        CancellationToken observedNamespaceToken = default;
+        CancellationToken observedCustomViewToken = default;
+        CancellationToken observedOwnershipToken = default;
+
+        A.CallTo(() =>
+                _namespaceAuthorizationExecutor.ExecuteAsync(
+                    A<NamespaceAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => observedNamespaceToken = call.GetArgument<CancellationToken>(1))
+            .Returns(
+                Task.FromResult<NamespaceAuthorizationExecutionResult>(
+                    new NamespaceAuthorizationExecutionResult.Authorized()
+                )
+            );
+        A.CallTo(() =>
+                _customViewAuthorizationExecutor.ExecuteAsync(
+                    A<CustomViewAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => observedCustomViewToken = call.GetArgument<CancellationToken>(1))
+            .Returns(
+                Task.FromResult<CustomViewAuthorizationExecutionResult>(
+                    new CustomViewAuthorizationExecutionResult.Authorized()
+                )
+            );
+        A.CallTo(() =>
+                _ownershipAuthorizationExecutor.ExecuteAsync(
+                    A<OwnershipAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(call => observedOwnershipToken = call.GetArgument<CancellationToken>(1))
+            .Returns(
+                Task.FromResult<OwnershipAuthorizationExecutionResult>(
+                    new OwnershipAuthorizationExecutionResult.NotAuthorized(
+                        CreateOwnershipFailure(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch, 2)
+                    )
+                )
+            );
+
+        var result = await _sut.GetDocumentById(getRequest, cancellationToken);
+
+        result.Should().BeOfType<GetResult.GetFailureOwnershipNotAuthorized>();
+        observedOwnershipToken.Should().Be(cancellationToken);
+        observedNamespaceToken.Should().Be(cancellationToken);
+        observedCustomViewToken.Should().Be(cancellationToken);
+    }
+
+    /// <summary>
+    /// The authorized path, which the denial tests cannot reach: ownership authorizes, and only then does
+    /// the relationship OR group run. Ownership is an AND filter and the relationship group follows every
+    /// AND filter, so a reorder that moved the relationship group ahead of ownership would let a document
+    /// the caller does not own reach the relationship boundary — and, if that boundary authorized it, be
+    /// served.
+    /// </summary>
+    [Test]
+    public async Task It_runs_the_relationship_group_after_ownership_authorizes_a_get_by_id()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-cccccccccc19"));
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var readPlan = mappingSet.ReadPlansByResource[new QualifiedResourceName("Ed-Fi", "School")];
         var getRequest = CreateGetRequest(
             documentUuid,
             mappingSet,
             _schoolResourceInfo,
             authorizationStrategyEvaluators:
             [
-                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
             ],
-            namespacePrefixes: ["uri://ed-fi.org/"]
+            claimEducationOrganizationIds: [255901L],
+            ownershipTokenIds: [11]
         );
+        var hydratedPage = CreateHydratedPage(
+            readPlan,
+            CreateDocumentMetadataRow(documentUuid, 345L, 91L),
+            (345L, "Lincoln High")
+        );
+        var order = 0;
+        var ownershipOrder = 0;
+        var relationshipOrder = 0;
+        var hydrationOrder = 0;
 
         A.CallTo(() =>
                 _readTargetLookupService.ResolveForGetByIdAsync(
@@ -3038,27 +3415,343 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
                     _readTargetContentLastModifiedAt
                 )
             );
+        A.CallTo(() =>
+                _ownershipAuthorizationExecutor.ExecuteAsync(
+                    A<OwnershipAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(() => ownershipOrder = ++order)
+            .Returns(
+                Task.FromResult<OwnershipAuthorizationExecutionResult>(
+                    new OwnershipAuthorizationExecutionResult.Authorized()
+                )
+            );
+        A.CallTo(() =>
+                _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
+                    A<SingleRecordRelationshipAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(() => relationshipOrder = ++order)
+            .Returns(
+                Task.FromResult<SingleRecordRelationshipAuthorizationExecutionResult>(
+                    new SingleRecordRelationshipAuthorizationExecutionResult.Authorized(91L)
+                )
+            );
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    readPlan,
+                    new PageKeysetSpec.Single(345L),
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(() => hydrationOrder = ++order)
+            .Returns(hydratedPage);
+        A.CallTo(() => _readMaterializer.Materialize(A<RelationalReadMaterializationRequest>._))
+            .Returns(JsonNode.Parse("""{"id":"authorized"}""")!);
 
         var result = await _sut.GetDocumentById(getRequest);
 
-        var failure = result.Should().BeOfType<GetResult.GetFailureNotImplemented>().Subject;
-        failure.FailureMessage.Should().Contain(AuthorizationStrategyNameConstants.OwnershipBased);
+        result.Should().BeOfType<GetResult.GetSuccess>();
+        ownershipOrder.Should().Be(1);
+        relationshipOrder.Should().Be(2);
+        hydrationOrder.Should().Be(3);
+    }
+
+    /// <summary>
+    /// Ownership joins the stored AND-filter read boundary. It reads the stored row and reports no content
+    /// version, so its decision is only valid for the version that drove the attempt; when the relationship
+    /// boundary then observes a different version, a mutation interleaved and the whole authorization
+    /// sequence must re-run rather than serve a representation ownership never validated.
+    /// </summary>
+    /// <remarks>
+    /// Ownership is deliberately the only stored AND filter configured here. With no namespace or custom
+    /// view check present, the anchoring step runs only because ownership is counted among them, so this
+    /// test fails if ownership is ever dropped from that condition.
+    /// </remarks>
+    [Test]
+    public async Task It_retries_when_ownership_authorized_a_version_the_relationship_boundary_did_not_observe()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-cccccccccc20"));
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            _schoolResourceInfo,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ],
+            claimEducationOrganizationIds: [255901L],
+            ownershipTokenIds: [11]
+        );
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsNextFromSequence(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                ),
+                new RelationalReadTargetLookupResult.NotFound()
+            );
+        GivenOwnershipAuthorizationReturns(new OwnershipAuthorizationExecutionResult.Authorized());
+        // The relationship boundary observed content version 92 while the ownership check authorized the
+        // row at 91, so the two decisions describe different rows.
+        A.CallTo(() =>
+                _singleRecordRelationshipAuthorizationExecutor.ExecuteAsync(
+                    A<SingleRecordRelationshipAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(
+                Task.FromResult<SingleRecordRelationshipAuthorizationExecutionResult>(
+                    new SingleRecordRelationshipAuthorizationExecutionResult.Authorized(92L)
+                )
+            );
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        // The retry re-resolves the target, which is gone, so the read ends as a 404 rather than serving a
+        // representation no check validated.
+        result.Should().BeOfType<GetResult.GetFailureNotExists>();
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedTwiceExactly();
+        AssertGetByIdHydrationWasNotAttempted();
+    }
+
+    /// <summary>
+    /// The same denial through the read-acceleration entry point. Both GET-by-id paths run their own
+    /// preflight and their own per-attempt authorization, so a check wired into one is not wired into the
+    /// other by construction.
+    /// </summary>
+    [Test]
+    public async Task It_denies_a_read_acceleration_get_by_id_on_an_ownership_token_mismatch()
+    {
+        var readAccelerationCoordinator = new RecordingReadAccelerationCoordinator();
+        UseReadAccelerationCoordinator(readAccelerationCoordinator);
+        var documentUuid = new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-cccccccccc18"));
+        var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
+        var getRequest = GivenAResolvableOwnershipGetByIdTarget(
+            documentUuid,
+            mappingSet,
+            [CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased)]
+        );
+        GivenOwnershipAuthorizationReturns(
+            new OwnershipAuthorizationExecutionResult.NotAuthorized(
+                CreateOwnershipFailure(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch, 0)
+            )
+        );
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        readAccelerationCoordinator.GetByIdAttempts.Should().Be(1);
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch);
+        AssertGetByIdHydrationWasNotAttempted();
+    }
+
+    /// <summary>
+    /// The stored ownership token is null, which is auth.md 2.14 rather than 2.13: the document can never be
+    /// reached by any client, so the response type differs even though both are a 403.
+    /// </summary>
+    [Test]
+    public async Task It_returns_the_uninitialized_ownership_failure_for_a_get_by_id_stored_null_token()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-cccccccccc14"));
+        var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
+        var getRequest = GivenAResolvableOwnershipGetByIdTarget(
+            documentUuid,
+            mappingSet,
+            [CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased)]
+        );
+        GivenOwnershipAuthorizationReturns(
+            new OwnershipAuthorizationExecutionResult.NotAuthorized(
+                CreateOwnershipFailure(OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized, 0)
+            )
+        );
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized);
+        AssertGetByIdHydrationWasNotAttempted();
+    }
+
+    /// <summary>
+    /// An ownership AUTH1 payload the request's plan cannot account for is a security-configuration 500, not
+    /// a denial attributed to a strategy that did not deny the request.
+    /// </summary>
+    [Test]
+    public async Task It_returns_a_get_by_id_security_configuration_failure_for_an_unattributable_ownership_payload()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-cccccccccc15"));
+        var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
+        var getRequest = GivenAResolvableOwnershipGetByIdTarget(
+            documentUuid,
+            mappingSet,
+            [CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased)]
+        );
+        GivenOwnershipAuthorizationReturns(
+            new OwnershipAuthorizationExecutionResult.InvalidAuthorizationFailure(
+                OwnershipAuthorizationSecurityConfigurationMessages.InvalidAuthorizationMetadata,
+                AuthorizationSecurityConfigurationDiagnostics.ForOwnershipAuthorizationAuth1(
+                    AuthorizationSecurityConfigurationDiagnostics.OwnershipAuth1PayloadMappingFailed,
+                    0
+                )
+            )
+        );
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        var failure = result.Should().BeOfType<GetResult.GetFailureSecurityConfiguration>().Subject;
+        failure
+            .Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(OwnershipAuthorizationSecurityConfigurationMessages.InvalidAuthorizationMetadata);
+        failure
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.ProviderOrPlannerFailureKind.Should()
+            .Be(AuthorizationSecurityConfigurationDiagnostics.OwnershipAuth1PayloadMappingFailed);
+        AssertGetByIdHydrationWasNotAttempted();
+    }
+
+    /// <summary>
+    /// A target deleted between the unlocked lookup and the ownership check must surface as a 404 on
+    /// re-resolution, never as an ownership denial for a row that no longer exists.
+    /// </summary>
+    [Test]
+    public async Task It_retries_and_returns_not_found_when_the_get_by_id_ownership_target_is_stale()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-cccccccccc16"));
+        var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
+        var getRequest = CreateGetRequest(
+            documentUuid,
+            mappingSet,
+            _schoolResourceInfo,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ],
+            namespacePrefixes: ["uri://ed-fi.org/"],
+            ownershipTokenIds: [11]
+        );
+
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .ReturnsNextFromSequence(
+                new RelationalReadTargetLookupResult.ExistingDocument(
+                    345L,
+                    documentUuid,
+                    91L,
+                    _readTargetContentLastModifiedAt
+                ),
+                new RelationalReadTargetLookupResult.NotFound()
+            );
+        GivenOwnershipAuthorizationReturns(new OwnershipAuthorizationExecutionResult.StaleTarget());
+
+        var result = await _sut.GetDocumentById(getRequest);
+
+        result.Should().BeOfType<GetResult.GetFailureNotExists>();
+        A.CallTo(() =>
+                _readTargetLookupService.ResolveForGetByIdAsync(
+                    mappingSet,
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    documentUuid,
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedTwiceExactly();
+        AssertGetByIdHydrationWasNotAttempted();
+    }
+
+    /// <summary>
+    /// The ownership check receives the resolved target and the caller's tokens, and its request carries the
+    /// planned configured index so a denial can be attributed to the right configured position.
+    /// </summary>
+    [Test]
+    public async Task It_passes_the_resolved_target_and_the_caller_tokens_to_the_get_by_id_ownership_check()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("dddddddd-1111-2222-3333-cccccccccc17"));
+        var mappingSet = CreateNamespaceAuthorizationMappingSet(_schoolResourceInfo);
+        var getRequest = GivenAResolvableOwnershipGetByIdTarget(
+            documentUuid,
+            mappingSet,
+            [
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.NamespaceBased),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ],
+            ownershipTokenIds: [7, 3, 3]
+        );
+        OwnershipAuthorizationExecutionRequest capturedRequest = null!;
+
         A.CallTo(() =>
                 _namespaceAuthorizationExecutor.ExecuteAsync(
                     A<NamespaceAuthorizationExecutionRequest>._,
                     A<CancellationToken>._
                 )
             )
-            .MustNotHaveHappened();
+            .Returns(
+                Task.FromResult<NamespaceAuthorizationExecutionResult>(
+                    new NamespaceAuthorizationExecutionResult.Authorized()
+                )
+            );
         A.CallTo(() =>
-                _documentHydrator.HydrateAsync(
-                    A<ResourceReadPlan>._,
-                    A<PageKeysetSpec>._,
-                    A<HydrationExecutionOptions>._,
+                _ownershipAuthorizationExecutor.ExecuteAsync(
+                    A<OwnershipAuthorizationExecutionRequest>._,
                     A<CancellationToken>._
                 )
             )
-            .MustNotHaveHappened();
+            .Invokes(call => capturedRequest = call.GetArgument<OwnershipAuthorizationExecutionRequest>(0)!)
+            .Returns(
+                Task.FromResult<OwnershipAuthorizationExecutionResult>(
+                    new OwnershipAuthorizationExecutionResult.NotAuthorized(
+                        CreateOwnershipFailure(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch, 1)
+                    )
+                )
+            );
+
+        await _sut.GetDocumentById(getRequest);
+
+        capturedRequest.MappingSet.Should().BeSameAs(mappingSet);
+        capturedRequest.DocumentId.Should().Be(345L);
+        capturedRequest.Check.RawConfiguredIndex.Should().Be(1);
+        // Deduplicated and ascending, so the emitted parameter order is deterministic.
+        capturedRequest.OwnershipTokenParameterization.TokensInOrder.Should().Equal((short)3, (short)7);
     }
 
     [Test]
@@ -4665,6 +5358,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -4837,6 +5531,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -4911,6 +5606,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -6412,8 +7108,9 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     public async Task It_fails_closed_when_a_custom_view_is_composed_with_OwnershipBased()
     {
         // DMS-1410 owns GET-many OwnershipBased support. Even alongside a resolved custom view and a
-        // relationship strategy, GET-many must fail closed rather than emit an ownership filter:
-        // DMS-1060 has not stamped CreatedByOwnershipTokenId yet, so a filter would silently drop every row.
+        // relationship strategy, GET-many must fail closed rather than emit an ownership filter: DMS-1060
+        // ships the stamping and the single-record check, not the page filter, which is a different shape of
+        // query and not this ticket's to emit.
         var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
         var queryRequest = CreateQueryRequest(
             mappingSet,
@@ -9038,8 +9735,131 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         _capturedExecutorRequest.TraceId.Should().Be(traceId);
     }
 
+    /// <summary>
+    /// A POST forwards the API client's creator ownership token to the executor, which stamps it onto
+    /// <c>dms.Document</c> if the write resolves to a create.
+    /// </summary>
     [Test]
-    public async Task It_returns_post_not_implemented_for_known_but_not_enabled_relationship_authorization_before_target_lookup()
+    public async Task It_forwards_the_creator_ownership_token_for_a_post()
+    {
+        var upsertRequest = CreateOwnershipStampingUpsertRequest(
+            new RelationalAuthorizationContext([], [], creatorOwnershipTokenId: 42, ownershipTokenIds: [])
+        );
+
+        await _sut.UpsertDocument(upsertRequest);
+
+        _capturedExecutorRequest.CreatorOwnershipTokenId.Should().Be((short)42);
+    }
+
+    /// <summary>
+    /// A client with no creator token stamps null rather than failing: an unstamped document is a valid
+    /// outcome, and one that ownership authorization can never later grant access to.
+    /// </summary>
+    [Test]
+    public async Task It_forwards_a_null_creator_ownership_token_when_the_client_has_none()
+    {
+        var upsertRequest = CreateOwnershipStampingUpsertRequest(
+            new RelationalAuthorizationContext([], [], creatorOwnershipTokenId: null, ownershipTokenIds: [7])
+        );
+
+        await _sut.UpsertDocument(upsertRequest);
+
+        _capturedExecutorRequest.CreatorOwnershipTokenId.Should().BeNull();
+    }
+
+    /// <summary>
+    /// Forwarded regardless of the resource's configured strategies. Stamping is unconditional, which is what
+    /// lets a claim set later enforce ownership over data written before it was configured.
+    /// </summary>
+    [Test]
+    public async Task It_forwards_the_creator_ownership_token_for_a_post_with_no_ownership_strategy_configured()
+    {
+        var upsertRequest = CreateOwnershipStampingUpsertRequest(
+            new RelationalAuthorizationContext([], [], creatorOwnershipTokenId: 9, ownershipTokenIds: []),
+            [
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                ),
+            ]
+        );
+
+        await _sut.UpsertDocument(upsertRequest);
+
+        _capturedExecutorRequest.CreatorOwnershipTokenId.Should().Be((short)9);
+    }
+
+    /// <summary>
+    /// A PUT never creates, so it forwards no creator token at all. Combined with the write path emitting no
+    /// statement that mentions the column, this is what makes "a PUT cannot change the stored ownership
+    /// token" true at the source rather than only downstream.
+    /// </summary>
+    [Test]
+    public async Task It_forwards_no_creator_ownership_token_for_a_put()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
+
+        // The shared setup scripts an upsert result, which the PUT projector rejects; script an update one
+        // so the request reaches the executor and its captured input can be inspected.
+        A.CallTo(() => _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorInput>._, A<CancellationToken>._))
+            .Invokes(call =>
+            {
+                _capturedExecutorRequest = call.GetArgument<RelationalWriteExecutorInput>(0)!;
+                _capturedExecutorRequests.Add(_capturedExecutorRequest);
+            })
+            .Returns(
+                Task.FromResult<RelationalWriteExecutorResult>(
+                    new RelationalWriteExecutorResult.Update(
+                        new UpdateResult.UpdateSuccess(documentUuid, ComposedWriteResultEtag)
+                    )
+                )
+            );
+
+        var updateRequest = A.Fake<IUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet).Returns(mappingSet);
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody("Roosevelt High"));
+        A.CallTo(() => updateRequest.TraceId).Returns(new TraceId("put-ownership-stamp"));
+        A.CallTo(() => updateRequest.AuthorizationContext)
+            .Returns(
+                new RelationalAuthorizationContext([], [], creatorOwnershipTokenId: 42, ownershipTokenIds: [])
+            );
+
+        await _sut.UpdateDocumentById(updateRequest);
+
+        _capturedExecutorRequest.OperationKind.Should().Be(RelationalWriteOperationKind.Put);
+        _capturedExecutorRequest.CreatorOwnershipTokenId.Should().BeNull();
+    }
+
+    private static IUpsertRequest CreateOwnershipStampingUpsertRequest(
+        RelationalAuthorizationContext authorizationContext,
+        AuthorizationStrategyEvaluator[]? authorizationStrategyEvaluators = null
+    )
+    {
+        var mappingSet = CreateSupportedMappingSet(_schoolResourceInfo);
+        var upsertRequest = A.Fake<IUpsertRequest>();
+
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet).Returns(mappingSet);
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Roosevelt High"));
+        A.CallTo(() => upsertRequest.TraceId).Returns(new TraceId("post-ownership-stamp"));
+        A.CallTo(() => upsertRequest.AuthorizationContext).Returns(authorizationContext);
+
+        if (authorizationStrategyEvaluators is not null)
+        {
+            A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
+                .Returns(authorizationStrategyEvaluators);
+        }
+
+        return upsertRequest;
+    }
+
+    [Test]
+    public async Task It_plans_post_ownership_alongside_a_supported_relationship_strategy()
     {
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var requestBody = CreateRequestBody("Roosevelt High");
@@ -9063,19 +9883,180 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
             ]);
         A.CallTo(() => upsertRequest.AuthorizationContext)
-            .Returns(new RelationalAuthorizationContext([255901]));
+            .Returns(new RelationalAuthorizationContext([255901], [], null, [11]));
+
+        await _sut.UpsertDocument(upsertRequest);
+
+        // OwnershipBased is the only strategy in the relationship classifier's known-but-not-enabled set, so
+        // once Update is enforced this composition plans instead of returning a 501, and the executor
+        // receives the planned check with the caller's tokens.
+        var executorInput = _capturedExecutorRequests.Should().ContainSingle().Subject;
+        executorInput.StoredOwnershipAuthorization.Should().NotBeNull();
+        var ownership = executorInput.StoredOwnershipAuthorization!;
+        ownership.Check.RawConfiguredIndex.Should().Be(1);
+        ownership.OwnershipTokenParameterization.TokensInOrder.Should().Equal((short)11);
+    }
+
+    /// <summary>
+    /// Ownership is the last AND filter ahead of the relationship OR group, so a relationship NoClaims
+    /// cannot be reported at preflight while an ownership check is still planned. A POST resolving to
+    /// upsert-as-update has a stored token nothing has read yet, and short-circuiting here would report the
+    /// relationship denial in place of the ownership one auth.md gives precedence to.
+    /// </summary>
+    [Test]
+    public async Task It_defers_a_post_relationship_no_claims_denial_when_an_ownership_check_is_still_planned()
+    {
+        var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet)
+            .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Post no claims with ownership"));
+        // Empty claim EducationOrganizationIds make the relationship strategy resolve to NoClaims; the
+        // ownership tokens keep an ownership check planned alongside it.
+        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ]);
+        A.CallTo(() => upsertRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([], [], null, [11]));
+
+        await _sut.UpsertDocument(upsertRequest);
+
+        var executorInput = _capturedExecutorRequests.Should().ContainSingle().Subject;
+        executorInput.StoredOwnershipAuthorization.Should().NotBeNull();
+        executorInput
+            .StoredOwnershipAuthorization!.OwnershipTokenParameterization.TokensInOrder.Should()
+            .Equal((short)11);
+        executorInput
+            .ProposedRelationshipAuthorization.Should()
+            .BeOfType<RelationshipAuthorizationResult.NoClaims>();
+    }
+
+    /// <summary>
+    /// A POST cannot know at preflight whether it will create or update, and a create never parameterizes the
+    /// ownership-token list, so an over-limit list must not stop it before the session opens. The planner's
+    /// cap is deferred: the executor receives no ownership parameterization at all, the creator token for the
+    /// create branch, and the security-configuration failure it owes only if the target proves to exist.
+    /// </summary>
+    [Test]
+    public async Task It_defers_a_post_ownership_token_cap_to_target_resolution()
+    {
+        var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet)
+            .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Post over the ownership cap"));
+        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ]);
+        A.CallTo(() => upsertRequest.AuthorizationContext)
+            .Returns(
+                new RelationalAuthorizationContext(
+                    [],
+                    [],
+                    creatorOwnershipTokenId: 42,
+                    ownershipTokenIds: OverCapOwnershipTokenIds()
+                )
+            );
+
+        await _sut.UpsertDocument(upsertRequest);
+
+        var executorInput = _capturedExecutorRequests.Should().ContainSingle().Subject;
+        executorInput.StoredOwnershipAuthorization.Should().BeNull();
+        executorInput.CreatorOwnershipTokenId.Should().Be((short)42);
+        var deferredFailure = executorInput
+            .DeferredStoredOwnershipFailureResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>()
+            .Subject;
+        // The configured count is reportable; a token value never is.
+        deferredFailure.Errors.Should().ContainSingle().Which.Should().Contain("2,000");
+        deferredFailure
+            .Diagnostics.Should()
+            .ContainSingle()
+            .Which.ProviderOrPlannerFailureKind.Should()
+            .Be(AuthorizationSecurityConfigurationDiagnostics.OwnershipTokenCapExceeded);
+    }
+
+    /// <summary>
+    /// Intentional precedence for the one POST double failure the deferral changes. An unrecognized strategy
+    /// is a relationship configuration failure the classifier reports at preflight; with the cap deferred the
+    /// planner has no cap to rank ahead of it, so that 500 is reported before the target is resolved and the
+    /// executor is never reached. A create would never have reached the cap and the planner cannot know the
+    /// branch, so unlike GET-by-id, PUT and DELETE — where the cap terminal displaces this failure — a POST
+    /// reports the configuration failure it can already prove.
+    /// </summary>
+    [Test]
+    public async Task It_reports_a_post_relationship_configuration_failure_ahead_of_a_deferred_ownership_token_cap()
+    {
+        var upsertRequest = A.Fake<IUpsertRequest>();
+        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => upsertRequest.MappingSet)
+            .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Post unknown strategy over cap"));
+        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator("AnUnknownAuthorizationStrategy"),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ]);
+        A.CallTo(() => upsertRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([], [], null, OverCapOwnershipTokenIds()));
 
         var result = await _sut.UpsertDocument(upsertRequest);
 
-        var failure = result.Should().BeOfType<UpsertResult.UpsertFailureNotImplemented>().Subject;
-        failure.Reason.Should().Be(UpsertFailureNotImplementedReason.StrategyNotEnabled);
-        failure.FailureMessage.Should().Contain(AuthorizationStrategyNameConstants.OwnershipBased);
-        AssertSupportedRelationshipStrategyNames(failure.FailureMessage);
+        var failure = result.Should().BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>().Subject;
+        failure.Errors.Should().NotContain(error => error.Contains("2,000"));
+        failure
+            .Diagnostics.Should()
+            .NotContain(diagnostic =>
+                diagnostic.ProviderOrPlannerFailureKind
+                == AuthorizationSecurityConfigurationDiagnostics.OwnershipTokenCapExceeded
+            );
         _capturedExecutorRequests.Should().BeEmpty();
-        A.CallTo(() => _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorInput>._, A<CancellationToken>._))
-            .MustNotHaveHappened();
-        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
-            .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// The deferral is POST's alone. A PUT's target must already exist, so its ownership check is never
+    /// vacuous, and the cap stays a planner terminal reported before the executor is reached.
+    /// </summary>
+    [Test]
+    public async Task It_keeps_the_put_ownership_token_cap_as_a_preflight_terminal()
+    {
+        var updateRequest = A.Fake<IUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet)
+            .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody("Put over the ownership cap"));
+        A.CallTo(() => updateRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ]);
+        A.CallTo(() => updateRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([], [], null, OverCapOwnershipTokenIds()));
+
+        var result = await _sut.UpdateDocumentById(updateRequest);
+
+        result
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureSecurityConfiguration>()
+            .Which.Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("2,000");
+        _capturedExecutorRequests.Should().BeEmpty();
     }
 
     [Test]
@@ -9223,40 +10204,14 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_validates_a_post_custom_view_when_an_unsupported_strategy_stops_before_planning()
+    public async Task It_validates_a_put_custom_view_when_an_unknown_strategy_stops_before_planning()
     {
-        // OwnershipBased makes the strategy-level outcome StillUnsupported, which enters the relationship
-        // bucket before any custom view has been planned. The view still AND-composes ahead of that 501, so
-        // the bucket has to plan and validate it rather than reporting the terminal over an unchecked view.
-        var capturedValidationSql = GivenCustomViewValidationIsRecorded();
-        var upsertRequest = A.Fake<IUpsertRequest>();
-        A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
-        A.CallTo(() => upsertRequest.MappingSet)
-            .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
-        A.CallTo(() => upsertRequest.DocumentInfo).Returns(CreateDocumentInfo());
-        A.CallTo(() => upsertRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
-        A.CallTo(() => upsertRequest.EdfiDoc).Returns(CreateRequestBody("Post unsupported strategy"));
-        A.CallTo(() => upsertRequest.AuthorizationStrategyEvaluators)
-            .Returns([
-                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
-                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
-            ]);
-        A.CallTo(() => upsertRequest.AuthorizationContext)
-            .Returns(new RelationalAuthorizationContext([255901]));
-
-        var result = await _sut.UpsertDocument(upsertRequest);
-
-        result.Should().BeOfType<UpsertResult.UpsertFailureNotImplemented>();
-        capturedValidationSql
-            .Should()
-            .ContainSingle()
-            .Which.Should()
-            .Contain("SchoolWithCustomAuthorization");
-    }
-
-    [Test]
-    public async Task It_validates_a_put_custom_view_when_an_unsupported_strategy_stops_before_planning()
-    {
+        // The PUT counterpart of the POST unknown-strategy case above. An unknown strategy makes the
+        // strategy-level outcome SecurityConfigurationError, which enters the relationship bucket with
+        // nothing planned, and the view AND-composes ahead of that 500 so the bucket owes its validation.
+        // OwnershipBased used to give this test its own StillUnsupported trigger; it is enforced for every
+        // single-record operation now, so an unknown strategy is the remaining way to reach the bucket
+        // unplanned.
         var capturedValidationSql = GivenCustomViewValidationIsRecorded();
         var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
@@ -9264,18 +10219,18 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
         A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
         A.CallTo(() => updateRequest.DocumentUuid).Returns(new DocumentUuid(Guid.NewGuid()));
-        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody("Put unsupported strategy"));
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody("Put unknown strategy"));
         A.CallTo(() => updateRequest.AuthorizationStrategyEvaluators)
             .Returns([
                 CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
-                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+                CreateAuthorizationStrategyEvaluator("AnUnknownAuthorizationStrategy"),
             ]);
         A.CallTo(() => updateRequest.AuthorizationContext)
             .Returns(new RelationalAuthorizationContext([255901]));
 
         var result = await _sut.UpdateDocumentById(updateRequest);
 
-        result.Should().BeOfType<UpdateResult.UpdateFailureNotImplemented>();
+        result.Should().BeOfType<UpdateResult.UpdateFailureSecurityConfiguration>();
         capturedValidationSql
             .Should()
             .ContainSingle()
@@ -9447,7 +10402,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_returns_post_security_configuration_failure_before_known_but_not_enabled_result()
+    public async Task It_returns_post_security_configuration_failure_for_an_unknown_strategy()
     {
         var upsertRequest = A.Fake<IUpsertRequest>();
         A.CallTo(() => upsertRequest.ResourceInfo).Returns(_schoolResourceInfo);
@@ -9466,8 +10421,14 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.UpsertDocument(upsertRequest);
 
         var failure = result.Should().BeOfType<UpsertResult.UpsertFailureSecurityConfiguration>().Subject;
-        failure.Errors.Should().Contain(error => error.Contains("Relational POST authorization metadata"));
-        failure.Errors.Should().Contain(error => error.Contains("CustomAuthorizationStrategy"));
+        // OwnershipBased no longer contributes a known-but-not-enabled failure to this bucket — it is
+        // enforced for every single-record operation — so the unknown strategy's own 500 is what remains.
+        failure
+            .Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("Could not find authorization strategy implementations")
+            .And.Contain("CustomAuthorizationStrategy");
         _capturedExecutorRequests.Should().BeEmpty();
         A.CallTo(() => _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorInput>._, A<CancellationToken>._))
             .MustNotHaveHappened();
@@ -10335,8 +11296,18 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_returns_put_not_implemented_for_known_but_not_enabled_relationship_authorization_before_target_lookup()
+    public async Task It_plans_put_ownership_alongside_a_supported_relationship_strategy()
     {
+        // The shared fake write executor answers with an upsert result, which the PUT projector rejects, so
+        // this test scripts an update result the way the other PUT cases in this fixture do.
+        GivenWriteExecutorCaptures(
+            new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateSuccess(
+                    new DocumentUuid(Guid.Parse("bbbbbbbb-1111-2222-3333-aaaaaaaaaa11")),
+                    ComposedWriteResultEtag
+                )
+            )
+        );
         var documentUuid = new DocumentUuid(Guid.NewGuid());
         var requestBody = CreateRequestBody("Roosevelt High");
         var documentInfo = CreateDocumentInfo();
@@ -10359,21 +11330,67 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
             ]);
         A.CallTo(() => updateRequest.AuthorizationContext)
-            .Returns(new RelationalAuthorizationContext([255901]));
+            .Returns(new RelationalAuthorizationContext([255901], [], null, [11]));
 
-        var result = await _sut.UpdateDocumentById(updateRequest);
+        await _sut.UpdateDocumentById(updateRequest);
 
-        var failure = result.Should().BeOfType<UpdateResult.UpdateFailureNotImplemented>().Subject;
-        failure.Reason.Should().Be(UpdateFailureNotImplementedReason.StrategyNotEnabled);
-        failure.FailureMessage.Should().Contain(AuthorizationStrategyNameConstants.OwnershipBased);
-        AssertSupportedRelationshipStrategyNames(failure.FailureMessage);
-        _capturedExecutorRequests.Should().BeEmpty();
-        A.CallTo(() => _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorInput>._, A<CancellationToken>._))
-            .MustNotHaveHappened();
+        // The PUT twin of the POST case above: enforced, so planned rather than 501, and the executor
+        // receives the planned check.
+        var executorInput = _capturedExecutorRequests.Should().ContainSingle().Subject;
+        executorInput.StoredOwnershipAuthorization.Should().NotBeNull();
+        var ownership = executorInput.StoredOwnershipAuthorization!;
+        ownership.Check.RawConfiguredIndex.Should().Be(1);
+        ownership.OwnershipTokenParameterization.TokensInOrder.Should().Equal((short)11);
+    }
+
+    /// <summary>
+    /// The PUT counterpart of the POST deferral, and the asymmetry is deliberate. A stored-slot NoClaims
+    /// routes the write down the ordered-segments path, where the ownership segment already runs ahead of
+    /// the stored relationship boundary — so the ownership denial wins from the stored slot, without the
+    /// merge the proposed slot would run before reporting it. What has to hold is that the ownership plan
+    /// still reaches the executor.
+    /// </summary>
+    [Test]
+    public async Task It_keeps_a_put_relationship_no_claims_denial_in_the_stored_slot_behind_a_planned_ownership_check()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-1111-2222-3333-aaaaaaaaaa12"));
+        GivenWriteExecutorCaptures(
+            new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateSuccess(documentUuid, ComposedWriteResultEtag)
+            )
+        );
+        var updateRequest = A.Fake<IUpdateRequest>();
+        A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
+        A.CallTo(() => updateRequest.MappingSet)
+            .Returns(CreateWriteAuthorizationAwareMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+        A.CallTo(() => updateRequest.DocumentInfo).Returns(CreateDocumentInfo());
+        A.CallTo(() => updateRequest.DocumentUuid).Returns(documentUuid);
+        A.CallTo(() => updateRequest.EdfiDoc).Returns(CreateRequestBody("Put no claims with ownership"));
+        A.CallTo(() => updateRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly
+                ),
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ]);
+        A.CallTo(() => updateRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([], [], null, [11]));
+
+        await _sut.UpdateDocumentById(updateRequest);
+
+        var putExecutorInput = _capturedExecutorRequests.Should().ContainSingle().Subject;
+        putExecutorInput
+            .StoredRelationshipAuthorization.Should()
+            .BeOfType<RelationshipAuthorizationResult.NoClaims>();
+        putExecutorInput.ProposedRelationshipAuthorization.Should().BeNull();
+        putExecutorInput.StoredOwnershipAuthorization.Should().NotBeNull();
+        putExecutorInput
+            .StoredOwnershipAuthorization!.OwnershipTokenParameterization.TokensInOrder.Should()
+            .Equal((short)11);
     }
 
     [Test]
-    public async Task It_returns_put_security_configuration_failure_before_known_but_not_enabled_result()
+    public async Task It_returns_put_security_configuration_failure_for_an_unknown_strategy()
     {
         var updateRequest = A.Fake<IUpdateRequest>();
         A.CallTo(() => updateRequest.ResourceInfo).Returns(_schoolResourceInfo);
@@ -10392,8 +11409,14 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         var result = await _sut.UpdateDocumentById(updateRequest);
 
         var failure = result.Should().BeOfType<UpdateResult.UpdateFailureSecurityConfiguration>().Subject;
-        failure.Errors.Should().Contain(error => error.Contains("Relational PUT authorization metadata"));
-        failure.Errors.Should().Contain(error => error.Contains("CustomAuthorizationStrategy"));
+        // OwnershipBased no longer contributes a known-but-not-enabled failure to this bucket — it is
+        // enforced for every single-record operation — so the unknown strategy's own 500 is what remains.
+        failure
+            .Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("Could not find authorization strategy implementations")
+            .And.Contain("CustomAuthorizationStrategy");
         _capturedExecutorRequests.Should().BeEmpty();
         A.CallTo(() => _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorInput>._, A<CancellationToken>._))
             .MustNotHaveHappened();
@@ -11190,6 +12213,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -11247,6 +12271,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -11289,6 +12314,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -11346,6 +12372,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -11402,6 +12429,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -11468,6 +12496,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -11569,6 +12598,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -11632,6 +12662,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -11672,6 +12703,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             _singleRecordRelationshipAuthorizationExecutor,
             _namespaceAuthorizationExecutor,
             _customViewAuthorizationExecutor,
+            _ownershipAuthorizationExecutor,
             _commandExecutor,
             readAccelerationCoordinator: PassthroughDocumentCacheReadAccelerationCoordinator.Instance
         );
@@ -12110,10 +13142,23 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     [Test]
-    public async Task It_returns_not_implemented_before_delete_target_lookup_when_authorization_includes_a_still_unsupported_strategy()
+    public async Task It_denies_a_delete_on_an_ownership_token_mismatch_and_rolls_back()
     {
+        // OwnershipBased is the only strategy in the relationship classifier's known-but-not-enabled set, so
+        // once Delete is enforced this composition plans instead of returning a 501. Ownership is an AND
+        // filter running before the relationship OR group, so its denial ends the delete — and the deletes
+        // rode the same aborted command, so the row survives the rollback.
         var documentUuid = new DocumentUuid(Guid.NewGuid());
-        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+        var mappingSet = AsMssql(CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+        ConfigureResolvedDocument(documentId: 345L, documentUuid);
+        ConfigureDeleteAuth1Failure(
+            OwnershipAuthorizationAuth1FailurePayloadCodec.Encode(
+                new OwnershipAuthorizationAuth1FailurePayload(
+                    1,
+                    OwnershipAuthorizationAuth1FailureKind.OwnershipTokenMismatch
+                )
+            )
+        );
 
         var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet, documentUuid: documentUuid);
         A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
@@ -12124,19 +13169,118 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
                 CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
             ]);
         A.CallTo(() => deleteRequest.AuthorizationContext)
-            .Returns(new RelationalAuthorizationContext([255901L]));
+            .Returns(new RelationalAuthorizationContext([255901L], [], null, [11]));
 
         var result = await _sut.DeleteDocumentById(deleteRequest);
 
-        result.Should().BeOfType<DeleteResult.DeleteFailureNotImplemented>();
-        var failure = result.As<DeleteResult.DeleteFailureNotImplemented>();
-        failure.FailureMessage.Should().Contain(AuthorizationStrategyNameConstants.OwnershipBased);
-        AssertSupportedRelationshipStrategyNames(failure.FailureMessage);
+        var failure = result.Should().BeOfType<DeleteResult.DeleteFailureOwnershipNotAuthorized>().Subject;
+        failure
+            .OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch);
+        failure.OwnershipFailure.ConfiguredStrategyIndex.Should().Be(1);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    /// <summary>
+    /// An uninitialized stored token is auth.md 2.14 and reaches the caller as its own failure kind.
+    /// </summary>
+    [Test]
+    public async Task It_denies_a_delete_whose_stored_ownership_token_was_never_assigned()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var mappingSet = AsMssql(CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+        ConfigureResolvedDocument(documentId: 345L, documentUuid);
+        ConfigureDeleteAuth1Failure(
+            OwnershipAuthorizationAuth1FailurePayloadCodec.Encode(
+                new OwnershipAuthorizationAuth1FailurePayload(
+                    0,
+                    OwnershipAuthorizationAuth1FailureKind.StoredOwnershipTokenUninitialized
+                )
+            )
+        );
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet, documentUuid: documentUuid);
+        A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ]);
+        A.CallTo(() => deleteRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([], [], null, [11]));
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    /// <summary>
+    /// The ownership denial outranks a specific-tag If-Match mismatch. The check rides the opening command,
+    /// which the precondition comparison follows, so a caller who does not own the row learns that rather
+    /// than being told its etag is stale — which would disclose that the row changed.
+    /// </summary>
+    [Test]
+    public async Task It_reports_an_ownership_denial_over_an_if_match_mismatch()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var mappingSet = AsMssql(CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo));
+        ConfigureResolvedDocument(documentId: 345L, documentUuid);
+        ConfigureDeleteAuth1Failure(
+            OwnershipAuthorizationAuth1FailurePayloadCodec.Encode(
+                new OwnershipAuthorizationAuth1FailurePayload(
+                    0,
+                    OwnershipAuthorizationAuth1FailureKind.OwnershipTokenMismatch
+                )
+            )
+        );
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet, documentUuid: documentUuid);
+        A.CallTo(() => deleteRequest.WritePrecondition)
+            .Returns(new WritePrecondition.IfMatch("\"stale-ownership-etag\""));
+        A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ]);
+        A.CallTo(() => deleteRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([], [], null, [11]));
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureOwnershipNotAuthorized>();
+    }
+
+    /// <summary>
+    /// The ownership token cap is a planner terminal, so it is reported before the write session opens and
+    /// the target is never locked.
+    /// </summary>
+    [Test]
+    public async Task It_fails_closed_for_a_delete_with_an_over_cap_ownership_token_list()
+    {
+        var documentUuid = new DocumentUuid(Guid.NewGuid());
+        var mappingSet = CreateQuerySupportedMappingSetWithRootEdOrgSubject(_schoolResourceInfo);
+
+        var deleteRequest = CreateNonDescriptorDeleteRequest(mappingSet, documentUuid: documentUuid);
+        A.CallTo(() => deleteRequest.AuthorizationStrategyEvaluators)
+            .Returns([
+                CreateAuthorizationStrategyEvaluator(AuthorizationStrategyNameConstants.OwnershipBased),
+            ]);
+        A.CallTo(() => deleteRequest.AuthorizationContext)
+            .Returns(new RelationalAuthorizationContext([], [], null, OverCapOwnershipTokenIds()));
+
+        var result = await _sut.DeleteDocumentById(deleteRequest);
+
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureSecurityConfiguration>()
+            .Which.Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("2,000");
         _writeSessionFactory.CreateAsyncCallCount.Should().Be(0);
-        _currentEtagPreconditionChecker.CallCount.Should().Be(0);
-        A.CallTo(_commandExecutor)
-            .WithReturnType<Task<SingleRecordRelationshipAuthorizationExecutionResult>>()
-            .MustNotHaveHappened();
     }
 
     [Test]
@@ -13184,15 +14328,19 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         }
     }
 
-    private static void AssertSupportedRelationshipStrategyNames(string message)
-    {
-        foreach (
-            var expectedStrategyName in RelationshipAuthorizationStrategyCatalog.SupportedRelationshipStrategyNames
-        )
-        {
-            message.Should().Contain(expectedStrategyName);
-        }
-    }
+    /// <summary>
+    /// Asserts no ownership authorization round trip was made. While the ReadSingle enablement gate is
+    /// closed no operation plans an ownership check, so the wiring must stay inert: an unconditional call
+    /// here would be an extra command per read and, once the gate opens, a check running out of order.
+    /// </summary>
+    private void AssertOwnershipAuthorizationWasNotExecuted() =>
+        A.CallTo(() =>
+                _ownershipAuthorizationExecutor.ExecuteAsync(
+                    A<OwnershipAuthorizationExecutionRequest>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
 
     private static IGetRequest CreateGetRequest(
         DocumentUuid documentUuid,
@@ -13202,7 +14350,8 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         ReadableProfileProjectionContext? readableProfileProjectionContext = null,
         AuthorizationStrategyEvaluator[]? authorizationStrategyEvaluators = null,
         IReadOnlyList<long>? claimEducationOrganizationIds = null,
-        IReadOnlyList<string>? namespacePrefixes = null
+        IReadOnlyList<string>? namespacePrefixes = null,
+        IReadOnlyList<short>? ownershipTokenIds = null
     )
     {
         var getRequest = A.Fake<IGetRequest>();
@@ -13225,12 +14374,19 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             .Returns(
                 new RelationalAuthorizationContext(
                     claimEducationOrganizationIds ?? [],
-                    namespacePrefixes ?? []
+                    namespacePrefixes ?? [],
+                    creatorOwnershipTokenId: null,
+                    ownershipTokenIds ?? []
                 )
             );
 
         return getRequest;
     }
+
+    private static OwnershipAuthorizationFailure CreateOwnershipFailure(
+        OwnershipAuthorizationFailureKind failureKind,
+        int configuredStrategyIndex
+    ) => new(failureKind, configuredStrategyIndex, AuthorizationStrategyNameConstants.OwnershipBased);
 
     private static RelationshipAuthorizationFailure CreateRelationshipFailure() =>
         new(

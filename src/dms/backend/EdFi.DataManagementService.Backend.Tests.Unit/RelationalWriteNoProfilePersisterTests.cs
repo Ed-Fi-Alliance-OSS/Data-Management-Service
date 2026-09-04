@@ -43,6 +43,73 @@ public class Given_Relational_Write_No_Profile_Persister
     }
 
     [Test]
+    public async Task It_stamps_the_creator_ownership_token_on_the_created_document()
+    {
+        var rootPlan = CreateRootPlan();
+        var writePlan = CreateWritePlan([rootPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Post) with
+        {
+            CreatorOwnershipTokenId = 42,
+        };
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [],
+                    [CreateRow(FlattenedWriteValue.UnresolvedRootDocumentId.Instance, 255901, "Lincoln High")]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(ScalarResult: 910L),
+            new CommandResponse(),
+            new CommandResponse(ScalarResult: 77L),
+        ]);
+
+        await _sut.PersistAsync(request, mergeResult, writeSession);
+
+        writeSession.Commands[0].CommandText.Should().Contain("\"CreatedByOwnershipTokenId\"");
+        GetParameterValue(writeSession.Commands[0], "@createdByOwnershipTokenId").Should().Be((short)42);
+    }
+
+    /// <summary>
+    /// A write that resolved to an existing target must leave the stored ownership token alone. Nothing this
+    /// path issues may mention the column: that, rather than a guard, is what preserves the token across a
+    /// PUT and an upsert-as-update.
+    /// </summary>
+    [Test]
+    public async Task It_never_writes_the_ownership_column_for_an_existing_target()
+    {
+        var rootPlan = CreateRootPlan();
+        var writePlan = CreateWritePlan([rootPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put) with
+        {
+            CreatorOwnershipTokenId = 42,
+        };
+        var mergeResult = new RelationalWriteMergeResult(
+            [new RelationalWriteMergedTableState(rootPlan, [], [CreateRow(345L, 255901, "Lincoln High")])],
+            supportsGuardedNoOp: true
+        );
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(),
+            new CommandResponse(ScalarResult: 77L),
+        ]);
+
+        await _sut.PersistAsync(request, mergeResult, writeSession);
+
+        writeSession
+            .Commands.Should()
+            .OnlyContain(command =>
+                !command.CommandText.Contains("CreatedByOwnershipTokenId", StringComparison.Ordinal)
+            );
+        writeSession
+            .Commands.SelectMany(static command => command.Parameters)
+            .Should()
+            .NotContain(parameter => parameter.Name == "@createdByOwnershipTokenId");
+    }
+
+    [Test]
     public async Task It_inserts_document_root_and_root_extension_rows_for_create_requests()
     {
         var rootPlan = CreateRootPlan();
@@ -89,6 +156,9 @@ public class Given_Relational_Write_No_Profile_Persister
             .Should()
             .Be(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"));
         GetParameterValue(writeSession.Commands[0], "@resourceKeyId").Should().Be((short)1);
+        // Stamped on every create, whether or not the resource uses OwnershipBased. Null here because this
+        // request carries no creator token.
+        GetParameterValue(writeSession.Commands[0], "@createdByOwnershipTokenId").Should().BeNull();
 
         writeSession.Commands[1].CommandText.Should().Be(rootPlan.InsertSql);
         GetParameterValue(writeSession.Commands[1], "@DocumentId").Should().Be(910L);

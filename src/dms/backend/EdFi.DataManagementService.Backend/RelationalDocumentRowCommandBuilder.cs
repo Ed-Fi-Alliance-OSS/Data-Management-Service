@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Model;
 
@@ -22,39 +23,77 @@ namespace EdFi.DataManagementService.Backend;
 /// </remarks>
 internal static class RelationalDocumentRowCommandBuilder
 {
+    /// <param name="createdByOwnershipTokenId">
+    /// The API client's <c>CreatorOwnershipTokenId</c>, or <see langword="null"/> when the client has none.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// <c>CreatedByOwnershipTokenId</c> is stamped on every create, whether or not the resource is configured
+    /// with <c>OwnershipBased</c>. That is what lets a claim set later enforce ownership over data written
+    /// before it was configured, so the column list must not become conditional on configured strategies.
+    /// </para>
+    /// <para>
+    /// The column and its parameter are emitted even when the value is null, so each dialect has exactly one
+    /// statement text. Omitting the column for a null token would double the statement-text cardinality for
+    /// no benefit and cost plan reuse on both engines.
+    /// </para>
+    /// </remarks>
     public static RelationalCommand BuildInsertCommand(
         SqlDialect dialect,
         DocumentUuid documentUuid,
-        short resourceKeyId
+        short resourceKeyId,
+        short? createdByOwnershipTokenId
     )
     {
         return dialect switch
         {
             SqlDialect.Pgsql => new RelationalCommand(
                 """
-                INSERT INTO dms."Document" ("DocumentUuid", "ResourceKeyId")
-                VALUES (@documentUuid, @resourceKeyId)
+                INSERT INTO dms."Document" ("DocumentUuid", "ResourceKeyId", "CreatedByOwnershipTokenId")
+                VALUES (@documentUuid, @resourceKeyId, @createdByOwnershipTokenId)
                 RETURNING "DocumentId";
                 """,
                 [
                     new RelationalParameter("@documentUuid", documentUuid.Value),
                     new RelationalParameter("@resourceKeyId", resourceKeyId),
+                    BuildCreatedByOwnershipTokenIdParameter(createdByOwnershipTokenId),
                 ]
             ),
             SqlDialect.Mssql => new RelationalCommand(
                 """
-                INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
-                VALUES (@documentUuid, @resourceKeyId);
+                INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId], [CreatedByOwnershipTokenId])
+                VALUES (@documentUuid, @resourceKeyId, @createdByOwnershipTokenId);
                 SELECT SCOPE_IDENTITY();
                 """,
                 [
                     new RelationalParameter("@documentUuid", documentUuid.Value),
                     new RelationalParameter("@resourceKeyId", resourceKeyId),
+                    BuildCreatedByOwnershipTokenIdParameter(createdByOwnershipTokenId),
                 ]
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, null),
         };
     }
+
+    /// <summary>
+    /// The <c>CreatedByOwnershipTokenId</c> parameter, typed explicitly as <see cref="DbType.Int16"/>.
+    /// </summary>
+    /// <remarks>
+    /// The type is declared rather than left to provider inference because the value is nullable and reaches
+    /// the driver as <c>DBNull</c>, which carries no type of its own. Both providers would otherwise have to
+    /// infer a type for a null — PostgreSQL from the insert target, SQL Server by defaulting to a string type
+    /// and relying on an implicit conversion. Declaring <c>smallint</c> makes the null and non-null cases bind
+    /// identically on both engines. <c>ConfigureParameter</c> survives composite statement rewriting, so the
+    /// co-batched write path binds it the same way this one does.
+    /// </remarks>
+    private static RelationalParameter BuildCreatedByOwnershipTokenIdParameter(
+        short? createdByOwnershipTokenId
+    ) =>
+        new(
+            "@createdByOwnershipTokenId",
+            createdByOwnershipTokenId,
+            static parameter => parameter.DbType = DbType.Int16
+        );
 
     /// <summary>
     /// The scalar subquery yielding the <c>DocumentId</c> of the row whose <c>DocumentUuid</c> is bound to

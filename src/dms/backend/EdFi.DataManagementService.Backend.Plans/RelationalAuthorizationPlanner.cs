@@ -26,7 +26,50 @@ public abstract record RelationalAuthorizationPlanOutcome
         IReadOnlyList<NamespaceAuthorizationCheckSpec> NamespaceChecks,
         IReadOnlyList<ConfiguredAuthorizationStrategy> NonNamespaceConfiguredStrategies,
         IReadOnlyList<SupportedCustomViewAuthorizationStrategy> CustomViewStrategies
-    ) : RelationalAuthorizationPlanOutcome;
+    ) : RelationalAuthorizationPlanOutcome
+    {
+        /// <summary>
+        /// The planned ownership check, or <see langword="null"/> when <c>OwnershipBased</c> is not
+        /// configured or is not enforced for this operation and storage kind.
+        /// </summary>
+        /// <remarks>
+        /// An <c>init</c> property rather than a positional member so no existing construction site changes.
+        /// Singular, not a list: ownership plans exactly one check per operation, and repeated configuration
+        /// collapses to the earliest occurrence.
+        /// <para>
+        /// Null here does not mean "ownership is satisfied" — while the enablement gate withholds an
+        /// operation, a configured <c>OwnershipBased</c> stays in the non-namespace bucket and the request
+        /// never reaches a <c>Plan</c> at all, because the classifier reports it known-but-not-enabled. A
+        /// caller therefore cannot silently drop the check by ignoring this property.
+        /// </para>
+        /// </remarks>
+        public OwnershipAuthorizationCheckSpec? OwnershipCheck { get; init; }
+    }
+
+    /// <summary>
+    /// <c>OwnershipBased</c> is enforced and the client's ownership-token list reaches the defensive limit.
+    /// Maps to a 500 Security Configuration Error at planner/preflight time — no DB roundtrip is issued.
+    /// </summary>
+    /// <param name="OwnershipTokenCount">
+    /// The configured token count, as supplied and before deduplication. Reported so an operator can see
+    /// what to reduce; no token value is ever disclosed.
+    /// </param>
+    /// <param name="StrategyName">Always <c>OwnershipBased</c>.</param>
+    /// <remarks>
+    /// Ranked after both namespace terminals and ahead of every relationship terminal, because ownership is
+    /// an AND strategy that executes last among the AND strategies and before the relationship OR group.
+    /// <para>
+    /// <see cref="CustomViewStrategies"/> carries every resolved custom view rather than only those
+    /// configured before some index: ownership executes last among the AND strategies whatever position CMS
+    /// gave it, so every view runs ahead of this terminal and must be validated before it is reported.
+    /// </para>
+    /// </remarks>
+    public sealed record OwnershipTokenCapExceeded(int OwnershipTokenCount, string StrategyName)
+        : RelationalAuthorizationPlanOutcome
+    {
+        public IReadOnlyList<SupportedCustomViewAuthorizationStrategy> CustomViewStrategies { get; init; } =
+        [];
+    }
 
     /// <summary>
     /// <c>NamespaceBased</c> is configured but no securable element resolves to the resource's
@@ -76,6 +119,30 @@ public abstract record RelationalAuthorizationPlanOutcome
 }
 
 /// <summary>
+/// How <see cref="RelationalAuthorizationPlanner.Plan"/> treats an enforced <c>OwnershipBased</c> token list
+/// that reaches the defensive limit.
+/// </summary>
+public enum OwnershipTokenCapHandling
+{
+    /// <summary>
+    /// Report <see cref="RelationalAuthorizationPlanOutcome.OwnershipTokenCapExceeded"/> as a planner terminal.
+    /// The default, for every operation whose target is known to exist before planning — GET-by-id, PUT and
+    /// DELETE — so the failure is reported before any session opens and is ranked against the other terminals.
+    /// </summary>
+    FailAtPlanning,
+
+    /// <summary>
+    /// Plan as though the list were under the limit and leave the failure to the caller, who owes it only once
+    /// the target proves to exist. For POST: the check authorizes the stored token, so it is vacuous for a
+    /// create and the over-limit list is never parameterized for one, while a POST that resolves to an
+    /// upsert-as-update fails closed in the ownership slot — after the custom-view and namespace checks,
+    /// before the relationship check and before any DML. With the cap deferred it is not a planning fact, so
+    /// a relationship configuration failure keeps its own precedence rather than yielding to the cap.
+    /// </summary>
+    DeferToTargetResolution,
+}
+
+/// <summary>
 /// Higher-level relational authorization planner. Splits the configured strategy list into a
 /// namespace bucket and a non-namespace bucket, delegates namespace planning to
 /// <see cref="NamespaceAuthorizationPlanner"/>, and uses
@@ -94,22 +161,41 @@ public abstract record RelationalAuthorizationPlanOutcome
 /// before the <c>NamespaceBased</c> index.</item>
 /// <item><see cref="RelationalAuthorizationPlanOutcome.NoUsableRootColumn"/> — <c>NamespaceBased</c> is configured
 /// but no root-table column resolves (500).</item>
+/// <item><see cref="RelationalAuthorizationPlanOutcome.StillUnsupported"/> — descriptor storage configured with
+/// <c>OwnershipBased</c> on a single-record operation (501 NotImplemented, fail closed). The one place an
+/// unsupported strategy outranks a namespace terminal: descriptor ownership enforcement is out of this story's
+/// scope, so reporting the namespace 403 first would answer as though the caller's prefixes refused a check
+/// that was never enforced. Scoped to the operations the ownership gate would otherwise enforce, so descriptor
+/// <c>ReadMany</c> keeps its namespace terminal.</item>
 /// <item><see cref="RelationalAuthorizationPlanOutcome.NoPrefixesConfigured"/> — <c>NamespaceBased</c> is configured
 /// and the client has no namespace prefixes (403, preflight). Namespace-based is AND-combined and executes
 /// ahead of relationship OR-combined strategies, so its 403 wins over a sibling
 /// known-but-not-enabled relationship strategy.</item>
+/// <item><see cref="RelationalAuthorizationPlanOutcome.OwnershipTokenCapExceeded"/> — <c>OwnershipBased</c> is
+/// enforced and the client's ownership-token list reaches the defensive limit (500, preflight). Ranked after both
+/// namespace terminals, because Namespace-based and custom view-based execute ahead of Ownership-based among the
+/// AND strategies; and ahead of every relationship terminal, because the relationship OR group executes after all
+/// AND strategies. That last part needs no index comparison, unlike the namespace-versus-relationship case: an
+/// ownership terminal outranks a relationship one whatever position CMS gave either. It does <em>not</em> outrank a
+/// custom-view configuration failure, which the classifier reports in the same bucket as relationship failures —
+/// see <c>OwnershipCapOutranksClassifierFailure</c>. A caller that resolves its target in-session — POST — asks
+/// for <see cref="OwnershipTokenCapHandling.DeferToTargetResolution"/>, and this terminal is then never
+/// returned: the plan is handed back and the caller fails closed only once the target proves to exist.</item>
 /// <item><see cref="RelationalAuthorizationPlanOutcome.StillUnsupported"/> — the relationship classifier reports a
 /// known-but-not-enabled strategy in the non-namespace bucket (501 NotImplemented, fail closed).</item>
 /// <item><see cref="RelationalAuthorizationPlanOutcome.Plan"/> — everything else.</item>
 /// </list>
 /// <para>
-/// <c>OwnershipBased</c> is known but not enabled for every operation, <c>ReadMany</c> included:
-/// DMS-1410 owns enabling it for <c>ReadMany</c>, while DMS-1060 owns write-side
-/// <c>CreatedByOwnershipTokenId</c> stamping.
-/// Until that required work lands, DMS-1062 never promotes it to a supported AND filter, so it always reaches
-/// its fail-closed 501 rather than filtering a page against
-/// ownership context this story cannot provision. A custom view configured ahead of that terminal is still
-/// validated first, so an earlier custom-view configuration failure keeps its own response.
+/// <c>OwnershipBased</c> is split into a bucket of its own, but only where
+/// <c>EnforcesOwnershipChecks</c> says the caller executes the check. Everywhere else it stays in the
+/// non-namespace bucket, so the classifier keeps reporting it known-but-not-enabled and the request keeps its
+/// fail-closed 501 — which is what stops an unenforced ownership strategy from being silently dropped. The
+/// gate enforces every single-record operation and withholds <c>ReadMany</c>; each enforcement step added
+/// its own operation in the same commit that wired that operation's executor. <c>ReadMany</c> is withheld for the whole story (DMS-1410 owns
+/// GET-many ownership filtering, which is a page filter rather than a single-record check), and descriptor
+/// storage is withheld because descriptor ownership enforcement is out of this story's scope. A custom view
+/// configured ahead of any of these terminals is still validated first, so an earlier custom-view
+/// configuration failure keeps its own response.
 /// </para>
 /// </remarks>
 public static class RelationalAuthorizationPlanner
@@ -119,7 +205,8 @@ public static class RelationalAuthorizationPlanner
         ConcreteResourceModel resource,
         NamespaceAuthorizationOperation operation,
         IReadOnlyList<ConfiguredAuthorizationStrategy> configuredAuthorizationStrategies,
-        RelationalAuthorizationContext context
+        RelationalAuthorizationContext context,
+        OwnershipTokenCapHandling ownershipTokenCapHandling = OwnershipTokenCapHandling.FailAtPlanning
     )
     {
         ArgumentNullException.ThrowIfNull(mappingSet);
@@ -130,6 +217,20 @@ public static class RelationalAuthorizationPlanner
         var (namespaceStrategies, nonNamespaceStrategies) = SplitByNamespaceBased(
             configuredAuthorizationStrategies
         );
+
+        // Split OwnershipBased into its own bucket only where it is enforced. Where it is not, it stays in
+        // the non-namespace bucket so the classifier keeps reporting it known-but-not-enabled and the
+        // request keeps its existing 501. That is what makes an unenforced ownership strategy fail closed
+        // rather than be silently dropped, and it is why this split is conditional rather than
+        // unconditional like the namespace one.
+        var enforcesOwnershipChecks = EnforcesOwnershipChecks(operation, resource.StorageKind);
+
+        IReadOnlyList<ConfiguredAuthorizationStrategy> ownershipStrategies = [];
+
+        if (enforcesOwnershipChecks)
+        {
+            (ownershipStrategies, nonNamespaceStrategies) = SplitByOwnershipBased(nonNamespaceStrategies);
+        }
 
         // SecurityConfigurationError (500) and StillUnsupported (501) are detected by the existing
         // relationship classifier; invoke it only when the non-namespace bucket is non-empty.
@@ -148,7 +249,25 @@ public static class RelationalAuthorizationPlanner
 
         var enforcesCustomViewChecks = EnforcesCustomViewChecks(operation);
 
-        if (hasSecurityConfigurationError && !enforcesCustomViewChecks)
+        // Deferred, the cap is not a planning fact: a POST that creates never parameterizes the list, so the
+        // caller owes the failure only once the target proves to exist, and no terminal below may consult it.
+        var ownershipCapExceeded =
+            ownershipTokenCapHandling is OwnershipTokenCapHandling.FailAtPlanning
+            && ownershipStrategies.Count > 0
+            && context.OwnershipTokenIds.Count >= OwnershipTokenLimitExceededException.OwnershipTokenLimit;
+
+        // Whether the ownership terminal may displace the classifier's security-configuration failure.
+        // Evaluated once here so both relationship security-configuration arms below consult one answer.
+        var ownershipCapOutranksClassifierFailure = OwnershipCapOutranksClassifierFailure(
+            ownershipCapExceeded,
+            relationshipClassification?.SecurityConfigurationFailures ?? []
+        );
+
+        if (
+            hasSecurityConfigurationError
+            && !enforcesCustomViewChecks
+            && !ownershipCapOutranksClassifierFailure
+        )
         {
             return new RelationalAuthorizationPlanOutcome.SecurityConfigurationError(
                 nonNamespaceStrategies,
@@ -178,7 +297,10 @@ public static class RelationalAuthorizationPlanner
                         relationshipClassification!.SecurityConfigurationFailures
                     );
 
-            if (!namespaceTerminalPrecedesFailure)
+            // The ownership terminal may also outrank this failure — but only when the failure is a
+            // relationship one. A custom-view configuration failure keeps its own response, because every
+            // custom view executes ahead of ownership among the AND strategies.
+            if (!namespaceTerminalPrecedesFailure && !ownershipCapOutranksClassifierFailure)
             {
                 return new RelationalAuthorizationPlanOutcome.SecurityConfigurationError(
                     nonNamespaceStrategies,
@@ -201,6 +323,33 @@ public static class RelationalAuthorizationPlanner
             };
         }
 
+        // Descriptor ownership enforcement is out of this story's scope, so a descriptor configured with
+        // OwnershipBased must fail closed as known-but-not-enabled (501) on every single-record operation —
+        // GET-by-id, the write verbs, and DELETE. Ranked ahead of the namespace no-prefixes terminal on
+        // purpose, and it is the one place where an unimplemented strategy outranks a namespace terminal:
+        // that 403 is a runtime authorization answer for a strategy the caller does execute, so letting it
+        // win reports "your namespace prefixes refused this" for a descriptor whose ownership strategy was
+        // never enforced at all. The unimplemented strategy has to be the terminal, or the response says the
+        // request was authorized-and-refused rather than not-implemented.
+        //
+        // Ranked after NoUsableRootColumn, which stays ahead: that terminal means the descriptor's own
+        // namespace column is missing from the model, which is a genuine security-configuration fault (500)
+        // rather than a masked scope boundary.
+        //
+        // Scoped to the operations the ownership gate would otherwise enforce, so descriptor GET-many keeps
+        // its existing namespace terminal — GET-many ownership filtering is DMS-1410's.
+        if (DescriptorOwnershipUnsupported(resource.StorageKind, operation, nonNamespaceStrategies))
+        {
+            // relationshipClassification is non-null because the predicate requires OwnershipBased in the
+            // non-namespace bucket, so that bucket is non-empty. The classification is carried unchanged, so
+            // the resolved custom views ride along and a view configured ahead of this terminal keeps its own
+            // configuration failure exactly as it does on the other unsupported terminals below.
+            return new RelationalAuthorizationPlanOutcome.StillUnsupported(
+                nonNamespaceStrategies,
+                relationshipClassification!
+            );
+        }
+
         if (namespaceOutcome is NamespaceAuthorizationPlanOutcome.NoPrefixesConfigured noPrefixes)
         {
             ConfiguredAuthorizationStrategy namespaceStrategy = namespaceStrategies[0];
@@ -208,6 +357,25 @@ public static class RelationalAuthorizationPlanner
             return new RelationalAuthorizationPlanOutcome.NoPrefixesConfigured(
                 noPrefixes.StrategyName,
                 namespaceStrategy.RawConfiguredIndex
+            )
+            {
+                CustomViewStrategies = supportedCustomViewStrategies,
+            };
+        }
+
+        // Ranked here on purpose: after both namespace terminals, because Namespace-based and custom
+        // view-based execute ahead of Ownership-based among the AND strategies; and before every
+        // relationship terminal below, because the relationship OR group executes after all of them. The
+        // two relationship security-configuration arms above already yield to it.
+        //
+        // Every resolved custom view is carried for validation, not just those configured before some
+        // index, because ownership executes last among the AND strategies whatever position CMS gave it —
+        // so every view genuinely runs ahead of this terminal.
+        if (ownershipCapExceeded)
+        {
+            return new RelationalAuthorizationPlanOutcome.OwnershipTokenCapExceeded(
+                context.OwnershipTokenIds.Count,
+                AuthorizationStrategyNameConstants.OwnershipBased
             )
             {
                 CustomViewStrategies = supportedCustomViewStrategies,
@@ -277,12 +445,175 @@ public static class RelationalAuthorizationPlanner
                 .Where(strategy => !customViewStrategyRawIndexes.Contains(strategy.RawConfiguredIndex))
                 .ToArray();
 
+        // Planned only where enforced, so the ownership bucket is empty for every operation and storage kind
+        // the gate withholds — and in those cases the strategy is still in the relationship bucket earning
+        // its known-but-not-enabled 501 above, so this null can never mean "dropped".
+        var ownershipCheck =
+            ownershipStrategies.Count == 0
+                ? null
+                : OwnershipAuthorizationPlanner.Plan(operation, ownershipStrategies);
+
         return new RelationalAuthorizationPlanOutcome.Plan(
             namespaceChecks,
             relationshipConfiguredStrategies,
             supportedCustomViewStrategies
-        );
+        )
+        {
+            OwnershipCheck = ownershipCheck,
+        };
     }
+
+    /// <summary>
+    /// Whether the caller for this operation and storage kind executes the ownership check this planner
+    /// would hand back. When it does not, <c>OwnershipBased</c> is left in the relationship bucket so the
+    /// classifier reports it known-but-not-enabled and the request fails closed with 501, exactly as it did
+    /// before ownership planning existed.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Returns <see langword="true"/> for every single-record operation, and never for
+    /// <see cref="NamespaceAuthorizationOperation.ReadMany"/> or descriptor storage. Each enforcement step
+    /// flipped exactly one operation on in the same commit that added its execution, so no commit existed in
+    /// which a planned ownership check had no executor.
+    /// </para>
+    /// <para>
+    /// <see cref="ResourceStorageKind.SharedDescriptorTable"/> is withheld permanently for this story.
+    /// Descriptor ownership enforcement is out of scope, and this named arm is what keeps that boundary
+    /// deliberate: before ownership had its own bucket, descriptors were protected only incidentally, by
+    /// <c>RelationalReadGuardrails.HasDescriptorUnsupportedNonNamespaceStrategies</c> catching every
+    /// non-namespace strategy. Splitting ownership out would have removed that protection silently.
+    /// Descriptor <em>stamping</em> is unaffected — it never consults configured strategies.
+    /// </para>
+    /// <para>
+    /// <see cref="NamespaceAuthorizationOperation.ReadMany"/> is withheld for the whole story: GET-many
+    /// ownership filtering is DMS-1410's, and it is a page filter rather than a single-record check.
+    /// </para>
+    /// <para>
+    /// Internal rather than private so its matrix can be pinned directly. A withheld operation returns the
+    /// same known-but-not-enabled 501 whether this gate withheld it or the classifier never recognized the
+    /// strategy, so a plan outcome alone cannot say which happened; only the predicate separates them, and
+    /// the alternative was a test-only switch, which would be a worse thing to add.
+    /// </para>
+    /// </remarks>
+    internal static bool EnforcesOwnershipChecks(
+        NamespaceAuthorizationOperation operation,
+        ResourceStorageKind storageKind
+    ) =>
+        storageKind is not ResourceStorageKind.SharedDescriptorTable
+        && _ownershipEnforcedOperations.Contains(operation);
+
+    /// <summary>
+    /// Whether this request is a descriptor operation configured with <c>OwnershipBased</c> that the story
+    /// leaves unimplemented, and so must report the known-but-not-enabled 501 rather than any namespace
+    /// terminal that would otherwise be reported first.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The complement of <see cref="EnforcesOwnershipChecks"/> for descriptor storage: that gate withholds
+    /// enforcement, and this predicate is what makes the withheld case visible early enough to keep its own
+    /// terminal. Without it the strategy still reaches the classifier and still earns its 501, but only when
+    /// no namespace terminal is reported first — and a client with no namespace prefixes reports one every
+    /// time, turning the descriptor scope boundary into a namespace 403.
+    /// </para>
+    /// <para>
+    /// Gated on the same operation set as the enforcement gate rather than on all operations, so
+    /// <see cref="NamespaceAuthorizationOperation.ReadMany"/> keeps its existing behavior: descriptor
+    /// GET-many ownership filtering is DMS-1410's and is staged separately.
+    /// </para>
+    /// <para>
+    /// Internal so the boundary can be pinned directly, for the same reason the enforcement gate is.
+    /// </para>
+    /// </remarks>
+    internal static bool DescriptorOwnershipUnsupported(
+        ResourceStorageKind storageKind,
+        NamespaceAuthorizationOperation operation,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies
+    )
+    {
+        ArgumentNullException.ThrowIfNull(nonNamespaceConfiguredStrategies);
+
+        return storageKind is ResourceStorageKind.SharedDescriptorTable
+            && _ownershipEnforcedOperations.Contains(operation)
+            && nonNamespaceConfiguredStrategies.Any(IsOwnershipBased);
+    }
+
+    /// <summary>
+    /// The operations whose callers execute the ownership check. Each enforcement step adds its own
+    /// operation in the same commit that wires that operation's executor, so no operation can be planned a
+    /// check nothing executes.
+    /// </summary>
+    /// <remarks>
+    /// A membership set rather than a per-operation switch, so an operation absent from it is withheld by
+    /// default: an operation added to the enum without an ownership executor keeps its 501 rather than
+    /// silently inheriting enforcement it does not implement.
+    /// <para>
+    /// <see cref="NamespaceAuthorizationOperation.ReadMany"/> must never be added here. GET-many ownership
+    /// filtering is DMS-1410's, and it is a page filter, not a single-record check —
+    /// <see cref="OwnershipAuthorizationPlanner"/> throws if it is ever asked to plan one.
+    /// </para>
+    /// </remarks>
+    private static readonly HashSet<NamespaceAuthorizationOperation> _ownershipEnforcedOperations =
+    [
+        // Every single-record operation. ReadMany is absent and must stay absent: GET-many ownership
+        // filtering is DMS-1410's, and it is a page filter rather than a single-record check.
+        NamespaceAuthorizationOperation.ReadSingle,
+        NamespaceAuthorizationOperation.Update,
+        NamespaceAuthorizationOperation.Delete,
+    ];
+
+    /// <summary>
+    /// Whether the ownership token-cap terminal may displace the relationship classifier's
+    /// security-configuration failure.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The classifier's <c>SecurityConfigurationError</c> bucket is not purely relationship failures: it also
+    /// carries custom view-based strategy-resolution failures, such as a
+    /// <c>{BasisResource}With…</c> strategy whose basis resource does not exist
+    /// (<see cref="RelationshipAuthorizationFailureKind.UnknownCustomViewBasisResource"/>). Those are
+    /// AND-strategy failures. Every custom view executes ahead of Ownership-based among the AND strategies,
+    /// whatever position CMS gave either, so a custom-view configuration failure keeps its own response and
+    /// the ownership cap must yield to it — with no index comparison needed.
+    /// </para>
+    /// <para>
+    /// A purely relationship or otherwise generic failure does yield to the cap, because the relationship OR
+    /// group executes after every AND strategy. Both outcomes are a 500 with the same status and title, so
+    /// this choice decides which diagnostic an operator sees rather than whether the request is refused.
+    /// </para>
+    /// <para>
+    /// These are the classifier-level failures, which never become
+    /// <c>SupportedCustomViewAuthorizationStrategy</c> entries and so are never validated through the
+    /// resolved-custom-view path. That path is unaffected: a resolved view that turns out to be missing or
+    /// non-conforming is still probed and still keeps its own 500, because the terminals carry their
+    /// resolved views for validation.
+    /// </para>
+    /// <para>
+    /// Internal so the rule can be pinned directly, which is how it was covered before any operation was
+    /// enforced and no plan outcome could reach it. It is now also asserted behaviorally through
+    /// <see cref="NamespaceAuthorizationOperation.ReadSingle"/>: an unresolved custom-view basis paired with
+    /// an over-cap ownership token list must report the custom-view failure, not the cap terminal.
+    /// </para>
+    /// </remarks>
+    internal static bool OwnershipCapOutranksClassifierFailure(
+        bool ownershipCapExceeded,
+        IReadOnlyList<RelationshipAuthorizationFailureMetadata> securityConfigurationFailures
+    )
+    {
+        ArgumentNullException.ThrowIfNull(securityConfigurationFailures);
+
+        return ownershipCapExceeded && !securityConfigurationFailures.Any(IsCustomViewConfigurationFailure);
+    }
+
+    /// <summary>
+    /// Whether a classifier security-configuration failure is about a custom view rather than a relationship
+    /// strategy. Kept as a list of kinds rather than a name-convention test so a kind added later is a
+    /// compile-time decision here instead of silently defaulting to relationship precedence.
+    /// </summary>
+    private static bool IsCustomViewConfigurationFailure(RelationshipAuthorizationFailureMetadata failure) =>
+        failure.FailureKind
+            is RelationshipAuthorizationFailureKind.UnknownCustomViewBasisResource
+                or RelationshipAuthorizationFailureKind.NoCustomViewJoinPath
+                or RelationshipAuthorizationFailureKind.MissingProposedCustomViewRootBinding;
 
     /// <summary>
     /// Whether the caller for this operation executes the custom-view checks this planner hands back. When it
@@ -360,4 +691,41 @@ public static class RelationalAuthorizationPlanner
 
         return (namespaceStrategies, nonNamespaceStrategies);
     }
+
+    /// <summary>
+    /// Splits <c>OwnershipBased</c> out of the non-namespace bucket, preserving configured order in both.
+    /// </summary>
+    private static (
+        IReadOnlyList<ConfiguredAuthorizationStrategy> Ownership,
+        IReadOnlyList<ConfiguredAuthorizationStrategy> NonOwnership
+    ) SplitByOwnershipBased(IReadOnlyList<ConfiguredAuthorizationStrategy> nonNamespaceConfiguredStrategies)
+    {
+        List<ConfiguredAuthorizationStrategy> ownershipStrategies = [];
+        List<ConfiguredAuthorizationStrategy> nonOwnershipStrategies = [];
+
+        foreach (var configuredStrategy in nonNamespaceConfiguredStrategies)
+        {
+            if (IsOwnershipBased(configuredStrategy))
+            {
+                ownershipStrategies.Add(configuredStrategy);
+            }
+            else
+            {
+                nonOwnershipStrategies.Add(configuredStrategy);
+            }
+        }
+
+        return (ownershipStrategies, nonOwnershipStrategies);
+    }
+
+    /// <summary>
+    /// Whether a configured strategy is <c>OwnershipBased</c>. One definition so the ownership split and the
+    /// descriptor boundary can never drift apart on how the strategy is recognized.
+    /// </summary>
+    private static bool IsOwnershipBased(ConfiguredAuthorizationStrategy configuredStrategy) =>
+        string.Equals(
+            configuredStrategy.StrategyName,
+            AuthorizationStrategyNameConstants.OwnershipBased,
+            StringComparison.Ordinal
+        );
 }

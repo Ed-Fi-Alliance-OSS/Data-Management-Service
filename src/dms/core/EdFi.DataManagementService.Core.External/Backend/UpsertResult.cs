@@ -121,6 +121,19 @@ public record UpsertResult
         : UpsertResult();
 
     /// <summary>
+    /// A failure because stored ownership-based authorization denied the POST resolving to an
+    /// upsert-as-update. Carries the ownership failure metadata so Core can build the §2.13/§2.14
+    /// ProblemDetails response.
+    /// </summary>
+    /// <remarks>
+    /// Only ever produced for a POST that resolved to an existing target. Ownership authorizes stored values,
+    /// and a create has none: <c>CreatorOwnershipTokenId</c> stamps the new row rather than authorizing it, so
+    /// a POST resolving to a create is never denied by this strategy.
+    /// </remarks>
+    public record UpsertFailureOwnershipNotAuthorized(OwnershipAuthorizationFailure OwnershipFailure)
+        : UpsertResult();
+
+    /// <summary>
     /// A failure because the requested POST/upsert operation is intentionally not implemented.
     /// </summary>
     /// <param name="FailureMessage">A message providing failure information</param>

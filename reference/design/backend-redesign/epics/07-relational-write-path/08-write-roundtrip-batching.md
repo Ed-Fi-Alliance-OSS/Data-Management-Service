@@ -237,6 +237,7 @@ has a recorded command count yet.
 | Namespace authorization only | 4 (adds the authorization command and `ShouldRetryPostHydrationReadBoundaryAsync`) |
 | Namespace and relationship authorization | 5 |
 | Custom-view authorization | unrecorded. A regular resource adds one command for the view-contract probe that precedes the membership run; the `cv1` statement itself joins the authorization command. A descriptor GET-by-id has no authorization command to join — it evaluates namespace in memory — so its membership query is an added command alongside that probe |
+| Ownership authorization | one command more than the same variant without it. The ownership check does not join the authorization command; see the deviation recorded below |
 
 ### Descriptor Writes
 
@@ -341,6 +342,30 @@ design, and doing so inside a write-path story would put read-path correctness a
 therefore records the deviation and changes nothing on this path; the read path must not regress and
 read regression coverage is run. A follow-on story is recommended for co-batching authorized
 GET-by-id.
+
+### Ownership GET-by-id: One Added Command
+
+`OwnershipBased` adds one command to GET-by-id, on the ownership-configured read path only. It does not
+join the authorization command the namespace and relationship checks share, because it is not an `AUTH1`
+statement against that carrier: it runs ahead of hydration and reconstitution so a denial is decided
+before any representation is built, and the stale-target retry above it is preserved unchanged.
+
+The write and delete paths do not pay this. There the ownership statement genuinely shares the
+operation's roundtrip — `RelationalCompositeStoredAuthorization` appends it into the same composite
+command as the custom-view and namespace statements, after them and before the relationship statement,
+which is what makes statement order the precedence order. Only the read path adds a command, and only
+when ownership is configured for the action.
+
+That append is budget-guarded like the namespace one, so sharing the roundtrip is the ordinary case rather
+than a guarantee: when the composite plan does not fit the command's parameter budget, the ownership
+statement takes an ordered same-session segment ahead of the mutation or delete instead. On SQL Server a
+near-ceiling namespace prefix list combined with a large ownership token list reaches this well below the
+2,000-token cap. The command count changes; authorization-before-mutation ordering and the precedence
+order above do not.
+
+Collapsing it belongs with the co-batching follow-on recommended for authorized GET-by-id above: the
+ownership check would join whatever carrier that story establishes. DMS-1060 records the deviation and
+changes nothing else on this path.
 
 ### Descriptor Writes: Verification Only
 

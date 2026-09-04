@@ -33,6 +33,11 @@ internal static class AuthorizationSecurityConfigurationDiagnostics
         "CustomViewAuthorization.Auth1.PayloadMappingFailed";
     public const string CustomViewProposedValueExtractionInvalid =
         "CustomViewAuthorization.ProposedValueExtractionInvalid";
+    public const string OwnershipTokenCapExceeded = "OwnershipAuthorization.TokenCapExceeded";
+    public const string OwnershipAuth1PayloadMappingFailed =
+        "OwnershipAuthorization.Auth1.PayloadMappingFailed";
+    public const string OwnershipInvalidStaleTargetPayload =
+        "OwnershipAuthorization.Auth1.InvalidStaleTargetPayload";
 
     public static SecurityConfigurationFailureDiagnostic[] ForNamespacePrefixParameterization(
         string providerOrPlannerFailureKind
@@ -53,6 +58,51 @@ internal static class AuthorizationSecurityConfigurationDiagnostics
                 ProviderOrPlannerFailureKind: providerOrPlannerFailureKind,
                 ConfiguredStrategyNames: [AuthorizationStrategyNameConstants.NamespaceBased],
                 PhysicalPath: FormatNamespacePhysicalPath(checks)
+            ),
+        ];
+
+    /// <summary>
+    /// Diagnostics for an ownership-token parameterization failure — today only the provider-independent
+    /// defensive token limit.
+    /// </summary>
+    /// <remarks>
+    /// No physical path is reported: the ownership check addresses <c>dms.Document</c> by <c>DocumentId</c>
+    /// regardless of resource, so there is no resource-specific column to name. No token value is reported
+    /// either; the message carries only a count.
+    /// </remarks>
+    public static SecurityConfigurationFailureDiagnostic[] ForOwnershipTokenParameterization(
+        string providerOrPlannerFailureKind
+    ) =>
+        [
+            new SecurityConfigurationFailureDiagnostic(
+                ProviderOrPlannerFailureKind: providerOrPlannerFailureKind,
+                ConfiguredStrategyNames: [AuthorizationStrategyNameConstants.OwnershipBased]
+            ),
+        ];
+
+    /// <summary>
+    /// Diagnostics for an ownership AUTH1 payload that could not be attributed to the request's planned
+    /// ownership check.
+    /// </summary>
+    /// <param name="providerOrPlannerFailureKind">
+    /// <see cref="OwnershipAuth1PayloadMappingFailed"/> for an unparseable payload or a configured-index
+    /// mismatch, or <see cref="OwnershipInvalidStaleTargetPayload"/> for a stale-target payload on a path
+    /// that planned no stored ownership check.
+    /// </param>
+    /// <param name="configuredStrategyIndex">
+    /// The configured index the request's planned ownership check carried, or <see langword="null"/> when no
+    /// ownership check was planned. Reported so an operator can see which configured position the request
+    /// expected, against the index the payload actually carried.
+    /// </param>
+    public static SecurityConfigurationFailureDiagnostic[] ForOwnershipAuthorizationAuth1(
+        string providerOrPlannerFailureKind,
+        int? configuredStrategyIndex
+    ) =>
+        [
+            new SecurityConfigurationFailureDiagnostic(
+                ProviderOrPlannerFailureKind: providerOrPlannerFailureKind,
+                ConfiguredStrategyNames: [AuthorizationStrategyNameConstants.OwnershipBased],
+                ConfiguredStrategyIndexes: configuredStrategyIndex is { } index ? [index] : []
             ),
         ];
 

@@ -942,6 +942,291 @@ public class Given_The_Composite_Relational_Write_First_Phase
             new JsonPath("$.schoolReference")
         );
 
+    // ----- Ownership --------------------------------------------------------
+
+    /// <summary>
+    /// The ownership statement lands after the namespace one, matching auth.md: ownership is the last AND
+    /// filter. Statement order is precedence order because the command aborts at its first AUTH1; the
+    /// relative order against the relationship statement is asserted by the composite append fixture.
+    /// </summary>
+    [TestCase(RelationalWriteOperationKind.Post)]
+    [TestCase(RelationalWriteOperationKind.Put)]
+    public async Task It_emits_the_ownership_statement_after_namespace_and_before_hydration(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        var target = new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value);
+        var input = CreateInput(operationKind) with
+        {
+            StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(),
+            StoredOwnershipAuthorization = CreateStoredOwnershipAuthorization(),
+        };
+        var session = new ScriptedWriteSession(
+            CreateReader(
+                CreateCaptureTable(target),
+                // One row set for the namespace check, one for the ownership check.
+                CreateAuthorizationTable(),
+                CreateAuthorizationTable(),
+                CreateDocumentMetadataTable(target, 44L),
+                CreateRootTable(target)
+            )
+        );
+
+        await CreateSut().ResolveAsync(input, session);
+
+        var commandText = session.Commands.Should().ContainSingle().Subject.CommandText;
+        // The prefix parameter is emitted only by the namespace check; both checks are SELECT CASE, so a
+        // shared marker would make this comparison hold either way.
+        var namespaceIndex = commandText.IndexOf("namespacePrefixes", StringComparison.Ordinal);
+        var ownershipIndex = commandText.IndexOf("CreatedByOwnershipTokenId", StringComparison.Ordinal);
+        namespaceIndex.Should().BePositive();
+        ownershipIndex.Should().BePositive();
+        namespaceIndex.Should().BeLessThan(ownershipIndex);
+        // Hydration follows both checks, which is what puts the ownership decision ahead of reading the row
+        // it authorizes.
+        ownershipIndex
+            .Should()
+            .BeLessThan(commandText.LastIndexOf("ContentVersion", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// This is the assertion that pins D1: a POST that resolves to a create is never denied by ownership.
+    /// The statement carries the carrier's row guard, so with no captured target it produces no rows and
+    /// none of its branches — the AUTH1 abort device included — evaluates. Asserted with the caller holding
+    /// zero ownership tokens, which is the configuration most likely to deny if the guard were missing.
+    /// </summary>
+    [Test]
+    public async Task It_keeps_the_ownership_statement_vacuous_for_a_create_with_no_tokens()
+    {
+        var input = CreateInput(RelationalWriteOperationKind.Post, includeReadPlan: false) with
+        {
+            StoredOwnershipAuthorization = CreateStoredOwnershipAuthorization(ownershipTokenIds: []),
+        };
+        var session = new ScriptedWriteSession(
+            CreateReader(CreateCaptureTable(target: null), CreateAuthorizationTable())
+        );
+
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+        resolution
+            .Outcome!.ExecutionRequest.TargetContext.Should()
+            .BeOfType<RelationalWriteTargetContext.CreateNew>();
+        var commandText = session.Commands.Should().ContainSingle().Subject.CommandText;
+        // The check is present and guarded: an empty token list renders a constant-false membership
+        // predicate, and the row guard is what stops the statement producing a row to abort on.
+        commandText.Should().Contain("CreatedByOwnershipTokenId");
+        commandText.Should().Contain("1 = 0");
+        commandText
+            .Should()
+            .Contain(
+                IRelationalCompositeCommandDialect
+                    .Create(SqlDialect.Pgsql)
+                    .Carrier.CapturedTargetPresentPredicate
+            );
+    }
+
+    /// <summary>
+    /// The failure a POST deferred from preflight is owed only to an upsert-as-update, and in the ownership
+    /// slot: after the namespace segment, before the relationship check and the hydration, so no DML follows.
+    /// The request takes the ordered-segments path, which is what keeps the relationship statement and the
+    /// hydration from riding ahead of the failure inside one composite command.
+    /// </summary>
+    [Test]
+    public async Task It_returns_the_deferred_ownership_failure_for_an_existing_post_target_after_the_namespace_segment()
+    {
+        var deferred = RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
+            RelationalWriteOperationKind.Post,
+            ["ownership token cap"]
+        );
+        var target = new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value);
+        var input = CreateInput(RelationalWriteOperationKind.Post) with
+        {
+            StoredNamespaceAuthorization = CreateStoredNamespaceAuthorization(),
+            DeferredStoredOwnershipFailureResult = deferred,
+        };
+        var session = new ScriptedWriteSession(
+            CreateCaptureReader(target),
+            CreateReader(CreateAuthorizationTable())
+        );
+
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeSameAs(deferred);
+        resolution.Outcome.Should().BeNull();
+        // Capture, then the namespace segment, then the deferred failure in the ownership slot: no
+        // relationship, reference or hydration command follows it.
+        session.Commands.Should().HaveCount(2);
+        session.Commands[1].CommandText.Should().Contain("namespacePrefixes");
+        session
+            .Commands.Should()
+            .NotContain(command => command.CommandText.Contains("CreatedByOwnershipTokenId"));
+    }
+
+    /// <summary>
+    /// A create never sees the deferred failure: ownership never denies a create, and the over-limit list was
+    /// never parameterized for one, so the write proceeds with no ownership statement or parameter at all.
+    /// </summary>
+    [Test]
+    public async Task It_ignores_the_deferred_ownership_failure_for_a_post_create()
+    {
+        var deferred = RelationalWriteExecutorResults.BuildSecurityConfigurationFailureResult(
+            RelationalWriteOperationKind.Post,
+            ["ownership token cap"]
+        );
+        var input = CreateInput(RelationalWriteOperationKind.Post, includeReadPlan: false) with
+        {
+            DeferredStoredOwnershipFailureResult = deferred,
+        };
+        var session = new ScriptedWriteSession(CreateCaptureReader(target: null));
+
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+        resolution
+            .Outcome!.ExecutionRequest.TargetContext.Should()
+            .BeOfType<RelationalWriteTargetContext.CreateNew>();
+        var commandText = session.Commands.Should().ContainSingle().Subject.CommandText;
+        commandText.Should().NotContain("CreatedByOwnershipTokenId");
+        commandText.Should().NotContain("ownershipTokenIds");
+    }
+
+    /// <summary>
+    /// An ownership denial on the co-batched command maps to the operation's own ownership failure rather
+    /// than a generic write failure, for both verbs.
+    /// </summary>
+    [TestCase(RelationalWriteOperationKind.Post)]
+    [TestCase(RelationalWriteOperationKind.Put)]
+    public async Task It_maps_a_co_batched_ownership_denial_to_the_operations_ownership_failure(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        var input = CreateInput(operationKind) with
+        {
+            StoredOwnershipAuthorization = CreateStoredOwnershipAuthorization(rawConfiguredIndex: 1),
+        };
+        var extractor = new TestProviderFailureExtractor(
+            OwnershipAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
+            OwnershipAuthorizationAuth1FailurePayloadCodec.Encode(
+                new OwnershipAuthorizationAuth1FailurePayload(
+                    1,
+                    OwnershipAuthorizationAuth1FailureKind.OwnershipTokenMismatch
+                )
+            )
+        );
+        var session = new ScriptedWriteSession(new FakeDbException("ownership denial"));
+
+        var resolution = await CreateSut(providerFailureExtractor: extractor).ResolveAsync(input, session);
+
+        var immediate = resolution.ImmediateResult.Should().NotBeNull().And.Subject;
+
+        if (operationKind is RelationalWriteOperationKind.Post)
+        {
+            immediate
+                .Should()
+                .BeOfType<RelationalWriteExecutorResult.Upsert>()
+                .Which.Result.Should()
+                .BeOfType<UpsertResult.UpsertFailureOwnershipNotAuthorized>()
+                .Which.OwnershipFailure.ConfiguredStrategyIndex.Should()
+                .Be(1);
+        }
+        else
+        {
+            immediate
+                .Should()
+                .BeOfType<RelationalWriteExecutorResult.Update>()
+                .Which.Result.Should()
+                .BeOfType<UpdateResult.UpdateFailureOwnershipNotAuthorized>()
+                .Which.OwnershipFailure.ConfiguredStrategyIndex.Should()
+                .Be(1);
+        }
+    }
+
+    /// <summary>
+    /// A token list that does not fit the command's budget sends the whole request to the ordered-segments
+    /// path, as a namespace non-fit already does. That path executes and validates every check in configured
+    /// order, so ownership still runs after the namespace check and before the relationship one.
+    /// </summary>
+    /// <remarks>
+    /// SQL Server-shaped deliberately, and asserted at both token counts against one budget. PostgreSQL
+    /// binds any token count as a single array parameter, so a PostgreSQL fallback could only ever be caused
+    /// by something other than the token list — the capture's own parameters, say — which would make this
+    /// test pass while proving nothing. Here the token count is the only thing that differs between the two
+    /// cases.
+    /// </remarks>
+    [TestCase(2, true)]
+    [TestCase(6, false)]
+    public async Task It_co_batches_ownership_only_while_its_scalar_tokens_fit_the_budget(
+        int ownershipTokenCount,
+        bool expectsCoBatch
+    )
+    {
+        var target = new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value);
+        var input = CreateInput(RelationalWriteOperationKind.Put, dialect: SqlDialect.Mssql) with
+        {
+            StoredOwnershipAuthorization = CreateStoredOwnershipAuthorization(
+                dialect: SqlDialect.Mssql,
+                ownershipTokenIds:
+                [
+                    .. Enumerable.Range(1, ownershipTokenCount).Select(static tokenId => (short)tokenId),
+                ]
+            ),
+        };
+        var session = expectsCoBatch
+            ? new ScriptedWriteSession(
+                CreateReader(
+                    CreateCaptureTable(target),
+                    CreateAuthorizationTable(),
+                    CreateDocumentMetadataTable(target, 44L),
+                    CreateRootTable(target)
+                )
+            )
+            : new ScriptedWriteSession(
+                CreateCaptureReader(target),
+                // The ownership segment authorizes, then hydration runs.
+                CreateReader(CreateAuthorizationTable()),
+                CreateReader(CreateDocumentMetadataTable(target, 44L), CreateRootTable(target))
+            );
+
+        var resolution = await CreateSut(
+                commandBudget: new RelationalCommandBudget(
+                    MaxParametersPerCommand: 4,
+                    MaxRowsPerStatement: 1000
+                )
+            )
+            .ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+
+        if (expectsCoBatch)
+        {
+            session.Commands.Should().ContainSingle();
+            session.Commands[0].CommandText.Should().Contain("CreatedByOwnershipTokenId");
+            return;
+        }
+
+        session.Commands.Count.Should().BeGreaterThan(1);
+        session.Commands[0].CommandText.Should().NotContain("CreatedByOwnershipTokenId");
+        session
+            .Commands.Skip(1)
+            .Should()
+            .Contain(command => command.CommandText.Contains("CreatedByOwnershipTokenId"));
+    }
+
+    private static RelationalOwnershipAuthorization CreateStoredOwnershipAuthorization(
+        int rawConfiguredIndex = 1,
+        IReadOnlyList<short>? ownershipTokenIds = null,
+        SqlDialect dialect = SqlDialect.Pgsql
+    ) =>
+        new(
+            new OwnershipAuthorizationCheckSpec(rawConfiguredIndex),
+            OwnershipTokenParameterizationFactory.Create(
+                dialect,
+                ownershipTokenIds ?? [11],
+                "ownershipTokenIds"
+            )
+        );
+
     private static DbDataReader CreateCompositeReader(
         CapturedTarget? target,
         bool includeMetadata = true,

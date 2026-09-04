@@ -121,6 +121,13 @@ public record UpdateResult
         : UpdateResult();
 
     /// <summary>
+    /// A failure because stored ownership-based authorization denied the PUT/update. Carries the ownership
+    /// failure metadata so Core can build the §2.13/§2.14 ProblemDetails response.
+    /// </summary>
+    public record UpdateFailureOwnershipNotAuthorized(OwnershipAuthorizationFailure OwnershipFailure)
+        : UpdateResult();
+
+    /// <summary>
     /// A failure because the requested PUT/update operation is intentionally not implemented.
     /// </summary>
     /// <param name="FailureMessage">A message providing failure information</param>

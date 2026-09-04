@@ -565,6 +565,40 @@ public class Given_A_Mssql_RelationalPost_Create_Authorization_With_A_Synthetic_
         _context.AssertPostCreateRelationshipAuthorizationUsesStructuredClaimParameter();
     }
 
+    /// <summary>
+    /// Ownership AND-composes ahead of the relationship OR group, so when both are configured and the
+    /// caller holds no EducationOrganization claims at all, the ownership denial is what a POST resolving
+    /// to upsert-as-update reports. Preflight cannot short-circuit the relationship NoClaims here: nothing
+    /// has read the stored token yet. The row was created without one, which is auth.md 2.14, and the row
+    /// assertions are the other half of the point — a denial must leave it exactly where it was.
+    /// </summary>
+    [Test]
+    public async Task It_reports_a_post_as_update_ownership_denial_over_a_relationship_no_claims_denial()
+    {
+        var seed = CreateRootChildSeed(
+            "ffffffff-0000-0000-0000-000000000701",
+            701,
+            "ownership-over-relationship-no-claims",
+            100,
+            []
+        );
+
+        (await PostRootChildAsync(seed)).Should().BeOfType<UpsertResult.InsertSuccess>();
+
+        var result = await _context.UpsertAuthorizationRootChildAsync(
+            seed,
+            [],
+            RelationshipAuthorizationCrudTestSupport.EdOrgOnlyPlusKnownUnsupportedStrategyNames
+        );
+
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized);
+        await AssertPersistedRowsAsync(seed);
+    }
+
     private async Task<UpsertResult> PostRootChildAsync(
         AuthorizationRootChildSeed seed,
         IReadOnlyList<long>? claimEducationOrganizationIds = null,

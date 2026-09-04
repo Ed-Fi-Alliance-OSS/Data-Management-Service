@@ -622,8 +622,14 @@ public class Given_A_Postgresql_Relational_Delete_Authorization_With_A_Synthetic
         );
     }
 
+    /// <summary>
+    /// OwnershipBased is the only strategy in the relationship classifier's known-but-not-enabled set, so
+    /// once Delete is enforced this composition plans instead of returning a 501. These rows were seeded
+    /// without an ownership token, which is auth.md 2.14 — and the row assertions below are the point: a
+    /// denial must leave the row exactly where it was.
+    /// </summary>
     [Test]
-    public async Task It_returns_501_and_security_configuration_failures_before_deleting()
+    public async Task It_denies_and_reports_security_configuration_failures_before_deleting()
     {
         var knownUnsupportedSeed = _authorizationRootChildSeeds[7];
 
@@ -639,13 +645,11 @@ public class Given_A_Postgresql_Relational_Delete_Authorization_With_A_Synthetic
             RelationshipAuthorizationCrudTestSupport.EdOrgOnlyPlusKnownUnsupportedStrategyNames
         );
 
-        var notImplemented = knownUnsupportedResult
+        knownUnsupportedResult
             .Should()
-            .BeOfType<DeleteResult.DeleteFailureNotImplemented>()
-            .Subject;
-        notImplemented
-            .FailureMessage.Should()
-            .Contain(RelationshipAuthorizationCrudTestSupport.OwnershipBased);
+            .BeOfType<DeleteResult.DeleteFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized);
         var securityConfiguration = securityConfigurationResult
             .Should()
             .BeOfType<DeleteResult.DeleteFailureSecurityConfiguration>()

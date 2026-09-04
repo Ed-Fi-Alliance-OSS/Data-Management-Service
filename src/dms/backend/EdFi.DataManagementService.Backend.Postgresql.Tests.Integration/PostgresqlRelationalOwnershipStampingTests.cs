@@ -1,0 +1,716 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Data;
+using System.Globalization;
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Postgresql;
+using EdFi.DataManagementService.Backend.Tests.Common;
+using EdFi.DataManagementService.Backend.Tests.Integration.Common;
+using EdFi.DataManagementService.Core.Backend;
+using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.External.Security;
+using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
+using NUnit.Framework;
+using static EdFi.DataManagementService.Backend.Tests.Common.NoProfileUpdateSemanticsScenarios;
+
+namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
+
+/// <summary>
+/// Live-provider coverage for <c>dms.Document.CreatedByOwnershipTokenId</c> stamping on PostgreSQL.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The unit tests assert the emitted SQL and parameter binding; only a live provider can prove the column
+/// actually round-trips. Two things specifically need a real engine: that a nullable <c>smallint</c> parameter
+/// declared as <see cref="DbType.Int16"/> binds for both a value and a null, and that an update genuinely
+/// leaves the stored token alone rather than merely omitting it from a statement the unit tests inspected.
+/// </para>
+/// <para>
+/// Stamping first, then enforcement: the same seeded row proves both, because what a create stamps is
+/// exactly what a later GET-by-id has to authorize against.
+/// </para>
+/// </remarks>
+[TestFixture]
+[NonParallelizable]
+[Category("Authorization")]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
+public class Given_A_Postgresql_Relational_Write_With_Ownership_Stamping
+{
+    private const short CreatorToken = 42;
+    private const short OtherToken = 7;
+
+    private PostgresqlGeneratedDdlFixture _fixture = null!;
+    private MappingSet _mappingSet = null!;
+    private PostgresqlGeneratedDdlTestDatabase _database = null!;
+    private ServiceProvider _serviceProvider = null!;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
+        _mappingSet = _fixture.MappingSet;
+        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
+    }
+
+    [SetUp]
+    public async Task Setup()
+    {
+        await _database.ResetAsync();
+        _serviceProvider = CreateServiceProvider();
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        if (_serviceProvider is not null)
+        {
+            await _serviceProvider.DisposeAsync();
+            _serviceProvider = null!;
+        }
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_database is not null)
+        {
+            await _database.DisposeAsync();
+            _database = null!;
+        }
+    }
+
+    [Test]
+    public async Task It_stamps_the_creator_ownership_token_on_a_create()
+    {
+        var createResult = await ExecuteCreateAsync(CreatorToken);
+
+        createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+        (await ReadStoredOwnershipTokenAsync()).Should().Be(CreatorToken);
+    }
+
+    /// <summary>
+    /// A client with no creator token stamps null. This is the case the declared parameter type exists for: a
+    /// null reaches the driver as <c>DBNull</c>, which carries no type of its own.
+    /// </summary>
+    [Test]
+    public async Task It_stamps_null_when_the_client_has_no_creator_token()
+    {
+        var createResult = await ExecuteCreateAsync(creatorOwnershipTokenId: null);
+
+        createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+        (await ReadStoredOwnershipTokenAsync()).Should().BeNull();
+    }
+
+    [Test]
+    public async Task It_leaves_the_stored_token_unchanged_on_a_put()
+    {
+        await ExecuteCreateAsync(CreatorToken);
+
+        var updateResult = await ExecuteUpdateAsync(OtherToken);
+
+        updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
+        (await ReadStoredOwnershipTokenAsync()).Should().Be(CreatorToken);
+    }
+
+    /// <summary>
+    /// A POST that resolves to an upsert-as-update must also leave the stored token alone, even though its
+    /// request carries a creator token that a create would have stamped.
+    /// </summary>
+    [Test]
+    public async Task It_leaves_the_stored_token_unchanged_on_a_post_as_update()
+    {
+        await ExecuteCreateAsync(CreatorToken);
+
+        var upsertResult = await ExecuteCreateAsync(OtherToken, UpdateRequestBody());
+
+        upsertResult.Should().BeOfType<UpsertResult.UpdateSuccess>();
+        (await ReadStoredOwnershipTokenAsync()).Should().Be(CreatorToken);
+    }
+
+    /// <summary>
+    /// A document stamped null stays null through an update by a client that does have a creator token — an
+    /// unstamped document is permanently unreachable through ownership authorization, and an update must not
+    /// quietly repair it.
+    /// </summary>
+    [Test]
+    public async Task It_leaves_a_null_stored_token_null_on_a_put()
+    {
+        await ExecuteCreateAsync(creatorOwnershipTokenId: null);
+
+        await ExecuteUpdateAsync(CreatorToken);
+
+        (await ReadStoredOwnershipTokenAsync()).Should().BeNull();
+    }
+
+    // ----- Enforcement -----------------------------------------------------
+    // These execute the compiled ownership SQL against the real engine. Only a live provider can prove the
+    // SELECT CASE parses, the membership predicate binds smallint to smallint, and the AUTH1 abort device
+    // raises an error the dispatcher and mapper decode back into a response. The stamping tests above put a
+    // known token on the row, so each arm is reached by choosing which tokens the reader holds.
+
+    /// <summary>
+    /// The stored token is one of the reader's, so the read is authorized and the document is served.
+    /// </summary>
+    [Test]
+    public async Task It_authorizes_a_get_by_id_whose_stored_token_the_reader_holds()
+    {
+        await ExecuteCreateAsync(CreatorToken);
+
+        var result = await ExecuteOwnershipGetByIdAsync([OtherToken, CreatorToken]);
+
+        result.Should().BeOfType<GetResult.GetSuccess>();
+    }
+
+    /// <summary>
+    /// The stored token is not one of the reader's: auth.md 2.13. The row exists and is readable by its own
+    /// owner, so only the membership predicate can be denying it.
+    /// </summary>
+    [Test]
+    public async Task It_denies_a_get_by_id_whose_stored_token_the_reader_does_not_hold()
+    {
+        await ExecuteCreateAsync(CreatorToken);
+
+        var result = await ExecuteOwnershipGetByIdAsync([OtherToken]);
+
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch);
+    }
+
+    /// <summary>
+    /// A reader holding no tokens at all still runs the check rather than being short-circuited, so the
+    /// constant-false membership predicate has to be valid SQL on this engine. The row carries a token, so
+    /// this is a mismatch rather than the uninitialized case.
+    /// </summary>
+    [Test]
+    public async Task It_denies_a_get_by_id_for_a_reader_holding_no_tokens()
+    {
+        await ExecuteCreateAsync(CreatorToken);
+
+        var result = await ExecuteOwnershipGetByIdAsync([]);
+
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch);
+    }
+
+    /// <summary>
+    /// The stored token is null: auth.md 2.14, a different response type from 2.13 because the document can
+    /// never be reached by any client rather than merely not by this one. Reached by creating through a
+    /// client that has no creator token, which is exactly how such a row arises in practice.
+    /// </summary>
+    [Test]
+    public async Task It_denies_a_get_by_id_whose_stored_token_was_never_assigned()
+    {
+        await ExecuteCreateAsync(creatorOwnershipTokenId: null);
+
+        var result = await ExecuteOwnershipGetByIdAsync([CreatorToken]);
+
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized);
+    }
+
+    /// <summary>
+    /// The configured position travels through the emitted payload and back, so a denial is attributed to
+    /// the position OwnershipBased actually holds rather than to a normalized zero.
+    /// </summary>
+    [Test]
+    public async Task It_reports_the_configured_strategy_index_a_denial_came_from()
+    {
+        await ExecuteCreateAsync(CreatorToken);
+
+        var result = await ExecuteOwnershipGetByIdAsync(
+            [OtherToken],
+            strategyNames:
+            [
+                AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+                AuthorizationStrategyNameConstants.OwnershipBased,
+            ]
+        );
+
+        var failure = result.Should().BeOfType<GetResult.GetFailureOwnershipNotAuthorized>().Subject;
+        failure.OwnershipFailure.ConfiguredStrategyIndex.Should().Be(1);
+        failure.OwnershipFailure.StrategyName.Should().Be(AuthorizationStrategyNameConstants.OwnershipBased);
+    }
+
+    /// <summary>
+    /// The provider-independent defensive limit, reported before any statement is emitted. Proves the cap
+    /// terminal reaches the response on a live engine rather than the over-limit parameter list reaching the
+    /// SQL boundary.
+    /// </summary>
+    [Test]
+    public async Task It_fails_closed_for_a_get_by_id_with_an_over_cap_ownership_token_list()
+    {
+        await ExecuteCreateAsync(CreatorToken);
+
+        var result = await ExecuteOwnershipGetByIdAsync([
+            .. Enumerable
+                .Range(1, OwnershipTokenLimitExceededException.OwnershipTokenLimit)
+                .Select(static tokenId => (short)tokenId),
+        ]);
+
+        result
+            .Should()
+            .BeOfType<GetResult.GetFailureSecurityConfiguration>()
+            .Which.Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("2,000");
+    }
+
+    // ----- Delete enforcement ----------------------------------------------
+
+    /// <summary>
+    /// An owner may delete. Proves the co-batched ownership statement authorizes and the deletes in the same
+    /// command still run, rather than the check aborting a batch that carried them.
+    /// </summary>
+    [Test]
+    public async Task It_deletes_a_document_whose_stored_token_the_reader_holds()
+    {
+        await ExecuteCreateAsync(CreatorToken);
+
+        var result = await ExecuteOwnershipDeleteAsync([OtherToken, CreatorToken]);
+
+        result.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        (await CountStoredDocumentsAsync()).Should().Be(0);
+    }
+
+    /// <summary>
+    /// A non-owner may not, and the row survives. The deletes rode the same command the ownership statement
+    /// aborted, so the abort rolled them back — this is the assertion that a denial cannot destroy data.
+    /// </summary>
+    [Test]
+    public async Task It_denies_a_delete_whose_stored_token_the_reader_does_not_hold_and_leaves_the_row()
+    {
+        await ExecuteCreateAsync(CreatorToken);
+
+        var result = await ExecuteOwnershipDeleteAsync([OtherToken]);
+
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch);
+        (await CountStoredDocumentsAsync()).Should().Be(1);
+        (await ReadStoredOwnershipTokenAsync()).Should().Be(CreatorToken);
+    }
+
+    /// <summary>
+    /// A document created without a token can be deleted by nobody: auth.md 2.14, and the row stays.
+    /// </summary>
+    [Test]
+    public async Task It_denies_a_delete_whose_stored_ownership_token_was_never_assigned()
+    {
+        await ExecuteCreateAsync(creatorOwnershipTokenId: null);
+
+        var result = await ExecuteOwnershipDeleteAsync([CreatorToken]);
+
+        result
+            .Should()
+            .BeOfType<DeleteResult.DeleteFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized);
+        (await CountStoredDocumentsAsync()).Should().Be(1);
+    }
+
+    /// <summary>
+    /// The denial outranks a stale If-Match. Telling a non-owner its etag is stale would disclose that the
+    /// row changed, so the ownership decision is the one reported.
+    /// </summary>
+    [Test]
+    public async Task It_reports_an_ownership_delete_denial_over_a_stale_if_match()
+    {
+        await ExecuteCreateAsync(CreatorToken);
+
+        var result = await ExecuteOwnershipDeleteAsync([OtherToken], ifMatch: "\"stale-etag\"");
+
+        result.Should().BeOfType<DeleteResult.DeleteFailureOwnershipNotAuthorized>();
+        (await CountStoredDocumentsAsync()).Should().Be(1);
+    }
+
+    private async Task<DeleteResult> ExecuteOwnershipDeleteAsync(
+        IReadOnlyList<short> ownershipTokenIds,
+        string? ifMatch = null
+    )
+    {
+        using var scope = CreateScopeForDatabase();
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return await repository.DeleteDocumentById(
+            new DeleteRequest(
+                DocumentUuid: SchoolDocumentUuid,
+                ResourceInfo: SchoolResourceInfo,
+                TraceId: new TraceId("ownership-enforcement-delete"),
+                Headers: ifMatch is null ? [] : new Dictionary<string, string> { ["If-Match"] = ifMatch },
+                MappingSet: _mappingSet
+            )
+            {
+                AuthorizationContext = new RelationalAuthorizationContext(
+                    [],
+                    [],
+                    creatorOwnershipTokenId: null,
+                    ownershipTokenIds
+                ),
+                AuthorizationStrategyEvaluators =
+                [
+                    new AuthorizationStrategyEvaluator(
+                        AuthorizationStrategyNameConstants.OwnershipBased,
+                        [],
+                        FilterOperator.And
+                    ),
+                ],
+            }
+        );
+    }
+
+    private async Task<int> CountStoredDocumentsAsync()
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT COUNT(*) AS "DocumentCount"
+            FROM "dms"."Document"
+            WHERE "DocumentUuid" = @documentUuid;
+            """,
+            new NpgsqlParameter("documentUuid", SchoolDocumentUuid.Value)
+        );
+
+        return Convert.ToInt32(rows[0]["DocumentCount"], CultureInfo.InvariantCulture);
+    }
+
+    private async Task<GetResult> ExecuteOwnershipGetByIdAsync(
+        IReadOnlyList<short> ownershipTokenIds,
+        IReadOnlyList<string>? strategyNames = null
+    )
+    {
+        using var scope = CreateScopeForDatabase();
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return await repository.GetDocumentById(
+            new IntegrationRelationalGetRequest(
+                DocumentUuid: SchoolDocumentUuid,
+                ResourceInfo: SchoolResourceInfo,
+                MappingSet: _mappingSet,
+                AuthorizationStrategyEvaluators:
+                [
+                    .. (strategyNames ?? [AuthorizationStrategyNameConstants.OwnershipBased]).Select(
+                        static strategyName => new AuthorizationStrategyEvaluator(
+                            strategyName,
+                            [],
+                            FilterOperator.And
+                        )
+                    ),
+                ],
+                TraceId: new TraceId("pg-ownership-enforcement-get")
+            )
+            {
+                AuthorizationContext = new RelationalAuthorizationContext(
+                    [],
+                    [],
+                    creatorOwnershipTokenId: null,
+                    ownershipTokenIds
+                ),
+            }
+        );
+    }
+
+    // ----- Write enforcement -----------------------------------------------
+
+    /// <summary>
+    /// The live half of the D1 proof, moved here from 6.2 because a POST create cannot plan an ownership
+    /// check until the Update gate is open. <c>OwnershipBased</c> is configured and the caller holds no
+    /// tokens at all — the configuration most likely to deny if the carrier row guard were missing — and the
+    /// create still succeeds and still stamps.
+    /// </summary>
+    [Test]
+    public async Task It_creates_and_stamps_with_ownership_configured_and_no_tokens()
+    {
+        var createResult = await ExecuteOwnershipCreateAsync(CreatorToken, ownershipTokenIds: []);
+
+        createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+        (await ReadStoredOwnershipTokenAsync()).Should().Be(CreatorToken);
+    }
+
+    /// <summary>
+    /// A POST that resolves to an upsert-as-update is denied for a foreign token, and the stored row is
+    /// unchanged — including the token, which a denied write must never rewrite.
+    /// </summary>
+    [Test]
+    public async Task It_denies_a_post_as_update_for_a_foreign_token_and_leaves_the_row_unmodified()
+    {
+        await ExecuteCreateAsync(CreatorToken);
+
+        var result = await ExecuteOwnershipCreateAsync(
+            CreatorToken,
+            ownershipTokenIds: [OtherToken],
+            requestBody: UpdateRequestBody()
+        );
+
+        result
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch);
+        (await ReadStoredOwnershipTokenAsync()).Should().Be(CreatorToken);
+    }
+
+    [Test]
+    public async Task It_denies_a_put_for_a_foreign_token_and_leaves_the_row_unmodified()
+    {
+        await ExecuteCreateAsync(CreatorToken);
+
+        var result = await ExecuteOwnershipUpdateAsync([OtherToken]);
+
+        result
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch);
+        (await ReadStoredOwnershipTokenAsync()).Should().Be(CreatorToken);
+    }
+
+    /// <summary>
+    /// An owner may update, and the stored token survives it. The write carries its own creator token, which
+    /// a create would have stamped, so this also proves the update path still does not rewrite it.
+    /// </summary>
+    [Test]
+    public async Task It_authorizes_a_put_for_an_owner_and_preserves_the_stored_token()
+    {
+        await ExecuteCreateAsync(CreatorToken);
+
+        var result = await ExecuteOwnershipUpdateAsync([OtherToken, CreatorToken]);
+
+        result.Should().BeOfType<UpdateResult.UpdateSuccess>();
+        (await ReadStoredOwnershipTokenAsync()).Should().Be(CreatorToken);
+    }
+
+    /// <summary>
+    /// A document created without a token cannot be updated by anyone: auth.md 2.14.
+    /// </summary>
+    [Test]
+    public async Task It_denies_a_put_whose_stored_ownership_token_was_never_assigned()
+    {
+        await ExecuteCreateAsync(creatorOwnershipTokenId: null);
+
+        var result = await ExecuteOwnershipUpdateAsync([CreatorToken]);
+
+        result
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureOwnershipNotAuthorized>()
+            .Which.OwnershipFailure.FailureKind.Should()
+            .Be(OwnershipAuthorizationFailureKind.StoredOwnershipTokenUninitialized);
+        (await ReadStoredOwnershipTokenAsync()).Should().BeNull();
+    }
+
+    /// <summary>
+    /// The denial outranks a stale If-Match, as on the delete path: telling a non-owner its etag is stale
+    /// would disclose that the row changed.
+    /// </summary>
+    [Test]
+    public async Task It_reports_an_ownership_put_denial_over_a_stale_if_match()
+    {
+        await ExecuteCreateAsync(CreatorToken);
+
+        var result = await ExecuteOwnershipUpdateAsync([OtherToken], ifMatch: "\"stale-etag\"");
+
+        result.Should().BeOfType<UpdateResult.UpdateFailureOwnershipNotAuthorized>();
+        (await ReadStoredOwnershipTokenAsync()).Should().Be(CreatorToken);
+    }
+
+    private async Task<UpsertResult> ExecuteOwnershipCreateAsync(
+        short? creatorOwnershipTokenId,
+        IReadOnlyList<short> ownershipTokenIds,
+        JsonNode? requestBody = null
+    )
+    {
+        using var scope = CreateScopeForDatabase();
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return await repository.UpsertDocument(
+            new UpsertRequest(
+                ResourceInfo: SchoolResourceInfo,
+                DocumentInfo: CreateSchoolDocumentInfo(),
+                MappingSet: _mappingSet,
+                EdfiDoc: requestBody ?? CreateRequestBody(),
+                Headers: [],
+                TraceId: new TraceId("ownership-enforcement-post"),
+                DocumentUuid: SchoolDocumentUuid
+            )
+            {
+                AuthorizationContext = new RelationalAuthorizationContext(
+                    [],
+                    [],
+                    creatorOwnershipTokenId,
+                    ownershipTokenIds
+                ),
+                AuthorizationStrategyEvaluators = OwnershipStrategyEvaluators,
+            }
+        );
+    }
+
+    private async Task<UpdateResult> ExecuteOwnershipUpdateAsync(
+        IReadOnlyList<short> ownershipTokenIds,
+        string? ifMatch = null
+    )
+    {
+        using var scope = CreateScopeForDatabase();
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return await repository.UpdateDocumentById(
+            new UpdateRequest(
+                ResourceInfo: SchoolResourceInfo,
+                DocumentInfo: CreateSchoolDocumentInfo(),
+                MappingSet: _mappingSet,
+                EdfiDoc: UpdateRequestBody(),
+                Headers: ifMatch is null ? [] : new Dictionary<string, string> { ["If-Match"] = ifMatch },
+                TraceId: new TraceId("ownership-enforcement-put"),
+                DocumentUuid: SchoolDocumentUuid
+            )
+            {
+                AuthorizationContext = new RelationalAuthorizationContext(
+                    [],
+                    [],
+                    // A PUT carries a creator token too; a create would stamp it, an update must not.
+                    creatorOwnershipTokenId: OtherToken,
+                    ownershipTokenIds
+                ),
+                AuthorizationStrategyEvaluators = OwnershipStrategyEvaluators,
+            }
+        );
+    }
+
+    private static AuthorizationStrategyEvaluator[] OwnershipStrategyEvaluators =>
+        [
+            new AuthorizationStrategyEvaluator(
+                AuthorizationStrategyNameConstants.OwnershipBased,
+                [],
+                FilterOperator.And
+            ),
+        ];
+
+    private async Task<UpsertResult> ExecuteCreateAsync(
+        short? creatorOwnershipTokenId,
+        JsonNode? requestBody = null
+    )
+    {
+        using var scope = CreateScopeForDatabase();
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return await repository.UpsertDocument(
+            new UpsertRequest(
+                ResourceInfo: SchoolResourceInfo,
+                DocumentInfo: CreateSchoolDocumentInfo(),
+                MappingSet: _mappingSet,
+                EdfiDoc: requestBody ?? CreateRequestBody(),
+                Headers: [],
+                TraceId: new TraceId("pg-ownership-stamping-post"),
+                DocumentUuid: SchoolDocumentUuid
+            )
+            {
+                AuthorizationContext = CreateAuthorizationContext(creatorOwnershipTokenId),
+            }
+        );
+    }
+
+    private async Task<UpdateResult> ExecuteUpdateAsync(short? creatorOwnershipTokenId)
+    {
+        using var scope = CreateScopeForDatabase();
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        return await repository.UpdateDocumentById(
+            new UpdateRequest(
+                ResourceInfo: SchoolResourceInfo,
+                DocumentInfo: CreateSchoolDocumentInfo(),
+                MappingSet: _mappingSet,
+                EdfiDoc: UpdateRequestBody(),
+                Headers: [],
+                TraceId: new TraceId("pg-ownership-stamping-put"),
+                DocumentUuid: SchoolDocumentUuid
+            )
+            {
+                AuthorizationContext = CreateAuthorizationContext(creatorOwnershipTokenId),
+            }
+        );
+    }
+
+    private static RelationalAuthorizationContext CreateAuthorizationContext(
+        short? creatorOwnershipTokenId
+    ) => new([], [], creatorOwnershipTokenId, []);
+
+    private IServiceScope CreateScopeForDatabase()
+    {
+        var scope = _serviceProvider.CreateScope();
+
+        scope
+            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
+            .SetSelectedDataStore(
+                new DataStore(
+                    Id: 1,
+                    DataStoreType: "test",
+                    Name: "PostgresqlRelationalOwnershipStamping",
+                    ConnectionString: _database.ConnectionString,
+                    RouteContext: []
+                )
+            );
+
+        return scope;
+    }
+
+    private async Task<short?> ReadStoredOwnershipTokenAsync()
+    {
+        var rows = await _database.QueryRowsAsync(
+            """
+            SELECT "CreatedByOwnershipTokenId"
+            FROM "dms"."Document"
+            WHERE "DocumentUuid" = @documentUuid;
+            """,
+            new NpgsqlParameter("documentUuid", SchoolDocumentUuid.Value)
+        );
+
+        if (rows.Count != 1)
+        {
+            throw new InvalidOperationException(
+                $"Expected exactly one document row for '{SchoolDocumentUuid.Value}', but found {rows.Count}."
+            );
+        }
+
+        var value = rows[0]["CreatedByOwnershipTokenId"];
+        return value is null or DBNull ? null : Convert.ToInt16(value, CultureInfo.InvariantCulture);
+    }
+
+    private static ServiceProvider CreateServiceProvider()
+    {
+        ServiceCollection services = new();
+
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+        services.AddSingleton<NpgsqlDataSourceCache>();
+        services.AddScoped<IDataStoreSelection, DataStoreSelection>();
+        services.AddScoped<NpgsqlDataSourceProvider>();
+        services.Configure<DatabaseOptions>(options => options.IsolationLevel = IsolationLevel.ReadCommitted);
+        services.AddTestReadableProfileProjector();
+        services.AddScoped<RelationalDocumentStoreRepository>();
+        services.AddPostgresqlBackendIntegrationTestServices();
+
+        return services.BuildServiceProvider(
+            new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true }
+        );
+    }
+}

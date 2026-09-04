@@ -38,6 +38,9 @@ public class Given_AnAuth1PayloadFromAnotherFamily
     [TestCase("cv1|0|u")]
     [TestCase("cv1|1|r")]
     [TestCase("cv1|0|s")]
+    [TestCase("own1|0|m")]
+    [TestCase("own1|1|u")]
+    [TestCase("own1|0|s")]
     public void It_should_not_be_claimed_as_a_namespace_authorization_failure(string payloadText)
     {
         var mapped = NamespaceAuthorizationProviderFailureMapper.TryMapNamespaceAuthorizationFailure(
@@ -56,27 +59,35 @@ public class Given_AnAuth1PayloadFromAnotherFamily
     [Test]
     public void It_should_not_be_claimed_as_a_namespace_stale_stored_target()
     {
-        // The custom-view stale code is also 's'. Reading it as a namespace stale target would turn a
-        // custom-view retry signal into a namespace one, silently retrying against the wrong plan.
-        NamespaceAuthorizationProviderFailureMapper
-            .IsStaleStoredTargetFailure(
-                SqlDialect.Pgsql,
-                new FakeDbException("cv1|0|s", "AUTH1"),
-                new StubProviderFailureExtractor("AUTH1", "cv1|0|s"),
-                NamespaceValueSources
-            )
-            .Should()
-            .BeFalse();
+        // Every family's stale code is 's'. Reading another family's as a namespace stale target would turn
+        // its retry signal into a namespace one, silently retrying against the wrong plan.
+        foreach (var payloadText in new[] { "cv1|0|s", "own1|0|s" })
+        {
+            NamespaceAuthorizationProviderFailureMapper
+                .IsStaleStoredTargetFailure(
+                    SqlDialect.Pgsql,
+                    new FakeDbException(payloadText, "AUTH1"),
+                    new StubProviderFailureExtractor("AUTH1", payloadText),
+                    NamespaceValueSources
+                )
+                .Should()
+                .BeFalse(payloadText);
+        }
     }
 
     [TestCase("cv1|0|n")]
     [TestCase("cv1|0|u")]
     [TestCase("cv1|0|s")]
+    [TestCase("own1|0|m")]
+    [TestCase("own1|1|u")]
+    [TestCase("own1|0|s")]
     public void It_should_not_be_reported_as_namespace_invalid_authorization_metadata(string payloadText)
     {
         // The regression this pins: the diagnostics switch used to route every unrecognized dispatch result
         // through a catch-all that claimed it as namespace invalid-authorization metadata, which would have
-        // turned a custom-view 403 into a namespace 500 as soon as one command carried both.
+        // turned a custom-view 403 into a namespace 500 as soon as one command carried both. The ownership
+        // cases pin the same thing for the family added by DMS-1060, whose statements co-batch with the
+        // namespace statement on every write and delete path.
         var built =
             NamespaceAuthorizationProviderFailureMapper.TryBuildInvalidAuthorizationFailureDiagnostics(
                 SqlDialect.Pgsql,
@@ -91,9 +102,157 @@ public class Given_AnAuth1PayloadFromAnotherFamily
         diagnostics.Should().BeNull();
     }
 
+    /// <summary>
+    /// The same yield has to hold for a payload another family's codec cannot parse. Nothing in it can be
+    /// decoded, so only its discriminator says whose it is — and the discriminator names the statement that
+    /// raised the abort, so that family's mapper owns the diagnostic rather than this one.
+    /// </summary>
+    /// <remarks>
+    /// The regression this pins is narrower than the well-formed case above and outlived it: the yield used
+    /// to be written for <c>own1</c> alone, so a malformed <c>cv1</c> or <c>1|</c> payload was still filed as
+    /// <c>NamespaceInvalidAuth1Payload</c>. The composite classifier reaches the namespace arm before the
+    /// relationship one, so that stole the diagnostic from its owner on any command carrying a namespace
+    /// statement beside a custom-view or relationship one.
+    /// </remarks>
+    [TestCase("own1|0")]
+    [TestCase("own1|0|x")]
+    [TestCase("own1|-1|m")]
+    [TestCase("cv1|0")]
+    [TestCase("cv1|0|x")]
+    [TestCase("1|0|1|not-a-subject-failure")]
+    public void It_should_not_be_reported_as_namespace_invalid_metadata_when_malformed_but_prefixed_with_another_family(
+        string payloadText
+    )
+    {
+        var built =
+            NamespaceAuthorizationProviderFailureMapper.TryBuildInvalidAuthorizationFailureDiagnostics(
+                SqlDialect.Pgsql,
+                new FakeDbException(payloadText, "AUTH1"),
+                new StubProviderFailureExtractor("AUTH1", payloadText),
+                NamespaceValueSources,
+                NamespaceChecks,
+                out var diagnostics
+            );
+
+        built.Should().BeFalse(payloadText);
+        diagnostics.Should().BeNull(payloadText);
+    }
+
+    /// <summary>
+    /// The yield must stay narrow in the other direction too. A payload the dispatcher recognizes no family
+    /// for belongs to nobody, so the namespace mapper keeps claiming it — that is what stops an undecodable
+    /// payload from falling through every mapper into generic database-failure handling.
+    /// </summary>
+    [TestCase("garbage-with-no-discriminator")]
+    [TestCase("v2|0|x")]
+    public void It_should_still_report_namespace_invalid_payload_for_an_unknown_discriminator(
+        string payloadText
+    )
+    {
+        var built =
+            NamespaceAuthorizationProviderFailureMapper.TryBuildInvalidAuthorizationFailureDiagnostics(
+                SqlDialect.Pgsql,
+                new FakeDbException(payloadText, "AUTH1"),
+                new StubProviderFailureExtractor("AUTH1", payloadText),
+                NamespaceValueSources,
+                NamespaceChecks,
+                out var diagnostics
+            );
+
+        built.Should().BeTrue(payloadText);
+        diagnostics
+            .Should()
+            .NotBeNull()
+            .And.Contain(diagnostic =>
+                diagnostic.ProviderOrPlannerFailureKind
+                == AuthorizationSecurityConfigurationDiagnostics.NamespaceInvalidAuth1Payload
+            );
+    }
+
+    /// <summary>
+    /// A <c>cv1|</c>-prefixed payload the custom-view codec cannot parse is still this family's to report.
+    /// Only a custom-view statement emits that prefix, so no other family may answer for it — and declining
+    /// it left it to the namespace catch-all on a co-batched command, and to nothing at all on the
+    /// standalone executor, whose catch filters call straight into this predicate.
+    /// </summary>
+    [TestCase("cv1|0")]
+    [TestCase("cv1|0|x")]
+    [TestCase("cv1||n")]
+    [TestCase("cv1|-1|n")]
+    public void It_should_be_claimed_as_an_unmappable_custom_view_payload_when_malformed(string payloadText)
+    {
+        CustomViewAuthorizationProviderFailureMapper
+            .IsUnmappableCustomViewPayload(
+                SqlDialect.Pgsql,
+                new FakeDbException(payloadText, "AUTH1"),
+                new StubProviderFailureExtractor("AUTH1", payloadText),
+                []
+            )
+            .Should()
+            .BeTrue(payloadText);
+    }
+
+    /// <summary>
+    /// The claim stays narrow: a malformed payload of any other family, and one with no known discriminator
+    /// at all, are still not this family's to report.
+    /// </summary>
+    [TestCase("own1|0")]
+    [TestCase("own1|0|x")]
+    [TestCase("ns1|0")]
+    [TestCase("ns1|0|x")]
+    [TestCase("1|0|1|not-a-subject-failure")]
+    [TestCase("garbage-with-no-discriminator")]
+    [TestCase("v2|0|x")]
+    public void It_should_not_be_claimed_as_an_unmappable_custom_view_payload_when_not_custom_view_prefixed(
+        string payloadText
+    )
+    {
+        CustomViewAuthorizationProviderFailureMapper
+            .IsUnmappableCustomViewPayload(
+                SqlDialect.Pgsql,
+                new FakeDbException(payloadText, "AUTH1"),
+                new StubProviderFailureExtractor("AUTH1", payloadText),
+                []
+            )
+            .Should()
+            .BeFalse(payloadText);
+    }
+
+    /// <summary>
+    /// A malformed payload of a family the relationship mapper is consulted ahead of still yields with no
+    /// diagnostic, exactly as its well-formed payload does. The relationship mapper reports an undecodable
+    /// payload as its own parse failure, so claiming another family's malformed payload here would convert
+    /// that family's 403 into a relationship 500.
+    /// </summary>
+    [TestCase("ns1|0")]
+    [TestCase("ns1|0|x")]
+    [TestCase("cv1|0")]
+    [TestCase("cv1|0|x")]
+    [TestCase("own1|0")]
+    [TestCase("own1|0|x")]
+    public void It_should_not_be_claimed_as_a_relationship_diagnostic_when_malformed(string payloadText)
+    {
+        var mapped = RelationshipAuthorizationProviderFailureMapper.TryMapRelationshipAuthorizationFailure(
+            SqlDialect.Pgsql,
+            new FakeDbException(payloadText, "AUTH1"),
+            new StubProviderFailureExtractor("AUTH1", payloadText),
+            expectedEmittedAuth1Index: 0,
+            [],
+            [],
+            out var relationshipFailure,
+            out var invalidFailureDiagnostic
+        );
+
+        mapped.Should().BeFalse(payloadText);
+        relationshipFailure.Should().BeNull(payloadText);
+        invalidFailureDiagnostic.Should().BeNull(payloadText);
+    }
+
     [TestCase("cv1|0|n")]
     [TestCase("cv1|0|u")]
     [TestCase("ns1|0|m")]
+    [TestCase("own1|0|m")]
+    [TestCase("own1|1|u")]
     public void It_should_not_be_claimed_as_a_relationship_authorization_failure_or_diagnostic(
         string payloadText
     )
@@ -114,6 +273,38 @@ public class Given_AnAuth1PayloadFromAnotherFamily
         // No diagnostic either: a diagnostic makes callers report their own invalid-payload 500, which is
         // exactly the misclassification being prevented.
         invalidFailureDiagnostic.Should().BeNull();
+    }
+
+    /// <summary>
+    /// The custom-view mapper is safe by construction — it only claims a <c>CustomView</c> dispatch result —
+    /// but the contract is pinned so a future refactor toward a catch-all cannot reintroduce the
+    /// cross-family misclassification the rest of this fixture exists to prevent.
+    /// </summary>
+    [TestCase("own1|0|m")]
+    [TestCase("own1|1|u")]
+    [TestCase("own1|0|s")]
+    public void It_should_not_be_claimed_as_a_custom_view_authorization_problem(string payloadText)
+    {
+        CustomViewAuthorizationProviderFailureMapper
+            .IsUnmappableCustomViewPayload(
+                SqlDialect.Pgsql,
+                new FakeDbException(payloadText, "AUTH1"),
+                new StubProviderFailureExtractor("AUTH1", payloadText),
+                []
+            )
+            .Should()
+            .BeFalse(payloadText);
+
+        // Recognized by the dispatcher, so it is not an unrecognized provider failure the custom-view mapper
+        // would attribute to a missing or revoked auth view.
+        CustomViewAuthorizationProviderFailureMapper
+            .IsUnrecognizedProviderFailure(
+                SqlDialect.Pgsql,
+                new FakeDbException(payloadText, "AUTH1"),
+                new StubProviderFailureExtractor("AUTH1", payloadText)
+            )
+            .Should()
+            .BeFalse(payloadText);
     }
 
     [TestCase("garbage-with-no-discriminator")]
@@ -139,6 +330,101 @@ public class Given_AnAuth1PayloadFromAnotherFamily
         mapped.Should().BeFalse();
         relationshipFailure.Should().BeNull();
         invalidFailureDiagnostic.Should().NotBeNull();
+    }
+
+    /// <summary>
+    /// The full co-batch matrix for the ownership family. A single command carries namespace, custom-view,
+    /// relationship and ownership statements, and only one of them can raise the abort — so no other family
+    /// may convert an ownership payload into a denial of its own, whatever the payload says.
+    /// </summary>
+    /// <remarks>
+    /// Covers every variant an ownership statement can produce: the two denials (§2.13 and §2.14), the
+    /// stale-target retry signal, a configured-strategy index that matches no planned check, and two
+    /// malformed payload shapes. None of these mappers is given an ownership plan, so this is also the
+    /// "no planned ownership check" case.
+    /// <para>
+    /// These assertions are about the <em>403</em> paths, which is where a misattribution would be a
+    /// security-relevant wrong answer. Which family reports the 500 <em>diagnostic</em> for a malformed
+    /// ownership payload is settled separately, when the ownership provider-failure mapper joins the
+    /// composite classifier.
+    /// </para>
+    /// </remarks>
+    [TestCase("own1|0|m")]
+    [TestCase("own1|0|u")]
+    [TestCase("own1|0|s")]
+    [TestCase("own1|9|m")]
+    [TestCase("own1|0|x")]
+    [TestCase("own1|0")]
+    public void It_should_never_be_turned_into_another_familys_authorization_denial(string payloadText)
+    {
+        NamespaceAuthorizationProviderFailureMapper
+            .TryMapNamespaceAuthorizationFailure(
+                SqlDialect.Pgsql,
+                new FakeDbException(payloadText, "AUTH1"),
+                new StubProviderFailureExtractor("AUTH1", payloadText),
+                NamespaceValueSources,
+                ["uri://ed-fi.org"],
+                out var namespaceFailure
+            )
+            .Should()
+            .BeFalse(payloadText);
+        namespaceFailure.Should().BeNull(payloadText);
+
+        RelationshipAuthorizationProviderFailureMapper
+            .TryMapRelationshipAuthorizationFailure(
+                SqlDialect.Pgsql,
+                new FakeDbException(payloadText, "AUTH1"),
+                new StubProviderFailureExtractor("AUTH1", payloadText),
+                expectedEmittedAuth1Index: 0,
+                [],
+                [],
+                out var relationshipFailure,
+                out _
+            )
+            .Should()
+            .BeFalse(payloadText);
+        relationshipFailure.Should().BeNull(payloadText);
+
+        CustomViewAuthorizationProviderFailureMapper
+            .IsUnmappableCustomViewPayload(
+                SqlDialect.Pgsql,
+                new FakeDbException(payloadText, "AUTH1"),
+                new StubProviderFailureExtractor("AUTH1", payloadText),
+                []
+            )
+            .Should()
+            .BeFalse(payloadText);
+    }
+
+    /// <summary>
+    /// A well-formed ownership payload must not be read as any other family's stale-target retry signal:
+    /// every family encodes stale as <c>s</c>, and retrying against the wrong plan would re-run a check the
+    /// abort never came from.
+    /// </summary>
+    [Test]
+    public void It_should_never_be_read_as_another_familys_stale_stored_target()
+    {
+        const string OwnershipStalePayload = "own1|0|s";
+
+        NamespaceAuthorizationProviderFailureMapper
+            .IsStaleStoredTargetFailure(
+                SqlDialect.Pgsql,
+                new FakeDbException(OwnershipStalePayload, "AUTH1"),
+                new StubProviderFailureExtractor("AUTH1", OwnershipStalePayload),
+                NamespaceValueSources
+            )
+            .Should()
+            .BeFalse();
+
+        CustomViewAuthorizationProviderFailureMapper
+            .IsStaleStoredTargetFailure(
+                SqlDialect.Pgsql,
+                new FakeDbException(OwnershipStalePayload, "AUTH1"),
+                new StubProviderFailureExtractor("AUTH1", OwnershipStalePayload),
+                []
+            )
+            .Should()
+            .BeFalse();
     }
 
     [Test]
