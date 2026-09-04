@@ -196,6 +196,51 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
             .BeEquivalentTo(new[] { "uri://ed-fi.org/%", "uri://gbisd.edu/%" });
     }
 
+    /// <summary>
+    /// Ownership tokens are <c>smallint</c>, so the array must reach the provider as a <c>short[]</c>, from
+    /// which Npgsql infers <c>smallint[]</c>. A widened element type would still bind and still match, but it
+    /// would force the comparison to widen <c>dms.Document.CreatedByOwnershipTokenId</c> and give up its index.
+    /// </summary>
+    [Test]
+    public void It_should_bind_postgresql_array_parameter_for_short_ownership_tokens()
+    {
+        using var command = new NpgsqlCommand();
+        IReadOnlyList<short> ownershipTokenIds = [3, 7, 11];
+        var keyset = new PageKeysetSpec.Query(
+            CreateQueryPlan(
+                pageParametersInOrder:
+                [
+                    new QuerySqlParameter(
+                        QuerySqlParameterRole.Filter,
+                        "ownershipTokenIds",
+                        QuerySqlParameterBinding.PgsqlArray
+                    ),
+                    new QuerySqlParameter(QuerySqlParameterRole.Offset, "offset"),
+                    new QuerySqlParameter(QuerySqlParameterRole.Limit, "limit"),
+                ],
+                totalCountParametersInOrder: null
+            ),
+            new Dictionary<string, object?>
+            {
+                ["ownershipTokenIds"] = ownershipTokenIds,
+                ["offset"] = 0L,
+                ["limit"] = 25L,
+            },
+            PageOrderingMode.DocumentId
+        );
+
+        HydrationBatchBuilder.AddParameters(command, keyset);
+
+        command.Parameters.Count.Should().Be(3);
+        command.Parameters.Contains("@ownershipTokenIds").Should().BeTrue();
+        command
+            .Parameters["@ownershipTokenIds"]
+            .Value.Should()
+            .BeOfType<short[]>()
+            .Which.Should()
+            .Equal((short)3, (short)7, (short)11);
+    }
+
     [Test]
     public void It_should_bind_mssql_structured_parameter_with_expected_type_and_table_value()
     {
@@ -387,7 +432,7 @@ public class Given_HydrationBatchBuilder_Query_Parameter_Binding
         act.Should()
             .Throw<InvalidOperationException>()
             .WithMessage(
-                "Hydration query keyset parameter 'ClaimEducationOrganizationIds' requires an IReadOnlyList<long> or IReadOnlyList<string> runtime value."
+                "Hydration query keyset parameter 'ClaimEducationOrganizationIds' requires an IReadOnlyList<long>, IReadOnlyList<short>, or IReadOnlyList<string> runtime value."
             );
     }
 

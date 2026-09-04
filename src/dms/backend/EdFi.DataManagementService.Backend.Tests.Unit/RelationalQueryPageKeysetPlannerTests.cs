@@ -223,6 +223,114 @@ public class Given_RelationalQueryPageKeysetPlanner
             .Contain(parameter => parameter.ParameterName == "ClaimEducationOrganizationIds_1");
     }
 
+    /// <summary>
+    /// The ownership tokens are bound as the <c>short</c> list the array binder turns into a <c>short[]</c>,
+    /// never widened, and the same parameter serves page and total-count SQL.
+    /// </summary>
+    [Test]
+    public void It_should_add_the_postgresql_ownership_token_array_value_to_the_planned_query()
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);
+
+        var keyset = planner.Plan(
+            CreateRootTable(),
+            new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
+            ),
+            authorization: new PageDocumentIdAuthorizationSpec(
+                Strategies: [],
+                OwnershipTokenParameterization: OwnershipTokenParameterizationFactory.Create(
+                    SqlDialect.Pgsql,
+                    [11, 3, 7],
+                    "ownershipTokenIds"
+                )
+            )
+        );
+
+        keyset
+            .ParameterValues["ownershipTokenIds"]
+            .Should()
+            .BeAssignableTo<IReadOnlyList<short>>()
+            .Which.Should()
+            .Equal((short)3, (short)7, (short)11);
+        keyset
+            .Plan.PageParametersInOrder.Should()
+            .ContainSingle(parameter => parameter.ParameterName == "ownershipTokenIds")
+            .Which.Binding.Kind.Should()
+            .Be(QuerySqlParameterBindingKind.PgsqlArray);
+        keyset.Plan.TotalCountParametersInOrder.Should().NotBeNull();
+        keyset
+            .Plan.TotalCountParametersInOrder!.Value.Should()
+            .ContainSingle(parameter => parameter.ParameterName == "ownershipTokenIds");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("= ANY(@ownershipTokenIds)");
+    }
+
+    [Test]
+    public void It_should_add_the_sql_server_ownership_token_scalar_values_to_the_planned_query()
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Mssql);
+
+        var keyset = planner.Plan(
+            CreateRootTable(),
+            new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
+            ),
+            authorization: new PageDocumentIdAuthorizationSpec(
+                Strategies: [],
+                OwnershipTokenParameterization: OwnershipTokenParameterizationFactory.Create(
+                    SqlDialect.Mssql,
+                    [11, 3, 7],
+                    "ownershipTokenIds"
+                )
+            )
+        );
+
+        keyset.ParameterValues["ownershipTokenIds_0"].Should().Be((short)3);
+        keyset.ParameterValues["ownershipTokenIds_1"].Should().Be((short)7);
+        keyset.ParameterValues["ownershipTokenIds_2"].Should().Be((short)11);
+        keyset.ParameterValues.Keys.Should().NotContain("ownershipTokenIds");
+        keyset
+            .Plan.TotalCountParametersInOrder!.Value.Select(static parameter => parameter.ParameterName)
+            .Should()
+            .Equal("ownershipTokenIds_0", "ownershipTokenIds_1", "ownershipTokenIds_2");
+    }
+
+    /// <summary>
+    /// The compiler renders an empty token list as a constant false that references no parameter, so the
+    /// planner must bind none: a value with no placeholder would fail the plan's binding contract.
+    /// </summary>
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_bind_no_ownership_token_value_for_an_empty_token_list(SqlDialect dialect)
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(dialect);
+
+        var keyset = planner.Plan(
+            CreateRootTable(),
+            new RelationalQueryPreprocessingResult(new RelationalQueryPreprocessingOutcome.Continue(), []),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            ),
+            authorization: new PageDocumentIdAuthorizationSpec(
+                Strategies: [],
+                OwnershipTokenParameterization: OwnershipTokenParameterizationFactory.Create(
+                    dialect,
+                    [],
+                    "ownershipTokenIds"
+                )
+            )
+        );
+
+        keyset.ParameterValues.Keys.Should().NotContain(key => key.StartsWith("ownershipTokenIds"));
+        keyset
+            .Plan.PageParametersInOrder.Select(static parameter => parameter.ParameterName)
+            .Should()
+            .Equal("offset", "limit");
+        keyset.Plan.PageDocumentIdSql.Should().Contain("1 = 0");
+    }
+
     [TestCase("1.5")]
     [TestCase("2147483648")]
     public void It_should_signal_empty_page_when_integer_number_query_values_cannot_be_represented(
@@ -494,6 +602,60 @@ public class Given_RelationalQueryPageKeysetPlanner
         result.ParameterValues.Keys.Should().Contain("namespacePrefixes_2");
         result.Plan.PageDocumentIdSql.Should().Contain("LIKE ANY(@namespacePrefixes)");
         result.Plan.PageDocumentIdSql.Should().Contain("@namespacePrefixes_2");
+    }
+
+    /// <summary>
+    /// The same reservation the namespace and claim parameters get. Without it, a resource with a query
+    /// field named <c>ownershipTokenIds</c> would collide with the ownership array parameter and the compiler
+    /// would reject the plan as a duplicate filter parameter.
+    /// </summary>
+    [TestCase(SqlDialect.Pgsql, "ownershipTokenIds", "= ANY(@ownershipTokenIds)")]
+    [TestCase(SqlDialect.Mssql, "ownershipTokenIds_0", "IN (@ownershipTokenIds_0)")]
+    public void It_should_assign_collision_free_parameter_names_when_a_query_field_collides_with_an_ownership_authorization_parameter(
+        SqlDialect dialect,
+        string collidingQueryFieldName,
+        string expectedOwnershipSql
+    )
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(dialect);
+        var result = planner.Plan(
+            CreateRootTable(),
+            new RelationalQueryPreprocessingResult(
+                new RelationalQueryPreprocessingOutcome.Continue(),
+                [
+                    CreateElement(
+                        collidingQueryFieldName,
+                        $"$.{collidingQueryFieldName}",
+                        "string",
+                        new RelationalQueryFieldTarget.RootColumn(
+                            new DbColumnName("NamespacePrefixesQueryField")
+                        ),
+                        "collides with auth parameter",
+                        new PreprocessedRelationalQueryValue.Raw("collides with auth parameter")
+                    ),
+                ]
+            ),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: false, MaximumPageSize: 500)
+            ),
+            authorization: new PageDocumentIdAuthorizationSpec(
+                Strategies: [],
+                OwnershipTokenParameterization: OwnershipTokenParameterizationFactory.Create(
+                    dialect,
+                    [42],
+                    "ownershipTokenIds"
+                )
+            )
+        );
+
+        // The ownership parameter keeps its allocated name and the colliding query field is suffixed, so
+        // the membership predicate and the query predicate never share a parameter.
+        result.ParameterValues.Keys.Should().Contain(collidingQueryFieldName);
+        result.ParameterValues.Keys.Should().Contain($"{collidingQueryFieldName}_2");
+        result.ParameterValues[collidingQueryFieldName].Should().NotBe("collides with auth parameter");
+        result.ParameterValues[$"{collidingQueryFieldName}_2"].Should().Be("collides with auth parameter");
+        result.Plan.PageDocumentIdSql.Should().Contain(expectedOwnershipSql);
+        result.Plan.PageDocumentIdSql.Should().Contain($"@{collidingQueryFieldName}_2");
     }
 
     [Test]
