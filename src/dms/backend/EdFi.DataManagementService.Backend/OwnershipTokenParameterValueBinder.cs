@@ -32,15 +32,11 @@ internal static class OwnershipTokenParameterValueBinder
 {
     public static void Bind(
         IDictionary<string, object?> parameterValues,
-        OwnershipTokenParameterization? ownershipTokenParameterization
+        OwnershipTokenParameterization ownershipTokenParameterization
     )
     {
         ArgumentNullException.ThrowIfNull(parameterValues);
-
-        if (ownershipTokenParameterization is null)
-        {
-            return;
-        }
+        ArgumentNullException.ThrowIfNull(ownershipTokenParameterization);
 
         if (ownershipTokenParameterization.MatchesNoToken)
         {

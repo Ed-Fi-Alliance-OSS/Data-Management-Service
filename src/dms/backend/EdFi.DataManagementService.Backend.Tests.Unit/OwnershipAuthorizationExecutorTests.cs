@@ -522,6 +522,27 @@ public class Given_OwnershipAuthorizationCommandParameterBuilder
     }
 }
 
+[TestFixture]
+[Parallelizable]
+public class Given_OwnershipTokenParameterValueBinder
+{
+    /// <summary>
+    /// The binder's only production caller already requires a parameterization, so a null here is a
+    /// programming error, not a request to bind nothing. The case that legitimately binds nothing is a
+    /// non-null parameterization with no tokens, pinned by
+    /// Given_OwnershipAuthorizationExecutor.It_binds_no_token_parameter_when_the_client_holds_no_tokens.
+    /// </summary>
+    [Test]
+    public void It_rejects_a_null_parameterization()
+    {
+        Dictionary<string, object?> parameterValues = new(StringComparer.Ordinal);
+
+        Action act = () => OwnershipTokenParameterValueBinder.Bind(parameterValues, null!);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("ownershipTokenParameterization");
+    }
+}
+
 internal static class OwnershipAuthTestDoubles
 {
     public static string EncodePayload(
