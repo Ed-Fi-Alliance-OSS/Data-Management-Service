@@ -554,14 +554,14 @@ internal sealed class CdcConnectorObservationMapper(
                 : null;
         }
 
-        CdcDiagnosticCollector unusedDiagnostics = new();
+        // The category reaches a shared contract, so it is held to the same token rules every other
+        // reported name is. Asked as a predicate: this decides between the worker's own category and
+        // the unclassified stand-in, and has no diagnostic to report either way.
+        string normalizedCategory = category.ToLowerInvariant();
 
-        return CdcKafkaSafeTokenValidator.Validate(
-                category.ToLowerInvariant(),
-                "$.lastErrorCategory",
-                "lastErrorCategory",
-                unusedDiagnostics
-            ) ?? CdcConnectRestAdapter.UnclassifiedErrorCategory;
+        return CdcKafkaSafeTokenValidator.IsValid(normalizedCategory)
+            ? normalizedCategory
+            : CdcConnectRestAdapter.UnclassifiedErrorCategory;
     }
 
     private static CdcConnectorRuntimeState ToRuntimeState(string? state) =>

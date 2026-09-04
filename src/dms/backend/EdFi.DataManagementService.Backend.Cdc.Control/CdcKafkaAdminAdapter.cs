@@ -1006,7 +1006,9 @@ internal sealed class CdcKafkaAdminAdapter(
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        artifacts.Add(await DeleteTopicAclsAsync(topicName, aclKind, controlOptions, timeout));
+        artifacts.Add(
+            await DeleteResourceAclsAsync(ResourceType.Topic, topicName, aclKind, controlOptions, timeout)
+        );
 
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -1014,11 +1016,16 @@ internal sealed class CdcKafkaAdminAdapter(
     }
 
     /// <summary>
-    /// Deletes only literal grants on this exact topic. A broader pattern is never removed here: it is
-    /// not a binding artifact, and revoking it could strip access another binding still depends on.
+    /// Deletes only literal grants on this exact resource. A broader pattern is never removed here: it
+    /// is not a binding artifact, and revoking it could strip access another binding still depends on.
     /// </summary>
-    private async Task<CdcGovernedArtifact> DeleteTopicAclsAsync(
-        string topicName,
+    /// <remarks>
+    /// The resource type is a parameter rather than fixed at <see cref="ResourceType.Topic"/> so the
+    /// removal rule has one implementation for every resource a binding's grants are held on.
+    /// </remarks>
+    private async Task<CdcGovernedArtifact> DeleteResourceAclsAsync(
+        ResourceType resourceType,
+        string resourceName,
         CdcGovernedArtifactKind aclKind,
         CdcControlOptions controlOptions,
         TimeSpan timeout
@@ -1028,7 +1035,7 @@ internal sealed class CdcKafkaAdminAdapter(
         {
             return new(
                 aclKind,
-                topicName,
+                resourceName,
                 CdcCleanupState.NotFound,
                 "No governed grant existed because the deployment has no authorizer."
             );
@@ -1040,8 +1047,8 @@ internal sealed class CdcKafkaAdminAdapter(
                 {
                     PatternFilter = new ResourcePatternFilter
                     {
-                        Type = ResourceType.Topic,
-                        Name = topicName,
+                        Type = resourceType,
+                        Name = resourceName,
                         ResourcePatternType = ResourcePatternType.Literal,
                     },
                     EntryFilter = new AccessControlEntryFilter
@@ -1057,10 +1064,10 @@ internal sealed class CdcKafkaAdminAdapter(
         int deletedCount = results?.Sum(result => result.AclBindings?.Count ?? 0) ?? 0;
 
         return deletedCount == 0
-            ? new(aclKind, topicName, CdcCleanupState.NotFound, "No governed grant remained.")
+            ? new(aclKind, resourceName, CdcCleanupState.NotFound, "No governed grant remained.")
             : new(
                 aclKind,
-                topicName,
+                resourceName,
                 CdcCleanupState.Deleted,
                 $"Removed {deletedCount.ToString(CultureInfo.InvariantCulture)} literal governed grants."
             );
@@ -1427,7 +1434,20 @@ internal sealed class CdcKafkaAdminAdapter(
                     consumer.Principal,
                     timeout,
                     observedAt,
-                    diagnostics
+                    diagnostics,
+                    // A retained generation's public topic is this target's, not another instance's. A
+                    // guarded source replacement keeps the generation it supersedes until an operator
+                    // retires it, and a stable consumer principal holds a literal grant on both public
+                    // topics for as long as that lasts. Rejecting the older one would make ordinary
+                    // source replacement fail closed on the deployment doing exactly what the design
+                    // says it does. What still fails is a grant naming another instance key, any
+                    // progress or schema-history topic, or a non-literal pattern.
+                    alsoPermitted: grantedTopicName =>
+                        CdcArtifactNameGenerator.IsTargetPublicTopicName(
+                            inventory.TopicPrefix,
+                            inventory.InstanceKey,
+                            grantedTopicName
+                        )
                 )
             );
             state = Worse(
@@ -1446,13 +1466,18 @@ internal sealed class CdcKafkaAdminAdapter(
         return state;
     }
 
+    /// <param name="alsoPermitted">
+    /// An additional literal resource name this principal may hold a grant on, decided by name. Absent
+    /// for the consumer group, where the only permitted grant is the one on the group itself.
+    /// </param>
     private async Task<CdcKafkaPolicyItemState> VerifyConsumerResourceIsolationAsync(
         ResourceType resourceType,
         string permittedResourceName,
         string principal,
         TimeSpan timeout,
         DateTimeOffset observedAt,
-        List<CdcDiagnostic> diagnostics
+        List<CdcDiagnostic> diagnostics,
+        Func<string, bool>? alsoPermitted = null
     )
     {
         DescribeAclsResult result = await adminClient.DescribeAclsAsync(
@@ -1495,7 +1520,10 @@ internal sealed class CdcKafkaAdminAdapter(
         {
             if (
                 pattern.ResourcePatternType == ResourcePatternType.Literal
-                && string.Equals(pattern.Name, permittedResourceName, StringComparison.Ordinal)
+                && (
+                    string.Equals(pattern.Name, permittedResourceName, StringComparison.Ordinal)
+                    || alsoPermitted?.Invoke(pattern.Name) == true
+                )
             )
             {
                 continue;

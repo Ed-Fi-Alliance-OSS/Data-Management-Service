@@ -42,12 +42,11 @@ needed to provision, validate, start, stop, and retire a target.
 - Integrate provider setup, binding lifecycle, and connector rendering. DMS startup itself
   never enables tracking, and mutable projection/CDC state stays outside the bootstrap
   manifest.
-- Wire CDC-owned downstream-publication-history evidence into the E18 DocumentCache
-  administrative command gate by providing and registering the production
-  `IDocumentCacheDownstreamPublicationHistoryProvider` implementation. It reports
-  `internalOnly` only when durable CDC binding evidence proves the same normalized target key
-  and physical-source fingerprint were internal-only; `active`, `historical`, `possible`,
-  `unknown`, missing, or mismatched evidence keeps the E18 commands rejected with no mutation.
+- Provide and register the production
+  `IDocumentCacheDownstreamPublicationHistoryProvider` so the E18 DocumentCache administrative
+  command gate reads CDC-owned downstream-publication history. What counts as evidence, and
+  what each answer authorizes, is owned by
+  reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-administration.
 - Add cluster-scoped Kafka Connect offset-store provisioning/validation and binding-scoped
   Kafka topic, durability, record-size, and ACL provisioning/validation.
 - Add Kafka Connect registration, live validation, status polling, restart, guarded
@@ -139,118 +138,74 @@ controller, its adapters, and the entry points that invoke them.
   worker applied the request and it failed anyway or never accepted it at all, and only the
   second is worth reissuing.
 
+How operators are told to use this surface — procedures, worked examples, and the judgements
+each confirmation token puts on them — belongs to
+reference/design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md rather than here.
+
 ### Explicit Projection Target Evidence
 
-- The explicit-projection-target proof reads `DataManagement:DocumentCache:Targets` from the
-  unmodified `IConfiguration`, not through the CLI's DI graph. The CLI overwrites
-  `DocumentCacheOptions.Targets` with the invocation's own arguments, so resolving the proof
-  through the target resolver or registry would only confirm what the operator typed.
-- Because the proof is a configuration fact, the entry points must configure the target
-  before DMS starts: the CDC opt-in writes the `(tenant key, DataStoreId)` entry and the
-  status endpoint's required role into the DMS runtime settings, and infrastructure opt-in
-  alone never implies a projection target.
+The explicit-projection-target proof reads `DataManagement:DocumentCache:Targets` from the
+unmodified `IConfiguration` rather than through the CLI's DI graph, which overwrites
+`DocumentCacheOptions.Targets` with the invocation's own arguments and would only confirm what
+the operator typed. Because the proof is a configuration fact, the entry points configure the
+target before DMS starts; infrastructure opt-in alone never implies a projection target. What
+the proof must establish is owned by
+reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#configuration-and-projection-target-selection.
 
 ### Downstream Publication History for the E18 Administrative Gate
 
-The rule itself — what proves a projection internal-only, what each record means, and which
-observations reject — is owned by
-[Relational CDC and Document Projection](../../design-docs/cdc/cdc-streaming.md) under the
-read-acceleration toggle. It is not restated here.
+This story implements the evidence side of the read-acceleration rule owned by
+[Relational CDC and Document Projection](../../design-docs/cdc/cdc-streaming.md#cache-backed-reads-and-domain-lifecycle),
+and only the evidence side; what each record proves, and which observations reject, is the
+owner's and is not restated here. The `Backend.Cdc.Control` provider replaces the default
+abstraction that always answered `unknown`, and supplies `active` and `historical` from CDC
+records that name the requested target and `unknown` from every other shape. It creates no
+production path to `internalOnly`, and specifically none from the absence of a record — the E18
+offline commands stay rejected exactly as they were under the default provider, and what this
+one adds is the positive proof that keeps a published target out of them.
 
-This story's scope is the production implementation of that rule:
-
-- The `Backend.Cdc.Control` provider replaces the default abstraction that always answered
-  `unknown`, reading the deployment's durable binding and retirement records.
-- Retirement writes its retirement record before it deletes the binding record, so the two
-  are never both absent for a generation this deployment published.
-- The retirement records are read whenever no live binding names the target, including when
-  the deployment holds no binding at all: retiring the only binding empties that listing, and
-  the retirement is then the only record that names what was published.
-- The provider is registered by the packaged administrative host ahead of the DocumentCache
-  runtime services, whose registration of the `unknown` default is conditional.
-- Target matching maps the E18 empty tenant key onto the binding `default` token, and every
-  observation carries the currently resolved physical-source fingerprint, including the
-  rejecting ones, because the E18 evaluator checks the fingerprint before the status.
-- The deployment key is read from raw configuration rather than through the bound control
-  options, whose validation the administrative host defers to a `cdc` verb; binding it here
-  would make every DocumentCache command fail on CDC configuration it does not use.
-
-The bootstrap lifecycle configures exactly one target, so its store holds only that target's
-own records. `internalOnly` is therefore unreachable across the bootstrap lifecycle and the
-E18 offline commands stay rejected for the whole of it, which is the fail-closed side of the
-owning rule rather than a gap in this story.
+Three implementation facts are this story's own. The provider is registered by the packaged
+administrative host ahead of the DocumentCache runtime services, whose registration of the
+`unknown` default is conditional. Target matching maps the E18 empty tenant key onto the
+binding `default` token, and every observation carries the currently resolved
+physical-source fingerprint, including the rejecting ones, because the E18 evaluator checks the
+fingerprint before the status. The deployment key is read from raw configuration rather than
+through the bound control options, whose validation the administrative host defers to a `cdc`
+verb; binding it here would make every DocumentCache command fail on CDC configuration it does
+not use.
 
 ### Lag and the Metrics Bridge
 
-- Connector lag is Debezium's `MilliSecondsBehindSource` current value plus its P50, P95,
-  and P99 attributes, read over a JMX-to-HTTP bridge. It is never derived from the progress
-  topic: the lag observation contract requires all five values whenever `LagState` is not
-  `Unknown`, and the Debezium quantiles are named by the owning design as deployment-owned
-  CDC status.
-- The bridge is Jolokia, activated with `ENABLE_JOLOKIA=true` on the Kafka Connect service.
-  Its port is fixed at 8778 by the Connect image's entrypoint and is not configurable, so it
-  is a property of the image rather than a deployment setting; the reader derives the bridge
-  from the Connect host and that port unless an explicit metrics base URI is supplied.
-- The Prometheus JMX exporter is not an alternative on this image: its entrypoint branch
-  targets a port whose agent jar the image does not ship. Jolokia also returns per-attribute
-  JSON, where the exporter would require flattening rules to be authored and maintained.
-- An unavailable bridge yields `Unknown`, which keeps readiness false. A timeout never opens
-  writes as ready.
+Connector lag is Debezium's `MilliSecondsBehindSource` current value plus its P50, P95, and P99
+attributes, never derived from the progress topic; the lag observation contract and the
+readiness consequences of `Unknown` are owned by
+reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness.
+
+This story's resolution is the bridge those values are read over: Jolokia, activated with
+`ENABLE_JOLOKIA=true` on the Kafka Connect service, at the port 8778 the Connect image's
+entrypoint fixes, so the reader derives the bridge from the Connect host and that port unless
+an explicit metrics base URI is supplied. The Prometheus JMX exporter is not an alternative on
+this image: its entrypoint branch targets a port whose agent jar the image does not ship. An
+unavailable bridge yields `Unknown`.
 
 ### Retirement and Teardown Ordering
 
-- Retirement stops the connector, deletes its committed offsets while it is stopped and
-  still exists, then deletes the connector. Connect accepts an offsets `DELETE` only for an
-  existing stopped connector, and a configuration delete leaves committed offsets in the
-  shared store, so deleting the connector first would orphan offsets permanently and break
-  later registrations. The worker applies a stop asynchronously, so the control plane reads
-  the connector's state back until it reports `STOPPED` rather than treating the accepted
-  request as the fence; a connector that never settles is reported unavailable and
-  retryable. The wait is bounded by the Connect request timeout as elapsed time rather than
-  as a number of reads, because each state read carries that timeout of its own. Stopping
-  the connector is also how source replacement fences the outgoing generation.
-- Every provider pass runs under the configured provider-setup budget - the create pass, the
-  validate-only pass each verb composes its evidence from, and the retirement's own artifact
-  teardown. A pass that spends its budget is reported as a failed step rather than waited on:
-  the CLI adds no wall clock of its own, so an unbounded provider call would hold a verb open
-  indefinitely. A retirement whose provider teardown times out ends with no proof and its
-  binding record intact, exactly as any other failed step there does.
-- A connector the worker does not have ends the retirement. Because the offsets outlive the
-  configuration and the worker answers the same `404` whether the connector never existed or
-  was deleted out from under the record, a missing connector is never read as proof that the
-  committed offsets are gone. Retirement refuses, issues no proof, and keeps the binding
-  record naming what an operator must reconcile by hand.
-- An operator may take that judgement on themselves with `--connector-already-absent`, which
-  is how a generation whose connector was never registered, or whose earlier retirement
-  removed the connector before being interrupted, is still retirable. The retirement then
-  proceeds and its proof records the offsets as the operator's assertion rather than the
-  worker's observation, because the worker was never in a position to make one. Neither named
-  case can leave committed offsets behind: a connector that was never registered committed
-  none, and a retirement that removed a connector had already deleted its offsets first, in
-  the order above. What the switch actually covers is a connector deleted outside this control
-  plane, which is the judgement it puts on the operator by name.
-- After the connector, retirement removes the binding's public, progress, and SQL Server
-  schema-history topics and their ACLs, then the provider capture artifacts, then the
-  terminal incident state, and the binding record last of all, and only against a validated
-  cleanup proof that accounts for every artifact the record governs. The record goes last
-  because it is what makes a retirement retryable: an interruption between any two removals
-  leaves a record naming what is still there, while an incident whose binding had already been
-  deleted would fail every listing of that deployment and be retirable by nothing - the
-  retirement refuses on the missing record before it reaches the state that would clear it.
-  The shared Connect offset store is cluster-scoped and is never removed by per-binding
-  teardown.
-- A normal stop retains all of it. Local destructive volume removal is the only workflow
-  that may remove a binding record, and only in the same pass that removes every artifact
-  the record governs.
-- A binding record carries its tenant key in binding space, and every cdc verb takes it in E18
-  space. The two differ in exactly one value: the E18 default tenant is the empty string and the
-  binding token for it is `default`. Anything that reads a record and drives a verb from it -
-  the destructive teardown, and an operator reading a record by hand - maps back, because the
-  verb resolves the instance database's connection string under the E18 key and the deployment
-  holds the default tenant under the empty one. A record's own `default` passed through as
-  `--tenant-key` names a tenant the deployment does not have. The forward mapping is not
-  injective, so a deployment with a real tenant named `default` cannot be told apart from the
-  default tenant by a binding record alone.
+The removal order, the offsets-before-configuration rule, the read-back that proves the fence,
+and what an absent connector does to a retirement are owned by
+reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding.
+Operator guidance for the confirmation token, `--connector-already-absent`, and reading a
+binding record's tenant token back into a verb's `--tenant-key` belongs to
+reference/design/backend-redesign/epics/19-cdc-kafka/07-ops-docs-runbooks.md.
+
+This story owns how the controller spends its budgets and classifies its steps. Every provider
+pass runs under the configured provider-setup budget — the create pass, the validate-only pass
+each verb composes its evidence from, and the retirement's own artifact teardown — because the
+CLI adds no wall clock of its own and an unbounded provider call would hold a verb open
+indefinitely. A pass that spends its budget is a failed step, and a retirement whose provider
+teardown times out ends with no proof and its binding record intact, exactly as any other
+failed step there does. The connector-state read-back is bounded by the Connect request timeout
+as elapsed time rather than as a number of reads, because each state read carries that timeout
+of its own.
 
 ### Local Bootstrap and E2E Entry Points
 
@@ -295,18 +250,24 @@ owning rule rather than a gap in this story.
 - The durable binding state store is a persistent root outside the bootstrap manifest. The
   manifest is prepared-input handoff, while a binding record outlives any one bootstrap run
   and lives at least as long as every artifact it governs.
-- The enable phase allocates the binding generation from that store rather than fixing it at
-  the target's first. It takes one past the highest generation the store has ever held for the
-  instance key, counting the retirement records as well as the live bindings, because
-  retirement removes the binding record it retires and leaves the retirement record as the
-  only trace of it. Reading the live bindings alone would make a retired generation look
-  unallocated, and this root survives the destructive volume removal that destroys the
-  database the generation was bound to - so the next stack would ask to bind that same
-  generation to a new physical source, which the control plane refuses and v1 never does. The
-  governed names carry the generation, so a second local cycle publishes under its own
-  connector, topics, and consumer state rather than reusing the retired ones. A store that
-  cannot be enumerated, or a record not named for a generation, fails the phase rather than
-  allocating over what it could not read.
+- The enable phase takes the binding generation from that store rather than fixing it at the
+  target's first. A live binding record for the instance key is the generation the control plane
+  already holds, so the phase reuses it: an enable that wrote its binding and then failed during
+  activation, Kafka setup, connector registration, or readiness is completed by being reissued,
+  and only against the generation that record names — asking for the next one makes the rerun a
+  first attempt, which the control plane refuses while that generation is still live. More than
+  one live binding record for the instance key stops the phase rather than being chosen between.
+  With no live record it allocates one past the highest generation the store has ever held for
+  the instance key, retirement records included, because retirement removes the binding record it
+  retires and leaves the retirement record as the only trace of it. Reading the live bindings
+  alone would make a retired generation look unallocated, and this root survives the destructive
+  volume removal that destroys the database the generation was bound to - so the next stack would
+  ask to bind that same generation to a new physical source, which the control plane refuses and
+  v1 never does. Retirements are counted for that reason and are never reused. The governed names
+  carry the generation, so a second local cycle publishes under its own connector, topics, and
+  consumer state rather than reusing the retired ones. A store that cannot be enumerated, or a
+  record not named for a generation, fails the phase rather than allocating over what it could
+  not read.
 - That root reaches the control-plane container as a host bind mount, and the setup image
   clears the group- and other-write bits from it before the tool runs. Docker Desktop presents
   any bind mount as world-writable whatever the host's own permissions are - including a
@@ -335,12 +296,12 @@ owning rule rather than a gap in this story.
   image validation.
 - Provider tests cover the initial readiness and post-enablement lifecycle paths for
   PostgreSQL and SQL Server.
-- Downstream-publication-history tests prove the E18 `activate-offline`, `deactivate-offline`,
-  and `recover-cache-ahead` commands no longer receive the default `unknown` history: the
-  shipped composition for both datastores resolves the CDC-backed provider, and the provider
-  reports `internalOnly` only for a complete listing that holds a readable binding and none for
-  the target, reporting `active`, `historical`, or `unknown` for every other evidence shape, an
-  empty listing included.
+- Downstream-publication-history tests prove the shipped composition for both datastores
+  resolves the CDC-backed provider rather than the default that always answered `unknown`, and
+  that the provider reports `active` for a binding on the resolved physical source,
+  `historical` for a binding on an earlier one or a retirement naming the target, and `unknown`
+  for every other evidence shape — an unreadable listing, an empty one, and a listing whose
+  records all name other targets included.
 - Diagnostics tests cover each implementation boundary without exposing secrets.
 
 ## Not Assigned to This Story

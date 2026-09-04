@@ -139,6 +139,43 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
             .MustHaveHappenedOnceExactly();
     }
 
+    /// <summary>
+    /// A restart that was declined before it issued anything reports the same contract shape as one the
+    /// worker applied, so the exit code is all that tells an automated caller the deployment was left
+    /// exactly as the operator left it.
+    /// </summary>
+    [Test]
+    public async Task It_reports_a_restart_that_started_nothing_as_rejected_before_mutation()
+    {
+        A.CallTo(() => _controller.RestartAsync(A<CdcTargetOperationRequest>._, A<CancellationToken>._))
+            .Returns(DeclinedRestart());
+
+        DocumentCacheAdminCdcCommandResult result = await ExecuteAsync(
+            Request(DocumentCacheAdminCommandSurface.CdcRestartVerbName)
+        );
+
+        using AssertionScope assertions = new();
+        result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.RejectedNoMutation);
+        result.Outcome.Should().Be("notReady", "the contract still reports the readiness it observed");
+    }
+
+    /// <summary>
+    /// A restart the worker applied is classified by readiness like any other status read, because what
+    /// the connector does next is an outcome to observe rather than a request to reissue.
+    /// </summary>
+    [Test]
+    public async Task It_reports_an_applied_restart_as_successful()
+    {
+        A.CallTo(() => _controller.RestartAsync(A<CdcTargetOperationRequest>._, A<CancellationToken>._))
+            .Returns(Status(CdcReadiness.NotReady));
+
+        DocumentCacheAdminCdcCommandResult result = await ExecuteAsync(
+            Request(DocumentCacheAdminCommandSurface.CdcRestartVerbName)
+        );
+
+        result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.Success);
+    }
+
     [Test]
     public async Task It_adopts_under_the_operator_supplied_binding_record()
     {
@@ -310,6 +347,36 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
         result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.IncompleteRetryable);
         result.Contract.Should().BeNull();
         result.Diagnostics.Should().NotBeEmpty();
+    }
+
+    /// <summary>
+    /// Automation reissues an incomplete retirement and corrects a rejected one, so a refusal that
+    /// removed nothing must not be reported as a half-finished teardown a retry would resolve.
+    /// </summary>
+    [Test]
+    public async Task It_reports_a_retirement_refused_before_any_mutation_as_rejected()
+    {
+        A.CallTo(() => _controller.RetireAsync(A<CdcTargetOperationRequest>._, A<CancellationToken>._))
+            .Returns(
+                CdcContractReadResult<CdcCleanupProof>.Failure([
+                    new CdcDiagnostic(
+                        CdcDiagnosticCategory.ProviderMismatch,
+                        DateTimeOffset.UnixEpoch,
+                        "$.binding.provider",
+                        "CDC retirement requires the binding record to name this deployment's provider."
+                    )
+                    {
+                        Code = CdcRetirementDiagnosticCodes.RefusedNoMutation,
+                    },
+                ])
+            );
+
+        DocumentCacheAdminCdcCommandResult result = await ExecuteAsync(
+            Request(DocumentCacheAdminCommandSurface.CdcRetireVerbName)
+        );
+
+        result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.RejectedNoMutation);
+        result.Outcome.Should().Be("rejectedNoMutation");
     }
 
     /// <summary>
@@ -641,6 +708,62 @@ public sealed class Given_DocumentCacheAdminCdcCommandDispatcher
             component,
             component,
             component
+        );
+    }
+
+    /// <summary>
+    /// One target status carrying the step that says no connector request was issued. Every component
+    /// reads unknown, which is what a status collected against an unproved source reports anyway.
+    /// </summary>
+    private static CdcStatus DeclinedRestart()
+    {
+        CdcComponent unknown = new(
+            CdcComponentState.Unknown,
+            CdcBlockingCategory.ProviderHistoryUnknown,
+            DateTimeOffset.UnixEpoch,
+            null
+        );
+
+        return new(
+            CdcJsonContract.CurrentContractVersion,
+            DateTimeOffset.UnixEpoch,
+            CdcReadiness.NotReady,
+            CdcBlockingCategory.ProviderHistoryUnknown,
+            [
+                new CdcTargetStatus(
+                    new("deployment", "", "1", "instance", 1, CoreCdc.CdcProvider.Postgresql),
+                    CdcReadiness.NotReady,
+                    CdcBlockingCategory.ProviderHistoryUnknown,
+                    unknown,
+                    unknown,
+                    unknown,
+                    unknown,
+                    new(
+                        CdcComponentState.Unknown,
+                        CdcBlockingCategory.ProviderHistoryUnknown,
+                        DateTimeOffset.UnixEpoch,
+                        null,
+                        CdcSourceHistoryContinuity.Unknown,
+                        incidentLatched: false
+                    ),
+                    unknown,
+                    unknown,
+                    unknown,
+                    unknown,
+                    unknown,
+                    [
+                        new CdcDiagnostic(
+                            CdcDiagnosticCategory.ProviderHistoryUnknown,
+                            DateTimeOffset.UnixEpoch,
+                            "$.bindingState",
+                            "CDC restart issued no connector request."
+                        )
+                        {
+                            Code = CdcRestartDiagnosticCodes.NotAttempted,
+                        },
+                    ]
+                ),
+            ]
         );
     }
 

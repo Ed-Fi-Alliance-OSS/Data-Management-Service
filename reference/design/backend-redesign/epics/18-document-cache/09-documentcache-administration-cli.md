@@ -252,8 +252,11 @@ ad hoc DMS web process or duplicating provider-specific rebuild logic.
   18-01 downstream-publication-history abstraction to report `internalOnly` for the same
   normalized target key and physical-source fingerprint. Do not accept a CLI boolean,
   operator-entered text, stopped connector, or removed `DocumentCache:Targets` entry as
-  internal-only proof. E19 supplies that evidence from the deployment's durable CDC records;
-  what those records prove, and which observations reject, is owned by
+  internal-only proof. E19 supplies the CDC evidence behind that abstraction — `active` and
+  `historical` from records that name the target, `unknown` from every other shape — and it
+  does not prove `internalOnly` from the absence of a record, so these three commands stay
+  rejected until evidence that positively proves a target internal-only exists. What those
+  records prove, and which observations reject, is owned by
   [Relational CDC and Document Projection](../../design-docs/cdc/cdc-streaming.md) under the
   read-acceleration toggle and is not restated here. The packaged command must not ship a
   non-production command-line switch, appsettings flag, environment variable, or plug-in proof

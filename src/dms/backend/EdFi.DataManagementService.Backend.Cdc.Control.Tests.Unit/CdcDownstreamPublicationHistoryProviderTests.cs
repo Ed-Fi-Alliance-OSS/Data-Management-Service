@@ -15,9 +15,11 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Cdc.Control.Tests.Unit;
 
 /// <summary>
-/// The E18 offline read-acceleration commands are admitted only when this provider proves the
-/// target was never published downstream, so each case here is either an admission the gate must
-/// accept or a rejection it must keep closed.
+/// The E18 offline read-acceleration commands are admitted only for a projection proven never to
+/// have been published downstream, and no CDC record proves that. Each case here is therefore either
+/// positive proof of publication, which the gate must keep rejecting on, or an evidence shape that
+/// leaves the history unknown, which it must also keep rejecting on. What must never happen is the
+/// admitting status being reported from the absence of a record.
 /// </summary>
 [TestFixture]
 [Parallelizable]
@@ -32,22 +34,28 @@ public class Given_CdcDownstreamPublicationHistoryProvider
 
     private static readonly DateTimeOffset ObservedAt = new(2026, 9, 2, 12, 0, 0, TimeSpan.Zero);
 
+    /// <summary>
+    /// Other targets' bindings are not evidence about this one. A store holding one unrelated binding
+    /// and no record naming this target establishes only which records exist now, so the history is
+    /// unknown and the destructive commands stay rejected.
+    /// </summary>
     [Test]
-    public async Task It_reports_internal_only_when_the_deployment_binds_only_other_targets()
+    public async Task It_reports_unknown_when_the_deployment_binds_only_other_targets()
     {
         DocumentCacheDownstreamPublicationHistoryObservation observation = await ObserveAsync(
             Listed(Binding(tenantKey: "default", dataStoreId: "7", CurrentFingerprintValue))
         );
 
-        observation.Status.Should().Be(DocumentCacheDownstreamPublicationStatus.InternalOnly);
+        using AssertionScope assertions = new();
+        observation.Status.Should().Be(DocumentCacheDownstreamPublicationStatus.Unknown);
         observation.EvidenceGenerationIdentifier.Should().BeNull();
     }
 
     /// <summary>
     /// Retirement deletes the binding record it retires, so a target that was published and then
-    /// retired reads as a deployment binding only other targets — the shape that would otherwise
-    /// report internal-only and admit the destructive commands. The retirement record is what keeps
-    /// that history, and finding one makes the target historical rather than internal-only.
+    /// retired reads as a deployment binding only other targets. The retirement record is what keeps
+    /// that history, and finding one reports the target historical — positive proof of publication,
+    /// rather than the unknown the bare absence of a binding would leave.
     /// </summary>
     [Test]
     public async Task It_reports_historical_when_the_targets_only_binding_was_retired()
@@ -66,11 +74,11 @@ public class Given_CdcDownstreamPublicationHistoryProvider
 
     /// <summary>
     /// A retirement of the same source under a different tenant or data store is another target's
-    /// history and must not disqualify this one, or no target could ever be proven internal-only in a
-    /// deployment that has retired anything at all.
+    /// history and says nothing about this one. It leaves this target with no record naming it, which
+    /// is unknown rather than proof that it was never published.
     /// </summary>
     [Test]
-    public async Task It_reports_internal_only_when_only_another_targets_binding_was_retired()
+    public async Task It_reports_unknown_when_only_another_targets_binding_was_retired()
     {
         DocumentCacheDownstreamPublicationHistoryObservation observation = await ObserveAsync(
             Listed(Binding(tenantKey: "default", dataStoreId: "7", CurrentFingerprintValue)),
@@ -79,7 +87,7 @@ public class Given_CdcDownstreamPublicationHistoryProvider
             )
         );
 
-        observation.Status.Should().Be(DocumentCacheDownstreamPublicationStatus.InternalOnly);
+        observation.Status.Should().Be(DocumentCacheDownstreamPublicationStatus.Unknown);
     }
 
     /// <summary>
@@ -203,16 +211,17 @@ public class Given_CdcDownstreamPublicationHistoryProvider
 
     /// <summary>
     /// Only the data-store id differs in the "other targets" case, so without this one the tenant key
-    /// could be ignored entirely and every case would still pass.
+    /// could be ignored entirely and every case would still pass: another tenant's binding would be
+    /// read as this target's own and report it active.
     /// </summary>
     [Test]
-    public async Task It_reports_internal_only_when_only_another_tenant_binds_the_same_data_store_id()
+    public async Task It_reports_unknown_when_only_another_tenant_binds_the_same_data_store_id()
     {
         DocumentCacheDownstreamPublicationHistoryObservation observation = await ObserveAsync(
             Listed(Binding(tenantKey: "other-tenant", dataStoreId: "1", CurrentFingerprintValue))
         );
 
-        observation.Status.Should().Be(DocumentCacheDownstreamPublicationStatus.InternalOnly);
+        observation.Status.Should().Be(DocumentCacheDownstreamPublicationStatus.Unknown);
     }
 
     /// <summary>
@@ -402,13 +411,18 @@ public class Given_CdcDownstreamPublicationHistoryProvider
         observation.PhysicalSourceFingerprint!.Value.Should().Be(CurrentFingerprintValue);
     }
 
+    /// <summary>
+    /// The gate is closed by an unknown history exactly as it is by a present one, so a store whose
+    /// records all name other targets admits nothing. This is the case the provider must never turn
+    /// into an admission: it is the shape a mis-mounted or partially restored state root produces.
+    /// </summary>
     [Test]
-    public async Task It_admits_the_administrative_gate_only_on_proven_internal_only_evidence()
+    public async Task It_keeps_the_administrative_gate_closed_when_no_record_names_the_target()
     {
         DocumentCacheTargetKey targetKey = DocumentCacheTargetKey.Create("default", 1);
         DocumentCachePhysicalSourceFingerprint fingerprint = new(CurrentFingerprintValue);
 
-        DocumentCacheDownstreamPublicationHistoryProofResult admitted =
+        DocumentCacheDownstreamPublicationHistoryProofResult rejected =
             DocumentCacheDownstreamPublicationHistoryProofEvaluator.Evaluate(
                 targetKey,
                 fingerprint,
@@ -417,9 +431,12 @@ public class Given_CdcDownstreamPublicationHistoryProvider
                 )
             );
 
-        admitted.IsAccepted.Should().BeTrue();
-        admitted.Classification.Should().Be(DocumentCacheAdministrativeCommandClassification.Succeeded);
-        admitted.Diagnostics.Should().BeEmpty();
+        using AssertionScope assertions = new();
+        rejected.IsAccepted.Should().BeFalse();
+        rejected
+            .Classification.Should()
+            .Be(DocumentCacheAdministrativeCommandClassification.DownstreamHistoryPresentOrUnknown);
+        rejected.Diagnostics.Should().NotBeEmpty();
     }
 
     [Test]

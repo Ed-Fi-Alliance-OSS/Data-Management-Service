@@ -195,10 +195,10 @@ public class Given_CdcSetupControllerRetirement
         CdcContractReadResult<CdcCleanupProof> retirement = await harness.RetireAsync();
 
         using var _ = new AssertionScope();
-        AssertRecordSurvived(harness, retirement);
-        Refusal(retirement).Category.Should().Be(CdcDiagnosticCategory.ConnectOffsetStoreInvalid);
-        Refusal(retirement).Component.Should().Be(CdcDiagnosticComponent.ConnectOffsetStore);
-        Refusal(retirement).Observed.Should().Be(Connector(), "the refusal names the connector at issue");
+        AssertNothingMutated(harness, retirement);
+        Refused(retirement).Category.Should().Be(CdcDiagnosticCategory.ConnectOffsetStoreInvalid);
+        Refused(retirement).Component.Should().Be(CdcDiagnosticComponent.ConnectOffsetStore);
+        Refused(retirement).Observed.Should().Be(Connector(), "the refusal names the connector at issue");
 
         // The offsets are where this ends. Nothing past them is attempted, so no later removal can be
         // mistaken for progress on a retirement that never established its first artifact.
@@ -269,12 +269,65 @@ public class Given_CdcSetupControllerRetirement
 
         using var _ = new AssertionScope();
         retirement.Succeeded.Should().BeFalse();
-        Refusal(retirement).Category.Should().Be(CdcDiagnosticCategory.BindingMissing);
+        Refused(retirement).Category.Should().Be(CdcDiagnosticCategory.BindingMissing);
         A.CallTo(() => harness.Connect.StopConnectorAsync(A<string>._, A<CancellationToken>._))
             .MustNotHaveHappened();
         A.CallTo(() =>
                 harness.Kafka.DeleteBindingArtifactsAsync(A<CdcArtifactInventory>._, A<CancellationToken>._)
             )
+            .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// The binding names the provider its artifacts were created under, and a deployment wired for the
+    /// other one can remove none of them. Refusing before the connector fence is what keeps a mistaken
+    /// data store from having its connector stopped and deleted and its topics and grants removed, only
+    /// for the database step at the end to be the one that reports the mismatch.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_a_binding_recorded_under_another_provider_before_any_mutation()
+    {
+        CdcSetupControllerHarness harness = new(CdcProvider.Postgresql)
+        {
+            BindingRead = CdcSetupControllerHarness.Present(
+                CdcSetupControllerHarness.Binding(CdcProvider.SqlServer)
+            ),
+        };
+
+        CdcContractReadResult<CdcCleanupProof> retirement = await harness.RetireAsync();
+
+        using var _ = new AssertionScope();
+        AssertNothingMutated(harness, retirement);
+        Refused(retirement).Category.Should().Be(CdcDiagnosticCategory.ProviderMismatch);
+        Refused(retirement).Path.Should().Be("$.binding.provider");
+        A.CallTo(() => harness.Connect.StopConnectorAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// A source replacement retains the generation it supersedes, and that generation's provider
+    /// artifacts live in the database it was bound to. A retirement issued with the replacement's
+    /// connection string finds none of them, so proving the connected source is the binding's own is
+    /// what stops a cleanup proof from certifying an absence in a database that never held them — and
+    /// the binding record that names the real ones from being deleted.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_to_retire_a_generation_bound_to_another_physical_source()
+    {
+        CdcSetupControllerHarness harness = new()
+        {
+            BindingRead = CdcSetupControllerHarness.Present(
+                CdcSetupControllerHarness.PreviousGenerationBinding()
+            ),
+        };
+
+        CdcContractReadResult<CdcCleanupProof> retirement = await harness.RetireAsync();
+
+        using var _ = new AssertionScope();
+        AssertNothingMutated(harness, retirement);
+        Refused(retirement).Category.Should().Be(CdcDiagnosticCategory.SourceMismatch);
+        Refused(retirement).Path.Should().Be("$.binding.physicalSourceFingerprint");
+        A.CallTo(() => harness.Connect.StopConnectorAsync(A<string>._, A<CancellationToken>._))
             .MustNotHaveHappened();
     }
 
@@ -325,6 +378,10 @@ public class Given_CdcSetupControllerRetirement
     private static CdcConnectResult NotFound() =>
         new(CdcConnectOutcome.NotFound, new(404, "no such connector", false));
 
+    /// <summary>
+    /// A retirement that removed governed artifacts and stopped leaves the binding record naming what
+    /// is left, so reissuing it is how it finishes.
+    /// </summary>
     private static void AssertRecordSurvived(
         CdcSetupControllerHarness harness,
         CdcContractReadResult<CdcCleanupProof> retirement
@@ -332,7 +389,26 @@ public class Given_CdcSetupControllerRetirement
     {
         retirement.Succeeded.Should().BeFalse();
         retirement.Contract.Should().BeNull();
-        Refusal(retirement).Retryable.Should().BeTrue();
+        Incomplete(retirement).Retryable.Should().BeTrue();
+        AssertRecordNotDeleted(harness);
+    }
+
+    /// <summary>
+    /// A refusal decided before anything was touched is the operator's to correct: reissuing it
+    /// unchanged repeats a rejection, which is why it must not report itself as retryable.
+    /// </summary>
+    private static void AssertNothingMutated(
+        CdcSetupControllerHarness harness,
+        CdcContractReadResult<CdcCleanupProof> retirement
+    )
+    {
+        retirement.Succeeded.Should().BeFalse();
+        retirement.Contract.Should().BeNull();
+        Refused(retirement).Retryable.Should().BeFalse();
+        AssertRecordNotDeleted(harness);
+    }
+
+    private static void AssertRecordNotDeleted(CdcSetupControllerHarness harness) =>
         A.CallTo(() =>
                 harness.Bindings.DeleteStateAfterVerifiedCleanupAsync(
                     A<CdcCleanupProof>._,
@@ -340,14 +416,16 @@ public class Given_CdcSetupControllerRetirement
                 )
             )
             .MustNotHaveHappened();
-    }
 
     private static CdcGovernedArtifact Artifact(CdcCleanupProof proof, CdcGovernedArtifactKind kind) =>
         proof.GovernedArtifacts.Should().ContainSingle(artifact => artifact.ArtifactKind == kind).Subject;
 
-    private static CdcDiagnostic Refusal(CdcContractReadResult<CdcCleanupProof> retirement) =>
-        retirement
-            .Diagnostics.Should()
-            .ContainSingle(diagnostic => diagnostic.Code == "retireIncomplete")
-            .Subject;
+    private static CdcDiagnostic Refused(CdcContractReadResult<CdcCleanupProof> retirement) =>
+        Step(retirement, CdcRetirementDiagnosticCodes.RefusedNoMutation);
+
+    private static CdcDiagnostic Incomplete(CdcContractReadResult<CdcCleanupProof> retirement) =>
+        Step(retirement, CdcRetirementDiagnosticCodes.IncompleteRetryable);
+
+    private static CdcDiagnostic Step(CdcContractReadResult<CdcCleanupProof> retirement, string code) =>
+        retirement.Diagnostics.Should().ContainSingle(diagnostic => diagnostic.Code == code).Subject;
 }

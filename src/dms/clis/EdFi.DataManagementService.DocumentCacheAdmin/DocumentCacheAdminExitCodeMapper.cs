@@ -79,25 +79,4 @@ internal static class DocumentCacheAdminExitCodeMapper
             CdcReadiness.Unknown => DocumentCacheAdminExitCodes.Success,
             _ => DocumentCacheAdminExitCodes.UnexpectedFailure,
         };
-
-    /// <summary>
-    /// Maps one binding-state-store operation status onto an exit code.
-    /// </summary>
-    /// <remarks>
-    /// A missing or mismatched binding is a guard refusing before mutation, so it is
-    /// <see cref="DocumentCacheAdminExitCodes.RejectedNoMutation"/>. An unavailable state store is a
-    /// failure before mutation rather than a rejection: nothing about the request was refused, the
-    /// durable record simply could not be read or written.
-    /// </remarks>
-    public static int ForControlPlaneOperationStatus(CdcControlPlaneOperationStatus status) =>
-        status switch
-        {
-            CdcControlPlaneOperationStatus.Succeeded => DocumentCacheAdminExitCodes.Success,
-            CdcControlPlaneOperationStatus.BindingMissing => DocumentCacheAdminExitCodes.RejectedNoMutation,
-            CdcControlPlaneOperationStatus.BindingMismatch => DocumentCacheAdminExitCodes.RejectedNoMutation,
-            CdcControlPlaneOperationStatus.InvalidOperation => DocumentCacheAdminExitCodes.RejectedNoMutation,
-            CdcControlPlaneOperationStatus.StateStoreUnavailable =>
-                DocumentCacheAdminExitCodes.FailedNoMutation,
-            _ => DocumentCacheAdminExitCodes.UnexpectedFailure,
-        };
 }

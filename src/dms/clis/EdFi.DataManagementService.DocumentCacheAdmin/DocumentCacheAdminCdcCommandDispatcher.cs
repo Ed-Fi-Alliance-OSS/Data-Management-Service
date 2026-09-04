@@ -277,12 +277,11 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
                     .ConfigureAwait(false),
                 "cdcStatus"
             ),
-            DocumentCacheAdminCommandSurface.CdcRestartVerbName => Status(
+            DocumentCacheAdminCommandSurface.CdcRestartVerbName => Restart(
                 invocation,
                 await controller
                     .RestartAsync(TargetRequest(invocation), cancellationToken)
-                    .ConfigureAwait(false),
-                "cdcRestart"
+                    .ConfigureAwait(false)
             ),
             DocumentCacheAdminCommandSurface.CdcAdoptVerbName => await AdoptAsync(
                     invocation,
@@ -490,28 +489,49 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
             );
     }
 
+    /// <summary>
+    /// Classifies one retirement. A retirement that refused before it changed anything is the
+    /// operator's to correct, so it is reported as a rejection rather than as work a retry finishes.
+    /// </summary>
+    /// <remarks>
+    /// The two refused shapes are told apart by the code the control plane wrote rather than by
+    /// inspecting the diagnostics for what was removed:
+    /// <see cref="CdcRetirementDiagnosticCodes.RefusedNoMutation"/> is issued only for a retirement
+    /// decided before any governed artifact was touched. Anything else that produced no cleanup proof
+    /// removed artifacts and left the binding record naming the rest, which is the
+    /// incomplete-and-retryable classification a reissued retirement resolves.
+    /// </remarks>
     private static DocumentCacheAdminCdcCommandResult Retire(
         Invocation invocation,
         CdcContractReadResult<CdcCleanupProof> proof
-    ) =>
-        proof.Contract is { } cleanupProof
-            ? DocumentCacheAdminCdcCommandResult.ForContract(
+    )
+    {
+        if (proof.Contract is { } cleanupProof)
+        {
+            return DocumentCacheAdminCdcCommandResult.ForContract(
                 invocation.Request.VerbName,
                 cleanupProof,
                 DocumentCacheAdminExitCodes.Success,
                 "completed",
                 "cdcRetire",
                 invocation.GovernedNames
-            )
-            // A partial teardown leaves the binding record intact so the retry stays idempotent, which is
-            // exactly the incomplete-and-retryable classification.
-            : DocumentCacheAdminCdcCommandResult.Refused(
-                invocation.Request.VerbName,
-                DocumentCacheAdminExitCodes.IncompleteRetryable,
-                "incompleteRetryable",
-                "cdcRetire",
-                proof.Diagnostics
             );
+        }
+
+        bool refusedBeforeMutation = proof.Diagnostics.Any(diagnostic =>
+            diagnostic.Code == CdcRetirementDiagnosticCodes.RefusedNoMutation
+        );
+
+        return DocumentCacheAdminCdcCommandResult.Refused(
+            invocation.Request.VerbName,
+            refusedBeforeMutation
+                ? DocumentCacheAdminExitCodes.RejectedNoMutation
+                : DocumentCacheAdminExitCodes.IncompleteRetryable,
+            refusedBeforeMutation ? "rejectedNoMutation" : "incompleteRetryable",
+            "cdcRetire",
+            proof.Diagnostics
+        );
+    }
 
     private static DocumentCacheAdminCdcCommandResult Admission(
         Invocation invocation,
@@ -526,6 +546,39 @@ internal sealed class DocumentCacheAdminCdcCommandDispatcher(
             category,
             invocation.GovernedNames
         );
+
+    /// <summary>
+    /// Classifies one restart. A restart that started nothing is the operator's to correct, so it is
+    /// not classified by the readiness mapper the read-only <c>cdc status</c> uses, which answers
+    /// success for every readiness value.
+    /// </summary>
+    /// <remarks>
+    /// The restart's own step codes are what separate the two: a request the worker refused, and one
+    /// that was never issued because continuity was not proved or the binding named no connector.
+    /// Everything else was applied, and the connector state that follows is an outcome to observe
+    /// rather than a request to reissue — which is exactly what the readiness mapping reports.
+    /// </remarks>
+    private static DocumentCacheAdminCdcCommandResult Restart(Invocation invocation, CdcStatus status)
+    {
+        bool started = !status.Targets.Any(target =>
+            target.Diagnostics.Any(diagnostic =>
+                diagnostic.Code
+                    is CdcRestartDiagnosticCodes.NotAttempted
+                        or CdcRestartDiagnosticCodes.NotApplied
+            )
+        );
+
+        return DocumentCacheAdminCdcCommandResult.ForContract(
+            invocation.Request.VerbName,
+            status,
+            started
+                ? DocumentCacheAdminExitCodeMapper.ForStatus(status)
+                : DocumentCacheAdminExitCodes.RejectedNoMutation,
+            LowerCamel(status.Readiness.ToString()),
+            "cdcRestart",
+            invocation.GovernedNames
+        );
+    }
 
     private static DocumentCacheAdminCdcCommandResult Status(
         Invocation invocation,

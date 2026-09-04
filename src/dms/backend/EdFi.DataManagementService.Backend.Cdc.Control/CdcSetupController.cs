@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using Confluent.Kafka;
 using EdFi.DataManagementService.Backend.Cdc;
@@ -764,27 +765,24 @@ internal sealed class CdcSetupController(
 
         // Step 6: render the connector, validate it before it is registered, register it, and validate
         // what the worker actually holds against the same template rules.
-        CdcConnectorTemplateRequest templateRequest;
-        try
-        {
-            templateRequest = new(
+        if (
+            !TryComposeConnectorTemplate(
                 binding,
                 new CdcConnectorProviderSetupEvidence(target.Generation, created),
-                controlOptions.ToDeploymentPolicy(),
-                controlOptions.ToProviderConnectionProperties(ToDdlProvider(provider)),
-                controlOptions.ToKafkaClientSecurityProperties()
-            );
-        }
-        catch (ArgumentException exception)
+                controlOptions,
+                provider,
+                out CdcConnectorTemplateRequest? templateRequest,
+                out string? templateRejection
+            )
+        )
         {
-            // The rejected value is carried in the exception, so only the rejection's type is reported.
             return Blocked(
                 Step(
                     "enableConnectorInputsInvalid",
                     CdcDiagnosticCategory.ConnectorConfigInvalid,
                     CdcDiagnosticComponent.ConnectorConfig,
                     "CDC enablement could not compose the connector template inputs.",
-                    exception.GetType().Name,
+                    templateRejection,
                     timeProvider.GetUtcNow()
                 ),
                 []
@@ -914,7 +912,10 @@ internal sealed class CdcSetupController(
         // is captured after the projector reported caught-up, so the position it names is one the
         // projector had already drained.
         CdcProviderBarrierCaptureResult capturedBarrier = await sourcePositions
-            .CaptureBarrierAsync(new(request.ConnectionString, binding), cancellationToken)
+            .CaptureBarrierAsync(
+                BarrierCapture(request.ConnectionString, binding, controlOptions),
+                cancellationToken
+            )
             .ConfigureAwait(false);
         if (!capturedBarrier.Succeeded)
         {
@@ -1135,7 +1136,29 @@ internal sealed class CdcSetupController(
                 collected.Continuity
             );
 
-            return Compose(collected.Evaluation);
+            // The status this returns describes a connector the restart never asked the worker about,
+            // which reads exactly like one it asked about and failed to start. The step says which,
+            // because only this one leaves the deployment as the operator left it.
+            return Compose(
+                collected.Evaluation with
+                {
+                    StateStoreDiagnostics =
+                    [
+                        StatusStep(
+                            CdcRestartDiagnosticCodes.NotAttempted,
+                            collected.Continuity == CdcSourceHistoryContinuity.Lost
+                                ? CdcDiagnosticCategory.SourceHistoryLost
+                                : CdcDiagnosticCategory.ProviderHistoryUnknown,
+                            CdcDiagnosticComponent.SourceHistory,
+                            "CDC restart issued no connector request: source-history continuity is proved "
+                                + "before a connector is started, never after.",
+                            collected.Continuity.ToString(),
+                            timeProvider.GetUtcNow()
+                        ),
+                        .. collected.Evaluation.StateStoreDiagnostics,
+                    ],
+                }
+            );
         }
 
         // A connector the worker is holding fenced is resumed rather than restarted. STOPPED and
@@ -1196,7 +1219,7 @@ internal sealed class CdcSetupController(
                 evaluation,
                 inventory,
                 connectorAction,
-                "restartNotApplied",
+                CdcRestartDiagnosticCodes.NotApplied,
                 CdcDiagnosticCategory.ConnectorNotRunning,
                 refusedMessage,
                 refusedExpectation
@@ -1271,6 +1294,25 @@ internal sealed class CdcSetupController(
             );
         }
 
+        // The binding names the provider its artifacts were created under, and this deployment's
+        // adapters are for one provider only. Checked here rather than at the provider step, because
+        // the provider step is the last one: a record naming another provider would otherwise have its
+        // connector stopped and deleted and its topics and grants removed before the mismatch was
+        // reached, and the database teardown that failed is the only step that would have reported it.
+        // Adoption refuses the same mismatch for the same reason.
+        if (binding.Provider != provider)
+        {
+            return RetirementRefused(
+                CdcDiagnosticCategory.ProviderMismatch,
+                CdcDiagnosticComponent.Binding,
+                "CDC retirement requires the binding record to name this deployment's provider.",
+                "$.binding.provider",
+                binding.Provider.ToString(),
+                now,
+                []
+            );
+        }
+
         CdcArtifactNameResult artifactNames = CdcArtifactNameGenerator.RecoverFromBinding(binding);
         if (artifactNames.Inventory is not { } inventory)
         {
@@ -1282,6 +1324,77 @@ internal sealed class CdcSetupController(
                 "unrecoverable",
                 now,
                 artifactNames.Diagnostics
+            );
+        }
+
+        // The record names governed artifacts in one physical database, and the connection string is
+        // not proof that this is that one. A retirement of a superseded generation pointed at the
+        // target's current source finds none of that generation's provider artifacts, records every one
+        // as absent, issues a cleanup proof for a database that never held them, and then deletes the
+        // one record that named the real ones — while the old source keeps its publication and slot, or
+        // its capture instances and gating role. So the source is proved here, before the fence, rather
+        // than inferred at the end from a teardown that found nothing. A generation whose source is no
+        // longer the target's current source is retirable only against that source's own connection,
+        // and without one, refusing is the only honest answer.
+        (DbConnection? sourceConnection, string? sourceConnectionRefusal) =
+            await OpenProviderConnectionWithinBudgetAsync(
+                    provider,
+                    request.ConnectionString,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        if (sourceConnection is null)
+        {
+            return RetirementRefused(
+                CdcDiagnosticCategory.ProviderSetupInvalid,
+                CdcDiagnosticComponent.ProviderSetup,
+                "CDC retirement could not reach the instance database it proves the binding's physical "
+                    + "source against.",
+                "$.binding",
+                sourceConnectionRefusal ?? "unavailable",
+                now,
+                []
+            );
+        }
+
+        string? observedSourceFingerprint;
+        await using (sourceConnection)
+        {
+            // The same validate-only pass every other verb reads the live source identity from. Nothing
+            // is provisioned or removed by it, and only the fingerprint is taken: whether the artifacts
+            // themselves are still there is what the teardown below reports.
+            CdcProviderSetupResult boundSource = await SetupProviderWithinBudgetAsync(
+                    ProviderSetupRequest(
+                        request.ProviderSetup,
+                        provider,
+                        binding.PhysicalSourceFingerprint,
+                        inventory,
+                        sourceConnection,
+                        DdlCdc.CdcProviderSetupMode.ValidateOnly
+                    ),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            observedSourceFingerprint = boundSource.ObservedSourceFingerprint?.Value;
+        }
+
+        if (
+            !string.Equals(
+                observedSourceFingerprint,
+                binding.PhysicalSourceFingerprint,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return RetirementRefused(
+                CdcDiagnosticCategory.SourceMismatch,
+                CdcDiagnosticComponent.ProviderSetup,
+                "CDC retirement requires the connected database to be the binding's own physical source.",
+                "$.binding.physicalSourceFingerprint",
+                observedSourceFingerprint is null ? "unreadable" : "a different physical source",
+                now,
+                []
             );
         }
 
@@ -1503,7 +1616,10 @@ internal sealed class CdcSetupController(
             .ConfigureAwait(false);
         if (deletion.Status != CdcControlPlaneOperationStatus.Succeeded)
         {
-            return RetirementRefused(
+            // Every governed artifact is already gone by this point, so this is the most incomplete a
+            // retirement gets rather than a refusal: the record that survives is what the retry reads
+            // to finish, and it is the only thing left to remove.
+            return RetirementIncomplete(
                 CdcDiagnosticCategory.LocalStateUnavailable,
                 CdcDiagnosticComponent.StateStore,
                 "CDC retirement could not delete the binding record after verified cleanup.",
@@ -1554,6 +1670,10 @@ internal sealed class CdcSetupController(
                 : "the Kafka Connect worker reported no such governed artifact"
         );
 
+    /// <summary>
+    /// Reports a step that ended a retirement after it had begun removing governed artifacts. No proof
+    /// is issued, so the binding record stays and names what a retry must finish removing.
+    /// </summary>
     private static CdcContractReadResult<CdcCleanupProof> RetirementFailed(
         CdcDiagnosticComponent component,
         string message,
@@ -1561,7 +1681,7 @@ internal sealed class CdcSetupController(
         string observed,
         DateTimeOffset observedAt
     ) =>
-        RetirementRefused(
+        RetirementIncomplete(
             CdcDiagnosticCategory.ArtifactNotRemoved,
             component,
             message,
@@ -1572,10 +1692,67 @@ internal sealed class CdcSetupController(
         );
 
     /// <summary>
-    /// Reports the step that ended a retirement. No proof is issued, so the binding record stays and
-    /// names what a retry must finish removing.
+    /// Reports a retirement that stopped partway. Reissuing it is the way it completes, because the
+    /// binding record it did not reach still names every artifact that is left.
     /// </summary>
+    private static CdcContractReadResult<CdcCleanupProof> RetirementIncomplete(
+        CdcDiagnosticCategory category,
+        CdcDiagnosticComponent component,
+        string message,
+        string path,
+        string observed,
+        DateTimeOffset observedAt,
+        IReadOnlyList<CdcDiagnostic> diagnostics
+    ) =>
+        Retirement(
+            CdcRetirementDiagnosticCodes.IncompleteRetryable,
+            retryable: true,
+            "every governed artifact removed before the binding record",
+            category,
+            component,
+            message,
+            path,
+            observed,
+            observedAt,
+            diagnostics
+        );
+
+    /// <summary>
+    /// Reports a retirement refused before it changed anything.
+    /// </summary>
+    /// <remarks>
+    /// Kept distinct from <see cref="RetirementIncomplete"/> because the two need opposite handling and
+    /// are indistinguishable to a caller once they share a code: reissuing a partial teardown is how it
+    /// finishes, while reissuing a refusal repeats a request that was wrong the first time. Every
+    /// refusal reported through here is decided before the connector fence, or on a fence that found no
+    /// connector to stop, so the deployment is exactly as the operator left it.
+    /// </remarks>
     private static CdcContractReadResult<CdcCleanupProof> RetirementRefused(
+        CdcDiagnosticCategory category,
+        CdcDiagnosticComponent component,
+        string message,
+        string path,
+        string observed,
+        DateTimeOffset observedAt,
+        IReadOnlyList<CdcDiagnostic> diagnostics
+    ) =>
+        Retirement(
+            CdcRetirementDiagnosticCodes.RefusedNoMutation,
+            retryable: false,
+            "a retirement request this deployment can begin",
+            category,
+            component,
+            message,
+            path,
+            observed,
+            observedAt,
+            diagnostics
+        );
+
+    private static CdcContractReadResult<CdcCleanupProof> Retirement(
+        string code,
+        bool retryable,
+        string expected,
         CdcDiagnosticCategory category,
         CdcDiagnosticComponent component,
         string message,
@@ -1586,15 +1763,15 @@ internal sealed class CdcSetupController(
     ) =>
         CdcContractReadResult<CdcCleanupProof>.Failure([
             new CdcDiagnostic(
-                "retireIncomplete",
+                code,
                 category,
                 CdcDiagnosticSeverity.Error,
                 component,
                 observedAt,
                 message,
-                retryable: true,
+                retryable,
                 artifactKind: "cdcRetirement",
-                expected: "every governed artifact removed before the binding record",
+                expected: expected,
                 observed: observed
             ).WithPath(path),
             .. diagnostics,
@@ -2227,20 +2404,17 @@ internal sealed class CdcSetupController(
                 : connectorStatus.Outcome.ToString()
         );
 
-        CdcConnectorTemplateRequest templateRequest;
-        try
-        {
-            templateRequest = new(
+        if (
+            !TryComposeConnectorTemplate(
                 binding,
                 new CdcConnectorProviderSetupEvidence(binding.Generation, validated),
-                controlOptions.ToDeploymentPolicy(),
-                controlOptions.ToProviderConnectionProperties(ToDdlProvider(provider)),
-                controlOptions.ToKafkaClientSecurityProperties()
-            );
-        }
-        catch (ArgumentException exception)
+                controlOptions,
+                provider,
+                out CdcConnectorTemplateRequest? templateRequest,
+                out string? templateRejection
+            )
+        )
         {
-            // The rejected value is carried in the exception, so only the rejection's type is reported.
             return CdcContractReadResult<CdcAdoptionProof>.Failure([
                 .. refusals,
                 AdoptionRefused(
@@ -2248,7 +2422,7 @@ internal sealed class CdcSetupController(
                     CdcDiagnosticComponent.ConnectorConfig,
                     "CDC adoption could not compose the connector template inputs the live configuration is verified against.",
                     "$.connectorConfig",
-                    exception.GetType().Name,
+                    templateRejection,
                     timeProvider.GetUtcNow()
                 ),
             ]);
@@ -2712,27 +2886,24 @@ internal sealed class CdcSetupController(
                 .ConfigureAwait(false),
         };
 
-        CdcConnectorTemplateRequest templateRequest;
-        try
-        {
-            templateRequest = new(
+        if (
+            !TryComposeConnectorTemplate(
                 binding,
                 new CdcConnectorProviderSetupEvidence(binding.Generation, validated),
-                controlOptions.ToDeploymentPolicy(),
-                controlOptions.ToProviderConnectionProperties(ToDdlProvider(provider)),
-                controlOptions.ToKafkaClientSecurityProperties()
-            );
-        }
-        catch (ArgumentException exception)
+                controlOptions,
+                provider,
+                out CdcConnectorTemplateRequest? templateRequest,
+                out string? templateRejection
+            )
+        )
         {
-            // The rejected value is carried in the exception, so only the rejection's type is reported.
             return Blocked(
                 StatusStep(
                     "statusConnectorInputsInvalid",
                     CdcDiagnosticCategory.ConnectorConfigInvalid,
                     CdcDiagnosticComponent.ConnectorConfig,
                     "CDC status could not compose the connector template inputs the read-back is compared against.",
-                    exception.GetType().Name,
+                    templateRejection,
                     timeProvider.GetUtcNow()
                 ),
                 []
@@ -2749,7 +2920,10 @@ internal sealed class CdcSetupController(
         // an offset at or past it is evidence the connector passed a position the source had already
         // reached rather than one it reached afterwards.
         CdcProviderBarrierCaptureResult capturedBarrier = await sourcePositions
-            .CaptureBarrierAsync(new(request.ConnectionString, binding), cancellationToken)
+            .CaptureBarrierAsync(
+                BarrierCapture(request.ConnectionString, binding, controlOptions),
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         CdcConnectResult<CdcConnectorOffsets> committedOffsets = await connectClient
@@ -3133,6 +3307,70 @@ internal sealed class CdcSetupController(
         )
         {
             CommandTimeout = controlOptions.Timeouts.EligibilityProbe,
+        };
+
+    /// <summary>
+    /// Composes the connector template inputs for one generation, or names the rejection for the
+    /// caller's own refusal.
+    /// </summary>
+    /// <remarks>
+    /// Every verb that renders, registers, or compares a connector configuration composes the same
+    /// inputs from the same sources, and the composition validates them as it goes. It is written once
+    /// here so that rule has one definition, while each caller keeps its own refusal: a rejection is
+    /// an enablement that cannot proceed, an adoption that cannot verify, or a status that cannot
+    /// compare, and those are not the same answer. The rejected value stays inside the exception, so
+    /// only the rejection's type is ever reported.
+    /// </remarks>
+    private static bool TryComposeConnectorTemplate(
+        CdcBinding binding,
+        CdcConnectorProviderSetupEvidence setupEvidence,
+        CdcControlOptions controlOptions,
+        CoreCdc.CdcProvider provider,
+        [NotNullWhen(true)] out CdcConnectorTemplateRequest? templateRequest,
+        [NotNullWhen(false)] out string? rejection
+    )
+    {
+        try
+        {
+            templateRequest = new(
+                binding,
+                setupEvidence,
+                controlOptions.ToDeploymentPolicy(),
+                controlOptions.ToProviderConnectionProperties(ToDdlProvider(provider)),
+                controlOptions.ToKafkaClientSecurityProperties()
+            );
+            rejection = null;
+            return true;
+        }
+        catch (ArgumentException exception)
+        {
+            templateRequest = null;
+            rejection = exception.GetType().Name;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// One provider-barrier capture, under the deployment's own configured budget rather than the
+    /// contract's defaults.
+    /// </summary>
+    /// <remarks>
+    /// The capture is the half of the barrier step that waits on the provider: SQL Server cannot name a
+    /// position until the heartbeat after-image appears in the capture instance, so the wait belongs to
+    /// the capture and not only to the committed-offset polling that follows it. Left on the record's
+    /// 45-second default the capture would fail well inside a <c>Timeouts.ProviderBarrier</c> an
+    /// operator raised for exactly that source, and the raised value would have no effect on the step
+    /// it was raised for.
+    /// </remarks>
+    private static CdcProviderBarrierCaptureRequest BarrierCapture(
+        string connectionString,
+        CdcBinding binding,
+        CdcControlOptions controlOptions
+    ) =>
+        new(connectionString, binding)
+        {
+            CaptureWaitTimeout = controlOptions.Timeouts.ProviderBarrier,
+            PollInterval = controlOptions.Timeouts.PollInterval,
         };
 
     /// <summary>

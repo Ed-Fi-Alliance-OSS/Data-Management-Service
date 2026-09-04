@@ -137,6 +137,12 @@ two generations. The verb refuses that rather than proceeding.
 The generation it supersedes is retained, not retired: its connector configuration and
 committed offsets are left for a `cdc retire` that removes them in order.
 
+`cdc retire` proves, before it fences anything, that the binding record names this deployment's
+provider and that the connected database is the binding's own physical source. A retained
+superseded generation is therefore retired against the connection string of the database it was
+bound to, not the replacement's: retiring it against the replacement would find none of its
+artifacts and certify an absence in a database that never held them.
+
 Each `cdc` verb writes one shared CDC contract document, selected by the verb rather than
 by the outcome:
 
@@ -145,7 +151,7 @@ by the outcome:
 | `cdc enable` | `CdcAdmission` | `admitted`, `notAdmitted`, `unknown` |
 | `cdc status`, `cdc restart` | `CdcStatus` | `ready`, `notReady`, `unknown` |
 | `cdc adopt` | `CdcAdoptionProof` | `completed`, `rejectedNoMutation` |
-| `cdc retire` | `CdcCleanupProof` | `completed`, `incompleteRetryable` |
+| `cdc retire` | `CdcCleanupProof` | `completed`, `rejectedNoMutation`, `incompleteRetryable` |
 
 Without `--json`, a `cdc` verb prints its outcome followed by the governed names it
 operated on — connector name, provider, data store identifier, the opaque instance key,
@@ -156,12 +162,14 @@ Current packaged production behavior intentionally rejects `activate-offline`,
 `deactivate-offline`, and `recover-cache-ahead` unless a trusted downstream
 publication-history provider reports `internalOnly` for the same target and
 physical-source fingerprint. This tool registers the CDC control plane, so that provider
-reads the durable binding state store: it reports `internalOnly` only when a complete,
-readable listing for the deployment holds at least one binding, none of them binds this
-target, and no retirement record says one once did. A listing that fails, a record that
-cannot be read, an empty store, and a store with no deployment key configured all report
-`unknown`. Treat `downstreamHistoryPresentOrUnknown` as expected whenever the evidence
-does not positively prove the target was never published.
+reads the durable binding state store, which holds positive evidence of publication and
+nothing else: a binding naming the target on the resolved physical source reports `active`;
+a binding naming it on an earlier source, or a retirement record naming it, reports
+`historical`; and every other shape reports `unknown` — a listing that fails, a record that
+cannot be read, an empty store, a store whose records all name other targets, and a store with
+no deployment key configured. Nothing in those records states that a target was never
+published, so the provider never reports `internalOnly` and these three commands are rejected
+in every case. Treat `downstreamHistoryPresentOrUnknown` as the expected outcome.
 
 All commands support `--json`. In JSON mode, stdout contains exactly one shared contract
 document and no prose. Logs, warnings, progress, and sanitized diagnostics go to stderr or
@@ -372,16 +380,20 @@ The `cdc` verbs use the same codes, classified from the shared CDC contract they
 | `cdc` outcome | Code |
 | --- | ---: |
 | Write admission opened, adoption completed, or retirement completed. | 0 |
-| A readiness answer of any kind, including `notReady` and `unknown`. | 0 |
+| A readiness answer of any kind from `cdc status`, including `notReady` and `unknown`. | 0 |
+| A restart the worker applied, whatever the connector reports afterwards. | 0 |
 | The binding is missing, does not match, or the operation is invalid for it. | 10 |
+| A retirement or restart refused before it changed anything. | 10 |
 | The binding state store could not be read or written. | 11 |
 | Write admission did not open, or a retirement removed only part of the artifact set. | 12 |
 
 Write admission that did not open is retryable rather than a rejection: the binding record
 is made durable before any external artifact is created, so such a run may already have
 mutated deployment state, and every `cdc` verb is built to be reissued unchanged. A partial
-retirement leaves the binding record in place for the same reason. A readiness report is a
-success whatever it reports, because the command answered; only a status that could not be
+retirement leaves the binding record in place for the same reason, and is completed by being
+reissued. A retirement or restart that changed nothing is a rejection instead: reissuing it
+unchanged repeats a request that was wrong the first time. A readiness report from `cdc status`
+is a success whatever it reports, because the command answered; only a status that could not be
 produced at all fails.
 
 ## Runbook Links

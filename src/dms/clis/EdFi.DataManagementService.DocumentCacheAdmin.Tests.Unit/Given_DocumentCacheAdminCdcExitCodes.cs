@@ -107,46 +107,6 @@ public sealed class Given_DocumentCacheAdminCdcExitCodes
             .Be(DocumentCacheAdminExitCodes.Success);
     }
 
-    [TestCase(CdcControlPlaneOperationStatus.Succeeded, DocumentCacheAdminExitCodes.Success)]
-    [TestCase(CdcControlPlaneOperationStatus.BindingMissing, DocumentCacheAdminExitCodes.RejectedNoMutation)]
-    [TestCase(CdcControlPlaneOperationStatus.BindingMismatch, DocumentCacheAdminExitCodes.RejectedNoMutation)]
-    [TestCase(
-        CdcControlPlaneOperationStatus.InvalidOperation,
-        DocumentCacheAdminExitCodes.RejectedNoMutation
-    )]
-    [TestCase(
-        CdcControlPlaneOperationStatus.StateStoreUnavailable,
-        DocumentCacheAdminExitCodes.FailedNoMutation
-    )]
-    public void It_maps_every_control_plane_operation_status(
-        CdcControlPlaneOperationStatus status,
-        int expectedExitCode
-    )
-    {
-        DocumentCacheAdminExitCodeMapper.ForControlPlaneOperationStatus(status).Should().Be(expectedExitCode);
-    }
-
-    [Test]
-    public void It_maps_every_control_plane_operation_status_enum_value()
-    {
-        foreach (CdcControlPlaneOperationStatus status in Enum.GetValues<CdcControlPlaneOperationStatus>())
-        {
-            DocumentCacheAdminExitCodeMapper
-                .ForControlPlaneOperationStatus(status)
-                .Should()
-                .NotBe(DocumentCacheAdminExitCodes.UnexpectedFailure, status.ToString());
-        }
-    }
-
-    [Test]
-    public void It_maps_an_undefined_control_plane_operation_status_to_the_unexpected_failure_code()
-    {
-        DocumentCacheAdminExitCodeMapper
-            .ForControlPlaneOperationStatus((CdcControlPlaneOperationStatus)int.MaxValue)
-            .Should()
-            .Be(DocumentCacheAdminExitCodes.UnexpectedFailure);
-    }
-
     /// <summary>
     /// An unadmitted enablement may already have made the binding durable and created governed
     /// artifacts, so it must never report the rejected-before-mutation code.

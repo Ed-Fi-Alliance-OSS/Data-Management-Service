@@ -425,6 +425,49 @@ public sealed record CdcAdoptionVerificationResult
     }
 }
 
+/// <summary>
+/// The diagnostic codes a refused retirement reports under, named here because the control plane
+/// writes them and the administrative CLI classifies the invocation from them.
+/// </summary>
+/// <remarks>
+/// The distinction they carry is what an automated caller does next. A retirement that refused before
+/// it changed anything is a request to correct, and reissuing it unchanged repeats a rejection; one
+/// that stopped partway has already removed governed artifacts, left the binding record naming what
+/// remains, and is completed by being reissued. Collapsing the two makes every operator mistake look
+/// like a half-finished teardown that retrying will resolve.
+/// </remarks>
+public static class CdcRetirementDiagnosticCodes
+{
+    /// <summary>A retirement refused before any governed artifact was touched.</summary>
+    public const string RefusedNoMutation = "retireRefused";
+
+    /// <summary>A retirement that began removing governed artifacts and did not finish.</summary>
+    public const string IncompleteRetryable = "retireIncomplete";
+}
+
+/// <summary>
+/// The diagnostic codes a restart that started nothing reports under, named here because the control
+/// plane writes them and the administrative CLI classifies the invocation from them.
+/// </summary>
+/// <remarks>
+/// Restart reports the shared status contract whether or not it acted, so the status alone does not
+/// say which happened: a connector that is not running reads the same when the restart was declined
+/// before it was issued, when the worker refused it, and when it was applied to a connector that
+/// failed afterwards. Only the first two leave the deployment untouched, and only they are the
+/// operator's to correct rather than an outcome to observe.
+/// </remarks>
+public static class CdcRestartDiagnosticCodes
+{
+    /// <summary>
+    /// A restart that was never issued, because source-history continuity was not proved or the
+    /// binding named no connector to act on.
+    /// </summary>
+    public const string NotAttempted = "restartNotAttempted";
+
+    /// <summary>A restart the Kafka Connect worker refused.</summary>
+    public const string NotApplied = "restartNotApplied";
+}
+
 public sealed record CdcCleanupProof(
     [property: JsonRequired] int ContractVersion,
     [property: JsonRequired] string OperationId,

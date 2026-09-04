@@ -29,18 +29,26 @@ namespace EdFi.DataManagementService.Backend.Cdc.Control;
 /// and this provider reads those records whenever no binding names the target. A retirement that
 /// names it reports <c>Historical</c>.
 ///
-/// Evidence is a record that names the target: a readable binding, or a retirement. A state store
-/// that cannot be listed, or that holds a record this build cannot read as a binding, yields
-/// <c>Unknown</c> so the E18 gate rejects without mutation, and so does a store that holds no binding
-/// and no matching retirement — a fresh volume, a mis-mounted root, and a root pointed at another
-/// deployment all list empty, so an absent record only means <c>InternalOnly</c> once a readable
-/// binding has shown that this is the populated, authoritative store. A retirement naming the target
-/// is itself that showing, which is why it is consulted even when no binding is live: retiring the
-/// deployment's only binding leaves the retirement as the sole trace of what was published.
-/// Retirements are also the exception to the empty-listing reasoning in the other direction: a
-/// deployment that has retired nothing legitimately holds none, so an empty retirement listing is an
-/// answer rather than a gap. The provider never reports <c>Possible</c>: it either reads the
-/// deployment's records or it does not.
+/// Evidence is a record that names the target: a readable binding, or a retirement. Nothing else is
+/// evidence. A state store that cannot be listed, that holds a record this build cannot read as a
+/// binding, or that simply holds no record naming the requested target all yield <c>Unknown</c>, so
+/// the E18 gate rejects without mutation.
+///
+/// The absence of a record is deliberately not read as proof that the target was never published.
+/// Absence would prove that only if this store were known to be a complete history of every target
+/// for the deployment's lifetime, and nothing establishes that: a listing proves which records exist
+/// now, not that none was ever lost, and a restored, copied, partially migrated, or mis-mounted root
+/// answers a listing exactly as an intact one does. Reading absence as proof would let a root that
+/// happens to hold one unrelated binding authorize the destructive E18 commands for a target it says
+/// nothing about, so <c>InternalOnly</c> is reported only from a record that names the target — which,
+/// there being no durable record of a non-event, means it is not currently reachable. That is the
+/// same answer the default provider gives, and it leaves the E18 destructive commands rejected as
+/// they already were; what this provider adds over the default is the positive proof of <c>Active</c>
+/// and <c>Historical</c>, which is what actually keeps a published target out of those commands.
+///
+/// A retirement is consulted even when no binding is live, because retiring the deployment's only
+/// binding leaves the retirement as the sole trace of what was published. The provider never reports
+/// <c>Possible</c>: it either reads a record naming the target or it does not.
 ///
 /// The deployment key is read from raw configuration rather than through <c>CdcControlOptions</c>
 /// on purpose. Those options are validated on first resolution, which the administrative host
@@ -133,12 +141,11 @@ public sealed class CdcDownstreamPublicationHistoryProvider(
 
         if (matchedBinding is null)
         {
-            // No live binding names this target, which is not yet the same as never having published
-            // it: retirement removes the binding record it retires. The retirement records are the
-            // durable trace of that, and they must be read before an absent binding may be read as
-            // proof of an unpublished target. That holds when the listing is empty as well as when it
-            // names other targets: retiring the deployment's only binding empties the binding tree and
-            // leaves the retirement behind.
+            // No live binding names this target, which is not the same as never having published it:
+            // retirement removes the binding record it retires, and the retirement record is the
+            // durable trace of what that generation published. It is read whether the listing is empty
+            // or names other targets, because retiring the deployment's only binding empties the
+            // binding tree and leaves the retirement as the sole evidence.
             CdcRetirementListResult retirementsResult = await _bindingLifecycleService
                 .ListRetirementsAsync(deploymentKey, cancellationToken)
                 .ConfigureAwait(false);
@@ -167,27 +174,18 @@ public sealed class CdcDownstreamPublicationHistoryProvider(
                 );
             }
 
-            if (listResult.States.Count == 0)
-            {
-                // Nothing readable names this target, and a store holding no binding at all is
-                // indistinguishable from one this deployment has never written to: a fresh volume, a
-                // mis-mounted root, or a root pointed at the wrong deployment all list empty. Reading
-                // that as proof would admit the destructive commands on exactly the evidence the
-                // deployment failed to supply, so at least one readable record - a binding here, since
-                // no retirement matched - must establish that the store is the populated one.
-                return Unknown(
-                    targetKey,
-                    currentPhysicalSourceFingerprint,
-                    "The CDC binding state store holds no bindings for this deployment, so it cannot be distinguished from an unwritten store."
-                );
-            }
-
-            return Observation(
+            // No record names this target. That is not proof the target was never published: it would
+            // be only if this store were known to hold every record the deployment has ever written,
+            // and a listing establishes what exists now rather than what was never lost. A restored,
+            // copied, partially migrated, or mis-mounted root answers identically to an intact one,
+            // and other targets' bindings say nothing about this one. Proving internal-only from
+            // absence needs positive durable evidence about this target - a record initialized for it
+            // and irreversibly transitioned when publication occurs - which no contract in this
+            // deployment produces, so the honest answer is that the history is unknown.
+            return Unknown(
                 targetKey,
                 currentPhysicalSourceFingerprint,
-                DocumentCacheDownstreamPublicationStatus.InternalOnly,
-                evidenceGenerationIdentifier: null,
-                "The deployment's CDC bindings name other targets, none binds this one, and none was ever retired for it, so its projection was never published downstream."
+                "No CDC binding or retirement record names this target, and an absent record is not evidence that its projection was never published downstream."
             );
         }
 

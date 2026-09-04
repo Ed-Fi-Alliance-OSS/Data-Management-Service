@@ -266,12 +266,20 @@ function Resolve-CdcHostBindingStateRoot {
 function Get-CdcNextGeneration {
     <#
     .SYNOPSIS
-        The generation a new binding for this instance key may be created under.
+        The generation this enable must run under for the instance key.
 
     .DESCRIPTION
-        One past the highest generation the store has ever held for the instance key, counting the
-        retirement records as well as the live bindings - so the first binding of a target is 1, and
-        a target whose only generation was retired gets 2.
+        A live binding record for the instance key is the generation the control plane already holds,
+        so it is returned as-is. An enable that wrote its binding and then failed during activation,
+        Kafka setup, connector registration, or readiness is completed by being reissued, and it can
+        only be reissued against the generation the record names: asking for the next one makes the
+        rerun a first attempt, which the control plane refuses while the previous generation is still
+        live. More than one live binding record for the instance key is a state this phase may not
+        choose between, so it stops rather than guessing which one the rerun means.
+
+        With no live binding record, the generation is one past the highest the store has ever held
+        for the instance key, counting the retirement records as well - so the first binding of a
+        target is 1, and a target whose only generation was retired gets 2.
 
         Both trees are counted because retirement removes the binding record it retires and leaves
         the retirement record as the only trace. Reading the bindings alone makes a retired
@@ -280,7 +288,8 @@ function Get-CdcNextGeneration {
         generation was bound to, so the next stack would ask for that same generation against a new
         physical source. That reassigns an existing connector name, topic namespace, and consumer
         state to a different database, which v1 never does - the control plane refuses it, and
-        without this the refusal would land on every enable after the first teardown.
+        without this the refusal would land on every enable after the first teardown. Retirements
+        are counted for that reason alone and are never reused.
 
         A store that cannot be enumerated is fatal rather than empty, for the same reason it is in
         the teardown module: an unreadable tree read as "no generations" would allocate 1 over
@@ -302,7 +311,7 @@ function Get-CdcNextGeneration {
         $InstanceKey
     )
 
-    $highest = 0L
+    $recorded = @{ bindings = @(); retirements = @() }
     foreach ($stateKind in @("bindings", "retirements")) {
         $instanceDirectory = Join-Path (Join-Path (Join-Path $BindingStateRoot $stateKind) $DeploymentKey) $InstanceKey
         if (-not (Test-Path -LiteralPath $instanceDirectory -PathType Container)) {
@@ -324,9 +333,23 @@ function Get-CdcNextGeneration {
                 throw "CDC phase: '$($stateFile.FullName)' is not named for a binding generation. The store's own layout names each record for the generation it holds, so a generation cannot be allocated without reading it. Repair or remove that file before enabling CDC."
             }
 
-            if ($generation -gt $highest) {
-                $highest = $generation
-            }
+            $recorded[$stateKind] += $generation
+        }
+    }
+
+    $live = @($recorded["bindings"])
+    if ($live.Count -gt 1) {
+        throw "CDC phase: the binding state store holds $($live.Count) live binding records for instance key '$InstanceKey' (generations $(($live | Sort-Object) -join ', ')). One of them is the generation an enable would have to be reissued against, and this phase cannot choose which, so it stops. Retire the generations that are no longer wanted before enabling CDC."
+    }
+
+    if ($live.Count -eq 1) {
+        return $live[0]
+    }
+
+    $highest = 0L
+    foreach ($generation in @($recorded["retirements"])) {
+        if ($generation -gt $highest) {
+            $highest = $generation
         }
     }
 

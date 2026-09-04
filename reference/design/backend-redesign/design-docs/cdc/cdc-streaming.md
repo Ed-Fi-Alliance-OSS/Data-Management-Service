@@ -352,9 +352,9 @@ erase that history or authorize clearing. Online compatible cache rebuild remain
 by its own operation above, while CDC containment and baseline-replacing recovery remain
 governed by the contracts below.
 
-Internal-only is proved from durable deployment state, never from an operator assertion, a
-CLI switch, a stopped connector, or a removed `DocumentCache:Targets` entry. The proof is
-the deployment's own CDC records:
+Internal-only is never taken from an operator assertion, a CLI switch, a stopped connector, or
+a removed `DocumentCache:Targets` entry. Eligibility is decided from durable deployment state,
+and the state that decides it is the deployment's own CDC records:
 
 - A binding naming the target on its currently resolved physical source proves active
   downstream publication; one naming the target on an earlier physical source proves
@@ -363,21 +363,31 @@ the deployment's own CDC records:
   proof that a target was never published. Retirement therefore records the generation it
   retires durably, before the binding record is removed, and never removes that record
   afterwards. A retirement record naming the target proves historical publication.
-- Internal-only requires a complete, readable listing that holds at least one binding, holds
-  no binding for the target, and holds no retirement record for it. A listing that cannot be
-  completed, a record that cannot be read as a binding, an unconfigured deployment key, and a
-  listing that holds no binding at all and no retirement naming the target are all unknown, and
-  unknown rejects without mutation.
-- An empty binding listing is unknown rather than proof, because a fresh volume, a mis-mounted
-  state root, and a root pointed at another deployment are indistinguishable from a deployment
-  that has bound nothing. Retirement records are the exception in both directions: a deployment
-  that has retired nothing legitimately holds none, so an empty retirement listing is an answer;
-  and a retirement naming the target is proof in its own right, so it is read before an absent
-  binding is called unknown. Retiring a deployment's only binding empties the binding listing and
-  leaves that retirement as the sole trace of what the target published.
+- No record naming the target is unknown rather than proof of internal-only. A listing
+  establishes which records exist now, not that none was ever lost: a fresh volume, a
+  mis-mounted state root, a restored or partially migrated root, and a root pointed at another
+  deployment all answer a listing exactly as an intact one does, and other targets' bindings
+  say nothing about this one. A listing that cannot be completed, a record that cannot be read
+  as a binding, and an unconfigured deployment key are unknown for the same reason. Unknown
+  rejects without mutation.
+- Retirement records are read even when the binding listing is empty, because retiring a
+  deployment's only binding empties that listing and leaves the retirement as the sole trace of
+  what the target published. A deployment that has retired nothing legitimately holds no
+  retirement record, so an empty retirement listing is not itself a gap.
 
-A deployment that registers no CDC control plane has no such records to read and reports
-unknown, which rejects.
+Proving internal-only therefore requires positive durable evidence about the target itself — a
+record initialized for it and irreversibly transitioned when publication occurs — which no
+contract in this design produces. Until one does, the CDC records prove ineligibility and never
+eligibility: a target reports active, historical, or unknown, and unknown rejects. A deployment
+that registers no CDC control plane has no such records to read and reports unknown, which also
+rejects.
+
+Every observation carries the currently resolved physical-source fingerprint, including the
+rejecting ones, because the administrative gate compares the fingerprint before it reads the
+status and withholding it would report a source mismatch that was never observed. That
+comparison is therefore evidence only on an observation that names a record: where no record
+names the target, the fingerprint is the one the caller already resolved, and the status alone
+is what rejects. The gate must never be given a fingerprint match as a substitute for a record.
 
 ## Projection Health and Deployment-Owned CDC Readiness
 
@@ -907,7 +917,22 @@ Binding creation and cleanup follow a fail-closed order:
    artifact, or delete the connector, every governed topic, offset, ACL, PostgreSQL
    slot/publication, SQL Server capture artifact, and other governed artifact before
    deleting the terminal incident state and binding record. A normal process restart or
-   stack stop deletes neither.
+   stack stop deletes neither. Within that removal the connector is stopped first, its
+   committed offsets are deleted while it is stopped and still exists, and its configuration
+   is deleted only afterwards: Connect accepts an offsets delete only for an existing stopped
+   connector, and deleting the configuration leaves the committed offsets in the
+   cluster-scoped store. The stop is proved by reading the connector's state back until it
+   reports stopped, because the worker applies a stop asynchronously and an accepted request
+   is not yet a fence. A connector the worker does not have ends the retirement: the worker
+   answers the same way whether the connector never existed or was deleted out from under the
+   record, so its absence is never read as proof that the committed offsets are gone. Only an
+   explicit operator assertion that the connector is already absent allows the retirement to
+   continue, and the proof then records the offsets as that assertion rather than as an
+   observation. A retirement also proves, before it fences anything, that the record names the
+   deployment's provider and that the connected database is that record's own physical source.
+   A retained superseded generation is therefore retirable only against the database it was
+   bound to: run against the source that replaced it, every provider artifact would be reported
+   absent, and the proof would certify a cleanup of a database that never held them.
 
 The binding record lives at least as long as any governed artifact. Local teardown may
 remove it only in the same destructive volume-removal workflow that removes all of those
@@ -934,10 +959,15 @@ of applying the empty-table retry classification.
 
 V1 never reassigns an existing topic or connector generation to a different physical
 database. Guarded source replacement is supported only for a database previously enabled
-through the v1 new-database path. It fences the old connector, rotates `SourceIdentity`
-through the binding-state operation, and creates a new binding generation, connector,
-public topic, progress topic, SQL Server schema-history topic when applicable, consumer
-state namespace, and snapshot. Enablement is the same sequence and is held to the same
+through the v1 new-database path. It fences the old connector and creates a new binding
+generation, connector, public topic, progress topic, SQL Server schema-history topic when
+applicable, consumer state namespace, and snapshot. The replacing source's `SourceIdentity`
+must already have been rotated away from the generation it replaces before the operation is
+invoked, and the operation refuses a source whose identity still resolves to the replaced
+generation's physical-source fingerprint: a restore, rollback, or copied backup carries the
+replaced database's own identity row, and binding a new generation to it would publish one
+physical source under two generations. Rotating that identity is not part of the operation.
+Enablement is the same sequence and is held to the same
 fence: it never starts a generation of a target the deployment already holds a live binding
 for, except the one generation a replacement fenced and named on the way in. Without that,
 repointing a deployment at a new empty database and enabling again would reach a replacement's
@@ -1555,6 +1585,20 @@ effective deployment-managed ACL set would grant a configured instance consumer 
 another instance topic or any progress topic. ACL verification completes before connector
 registration and before combined readiness can pass. It does not rely on consumer-side
 filtering as an isolation control.
+
+Generations of one target are not isolated from each other, and the rule above is deliberately
+about another instance's topic rather than another generation's. Guarded source replacement
+retains the generation it supersedes until an operator retires it, so a stable consumer
+principal holds literal grants on both of that target's public topics for as long as that
+lasts; treating the retained one as foreign would make ordinary source replacement fail closed.
+A grant naming another instance key, any progress or schema-history topic, or a non-literal
+pattern still fails closed.
+
+The consumer-group grant is the consumer's rather than one generation's. Its name is deployment
+configuration, not a binding-derived artifact name, and the same consumer group reads the
+generation that replaces a retired one, so binding retirement removes every topic grant the
+binding created - which is what carries access to data - and never the consumer-group grant.
+Revoking that is a deployment decision, taken when the consumer itself is removed.
 
 Structured logs and metrics cover:
 

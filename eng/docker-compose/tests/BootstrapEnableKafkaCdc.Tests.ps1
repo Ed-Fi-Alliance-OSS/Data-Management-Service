@@ -553,19 +553,33 @@ Describe "DMS-1323 bootstrap CDC phase" {
                 Get-CdcNextGeneration -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds1" |
                     Should -Be 2
 
-                # A live binding counts the same way, and the highest across both trees wins.
+                # Another instance key allocates from its own generations, not this one's.
+                Get-CdcNextGeneration -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds7" |
+                    Should -Be 1
+            }
+            finally {
+                Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "reuses the generation of the live binding record, so a partial enable is reissuable" {
+            # An enable that wrote its binding and then failed later is completed by being reissued,
+            # and only against the generation the record names: asking for the next one makes the
+            # rerun a first attempt, which the control plane refuses while that generation is live.
+            $root = Join-Path ([System.IO.Path]::GetTempPath()) "dms-1323-generation-$([System.Guid]::NewGuid().ToString('n'))"
+            try {
+                $retirements = Join-Path (Join-Path (Join-Path $root "retirements") "local") "ds1"
+                New-Item -ItemType Directory -Force -Path $retirements | Out-Null
+                "{}" | Set-Content -LiteralPath (Join-Path $retirements "1.json") -Encoding utf8
+
                 $bindings = Join-Path (Join-Path (Join-Path $root "bindings") "local") "ds1"
                 New-Item -ItemType Directory -Force -Path $bindings | Out-Null
                 "{}" | Set-Content -LiteralPath (Join-Path $bindings "4.json") -Encoding utf8
 
                 Get-CdcNextGeneration -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds1" |
-                    Should -Be 5
+                    Should -Be 4
 
-                # Another instance key allocates from its own generations, not this one's.
-                Get-CdcNextGeneration -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds7" |
-                    Should -Be 1
-
-                # And the allocated value is what the enable invocation actually carries.
+                # And the reused value is what the enable invocation actually carries.
                 $arguments = Get-CdcEnableArgument `
                     -ComposeProjectName "dms-local" `
                     -EnvironmentFile "/tmp/.env.derived" `
@@ -577,7 +591,26 @@ Describe "DMS-1323 bootstrap CDC phase" {
                     -BindingStateRoot $root
 
                 ($arguments -join " ") | Should -BeLike "*--instance-key ds1*"
-                ($arguments -join " ") | Should -BeLike "*--generation 5*"
+                ($arguments -join " ") | Should -BeLike "*--generation 4*"
+            }
+            finally {
+                Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "refuses to choose between two live binding records for the instance key" {
+            # Either could be the generation a rerun means, and picking one would enable a second
+            # generation of a target that already has a live binding.
+            $root = Join-Path ([System.IO.Path]::GetTempPath()) "dms-1323-generation-$([System.Guid]::NewGuid().ToString('n'))"
+            try {
+                $bindings = Join-Path (Join-Path (Join-Path $root "bindings") "local") "ds1"
+                New-Item -ItemType Directory -Force -Path $bindings | Out-Null
+                "{}" | Set-Content -LiteralPath (Join-Path $bindings "4.json") -Encoding utf8
+                "{}" | Set-Content -LiteralPath (Join-Path $bindings "5.json") -Encoding utf8
+
+                {
+                    Get-CdcNextGeneration -BindingStateRoot $root -DeploymentKey "local" -InstanceKey "ds1"
+                } | Should -Throw -ExpectedMessage "*live binding records for instance key*"
             }
             finally {
                 Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
@@ -1988,8 +2021,12 @@ Describe "DMS-1323 operator and story documentation" {
             $owningDesignText = Get-Content -LiteralPath (
                 Join-Path $script:sourceRepoRoot "reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md"
             ) -Raw
-            $owningDesignText | Should -Match 'Internal-only is proved from durable deployment state'
+            $owningDesignText | Should -Match 'Eligibility is decided from durable deployment state'
             $owningDesignText | Should -Match 'Retirement therefore records the generation it'
+
+            # And the rule the owner states is the one the provider implements: absence of a record
+            # naming the target is unknown, never the status that admits the E18 offline commands.
+            $owningDesignText | Should -Match 'No record naming the target is unknown rather than proof'
         }
 
         It "places the section before the acceptance evidence, as the sibling story does" {
