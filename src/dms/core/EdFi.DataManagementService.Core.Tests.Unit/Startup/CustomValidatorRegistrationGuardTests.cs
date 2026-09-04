@@ -178,10 +178,10 @@ public class Given_A_Custom_Validator_Registration_Guard
     }
 
     /// <summary>
-    /// A keyed descriptor carries the contract as its ServiceType so it reaches the audit, but every
-    /// unkeyed Implementation accessor on one returns null instead of throwing, so it breaks no other
-    /// rule, and the unkeyed resolution DMS performs never yields it. Unrejected it would be audited
-    /// clean, skip the activation probe, never be AppliesTo-checked, and never run.
+    /// A keyed descriptor is absent from the unkeyed collection DMS resolves, so a keyed-only
+    /// registration never runs. This one names its implementation type, so the reachability check
+    /// owns it and the abort names that type rather than a shape rule that cannot apply to a keyed
+    /// registration.
     /// </summary>
     [Test]
     public async Task It_aborts_for_a_keyed_registration()
@@ -197,6 +197,50 @@ public class Given_A_Custom_Validator_Registration_Guard
             .And.Contain("are not among the")
             .And.Contain(", keyed,")
             .And.NotContain("<registration with no implementation type>");
+    }
+
+    /// <summary>
+    /// The one keyed shape no later check can report. A keyed factory names no implementation type,
+    /// so the only type the reachability check could compare is the contract itself, which every
+    /// resolved validator satisfies. Unrejected this registration is audited clean, and the guard
+    /// reports activating zero validators while the implementer registered one.
+    /// </summary>
+    [Test]
+    public async Task It_aborts_for_a_keyed_factory_registration()
+    {
+        GuardRun run = await RunGuard(services =>
+            services.AddKeyedTransient<ICustomResourceValidator>(
+                "plugin-key",
+                (_, _) => new MatchingValidator()
+            )
+        );
+
+        run.Thrown.Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Contain("Startup aborted: 1 ICustomResourceValidator registration(s) are invalid.")
+            .And.Contain("it is keyed, so it contributes nothing to the unkeyed collection");
+    }
+
+    /// <summary>
+    /// No shape rule applies to a keyed descriptor, because a keyed registration is absent from the
+    /// collection DMS resolves whatever shape it carries. Reporting its lifetime would send an
+    /// implementer to change the lifetime, restart, and hit a second abort naming the real defect.
+    /// </summary>
+    [Test]
+    public async Task It_reports_a_keyed_non_transient_registration_as_unreachable_rather_than_mislifetimed()
+    {
+        GuardRun run = await RunGuard(services =>
+            services.AddKeyedSingleton<ICustomResourceValidator, MatchingValidator>("plugin-key")
+        );
+
+        run.Thrown.Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Contain($"'{Logged(typeof(MatchingValidator))}':")
+            .And.Contain("are not among the")
+            .And.Contain(", keyed, Singleton lifetime")
+            .And.NotContain("rather than Transient");
     }
 
     /// <summary>
@@ -221,11 +265,6 @@ public class Given_A_Custom_Validator_Registration_Guard
             .And.Contain("IEnumerable<ICustomResourceValidator>");
     }
 
-    /// <summary>
-    /// The displacement half of the same defect: a correctly registered validator coexisting with a
-    /// collection registration must still abort, because otherwise the correct one stops resolving
-    /// while the guard reports success.
-    /// </summary>
     /// <summary>
     /// A keyed descriptor is invisible to the unkeyed resolution DMS performs, so registering one
     /// beside a valid contract registration hides nothing: the validator still resolves. Rejecting
@@ -263,6 +302,11 @@ public class Given_A_Custom_Validator_Registration_Guard
         run.Thrown.Should().BeNull();
     }
 
+    /// <summary>
+    /// The displacement half of the same defect: a correctly registered validator coexisting with a
+    /// collection registration must still abort, because otherwise the correct one stops resolving
+    /// while the guard reports success.
+    /// </summary>
     [Test]
     public async Task It_aborts_for_a_collection_registration_that_hides_a_valid_one()
     {
@@ -799,6 +843,49 @@ public class Given_A_Custom_Validator_Registration_Guard
     }
 
     /// <summary>
+    /// A resolved subclass is not evidence that a registered concrete base class runs: it is a
+    /// different validator with its own AppliesTo. Accepting it as evidence would boot clean while
+    /// the base class the implementer registered on purpose never runs for any write.
+    /// </summary>
+    [Test]
+    public async Task It_aborts_for_a_concrete_base_class_registration_a_subclass_resolves_for()
+    {
+        GuardRun run = await RunGuard(services =>
+        {
+            services.TryAddEnumerable(
+                ServiceDescriptor.Transient<ICustomResourceValidator, SubclassValidator>()
+            );
+            services.AddTransient<ConcreteBaseValidator>();
+        });
+
+        run.Thrown.Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Contain($"'{Logged(typeof(ConcreteBaseValidator))}':")
+            .And.Contain("are not among the")
+            .And.NotContain($"'{Logged(typeof(SubclassValidator))}'");
+    }
+
+    /// <summary>
+    /// The other half of that comparison. An abstract service type is a contract someone else
+    /// satisfies, exactly like the implementer's own interface, so an instance assignable to it
+    /// resolving means nothing is hidden.
+    /// </summary>
+    [Test]
+    public async Task It_accepts_an_abstract_base_class_alias_beside_a_contract_registration()
+    {
+        GuardRun run = await RunGuard(services =>
+        {
+            services.TryAddEnumerable(
+                ServiceDescriptor.Transient<ICustomResourceValidator, MatchingValidator>()
+            );
+            services.AddTransient<ValidatorBase>(_ => new MatchingValidator());
+        });
+
+        run.Thrown.Should().BeNull();
+    }
+
+    /// <summary>
     /// An open generic registration of the collection type is selected ahead of the collection MS DI
     /// would synthesize, so it substitutes or empties the set the same way a closed registration
     /// does, while carrying a service type equal to neither the contract nor its closed collection.
@@ -819,6 +906,24 @@ public class Given_A_Custom_Validator_Registration_Guard
             .Which.Message.Should()
             .Contain($"'{Logged(typeof(MatchingValidator))}'")
             .And.Contain("are not among the");
+    }
+
+    /// <summary>
+    /// A registration of the collection type supplies whatever it yields, and every check below it
+    /// reads an instance's type. A null is rejected where the collection is resolved rather than
+    /// dereferenced into a NullReferenceException that names no registration.
+    /// </summary>
+    [Test]
+    public async Task It_aborts_for_a_null_resolved_validator_instance()
+    {
+        GuardRun run = await RunGuard(services =>
+            services.AddTransient(typeof(IEnumerable<>), typeof(NullBag<>))
+        );
+
+        run.Thrown.Should()
+            .BeOfType<InvalidOperationException>()
+            .Which.Message.Should()
+            .Contain("contains a null instance");
     }
 
     /// <summary>
@@ -918,6 +1023,20 @@ public class Given_A_Custom_Validator_Registration_Guard
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
+    /// <summary>
+    /// The same shape as EmptyBag, yielding a single null rather than nothing, so the collection
+    /// DMS resolves is non-empty and holds no validator.
+    /// </summary>
+    private sealed class NullBag<T> : IEnumerable<T>
+    {
+        public IEnumerator<T> GetEnumerator()
+        {
+            yield return default!;
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
     private sealed class ThrowingDisposeValidator : ValidatorBase, IDisposable
     {
         public override IReadOnlyList<ValidatedResource> AppliesTo =>
@@ -959,6 +1078,14 @@ public class Given_A_Custom_Validator_Registration_Guard
         public override IReadOnlyList<ValidatedResource> AppliesTo =>
             [new ValidatedResource(CoreProjectName, CoreResourceName)];
     }
+
+    private class ConcreteBaseValidator : ValidatorBase
+    {
+        public override IReadOnlyList<ValidatedResource> AppliesTo =>
+            [new ValidatedResource(CoreProjectName, CoreResourceName)];
+    }
+
+    private sealed class SubclassValidator : ConcreteBaseValidator { }
 
     private sealed class ExtensionMatchingValidator : ValidatorBase
     {

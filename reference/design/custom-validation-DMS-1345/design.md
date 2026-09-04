@@ -429,25 +429,32 @@ This is a deliberate refusal of the ODS precedent for extension registration, wh
 The catch covers only that much: Autofac defers a module's own `Load` body to container build, outside the cited `try`, so a module that throws while performing its registrations is not swallowed but takes the process down.
 It is the swallowing half that this design refuses.
 
-Fatal conditions, from the registrations: a contract descriptor that is not transient; a contract descriptor carrying an `ImplementationInstance` or an `ImplementationFactory`; an unkeyed registration of `IEnumerable<ICustomResourceValidator>` itself; a registered validator type that is not among the instances DMS resolves, which is what makes a keyed-only or concrete-type-only registration fatal; and a registered validator the container cannot construct.
+Fatal conditions, from the registrations: an unkeyed contract descriptor that is not transient; an unkeyed contract descriptor carrying an `ImplementationInstance` or an `ImplementationFactory`; a keyed contract descriptor naming no implementation type; an unkeyed registration of `IEnumerable<ICustomResourceValidator>` itself; a null instance in the collection DMS resolves; a registered validator type that is not among the instances DMS resolves, which is what makes a keyed-only or concrete-type-only registration fatal; and a registered validator the container cannot construct.
 Fatal conditions, from `AppliesTo`: a null list, a null element, and a getter or list that throws when read or walked.
 Each is reported against the validator that produced it, so the abort names a registration rather than a task.
 
 **Enumerating the ways a registration can fail to be reached does not converge, so the guard does not enumerate them.**
 It rests on two checks:
 
-1. **A contract descriptor carries a permitted shape.** The properties a `ServiceDescriptor` can hold are finite, so this is closed by construction rather than by enumerating mistakes: transient, and an implementation type rather than an instance or a factory. It keeps specific messages because they are what an implementer can act on. An unkeyed registration of the collection type is rejected here too, since it replaces the collection DMS resolves outright.
+1. **An unkeyed contract descriptor carries a permitted shape.** The properties a `ServiceDescriptor` can hold are finite, so this is closed by construction rather than by enumerating mistakes: transient, and an implementation type rather than an instance or a factory. It keeps specific messages because they are what an implementer can act on. An unkeyed registration of the collection type is rejected here too, since it replaces the collection DMS resolves outright. A keyed contract descriptor is held to one rule instead, below.
 2. **Every validator type a descriptor shows is represented among the instances DMS actually resolves.** This compares intent against the resolution DMS itself performs, so a registration that fails to reach that resolution is caught whatever shape produced it.
 
 Check 1 holds only what resolving cannot answer. A non-transient or factory-shaped descriptor resolves perfectly well, so no comparison against resolved instances would reveal it; a factory descriptor in particular records what a delegate returns, not whether the delegate constructs anything, which makes `sp => capturedInstance` and `sp => new MyValidator(...)` the same shape to any audit and to any number of resolutions.
 Everything else is check 2's, because check 2 is strictly more precise. A keyed descriptor is the worked example: keyed-only is unreachable and check 2 reports it, while a keyed alias beside a valid contract registration is reachable and check 2 accepts it. A shape rule keyed on `IsKeyedService` cannot separate those two and refuses to boot over the second.
+Check 2 can separate them only while the descriptor names an implementation type, which is why a keyed contract descriptor naming none is check 1's one keyed rule.
+A keyed factory shows nothing but its service type, and for a contract registration that is the contract itself, which every resolved validator satisfies; so no comparison against resolved instances can report it, and reading the unkeyed accessors that would catch the same shape unkeyed answers null on a keyed descriptor.
+Check 1 therefore reads no unkeyed accessor on a keyed descriptor at all, which also decouples the guard from the `ServiceDescriptor` behavior of returning null there rather than throwing.
 Check 2 compares against resolved *instances* rather than a list of approved types, which is what lets it accept an alias under an implementer's own interface.
+Standing in for a registered type is assignability only where that type is abstract, interfaces included by metadata, since an abstract type is a contract another type satisfies.
+A concrete class is matched by identity instead: a resolved subclass is a different validator carrying its own `AppliesTo`, so accepting one as evidence would pass a base-class registration that never runs.
 Check 1 aborts before check 2 resolves anything, so a descriptor rejected for its shape is never also described as unreachable.
 
 Two limits are worth stating rather than defending with code.
 A factory registered under a service type unrelated to the contract, through the single-generic-argument overload, shows only that unrelated service type; the two-argument overload does expose the implementation as its delegate's return type, but reading that means trusting a delegate signature rather than a descriptor property, and check 2 already catches the registration whenever the validator resolves nowhere else.
 An open generic registration of `IEnumerable<>` is not a validator-specific hazard at all: it empties every `IEnumerable<T>`, including the `IDmsStartupTask` collection the orchestrator resolves, so no startup task runs and this guard never executes to report anything.
 The `ImplementationInstance` rejection does not change whether startup aborts, since `ServiceDescriptor` only produces one at `Singleton` lifetime and the lifetime rule already aborts on it; it earns its place by naming the actual mistake rather than reporting a lifetime the implementer never chose.
+The null-instance rejection earns its place the same way.
+The collection is typed as holding validators, but a registration of the collection type supplies whatever it yields, and both checks read an instance's type, so rejecting a null where it resolves is what keeps every abort naming a registration instead of surfacing a `NullReferenceException` from a later dereference.
 
 **The operator-facing message will name the wrong phase.**
 An `Order` in the 200s runs inside the `[0, 299]` window that `Program.cs:163-169` labels `InitializeApiSchemas`, whose failure text is "API schema initialization failed. DMS cannot start with invalid schemas." (`:167`).

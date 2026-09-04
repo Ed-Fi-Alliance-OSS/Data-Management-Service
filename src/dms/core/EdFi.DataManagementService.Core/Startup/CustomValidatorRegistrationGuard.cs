@@ -21,9 +21,10 @@ namespace EdFi.DataManagementService.Core.Startup;
 /// Registration code runs outside this repository, so this cannot rely on any convention an
 /// implementer is asked to follow. It applies two independent checks:
 /// <list type="number">
-/// <item>A descriptor registered under the contract carries a shape the contract permits. The
-/// properties a ServiceDescriptor can hold are finite, so this check is complete by construction
-/// rather than by enumerating mistakes.</item>
+/// <item>An unkeyed descriptor registered under the contract carries a shape the contract permits.
+/// The properties a ServiceDescriptor can hold are finite, so this check is complete by
+/// construction rather than by enumerating mistakes. A keyed one is held to a single rule, since
+/// the second check owns every keyed descriptor it can see.</item>
 /// <item>Every type a descriptor shows to be a validator is represented among the instances the
 /// container actually returns. This compares intent against the resolution DMS itself performs, so
 /// it does not depend on knowing the ways a registration can fail to reach that resolution.</item>
@@ -118,7 +119,26 @@ internal sealed class CustomValidatorRegistrationGuard(
         {
             if (descriptor.ServiceType == typeof(ICustomResourceValidator))
             {
-                AuditContractDescriptor(descriptor, offenses);
+                // A keyed registration is absent from the unkeyed collection DMS resolves whatever
+                // shape it carries, so no shape rule below applies to one, and the unkeyed
+                // accessors those rules read answer null for properties a keyed descriptor holds
+                // elsewhere. Check 2 owns every keyed descriptor that names an implementation type,
+                // because it can tell a keyed-only registration from a keyed alias beside a working
+                // one. One naming no type is the residual: the only type check 2 could compare is
+                // the contract itself, which every resolved validator satisfies, so it is reported
+                // here or nowhere.
+                if (!descriptor.IsKeyedService)
+                {
+                    AuditUnkeyedContractDescriptor(descriptor, offenses);
+                }
+                else if (ImplementationTypeOf(descriptor) is null)
+                {
+                    offenses.Add(
+                        $"'{DescribeImplementation(descriptor)}': it is keyed, so it "
+                            + "contributes nothing to the unkeyed collection DMS resolves, and it "
+                            + "names no type the reachability check could report instead"
+                    );
+                }
             }
             else if (!descriptor.IsKeyedService && IsValidatorCollectionServiceType(descriptor.ServiceType))
             {
@@ -133,7 +153,7 @@ internal sealed class CustomValidatorRegistrationGuard(
         return offenses;
     }
 
-    private static void AuditContractDescriptor(ServiceDescriptor descriptor, List<string> offenses)
+    private static void AuditUnkeyedContractDescriptor(ServiceDescriptor descriptor, List<string> offenses)
     {
         List<string> brokenRules = [];
 
@@ -164,9 +184,11 @@ internal sealed class CustomValidatorRegistrationGuard(
 
     private static List<ICustomResourceValidator> ResolveValidators(AsyncServiceScope scope)
     {
+        List<ICustomResourceValidator> resolvedValidators;
+
         try
         {
-            return [.. scope.ServiceProvider.GetServices<ICustomResourceValidator>()];
+            resolvedValidators = [.. scope.ServiceProvider.GetServices<ICustomResourceValidator>()];
         }
         catch (Exception activationException)
         {
@@ -180,6 +202,23 @@ internal sealed class CustomValidatorRegistrationGuard(
                 activationException
             );
         }
+
+        // The collection is typed as holding validators, but a registration of the collection type
+        // supplies whatever it yields, so what arrives here is only as good as that registration.
+        // Both checks below read an instance's type, so a null is rejected at the point it resolves
+        // rather than dereferenced into an exception that names nothing.
+        if (resolvedValidators.Exists(static validator => validator is null))
+        {
+            throw new InvalidOperationException(
+                "Startup aborted: the resolved ICustomResourceValidator collection contains a null "
+                    + "instance. A null is not a validator: it carries no type to report and no "
+                    + "AppliesTo to audit. Register each validator with "
+                    + "services.TryAddEnumerable(ServiceDescriptor.Transient<ICustomResourceValidator, "
+                    + "MyValidator>()) rather than registering the collection itself, then restart DMS"
+            );
+        }
+
+        return resolvedValidators;
     }
 
     /// <summary>
@@ -189,7 +228,8 @@ internal sealed class CustomValidatorRegistrationGuard(
     /// <remarks>
     /// Comparison is against resolved instances rather than against a list of approved types, so
     /// aliasing a validator under an implementer's own interface beside a contract registration is
-    /// not an offense: an instance satisfying the alias does resolve.
+    /// not an offense: an instance satisfying the alias does resolve. What counts as satisfying it
+    /// is <see cref="IsRepresentedBy" />.
     /// </remarks>
     private void VerifyEveryRegisteredValidatorResolved(List<ICustomResourceValidator> resolvedValidators)
     {
@@ -201,7 +241,7 @@ internal sealed class CustomValidatorRegistrationGuard(
 
             if (
                 registeredValidatorType is null
-                || resolvedValidators.Exists(registeredValidatorType.IsInstanceOfType)
+                || IsRepresentedBy(resolvedValidators, registeredValidatorType)
             )
             {
                 continue;
@@ -233,11 +273,29 @@ internal sealed class CustomValidatorRegistrationGuard(
     }
 
     /// <summary>
+    /// Whether the resolved collection stands in for a registered type. An abstract type, which by
+    /// metadata includes every interface, is a contract some other type satisfies, so any
+    /// assignable instance resolving means nothing is hidden: that is what makes aliasing a
+    /// validator under an implementer's own interface beside a contract registration legitimate. A
+    /// concrete class is not, because a resolved subclass is a different validator carrying its own
+    /// AppliesTo, so accepting one as evidence would pass a base-class registration that never runs
+    /// for any resource.
+    /// </summary>
+    private static bool IsRepresentedBy(
+        List<ICustomResourceValidator> resolvedValidators,
+        Type registeredValidatorType
+    ) =>
+        registeredValidatorType.IsAbstract
+            ? resolvedValidators.Exists(registeredValidatorType.IsInstanceOfType)
+            : resolvedValidators.Exists(validator => validator.GetType() == registeredValidatorType);
+
+    /// <summary>
     /// The validator type a descriptor shows, or null when it shows none. An implementation type or
     /// instance names the concrete type directly. A factory names nothing, leaving the service type
     /// as the only evidence, which is worth reporting when it is assignable to the contract but is
-    /// not the contract itself: a factory registered under the contract contributes to the resolved
-    /// collection, so it is check 1's business and not this one's.
+    /// not the contract itself. A factory registered under the contract is check 1's business
+    /// either way: unkeyed it contributes to the resolved collection, and keyed it shows nothing
+    /// but the contract, which every resolved validator satisfies.
     /// </summary>
     /// <remarks>
     /// The residual is a factory under a service type unrelated to the contract, registered through
