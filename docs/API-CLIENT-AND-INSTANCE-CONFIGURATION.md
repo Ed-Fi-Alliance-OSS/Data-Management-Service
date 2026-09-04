@@ -182,6 +182,16 @@ Data Store Derivatives are alternate database instances associated with a parent
 data store, such as read replicas or snapshots. Read replicas distribute query
 load, while snapshots preserve point-in-time data for backup, testing, or analysis.
 
+A `Snapshot` derivative must reference a database that is frozen for the duration
+of a client's paging session. Change-version-filtered collection reads served
+from a snapshot are paged in change-version order, and that ordering is only safe
+over data that cannot change while it is being walked. Configuring a source that
+continues to apply changes — a live secondary, or a standby still shipping logs —
+as a `Snapshot` rather than a `ReadReplica` can silently return one document
+twice and skip another within a single walk, with no error reported. A
+`ReadReplica` carries no such requirement: reads served from one keep the live
+paging rule. See [Cursor Paging](./CURSOR-PAGING.md).
+
 Each derivative type is stored with its own encrypted connection string and is
 automatically deleted when its parent data store is removed (CASCADE DELETE).
 

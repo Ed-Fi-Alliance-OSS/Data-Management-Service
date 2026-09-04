@@ -145,11 +145,13 @@ leaves a bounded window bounded — but it reads a different result set from tha
 token's position, like any other filter change.
 
 The same rule applies to asking for a snapshot, but only for a window of
-`minChangeVersion` alone. A snapshot walks that window in a different
+`minChangeVersion` alone. `Use-Snapshot: true` is the request header that
+asks for a point-in-time copy of the data instead of current data, where the
+deployment offers one. A snapshot walks a min-only window in a different
 order than current data does, so such a walk belongs to the source that
-started it: adding or dropping `Use-Snapshot: true` partway through one
-is rejected with the invalid-token message, exactly as adding or
-dropping `maxChangeVersion` is.
+started it: adding or dropping the header partway through one is rejected
+with the invalid-token message, exactly as adding or dropping
+`maxChangeVersion` is.
 
 A walk that carries `maxChangeVersion`, and a walk with no change-version
 window at all, are walked in the same order on either source, so their
@@ -252,8 +254,9 @@ A `pageToken` — whether it came from a `Next-Page-Token` header or from a
 ## Cursor paging is not a snapshot
 
 Cursor paging adds no long-running transaction, no server-side cursor state, and
-no repeatable-read guarantee. A walk reads live data, and it may take a while, so
-writes committed during the walk can be observed. Specifically:
+no repeatable-read guarantee. A walk reads live data unless the deployment offers
+a snapshot and the request asks for one, and it may take a while, so writes
+committed during the walk can be observed. On a live source, specifically:
 
 - A deleted document leaves a gap. This is harmless; the walk continues.
 - A document that stops matching your filters, change-version window, or
@@ -274,8 +277,14 @@ writes committed during the walk can be observed. Specifically:
   document forward inside the window and the walk can return it a second time.
   Take the bound from that operation rather than choosing one.
 
-If you need a stable view of a collection, do not rely on cursor paging to
-provide one.
+A walk served from a snapshot observes none of the above, because the copy it
+reads does not change while it is being walked. That stability is a property of
+the snapshot, not of cursor paging, which is what this section's title means:
+asking for `Use-Snapshot: true` is what supplies it, and a walk that drops the
+header partway through gives it up.
+
+If you need a stable view of a collection and the deployment offers no snapshot,
+do not rely on cursor paging to provide one.
 
 > [!NOTE]
 > Rely on the actual presence of the `Next-Page-Token` header rather than
