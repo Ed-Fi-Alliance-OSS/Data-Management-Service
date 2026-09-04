@@ -19,7 +19,13 @@ It does not add HTTP endpoints, pipeline behavior, OpenAPI metadata, plugin-regi
 - `IdentityResultStatus` has only `Success`, `Incomplete`, `InvalidProperties`, and `NotFound`; provider integration failures are reported by throwing exceptions, not by an extra status value.
 - `IdentityResult` has no request-token member.
 - Only `FindAsync` and `SearchAsync` return `IdentityAsyncResult`.
+- `IdentityRequestContext` carries a required `ClientId` alongside `Tenant`, `RouteQualifiers`, and `TraceId`, so a provider can scope an async job to the client that created it.
 - XML documentation states request body expectations, payload obligations, result invariants, async token rules, route context, and cancellation behavior.
+- XML documentation states the async job obligations: bind each job to the request's `Tenant`, `RouteQualifiers`, and `ClientId`; treat a mismatched poll as `NotFound`; document retention, repeated-poll, terminal-failure, multi-replica, and restart behavior; and that request cancellation does not cancel an accepted job.
+- XML documentation states that `TraceId` is a correlation value and is not an ownership, cache, or idempotency key.
+- XML documentation states that DMS applies no timeout to and never retries a provider call, and that a provider must document its repeated-create behavior because a lost create response can otherwise cause duplicate issuance.
+- XML documentation states the UniqueId issuance constraints: deployment-wide uniqueness across tenants and qualifiers, distinctness under case-insensitive comparison, non-empty with no surrounding whitespace, a single URL path segment, and stability for the life of the identity.
+- XML documentation states that all three service lifetimes are supported, that DMS resolves the provider once per request from its own scope and never disposes it directly, and that a provider must be safe for concurrent calls across requests.
 - The package declares its own public DTOs and does not expose internal DMS Core types.
 - The project declares its own `Version`, `AssemblyVersion`, and `FileVersion`, initially `1.0.0`, independent of the DMS release version.
 - Package assertions prove the package version and contained assembly version match the contract's declared version.

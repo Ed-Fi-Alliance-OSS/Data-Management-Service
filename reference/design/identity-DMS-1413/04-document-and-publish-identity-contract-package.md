@@ -33,7 +33,15 @@ Documentation can be drafted earlier, but this Jira is not complete until the pa
 - Documentation states `IdentityError` is returned only for `InvalidProperties`, and upstream failure diagnostics are logged rather than returned to clients.
 - Documentation states the identity package has its own contract version independent of the DMS release version.
 - Documentation states the async token rule, including the two excluded dot segments.
-- Documentation states the tenant/route-qualifier boundary: DMS validates tenant existence after authentication, route qualifiers pass through as context, and datastore authorization is not part of identity.
+- Documentation states the async job obligations an implementer owns: context binding to tenant, qualifiers, and client; a mismatched poll answered as `NotFound`; retention and post-expiry behavior; repeated polls of a complete job returning the same result; terminal failure represented as an answer rather than indefinite `Incomplete`; multi-replica retrievability or a single-replica statement; restart behavior; and that request cancellation does not cancel an accepted job.
+- Documentation states that async results are scoped to the issuing client rather than shared across the tenant.
+- Documentation states that DMS applies no timeout to and never retries a provider call, that a lost create response can therefore cause duplicate issuance on a client retry, that `TraceId` is not an idempotency key, and that each implementer must document its own repeated-create behavior and reconciliation.
+- Documentation states the UniqueId issuance constraints, including that case-variant ids collapse onto one person-resource natural key on SQL Server and remain distinct on PostgreSQL, and that person-write validation itself is DMS-1414's scope.
+- Documentation states the supported provider lifetimes, that DMS resolves the provider once per request from its own scope and does not dispose it directly, and that a provider must be safe for concurrent calls across requests.
+- Documentation states the tenant/route-qualifier boundary: DMS validates tenant existence after authentication, binds the authenticated client to the URL tenant, passes route qualifiers through as context, and does not make datastore authorization part of identity.
+- Documentation distinguishes the `401` for a client that does not belong to the URL tenant, the `404` for a tenant that does not exist, and the `503` for an unanswerable check.
+- Documentation states that the identity claim's authorization strategies must be `NoFurtherAuthorizationRequired` and that any other configuration fails closed as invalid security configuration.
+- The implementer chapter points to the served `/metadata/identity/v2/swagger.json` document as the artifact an implementer validates its own request and response payloads against; no separate conformance test package ships in this epic.
 - The packed package README points to the same implementer guidance.
 
 ### Package Publication

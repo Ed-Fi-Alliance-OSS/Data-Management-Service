@@ -34,6 +34,9 @@ Before those foundations exist, the Identity API can be implemented and tested o
 - `Incomplete` from any operation except results returns provider-contract-violation `502`.
 - Tokens that need escaping round-trip to the provider unchanged.
 - Exact `.` and `..` tokens return `502` with no `Location`.
+- The fixture plugin binds each async job to the issuing `Tenant`, `RouteQualifiers`, and `ClientId`, and a token redeemed under a different tenant, qualifier set, or client returns identity-not-found `404` rather than the original job.
+- A fixture-plugin async job either remains pollable after the DMS container restarts, or the fixture documents itself as in-memory only and the test asserts the documented `404`.
+- The fixture plugin is registered with a scoped lifetime and a scoped dependency of its own, proving the host resolves it per request rather than capturing it in the singleton `ApiService`.
 - Custom properties pass through request and response payloads.
 - Standard identifying attributes and unsupported-as-null semantics appear in success responses.
 - Search scores are present on returned search matches and are passed through without DMS inspection.
