@@ -264,8 +264,8 @@ internal class ValidateQueryMiddleware(
         }
 
         // The window and the anchor it resolves to are assigned together: the anchor is a function of
-        // the window, so a request carrying one without the other would describe a page selection that
-        // cannot exist.
+        // the window and of the data store serving the request, so a request carrying the window
+        // without the anchor it resolved would describe a page selection that cannot exist.
         requestInfo.ChangeVersionRange = changeVersionResult.Range;
         requestInfo.PageOrderingMode = pageOrderingMode;
 

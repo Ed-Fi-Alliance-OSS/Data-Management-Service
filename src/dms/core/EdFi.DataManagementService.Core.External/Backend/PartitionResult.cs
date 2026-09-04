@@ -13,8 +13,10 @@ namespace EdFi.DataManagementService.Core.External.Backend;
 /// <remarks>
 /// Provider-neutral by construction: success carries typed inclusive anchor ranges only, never token
 /// text and no provider syntax. The values are <c>DocumentId</c> or <c>ContentVersion</c> depending
-/// on how the request resolved its anchor, and both are dense integer sequences, so one range type
-/// carries either. Core encodes each range as a page token at the HTTP contract boundary.
+/// on how the request resolved its anchor, and one range type carries either because both name a
+/// <c>bigint</c> column. Neither is a dense sequence, and nothing here needs one to be: the ranges
+/// are assembled from anchor values read at boundary row numbers rather than computed from a range
+/// width. Core encodes each range as a page token at the HTTP contract boundary.
 ///
 /// The failure alternatives mirror the query failure set the shared capability lookup, authorization
 /// resolution, and command execution report, so the two operations cannot answer the same backend
@@ -34,8 +36,9 @@ public abstract record PartitionResult
     /// </summary>
     /// <param name="Ranges">
     /// The inclusive ranges a client can walk independently, in the units of the anchor the request
-    /// resolved. Every range but the last is bounded above, so a later insert cannot move into a
-    /// completed partition.
+    /// resolved. Every range but the last is bounded above, so a later write cannot move into a
+    /// completed partition: under a <c>DocumentId</c> anchor the mover would be an insert, and under a
+    /// <c>ContentVersion</c> anchor an update, which re-stamps the row above every closed range.
     /// </param>
     public sealed record PartitionSuccess(IReadOnlyList<CursorRange> Ranges) : PartitionResult
     {

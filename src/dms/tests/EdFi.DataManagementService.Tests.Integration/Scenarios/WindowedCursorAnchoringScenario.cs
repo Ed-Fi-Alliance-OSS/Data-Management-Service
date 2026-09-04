@@ -32,9 +32,11 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 /// A max-bearing window is a monotonic-escape window: an update pushes a row past the maximum and out
 /// of the window entirely, rather than moving it past the anchor while it remains eligible. That is the
 /// property the anchor rests on, and the mid-walk mutation cases below are what exercise it against a
-/// real database rather than against a described one. The min-only case is its counterpart: an
-/// open-ended window has no escape, so it keeps the <c>DocumentId</c> anchor, and the same mid-walk
-/// update that is safe here would return a row twice there.
+/// real database rather than against a described one. The min-only case is its counterpart against
+/// current data: an open-ended window has no escape there, so it keeps the <c>DocumentId</c> anchor,
+/// and the same mid-walk update that is safe here would return a row twice. A frozen snapshot admits
+/// no such update at all, so it anchors every windowed shape on <c>ContentVersion</c>, min-only
+/// included.
 /// </para>
 /// </summary>
 internal static class WindowedCursorAnchoringScenario

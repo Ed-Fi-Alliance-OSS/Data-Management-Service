@@ -155,7 +155,9 @@ public sealed record DescriptorQueryRequest
 
     /// <summary>
     /// The paging choice for descriptor GET-many execution: traditional limit/offset, or cursor
-    /// selection over an inclusive DocumentId range.
+    /// selection over an inclusive anchor range. A cursor range is expressed in the units of
+    /// <see cref="PageOrderingMode" />, not in <c>DocumentId</c> units unless that is the anchor the
+    /// request resolved.
     /// </summary>
     public CollectionPaging Paging { get; init; }
 

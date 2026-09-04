@@ -192,6 +192,18 @@ twice and skip another within a single walk, with no error reported. A
 `ReadReplica` carries no such requirement: reads served from one keep the live
 paging rule. See [Cursor Paging](./CURSOR-PAGING.md).
 
+The requirement covers the derivative's identity as well as the database behind
+it. While reads against a snapshot are in progress, do not re-point the
+derivative at a different connection string, and do not re-create the database
+behind an unchanged one. Neither is reported: the pages already returned are not
+re-read, and the reads finish normally with their pages drawn from two different
+points in time. Re-creating the database at an unchanged connection string is the
+more severe of the two, because no configuration changed and nothing keyed on the
+connection string can observe the substitution. Removing the derivative row, or
+dropping the snapshot or otherwise making it unreachable, is the one case that
+does surface — as `404` with `Snapshot not found.` — interrupting the reads
+rather than silently answering them from a different copy.
+
 Each derivative type is stored with its own encrypted connection string and is
 automatically deleted when its parent data store is removed (CASCADE DELETE).
 

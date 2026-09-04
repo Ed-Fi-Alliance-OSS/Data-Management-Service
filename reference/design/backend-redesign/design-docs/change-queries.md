@@ -2011,6 +2011,9 @@ The generated SQL used to fulfill a `GET /data/v3/ed-fi/grades?minChangeVersion=
 
 ```sql
 DROP TABLE IF EXISTS "page";
+-- Conditional: under a ContentVersion anchor - which this max-bearing window resolves - the keyset
+-- also carries a nullable "ContentVersion" column, and the page_ids selection and the insert column
+-- list below name it as well. See "Page-selection ordering" below.
 CREATE TEMP TABLE "page" ("DocumentId" bigint PRIMARY KEY) ON COMMIT DROP;
 
 WITH page_ids AS (

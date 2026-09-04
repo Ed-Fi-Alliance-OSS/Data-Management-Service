@@ -287,9 +287,14 @@ internal static class DerivativeRoutingScenario
 
         pageTokens.Should().NotBeEmpty("the snapshot holds Students inside the window");
 
-        // The walk these boundaries were cut for. Covering the snapshot exactly once is only true if
-        // the boundaries and the pages were computed over the same column: a ContentVersion boundary
-        // consumed by a DocumentId page selection would overlap or leave a gap.
+        // The walk these boundaries were cut for. What this pins is the anchor the partition step
+        // resolved, not where it cut: the seed is far under the minimum partition size, so the set is
+        // a single unbounded range and no interior boundary is placed. Had the step applied the live
+        // rule instead, this min-only window would have resolved DocumentId and marked its tokens
+        // accordingly, and the walk below - which resolves ContentVersion from the same window on the
+        // snapshot - would reject the first token it replayed. Boundaries actually cut on the
+        // ContentVersion column are covered by WindowedPartitionAnchoringScenario, which lowers the
+        // host's maximum page size so interior cuts are reachable over HTTP.
         HashSet<string> walked = await WalkPartitionsAsync(harness, pageTokens, MinOnlyWindowQuery);
 
         walked

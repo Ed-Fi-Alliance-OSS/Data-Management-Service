@@ -13,10 +13,12 @@ namespace EdFi.DataManagementService.Backend;
 /// </summary>
 /// <remarks>
 /// Pure, provider-neutral, and anchor-neutral: the starts are <c>DocumentId</c> or
-/// <c>ContentVersion</c> values depending on how the request resolved its anchor, and both are dense
-/// integer sequences, so the same arithmetic assembles both. Both providers return the same ordered
-/// starts for equivalent data, so both produce the same ranges and therefore the same tokens. Core
-/// encodes the ranges; nothing here touches token text.
+/// <c>ContentVersion</c> values depending on how the request resolved its anchor, and the same
+/// arithmetic assembles both because it needs nothing from them but that they be strictly ascending
+/// <c>long</c> values. Density is deliberately not assumed - neither anchor is dense, and a range
+/// here is closed at the next start rather than at a computed width. Both providers return the same
+/// ordered starts for equivalent data, so both produce the same ranges and therefore the same tokens.
+/// Core encodes the ranges; nothing here touches token text.
 /// </remarks>
 internal static class PartitionRangeAssembler
 {

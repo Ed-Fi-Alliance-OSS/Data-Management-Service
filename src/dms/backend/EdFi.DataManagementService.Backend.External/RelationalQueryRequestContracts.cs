@@ -122,7 +122,9 @@ public interface IQueryRequest : IRequestWithMappingSet
 
     /// <summary>
     /// The paging mode and its inputs for this query: traditional limit/offset, or cursor over an
-    /// inclusive DocumentId range.
+    /// inclusive anchor range. A cursor range is expressed in the units of
+    /// <see cref="PageOrderingMode" />, not in <c>DocumentId</c> units unless that is the anchor the
+    /// request resolved.
     /// </summary>
     CollectionPaging Paging { get; }
 
