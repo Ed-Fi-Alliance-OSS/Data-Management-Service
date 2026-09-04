@@ -440,6 +440,9 @@ jobs:
         run: |
           Import-Module ./modules/SmokeTest.psm1 -Force
           $credentials = Get-SmokeTestCredential -ConfigServiceUrl "http://localhost:8081" -DataStoreIds @([long]$env:SMOKE_DATA_STORE_ID)
+          # Mask the credentials in the job log before they can be written or echoed anywhere
+          Write-Host "::add-mask::$($credentials.Key)"
+          Write-Host "::add-mask::$($credentials.Secret)"
           # Store credentials in environment variables for subsequent steps
           "SMOKE_TEST_KEY=$($credentials.Key)" | Out-File -FilePath $env:GITHUB_ENV -Append
           "SMOKE_TEST_SECRET=$($credentials.Secret)" | Out-File -FilePath $env:GITHUB_ENV -Append

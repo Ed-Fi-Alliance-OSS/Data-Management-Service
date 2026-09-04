@@ -591,8 +591,11 @@ function Add-Vendor {
     .EXAMPLE
         $creds = Add-Application -VendorId 12345 -AccessToken $token -ApplicationName "MyApp" -DataStoreIds @(1,2)
         Write-Output "App ID: $($creds.Id)"
-        Write-Output "App Key: $($creds.Key)"
-        Write-Output "App Secret: $($creds.Secret)"
+
+        # Hand the key and secret straight to the consumer instead of echoing them. They
+        # authenticate against the API, so they do not belong in console output that ends
+        # up in a shared terminal or a CI log.
+        $apiToken = Get-DmsToken -DmsUrl "http://localhost:8080" -Key $creds.Key -Secret $creds.Secret
 #>
 function Add-Application {
     [CmdletBinding()]
