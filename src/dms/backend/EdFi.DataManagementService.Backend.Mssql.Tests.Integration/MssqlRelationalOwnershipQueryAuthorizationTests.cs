@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
 using FluentAssertions;
+using Microsoft.Data.SqlClient;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
@@ -457,10 +458,161 @@ public class Given_A_Mssql_Relational_Ownership_Query_Authorization_With_A_Synth
         _context.AssertNoHydration();
     }
 
+    [Test]
+    public async Task It_filters_a_cursor_page_to_owned_rows_ahead_of_the_cursor_bounds()
+    {
+        // Owned rows in document order are 1, 2, 5, 6 and 7. A three-item cursor page over the whole range
+        // selects the first three owned rows and anchors on the third, stepping over rows 3 and 4 in between.
+        var result = await QueryRootChildrenAsync(
+            ownershipTokenIds: [OwnerToken],
+            paging: new CollectionPaging.Cursor(CursorRange.From(1), new PageSize(3))
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+
+        AssertReturnedRootChildren(success, 1, 2, 5);
+        success.TotalCount.Should().BeNull("cursor paging never counts");
+        success.HighestSelectedAnchor.Should().Be(await ReadRootChildDocumentIdAsync(5));
+
+        var pageSql = _context.AssertSingleQueryHydration().Plan.PageDocumentIdSql;
+        pageSql
+            .IndexOf(OwnershipPredicatePrefixSql, StringComparison.Ordinal)
+            .Should()
+            .BeLessThan(
+                pageSql.IndexOf("AND (r.[DocumentId] >= @cursorMin)", StringComparison.Ordinal),
+                "the ownership filter belongs to the candidate relation the cursor bounds are applied to"
+            );
+    }
+
+    [Test]
+    public async Task It_walks_every_owned_row_exactly_once_across_cursor_pages()
+    {
+        var walked = await WalkOwnedCursorPagesAsync(CursorRange.From(1), pageSize: 2);
+
+        walked.Should().Equal(RootChildIds(1, 2, 5, 6, 7));
+    }
+
+    [Test]
+    public async Task It_returns_an_empty_cursor_page_without_hydrating_when_the_caller_has_no_tokens()
+    {
+        var result = await QueryRootChildrenAsync(
+            ownershipTokenIds: [],
+            paging: new CollectionPaging.Cursor(CursorRange.From(1), new PageSize(3))
+        );
+
+        var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+
+        success.EdfiDocs.Should().BeEmpty();
+        success.TotalCount.Should().BeNull();
+        success.HighestSelectedAnchor.Should().BeNull();
+        success.SelectionSkipped.Should().BeTrue();
+        _context.AssertNoHydration();
+    }
+
+    [Test]
+    public async Task It_cuts_partition_boundaries_only_on_owned_document_ids()
+    {
+        // One partition per owned row, so every boundary start must be an owned DocumentId: rows 3 (other
+        // token) and 4 (null stamp) can never open a range.
+        var ownedDocumentIds = await ReadRootChildDocumentIdsAsync(1, 2, 5, 6, 7);
+
+        var result = await QueryRootChildPartitionsAsync(
+            ownershipTokenIds: [OwnerToken],
+            requestedPartitionCount: 5
+        );
+
+        var success = result.Should().BeOfType<PartitionResult.PartitionSuccess>().Subject;
+
+        success.Ranges.Select(static range => range.InclusiveMinimum).Should().Equal(ownedDocumentIds);
+        success.Ranges[^1].InclusiveMaximum.Should().Be(long.MaxValue);
+        AssertContiguous(success.Ranges);
+        success.SelectionSkipped.Should().BeFalse();
+        _context.AssertNoHydration();
+    }
+
+    [Test]
+    public async Task It_returns_no_partitions_without_a_command_when_the_caller_has_no_tokens()
+    {
+        var result = await QueryRootChildPartitionsAsync(ownershipTokenIds: [], requestedPartitionCount: 2);
+
+        var success = result.Should().BeOfType<PartitionResult.PartitionSuccess>().Subject;
+
+        success.Ranges.Should().BeEmpty();
+        success.SelectionSkipped.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task It_returns_no_partitions_for_a_token_nothing_was_stamped_with()
+    {
+        var result = await QueryRootChildPartitionsAsync(
+            ownershipTokenIds: [UnusedToken],
+            requestedPartitionCount: 2
+        );
+
+        var success = result.Should().BeOfType<PartitionResult.PartitionSuccess>().Subject;
+
+        success.Ranges.Should().BeEmpty();
+        success.SelectionSkipped.Should().BeFalse("the boundary statement ran and matched nothing");
+    }
+
+    [Test]
+    public async Task It_covers_the_owned_set_exactly_once_when_cursor_pages_walk_the_partitions()
+    {
+        // Boundaries and pages are cut from the same ownership-filtered candidate relation, so walking every
+        // partition with bounded cursor pages must reproduce the owned rows once each, in document order.
+        var partitions = await QueryRootChildPartitionsAsync(
+            ownershipTokenIds: [OwnerToken],
+            requestedPartitionCount: 2
+        );
+
+        var ranges = partitions.Should().BeOfType<PartitionResult.PartitionSuccess>().Subject.Ranges;
+        ranges.Should().HaveCount(2);
+        AssertContiguous(ranges);
+
+        List<string> walked = [];
+
+        foreach (var range in ranges)
+        {
+            walked.AddRange(await WalkOwnedCursorPagesAsync(range, pageSize: 2));
+        }
+
+        walked.Should().Equal(RootChildIds(1, 2, 5, 6, 7));
+    }
+
+    [Test]
+    public async Task It_cuts_partition_boundaries_on_the_relationship_and_ownership_intersection()
+    {
+        // The same candidate relation the page test composes: the OR group admits schools 100 and 200, and
+        // ownership keeps rows 1, 2, 5 and 7 among them.
+        var expectedDocumentIds = await ReadRootChildDocumentIdsAsync(1, 2, 5, 7);
+
+        var result = await _context.QueryPartitionsAsync(
+            ProjectEndpointName,
+            RootChildResourceName,
+            [ClaimEducationOrganizationId],
+            [
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnlyInverted,
+                AuthorizationStrategyNameConstants.OwnershipBased,
+            ],
+            requestedPartitionCount: 4,
+            minimumPartitionSize: 1,
+            ownershipTokenIds: [OwnerToken]
+        );
+
+        result
+            .Should()
+            .BeOfType<PartitionResult.PartitionSuccess>()
+            .Subject.Ranges.Select(static range => range.InclusiveMinimum)
+            .Should()
+            .Equal(expectedDocumentIds);
+    }
+
     private Task<QueryResult> QueryRootChildrenAsync(
         IReadOnlyList<short> ownershipTokenIds,
         int? limit = null,
-        int? offset = null
+        int? offset = null,
+        CollectionPaging? paging = null
     ) =>
         _context.QueryAsync(
             ProjectEndpointName,
@@ -469,23 +621,103 @@ public class Given_A_Mssql_Relational_Ownership_Query_Authorization_With_A_Synth
             _ownershipStrategy,
             limit: limit,
             offset: offset,
+            ownershipTokenIds: ownershipTokenIds,
+            paging: paging
+        );
+
+    private Task<PartitionResult> QueryRootChildPartitionsAsync(
+        IReadOnlyList<short> ownershipTokenIds,
+        int requestedPartitionCount
+    ) =>
+        _context.QueryPartitionsAsync(
+            ProjectEndpointName,
+            RootChildResourceName,
+            [],
+            _ownershipStrategy,
+            requestedPartitionCount,
+            minimumPartitionSize: 1,
             ownershipTokenIds: ownershipTokenIds
         );
+
+    /// <summary>
+    /// Walks the owner's cursor pages over <paramref name="range"/> until a page selects nothing, and returns
+    /// the served ids in walk order. Each page must hydrate exactly once and never count.
+    /// </summary>
+    private async Task<IReadOnlyList<string>> WalkOwnedCursorPagesAsync(CursorRange range, int pageSize)
+    {
+        List<string> walked = [];
+        var current = range;
+
+        // One page per seeded row plus the terminal empty page is the most a correct walk can take.
+        for (var page = 0; page <= _rootChildSeeds.Length + 1; page++)
+        {
+            var result = await QueryRootChildrenAsync(
+                ownershipTokenIds: [OwnerToken],
+                paging: new CollectionPaging.Cursor(current, new PageSize(pageSize))
+            );
+            var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
+
+            success.TotalCount.Should().BeNull();
+            _context.AssertSingleQueryHydration().Plan.TotalCountSql.Should().BeNull();
+            walked.AddRange(ServedIds(success));
+
+            if (success.HighestSelectedAnchor is not { } highestSelectedDocumentId)
+            {
+                success.EdfiDocs.Should().BeEmpty();
+                return walked;
+            }
+
+            current = new CursorRange(highestSelectedDocumentId + 1, current.InclusiveMaximum);
+        }
+
+        throw new AssertionException("The cursor walk did not reach a terminal empty page.");
+    }
+
+    private async Task<IReadOnlyList<long>> ReadRootChildDocumentIdsAsync(
+        params int[] authorizationRootChildIds
+    )
+    {
+        List<long> documentIds = [];
+
+        foreach (var authorizationRootChildId in authorizationRootChildIds)
+        {
+            documentIds.Add(await ReadRootChildDocumentIdAsync(authorizationRootChildId));
+        }
+
+        return documentIds;
+    }
+
+    private Task<long> ReadRootChildDocumentIdAsync(int authorizationRootChildId) =>
+        _context.Database.ExecuteScalarAsync<long>(
+            """
+            SELECT [DocumentId]
+            FROM [dms].[Document]
+            WHERE [DocumentUuid] = @documentUuid;
+            """,
+            new SqlParameter("documentUuid", RootChildSeed(authorizationRootChildId).DocumentUuid.Value)
+        );
+
+    private static void AssertContiguous(IReadOnlyList<CursorRange> ranges)
+    {
+        for (var index = 0; index + 1 < ranges.Count; index++)
+        {
+            ranges[index].InclusiveMaximum.Should().Be(ranges[index + 1].InclusiveMinimum - 1);
+        }
+    }
 
     private static void AssertReturnedRootChildren(
         QueryResult.QuerySuccess success,
         params int[] expectedAuthorizationRootChildIds
-    ) =>
-        success
-            .EdfiDocs.Select(static document => document!["id"]!.GetValue<string>())
-            .Should()
-            .Equal(
-                expectedAuthorizationRootChildIds.Select(static id =>
-                    _rootChildSeeds
-                        .Single(seed => seed.Seed.AuthorizationRootChildId == id)
-                        .Seed.DocumentUuid.Value.ToString()
-                )
-            );
+    ) => ServedIds(success).Should().Equal(RootChildIds(expectedAuthorizationRootChildIds));
+
+    private static IReadOnlyList<string> ServedIds(QueryResult.QuerySuccess success) =>
+        [.. success.EdfiDocs.Select(static document => document!["id"]!.GetValue<string>())];
+
+    private static IReadOnlyList<string> RootChildIds(params int[] authorizationRootChildIds) =>
+        [.. authorizationRootChildIds.Select(static id => RootChildSeed(id).DocumentUuid.Value.ToString())];
+
+    private static AuthorizationRootChildSeed RootChildSeed(int authorizationRootChildId) =>
+        _rootChildSeeds.Single(seed => seed.Seed.AuthorizationRootChildId == authorizationRootChildId).Seed;
 
     private static IReadOnlyList<short> Tokens(int count) =>
         [.. Enumerable.Range(1, count).Select(static value => (short)value)];
