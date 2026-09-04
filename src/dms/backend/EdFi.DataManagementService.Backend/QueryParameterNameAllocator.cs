@@ -61,9 +61,10 @@ internal static class QueryParameterNameAllocator
     /// </summary>
     /// <remarks>
     /// The ownership names are reserved from the parameterization's declared names rather than from what a
-    /// statement binds, so an empty token list still reserves its base name. Reserving a name the SQL never
-    /// mentions only suffixes a colliding query field; leaving it unreserved could let a query field take a
-    /// name the ownership SQL uses whenever the list is non-empty.
+    /// statement binds. On PostgreSQL the array parameter is declared even for an empty token list, so its
+    /// base name is reserved although the constant-false predicate never mentions it; reserving it only
+    /// suffixes a colliding query field. On SQL Server an empty list declares no scalar names, so nothing is
+    /// reserved and nothing needs to be: the SQL binds no ownership parameter either.
     /// </remarks>
     public static IReadOnlyList<string> CollectAuthorizationParameterNames(
         PageDocumentIdAuthorizationSpec? authorization

@@ -14559,9 +14559,11 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
     }
 
     /// <summary>
-    /// Asserts no ownership authorization round trip was made. While the ReadSingle enablement gate is
-    /// closed no operation plans an ownership check, so the wiring must stay inert: an unconditional call
-    /// here would be an extra command per read and, once the gate opens, a check running out of order.
+    /// Asserts no ownership authorization round trip was made. The executor carries only the single-record
+    /// ownership check that ReadSingle, Update, and Delete plan when <c>OwnershipBased</c> is configured. A
+    /// request without that strategy, and every GET-many — whose ownership is a page filter compiled into
+    /// the page SQL rather than an executor round trip — must leave the wiring inert: an unconditional call
+    /// here would be an extra command per read, or a check running out of order.
     /// </summary>
     private void AssertOwnershipAuthorizationWasNotExecuted() =>
         A.CallTo(() =>
