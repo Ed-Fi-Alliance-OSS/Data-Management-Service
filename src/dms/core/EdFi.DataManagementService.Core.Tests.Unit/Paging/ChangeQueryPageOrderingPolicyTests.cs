@@ -556,4 +556,30 @@ public class Given_ChangeQueryPageOrderingPolicy_Resolving_For_A_Data_Store_Kind
     {
         _legacyPolicy.ResolveFor(_minOnly, targetKind).Should().Be(PageOrderingMode.DocumentId);
     }
+
+    /// <summary>
+    /// The kinds asserted above are the whole enum.
+    /// <see cref="ChangeQueryPageOrderingPolicy.ResolveFor" /> sends every kind that is not
+    /// <see cref="EffectiveTargetKind.Snapshot" /> to the live rule, which is right only while every
+    /// other kind is unfrozen. A kind added later would take the live rule silently and, if it were
+    /// frozen, lose the seek this rule exists to give it — so the decision is forced here instead.
+    /// </summary>
+    [Test]
+    public void It_accounts_for_every_data_store_kind()
+    {
+        EffectiveTargetKind[] classified =
+        [
+            EffectiveTargetKind.Primary,
+            EffectiveTargetKind.ReadReplica,
+            EffectiveTargetKind.Snapshot,
+        ];
+
+        Enum.GetValues<EffectiveTargetKind>()
+            .Should()
+            .BeEquivalentTo(
+                classified,
+                "a new target kind must be classified as frozen or unfrozen here rather than "
+                    + "defaulting to the live rule unnoticed"
+            );
+    }
 }

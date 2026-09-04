@@ -66,7 +66,6 @@ public static class TestHelper
         var dataStoreSelection = A.Fake<IDataStoreSelection>();
         A.CallTo(() => dataStoreSelection.GetEffectiveTarget())
             .Returns(new EffectiveDataStoreTarget(kind, "test-connection-string"));
-        A.CallTo(() => dataStoreSelection.IsEffectiveTargetSet).Returns(true);
 
         var serviceProvider = A.Fake<IServiceProvider>();
         A.CallTo(() => serviceProvider.GetService(typeof(IDataStoreSelection))).Returns(dataStoreSelection);

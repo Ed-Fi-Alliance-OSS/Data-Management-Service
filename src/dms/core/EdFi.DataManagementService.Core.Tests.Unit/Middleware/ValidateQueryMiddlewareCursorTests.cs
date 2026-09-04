@@ -116,14 +116,18 @@ public class ValidateQueryMiddlewareCursorTests
         );
 
     /// <summary>
-    /// The composition under test is supplied directly by the fixtures that need one this file does not
-    /// otherwise build — the deployment running with the page-ordering kill switch on.
+    /// Executes against the primary, which is where every expectation written before the data source
+    /// mattered belongs.
     /// </summary>
     private static Task<RequestInfo> Execute(
         IPipelineStep middleware,
         params (string Key, string Value)[] queryParameters
     ) => Execute(middleware, EffectiveTargetKind.Primary, queryParameters);
 
+    /// <summary>
+    /// The composition under test is supplied directly by the fixtures that need one this file does not
+    /// otherwise build — the deployment running with the page-ordering kill switch on.
+    /// </summary>
     private static async Task<RequestInfo> Execute(
         IPipelineStep middleware,
         EffectiveTargetKind targetKind,
