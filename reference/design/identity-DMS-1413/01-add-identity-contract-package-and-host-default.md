@@ -27,6 +27,7 @@ It does not add HTTP endpoints, pipeline behavior, OpenAPI metadata, plugin-regi
 - `NoIdentityService` is registered as the DMS host default and declares no capabilities.
 - The project is added to the DMS solution with a committed `packages.lock.json`.
 - `src/dms/Dockerfile` has the new project in both explicit copy blocks needed for locked restore and source copy.
+- `src/dms/core/EdFi.DataManagementService.Core/EdFi.DataManagementService.Core.csproj` takes the `ProjectReference` on the contract project, matching how it already references `EdFi.DataManagementService.CustomValidation`, so the contract assembly ships in the image. That reference and the `src/dms/Dockerfile` copy-list entries land together in this story.
 - No plugin registry entry or startup loading integration is claimed by this story.
 
 ## Tasks

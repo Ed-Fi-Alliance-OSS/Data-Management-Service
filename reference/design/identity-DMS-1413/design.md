@@ -187,6 +187,7 @@ public interface IIdentityService
 Only find and search can return `IdentityAsyncResult`, so tokens are impossible from create, get-by-id, and results.
 `FindAsync` and `SearchAsync` may return `Success`, `InvalidProperties`, or `NotFound`; `Incomplete` is valid only from `ResultsAsync`.
 If a provider returns `Incomplete` from any operation other than `ResultsAsync`, DMS treats it as provider contract misuse.
+A `RequestToken` is meaningful only on `Success`; DMS ignores any token returned alongside `InvalidProperties` or `NotFound`.
 `IdentityError` entries are projected only for `InvalidProperties`.
 Upstream provider failures are signaled by throwing; DMS logs the exception and returns a sanitized identity-upstream-failure problem without provider error details in the client response.
 
@@ -232,7 +233,7 @@ The contract and OpenAPI document must describe what the provider must return on
 | GetById `Success` | An `IdentityResponse` object |
 | Find/Search synchronous `Success` | An `IdentitySearchResponse` object |
 | Results `Success` | An `IdentitySearchResponse` object with wire `Status` complete |
-| Results `Incomplete` | An `IdentitySearchResponse` object with wire `Status` incomplete |
+| Results `Incomplete` | An `IdentitySearchResponse` object with wire `Status` incomplete. The object itself is still required, so the missing-payload rule below still applies; it simply carries no result data while the request is pending |
 
 `IdentityResponse` is a JSON object with these standard wire properties:
 
@@ -256,7 +257,8 @@ Providers may add custom properties to `IdentityResponse`, `BirthLocation`, and 
 `IdentitySearchResponse` is a JSON object with:
 
 - `Status`: required string, either `Complete` or `Incomplete`;
-- `SearchResponses`: required array with one entry per submitted UniqueId or search request, in request order;
+- `SearchResponses` when `Status` is `Complete`: a required array with one entry per submitted UniqueId or search request, in request order;
+- `SearchResponses` when `Status` is `Incomplete`: optional, because no result data exists yet. An incomplete poll may omit the property or send an empty array, matching ODS. Schemas declare `SearchResponses` required only for the complete shape;
 - each `SearchResponses` entry has a required `Responses` array;
 - find entries contain zero or one `IdentityResponse`;
 - search entries contain zero or more `IdentityResponse` values and every returned match has a numeric `Score`.
@@ -450,25 +452,27 @@ Longer dotted values such as `...`, `a.b`, and `.hidden` are ordinary data and r
 | Malformed JSON or empty body | no | `400` |
 | Duplicate property name | no | `400` data-validation problem |
 | Wrong top-level body shape | no | `400` |
-| Capability absent | no | `404` with `urn:ed-fi:api:identity:operation-not-supported` |
+| Capability absent | no | `404` with `urn:ed-fi:api:identities:operation-not-supported` |
+| Route value present but blank | no | `400` |
 | Create `Success` | yes | `200`, body is unique-id JSON string |
 | GetById `Success` | yes | `200`, body is provider payload |
 | Find/Search synchronous `Success` | yes | `200`, body is provider payload |
 | Find/Search async `Success` | yes | `202`, no body, `Location` points to results route |
-| `Incomplete` from any operation except results | yes | `502` with `urn:ed-fi:api:identity:provider-contract-violation` |
+| `Incomplete` from any operation except results | yes | `502` with `urn:ed-fi:api:identities:provider-contract-violation` |
 | Results `Success` | yes | `200`, body is provider payload |
 | Results `Incomplete` | yes | `200`, body is provider payload, `Location` points to current poll URL |
 | Any operation `InvalidProperties` | yes | `400`, provider errors projected, payload ignored |
-| Provider `NotFound` for get-by-id subject miss, results token miss, or provider-owned context refusal | yes | `404` with `urn:ed-fi:api:identity:not-found` |
-| `Success` or `Incomplete` missing required payload | yes | `502` with `urn:ed-fi:api:identity:provider-contract-violation` |
-| Find/Search `Success` with both payload and token, or neither | yes | `502` with `urn:ed-fi:api:identity:provider-contract-violation` |
-| Find/Search `Success` with unusable token | yes | `502` with `urn:ed-fi:api:identity:provider-contract-violation`, no `Location` |
-| `RequestToken` returned while `Results` capability is absent | yes | `502` with `urn:ed-fi:api:identity:provider-contract-violation` |
-| Provider throws while request is live | yes | `502` with `urn:ed-fi:api:identity:upstream-failure`, exception logged and not returned |
+| Provider `NotFound` for get-by-id subject miss, results token miss, or provider-owned context refusal | yes | `404` with `urn:ed-fi:api:identities:not-found` |
+| `Success` or `Incomplete` missing required payload | yes | `502` with `urn:ed-fi:api:identities:provider-contract-violation` |
+| Find/Search `Success` with both payload and token, or neither | yes | `502` with `urn:ed-fi:api:identities:provider-contract-violation` |
+| Find/Search `Success` with unusable token | yes | `502` with `urn:ed-fi:api:identities:provider-contract-violation`, no `Location` |
+| `RequestToken` returned while `Results` capability is absent | yes | `502` with `urn:ed-fi:api:identities:provider-contract-violation` |
+| Provider throws while request is live | yes | `502` with `urn:ed-fi:api:identities:upstream-failure`, exception logged and not returned |
 | Provider throws `OperationCanceledException` after request cancellation | yes | rethrow so the host abandons the aborted response |
 
 The unsupported-operation `404`, tenant-not-found `404`, identity-not-found `404`, and feature-off `404` must be distinguishable by route presence or problem-detail `type` in tests.
 Provider-contract-violation `502` and identity-upstream-failure `502` must also be distinguishable by problem-detail `type`.
+The problem-detail namespace is `urn:ed-fi:api:identities:*` rather than `urn:ed-fi:api:identity:*` because DMS already uses `urn:ed-fi:api:identity-conflict` for a document's natural-key identity, an unrelated concept, and `identities` matches this API's route and name.
 The upstream-failure problem title identifies Identity Management as the failing subsystem and omits provider exception details.
 `IdentityError` values are not returned for upstream failures; provider details remain in structured logs.
 
@@ -510,7 +514,7 @@ The DMS-owned API stories can use the host default and test doubles.
 Unit tests:
 
 - capability matrix for all five operations and unsupported-operation `404`;
-- identity-not-found `404` uses `urn:ed-fi:api:identity:not-found`, distinct from operation-unsupported, tenant-not-found, and feature-off `404`;
+- identity-not-found `404` uses `urn:ed-fi:api:identities:not-found`, distinct from operation-unsupported, tenant-not-found, and feature-off `404`;
 - find/search no-match returns `200` with an empty `Responses` array in the corresponding response group;
 - operation-to-action authorization, capability checks, and ordering;
 - tenant syntax, tenant existence, and claim-set ordering with a tenant-keyed or failing `IClaimSetProvider`;
@@ -527,6 +531,7 @@ Unit tests:
 - ordinary dotted tokens `...`, `a.b`, and `.hidden` accepted;
 - result invariants such as missing payload, both payload and token, neither payload nor token, and token without results capability;
 - `Incomplete` from any operation except results is provider contract misuse;
+- a pending results poll whose payload carries wire `Status` incomplete and no result data returns `200` verbatim, not `502`;
 - response-payload non-validation, proving a wrong-shaped success payload is served verbatim;
 - request and response schemas for standard identifying attributes, unsupported-as-null semantics, ordered search-response groups, `BirthDate` as `date-time`, and `Score` as `number`/`double`;
 - OpenAPI response metadata for provider `InvalidProperties` `400`, unsupported-media-type `415`, operation-unsupported `404`, identity-not-found `404`, provider-contract-violation `502`, and identity-upstream-failure `502`;
@@ -583,7 +588,7 @@ Risks:
 - The create response differs from running ODS code by omitting `201 Location`.
 - A published contract is permanent and additive-only.
 - Feature-toggle rot is a real risk; absence tests must cover routes, metadata, listing, and Discovery.
-- `IApiService` grows five methods and many tests construct it directly.
+- `IApiService` grows five methods. Interface fakes absorb that automatically, but the `ApiService` constructor gains a dependency and 13 test sites construct that class directly.
 - Plugins run fully trusted in process.
 - Capabilities are deployment-wide in v1.
 - Parameterizing content-type validation touches existing resource write pipelines.
@@ -610,3 +615,4 @@ Open questions with recommended defaults:
 - `JwtRoleAuthenticationMiddleware` is registered but not composed into a pipeline.
 - Existing fixed-service facade paths pass no request cancellation token.
 - Tenant existence should eventually be unified behind one Core-side helper used by both frontend fixed routes and the identity Core middleware.
+- The Configuration Service claim-set provider is a singleton that mutates one shared `HttpClient`'s `Tenant` and `Authorization` default headers per call, while the claim-set cache's stampede lock is keyed per tenant. Concurrent first-time misses for different tenants can therefore race on those headers. Identity service-claim authorization adds another caller to that path.

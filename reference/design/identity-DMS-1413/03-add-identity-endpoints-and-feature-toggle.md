@@ -21,6 +21,7 @@ The endpoints call the Core facade and pass `HttpContext.RequestAborted`.
 - `GET /identity/v2/identities/results/{token}` routes to results polling.
 - POST handlers request body parsing through the existing frontend body extraction path.
 - GET handlers do not parse a body and ignore `Content-Type`.
+- Compose and environment files carry `AppSettings__EnableIdentityManagement`, following the existing `AppSettings__EnableManagementEndpoints` entries in `eng/docker-compose/local-dms.yml`, `eng/docker-compose/published-dms.yml`, and `eng/azure-vm/compose/docker-compose.yml`, so a Docker stack can enable the feature.
 - No plugin maps identity HTTP routes.
 
 ## Tasks
@@ -30,3 +31,4 @@ The endpoints call the Core facade and pass `HttpContext.RequestAborted`.
 3. Add disabled-route absence tests.
 4. Add route-collision tests for `results` and `results/{token}`.
 5. Add cancellation propagation tests from `HttpContext.RequestAborted`.
+6. Add compose and environment entries for the feature toggle.
