@@ -109,6 +109,75 @@ public class Given_OrderedDeleteCommandBuilder
         command.CommandText.Should().Contain(expectedTableFragment);
     }
 
+    private static readonly DbTableName SchoolTable = new(new DbSchemaName("edfi"), "School");
+
+    private static readonly DocumentUuid DescriptorUuid = new(
+        Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")
+    );
+
+    private static IEnumerable<TestCaseData> DeleteCommandBuilders()
+    {
+        yield return new TestCaseData(
+            (Func<SqlDialect, RelationalCommand>)(
+                dialect =>
+                    OrderedDeleteCommandBuilder.BuildResourceDeleteByDocumentIdCommand(
+                        dialect,
+                        SchoolTable,
+                        123L
+                    )
+            )
+        ).SetArgDisplayNames("ResourceDeleteByDocumentId");
+        yield return new TestCaseData(
+            (Func<SqlDialect, RelationalCommand>)(
+                dialect =>
+                    OrderedDeleteCommandBuilder.BuildResourceRootDeleteByDocumentIdCommand(
+                        dialect,
+                        SchoolTable,
+                        123L
+                    )
+            )
+        ).SetArgDisplayNames("ResourceRootDeleteByDocumentId");
+        yield return new TestCaseData(
+            (Func<SqlDialect, RelationalCommand>)(
+                dialect => OrderedDeleteCommandBuilder.BuildDocumentDeleteByDocumentIdCommand(dialect, 123L)
+            )
+        ).SetArgDisplayNames("DocumentDeleteByDocumentId");
+        yield return new TestCaseData(
+            (Func<SqlDialect, RelationalCommand>)(
+                dialect =>
+                    OrderedDeleteCommandBuilder.BuildDescriptorDeleteCommand(dialect, DescriptorUuid, 101)
+            )
+        ).SetArgDisplayNames("DescriptorDelete");
+    }
+
+    /// <summary>
+    /// MSSQL delete plans carry the NO ACTION referential-check apparatus for every table referencing the
+    /// deleted row's cascade targets, so an auto-stats refresh on any of them recompiles the batch. Every
+    /// DELETE the builder emits for SQL Server must therefore pin its plan with KEEPFIXED PLAN.
+    /// </summary>
+    [TestCaseSource(nameof(DeleteCommandBuilders))]
+    public void It_pins_every_sql_server_delete_statement_with_keepfixed_plan(
+        Func<SqlDialect, RelationalCommand> build
+    )
+    {
+        var deleteStatements = SplitStatements(build(SqlDialect.Mssql))
+            .Where(statement => statement.StartsWith("DELETE FROM", StringComparison.Ordinal))
+            .ToArray();
+
+        deleteStatements.Should().NotBeEmpty();
+        deleteStatements
+            .Should()
+            .AllSatisfy(statement =>
+                statement.Should().EndWith("OPTION (KEEPFIXED PLAN)", "the plan hint must close each DELETE")
+            );
+    }
+
+    [TestCaseSource(nameof(DeleteCommandBuilders))]
+    public void It_emits_no_statement_options_for_postgresql(Func<SqlDialect, RelationalCommand> build)
+    {
+        build(SqlDialect.Pgsql).CommandText.Should().NotContain("OPTION (");
+    }
+
     private static string[] SplitStatements(RelationalCommand command) =>
         command.CommandText.Split(
             ';',

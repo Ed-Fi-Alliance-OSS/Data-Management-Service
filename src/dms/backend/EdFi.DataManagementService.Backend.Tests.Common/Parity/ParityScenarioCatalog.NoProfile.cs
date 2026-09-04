@@ -264,7 +264,7 @@ public static partial class ParityScenarioCatalog
                 + " + NoProfileGuardedNoOpScenarios.AssertPutNoOpOutcome"
                 + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump",
             diff: new DialectDifference(
-                "PostgreSQL takes the capture lock with FOR UPDATE inside the capture CTE; SQL Server takes it with WITH (UPDLOCK, HOLDLOCK, ROWLOCK) on the capture SELECT.",
+                "PostgreSQL takes the capture lock with FOR UPDATE inside the capture CTE; SQL Server takes it with WITH (UPDLOCK, ROWLOCK) on the capture SELECT.",
                 "The locking construct differs by dialect; behavioral parity is the observable outcome — the capture blocks until the competing transaction commits, then observes the committed content version and still returns a guarded no-op."
             )
         ),
@@ -280,7 +280,7 @@ public static partial class ParityScenarioCatalog
                 + " + NoProfileGuardedNoOpScenarios.AssertPostAsUpdateNoOpOutcome"
                 + " + NoProfileGuardedNoOpScenarios.AssertRowsetUnchangedExceptOneContentVersionBump",
             diff: new DialectDifference(
-                "PostgreSQL takes the capture lock with FOR UPDATE inside the capture CTE; SQL Server takes it with WITH (UPDLOCK, HOLDLOCK, ROWLOCK) on the capture SELECT.",
+                "PostgreSQL takes the capture lock with FOR UPDATE inside the capture CTE; SQL Server takes it with WITH (UPDLOCK, ROWLOCK) on the capture SELECT.",
                 "The locking construct differs by dialect; behavioral parity is the observable outcome — the capture blocks until the competing transaction commits, then observes the committed content version and still returns a guarded no-op."
             )
         ),

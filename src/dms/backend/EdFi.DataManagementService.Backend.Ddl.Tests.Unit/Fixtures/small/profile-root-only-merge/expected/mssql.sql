@@ -869,11 +869,14 @@ BEGIN
         SELECT i.[DocumentId]
         FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
         WHERE (i.[ProfileRootOnlyMergeItemId] <> d.[ProfileRootOnlyMergeItemId] OR (i.[ProfileRootOnlyMergeItemId] IS NULL AND d.[ProfileRootOnlyMergeItemId] IS NOT NULL) OR (i.[ProfileRootOnlyMergeItemId] IS NOT NULL AND d.[ProfileRootOnlyMergeItemId] IS NULL));
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 1;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProfileRootOnlyMergeItem' AS nvarchar(max)) + N'$.profileRootOnlyMergeItemId=' + CAST(i.[ProfileRootOnlyMergeItemId] AS nvarchar(max))), i.[DocumentId], 1
-        FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
+        IF EXISTS (SELECT 1 FROM @changedDocs)
+        BEGIN
+            DELETE FROM [dms].[ReferentialIdentity]
+            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 1;
+            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProfileRootOnlyMergeItem' AS nvarchar(max)) + N'$.profileRootOnlyMergeItemId=' + CAST(i.[ProfileRootOnlyMergeItemId] AS nvarchar(max))), i.[DocumentId], 1
+            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
+        END
     END
 END;
 GO
@@ -943,21 +946,24 @@ BEGIN
         SELECT i.[DocumentId]
         FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
         WHERE (i.[ProfileRootOnlyMergeItemId] <> d.[ProfileRootOnlyMergeItemId] OR (i.[ProfileRootOnlyMergeItemId] IS NULL AND d.[ProfileRootOnlyMergeItemId] IS NOT NULL) OR (i.[ProfileRootOnlyMergeItemId] IS NOT NULL AND d.[ProfileRootOnlyMergeItemId] IS NULL));
-        INSERT INTO [tracked_changes_edfi].[ProfileRootOnlyMergeItem] (
-            [OldProfileRootOnlyMergeItemId],
-            [NewProfileRootOnlyMergeItemId],
-            [Id],
-            [ChangeVersion]
-        )
-        SELECT
-            del.[ProfileRootOnlyMergeItemId],
-            i.[ProfileRootOnlyMergeItemId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
-        FROM @changedDocs cd
-        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        IF EXISTS (SELECT 1 FROM @changedDocs)
+        BEGIN
+            INSERT INTO [tracked_changes_edfi].[ProfileRootOnlyMergeItem] (
+                [OldProfileRootOnlyMergeItemId],
+                [NewProfileRootOnlyMergeItemId],
+                [Id],
+                [ChangeVersion]
+            )
+            SELECT
+                del.[ProfileRootOnlyMergeItemId],
+                i.[ProfileRootOnlyMergeItemId],
+                doc.[DocumentUuid],
+                doc.[ContentVersion]
+            FROM @changedDocs cd
+            INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
+            INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+            INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        END
     END
 END;
 GO
@@ -983,11 +989,14 @@ BEGIN
         SELECT i.[DocumentId]
         FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
         WHERE (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND d.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND d.[StudentUniqueId] IS NULL));
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 3;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudent' AS nvarchar(max)) + N'$.studentUniqueId=' + i.[StudentUniqueId]), i.[DocumentId], 3
-        FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
+        IF EXISTS (SELECT 1 FROM @changedDocs)
+        BEGIN
+            DELETE FROM [dms].[ReferentialIdentity]
+            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 3;
+            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
+            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudent' AS nvarchar(max)) + N'$.studentUniqueId=' + i.[StudentUniqueId]), i.[DocumentId], 3
+            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
+        END
     END
 END;
 GO
@@ -1057,21 +1066,24 @@ BEGIN
         SELECT i.[DocumentId]
         FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
         WHERE (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND d.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND d.[StudentUniqueId] IS NULL));
-        INSERT INTO [tracked_changes_edfi].[Student] (
-            [OldStudentUniqueId],
-            [NewStudentUniqueId],
-            [Id],
-            [ChangeVersion]
-        )
-        SELECT
-            del.[StudentUniqueId],
-            i.[StudentUniqueId],
-            doc.[DocumentUuid],
-            doc.[ContentVersion]
-        FROM @changedDocs cd
-        INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
-        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-        INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        IF EXISTS (SELECT 1 FROM @changedDocs)
+        BEGIN
+            INSERT INTO [tracked_changes_edfi].[Student] (
+                [OldStudentUniqueId],
+                [NewStudentUniqueId],
+                [Id],
+                [ChangeVersion]
+            )
+            SELECT
+                del.[StudentUniqueId],
+                i.[StudentUniqueId],
+                doc.[DocumentUuid],
+                doc.[ContentVersion]
+            FROM @changedDocs cd
+            INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
+            INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+            INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
+        END
     END
 END;
 GO

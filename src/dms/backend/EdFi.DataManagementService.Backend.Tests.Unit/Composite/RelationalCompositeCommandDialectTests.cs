@@ -220,7 +220,7 @@ public class Given_A_Relational_Composite_Command_Dialect
 
         var sql = carrier.EmitCaptureTarget("d.[DocumentUuid] = @documentUuid_s0");
 
-        sql.Should().Contain("WITH (UPDLOCK, HOLDLOCK, ROWLOCK)");
+        sql.Should().Contain("WITH (UPDLOCK, ROWLOCK)");
         sql.Should().Contain("@dms_composite_target_documentid = d.[DocumentId]");
         carrier.DeclarationPrologue.Should().Contain("DECLARE @dms_composite_target_documentid BIGINT");
         carrier.CapturedTargetIdExpression.Should().Be("@dms_composite_target_documentid");
