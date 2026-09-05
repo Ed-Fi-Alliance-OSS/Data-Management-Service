@@ -410,6 +410,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     {
         _ddl.Should().Contain("CREATE TABLE IF NOT EXISTS \"dms\".\"RepresentationRestampOperation\"");
         _ddl.Should().Contain("\"OperationId\" uuid NOT NULL");
+        _ddl.Should().Contain("\"DataStoreId\" bigint NOT NULL");
         _ddl.Should().Contain("\"ScopeJson\" jsonb NOT NULL");
         _ddl.Should().Contain("\"Reason\" varchar(1024) NOT NULL");
         _ddl.Should()
@@ -1537,6 +1538,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     {
         _ddl.Should().Contain("CREATE TABLE [dms].[RepresentationRestampOperation]");
         _ddl.Should().Contain("[OperationId] uniqueidentifier NOT NULL");
+        _ddl.Should().Contain("[DataStoreId] bigint NOT NULL");
         _ddl.Should().Contain("[ScopeJson] nvarchar(max) NOT NULL");
         _ddl.Should().Contain("[Reason] nvarchar(1024) NOT NULL");
         _ddl.Should()

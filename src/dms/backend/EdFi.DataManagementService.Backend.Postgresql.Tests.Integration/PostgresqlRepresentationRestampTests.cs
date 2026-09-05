@@ -108,6 +108,42 @@ public class Given_A_Postgresql_RepresentationRestampStore
     }
 
     [Test]
+    public async Task It_persists_and_loads_a_manifest_for_a_64_bit_data_store_identifier()
+    {
+        var target = new DocumentCacheAdministrativeTargetKey("tenant", (long)int.MaxValue + 1);
+        DocumentCacheRepresentationRestampOperation operation = Operation(
+            new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Person"),
+            boundary: 0,
+            previewDocumentCount: 0
+        ) with
+        {
+            TargetKey = target,
+        };
+
+        await using (IDocumentCacheAdministrativeMutexLease lease = await LeaseAsync())
+        await using (
+            IRelationalWriteSession session = await lease.BeginTransactionAsync(IsolationLevel.Serializable)
+        )
+        {
+            await _store.CreateDraftAsync(session, operation, CancellationToken.None);
+            await session.CommitAsync();
+        }
+
+        await using IDocumentCacheAdministrativeMutexLease readLease = await LeaseAsync();
+        await using IRelationalWriteSession readSession = await readLease.BeginTransactionAsync(
+            IsolationLevel.ReadCommitted
+        );
+        DocumentCacheRepresentationRestampOperation? loaded = await _store.LoadAsync(
+            readSession,
+            operation.OperationId,
+            CancellationToken.None
+        );
+
+        loaded.Should().NotBeNull();
+        loaded!.TargetKey.Should().Be(target);
+    }
+
+    [Test]
     public async Task It_atomically_updates_canonical_root_mirror_and_tracking_work_for_a_resource_page()
     {
         Source first = await InsertAsync(10);

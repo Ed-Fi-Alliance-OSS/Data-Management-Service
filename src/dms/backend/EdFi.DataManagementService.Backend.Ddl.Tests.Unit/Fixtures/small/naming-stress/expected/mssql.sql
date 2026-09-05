@@ -372,7 +372,7 @@ CREATE TABLE [dms].[RepresentationRestampOperation]
     [OperationId] uniqueidentifier NOT NULL,
     [ContractVersion] int NOT NULL,
     [TenantKey] nvarchar(256) NOT NULL,
-    [DataStoreId] int NOT NULL,
+    [DataStoreId] bigint NOT NULL,
     [PhysicalSourceFingerprint] nvarchar(71) NOT NULL,
     [ScopeJson] nvarchar(max) NOT NULL,
     [Reason] nvarchar(1024) NOT NULL,

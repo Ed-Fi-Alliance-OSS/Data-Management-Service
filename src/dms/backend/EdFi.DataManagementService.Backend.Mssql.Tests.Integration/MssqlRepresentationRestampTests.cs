@@ -136,6 +136,42 @@ public class Given_A_Mssql_RepresentationRestampStore
     }
 
     [Test]
+    public async Task It_persists_and_loads_a_manifest_for_a_64_bit_data_store_identifier()
+    {
+        var target = new DocumentCacheAdministrativeTargetKey("tenant", (long)int.MaxValue + 1);
+        DocumentCacheRepresentationRestampOperation operation = Operation(
+            new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Person"),
+            boundary: 0,
+            previewDocumentCount: 0
+        ) with
+        {
+            TargetKey = target,
+        };
+
+        await using (IDocumentCacheAdministrativeMutexLease lease = await LeaseAsync())
+        await using (
+            IRelationalWriteSession session = await lease.BeginTransactionAsync(IsolationLevel.Serializable)
+        )
+        {
+            await _store.CreateDraftAsync(session, operation, CancellationToken.None);
+            await session.CommitAsync();
+        }
+
+        await using IDocumentCacheAdministrativeMutexLease readLease = await LeaseAsync();
+        await using IRelationalWriteSession readSession = await readLease.BeginTransactionAsync(
+            IsolationLevel.ReadCommitted
+        );
+        DocumentCacheRepresentationRestampOperation? loaded = await _store.LoadAsync(
+            readSession,
+            operation.OperationId,
+            CancellationToken.None
+        );
+
+        loaded.Should().NotBeNull();
+        loaded!.TargetKey.Should().Be(target);
+    }
+
+    [Test]
     public async Task It_atomically_updates_canonical_root_mirror_and_tracking_work_for_a_resource_page()
     {
         Source first = await InsertAsync(10);
@@ -227,6 +263,44 @@ public class Given_A_Mssql_RepresentationRestampStore
         await StampAsync(new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Person"), 10);
         (await CountAsync("DocumentProjectionWork")).Should().Be(0);
         (await CanonicalAsync(source.DocumentId)).Version.Should().BeGreaterThan(10);
+    }
+
+    [Test]
+    public async Task It_bounds_a_SQL_Server_restamp_page_below_the_mirror_parameter_limit()
+    {
+        await InsertManyAsync(701);
+        await LifecycleAsync("Disabled", false);
+        DocumentCacheRepresentationRestampOperation operation = Operation(
+            new DocumentCacheRepresentationRestampResourceScope("Ed-Fi", "Person"),
+            boundary: 701,
+            previewDocumentCount: 701
+        );
+
+        await using IDocumentCacheAdministrativeMutexLease lease = await LeaseAsync();
+        await using IRelationalWriteSession session = await lease.BeginTransactionAsync(
+            IsolationLevel.Serializable
+        );
+        RepresentationRestampPage firstPage = await _store.SelectNextPageAsync(
+            session,
+            operation,
+            pageSize: 701,
+            CancellationToken.None
+        );
+
+        firstPage.Count.Should().Be(700);
+        await _store.StampPageAsync(session, firstPage, CancellationToken.None);
+
+        RepresentationRestampPage finalPage = await _store.SelectNextPageAsync(
+            session,
+            operation,
+            pageSize: 701,
+            CancellationToken.None
+        );
+        finalPage.Count.Should().Be(1);
+        await _store.StampPageAsync(session, finalPage, CancellationToken.None);
+        await session.CommitAsync();
+
+        (await CountAsync("DocumentProjectionWork")).Should().Be(0);
     }
 
     [Test]
@@ -783,6 +857,34 @@ public class Given_A_Mssql_RepresentationRestampStore
             new SqlParameter("@id", SqlDbType.BigInt) { Value = id }
         );
         return new(id, uuid, version);
+    }
+
+    private async Task InsertManyAsync(int count)
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            DECLARE @documents TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
+
+            WITH [numbers] AS (
+                SELECT TOP (@count) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS [Value]
+                FROM sys.all_objects AS [first]
+                CROSS JOIN sys.all_objects AS [second]
+            )
+            INSERT INTO [dms].[Document] (
+                [DocumentUuid], [ResourceKeyId], [ContentVersion], [ContentLastModifiedAt]
+            )
+            OUTPUT INSERTED.[DocumentId] INTO @documents ([DocumentId])
+            SELECT NEWID(), 1, [Value], SYSUTCDATETIME()
+            FROM [numbers];
+
+            INSERT INTO [edfi].[Person] ([DocumentId], [PersonId])
+            SELECT [DocumentId], [DocumentId]
+            FROM @documents;
+
+            ALTER SEQUENCE [dms].[ChangeVersionSequence] RESTART WITH 702;
+            """,
+            new SqlParameter("@count", SqlDbType.Int) { Value = count }
+        );
     }
 
     // Test data always inserts documents with monotonically increasing content versions, so an

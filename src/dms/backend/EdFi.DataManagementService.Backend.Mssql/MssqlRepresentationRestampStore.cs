@@ -26,6 +26,11 @@ public sealed class MssqlRepresentationRestampStore(
     IRuntimeMappingSetCompiler runtimeMappingSetCompiler
 ) : IRepresentationRestampStore
 {
+    // UpdateMirrorAsync uses three scalar parameters for every selected document. SQL Server
+    // supports at most 2,100 parameters per command, so a page must contain no more than 700
+    // documents even when the shared projector page-size setting is larger.
+    private const int MaxMirrorStampsPerCommand = 700;
+
     private const string BigIntTableType = "dms.BigIntTable";
     private const string UniqueIdentifierTableType = "dms.UniqueIdentifierTable";
 
@@ -109,11 +114,7 @@ public sealed class MssqlRepresentationRestampStore(
                         Parameter("@operationId", operation.OperationId, SqlDbType.UniqueIdentifier),
                         Parameter("@contractVersion", operation.ContractVersion, SqlDbType.Int),
                         Parameter("@tenantKey", operation.TargetKey.TenantKey, SqlDbType.NVarChar),
-                        Parameter(
-                            "@dataStoreId",
-                            checked((int)operation.TargetKey.DataStoreId),
-                            SqlDbType.Int
-                        ),
+                        Parameter("@dataStoreId", operation.TargetKey.DataStoreId, SqlDbType.BigInt),
                         Parameter(
                             "@physicalSourceFingerprint",
                             operation.PhysicalSourceFingerprint.Value,
@@ -193,7 +194,7 @@ public sealed class MssqlRepresentationRestampStore(
             reader.GetFieldValue<int>(1),
             new DocumentCacheAdministrativeTargetKey(
                 reader.GetFieldValue<string>(2),
-                reader.GetFieldValue<int>(3)
+                reader.GetFieldValue<long>(3)
             ),
             new DocumentCachePhysicalSourceFingerprint(reader.GetFieldValue<string>(4)),
             canonicalScope,
@@ -233,7 +234,7 @@ public sealed class MssqlRepresentationRestampStore(
                 mappingSet,
                 operation.Scope,
                 operation.PreRestampBoundary,
-                pageSize,
+                Math.Min(pageSize, MaxMirrorStampsPerCommand),
                 cancellationToken
             )
             .ConfigureAwait(false);

@@ -5,9 +5,19 @@
 
 using System.Diagnostics;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.Postgresql;
+using EdFi.DataManagementService.Core;
+using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration;
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Npgsql;
+using Serilog;
 
 namespace EdFi.DataManagementService.Tests.E2E.Management;
 
@@ -28,62 +38,81 @@ internal static class RepresentationRestampE2EHarness
         );
         Directory.CreateDirectory(schemaCopyDirectory);
 
-        await RunProcessAsync("docker", ["cp", $"{DmsContainerName}:/app/ApiSchema", schemaCopyDirectory]);
-
-        await RunProcessAsync("docker", ["stop", DmsContainerName]);
-
-        try
-        {
-            await using DocumentCacheAdminCliTarget target =
-                DocumentCacheAdminCliTarget.CreateExternalPostgresql(
-                    AppSettings.DataStoreAdminConnectionString,
-                    dataStoreId: 1,
-                    Path.Combine(schemaCopyDirectory, "ApiSchema")
+        await RunWithDirectoryCleanupAsync(
+            schemaCopyDirectory,
+            async () =>
+            {
+                var projectionExpected = false;
+                await RunProcessAsync(
+                    "docker",
+                    ["cp", $"{DmsContainerName}:/app/ApiSchema", schemaCopyDirectory]
                 );
-            await SetTrackingLifecycleAsync();
-            await using DocumentCacheAdminTestConfigurationService configurationService =
-                DocumentCacheAdminTestConfigurationService.Start(target, ConfigurationServiceEncryptionKey);
-            JsonObject preview = await RunCliAsync(
-                "restamp-preview",
-                target.DataStoreId,
-                configurationService.BaseUri,
-                target.ApiSchemaDirectory,
-                [
-                    "--mode",
-                    "tracking",
-                    "--reason",
-                    "E2E observable representation restamp verification",
-                    "--document-uuid",
-                    documentUuid.ToString(),
-                    "--offline-writer-admission",
-                    "closedAndDrained",
-                ]
-            );
-            Guid operationId = preview["result"]!["operationId"]!.GetValue<Guid>();
+                await RunProcessAsync("docker", ["stop", DmsContainerName]);
 
-            JsonObject execute = await RunCliAsync(
-                "restamp-execute",
-                target.DataStoreId,
-                configurationService.BaseUri,
-                target.ApiSchemaDirectory,
-                [
-                    "--operation-id",
-                    operationId.ToString(),
-                    "--confirm",
-                    "representationRestamp",
-                    "--offline-writer-admission",
-                    "closedAndDrained",
-                ]
-            );
-            execute["result"]!["state"]!.GetValue<string>().Should().Be("completed");
-            execute["result"]!["claimLevel"]!.GetValue<string>().Should().Be("projectionWorkQueued");
-        }
-        finally
-        {
-            await RunProcessAsync("docker", ["start", DmsContainerName]);
-            await WaitForDmsAsync();
-            Directory.Delete(schemaCopyDirectory, recursive: true);
-        }
+                try
+                {
+                    await using DocumentCacheAdminCliTarget target =
+                        DocumentCacheAdminCliTarget.CreateExternalPostgresql(
+                            AppSettings.DataStoreAdminConnectionString,
+                            dataStoreId: 1,
+                            Path.Combine(schemaCopyDirectory, "ApiSchema")
+                        );
+                    await SetTrackingLifecycleAsync();
+                    await using DocumentCacheAdminTestConfigurationService configurationService =
+                        DocumentCacheAdminTestConfigurationService.Start(
+                            target,
+                            ConfigurationServiceEncryptionKey
+                        );
+                    JsonObject preview = await RunCliAsync(
+                        "restamp-preview",
+                        target.DataStoreId,
+                        configurationService.BaseUri,
+                        target.ApiSchemaDirectory,
+                        [
+                            "--mode",
+                            "tracking",
+                            "--reason",
+                            "E2E observable representation restamp verification",
+                            "--document-uuid",
+                            documentUuid.ToString(),
+                            "--offline-writer-admission",
+                            "closedAndDrained",
+                        ]
+                    );
+                    Guid operationId = preview["result"]!["operationId"]!.GetValue<Guid>();
+
+                    JsonObject execute = await RunCliAsync(
+                        "restamp-execute",
+                        target.DataStoreId,
+                        configurationService.BaseUri,
+                        target.ApiSchemaDirectory,
+                        [
+                            "--operation-id",
+                            operationId.ToString(),
+                            "--confirm",
+                            "representationRestamp",
+                            "--offline-writer-admission",
+                            "closedAndDrained",
+                        ]
+                    );
+                    execute["result"]!["state"]!.GetValue<string>().Should().Be("completed");
+                    execute["result"]!["claimLevel"]!.GetValue<string>().Should().Be("projectionWorkQueued");
+                    long restampedContentVersion = await ReadCanonicalContentVersionAsync(documentUuid);
+                    (await ReadRequiredWorkVersionAsync(documentUuid)).Should().Be(restampedContentVersion);
+                    await DrainOrdinaryProjectorAsync(target);
+                    projectionExpected = true;
+                }
+                finally
+                {
+                    await RunProcessAsync("docker", ["start", DmsContainerName]);
+                    await WaitForDmsAsync();
+                    if (projectionExpected)
+                    {
+                        await WaitForProjectedCacheAsync(documentUuid);
+                    }
+                }
+            }
+        );
     }
 
     private static async Task SetTrackingLifecycleAsync()
@@ -94,6 +123,130 @@ internal static class RepresentationRestampE2EHarness
         command.CommandText =
             "UPDATE dms.\"DocumentCacheState\" SET \"ProjectionLifecycleState\" = 'Tracking', \"CacheAheadRecoveryRequired\" = false WHERE \"StateId\" = 1";
         await command.ExecuteNonQueryAsync();
+    }
+
+    private static async Task DrainOrdinaryProjectorAsync(DocumentCacheAdminCliTarget target)
+    {
+        using var timeoutSource = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        try
+        {
+            await using ServiceProvider serviceProvider = await CreateProjectionServiceProviderAsync(
+                target.AppSettingsDatastore,
+                target.ApiSchemaDirectory,
+                timeoutSource.Token
+            );
+            DocumentCacheTargetExecutionContext executionContext = new(
+                DocumentCacheTargetKey.Create(target.TenantKey, target.DataStoreId),
+                new DocumentCacheTargetContextGeneration(1),
+                new DocumentCacheTargetEffectiveSettings(
+                    true,
+                    TimeSpan.FromMilliseconds(250),
+                    TimeSpan.FromMilliseconds(10),
+                    10,
+                    1,
+                    TimeSpan.FromSeconds(1),
+                    1000,
+                    TimeSpan.FromMinutes(1)
+                ),
+                new DocumentCacheTargetDataStoreMetadata(target.DataStoreId, target.AppSettingsDatastore),
+                new DocumentCacheTargetConnectionInput(target.ProviderToken, target.ConnectionString),
+                new DocumentCachePhysicalSourceFingerprint(
+                    "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                ),
+                new DocumentCacheLifecycleObservation(DocumentCacheLifecycleState.Tracking, false),
+                new DocumentCacheInventoryValidationResult(
+                    DocumentCacheInventoryStatus.Satisfied,
+                    "Inventory satisfied."
+                ),
+                new DocumentCacheEnqueueTriggerValidationResult(
+                    DocumentCacheEnqueueTriggerStatus.Satisfied,
+                    "Enqueue trigger satisfied."
+                ),
+                DocumentCacheSqlServerPrerequisiteDetails.NotApplicable()
+            );
+            await using DocumentCacheProjectionTargetRuntimeContext context = await serviceProvider
+                .GetRequiredService<IDocumentCacheProjectionTargetRuntimeContextFactory>()
+                .CreateAsync(executionContext, timeoutSource.Token);
+            IDocumentCacheProjectionDrainPageProcessor processor =
+                serviceProvider.GetRequiredService<IDocumentCacheProjectionDrainPageProcessor>();
+
+            while (true)
+            {
+                DocumentCacheProjectionDrainPageResult result = await processor.ProcessPageAsync(
+                    new DocumentCacheProjectionDrainPageRequest(
+                        context,
+                        DocumentCacheProjectionDrainInvocationKind.Ordinary
+                    ),
+                    timeoutSource.Token
+                );
+                if (result.Outcome == DocumentCacheProjectionDrainPageOutcome.NoEligibleWork)
+                {
+                    return;
+                }
+
+                result.Outcome.Should().Be(DocumentCacheProjectionDrainPageOutcome.PageProcessed);
+            }
+        }
+        catch (OperationCanceledException exception) when (timeoutSource.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"Timed out draining the ordinary projector for target '{target.TenantKey}':{target.DataStoreId}.",
+                exception
+            );
+        }
+    }
+
+    internal static async Task<ServiceProvider> CreateProjectionServiceProviderAsync(
+        string appSettingsDatastore,
+        string apiSchemaDirectory,
+        CancellationToken cancellationToken
+    )
+    {
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(
+                new Dictionary<string, string?>
+                {
+                    ["AppSettings:Datastore"] = appSettingsDatastore,
+                    ["AppSettings:UseApiSchemaPath"] = "true",
+                    ["AppSettings:ApiSchemaPath"] = apiSchemaDirectory,
+                }
+            )
+            .Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(configuration);
+        services
+            .AddOptions<EdFi.DataManagementService.Core.Configuration.AppSettings>()
+            .Bind(configuration.GetSection("AppSettings"));
+        services.AddDmsDefaultConfiguration(
+            Log.Logger,
+            configuration.GetSection("CircuitBreaker"),
+            configuration.GetSection("DeadlockRetry"),
+            maskRequestBodyInLogs: false
+        );
+        services.AddSingleton<IOptions<DocumentCacheOptions>>(Options.Create(new DocumentCacheOptions()));
+        services.AddSingleton(
+            new DeadlockRetrySettings
+            {
+                MaxRetryAttempts = 0,
+                BaseDelayMilliseconds = 1,
+                UseJitter = false,
+            }
+        );
+        services.AddPostgresqlDocumentCacheRuntimeServices(configuration);
+        ServiceProvider serviceProvider = services.BuildServiceProvider();
+        try
+        {
+            await serviceProvider
+                .GetRequiredService<IEffectiveSchemaBootstrapper>()
+                .InitializeAsync(cancellationToken);
+            return serviceProvider;
+        }
+        catch
+        {
+            await serviceProvider.DisposeAsync();
+            throw;
+        }
     }
 
     private static async Task<JsonObject> RunCliAsync(
@@ -174,6 +327,109 @@ internal static class RepresentationRestampE2EHarness
         throw new TimeoutException("DMS did not become healthy after the representation restamp.");
     }
 
+    private static async Task<long> ReadCanonicalContentVersionAsync(Guid documentUuid)
+    {
+        await using var connection = new NpgsqlConnection(AppSettings.DataStoreAdminConnectionString);
+        await connection.OpenAsync();
+        await using NpgsqlCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT "ContentVersion"
+            FROM dms."Document"
+            WHERE "DocumentUuid" = @documentUuid;
+            """;
+        command.Parameters.AddWithValue("documentUuid", documentUuid);
+        return Convert.ToInt64(await command.ExecuteScalarAsync());
+    }
+
+    private static async Task<long> ReadRequiredWorkVersionAsync(Guid documentUuid)
+    {
+        await using var connection = new NpgsqlConnection(AppSettings.DataStoreAdminConnectionString);
+        await connection.OpenAsync();
+        await using NpgsqlCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT work."RequiredContentVersion"
+            FROM dms."DocumentProjectionWork" AS work
+            INNER JOIN dms."Document" AS document ON document."DocumentId" = work."DocumentId"
+            WHERE document."DocumentUuid" = @documentUuid;
+            """;
+        command.Parameters.AddWithValue("documentUuid", documentUuid);
+        return Convert.ToInt64(await command.ExecuteScalarAsync());
+    }
+
+    private static async Task WaitForProjectedCacheAsync(Guid documentUuid)
+    {
+        await WaitForConditionAsync(
+            async cancellationToken =>
+            {
+                await using var connection = new NpgsqlConnection(AppSettings.DataStoreAdminConnectionString);
+                await connection.OpenAsync(cancellationToken);
+                await using NpgsqlCommand command = connection.CreateCommand();
+                command.CommandText = """
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM dms."Document" AS document
+                        INNER JOIN dms."DocumentCache" AS cache
+                            ON cache."DocumentId" = document."DocumentId"
+                        WHERE document."DocumentUuid" = @documentUuid
+                          AND cache."ContentVersion" = document."ContentVersion"
+                          AND NOT EXISTS (
+                              SELECT 1
+                              FROM dms."DocumentProjectionWork" AS work
+                              WHERE work."DocumentId" = document."DocumentId"
+                          )
+                    );
+                    """;
+                command.Parameters.AddWithValue("documentUuid", documentUuid);
+                return Convert.ToBoolean(await command.ExecuteScalarAsync(cancellationToken));
+            },
+            TimeSpan.FromMinutes(2),
+            TimeSpan.FromSeconds(2),
+            $"representation-restamp projection for document {documentUuid}: projection work to be absent and the document-cache content version to equal the canonical content version"
+        );
+    }
+
+    internal static async Task WaitForConditionAsync(
+        Func<CancellationToken, Task<bool>> condition,
+        TimeSpan timeout,
+        TimeSpan pollInterval,
+        string timeoutContext
+    )
+    {
+        using var timeoutSource = new CancellationTokenSource(timeout);
+
+        try
+        {
+            while (true)
+            {
+                if (await condition(timeoutSource.Token))
+                {
+                    return;
+                }
+
+                await Task.Delay(pollInterval, timeoutSource.Token);
+            }
+        }
+        catch (OperationCanceledException exception) when (timeoutSource.IsCancellationRequested)
+        {
+            throw new TimeoutException($"Timed out after {timeout} waiting for {timeoutContext}.", exception);
+        }
+    }
+
+    internal static async Task RunWithDirectoryCleanupAsync(string directory, Func<Task> action)
+    {
+        try
+        {
+            await action();
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
     private static async Task<ProcessResult> RunProcessAsync(
         string fileName,
         IReadOnlyList<string> arguments,
@@ -223,12 +479,14 @@ internal static class RepresentationRestampE2EHarness
             "EdFi.DataManagementService.DocumentCacheAdmin.csproj"
         );
 
-    private static string RepositoryRoot()
+    private static string RepositoryRoot() => RepositoryRoot(new DirectoryInfo(AppContext.BaseDirectory));
+
+    internal static string RepositoryRoot(DirectoryInfo startDirectory)
     {
-        DirectoryInfo? directory = new(AppContext.BaseDirectory);
+        DirectoryInfo? directory = startDirectory;
         while (directory is not null)
         {
-            if (File.Exists(Path.Combine(directory.FullName, ".git")))
+            if (File.Exists(Path.Combine(directory.FullName, "src", "dms", "EdFi.DataManagementService.sln")))
             {
                 return directory.FullName;
             }

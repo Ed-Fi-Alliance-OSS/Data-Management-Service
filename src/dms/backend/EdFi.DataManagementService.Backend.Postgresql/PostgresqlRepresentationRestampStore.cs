@@ -106,11 +106,7 @@ public sealed class PostgresqlRepresentationRestampStore(
                         Parameter("operationId", operation.OperationId, NpgsqlDbType.Uuid),
                         Parameter("contractVersion", operation.ContractVersion, NpgsqlDbType.Integer),
                         Parameter("tenantKey", operation.TargetKey.TenantKey, NpgsqlDbType.Varchar),
-                        Parameter(
-                            "dataStoreId",
-                            checked((int)operation.TargetKey.DataStoreId),
-                            NpgsqlDbType.Integer
-                        ),
+                        Parameter("dataStoreId", operation.TargetKey.DataStoreId, NpgsqlDbType.Bigint),
                         Parameter(
                             "physicalSourceFingerprint",
                             operation.PhysicalSourceFingerprint.Value,
@@ -195,7 +191,7 @@ public sealed class PostgresqlRepresentationRestampStore(
             reader.GetFieldValue<int>(1),
             new DocumentCacheAdministrativeTargetKey(
                 reader.GetFieldValue<string>(2),
-                reader.GetFieldValue<int>(3)
+                reader.GetFieldValue<long>(3)
             ),
             new DocumentCachePhysicalSourceFingerprint(reader.GetFieldValue<string>(4)),
             canonicalScope,

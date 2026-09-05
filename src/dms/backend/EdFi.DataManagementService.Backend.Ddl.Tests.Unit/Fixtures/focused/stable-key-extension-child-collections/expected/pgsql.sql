@@ -443,7 +443,7 @@ CREATE TABLE IF NOT EXISTS "dms"."RepresentationRestampOperation"
     "OperationId" uuid NOT NULL,
     "ContractVersion" integer NOT NULL,
     "TenantKey" varchar(256) NOT NULL,
-    "DataStoreId" integer NOT NULL,
+    "DataStoreId" bigint NOT NULL,
     "PhysicalSourceFingerprint" varchar(71) NOT NULL,
     "ScopeJson" jsonb NOT NULL,
     "Reason" varchar(1024) NOT NULL,

@@ -129,7 +129,7 @@ internal static class DmsCoreTableDefinitions
                 new(Col("OperationId"), dialect.UuidColumnType, IsNullable: false),
                 new(Col("ContractVersion"), dialect.Rules.ScalarTypeDefaults.Int32Type, IsNullable: false),
                 new(Col("TenantKey"), StringType(dialect, 256), IsNullable: false),
-                new(Col("DataStoreId"), dialect.Rules.ScalarTypeDefaults.Int32Type, IsNullable: false),
+                new(Col("DataStoreId"), dialect.Rules.ScalarTypeDefaults.Int64Type, IsNullable: false),
                 new(Col("PhysicalSourceFingerprint"), StringType(dialect, 71), IsNullable: false),
                 new(Col("ScopeJson"), dialect.JsonColumnType, IsNullable: false),
                 new(Col("Reason"), StringType(dialect, 1024), IsNullable: false),

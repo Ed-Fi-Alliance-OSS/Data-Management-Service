@@ -35,6 +35,7 @@
         <AssemblyAttribute Include="System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverageAttribute" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration" />
+        <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Cdc.Tests.Integration" />
     </ItemGroup>
     <ItemGroup>
         <None Include="README.md" Pack="true" PackagePath="\" />
