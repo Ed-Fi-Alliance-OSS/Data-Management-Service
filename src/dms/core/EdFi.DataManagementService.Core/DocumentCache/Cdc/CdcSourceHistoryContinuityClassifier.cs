@@ -757,7 +757,39 @@ public static class CdcSourceHistoryContinuityClassifier
             );
         }
 
-        if (input.ConnectorOffset.IsNull || input.ConnectorOffset.IsSnapshot)
+        if (input.ConnectorOffset.IsSnapshot)
+        {
+            // A snapshot offset is the connector's own progress through a phase that has not reached
+            // streaming yet, not a position this classification can decide continuity from. It is
+            // separated from the malformed offset below deliberately: latching is irreversible and
+            // closes the documented enable retry, which refuses an incident-latched binding, and an
+            // enablement whose initial snapshot was interrupted is the ordinary way to arrive here.
+            // Readiness stays false and neither start nor resume is automated, which is what a phase
+            // still in progress warrants; an established binding whose connector re-enters a snapshot
+            // reports the same way, and that is an operator decision rather than an automatic fence.
+            diagnostics.Add(
+                CdcDiagnosticCategory.StatusObservationUnavailable,
+                "$.connectorOffset.isSnapshot",
+                "CDC connector has committed only a snapshot position and has not reached streaming."
+            );
+
+            return new(
+                UnknownWithMetadata(
+                    input,
+                    observedAt,
+                    diagnostics,
+                    binding.Provider,
+                    inventory,
+                    expectedSourcePartitionHash,
+                    null,
+                    input.ProviderHistory,
+                    [CdcIncidentUnavailableFact.ConnectOffset]
+                ),
+                null
+            );
+        }
+
+        if (input.ConnectorOffset.IsNull)
         {
             return new(
                 Lost(

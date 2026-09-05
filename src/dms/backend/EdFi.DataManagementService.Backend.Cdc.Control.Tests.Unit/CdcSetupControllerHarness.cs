@@ -162,7 +162,14 @@ internal sealed class CdcSetupControllerHarness
         A.CallTo(() => ProviderSetup.SetupAsync(A<CdcProviderSetupRequest>._, A<CancellationToken>._))
             .ReturnsLazily(
                 (CdcProviderSetupRequest request, CancellationToken _) =>
-                    Task.FromResult(ProviderSetupResult(request))
+                {
+                    if (request.Mode == Ddl.CdcProviderSetupMode.ValidateOnly)
+                    {
+                        ProviderEvidenceOrder.Add(ProviderHistoryRead);
+                    }
+
+                    return Task.FromResult(ProviderSetupResult(request));
+                }
             );
 
         A.CallTo(() => Connections.Create(A<CoreCdc.CdcProvider>._, A<string>._)).Returns(Connection);
@@ -289,7 +296,12 @@ internal sealed class CdcSetupControllerHarness
                 Task.FromResult(ConnectorHeldByWorker() ? ConnectorConfigReadBack : NoSuchConnector)
             );
         A.CallTo(() => Connect.GetConnectorOffsetsAsync(A<string>._, A<CancellationToken>._))
-            .ReturnsLazily(() => Task.FromResult(CommittedOffsets));
+            .ReturnsLazily(() =>
+            {
+                ProviderEvidenceOrder.Add(ConnectOffsetRead);
+
+                return Task.FromResult(CommittedOffsets);
+            });
         A.CallTo(() => Connect.GetConnectorStatusAsync(A<string>._, A<CancellationToken>._))
             .ReturnsLazily(() => Task.FromResult(ConnectorStatus));
         A.CallTo(() => Connect.RestartConnectorAsync(A<string>._, A<CancellationToken>._))
@@ -512,6 +524,28 @@ internal sealed class CdcSetupControllerHarness
     /// the configured value would report a repartitioned topic as conforming.
     /// </summary>
     public List<int> VerifiedPartitionCounts { get; } = [];
+
+    /// <summary>Recorded in <see cref="ProviderEvidenceOrder"/> by the connector-offset fake.</summary>
+    public const string ConnectOffsetRead = "connectOffset";
+
+    /// <summary>
+    /// Recorded in <see cref="ProviderEvidenceOrder"/> by the provider-setup fake, for a validate-only
+    /// pass — the only mode that observes source history.
+    /// </summary>
+    public const string ProviderHistoryRead = "providerHistory";
+
+    /// <summary>
+    /// Every connector-offset read and provider source-history read, in the order they ran.
+    /// </summary>
+    /// <remarks>
+    /// Recorded because the order is the correctness property, not an implementation detail. The
+    /// retained range is a moving window and the committed offset is a moving position, so a range
+    /// observed before the offset can sit behind it while nothing is wrong - which the continuity
+    /// classifier reads as a retained-history gap, a terminal loss the status path latches durably and
+    /// fences the connector for. The history a classification decides on must therefore be read after
+    /// the offset it is compared against.
+    /// </remarks>
+    public List<string> ProviderEvidenceOrder { get; } = [];
 
     /// <summary>
     /// The partition count this harness configures, which is also what the default binding records. A

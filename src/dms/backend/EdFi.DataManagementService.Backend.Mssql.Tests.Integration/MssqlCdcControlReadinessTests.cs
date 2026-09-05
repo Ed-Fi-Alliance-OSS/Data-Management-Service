@@ -281,12 +281,20 @@ public class Given_A_SqlServer_CdcControlReadinessSequence
     /// that it does not finish.
     /// </summary>
     /// <remarks>
-    /// The steps after the provider barrier cannot settle against a stubbed Kafka Connect worker. SQL
-    /// Server's retained range end is <c>sys.fn_cdc_get_max_lsn()</c>, which the capture Agent job keeps
-    /// advancing on its own: an offset captured once falls behind a barrier taken after the job moved,
-    /// and an offset re-read on each pass moves under the steps that already consumed it. Only a
-    /// connector that is really streaming reports a position consistent with both. Everything up to and
-    /// including provider setup and connector registration does settle, and that is what is asserted.
+    /// The whole sequence is not required to settle here, and the assertions are scoped to the
+    /// provider-side effects: everything up to and including provider setup and connector registration.
+    ///
+    /// It cannot settle in this fixture for a reason that belongs to the fixture rather than to the
+    /// sequence. <see cref="SkewedTimeProvider"/> holds one instant, so every control-plane stamp is
+    /// equal, while the admission's ordering rules require each observation to fall strictly after the
+    /// one before it. The composed nine-step verdict is pinned in the unit sequence suite, where the
+    /// clock advances.
+    ///
+    /// The retained range is no longer among the reasons. SQL Server's range end is
+    /// <c>sys.fn_cdc_get_max_lsn()</c>, which the capture Agent job keeps advancing on its own, so a
+    /// range recorded before the offset it is compared against can sit behind it while nothing is wrong.
+    /// The control plane now reads the history a continuity classification decides on after that offset,
+    /// which is what makes the comparison meaningful on a real provider.
     /// </remarks>
     private async Task DriveEnablementThroughProviderStepsAsync(ICdcSetupController controller)
     {

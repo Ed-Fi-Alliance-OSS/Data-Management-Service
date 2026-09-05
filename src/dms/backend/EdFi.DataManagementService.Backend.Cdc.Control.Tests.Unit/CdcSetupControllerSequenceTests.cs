@@ -138,6 +138,47 @@ public class Given_CdcSetupControllerInitialReadinessSequence
     }
 
     /// <summary>
+    /// The provider source history a continuity classification decides on is read after the connector
+    /// offset it is compared against.
+    /// </summary>
+    /// <remarks>
+    /// The comparison is between a moving window and a moving position, so it only means anything when
+    /// the window is at least as new as the position. The validate-only pass this enablement already
+    /// ran for its provider-setup step precedes the connector's registration entirely: the range it
+    /// recorded is the one that stood before this binding had a connector, and every offset past the
+    /// barrier is necessarily past it. Classified against that, a healthy first enablement reports a
+    /// retained-history gap - the terminal classification the status path latches durably and fences
+    /// the connector for.
+    /// </remarks>
+    [Test]
+    public async Task It_reads_the_classified_provider_history_after_the_connector_offset()
+    {
+        CdcSetupControllerHarness harness = new();
+
+        CdcAdmission admission = await harness.EnableAsync();
+
+        using var _ = new AssertionScope();
+        admission.AdmissionState.Should().Be(CdcAdmissionState.Admitted);
+
+        // The step's own pass still runs before the connector exists - it is the gate that decides
+        // whether one is registered at all - and a second read follows the offset for the classifier.
+        harness
+            .ProviderEvidenceOrder.Should()
+            .ContainInOrder(
+                CdcSetupControllerHarness.ProviderHistoryRead,
+                CdcSetupControllerHarness.ConnectOffsetRead,
+                CdcSetupControllerHarness.ProviderHistoryRead
+            );
+        harness
+            .ProviderEvidenceOrder.LastIndexOf(CdcSetupControllerHarness.ProviderHistoryRead)
+            .Should()
+            .BeGreaterThan(
+                harness.ProviderEvidenceOrder.LastIndexOf(CdcSetupControllerHarness.ConnectOffsetRead),
+                "the classified history must be no older than the offset it is compared against"
+            );
+    }
+
+    /// <summary>
     /// The connector is registered only once the plugin has accepted the rendered configuration, and
     /// only after the binding-governed topics and ACLs exist.
     /// </summary>
@@ -523,6 +564,49 @@ public class Given_CdcSetupControllerInitialReadinessSequence
 
         // Refused before anything is durable or registered: the outgoing generation is still the only
         // publisher of this target when the refusal is reported.
+        A.CallTo(() => harness.Bindings.CreateBindingIfAbsentAsync(A<CdcBinding>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                harness.Connect.PutConnectorConfigAsync(
+                    A<string>._,
+                    A<IReadOnlyDictionary<string, string>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// The same refusal when the live generation was named under another instance key.
+    /// </summary>
+    /// <remarks>
+    /// The design owns the logical target identity and defines it as
+    /// <c>(deployment key, tenant key, DataStoreId)</c>. <c>instanceKey</c> is the deployment-controlled
+    /// Kafka-safe token the governed names are rendered from, validated only for shape and with no tie
+    /// to <c>dataStoreId</c>, so comparing it as part of that identity let a caller walk past this rule
+    /// by renaming it: with the target repointed at another physical database the same-target check
+    /// missed on the instance key and the same-source check missed on the fingerprint, and a plain
+    /// enable started a second publisher for a target already bound - the exact end state the fence
+    /// exists to prevent, reached without it.
+    /// </remarks>
+    [Test]
+    public async Task It_refuses_an_enable_naming_another_instance_key_for_a_target_already_bound()
+    {
+        CdcSetupControllerHarness harness = new()
+        {
+            BindingListing = CdcSetupControllerHarness.ListedBindings(
+                CdcSetupControllerHarness.PreviousGenerationBinding() with
+                {
+                    InstanceKey = "ds1-renamed",
+                }
+            ),
+        };
+
+        CdcAdmission admission = await harness.EnableAsync();
+
+        using var _ = new AssertionScope();
+        NotAdmitted(admission);
+        Diagnostic(admission, "enableTargetGenerationAlreadyLive").Should().NotBeNull();
         A.CallTo(() => harness.Bindings.CreateBindingIfAbsentAsync(A<CdcBinding>._, A<CancellationToken>._))
             .MustNotHaveHappened();
         A.CallTo(() =>

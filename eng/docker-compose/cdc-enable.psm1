@@ -283,12 +283,13 @@ function Get-CdcEnableGenerationPlan {
         live. More than one live binding record for the instance key is a state this phase may not
         choose between, so it stops rather than guessing which one the rerun means.
 
-        `ResumesLiveBinding` reports which of those two the generation came from, because reusing the
-        generation is not on its own enough to make the rerun work: the enable also has to carry the
-        two provisioning tokens, and the caller's only other evidence for them - whether this run
-        created the instance database - is false by construction on any rerun. The two facts are
-        answered together from the one enumeration so nothing downstream has to read the store again
-        or restate its layout.
+        `ResumesLiveBinding` reports which of those two the generation came from. It is what an
+        operator's -ResumeInterruptedEnable assertion has to be consistent with - a resume asserted
+        against a store holding no live record is refused - and it is not itself evidence that the
+        enablement being resumed never finished: this record is written before the artifacts it
+        governs exist and is removed only by retirement, so it outlives a completed enablement. The
+        two facts are answered together from the one enumeration so nothing downstream has to read the
+        store again or restate its layout.
 
         With no live binding record, the generation is one past the highest the store has ever held
         for the instance key, counting the retirement records as well - so the first binding of a
@@ -467,14 +468,18 @@ function Get-CdcEnableArgument {
     PLAINTEXT://dms-kafka1:9092, so a host-side process is redirected to names it cannot resolve.
 
     The two exact-token evidence flags are emitted for exactly two shapes: a run that created the
-    physical database, and the reissue of one - the latter evidenced by the live binding record the
-    generation was taken from, which only an enable already run against this database could have
-    written. Bootstrap has no standing to assert either fact about a data store it merely found and
-    never enabled, and for that shape the command surface refuses the enable, which is the correct
-    outcome reached without an assertion this caller cannot support. That refusal is a command-line
-    parse failure, not a control-plane result: the executor is never entered, so the exit code is
-    the parser's and no admission contract reaches stdout - which is also why the reissue needs the
+    physical database, and the reissue of one the operator asserts with -ResumeInterruptedEnable.
+    Bootstrap has no standing to assert either fact about a data store it merely found and never
+    enabled, and for that shape the command surface refuses the enable, which is the correct outcome
+    reached without an assertion this caller cannot support. That refusal is a command-line parse
+    failure, not a control-plane result: the executor is never entered, so the exit code is the
+    parser's and no admission contract reaches stdout - which is also why the reissue needs the
     tokens rather than the reused generation alone.
+
+    A plain rerun asserts neither. That is deliberate: the live binding record a rerun would have to
+    infer the reissue from survives a completed enablement, so inferring it asserted an initial
+    provisioning history for any target that had ever been enabled. The emission site records why the
+    control plane cannot recover the difference.
 
     The connector principal and the connector's own database connection properties travel by
     environment rather than on the command line, alongside the setup principal: they are deployment
@@ -513,11 +518,17 @@ function Get-CdcEnableArgument {
         [string]
         $DatabaseEngine,
 
-        # Whether this run created the instance database. One of the two sources of the provisioning
-        # evidence; the other is a live binding record, which this builder reads for itself.
+        # Whether this run created the instance database. The evidence a first run stands on.
         [Parameter(Mandatory)]
         [bool]
         $DatabaseCreatedByThisRun,
+
+        # The operator's assertion that the live binding record for this instance key belongs to an
+        # enablement that never finished, and that this run is completing it. The evidence a reissue
+        # stands on, and an assertion rather than an inference for the reason stated at the emission
+        # site below.
+        [switch]
+        $ResumeInterruptedEnable,
 
         # The instance database the binding captures from, as Kafka Connect must name it. Required
         # because it is a per-run value: the connector's own database property cannot be a compose
@@ -570,21 +581,29 @@ function Get-CdcEnableArgument {
         -InstanceKey $instanceKey
 
     # The two provisioning tokens, emitted for a first run and for the reissue of one. A first run is
-    # evidenced by the instance database not having existed before it started; a reissue is evidenced
-    # by the live binding record the generation was taken from, which only an enable that already ran
-    # against this database could have written. Without the second source the reissue is unreachable:
-    # the volume observation is false by construction on every rerun, the command surface requires
-    # both tokens with exact values, and the parse failure lands before the control plane's retry
-    # classifier is ever entered - so reusing the generation would produce a request that is refused
-    # for the evidence rather than judged on the target's state.
+    # evidenced by the instance database not having existed before it started. A reissue is not
+    # evidenced at all - it is asserted by the operator, through -ResumeInterruptedEnable - and the
+    # live binding record is only what the assertion has to be consistent with.
     #
-    # Neither source is trusted as the verdict. The tokens are what the caller can attest, and the
-    # control plane re-derives the same claim from the live target: an enable carrying them against a
-    # database that holds canonical, cache, or work rows, or one whose projection is resetting,
-    # rebuilding, or cache-ahead latched, is still refused. So a rerun over a target that finished
-    # enabling and was then written to is rejected on what the database shows, not admitted on what
-    # this phase asserted.
-    if ($DatabaseCreatedByThisRun -or $generationPlan.ResumesLiveBinding) {
+    # The record cannot carry that evidence on its own. It is written at step 3 of the enablement and
+    # removed only by retirement, so it outlives a completed enablement and every write admitted
+    # afterwards. Deriving "closed, never opened" from its presence asserted that history for any
+    # target that had merely been enabled once, and the control plane cannot recover the difference:
+    # with the binding present it classifies the reissue from the live lifecycle and the row counts,
+    # and a database that was admitted and later emptied - by deletes and a drained projection -
+    # presents exactly as one that was never opened. The resume that follows re-runs provider setup in
+    # create-or-exact-match mode, so the shape that reads as harmless is the one that can recreate
+    # capture artifacts around offsets a consumer still holds.
+    #
+    # What the control plane does re-derive still applies to both shapes and is not weakened by the
+    # switch: an enable carrying these tokens against a database that holds canonical, cache, or work
+    # rows, or one whose projection is resetting, rebuilding, or cache-ahead latched, is refused on
+    # what the database shows rather than admitted on what this phase asserted.
+    if ($ResumeInterruptedEnable -and -not $generationPlan.ResumesLiveBinding) {
+        throw "CDC phase: -ResumeInterruptedCdcEnable asserts that an interrupted enablement is being completed, but the binding state store holds no live binding record for instance key '$instanceKey' under deployment key '$deploymentKey'. There is nothing to resume, so the phase stops rather than asserting initial provisioning for a target it never bound. Drop the switch to run this as a first enablement."
+    }
+
+    if ($DatabaseCreatedByThisRun -or $ResumeInterruptedEnable) {
         $verbArguments += @(
             "--database-creation-mode", "created-for-initial-cdc-provisioning",
             "--write-admission", "closed-never-opened"
@@ -655,6 +674,11 @@ function Invoke-CdcEnablePhase {
         [bool]
         $DatabaseCreatedByThisRun,
 
+        # Forwarded to Get-CdcEnableArgument, which owns the rule and records why the assertion
+        # cannot be inferred from the binding state store.
+        [switch]
+        $ResumeInterruptedEnable,
+
         # The instance database the binding captures from. A caller that provisioned its own
         # database names it; an omitted value resolves the same way the configure phase resolves
         # the datastore database name, which is what a plain bootstrap run registered.
@@ -711,6 +735,7 @@ function Invoke-CdcEnablePhase {
         -DataStoreId $DataStoreId `
         -DatabaseEngine $DatabaseEngine `
         -DatabaseCreatedByThisRun $DatabaseCreatedByThisRun `
+        -ResumeInterruptedEnable:$ResumeInterruptedEnable `
         -SourceDatabaseName $resolvedSourceDatabaseName `
         -BindingStateRoot (Resolve-CdcHostBindingStateRoot -EnvValues $envValues) `
         -ConnectorPrincipal $connectorPrincipal

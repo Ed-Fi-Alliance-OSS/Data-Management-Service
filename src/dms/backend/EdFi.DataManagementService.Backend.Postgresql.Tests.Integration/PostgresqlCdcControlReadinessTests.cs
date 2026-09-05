@@ -151,19 +151,40 @@ public class Given_A_Postgresql_CdcControlReadinessSequence
         admission.TargetIdentity.Generation.Should().Be(BindingGeneration);
         admission.TargetIdentity.Provider.Should().Be(CoreCdc.CdcProvider.Postgresql);
 
-        // Write admission itself is not asserted here, and cannot be: the step after the barrier
-        // requires the connector's committed offset to sit inside the retained range the provider
-        // evidence recorded, and only a connector that is actually streaming advances the replication
-        // slot in a way that stays consistent with the sequence's own exact-match re-verification. A
-        // stubbed worker can satisfy the barrier or the retained range, never both. Reaching
-        // CdcAdmissionState.Admitted end to end is therefore evidence a real Debezium connector has to
-        // produce, and the unit sequence suite is where the composed nine-step verdict is pinned.
+        // Source-history continuity is affirmative against this database's real provider evidence, and
+        // the lag step is how that is asserted: the sequence returns at source history unless the
+        // classifier reports Healthy, so reaching a satisfied lag step is only possible past it. It is
+        // asserted this way because continuity is not carried on the source-history step itself.
+        //
+        // That it holds is the point. The retained range is a moving window and the committed offset a
+        // moving position, so the comparison is only meaningful when the range is read after the offset
+        // it is compared against. Read before - as the provider-setup step's own pass necessarily is,
+        // since that pass gates whether a connector is registered at all - the range recorded is the one
+        // that stood before this binding had a connector, and every offset past the barrier is past it.
+        // A healthy first enablement then reported a retained-history gap: the terminal classification
+        // the status path latches durably and fences the connector for.
+        admission
+            .Steps.Lag.State.Should()
+            .Be(
+                CoreCdc.CdcComponentState.Satisfied,
+                "the sequence reaches the lag step only through a healthy source history; it reported {0}",
+                DescribeDiagnostics(admission.Diagnostics)
+            );
+        admission
+            .Steps.SourceHistory.Category.Should()
+            .NotBe(
+                CoreCdc.CdcBlockingCategory.SourceHistoryLost,
+                "the classified continuity is decided on a retained range read after the offset"
+            );
+
+        // Write admission itself is not asserted here, and cannot be, for a reason that belongs to this
+        // fixture rather than to the sequence: SkewedTimeProvider holds one instant, so every
+        // control-plane stamp is equal, and the admission's ordering rules require each observation to
+        // fall strictly after the one before it. The composed nine-step verdict is pinned in the unit
+        // sequence suite, where the clock advances.
         admission
             .Steps.SourceHistory.State.Should()
-            .NotBe(
-                CoreCdc.CdcComponentState.Satisfied,
-                "a stubbed connector cannot produce affirmative continuity evidence"
-            );
+            .NotBe(CoreCdc.CdcComponentState.Satisfied, "the fixture's clock cannot order the steps");
     }
 
     [Test]

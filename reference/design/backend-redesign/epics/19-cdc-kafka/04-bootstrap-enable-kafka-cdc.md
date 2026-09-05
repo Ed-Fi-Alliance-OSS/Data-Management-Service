@@ -255,7 +255,11 @@ of its own.
   already holds, so the phase reuses it: an enable that wrote its binding and then failed during
   activation, Kafka setup, connector registration, or readiness is completed by being reissued,
   and only against the generation that record names — asking for the next one makes the rerun a
-  first attempt, which the control plane refuses while that generation is still live. More than
+  first attempt, which the control plane refuses while that generation is still live. The record
+  supplies the generation and nothing else: it is written before the artifacts it governs exist
+  and is removed only by retirement, so it survives a completed enablement and every write
+  admitted afterwards, and the provisioning evidence a reissue carries stays the caller's own
+  assertion under the rule above rather than something its presence establishes. More than
   one live binding record for the instance key stops the phase rather than being chosen between.
   With no live record it allocates one past the highest generation the store has ever held for
   the instance key, retirement records included, because retirement removes the binding record it

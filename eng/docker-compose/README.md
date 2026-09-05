@@ -1005,6 +1005,16 @@ names carry the generation, so the public topic moves from
 `edfi.dms.instance.<instanceKey>-g1.documents.v1` to `-g2`; a consumer pinned to the old name
 sees no new records. Delete the store to start over from generation 1.
 
+An enable that wrote its binding record and then failed — during guarded activation, Kafka
+setup, connector registration, or readiness — is completed by rerunning bootstrap with
+`-ResumeInterruptedCdcEnable`, which reuses the generation that record names and asserts the
+initial-provisioning evidence the control plane requires. The switch is explicit because the
+record cannot supply that evidence: it is written before the artifacts it governs exist and is
+removed only by retirement, so it also survives a *completed* enablement and every write
+admitted afterwards. Without it a plain rerun over an already-enabled target asserts nothing
+and is refused, which is the correct outcome. It is refused too when the store holds no live
+binding record to resume.
+
 Teardown is where the distinction matters:
 
 * `./start-local-dms.ps1 -d` (or `./bootstrap-local-dms.ps1 -d`) stops the stack and

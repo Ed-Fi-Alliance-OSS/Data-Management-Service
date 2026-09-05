@@ -122,6 +122,17 @@
     Root path of the durable CDC binding state store, defaulting to
     `eng/docker-compose/.cdc-state`. Requires `-EnableKafkaCdc`.
 
+.PARAMETER ResumeInterruptedCdcEnable
+    Assert that the live binding record this deployment holds belongs to an enablement that never
+    finished, and that this run is completing it. Requires `-EnableKafkaCdc`, and is refused when the
+    binding state store holds no live record to resume.
+
+    An explicit operator decision rather than something a rerun infers. The binding record is written
+    before the artifacts it governs exist and is removed only by retirement, so it survives a
+    completed enablement and every write admitted afterwards; its presence cannot establish that the
+    database was never opened to writes, which is what the initial-provisioning evidence asserts.
+    Without this switch a rerun over an already-enabled target asserts nothing and is refused.
+
 .PARAMETER AbandonCdcBindingState
     Remove the data volumes even when a CDC binding did not retire. A `-d -v` teardown otherwise
     fails on an unretired binding, because removing the volumes around a surviving binding record
@@ -251,6 +262,10 @@ param(
 
     # Root path of the durable CDC binding state store. Requires -EnableKafkaCdc.
     [string]$CdcBindingStatePath = "",
+
+    # Complete an enablement that never finished, rather than running this as a first enablement.
+    # Requires -EnableKafkaCdc. See .PARAMETER ResumeInterruptedCdcEnable.
+    [Switch]$ResumeInterruptedCdcEnable,
 
     # Abandon an unretired CDC binding rather than failing the destructive teardown. Requires -d -v.
     # See .PARAMETER AbandonCdcBindingState.

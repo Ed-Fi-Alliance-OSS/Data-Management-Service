@@ -577,6 +577,12 @@ function Invoke-BootstrapWrapper {
         # resolves a relative path against the caller's working directory and creates the root.
         [string]$CdcBindingStatePath = "",
 
+        # Asserts that the live binding record this deployment holds belongs to an enablement that
+        # never finished, and that this run is completing it. Forwarded to the CDC phase, which owns
+        # the rule; the wrapper never sets it for the caller, because a rerun cannot tell a completed
+        # enablement's record from an interrupted one's.
+        [Switch]$ResumeInterruptedCdcEnable,
+
         [Switch]$EnableSwaggerUI,
 
         [Switch]$EnableConfig,
@@ -686,6 +692,10 @@ function Invoke-BootstrapWrapper {
 
     if (-not [string]::IsNullOrWhiteSpace($CdcBindingStatePath) -and -not $EnableKafkaCdc) {
         throw "-CdcBindingStatePath requires -EnableKafkaCdc."
+    }
+
+    if ($ResumeInterruptedCdcEnable -and -not $EnableKafkaCdc) {
+        throw "-ResumeInterruptedCdcEnable requires -EnableKafkaCdc."
     }
 
     # Fail fast: validate -SchoolYearRange before any phase invocation. The format also gets parsed
@@ -1286,6 +1296,7 @@ function Invoke-BootstrapWrapper {
                 DatabaseEngine = $DatabaseEngine
                 DatabaseCreatedByThisRun = $cdcDataStoreVolumeWasAbsent
             }
+            if ($ResumeInterruptedCdcEnable) { $cdcArgs.ResumeInterruptedEnable = $true }
 
             $global:LASTEXITCODE = 0
             $cdcResult = & "$PSScriptRoot/enable-kafka-cdc.ps1" @cdcArgs

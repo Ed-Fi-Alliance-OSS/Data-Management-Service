@@ -2053,7 +2053,11 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                 # files a teardown must cover: local-config.yml is unconditional in
                 # start-local-dms.ps1's compose set. So it is excluded, like the other
                 # non-compose-shaping options.
-                'SeparateConfigDatabase'
+                'SeparateConfigDatabase',
+                # -ResumeInterruptedCdcEnable is an assertion the enable phase carries, so it shapes
+                # no compose file and has nothing to say to a teardown - unlike
+                # -AbandonCdcBindingState, which is a decision about the teardown itself.
+                'ResumeInterruptedCdcEnable'
             )
 
             # Completeness guard: every parameter the entry script declares must be classified here
@@ -2083,6 +2087,7 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                 -NoDataStore `
                 -AddSmokeTestCredentials `
                 -SeparateConfigDatabase `
+                -ResumeInterruptedCdcEnable `
                 -d
 
             $log = @(Get-Content -LiteralPath $callLog)

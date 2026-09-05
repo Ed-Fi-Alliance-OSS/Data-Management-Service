@@ -1070,6 +1070,20 @@ internal sealed class CdcSetupController(
             )
             .ConfigureAwait(false);
 
+        // Read after the barrier, so the retained range is compared against an offset it could have
+        // observed. The pass at step 5 recorded the range as it stood before this binding's connector
+        // existed, and every position past the barrier is necessarily past that.
+        CdcProviderSourceHistoryEvidence correlatedProviderHistory = await ReadCorrelatedProviderHistoryAsync(
+                request.OperationId,
+                request.ProviderSetup,
+                provider,
+                binding,
+                inventory,
+                connection,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
         CdcSourceHistoryClassificationResult sourceHistory = await sourcePositions
             .ObserveSourceHistoryAsync(
                 new(
@@ -1077,7 +1091,7 @@ internal sealed class CdcSetupController(
                     binding,
                     providerSetupObservation.ProviderSetup,
                     offsetObservation,
-                    providerSetupObservation.ProviderHistory
+                    correlatedProviderHistory
                 )
                 {
                     SqlServerSchemaHistory = schemaHistory,
@@ -2794,7 +2808,18 @@ internal sealed class CdcSetupController(
                     binding,
                     providerSetupObservation.ProviderSetup,
                     offsetObservation,
-                    providerSetupObservation.ProviderHistory
+                    // Read after the offset above, so the retained range is compared against a position
+                    // it could have observed rather than against the window as it stood beforehand.
+                    await ReadCorrelatedProviderHistoryAsync(
+                            request.OperationId,
+                            request.ProviderSetup,
+                            provider,
+                            binding,
+                            inventory,
+                            connection,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false)
                 )
                 {
                     SqlServerSchemaHistory = schemaHistory,
@@ -3368,7 +3393,20 @@ internal sealed class CdcSetupController(
                     binding,
                     providerSetupObservation.ProviderSetup,
                     offsetObservation,
-                    providerSetupObservation.ProviderHistory
+                    // Read after the offset above. The pass this status already ran preceded that read,
+                    // and a connector whose committed position advanced past the range it recorded would
+                    // be classified as a retained-history gap - which this path latches durably and
+                    // fences the connector for.
+                    await ReadCorrelatedProviderHistoryAsync(
+                            request.OperationId,
+                            request.ProviderSetup,
+                            provider,
+                            binding,
+                            inventory,
+                            connection,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false)
                 )
                 {
                     SqlServerSchemaHistory = schemaHistory,
@@ -4023,10 +4061,16 @@ internal sealed class CdcSetupController(
 
             if (IsSameLogicalTarget(existing, candidate))
             {
+                // Two records are exempt from the second-generation rule, and each is exempt as the
+                // specific binding it is rather than as a generation number: the candidate's own
+                // record, which a retry names again, and the one generation a guarded replacement
+                // fenced before entering the sequence. Instance key is compared here for that reason
+                // even though it is not part of the target identity - a record at the same generation
+                // under another instance key is a different binding, not either of these two.
                 if (
                     !secondGeneration.RefusesAnother
-                    || existing.Generation == candidate.Generation
-                    || existing.Generation == secondGeneration.FencedGeneration
+                    || existing.ToBindingIdentity() == candidate.ToBindingIdentity()
+                    || existing.ToBindingIdentity() == FencedBindingIdentity(candidate, secondGeneration)
                 )
                 {
                     continue;
@@ -4070,10 +4114,40 @@ internal sealed class CdcSetupController(
         return CdcBindingConflict.None;
     }
 
+    /// <summary>
+    /// Whether two bindings name the same logical CDC target.
+    /// </summary>
+    /// <remarks>
+    /// The design owns this identity and defines it as <c>(deployment key, tenant key, DataStoreId)</c>;
+    /// the deployment key is the scope of the listing this is applied to, so the two remaining
+    /// coordinates are what is compared here.
+    ///
+    /// <c>instanceKey</c> is deliberately not one of them. It is the deployment-controlled Kafka-safe
+    /// token the governed artifact names are rendered from, validated only for shape and with no tie to
+    /// <c>dataStoreId</c>, so including it let a caller that renamed it walk past the rule this feeds:
+    /// with the target repointed at another physical database, the same-target check missed on the
+    /// instance key and the same-source check missed on the fingerprint, and a plain enable started a
+    /// second publisher without fencing the live one.
+    /// </remarks>
     private static bool IsSameLogicalTarget(CdcBinding existing, CdcBinding candidate) =>
         string.Equals(existing.TenantKey, candidate.TenantKey, StringComparison.Ordinal)
-        && string.Equals(existing.DataStoreId, candidate.DataStoreId, StringComparison.Ordinal)
-        && string.Equals(existing.InstanceKey, candidate.InstanceKey, StringComparison.Ordinal);
+        && string.Equals(existing.DataStoreId, candidate.DataStoreId, StringComparison.Ordinal);
+
+    /// <summary>
+    /// The binding a guarded source replacement fenced before entering the enablement sequence: the
+    /// candidate's own binding at the generation the caller stopped. Null for a plain enable, which
+    /// fences nothing.
+    /// </summary>
+    private static CdcBindingIdentity? FencedBindingIdentity(
+        CdcBinding candidate,
+        CdcSecondGenerationRule secondGeneration
+    ) =>
+        secondGeneration.FencedGeneration is { } fencedGeneration
+            ? candidate.ToBindingIdentity() with
+            {
+                Generation = fencedGeneration,
+            }
+            : null;
 
     /// <summary>
     /// Whether a live binding of the same logical target at another generation refuses the operation,
@@ -4226,6 +4300,57 @@ internal sealed class CdcSetupController(
 
             return TimedOutProviderSetup(setupRequest, budget);
         }
+    }
+
+    /// <summary>
+    /// Provider source-history evidence read for the connector offset it is about to be classified
+    /// against, taken from a validate-only pass of its own.
+    /// </summary>
+    /// <remarks>
+    /// The retained range is a moving window and the committed offset is a moving position, so the
+    /// classifier's comparison only means anything when the history is at least as new as the offset.
+    /// The earlier validate-only pass each caller already ran cannot supply that: on enablement it runs
+    /// before the connector is registered, so its recorded PostgreSQL <c>confirmed_flush_lsn</c> and
+    /// SQL Server maximum LSN cannot reflect progress the connector had not made yet, and an offset
+    /// past that recorded maximum reads as a retained-history gap - a terminal loss the status path
+    /// latches durably and fences the connector for. On status and adoption the same pass runs before
+    /// the offset read and leaves the narrower form of the same race.
+    ///
+    /// So the history the classifier decides on is read here, after the offset. The earlier pass keeps
+    /// its own job unchanged: it is the evidence the provider-setup step reports and the gate that must
+    /// pass before any connector is registered, and only the history half is re-read.
+    ///
+    /// A refresh that fails or exhausts its budget observes no artifacts, which maps to an unknown
+    /// artifact state and an unknown retained range - continuity unknown, no incident, no fence. That
+    /// is the intended failure: evidence that could not be re-read is never a proved loss, and it is
+    /// never the stale evidence either.
+    /// </remarks>
+    private async Task<CdcProviderSourceHistoryEvidence> ReadCorrelatedProviderHistoryAsync(
+        string operationId,
+        CdcProviderSetupInputs setupInputs,
+        CoreCdc.CdcProvider provider,
+        CdcBinding binding,
+        CdcArtifactInventory inventory,
+        DbConnection connection,
+        CancellationToken cancellationToken
+    )
+    {
+        CdcProviderSetupResult refreshed = await SetupProviderWithinBudgetAsync(
+                ProviderSetupRequest(
+                    setupInputs,
+                    provider,
+                    binding.PhysicalSourceFingerprint,
+                    inventory,
+                    connection,
+                    DdlCdc.CdcProviderSetupMode.ValidateOnly
+                ),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return CdcProviderSetupResultMapper
+            .MapValidateOnlyResult(operationId, timeProvider.GetUtcNow(), binding, refreshed)
+            .ProviderHistory;
     }
 
     /// <summary>

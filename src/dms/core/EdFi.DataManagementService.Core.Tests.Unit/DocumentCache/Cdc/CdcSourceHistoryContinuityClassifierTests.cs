@@ -421,6 +421,64 @@ public class Given_CdcSourceHistoryContinuityClassifier
 
     [TestCase(CdcProvider.Postgresql)]
     [TestCase(CdcProvider.SqlServer)]
+    public void It_reports_unknown_without_incident_for_a_snapshot_connector_offset(CdcProvider provider)
+    {
+        CdcBinding binding = CdcContinuityFixture.CreateBinding(provider);
+        CdcSourceHistoryClassificationInput baselineInput = CdcContinuityFixture.CreateInput(binding);
+
+        CdcSourceHistoryClassificationResult result = CdcSourceHistoryContinuityClassifier.Evaluate(
+            baselineInput with
+            {
+                ConnectorOffset = CdcContinuityFixture.ConnectorOffset(
+                    binding,
+                    CdcConnectorOffsetMatchResult.Exact,
+                    isSnapshot: true
+                ),
+            }
+        );
+
+        result.Observation.Continuity.Should().Be(CdcSourceHistoryContinuity.Unknown);
+        result.Observation.IncidentFailureCategory.Should().BeNull();
+        result
+            .IncidentCandidate.Should()
+            .BeNull("a snapshot offset is phase progress, and latching closes the enable retry");
+        result
+            .Observation.Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CdcDiagnosticCategory.StatusObservationUnavailable
+                && diagnostic.Path == "$.connectorOffset.isSnapshot"
+            );
+        ValidateObservation(result.Observation, binding).Succeeded.Should().BeTrue();
+    }
+
+    [Test]
+    public void It_reports_unknown_for_a_snapshot_offset_even_on_an_established_stream()
+    {
+        // The published stream is what makes every other loss here terminal. A snapshot offset stays
+        // non-terminal anyway: it says the connector has not reached streaming, never that a position
+        // it already held is unrecoverable, and the fence a Lost classification drives is irreversible.
+        CdcBinding binding = CdcContinuityFixture.CreateBinding(CdcProvider.Postgresql);
+        CdcSourceHistoryClassificationInput baselineInput = CdcContinuityFixture.CreateInput(binding);
+
+        CdcSourceHistoryClassificationResult result = CdcSourceHistoryContinuityClassifier.Evaluate(
+            baselineInput with
+            {
+                PublicTopicPublication = new(true, true),
+                ConnectorOffset = CdcContinuityFixture.ConnectorOffset(
+                    binding,
+                    CdcConnectorOffsetMatchResult.Exact,
+                    isSnapshot: true
+                ),
+            }
+        );
+
+        result.Observation.Continuity.Should().Be(CdcSourceHistoryContinuity.Unknown);
+        result.IncidentCandidate.Should().BeNull();
+        ValidateObservation(result.Observation, binding).Succeeded.Should().BeTrue();
+    }
+
+    [TestCase(CdcProvider.Postgresql)]
+    [TestCase(CdcProvider.SqlServer)]
     public void It_latches_source_partition_hash_mismatch_from_exact_match_connector_offset(
         CdcProvider provider
     )
@@ -841,7 +899,7 @@ public class Given_CdcContinuityIncidentClassifier
                     ConnectorOffset = CdcContinuityFixture.ConnectorOffset(
                         input.Binding,
                         CdcConnectorOffsetMatchResult.Exact,
-                        isSnapshot: true
+                        isNull: true
                     ),
                 }
             )
@@ -1010,7 +1068,8 @@ internal static class CdcContinuityFixture
         CdcBinding binding,
         CdcConnectorOffsetMatchResult matchResult = CdcConnectorOffsetMatchResult.Exact,
         bool isSnapshot = false,
-        string? sourcePartitionHash = null
+        string? sourcePartitionHash = null,
+        bool isNull = false
     )
     {
         CdcArtifactInventory inventory = CdcArtifactNameGenerator.RecoverFromBinding(binding).Inventory!;
@@ -1028,7 +1087,7 @@ internal static class CdcContinuityFixture
             matchResult,
             resolvedSourcePartitionHash,
             isSnapshot,
-            false,
+            isNull,
             binding.Provider == CdcProvider.Postgresql ? 0x16B6C51 : null,
             binding.Provider == CdcProvider.SqlServer ? "00000023:00000138:0002" : null,
             binding.Provider == CdcProvider.SqlServer ? "00000023:00000139:0001" : null,

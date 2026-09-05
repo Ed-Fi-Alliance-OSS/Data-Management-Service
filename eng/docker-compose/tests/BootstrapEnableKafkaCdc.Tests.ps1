@@ -744,12 +744,12 @@ Describe "DMS-1323 bootstrap CDC phase" {
             $reusedArguments | Should -Not -Contain "--write-admission"
         }
 
-        It "supplies the evidence flags when the run reissues an enable that already wrote its binding" {
+        It "supplies the evidence flags when the operator asserts a reissue of an interrupted enable" {
             # The documented retry after an interrupted initial setup. The volume observation is
             # false by construction on a rerun - the engine's init hook created the database on the
-            # first one - so without the live binding record as a second source the reissue carries
-            # no tokens, the command surface refuses it at parse time, and the control plane's retry
-            # classifier is never entered. Reusing the generation is not on its own enough.
+            # first one - so the reissue carries no tokens unless the operator asserts it, the
+            # command surface refuses it at parse time, and the control plane's retry classifier is
+            # never entered. Reusing the generation is not on its own enough.
             $root = Join-Path ([System.IO.Path]::GetTempPath()) "dms-1323-resume-$([System.Guid]::NewGuid().ToString('n'))"
             try {
                 $bindings = Join-Path (Join-Path (Join-Path $root "bindings") "local") "ds1"
@@ -763,6 +763,7 @@ Describe "DMS-1323 bootstrap CDC phase" {
                     -DataStoreId 1 `
                     -DatabaseEngine "postgresql" `
                     -DatabaseCreatedByThisRun $false `
+                    -ResumeInterruptedEnable `
                     -SourceDatabaseName "edfi_datamanagementservice" `
                     -BindingStateRoot $root
 
@@ -776,6 +777,55 @@ Describe "DMS-1323 bootstrap CDC phase" {
             finally {
                 Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
             }
+        }
+
+        It "withholds the evidence flags for a live binding record the operator did not assert a reissue of" {
+            # The record alone cannot carry the claim. It is written before the artifacts it governs
+            # exist and is removed only by retirement, so it survives a completed enablement and every
+            # write admitted afterwards - and a database that was admitted and later emptied presents
+            # to the control plane's retry classifier exactly as one that was never opened. A plain
+            # rerun over an already-enabled target therefore asserts nothing, and the command surface
+            # refuses it. The generation is still the record's own: the allocator is unchanged.
+            $root = Join-Path ([System.IO.Path]::GetTempPath()) "dms-1323-noresume-$([System.Guid]::NewGuid().ToString('n'))"
+            try {
+                $bindings = Join-Path (Join-Path (Join-Path $root "bindings") "local") "ds1"
+                New-Item -ItemType Directory -Force -Path $bindings | Out-Null
+                "{}" | Set-Content -LiteralPath (Join-Path $bindings "3.json") -Encoding utf8
+
+                $rerunArguments = Get-CdcEnableArgument `
+                    -ComposeProjectName "dms-local" `
+                    -EnvironmentFile "/tmp/.env.derived" `
+                    -TenantKey "" `
+                    -DataStoreId 1 `
+                    -DatabaseEngine "postgresql" `
+                    -DatabaseCreatedByThisRun $false `
+                    -SourceDatabaseName "edfi_datamanagementservice" `
+                    -BindingStateRoot $root
+
+                $rerunArguments | Should -Not -Contain "--database-creation-mode"
+                $rerunArguments | Should -Not -Contain "--write-admission"
+                ($rerunArguments -join " ") | Should -BeLike "*--generation 3*"
+            }
+            finally {
+                Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "refuses an asserted reissue when the store holds no live binding record to resume" {
+            # The assertion has to be consistent with the store. Asserting initial provisioning for a
+            # target this deployment never bound is the shape the switch must not open.
+            {
+                Get-CdcEnableArgument `
+                    -ComposeProjectName "dms-local" `
+                    -EnvironmentFile "/tmp/.env.derived" `
+                    -TenantKey "" `
+                    -DataStoreId 1 `
+                    -DatabaseEngine "postgresql" `
+                    -DatabaseCreatedByThisRun $false `
+                    -ResumeInterruptedEnable `
+                    -SourceDatabaseName "edfi_datamanagementservice" `
+                    -BindingStateRoot (New-AbsentStateRoot)
+            } | Should -Throw "*holds no live binding record*"
         }
 
         It "runs the provider setup as the engine's own administrative principal" {

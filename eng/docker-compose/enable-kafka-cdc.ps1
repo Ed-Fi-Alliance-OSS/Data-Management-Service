@@ -55,6 +55,13 @@ param(
     [bool]
     $DatabaseCreatedByThisRun,
 
+    # The operator's assertion that the live binding record for this target belongs to an enablement
+    # that never finished. Also evidence rather than a preference, and asserted rather than observed:
+    # the record survives a completed enablement, so its presence cannot establish that the database
+    # was never opened to writes. cdc-enable.psm1 owns the rule.
+    [switch]
+    $ResumeInterruptedEnable,
+
     [string]
     $SourceDatabaseName = "",
 
@@ -73,5 +80,6 @@ Invoke-CdcEnablePhase `
     -DataStoreId $DataStoreId `
     -DatabaseEngine $DatabaseEngine `
     -DatabaseCreatedByThisRun $DatabaseCreatedByThisRun `
+    -ResumeInterruptedEnable:$ResumeInterruptedEnable `
     -SourceDatabaseName $SourceDatabaseName `
     -HealthTimeoutSeconds $HealthTimeoutSeconds
