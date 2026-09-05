@@ -111,7 +111,8 @@ try
         serviceProvider,
         Console.Out,
         Console.Error,
-        processCancellationSource.Token
+        processCancellationSource.Token,
+        Console.In
     );
     return exitCode;
 }

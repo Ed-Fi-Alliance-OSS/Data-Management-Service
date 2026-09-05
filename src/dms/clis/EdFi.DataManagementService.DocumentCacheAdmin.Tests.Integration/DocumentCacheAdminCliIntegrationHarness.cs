@@ -1459,6 +1459,13 @@ internal sealed class DocumentCacheAdminCliProcessHarness : IAsyncDisposable
     private const string ConfigurationServiceScope = "edfi_admin_api/full_access";
     private const string ConfigurationServiceSecret = "secret-from-environment";
     private const string EncryptionKey = "DocumentCacheAdminCliHarnessEncryptionKey";
+
+    // The governed-artifact identity and database principals a cdc verb resolves from configuration.
+    // Opaque tokens: nothing here is provisioned, and the one cdc verb this harness runs stops at the
+    // binding state store before any artifact is named against a broker or a provider.
+    internal const string CdcTopicPrefix = "edfi.dms";
+    internal const string CdcSetupPrincipal = "postgres";
+    internal const string CdcConnectorPrincipal = "dms_connector";
     private static readonly JsonSerializerOptions _writeOptions = new() { WriteIndented = true };
 
     private readonly string _tempDirectory;
@@ -1621,6 +1628,19 @@ internal sealed class DocumentCacheAdminCliProcessHarness : IAsyncDisposable
                     {
                         ["StatusObservationTimeout"] = "00:00:01",
                         ["EndpointTimeout"] = "00:00:05",
+                    },
+                    // The deployment facts a cdc verb reads from configuration rather than from its
+                    // command line, mirroring what cdc-setup.yml supplies to the shipped one-shot
+                    // container. Inert for every non-cdc command: the control options are validated
+                    // on first resolution, which only a cdc verb reaches.
+                    ["Cdc"] = new JsonObject
+                    {
+                        ["TopicPrefix"] = CdcTopicPrefix,
+                        ["PartitionCount"] = 1,
+                        ["ConnectWorkerKey"] = "1",
+                        ["ConnectOffsetStorageTopic"] = "debezium_source_offset",
+                        ["SetupPrincipal"] = CdcSetupPrincipal,
+                        ["ConnectorPrincipal"] = CdcConnectorPrincipal,
                     },
                 },
             },

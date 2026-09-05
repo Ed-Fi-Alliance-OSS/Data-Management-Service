@@ -418,9 +418,9 @@ exit $ExitCode
 
                 ([regex]::Matches($content, '"kafka\.yml"')).Count | Should -Be 1
                 $content | Should -Match '\$enableKafkaInfrastructure\s*=\s*\$EnableKafka\s+-or\s+\$EnableKafkaUI'
-                # The MSSQL relational path does not use Debezium CDC, so start-local-dms.ps1 additionally
-                # gates the kafka.yml/kafka-ui.yml compose files on $DatabaseEngine -eq "postgresql"; that
-                # extra clause is optional here so both start-local-dms.ps1 and start-published-dms.ps1 match.
+                # Kafka selection is engine-neutral in start-local-dms.ps1: the deployment-owned CDC
+                # workflow captures from SQL Server as well as PostgreSQL. The optional engine clause is
+                # retained here only so a start script that still carries one would also match.
                 $content | Should -Match 'if \(\$enableKafkaInfrastructure( -and \$DatabaseEngine -eq "postgresql")?\) \{\s*\$files \+= @\("-f", "kafka\.yml"\)\s*\}'
                 $content | Should -Match 'if \(\$EnableKafkaUI( -and \$DatabaseEngine -eq "postgresql")?\) \{\s*\$files \+= @\("-f", "kafka-ui\.yml"\)\s*\}'
                 $content | Should -Match 'docker compose \$files --env-file \$EnvironmentFile -p dms-(local|published) up \$upArgs kafka kafka-postgresql-source'

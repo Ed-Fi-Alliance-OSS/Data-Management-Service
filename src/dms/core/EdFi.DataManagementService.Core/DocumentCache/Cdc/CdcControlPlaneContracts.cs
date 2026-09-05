@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+﻿// SPDX-License-Identifier: Apache-2.0
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
@@ -33,6 +33,14 @@ public sealed record CdcBindingLifecycleListResult(
     [property: JsonRequired] IReadOnlyList<CdcDiagnostic> Diagnostics
 ) : ICdcJsonContract;
 
+public sealed record CdcRetirementListResult(
+    [property: JsonRequired] int ContractVersion,
+    [property: JsonRequired] DateTimeOffset ObservedAt,
+    [property: JsonRequired] CdcControlPlaneOperationStatus Status,
+    [property: JsonRequired] IReadOnlyList<CdcRetirement> Retirements,
+    [property: JsonRequired] IReadOnlyList<CdcDiagnostic> Diagnostics
+) : ICdcJsonContract;
+
 public interface ICdcBindingLifecycleService
 {
     Task<CdcBindingLifecycleResult> CreateBindingIfAbsentAsync(
@@ -51,6 +59,15 @@ public interface ICdcBindingLifecycleService
     );
 
     Task<CdcBindingLifecycleListResult> ListBindingsAsync(
+        string deploymentKey,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Every generation this deployment has retired. Retirement deletes the binding record, so this is
+    /// the only durable trace that a target was once published downstream.
+    /// </summary>
+    Task<CdcRetirementListResult> ListRetirementsAsync(
         string deploymentKey,
         CancellationToken cancellationToken = default
     );
@@ -195,6 +212,13 @@ public sealed record CdcSourceHistoryObservationRequest(
     public CdcIncident? LatchedIncident { get; init; }
 
     public CdcSqlServerSchemaHistoryEvidence? SqlServerSchemaHistory { get; init; }
+
+    /// <summary>
+    /// Whether the binding's public topic proves an established stream. Provider-independent, unlike
+    /// <see cref="SqlServerSchemaHistory"/>: every binding has a public topic, and it is what decides
+    /// whether an absent connector offset is a terminal loss or an enablement that has not finished.
+    /// </summary>
+    public CdcPublicTopicPublicationEvidence? PublicTopicPublication { get; init; }
 
     public string? ExpectedConnectSourcePartitionHash { get; init; }
 }

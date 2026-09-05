@@ -465,6 +465,7 @@ internal static class CdcProviderManifestEmitter
             CdcProviderArtifactKind.Grant => "grant",
             CdcProviderArtifactKind.SourceFingerprint => "source_fingerprint",
             CdcProviderArtifactKind.ProviderHistory => "provider_history",
+            CdcProviderArtifactKind.SetupPrincipalIdentity => "setup_principal_identity",
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unsupported CDC artifact kind."),
         };
 

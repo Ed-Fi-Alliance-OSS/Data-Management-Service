@@ -161,6 +161,20 @@ Describe "DocumentCacheAdmin package target" {
         $pushPackage.Extent.Text | Should -BeLike '*dotnet nuget push $PackageFile --api-key $NuGetApiKey --source $EdFiNuGetFeed*'
     }
 
+    It "smoke-tests the cdc verb group on the installed tool" {
+        $smokeScriptText = Get-Content -LiteralPath $script:smokeScriptPath -Raw
+
+        $smokeScriptText | Should -BeLike '*@("cdc", "--help")*'
+        $smokeScriptText | Should -BeLike '*@("cdc", "enable", "--help")*'
+
+        foreach ($cdcVerbName in @("enable", "status", "restart", "adopt", "replace-source", "retire")) {
+            $smokeScriptText | Should -BeLike "*`"$cdcVerbName`"*"
+        }
+
+        $smokeScriptText | Should -BeLike '*--database-creation-mode*'
+        $smokeScriptText | Should -BeLike '*--write-admission*'
+    }
+
     It "refuses to delete an existing smoke tool path without the package smoke marker" {
         $toolPath = Join-Path ([System.IO.Path]::GetTempPath()) "dms-document-cache-shared-$([Guid]::NewGuid().ToString('N'))"
         $keepPath = Join-Path $toolPath "keep.txt"

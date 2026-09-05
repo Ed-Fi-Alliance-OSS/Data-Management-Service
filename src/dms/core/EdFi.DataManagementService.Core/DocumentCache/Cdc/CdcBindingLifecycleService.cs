@@ -102,6 +102,53 @@ internal sealed class CdcBindingLifecycleService(ICdcBindingStateStore stateStor
         };
     }
 
+    public async Task<CdcRetirementListResult> ListRetirementsAsync(
+        string deploymentKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(deploymentKey);
+
+        CdcListRetirementsStateStoreResult result = await _stateStore
+            .ListRetirementsAsync(deploymentKey, cancellationToken)
+            .ConfigureAwait(false);
+
+        DateTimeOffset observedAt = ObservedAt();
+        return result switch
+        {
+            CdcListRetirementsStateStoreResult.Listed listed => new(
+                CdcJsonContract.CurrentContractVersion,
+                observedAt,
+                CdcControlPlaneOperationStatus.Succeeded,
+                listed.Retirements,
+                []
+            ),
+            CdcListRetirementsStateStoreResult.StateStoreFailure failure => new(
+                CdcJsonContract.CurrentContractVersion,
+                observedAt,
+                failure.Failure.Kind == CdcStateStoreFailureKind.InvalidOperation
+                    ? CdcControlPlaneOperationStatus.InvalidOperation
+                    : CdcControlPlaneOperationStatus.StateStoreUnavailable,
+                [],
+                failure.Failure.Diagnostics
+            ),
+            _ => new(
+                CdcJsonContract.CurrentContractVersion,
+                observedAt,
+                CdcControlPlaneOperationStatus.StateStoreUnavailable,
+                [],
+                [
+                    new(
+                        CdcDiagnosticCategory.LocalStateUnavailable,
+                        observedAt,
+                        "$",
+                        "CDC retirement list returned an unsupported result."
+                    ),
+                ]
+            ),
+        };
+    }
+
     public async Task<CdcBindingLifecycleResult> LatchSourceHistoryLossAsync(
         CdcIncident incident,
         CancellationToken cancellationToken = default

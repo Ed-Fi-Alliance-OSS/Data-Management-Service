@@ -173,6 +173,49 @@ public static class CdcArtifactNameGenerator
         );
     }
 
+    /// <summary>
+    /// Whether <paramref name="topicName"/> is the public topic of some generation of the target
+    /// identified by <paramref name="topicPrefix"/> and <paramref name="instanceKey"/>.
+    /// </summary>
+    /// <remarks>
+    /// Generations of one target are deliberately long-lived together: a guarded source replacement
+    /// retains the generation it supersedes until an operator retires it, and a stable consumer reads
+    /// both. Deciding that a topic belongs to this target rather than to another instance is therefore
+    /// something the ACL isolation rule needs, and the answer is a property of the naming rule above,
+    /// which is why it is answered here rather than by a pattern written at the call site.
+    ///
+    /// Only the public topic matches. The progress and schema-history topics extend the public name
+    /// with their own suffixes, and neither is a topic any consumer principal may hold a grant on.
+    /// </remarks>
+    public static bool IsTargetPublicTopicName(string topicPrefix, string instanceKey, string topicName)
+    {
+        ArgumentNullException.ThrowIfNull(topicPrefix);
+        ArgumentNullException.ThrowIfNull(instanceKey);
+        ArgumentNullException.ThrowIfNull(topicName);
+
+        string prefix = $"{topicPrefix}.instance.{instanceKey}-g";
+        const string Suffix = ".documents.v1";
+
+        if (
+            !topicName.StartsWith(prefix, StringComparison.Ordinal)
+            || !topicName.EndsWith(Suffix, StringComparison.Ordinal)
+            || topicName.Length <= prefix.Length + Suffix.Length
+        )
+        {
+            return false;
+        }
+
+        string generation = topicName[prefix.Length..^Suffix.Length];
+
+        return long.TryParse(
+                generation,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out long parsedGeneration
+            )
+            && parsedGeneration >= 1;
+    }
+
     public static CdcArtifactNameResult RecoverFromBinding(CdcBinding binding)
     {
         ArgumentNullException.ThrowIfNull(binding);

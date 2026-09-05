@@ -232,6 +232,7 @@ public class Given_CdcBindingStateStore
     {
         private readonly Dictionary<CdcBindingIdentity, string> _bindingJsonByIdentity = [];
         private readonly Dictionary<CdcBindingIdentity, CdcIncident> _incidentByIdentity = [];
+        private readonly List<CdcRetirement> _retirements = [];
 
         public bool FailAllOperations { get; set; }
 
@@ -354,6 +355,25 @@ public class Given_CdcBindingStateStore
             );
         }
 
+        public Task<CdcListRetirementsStateStoreResult> ListRetirementsAsync(
+            string deploymentKey,
+            CancellationToken cancellationToken
+        )
+        {
+            if (FailAllOperations)
+            {
+                return Task.FromResult<CdcListRetirementsStateStoreResult>(
+                    new CdcListRetirementsStateStoreResult.StateStoreFailure(CreateFailure())
+                );
+            }
+
+            return Task.FromResult<CdcListRetirementsStateStoreResult>(
+                new CdcListRetirementsStateStoreResult.Listed([
+                    .. _retirements.Where(retirement => retirement.DeploymentKey == deploymentKey),
+                ])
+            );
+        }
+
         public Task<CdcLatchIncidentStateStoreResult> LatchSourceHistoryLossAsync(
             CdcIncident incident,
             CancellationToken cancellationToken
@@ -442,6 +462,19 @@ public class Given_CdcBindingStateStore
 
             CdcCompleteBindingIdentity completeIdentity = verifiedCleanupProof.BindingIdentity;
             CdcBindingIdentity identity = completeIdentity.ToBindingIdentity();
+
+            // The real store records the retirement before it removes the binding, so the fake does
+            // too: a test that deletes and then lists must see what production would leave behind.
+            if (_bindingJsonByIdentity.TryGetValue(identity, out string? retiringJson))
+            {
+                _retirements.Add(
+                    CdcRetirement.FromBinding(
+                        CdcJsonContract.Deserialize<CdcBinding>(retiringJson).Contract!,
+                        DateTimeOffset.UnixEpoch
+                    )
+                );
+            }
+
             bool removedBinding = _bindingJsonByIdentity.Remove(identity);
             _incidentByIdentity.Remove(identity);
 

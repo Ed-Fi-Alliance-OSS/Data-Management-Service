@@ -345,11 +345,33 @@ try {
     Assert-RequiredText -Text $rootHelp -Expected "status" -Context "$toolCommandName --help"
     Assert-RequiredText -Text $rootHelp -Expected "rebuild-online" -Context "$toolCommandName --help"
 
+    Assert-RequiredText -Text $rootHelp -Expected "cdc" -Context "$toolCommandName --help"
+
     $rebuildHelp = Invoke-CapturedNativeCommand -FilePath $toolExecutablePath -Arguments @("rebuild-online", "--help")
     Assert-RequiredText -Text $rebuildHelp -Expected "Usage:" -Context "$toolCommandName rebuild-online --help"
     Assert-RequiredText -Text $rebuildHelp -Expected "$toolCommandName rebuild-online" -Context "$toolCommandName rebuild-online --help"
     Assert-RequiredText -Text $rebuildHelp -Expected "--confirm" -Context "$toolCommandName rebuild-online --help"
     Assert-RequiredText -Text $rebuildHelp -Expected "--command-timeout-seconds" -Context "$toolCommandName rebuild-online --help"
+
+    # The cdc verb group carries the Backend.Cdc.Control project reference into the packaged tool, so
+    # its help surface is the packaging evidence that the reference resolved in the installed package.
+    $cdcHelp = Invoke-CapturedNativeCommand -FilePath $toolExecutablePath -Arguments @("cdc", "--help")
+    Assert-RequiredText -Text $cdcHelp -Expected "Usage:" -Context "$toolCommandName cdc --help"
+    Assert-RequiredText -Text $cdcHelp -Expected "$toolCommandName cdc" -Context "$toolCommandName cdc --help"
+
+    foreach ($cdcVerbName in @("enable", "status", "restart", "adopt", "replace-source", "retire")) {
+        Assert-RequiredText -Text $cdcHelp -Expected $cdcVerbName -Context "$toolCommandName cdc --help"
+    }
+
+    $cdcEnableHelp = Invoke-CapturedNativeCommand `
+        -FilePath $toolExecutablePath `
+        -Arguments @("cdc", "enable", "--help")
+    Assert-RequiredText -Text $cdcEnableHelp -Expected "Usage:" -Context "$toolCommandName cdc enable --help"
+    Assert-RequiredText -Text $cdcEnableHelp -Expected "$toolCommandName cdc enable" -Context "$toolCommandName cdc enable --help"
+    Assert-RequiredText -Text $cdcEnableHelp -Expected "--database-creation-mode" -Context "$toolCommandName cdc enable --help"
+    Assert-RequiredText -Text $cdcEnableHelp -Expected "--write-admission" -Context "$toolCommandName cdc enable --help"
+    Assert-RequiredText -Text $cdcEnableHelp -Expected "--cdc-binding-state-path" -Context "$toolCommandName cdc enable --help"
+    Assert-RequiredText -Text $cdcEnableHelp -Expected "--durability-profile" -Context "$toolCommandName cdc enable --help"
 
     $bundledSchemaStatus = Invoke-WithProcessEnvironment `
         -Values @{

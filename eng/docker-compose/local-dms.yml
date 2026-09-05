@@ -80,6 +80,14 @@ services:
       DataManagement__DocumentCache__Status__StatusObservationTimeout: ${DMS_DOCUMENTCACHE_STATUS_OBSERVATION_TIMEOUT:-00:00:05}
       DataManagement__DocumentCache__Status__EndpointTimeout: ${DMS_DOCUMENTCACHE_STATUS_ENDPOINT_TIMEOUT:-00:00:30}
       DataManagement__DocumentCache__Status__RequiredRole: ${DMS_DOCUMENTCACHE_STATUS_REQUIRED_ROLE:-}
+      # Deployment-owned CDC projection target. Both are blank unless the bootstrap CDC opt-in
+      # wrote them, and a blank tenant/data-store pair binds to no projection target at all, so a
+      # non-CDC run is unaffected. Targets binds through indexed keys and this wiring carries
+      # exactly one, matching the design's one connector per instance database - it is not
+      # multi-target support. The status endpoint's required role the CDC opt-in also writes is
+      # the DocumentCache Status__RequiredRole setting above: one setting, one variable.
+      DataManagement__DocumentCache__Targets__0__TenantKey: ${DMS_CDC_TARGET_TENANT_KEY:-}
+      DataManagement__DocumentCache__Targets__0__DataStoreId: ${DMS_CDC_TARGET_DATA_STORE_ID:-}
       # JWT Authentication
       JwtAuthentication__Authority: ${DMS_JWT_AUTHORITY:-http://dms-keycloak:8080/realms/edfi}
       JwtAuthentication__Audience: ${DMS_JWT_AUDIENCE:-account}

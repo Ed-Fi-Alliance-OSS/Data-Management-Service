@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.Cdc.Control;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -125,6 +126,34 @@ public sealed class Given_DocumentCacheAdminServiceRegistration
             .Which.Should()
             .Be(DocumentCacheTargetKey.Create(string.Empty, 1));
         serviceProvider.GetRequiredService<IOptions<AppSettings>>().Value.MaximumPageSize.Should().Be(0);
+    }
+
+    /// <summary>
+    /// The offline activation, offline deactivation, and cache-ahead recovery commands reject every
+    /// invocation for as long as the DocumentCache runtime's own default provider answers with the
+    /// unknown status. The CDC control plane supplies the durable binding evidence instead, but only
+    /// because it is registered ahead of that default, so the shipped composition is pinned here
+    /// rather than the ordering being left to the reading of one file.
+    /// </summary>
+    [TestCase("postgresql")]
+    [TestCase("mssql")]
+    public void It_answers_the_downstream_publication_history_gate_from_durable_cdc_evidence(string datastore)
+    {
+        IServiceCollection services = new ServiceCollection();
+
+        services.AddLogging();
+        services.AddDocumentCacheAdminRuntimeServices(
+            CreateConfiguration(datastore),
+            new LoggerConfiguration().CreateLogger(),
+            DocumentCacheTargetKey.Create(string.Empty, 1)
+        );
+
+        services
+            .Single(descriptor =>
+                descriptor.ServiceType == typeof(IDocumentCacheDownstreamPublicationHistoryProvider)
+            )
+            .ImplementationType.Should()
+            .Be<CdcDownstreamPublicationHistoryProvider>(datastore);
     }
 
     [Test]

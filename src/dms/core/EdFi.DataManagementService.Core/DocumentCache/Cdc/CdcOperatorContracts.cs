@@ -84,6 +84,8 @@ public enum CdcAdoptionVerificationKind
     ConnectorConfig,
     KafkaTopics,
     KafkaAcls,
+    KafkaPolicy,
+    ConnectOffsetStore,
     ConnectOffsets,
     SourceHistoryContinuity,
 }
@@ -133,6 +135,54 @@ public enum CdcIncidentUnavailableFact
     ProviderRetainedRange,
     ConnectOffset,
     SchemaHistory,
+}
+
+/// <summary>
+/// The durable trace a retired binding generation leaves behind: this deployment did once publish this
+/// target's projection downstream, under this physical source.
+/// </summary>
+/// <remarks>
+/// A binding record is deleted by retirement, and its absence is therefore not evidence that a target
+/// was never published — only that it is not published now. The E18 offline read-acceleration toggle
+/// turns on exactly the opposite question, so retirement writes this record before it removes the
+/// binding and never removes it afterwards. A crash between the two leaves the retirement record
+/// without its binding, which reads as "was published, is not now" — the same answer a completed
+/// retirement gives, and the conservative one either way.
+///
+/// It carries the identity and the physical source rather than the governed artifact names: the
+/// artifacts are gone by the time it is written, and what outlives them is the fact of publication.
+/// </remarks>
+public sealed record CdcRetirement(
+    [property: JsonRequired] int Version,
+    [property: JsonRequired] string DeploymentKey,
+    [property: JsonRequired] string TenantKey,
+    [property: JsonRequired] string DataStoreId,
+    [property: JsonRequired] string InstanceKey,
+    [property: JsonRequired] long Generation,
+    [property: JsonRequired] string PhysicalSourceFingerprint,
+    [property: JsonRequired] DateTimeOffset RetiredAt,
+    [property: JsonRequired] int ContractVersion
+) : ICdcJsonContract
+{
+    public CdcBindingIdentity ToBindingIdentity() =>
+        new(DeploymentKey, TenantKey, DataStoreId, InstanceKey, Generation);
+
+    public static CdcRetirement FromBinding(CdcBinding binding, DateTimeOffset retiredAt)
+    {
+        ArgumentNullException.ThrowIfNull(binding);
+
+        return new(
+            binding.Version,
+            binding.DeploymentKey,
+            binding.TenantKey,
+            binding.DataStoreId,
+            binding.InstanceKey,
+            binding.Generation,
+            binding.PhysicalSourceFingerprint,
+            retiredAt.ToUniversalTime(),
+            binding.ContractVersion
+        );
+    }
 }
 
 public sealed record CdcBinding(
@@ -375,6 +425,49 @@ public sealed record CdcAdoptionVerificationResult
         get => _evidenceSummary;
         init => _evidenceSummary = CdcContractText.SanitizeRequiredEvidence(value);
     }
+}
+
+/// <summary>
+/// The diagnostic codes a refused retirement reports under, named here because the control plane
+/// writes them and the administrative CLI classifies the invocation from them.
+/// </summary>
+/// <remarks>
+/// The distinction they carry is what an automated caller does next. A retirement that refused before
+/// it changed anything is a request to correct, and reissuing it unchanged repeats a rejection; one
+/// that stopped partway has already removed governed artifacts, left the binding record naming what
+/// remains, and is completed by being reissued. Collapsing the two makes every operator mistake look
+/// like a half-finished teardown that retrying will resolve.
+/// </remarks>
+public static class CdcRetirementDiagnosticCodes
+{
+    /// <summary>A retirement refused before any governed artifact was touched.</summary>
+    public const string RefusedNoMutation = "retireRefused";
+
+    /// <summary>A retirement that began removing governed artifacts and did not finish.</summary>
+    public const string IncompleteRetryable = "retireIncomplete";
+}
+
+/// <summary>
+/// The diagnostic codes a restart that started nothing reports under, named here because the control
+/// plane writes them and the administrative CLI classifies the invocation from them.
+/// </summary>
+/// <remarks>
+/// Restart reports the shared status contract whether or not it acted, so the status alone does not
+/// say which happened: a connector that is not running reads the same when the restart was declined
+/// before it was issued, when the worker refused it, and when it was applied to a connector that
+/// failed afterwards. Only the first two leave the deployment untouched, and only they are the
+/// operator's to correct rather than an outcome to observe.
+/// </remarks>
+public static class CdcRestartDiagnosticCodes
+{
+    /// <summary>
+    /// A restart that was never issued, because source-history continuity was not proved or the
+    /// binding named no connector to act on.
+    /// </summary>
+    public const string NotAttempted = "restartNotAttempted";
+
+    /// <summary>A restart the Kafka Connect worker refused.</summary>
+    public const string NotApplied = "restartNotApplied";
 }
 
 public sealed record CdcCleanupProof(

@@ -1,0 +1,89 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# One-shot container the bootstrap CDC phase runs dms-document-cache in. It is never started by
+# `up`: the phase invokes it with `docker compose run --rm`, and the profile keeps it out of every
+# other compose command. It joins the dms network because that is the only place the instance
+# database, the broker, and Kafka Connect answer to the names they are registered under.
+#
+# It declares no depends_on deliberately. `docker compose run` starts a service's dependencies, and
+# the ordering this container needs - CMS reachable, DMS healthy and answering the DocumentCache
+# status endpoint, the broker and Connect worker up - is already established by the CDC phase
+# before it invokes this service. Declaring them here would let a bare `compose run` start a
+# partial stack the phase never gated.
+services:
+  cdc-setup:
+    image: ${DMS_CDC_SETUP_IMAGE:-ed-fi-document-cache-admin-local}
+    container_name: dms-cdc-setup
+    profiles:
+      - cdc
+    build:
+      context: ../../src/dms/
+      dockerfile: DocumentCacheAdmin.Dockerfile
+      additional_contexts:
+        parentdir: ../../src/
+    volumes:
+      # The durable binding state store. It outlives any one bootstrap run and is deliberately
+      # separate from the .bootstrap workspace, so it is mounted read-write from its own root.
+      #
+      # /state is named three times for one store and the three must agree: this mount target, the
+      # DMS_CDC_STATE_ROOT below that the image tightens, and the --cdc-binding-state-path the CDC
+      # phases pass from env-utility.psm1's Get-LocalCdcDeploymentPolicy. A Pester case in
+      # BootstrapEnableKafkaCdc.Tests.ps1 asserts all three resolve to the same path.
+      - ${DMS_CDC_BINDING_STATE_PATH:-./.cdc-state}:/state
+      # The same staged ApiSchema workspace the DMS container reads, so the provider-setup
+      # inventories are derived from the effective schema DMS itself is running.
+      - ${DMS_API_SCHEMA_MOUNT_SOURCE:-./.bootstrap/ApiSchema}:/app/ApiSchema:ro
+    environment:
+      # The bind-mounted store root, which the image's entrypoint clears the group- and other-write
+      # bits from before the tool runs. Docker Desktop presents any bind mount as world-writable
+      # whatever the host permissions are, and the binding state store refuses a shared-writable
+      # root, so without this every cdc verb fails at its first binding read. It is the mount target
+      # above, not the host path: the entrypoint acts inside the container.
+      DMS_CDC_STATE_ROOT: /state
+      AppSettings__Datastore: ${DMS_DATASTORE:-postgresql}
+      AppSettings__UseApiSchemaPath: ${USE_API_SCHEMA_PATH:-false}
+      AppSettings__ApiSchemaPath: ${API_SCHEMA_PATH:-}
+      AppSettings__MaximumPageSize: ${MAXIMUM_PAGE_SIZE:-500}
+      AppSettings__DefaultPartitionCount: ${DEFAULT_PARTITION_COUNT:-10}
+      AppSettings__MultiTenancy: ${DMS_MULTI_TENANCY:-false}
+      AppSettings__MaskRequestBodyInLogs: ${MASK_REQUEST_BODY_IN_LOGS:-true}
+      DatabaseOptions__IsolationLevel: ${DATABASE_ISOLATION_LEVEL:-RepeatableRead}
+      Serilog__MinimumLevel__Default: ${LOG_LEVEL:-Information}
+      SCHEMA_PACKAGES: ${SCHEMA_PACKAGES:-}
+      # The tool resolves the target and its instance database through CMS, exactly as DMS does.
+      ConfigurationServiceSettings__BaseUrl: ${CONFIG_SERVICE_URL:-http://ed-fi-api-config:8081}
+      ConfigurationServiceSettings__ClientId: ${CONFIG_SERVICE_CLIENT_ID:-CMSReadOnlyAccess}
+      ConfigurationServiceSettings__Scope: ${CONFIG_SERVICE_CLIENT_SCOPE:-edfi_admin_api/readonly_access}
+      ConfigurationServiceSettings__ClientSecret: ${CONFIG_SERVICE_CLIENT_SECRET}
+      ConfigurationServiceSettings__EncryptionKey: ${DMS_CONFIG_DATABASE_ENCRYPTION_KEY:-}
+      # Deployment policy the cdc verbs run under. The values a single run decides - the setup
+      # principal, the operator bearer token, and every option the command line carries - are
+      # supplied by the bootstrap CDC phase and are deliberately absent here.
+      DataManagement__DocumentCache__Cdc__TopicPrefix: ${DMS_CDC_TOPIC_PREFIX:-edfi.dms}
+      DataManagement__DocumentCache__Cdc__PartitionCount: ${DMS_CDC_PARTITION_COUNT:-1}
+      DataManagement__DocumentCache__Cdc__ConnectWorkerKey: ${DMS_CDC_CONNECT_WORKER_KEY:-1}
+      DataManagement__DocumentCache__Cdc__ConnectOffsetStorageTopic: ${DMS_CDC_CONNECT_OFFSET_STORAGE_TOPIC:-debezium_source_offset}
+      DataManagement__DocumentCache__Cdc__DmsBaseUrl: ${DMS_CDC_DMS_BASE_URL:-http://ed-fi-api:8080}
+      # The projection target the enable workflow's FIRST step proves. It is read here from the
+      # unmodified configuration - not through the CLI's own target resolver, which this invocation's
+      # arguments overwrite - so the question the proof answers is whether the DMS projector is
+      # configured to project the target, and this container has to see the same entry the DMS
+      # container does. Same two variables local-dms.yml and published-dms.yml read, so the pair the
+      # projector was started with and the pair the proof reads cannot drift. Blank on a run that did
+      # not opt into CDC, which binds to no target and is exactly what a non-CDC run wants.
+      DataManagement__DocumentCache__Targets__0__TenantKey: ${DMS_CDC_TARGET_TENANT_KEY:-}
+      DataManagement__DocumentCache__Targets__0__DataStoreId: ${DMS_CDC_TARGET_DATA_STORE_ID:-}
+    networks:
+      - dms
+    logging:
+      driver: json-file
+      options:
+        max-size: "${DOCKER_LOG_MAX_SIZE:-50m}"
+        max-file: "${DOCKER_LOG_MAX_FILE:-5}"
+
+networks:
+  dms:
+    external: true

@@ -273,7 +273,24 @@ SchemaTools invocation when a target's resolved dialect contradicts it.
 
 ---
 
-### 3.7 `bootstrap-local-dms.ps1` — Thin Convenience Wrapper (Optional)
+### 3.7 `enable-kafka-cdc.ps1` — Deployment-Owned CDC Enablement (Optional)
+
+**Delivery status:** Optional phase, selected by the wrapper's `-EnableKafkaCdc` opt-in and by the E2E harness. It is not part of the default bootstrap sequence.
+
+**Primary concern:** Register deployment-owned CDC capture for exactly one already-configured DocumentCache target, while write admission is still closed.
+
+| Item | Detail |
+|---|---|
+| **Preconditions** | The target is an operator-configured `DataManagement:DocumentCache:Targets` entry in the running DMS; the DMS, broker, and Connect worker are up; the instance database is provisioned and has admitted no write. |
+| **Inputs** | `-ComposeProjectName`, `-EnvironmentFile`, `-TenantKey`, `-DataStoreId`, `-DatabaseEngine`, `-DatabaseCreatedByThisRun` (creation evidence observed by the caller, forwarded verbatim), `-SourceDatabaseName` (optional; resolved from the environment file when omitted), `-HealthTimeoutSeconds` |
+| **Outputs** | A JSON-compatible object naming the bound target, the source database, and the creation evidence it ran under |
+| **Side effects** | Mints an operator token, provisions the connector's database principal, and runs `dms-document-cache cdc enable` in the one-shot administrative container |
+| **Failure conditions** | Throws on an unhealthy DMS, an unmapped or unauthorized DocumentCache status endpoint, a failed principal provision, or a non-zero `cdc enable` exit |
+| **Must NOT do** | Infer the creation evidence for itself; enable more than the one target it is given; run after any write has been admitted |
+
+**Boundary note:** The phase owns credential resolution, the health and status-endpoint authorization gates, connector-principal provisioning, and the tool invocation. The creation evidence is the one fact it cannot establish: whether the run created the instance database is observable only before the datastore container starts, which is a sequencing fact the caller holds, so it is supplied as an input and forwarded verbatim. The E2E harness invokes this same command rather than importing the wrapper module, so neither caller carries its own copy of the workflow.
+
+### 3.8 `bootstrap-local-dms.ps1` — Thin Convenience Wrapper (Optional)
 
 **Delivery status:** Convenience packaging plus a narrow slice of cross-phase orchestration policy: materializing a per-invocation `.bootstrap/.env.derived` with the bootstrap profile (loose `FAILURE_RATIO` so intra-tier BulkLoadClient retries don't trip the circuit breaker); unifying `-IdentityProvider` across the start and seed phases so a single wrapper invocation can't run infra under one provider and authenticate seeds under another; expanding the developer-facing `-SchoolYearRange "YYYY-YYYY"` into the `-SchoolYear <int[]>` array the seed phase consumes. The wrapper is optional and owns no phase-specific policy. The composable phase commands remain the authoritative bootstrap contract for DMS-916.
 

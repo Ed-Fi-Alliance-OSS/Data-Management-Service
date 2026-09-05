@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
+using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 
 namespace EdFi.DataManagementService.DocumentCacheAdmin;
 
@@ -20,6 +21,19 @@ internal static class DocumentCacheAdminJsonSerializer
         ArgumentNullException.ThrowIfNull(contractType);
 
         return JsonSerializer.Serialize(contract, contractType);
+    }
+
+    /// <summary>
+    /// Serializes a CDC contract with the CDC contract's own serializer options rather than the
+    /// DocumentCache defaults, so the lower-camel enum tokens and required contract version the shared
+    /// CDC contracts define round-trip exactly.
+    /// </summary>
+    public static string SerializeCdcContract(object contract, Type contractType)
+    {
+        ArgumentNullException.ThrowIfNull(contract);
+        ArgumentNullException.ThrowIfNull(contractType);
+
+        return JsonSerializer.Serialize(contract, contractType, CdcJsonContract.SerializerOptions);
     }
 }
 
