@@ -198,7 +198,12 @@ public class Given_CdcBindingContract
         JsonObject adoptionRoot = JsonNode.Parse(CdcJsonContract.Serialize(adoptionProof))!.AsObject();
         JsonObject cleanupRoot = JsonNode.Parse(CdcJsonContract.Serialize(cleanupProof))!.AsObject();
 
-        adoptionRoot["verificationResults"]!.AsArray().Should().HaveCount(8);
+        // One result per verification kind the contract defines, counted from the enum rather than
+        // pinned: a kind added without a result to carry it is the drift this asserts against.
+        adoptionRoot["verificationResults"]!
+            .AsArray()
+            .Should()
+            .HaveCount(Enum.GetValues<CdcAdoptionVerificationKind>().Length);
         adoptionRoot["verificationResults"]![0]!["verificationKind"]!
             .GetValue<string>()
             .Should()

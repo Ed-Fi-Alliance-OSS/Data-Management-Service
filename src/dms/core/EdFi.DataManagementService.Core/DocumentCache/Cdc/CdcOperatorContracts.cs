@@ -84,6 +84,8 @@ public enum CdcAdoptionVerificationKind
     ConnectorConfig,
     KafkaTopics,
     KafkaAcls,
+    KafkaPolicy,
+    ConnectOffsetStore,
     ConnectOffsets,
     SourceHistoryContinuity,
 }

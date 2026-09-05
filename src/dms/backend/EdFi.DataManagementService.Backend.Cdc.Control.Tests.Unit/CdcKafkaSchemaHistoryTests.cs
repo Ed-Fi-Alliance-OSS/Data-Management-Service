@@ -43,21 +43,68 @@ public class Given_CdcKafkaSchemaHistory
     }
 
     /// <summary>
-    /// A compacted-away prefix still leaves records behind it, so the earliest offset moving forward is
-    /// not an empty topic.
+    /// A topic whose log no longer starts at zero has lost the records in front of it. The governed
+    /// policy for this topic is <c>cleanup.policy=delete</c> with infinite time and size retention, so
+    /// nothing the deployment configures advances that offset; what remains cannot reconstruct the
+    /// schema at a source offset older than the surviving prefix.
     /// </summary>
     [Test]
-    public async Task It_reports_a_topic_whose_earliest_offset_advanced_as_valid()
+    public async Task It_reports_a_truncated_topic_with_a_committed_streaming_offset_as_required_record_lost()
     {
         CdcArtifactInventory inventory = Inventory(CdcProvider.SqlServer);
 
         CdcSqlServerSchemaHistoryEvidence? evidence = await RunAsync(
             inventory,
             Broker(inventory.SchemaHistoryTopicName!, partitionCount: 1),
-            OffsetReader(Watermarks((0, 8, 12)))
+            OffsetReader(Watermarks((0, 8, 12))),
+            connectorCommittedStreamingOffset: true
         );
 
-        evidence!.State.Should().Be(CdcSqlServerSchemaHistoryState.Valid);
+        evidence!.State.Should().Be(CdcSqlServerSchemaHistoryState.RequiredRecordLost);
+        Diagnostic(evidence, inventory.SchemaHistoryTopicName!)
+            .Category.Should()
+            .Be(CdcDiagnosticCategory.SourceHistoryLost);
+        Diagnostic(evidence, inventory.SchemaHistoryTopicName!).Observed.Should().Be("truncated");
+    }
+
+    /// <summary>
+    /// The same truncated topic without a committed streaming offset: there is no retained position
+    /// whose replay the missing prefix would have broken, so the state is undecidable rather than lost
+    /// - and undecidable keeps readiness false.
+    /// </summary>
+    [Test]
+    public async Task It_reports_a_truncated_topic_with_no_committed_streaming_offset_as_unknown()
+    {
+        CdcArtifactInventory inventory = Inventory(CdcProvider.SqlServer);
+
+        CdcSqlServerSchemaHistoryEvidence? evidence = await RunAsync(
+            inventory,
+            Broker(inventory.SchemaHistoryTopicName!, partitionCount: 1),
+            OffsetReader(Watermarks((0, 8, 12))),
+            connectorCommittedStreamingOffset: false
+        );
+
+        evidence!.State.Should().Be(CdcSqlServerSchemaHistoryState.Unknown);
+        Diagnostic(evidence, inventory.SchemaHistoryTopicName!).Observed.Should().Be("truncated");
+    }
+
+    /// <summary>
+    /// Truncation is decided across every partition the broker reports, so a retained history on one
+    /// partition does not cover a removed prefix on another.
+    /// </summary>
+    [Test]
+    public async Task It_reports_a_topic_truncated_on_one_of_several_partitions_as_required_record_lost()
+    {
+        CdcArtifactInventory inventory = Inventory(CdcProvider.SqlServer);
+
+        CdcSqlServerSchemaHistoryEvidence? evidence = await RunAsync(
+            inventory,
+            Broker(inventory.SchemaHistoryTopicName!, partitionCount: 2),
+            OffsetReader(Watermarks((0, 0, 12), (1, 5, 9))),
+            connectorCommittedStreamingOffset: true
+        );
+
+        evidence!.State.Should().Be(CdcSqlServerSchemaHistoryState.RequiredRecordLost);
     }
 
     [Test]
@@ -229,10 +276,6 @@ public class Given_CdcKafkaSchemaHistory
             .MustNotHaveHappened();
     }
 
-    /// <summary>
-    /// Every read asserts it, because <c>RequiredRecordLost</c> is not decidable from offsets: the
-    /// history topic's own delete-with-infinite-retention policy is what prevents that state.
-    /// </summary>
     private static async Task<CdcSqlServerSchemaHistoryEvidence?> RunAsync(
         CdcArtifactInventory inventory,
         IAdminClient adminClient,
@@ -256,13 +299,6 @@ public class Given_CdcKafkaSchemaHistory
             connectorCommittedStreamingOffset,
             CancellationToken.None
         );
-
-        evidence
-            ?.State.Should()
-            .NotBe(
-                CdcSqlServerSchemaHistoryState.RequiredRecordLost,
-                "a lost required record is not decidable from offsets and is never synthesized"
-            );
 
         return evidence;
     }

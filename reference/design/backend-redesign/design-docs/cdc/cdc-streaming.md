@@ -924,9 +924,12 @@ Binding creation and cleanup follow a fail-closed order:
    requires an operator-supplied complete record plus live verification of the physical
    source and every retained artifact. E19's binding-state operation owns guarded atomic
    record creation, and bootstrap owns the live provider, connector, topic, offset, ACL, and
-   configuration verification. Adoption repairs missing deployment state around an already
-   complete governed-artifact set; it is not a first-time enablement path. A failed or
-   incomplete adoption changes nothing.
+   configuration verification. It applies the same complete Kafka-policy and shared Connect
+   offset-store predicates the enablement and the restart apply, record-size budget included,
+   so a proof is never issued over a policy the deployment's broker limits make invalid;
+   those observations are read-only, because adoption provisions nothing. Adoption repairs
+   missing deployment state around an already complete governed-artifact set; it is not a
+   first-time enablement path. A failed or incomplete adoption changes nothing.
 4. On retirement, either retain the binding record with every retained governed
    artifact, or delete the connector, every governed topic, offset, ACL, PostgreSQL
    slot/publication, SQL Server capture artifact, and other governed artifact before
@@ -992,8 +995,13 @@ fence: it never starts a generation of a target the deployment already holds a l
 for, except the one generation a replacement fenced and named on the way in. Without that,
 repointing a deployment at a new empty database and enabling again would reach a replacement's
 end state with both generations publishing, which is the fence being bypassed rather than
-applied. The old generation is retained or explicitly retired; none
-of its governed artifacts is reused. The new generation reports eventual operational status
+applied. Every refusal the enablement can settle from reads alone is taken before the fence,
+not through the enablement the replacement enters afterwards: this includes a live binding
+of the same target at a generation the replacement did not fence - a retained earlier
+generation among them - and a governed artifact already standing at one of the replacing
+generation's names. Refusing either one after the barrier would stop a connector that was
+publishing correctly for a request that was never going to proceed. The old generation is
+retained or explicitly retired; none of its governed artifacts is reused. The new generation reports eventual operational status
 rather than another exact baseline. It cannot clear a published cache-ahead latch or recover
 a binding whose source-history loss is terminal. Removing a target requires explicit
 retain-or-delete decisions for every generation.
@@ -1208,8 +1216,12 @@ contract and is not an operator-configurable v1 exception.
 [Debezium's SQL Server connector](https://debezium.io/documentation/reference/3.6/connectors/sqlserver.html#sqlserver-schema-history-topic)
 distinguishes the required internal history store from optional public schema-change
 events. Normal connector stop or restart retains the history topic and Connect source
-offsets. Missing, unreadable, empty-when-offsets-exist, or misconfigured history makes the
-connector not ready; automation never recreates it silently around retained offsets. After
+offsets. Missing, unreadable, empty-when-offsets-exist, truncated-when-offsets-exist, or
+misconfigured history makes the connector not ready; automation never recreates it silently
+around retained offsets. A history topic whose log start has advanced past its first record
+is truncated: the governed `cleanup.policy=delete` with infinite time and size retention is
+observed at one point in time and does not establish that no earlier record was already
+removed, so a nonempty topic is not by itself a complete one. After
 initial enablement, missing or inconsistent history or offsets participates in the
 source-history continuity check and may terminally latch the binding. V1 provides no
 destructive same-binding recovery or controlled resnapshot for that condition. Binding

@@ -514,67 +514,27 @@ internal sealed class CdcSetupController(
         // ever provisioned that the control plane cannot name afterwards.
         CdcBinding binding = Binding(target, provider, physicalSourceFingerprint, inventory);
 
-        CdcBindingConflict conflict = await FindBindingConflictAsync(
+        CdcBindingConflict admission = await FindBindingAdmissionRefusalAsync(
                 binding,
+                inventory,
                 CdcSecondGenerationRule.RefusedUnlessFenced(fencedPreviousGeneration),
+                firstAttempt,
                 cancellationToken
             )
             .ConfigureAwait(false);
-        if (conflict.Blocked)
+        if (admission.Blocked)
         {
             return Blocked(
                 Step(
-                    conflict.Code,
-                    conflict.Category,
+                    admission.Code,
+                    admission.Category,
                     CdcDiagnosticComponent.Binding,
-                    conflict.Message,
-                    conflict.Observed,
+                    admission.Message,
+                    admission.Observed,
                     timeProvider.GetUtcNow()
                 ),
-                conflict.Diagnostics
+                admission.Diagnostics
             );
-        }
-
-        // An unbound attempt must be the first to provision these names. Nothing downstream can hold
-        // that line: the topic pass creates what is absent and accepts what already matches, and the
-        // registration is a configuration PUT that overwrites whatever the worker was holding under
-        // this name. So a deployment that lost its binding state store and enabled a fresh database
-        // would attach it to the previous life's topics and its consumers' committed offsets, and
-        // report a clean enablement of artifacts it had silently adopted.
-        //
-        // Only the unbound attempt asks. A retry legitimately finds the artifacts its own earlier run
-        // created, and a source replacement is unbound at a generation whose every governed name is
-        // new. Recovering deployment state around an artifact set that already exists is what `cdc
-        // adopt` is for, and it verifies each artifact against an operator-supplied record rather than
-        // inferring one from the names it finds.
-        if (firstAttempt)
-        {
-            CdcKafkaGovernedTopicPresence topicPresence = await kafkaAdmin
-                .FindExistingGovernedTopicsAsync(inventory, cancellationToken)
-                .ConfigureAwait(false);
-            CdcConnectResult<IReadOnlyDictionary<string, string>> existingConnector = await connectClient
-                .GetConnectorConfigAsync(inventory.ConnectorName, cancellationToken)
-                .ConfigureAwait(false);
-
-            if (
-                UnboundGovernedArtifactRefusal(inventory, topicPresence, existingConnector) is
-                { } unboundRefusal
-            )
-            {
-                return Blocked(
-                    Step(
-                        "enableGovernedArtifactAlreadyExists",
-                        unboundRefusal.Category,
-                        CdcDiagnosticComponent.Binding,
-                        "CDC enablement never infers a binding from artifacts it finds. A governed "
-                            + "artifact that exists without its binding record requires explicit "
-                            + "adoption or cleanup.",
-                        unboundRefusal.Observed,
-                        timeProvider.GetUtcNow()
-                    ),
-                    []
-                );
-            }
         }
 
         CdcBindingLifecycleResult bindingWrite = firstAttempt
@@ -2364,6 +2324,48 @@ internal sealed class CdcSetupController(
             );
         }
 
+        // The last two refusals the enablement would take on its own, asked here so neither is
+        // discovered after the fence below. A retained earlier generation refuses the replacing one
+        // under the second-generation rule, and a governed name the broker or the worker already holds
+        // refuses an unbound attempt at it; both are reads, and either taken after the barrier would
+        // leave the outgoing generation stopped with nothing replacing it. The enablement asks again
+        // for itself, over the state as it stands once the fence has been applied.
+        if (eligibility.PhysicalSourceFingerprint is not { } replacementFingerprint)
+        {
+            return Refused(
+                request.OperationId,
+                targetIdentity,
+                CdcDiagnosticCategory.SourceMismatch,
+                CdcDiagnosticComponent.ProviderSetup,
+                "CDC source replacement could not identify the physical source the replacing generation "
+                    + "would bind against.",
+                "absent",
+                eligibility.Diagnostics
+            );
+        }
+
+        CdcBindingConflict admission = await FindBindingAdmissionRefusalAsync(
+                Binding(target, provider, replacementFingerprint, replacementInventory),
+                replacementInventory,
+                CdcSecondGenerationRule.RefusedUnlessFenced(request.PreviousGeneration),
+                replacementFirstAttempt,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        if (admission.Blocked)
+        {
+            return Refused(
+                request.OperationId,
+                targetIdentity,
+                admission.Category,
+                CdcDiagnosticComponent.Binding,
+                admission.Message,
+                admission.Observed,
+                admission.Diagnostics,
+                code: admission.Code
+            );
+        }
+
         // The cutover barrier: the outgoing connector is fenced so it publishes nothing further from the
         // source being replaced. A connector the worker does not hold is already fenced.
         CdcConnectResult fence = await connectClient
@@ -2503,6 +2505,11 @@ internal sealed class CdcSetupController(
     /// advance, an unrotated source identity, a latched incident. True only where the refusal names
     /// something the deployment may settle on its own.
     /// </param>
+    /// <param name="code">
+    /// The verb's own refusal code by default. The two admission rules this operation runs ahead of its
+    /// cutover barrier keep the enablement's codes instead, so an operator reads the same code for the
+    /// same rule whether they reached it through <c>cdc enable</c> or <c>cdc replace-source</c>.
+    /// </param>
     private CdcAdmission Refused(
         string operationId,
         CdcTargetIdentity targetIdentity,
@@ -2511,7 +2518,8 @@ internal sealed class CdcSetupController(
         string message,
         string observed,
         IReadOnlyList<CdcDiagnostic> diagnostics,
-        bool retryable = false
+        bool retryable = false,
+        string code = "replaceSourceRefused"
     )
     {
         DateTimeOffset observedAt = timeProvider.GetUtcNow();
@@ -2522,7 +2530,7 @@ internal sealed class CdcSetupController(
                 StateStoreDiagnostics =
                 [
                     new CdcDiagnostic(
-                        "replaceSourceRefused",
+                        code,
                         category,
                         CdcDiagnosticSeverity.Error,
                         component,
@@ -2693,6 +2701,32 @@ internal sealed class CdcSetupController(
             AreGovernedAclsExactMatch(kafkaPolicy, provider),
             "the governed topic grants match the binding's Kafka policy",
             kafkaPolicy.PolicyState.ToString()
+        );
+
+        // The two kinds above name the artifacts an operator can act on individually, and neither
+        // reaches the overall policy state or the record-size verdict collected beside them. Adoption is
+        // held to the whole predicate the enablement is held to at `:783` and the restart at `:1367`,
+        // so a proof is never issued over a policy the deployment's broker limits make invalid.
+        Verify(
+            CdcAdoptionVerificationKind.KafkaPolicy,
+            CdcTargetStatusEvaluator.IsKafkaPolicySatisfied(kafkaPolicy),
+            "the binding's Kafka policy is satisfied in full, record-size budget included",
+            $"{kafkaPolicy.PolicyState} / record size {kafkaPolicy.RecordSizePolicy?.State.ToString() ?? "unobserved"}"
+        );
+
+        // Read-only: adoption reconstitutes the record of an artifact set that already exists and
+        // provisions nothing, so this is `Describe` rather than the `Ensure` the enablement calls. The
+        // store is cluster-scoped and holds the committed offsets the adopted binding's connector
+        // resumes from; `ConnectOffsets` below verifies that position, not the store holding it.
+        CdcConnectOffsetStorePolicyObservation connectOffsetStore = await kafkaAdmin
+            .DescribeConnectOffsetStoreAsync(context, cancellationToken)
+            .ConfigureAwait(false);
+
+        Verify(
+            CdcAdoptionVerificationKind.ConnectOffsetStore,
+            CdcTargetStatusEvaluator.IsConnectOffsetStorePolicySatisfied(connectOffsetStore),
+            "the shared Connect offset store matches the policy the deployment requires",
+            $"{connectOffsetStore.PolicyState} / {connectOffsetStore.AclState}"
         );
 
         CdcConnectResult<CdcConnectorStatus> connectorStatus = await connectClient
@@ -2997,11 +3031,13 @@ internal sealed class CdcSetupController(
                 CdcDiagnosticCategory.ConnectorConfigInvalid,
                 CdcDiagnosticComponent.ConnectorConfig
             ),
-            CdcAdoptionVerificationKind.KafkaTopics or CdcAdoptionVerificationKind.KafkaAcls => (
+            CdcAdoptionVerificationKind.KafkaTopics
+            or CdcAdoptionVerificationKind.KafkaAcls
+            or CdcAdoptionVerificationKind.KafkaPolicy => (
                 CdcDiagnosticCategory.KafkaPolicyInvalid,
                 CdcDiagnosticComponent.KafkaPolicy
             ),
-            CdcAdoptionVerificationKind.ConnectOffsets => (
+            CdcAdoptionVerificationKind.ConnectOffsetStore or CdcAdoptionVerificationKind.ConnectOffsets => (
                 CdcDiagnosticCategory.ConnectOffsetStoreInvalid,
                 CdcDiagnosticComponent.ConnectOffsetStore
             ),
@@ -4019,6 +4055,79 @@ internal sealed class CdcSetupController(
     /// deployment already binds, and a store that cannot be enumerated is not an answer to it —
     /// treating it as one would admit exactly the duplicates the check exists to stop.
     /// </remarks>
+    /// <summary>
+    /// Every admission refusal an enablement can settle from reads alone: a binding this deployment
+    /// already holds that the candidate would collide with, and - for an unbound attempt - a governed
+    /// artifact that already exists under a name no binding record claims.
+    /// </summary>
+    /// <remarks>
+    /// Shared with <c>ReplaceSourceAsync</c>, which runs it before its cutover barrier rather than
+    /// discovering these refusals through the enablement it enters afterwards. Both are decidable
+    /// before anything is fenced, and taking them afterwards would stop the outgoing generation for a
+    /// request that was never going to proceed - with a retained earlier generation, or a topic already
+    /// standing at the replacing generation's name, that is an outage of a connector that was
+    /// publishing correctly.
+    ///
+    /// <c>EnableCoreAsync</c> still asks for itself, as it does with the retry classification: a plain
+    /// enable enters it directly and fences nothing, and a replacement's preflight is separated from
+    /// its own call by the fence applied in between.
+    /// </remarks>
+    private async Task<CdcBindingConflict> FindBindingAdmissionRefusalAsync(
+        CdcBinding candidate,
+        CdcArtifactInventory inventory,
+        CdcSecondGenerationRule secondGeneration,
+        bool firstAttempt,
+        CancellationToken cancellationToken
+    )
+    {
+        CdcBindingConflict conflict = await FindBindingConflictAsync(
+                candidate,
+                secondGeneration,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        if (conflict.Blocked)
+        {
+            return conflict;
+        }
+
+        // An unbound attempt must be the first to provision these names. Nothing downstream can hold
+        // that line: the topic pass creates what is absent and accepts what already matches, and the
+        // registration is a configuration PUT that overwrites whatever the worker was holding under
+        // this name. So a deployment that lost its binding state store and enabled a fresh database
+        // would attach it to the previous life's topics and its consumers' committed offsets, and
+        // report a clean enablement of artifacts it had silently adopted.
+        //
+        // Only the unbound attempt asks. A retry legitimately finds the artifacts its own earlier run
+        // created. Recovering deployment state around an artifact set that already exists is what `cdc
+        // adopt` is for, and it verifies each artifact against an operator-supplied record rather than
+        // inferring one from the names it finds.
+        if (!firstAttempt)
+        {
+            return CdcBindingConflict.None;
+        }
+
+        CdcKafkaGovernedTopicPresence topicPresence = await kafkaAdmin
+            .FindExistingGovernedTopicsAsync(inventory, cancellationToken)
+            .ConfigureAwait(false);
+        CdcConnectResult<IReadOnlyDictionary<string, string>> existingConnector = await connectClient
+            .GetConnectorConfigAsync(inventory.ConnectorName, cancellationToken)
+            .ConfigureAwait(false);
+
+        return
+            UnboundGovernedArtifactRefusal(inventory, topicPresence, existingConnector) is { } unboundRefusal
+            ? new(
+                true,
+                "enableGovernedArtifactAlreadyExists",
+                unboundRefusal.Category,
+                "CDC enablement never infers a binding from artifacts it finds. A governed artifact "
+                    + "that exists without its binding record requires explicit adoption or cleanup.",
+                unboundRefusal.Observed,
+                []
+            )
+            : CdcBindingConflict.None;
+    }
+
     private async Task<CdcBindingConflict> FindBindingConflictAsync(
         CdcBinding candidate,
         CdcSecondGenerationRule secondGeneration,

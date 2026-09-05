@@ -113,7 +113,12 @@ controller, its adapters, and the entry points that invoke them.
   start-up rather than mid-sequence when either is absent. Every verb runs a provider-setup pass
   as the setup principal, and that pass reports the source grants held by the connector
   principal, so neither is conditional on Kafka. Only the Connect worker principal is
-  ACL-conditional: nothing outside the Kafka grants names it.
+  ACL-conditional: nothing outside the Kafka grants names it. The setup principal is verified
+  against the identity the connection authenticated as, so the local bootstrap resolves it from
+  the same effective configuration that registers the data store — `POSTGRES_USER` for
+  PostgreSQL, the fixed administrative account for SQL Server — rather than assuming the
+  default. A name that does not match fails the provider-setup pass, which runs after the
+  binding record is durable and guarded tracking is activated.
 - `status` and `restart` observe the governed artifacts; they never provision them. Both
   read the Kafka policy and the shared Connect offset store through the describe pass, so an
   absent topic is reported absent and a missing grant reported missing. Only `enable` and

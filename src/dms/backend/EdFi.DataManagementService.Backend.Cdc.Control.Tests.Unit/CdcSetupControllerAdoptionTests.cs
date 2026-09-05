@@ -371,6 +371,72 @@ public class Given_CdcSetupControllerAdoption
             .MustNotHaveHappened();
     }
 
+    /// <summary>
+    /// The governed topics and grants can each be conforming while the deployment's broker limits make
+    /// the binding's record-size budget unpublishable. Adoption is held to the whole policy predicate
+    /// the enablement and the restart are held to, so it never mints a record asserting a publication
+    /// guarantee the cluster cannot honor.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_a_binding_whose_record_size_budget_the_broker_does_not_admit()
+    {
+        CdcSetupControllerHarness harness = new()
+        {
+            KafkaPolicyState = CdcKafkaPolicyState.Invalid,
+            KafkaRecordSizeState = CdcKafkaPolicyItemState.Invalid,
+        };
+
+        CdcContractReadResult<CdcAdoptionProof> adoption = await harness.AdoptAsync();
+
+        using var _ = new AssertionScope();
+        adoption.Succeeded.Should().BeFalse();
+        adoption.Contract.Should().BeNull();
+        Refusal(adoption, CdcAdoptionVerificationKind.KafkaPolicy).Should().NotBeNull();
+        A.CallTo(() =>
+                harness.Bindings.ImportVerifiedBindingAsync(A<CdcAdoptionProof>._, A<CancellationToken>._)
+            )
+            .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// The cluster-scoped store holds the committed offsets the adopted connector resumes from. A
+    /// nonconforming store is refused here exactly as the enablement and the restart refuse it, and it
+    /// is read rather than provisioned: adoption changes nothing.
+    /// </summary>
+    [TestCase(CdcConnectOffsetStorePolicyState.Invalid, CdcConnectOffsetStoreItemState.Satisfied)]
+    [TestCase(CdcConnectOffsetStorePolicyState.Unknown, CdcConnectOffsetStoreItemState.Satisfied)]
+    [TestCase(CdcConnectOffsetStorePolicyState.Satisfied, CdcConnectOffsetStoreItemState.Invalid)]
+    [TestCase(CdcConnectOffsetStorePolicyState.Satisfied, CdcConnectOffsetStoreItemState.Unknown)]
+    public async Task It_refuses_a_nonconforming_shared_connect_offset_store(
+        CdcConnectOffsetStorePolicyState policyState,
+        CdcConnectOffsetStoreItemState aclState
+    )
+    {
+        CdcSetupControllerHarness harness = new()
+        {
+            OffsetStoreState = policyState,
+            OffsetStoreAclState = aclState,
+        };
+
+        CdcContractReadResult<CdcAdoptionProof> adoption = await harness.AdoptAsync();
+
+        using var _ = new AssertionScope();
+        adoption.Succeeded.Should().BeFalse();
+        adoption.Contract.Should().BeNull();
+        Refusal(adoption, CdcAdoptionVerificationKind.ConnectOffsetStore).Should().NotBeNull();
+        A.CallTo(() =>
+                harness.Kafka.EnsureConnectOffsetStoreAsync(
+                    A<CdcObservationContext>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                harness.Bindings.ImportVerifiedBindingAsync(A<CdcAdoptionProof>._, A<CancellationToken>._)
+            )
+            .MustNotHaveHappened();
+    }
+
     private static CdcAdoptionVerificationResult Verification(
         CdcAdoptionProof proof,
         CdcAdoptionVerificationKind kind

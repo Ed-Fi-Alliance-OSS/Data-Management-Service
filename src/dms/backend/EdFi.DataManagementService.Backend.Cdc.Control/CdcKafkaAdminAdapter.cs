@@ -148,10 +148,14 @@ public interface ICdcKafkaAdmin
     /// </summary>
     /// <remarks>
     /// The read is topic metadata plus earliest and latest partition offsets, never a consumed record:
-    /// every state this evidence can prove is decidable from offsets, and consuming would require
-    /// widening the connector-only history-topic grants. <see cref="CdcSqlServerSchemaHistoryState.RequiredRecordLost"/>
-    /// is never reported — it is not decidable from offsets, and the history topic's own
-    /// delete-with-infinite-retention policy is what prevents that state.
+    /// every state this evidence proves is decidable from offsets, and consuming would require widening
+    /// the connector-only history-topic grants.
+    /// <see cref="CdcSqlServerSchemaHistoryState.RequiredRecordLost"/> is reported from a log start that
+    /// has advanced past zero. The topic is governed as <c>cleanup.policy=delete</c> with infinite time
+    /// and size retention, so nothing the deployment configures advances that offset and a start past
+    /// zero is a removed prefix. The governed policy is not itself proof of a whole history: it is
+    /// observed at one point in time and says nothing about what a finite retention, a compaction, or an
+    /// administrative record deletion removed before this read.
     /// </remarks>
     /// <param name="enablementPhase">
     /// The phase the caller is observing in. It is load-bearing: the classifier leaves a first
@@ -937,9 +941,7 @@ internal sealed class CdcKafkaAdminAdapter(
 
             cancellationToken.ThrowIfCancellationRequested();
 
-            bool? retainsRecords = await RetainsSchemaHistoryRecordsAsync(topicMetadata, timeout);
-
-            if (retainsRecords is null)
+            if (await ReadSchemaHistoryOffsetSpanAsync(topicMetadata, timeout) is not { } offsetSpan)
             {
                 return Evidence(
                     enablementPhase,
@@ -953,11 +955,44 @@ internal sealed class CdcKafkaAdminAdapter(
                 );
             }
 
-            if (retainsRecords.Value)
+            if (offsetSpan.RetainsRecords)
             {
-                // The connector writes its schema history during the snapshot, so a topic holding
-                // records is the continuous state and carries no diagnostic of its own.
-                return Evidence(enablementPhase, CdcSqlServerSchemaHistoryState.Valid);
+                if (offsetSpan.BeginsAtFirstRecord)
+                {
+                    // The connector writes its schema history during the snapshot, so a topic holding
+                    // every record it ever wrote is the continuous state and carries no diagnostic of
+                    // its own.
+                    return Evidence(enablementPhase, CdcSqlServerSchemaHistoryState.Valid);
+                }
+
+                // Records were removed from the front of the history. What remains cannot reconstruct
+                // the schema at a source offset older than the surviving prefix, so this is a loss
+                // against a committed streaming offset exactly as an empty topic is. Without such an
+                // offset there is nothing to replay history for yet, and the incompleteness is reported
+                // rather than decided.
+                return connectorCommittedStreamingOffset
+                    ? Evidence(
+                        enablementPhase,
+                        CdcSqlServerSchemaHistoryState.RequiredRecordLost,
+                        SchemaHistoryLost(
+                            topicName,
+                            observedAt,
+                            "CDC SQL Server schema-history topic no longer begins at its first record "
+                                + "while the connector has committed a streaming offset.",
+                            "truncated"
+                        )
+                    )
+                    : Evidence(
+                        enablementPhase,
+                        CdcSqlServerSchemaHistoryState.Unknown,
+                        SchemaHistoryUnavailable(
+                            topicName,
+                            observedAt,
+                            "CDC SQL Server schema-history topic no longer begins at its first record and "
+                                + "the connector has committed no streaming offset to decide it against.",
+                            "truncated"
+                        )
+                    );
             }
 
             // An empty history topic is a loss only against a committed streaming offset the connector
@@ -1008,11 +1043,11 @@ internal sealed class CdcKafkaAdminAdapter(
     /// which is never reported as a topic that has published nothing.
     /// </summary>
     /// <remarks>
-    /// Deliberately not <see cref="RetainsSchemaHistoryRecordsAsync"/>. That asks what the topic still
-    /// holds, which is the right question for the schema history the connector replays; this asks what
-    /// it has ever held, which is the right one for a COMPACTED topic where every record can be
-    /// compacted away without the stream ever having been unestablished. A log end past zero is
-    /// monotonic evidence that a record was published.
+    /// Deliberately not <see cref="ReadSchemaHistoryOffsetSpanAsync"/>. That asks what the topic still
+    /// holds and whether it holds all of it, which is the right question for the schema history the
+    /// connector replays; this asks what it has ever held, which is the right one for a COMPACTED topic
+    /// where every record can be compacted away without the stream ever having been unestablished. A log
+    /// end past zero is monotonic evidence that a record was published.
     /// </remarks>
     private async Task<bool?> HasEverPublishedAsync(TopicMetadata topicMetadata, TimeSpan timeout)
     {
@@ -1031,10 +1066,14 @@ internal sealed class CdcKafkaAdminAdapter(
     }
 
     /// <summary>
-    /// Whether any partition of the topic still holds a record. Null means the bounding offsets could
-    /// not be read, which is never reported as an empty topic.
+    /// What the topic's bounding offsets say about the history it holds: whether any partition still
+    /// retains a record, and whether the history begins where the connector first wrote it. Null means
+    /// the bounding offsets could not be read, which is never reported as an empty or truncated topic.
     /// </summary>
-    private async Task<bool?> RetainsSchemaHistoryRecordsAsync(TopicMetadata topicMetadata, TimeSpan timeout)
+    private async Task<CdcSchemaHistoryOffsetSpan?> ReadSchemaHistoryOffsetSpanAsync(
+        TopicMetadata topicMetadata,
+        TimeSpan timeout
+    )
     {
         // Earliest and latest are requested separately so each result set is correlated by the request
         // that produced it: one flat response carrying both would only be separable by comparing values.
@@ -1055,6 +1094,7 @@ internal sealed class CdcKafkaAdminAdapter(
         }
 
         bool retainsRecords = false;
+        bool beginsAtFirstRecord = true;
         foreach (KeyValuePair<int, long> partition in latest)
         {
             if (!earliest.TryGetValue(partition.Key, out long start))
@@ -1063,9 +1103,14 @@ internal sealed class CdcKafkaAdminAdapter(
             }
 
             retainsRecords |= partition.Value > start;
+
+            // The log start offset only advances when records are removed. This topic is governed as
+            // `cleanup.policy=delete` with `retention.ms=-1` and `retention.bytes=-1`, so nothing the
+            // deployment configures can advance it - a start past zero is a prefix that is gone.
+            beginsAtFirstRecord &= start == 0;
         }
 
-        return retainsRecords;
+        return new(retainsRecords, beginsAtFirstRecord);
     }
 
     /// <summary>
@@ -3030,6 +3075,17 @@ internal sealed class CdcKafkaAdminAdapter(
     /// requirement already looked met.
     /// </remarks>
     private readonly record struct CdcKafkaAclGrant(string Principal, string Host, AclOperation Operation);
+
+    /// <summary>
+    /// What the schema-history topic's bounding offsets establish about the history it holds.
+    /// </summary>
+    /// <param name="RetainsRecords">Whether any partition still holds a record.</param>
+    /// <param name="BeginsAtFirstRecord">
+    /// Whether every partition's log still starts at offset zero. False is a removed prefix: the
+    /// connector's earliest DDL records are gone, so the schema at a retained source offset can no
+    /// longer be reconstructed by replaying what remains.
+    /// </param>
+    private readonly record struct CdcSchemaHistoryOffsetSpan(bool RetainsRecords, bool BeginsAtFirstRecord);
 
     private enum CdcKafkaConfigComparison
     {

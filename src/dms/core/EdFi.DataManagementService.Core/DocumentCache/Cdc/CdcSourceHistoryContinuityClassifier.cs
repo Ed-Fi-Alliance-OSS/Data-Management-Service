@@ -765,25 +765,62 @@ public static class CdcSourceHistoryContinuityClassifier
             // closes the documented enable retry, which refuses an incident-latched binding, and an
             // enablement whose initial snapshot was interrupted is the ordinary way to arrive here.
             // Readiness stays false and neither start nor resume is automated, which is what a phase
-            // still in progress warrants; an established binding whose connector re-enters a snapshot
-            // reports the same way, and that is an operator decision rather than an automatic fence.
+            // still in progress warrants.
+            //
+            // That exception is unfinished initial provisioning only, and it is narrowed by the same
+            // evidence the missing-offset branch above is narrowed by. An ESTABLISHED stream - one
+            // whose public topic has carried a record - that is back in a snapshot has lost the
+            // streaming position it would have resumed from, and the snapshot replacing it reads
+            // current rows: it cannot reconstruct a delete that happened while the stream was down, so
+            // a consumer holding cache state keeps an entry for a document that is gone. Left unlatched
+            // this heals itself out of sight, because the snapshot commits a fresh streaming offset and
+            // every observation after that classifies healthy.
+            if (input.PublicTopicPublication?.ProvesEstablishedStream != true)
+            {
+                diagnostics.Add(
+                    CdcDiagnosticCategory.StatusObservationUnavailable,
+                    "$.connectorOffset.isSnapshot",
+                    "CDC connector has committed only a snapshot position and its public topic does not "
+                        + "prove a stream this loss could be terminal for."
+                );
+
+                return new(
+                    UnknownWithMetadata(
+                        input,
+                        observedAt,
+                        diagnostics,
+                        binding.Provider,
+                        inventory,
+                        expectedSourcePartitionHash,
+                        null,
+                        input.ProviderHistory,
+                        [CdcIncidentUnavailableFact.ConnectOffset]
+                    ),
+                    null
+                );
+            }
+
             diagnostics.Add(
-                CdcDiagnosticCategory.StatusObservationUnavailable,
+                CdcDiagnosticCategory.SourceHistoryLost,
                 "$.connectorOffset.isSnapshot",
-                "CDC connector has committed only a snapshot position and has not reached streaming."
+                "CDC connector of an established stream has committed only a snapshot position, so the "
+                    + "streaming position it would resume from is gone."
             );
 
             return new(
-                UnknownWithMetadata(
+                Lost(
                     input,
                     observedAt,
                     diagnostics,
-                    binding.Provider,
-                    inventory,
-                    expectedSourcePartitionHash,
-                    null,
-                    input.ProviderHistory,
-                    [CdcIncidentUnavailableFact.ConnectOffset]
+                    CdcIncidentFailureCategory.ConnectOffsetMissing,
+                    BuildPositionMetadata(
+                        binding.Provider,
+                        inventory,
+                        expectedSourcePartitionHash,
+                        null,
+                        input.ProviderHistory,
+                        [CdcIncidentUnavailableFact.ConnectOffset]
+                    )
                 ),
                 null
             );

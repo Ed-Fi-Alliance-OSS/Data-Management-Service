@@ -419,9 +419,15 @@ public class Given_CdcSourceHistoryContinuityClassifier
         ValidateObservation(result.Observation, binding).Succeeded.Should().BeTrue();
     }
 
+    /// <summary>
+    /// An unpublished stream in a snapshot is an enablement that has not finished. Latching is
+    /// irreversible and closes the documented enable retry, which refuses an incident-latched binding.
+    /// </summary>
     [TestCase(CdcProvider.Postgresql)]
     [TestCase(CdcProvider.SqlServer)]
-    public void It_reports_unknown_without_incident_for_a_snapshot_connector_offset(CdcProvider provider)
+    public void It_reports_unknown_without_incident_for_a_snapshot_offset_on_an_unpublished_stream(
+        CdcProvider provider
+    )
     {
         CdcBinding binding = CdcContinuityFixture.CreateBinding(provider);
         CdcSourceHistoryClassificationInput baselineInput = CdcContinuityFixture.CreateInput(binding);
@@ -429,6 +435,7 @@ public class Given_CdcSourceHistoryContinuityClassifier
         CdcSourceHistoryClassificationResult result = CdcSourceHistoryContinuityClassifier.Evaluate(
             baselineInput with
             {
+                PublicTopicPublication = new(true, false),
                 ConnectorOffset = CdcContinuityFixture.ConnectorOffset(
                     binding,
                     CdcConnectorOffsetMatchResult.Exact,
@@ -451,13 +458,44 @@ public class Given_CdcSourceHistoryContinuityClassifier
         ValidateObservation(result.Observation, binding).Succeeded.Should().BeTrue();
     }
 
+    /// <summary>
+    /// Publication evidence that could not be read is not proof that the stream is established, and the
+    /// irreversible action needs proof.
+    /// </summary>
     [Test]
-    public void It_reports_unknown_for_a_snapshot_offset_even_on_an_established_stream()
+    public void It_reports_unknown_for_a_snapshot_offset_when_publication_evidence_is_unreadable()
     {
-        // The published stream is what makes every other loss here terminal. A snapshot offset stays
-        // non-terminal anyway: it says the connector has not reached streaming, never that a position
-        // it already held is unrecoverable, and the fence a Lost classification drives is irreversible.
         CdcBinding binding = CdcContinuityFixture.CreateBinding(CdcProvider.Postgresql);
+        CdcSourceHistoryClassificationInput baselineInput = CdcContinuityFixture.CreateInput(binding);
+
+        CdcSourceHistoryClassificationResult result = CdcSourceHistoryContinuityClassifier.Evaluate(
+            baselineInput with
+            {
+                PublicTopicPublication = CdcPublicTopicPublicationEvidence.Unreadable,
+                ConnectorOffset = CdcContinuityFixture.ConnectorOffset(
+                    binding,
+                    CdcConnectorOffsetMatchResult.Exact,
+                    isSnapshot: true
+                ),
+            }
+        );
+
+        result.Observation.Continuity.Should().Be(CdcSourceHistoryContinuity.Unknown);
+        result.IncidentCandidate.Should().BeNull();
+        ValidateObservation(result.Observation, binding).Succeeded.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// An established stream back in a snapshot has lost the streaming position it would have resumed
+    /// from, and the snapshot replacing it reads current rows only - it cannot reconstruct a delete that
+    /// happened while the stream was down. Left unlatched the condition heals itself out of sight: the
+    /// snapshot commits a fresh streaming offset and every later observation classifies healthy.
+    /// </summary>
+    [TestCase(CdcProvider.Postgresql)]
+    [TestCase(CdcProvider.SqlServer)]
+    public void It_latches_a_snapshot_offset_on_an_established_stream(CdcProvider provider)
+    {
+        CdcBinding binding = CdcContinuityFixture.CreateBinding(provider);
         CdcSourceHistoryClassificationInput baselineInput = CdcContinuityFixture.CreateInput(binding);
 
         CdcSourceHistoryClassificationResult result = CdcSourceHistoryContinuityClassifier.Evaluate(
@@ -472,8 +510,19 @@ public class Given_CdcSourceHistoryContinuityClassifier
             }
         );
 
-        result.Observation.Continuity.Should().Be(CdcSourceHistoryContinuity.Unknown);
-        result.IncidentCandidate.Should().BeNull();
+        result.Observation.Continuity.Should().Be(CdcSourceHistoryContinuity.Lost);
+        result
+            .Observation.IncidentFailureCategory.Should()
+            .Be(CdcIncidentFailureCategory.ConnectOffsetMissing);
+        result
+            .IncidentCandidate.Should()
+            .NotBeNull("an established stream that lost its streaming position is fenced, not observed");
+        result
+            .Observation.Diagnostics.Should()
+            .Contain(diagnostic =>
+                diagnostic.Category == CdcDiagnosticCategory.SourceHistoryLost
+                && diagnostic.Path == "$.connectorOffset.isSnapshot"
+            );
         ValidateObservation(result.Observation, binding).Succeeded.Should().BeTrue();
     }
 

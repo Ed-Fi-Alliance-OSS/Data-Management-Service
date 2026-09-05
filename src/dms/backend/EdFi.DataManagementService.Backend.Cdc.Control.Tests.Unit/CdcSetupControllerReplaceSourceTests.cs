@@ -401,7 +401,10 @@ public class Given_CdcSetupControllerReplaceSource
 
     /// <summary>
     /// Only the generation this replacement named and fenced. A third generation of the same target is
-    /// still live and still publishing, and naming one previous generation says nothing about it.
+    /// still live and still publishing, and naming one previous generation says nothing about it. The
+    /// rule is a read over the deployment's own bindings, so it is settled ahead of the cutover
+    /// barrier: refusing it afterwards would stop the outgoing generation for a request that was never
+    /// going to proceed.
     /// </summary>
     [Test]
     public async Task It_refuses_a_replacement_while_a_generation_it_did_not_fence_is_still_bound()
@@ -424,6 +427,8 @@ public class Given_CdcSetupControllerReplaceSource
         admission
             .Diagnostics.Should()
             .Contain(diagnostic => diagnostic.Code == "enableTargetGenerationAlreadyLive");
+        A.CallTo(() => harness.Connect.StopConnectorAsync(A<string>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
         A.CallTo(() =>
                 harness.Connect.PutConnectorConfigAsync(
                     A<string>._,
@@ -431,6 +436,37 @@ public class Given_CdcSetupControllerReplaceSource
                     A<CancellationToken>._
                 )
             )
+            .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// The replacing generation's every governed name is new, so a topic already standing at one of
+    /// them belongs to something this deployment has no binding record for. The enablement refuses that
+    /// for an unbound attempt, and a replacement is unbound by construction - asked here, over reads,
+    /// so the refusal does not arrive with the outgoing generation already stopped.
+    /// </summary>
+    [Test]
+    public async Task It_refuses_a_replacement_whose_generation_already_has_a_governed_topic()
+    {
+        CdcSetupControllerHarness harness = new()
+        {
+            PreviousGenerationRead = CdcSetupControllerHarness.Present(
+                CdcSetupControllerHarness.PreviousGenerationBinding()
+            ),
+            BindingListing = CdcSetupControllerHarness.ListedBindings(
+                CdcSetupControllerHarness.PreviousGenerationBinding()
+            ),
+            GovernedTopicPresence = new(true, [CdcSetupControllerHarness.Inventory().TopicName]),
+        };
+
+        CdcAdmission admission = await harness.ReplaceSourceAsync();
+
+        using var _ = new AssertionScope();
+        admission.AdmissionState.Should().NotBe(CdcAdmissionState.Admitted);
+        admission
+            .Diagnostics.Should()
+            .Contain(diagnostic => diagnostic.Code == "enableGovernedArtifactAlreadyExists");
+        A.CallTo(() => harness.Connect.StopConnectorAsync(A<string>._, A<CancellationToken>._))
             .MustNotHaveHappened();
     }
 

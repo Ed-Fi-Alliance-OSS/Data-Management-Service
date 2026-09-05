@@ -846,6 +846,69 @@ Describe "DMS-1323 bootstrap CDC phase" {
                 Should -BeLike "*DataManagement__DocumentCache__Cdc__SetupPrincipal=sa*"
         }
 
+        It "follows POSTGRES_USER when the stack configures a custom administrator" {
+            # The control plane verifies this principal against SESSION_USER during the provider-setup
+            # pass, which runs after the binding record is durable and guarded tracking is activated.
+            # A hard-coded `postgres` therefore fails a customised stack midway through enablement, so
+            # the principal is resolved from the same configuration that registers the CMS datastore
+            # and provisions the connector role.
+            $previous = $env:POSTGRES_USER
+            try {
+                $env:POSTGRES_USER = "northridge_super"
+
+                $arguments = Get-CdcEnableArgument `
+                    -ComposeProjectName "dms-local" `
+                    -EnvironmentFile "/tmp/.env.derived" `
+                    -TenantKey "" `
+                    -DataStoreId 1 `
+                    -DatabaseEngine "postgresql" `
+                    -DatabaseCreatedByThisRun $true `
+                    -SourceDatabaseName "edfi_datamanagementservice" `
+                    -BindingStateRoot (New-AbsentStateRoot)
+
+                ($arguments -join " ") |
+                    Should -BeLike "*DataManagement__DocumentCache__Cdc__SetupPrincipal=northridge_super*"
+            }
+            finally {
+                if ($null -eq $previous) {
+                    Remove-Item Env:\POSTGRES_USER -ErrorAction SilentlyContinue
+                }
+                else {
+                    $env:POSTGRES_USER = $previous
+                }
+            }
+        }
+
+        It "keeps the sa account for SQL Server regardless of POSTGRES_USER" {
+            # mssql.yml has no POSTGRES_USER equivalent; that engine authenticates as the fixed
+            # account, so the override must not leak across engines.
+            $previous = $env:POSTGRES_USER
+            try {
+                $env:POSTGRES_USER = "northridge_super"
+
+                $arguments = Get-CdcEnableArgument `
+                    -ComposeProjectName "dms-local" `
+                    -EnvironmentFile "/tmp/.env.derived" `
+                    -TenantKey "" `
+                    -DataStoreId 1 `
+                    -DatabaseEngine "mssql" `
+                    -DatabaseCreatedByThisRun $true `
+                    -SourceDatabaseName "edfi_datamanagementservice" `
+                    -BindingStateRoot (New-AbsentStateRoot)
+
+                ($arguments -join " ") |
+                    Should -BeLike "*DataManagement__DocumentCache__Cdc__SetupPrincipal=sa*"
+            }
+            finally {
+                if ($null -eq $previous) {
+                    Remove-Item Env:\POSTGRES_USER -ErrorAction SilentlyContinue
+                }
+                else {
+                    $env:POSTGRES_USER = $previous
+                }
+            }
+        }
+
         It "supplies the connector principal every cdc verb requires" {
             # The provider-setup input factory refuses any verb without it, because both the create
             # pass and the validate-only pass report the grants this principal holds. It is required

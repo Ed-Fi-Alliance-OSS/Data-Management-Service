@@ -425,8 +425,32 @@ function Get-CdcSetupComposeArgument {
     )
 
     Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
+    Import-Module (Join-Path $PSScriptRoot "database-safety.psm1") -Force
 
-    $setupPrincipal = if ($DatabaseEngine -eq "mssql") { "sa" } else { "postgres" }
+    # The control plane verifies this principal against the session the connection actually
+    # authenticated as (SESSION_USER on PostgreSQL, SUSER_SNAME() on SQL Server), and it does so during
+    # the provider-setup pass -- after the binding record is durable and guarded tracking is activated.
+    # A hard-coded name therefore fails a stack with a custom administrator midway rather than up
+    # front. POSTGRES_USER is a supported override that postgresql.yml passes to the container as
+    # ${POSTGRES_USER:-postgres}, and the same resolver registers the CMS datastore and provisions the
+    # CDC connector role, so the principal is resolved from the one configuration all of them read.
+    # mssql.yml has no equivalent override: that engine authenticates as the fixed sa account.
+    $setupPrincipal =
+        if ($DatabaseEngine -eq "mssql") {
+            "sa"
+        }
+        else {
+            # Compose gives an ambient POSTGRES_USER precedence over the file's, and the resolver
+            # honours that from an empty table, so a file that is not present yet still resolves the
+            # override the container would receive. Compose itself refuses the missing --env-file
+            # below, which is where that condition belongs.
+            $envValues =
+                if (Test-Path -LiteralPath $EnvironmentFile) { ReadValuesFromEnvFile $EnvironmentFile }
+                else { @{} }
+
+            Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres"
+        }
+
     $localPolicy = Get-LocalCdcDeploymentPolicy
 
     $composeArguments = @(
