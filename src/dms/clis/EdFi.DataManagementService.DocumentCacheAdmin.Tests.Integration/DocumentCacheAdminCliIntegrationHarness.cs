@@ -148,6 +148,29 @@ internal sealed class DocumentCacheAdminCliTarget : IAsyncDisposable
         );
     }
 
+    public static DocumentCacheAdminCliTarget CreateExternalMssql(
+        string connectionString,
+        long dataStoreId,
+        string apiSchemaDirectory
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(dataStoreId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(apiSchemaDirectory);
+
+        return new(
+            RelationalProviderToken.SqlServer,
+            DocumentCacheAdminCommandSurface.MssqlAppSettingsDatastoreValue,
+            connectionString,
+            apiSchemaDirectory,
+            postgresqlDatabase: null,
+            mssqlLease: null,
+            ownsPostgresqlDatabase: false,
+            ownsMssqlLease: false,
+            dataStoreId: dataStoreId
+        );
+    }
+
     public DocumentCacheAdminCliTarget CreateAlias(
         long dataStoreId,
         string tenantKey,

@@ -1010,6 +1010,22 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             );
         }
 
+        [When("representation restamp completes for the current resource in disabled mode")]
+        public async Task WhenRepresentationRestampCompletesForTheCurrentResourceInDisabledMode()
+        {
+            await RepresentationRestampE2EHarness.ExecuteDisabledRestampAsync(Guid.Parse(_id));
+        }
+
+        [When("representation restamp completes for document variable {string} in disabled mode")]
+        public async Task WhenRepresentationRestampCompletesForDocumentVariableInDisabledMode(
+            string variableName
+        )
+        {
+            await RepresentationRestampE2EHarness.ExecuteDisabledRestampAsync(
+                Guid.Parse(_scenarioVariables.GetValueByName(variableName))
+            );
+        }
+
         [When("a claim set is uploaded to CMS that grants {string} access to {string}")]
         public async Task WhenAClaimSetIsUploadedToCMSThatGrantsEndpointAccess(
             string endpointName,

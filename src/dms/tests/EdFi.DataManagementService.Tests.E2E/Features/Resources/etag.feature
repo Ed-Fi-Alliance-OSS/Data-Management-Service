@@ -3,7 +3,7 @@ Feature: ETag validations
         Background:
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
 
-        @e2e-ci-shard-1 @MssqlRepresentative
+        @e2e-ci-shard-1 @PostgresqlRepresentative @MssqlRepresentative
         Scenario: A representation restamp invalidates the strong ETag without changing domain fields
              When a POST request is made to "/ed-fi/students" with
                   """
@@ -24,6 +24,35 @@ Feature: ETag validations
                     "studentUniqueId": "1318001",
                     "birthDate": "2014-08-14",
                     "firstName": "Restamp",
+                    "lastSurname": "Student"
+                  }
+                  """
+             Then the ETag differs from request variable "restampOriginalEtag"
+              And the current resource lastModifiedDate is later than the stored value
+
+        # Disabled completion asserts canonicalOnlyComplete and no projection work in the harness.
+        # It makes no cache or Kafka publication claim.
+        @e2e-ci-shard-1 @PostgresqlRepresentative @MssqlRepresentative
+        Scenario: A disabled representation restamp invalidates the strong ETag without changing domain fields
+             When a POST request is made to "/ed-fi/students" with
+                  """
+                  {
+                      "studentUniqueId": "1318004",
+                      "birthDate": "2014-08-14",
+                      "firstName": "Disabled Restamp",
+                      "lastSurname": "Student"
+                  }
+                  """
+             Then it should respond with 201
+             When the current resource ETag and lastModifiedDate are stored
+             When representation restamp completes for the current resource in disabled mode
+             Then the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": "{id}",
+                    "studentUniqueId": "1318004",
+                    "birthDate": "2014-08-14",
+                    "firstName": "Disabled Restamp",
                     "lastSurname": "Student"
                   }
                   """
