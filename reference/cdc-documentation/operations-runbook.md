@@ -307,7 +307,7 @@ are relative to the selected CDC `targets[]`. Keep the full bounded diagnostics 
 | Missing deployment state | CDC `binding.category=bindingMissing`; unavailable store uses `statusObservationUnavailable` with `localStateUnavailable` diagnostics | [Binding routing](#route-binding-incident); verify exact root/mount before considering adoption. | [Binding storage](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding) |
 | Continuity unproved | CDC `sourceHistory.continuity=unknown`, category `providerHistoryUnknown` or `statusObservationUnavailable` | [Continuity routing](#route-continuity-incident); restore observations and recheck; do not start/resume on unknown. | [Continuity](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity) |
 | Terminal history loss / incomplete containment | CDC `sourceHistory.continuity=lost`, `incidentLatched`; `statusIncidentFenceNotApplied` or `statusSourceHistoryLatchNotDurable` | [Continuity routing](#route-continuity-incident); verify durability and fence independently, preserve terminal generation. | [Continuity](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity) |
-| Lifecycle or cache-ahead incident | Projection `lifecycle.state`, `cacheAhead.recoveryRequired`; CDC `projection.category=projectionNonOperational` | [E18 lifecycle triage](../document-cache-documentation/operations-runbook.md#lifecycle-mismatch-and-resetting), [CDC repair boundary](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations); stopping CDC does not authorize an internal-only reset. | [Lifecycle](../design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#durable-work-and-lifecycle) |
+| Lifecycle or cache-ahead incident | Projection `lifecycle.state`, `cacheAhead.recoveryRequired`; CDC `projection.category=projectionNonOperational` | [E18 lifecycle triage](../document-cache-documentation/operations-runbook.md#lifecycle-mismatch-and-resetting), [CDC repair handoff](#projection-repair-handoff); stopping CDC does not authorize an internal-only reset. | [Lifecycle](../design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#durable-work-and-lifecycle) |
 
 <a id="check-cdc-configuration"></a>
 ### Configuration and provider triage
@@ -351,6 +351,80 @@ continuity and destructive-retirement procedures remain T05/T06 work; this secti
 the incident, not a recovery authorization. Follow the
 [continuity owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity)
 and [deferred repair boundary](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations).
+
+<a id="projection-repair-handoff"></a>
+## Projection and CDC repair handoff
+
+Start with [projection observation](#observe-projection) for the selected tenant/data store
+and current physical-source fingerprint; correlate the CDC binding generation through
+[CDC observation](#observe-cdc). Projection process generation is not binding generation.
+Keep projection operations in the E18 runbook:
+
+| Projection concern | Existing procedure | CDC boundary |
+| --- | --- | --- |
+| Queue growth or poison work | [Processing/poison remediation](../document-cache-documentation/operations-runbook.md#persistent-projection-failure-and-poison-remediation) | Projector downtime permits canonical writes to queue; ordinary API routing does not wait for CDC. |
+| Enqueue failure | [Enqueue versus processing](../document-cache-documentation/operations-runbook.md#enqueue-vs-processing-availability) | Failed enqueue rolls back the complete canonical transaction; connector restart cannot fix it. |
+| Lifecycle/configuration mismatch or interrupted `Resetting` | [Lifecycle and retry](../document-cache-documentation/operations-runbook.md#lifecycle-mismatch-and-resetting) | Reissue only the known interrupted operation; removing runtime configuration grants no clearing authority. |
+| Cache rebuild with a clear latch | [Bounded online rebuild](../document-cache-documentation/operations-runbook.md#online-rebuild) | Lifecycle must be `Tracking` or `Rebuilding`; rebuilding does not restamp changed public bytes or certify a CDC baseline. |
+| Suspected restore/direct mutation or missing work | [Explicit O(N) scrub](../document-cache-documentation/operations-runbook.md#explicit-integrity-scrub) | Admission requires clear-latch `Tracking`; scrub never clears a set latch, and queue-empty status alone cannot rule out restore damage. |
+| Activation/deactivation | [Activation](../document-cache-documentation/operations-runbook.md#activation), [deactivation](../document-cache-documentation/operations-runbook.md#deactivation), [packaged history gate](../document-cache-documentation/operations-runbook.md#packaged-downstream-history) | Initial new-database enablement uses its owning setup workflow. Offline toggles remain rejected in packaged v1. |
+| SQL Server RCSI/`nested triggers` | [Provider correction scope](../document-cache-documentation/operations-runbook.md#sql-server-prerequisite-failure-correction) | Target initialization and activation validate both. Initialization correction/restart is `Disabled`-only; activation preflight can retry after correction. Post-validation changes on active targets are unsupported, with no renewed-readiness promise. |
+
+These procedures retain the [projection lifecycle owner](../design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#durable-work-and-lifecycle)
+and [repair owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations).
+Rebuild/scrub success never clears published-state risk. Reuse the
+[E18 evidence matrix](../document-cache-documentation/cdc-inv-evidence.md#matrix) for provider
+prerequisites, scan-free restart, reset/rebuild interruption, and scrub guards; downstream
+assertions and live exercises are tracked in the [T04 evidence handoff](cdc-inv-evidence.md#t04-projection-handoff-review).
+
+<a id="cache-ahead-containment"></a>
+### Cache-ahead and packaged offline-command rejection
+
+A set `cacheAhead.recoveryRequired` latch routes here from
+[E18 cache-ahead diagnosis](../document-cache-documentation/operations-runbook.md#cache-ahead-recovery).
+Preserve bounded projection/CDC status, source fingerprint, generation, cache/work/latch
+evidence, and any command rejection before choosing containment. The packaged CDC-backed
+provider proves `active` or `historical` from matching binding/retirement records; all other
+production evidence is `unknown`. It never supplies the same-target/source `internalOnly`
+proof required by `activate-offline`, `deactivate-offline`, or `recover-cache-ahead`.
+
+Once earlier guards pass, their command result is `rejectedNoMutation`, classification
+`downstreamHistoryPresentOrUnknown`, `mutated=false`, exit `10`. Preserve any earlier
+source, lifecycle, or prerequisite rejection instead of assuming every failure is history.
+[History/guard evidence](cdc-inv-evidence.md#t04-projection-handoff-review) distinguishes
+real-provider rejection from test-only `internalOnly` acceptance. Current or historical
+binding/consumer state disqualifies the simple read-acceleration toggle. Stopping a
+connector, removing a runtime target, or retiring a binding does not erase that history.
+
+Use [continuity containment routing](#route-continuity-incident) and the
+[cache-ahead recovery owner](../design/backend-redesign/design-docs/cdc/0001-relational-cdc-projector-and-sources.md#cache-ahead-invariant-recovery)
+for possibly published higher versions. Connector fencing and durable incident evidence
+must be verified separately; stopping publication does not unlock an E18 reset. Restamp,
+rebuild, and scrub cannot turn cache-ahead into a same-topic lower-version correction.
+A replacement namespace/baseline workflow is deferred, not an available recovery command.
+
+<a id="representation-correction-handoff"></a>
+### Representation correction versus disclosure
+
+Use the [E18 restamp boundary](../document-cache-documentation/operations-runbook.md#restamp-scope-boundary)
+and its independently owned utility guidance. This checkout provides the design/work-package
+handoff only; it has no executable restamp procedure or restamp evidence to reuse yet.
+
+| Incident decision | Handoff and admission boundary |
+| --- | --- |
+| Compatible representation bytes change; prior records require no purge | [Offline byte-changing correction owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#offline-byte-changing-representation-correction). Corrected public bytes need fresh canonical `ContentVersion` values; cache rebuild at the old version is insufficient. Projection/publication mode requires clear-latch `Tracking`. Same binding/topic eligibility is conditional on compatibility and no purge requirement. |
+| Canonical-only representation correction | Same owner; explicit clear-latch `Disabled` mode changes API validators/Change Query visibility, records no projection work, and makes no Kafka publication claim. It does not unlock packaged offline activation later. |
+| Cache-ahead latch or possibly published higher version | [Cache-ahead containment](#cache-ahead-containment); neither correction mode admits a set latch. Do not reinterpret this as ordinary materializer correction. |
+| Sensitive records must be purged | [Disclosure correction owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sensitive-data-disclosure-correction); same-topic correction is ineligible. The dedicated containment procedure is pending T07 in [delivery](cdc-inv-evidence.md#pending-delivery). Preserve the incident and route to connector fencing, operator-owned access revocation, guarded retirement, and platform purge evidence under that owner. Higher versions, tombstones, or compaction alone do not prove purge. |
+
+All restamp work requires externally stopping affected readers, DMS replicas, canonical
+writers, projector/direct-fill writers, bulk/administrative paths, and external writers.
+The utility's confirmation does not implement or certify that fence. `Resetting`,
+`Rebuilding`, or any set latch is ineligible. Follow the owning utility's mode/manifest/retry
+guards when delivered; do not replace it with manual stamp SQL. After projection/publication
+correction, higher-version public records and projection/connector status are eventual
+observations, not a replacement exact CDC baseline or an API admission gate. Disclosure
+re-enablement remains deferred by its owner.
 
 <a id="inspect-lag"></a>
 ## Inspect connector lag evidence

@@ -1,0 +1,20 @@
+Description:
+  Deactivate DocumentCache with writers offline
+
+Usage:
+  dms-document-cache deactivate-offline [options]
+
+Options:
+  --data-store-id <data-store-id>                                                Positive CMS data store identifier
+  --tenant-key <tenant-key>                                                      Target tenant key; omitted means the default tenant
+  --request-json <request-json>                                                  Path to a shared JSON request document, or '-' for stdin
+  --confirm <confirm>                                                            Command confirmation token
+  --expected-physical-source-fingerprint <expected-physical-source-fingerprint>  Optional opaque physical source fingerprint guard
+  --command-timeout-seconds <command-timeout-seconds>                            Total administrative command timeout in seconds (default: 86400) [default: 86400]
+  --offline-writer-admission <offline-writer-admission>                          Offline writer admission acknowledgement
+  -?, -h, --help                                                                 Show help and usage information
+  --json                                                                         Write the shared JSON contract document to stdout
+  -v, --verbose                                                                  Enable verbose (debug-level) logging
+  --settings <settings>                                                          Path to a DMS appsettings JSON file
+  --environment <environment>                                                    DMS environment name used for configuration loading
+  --datastore <postgresql|sqlserver>                                             Target datastore provider: postgresql or sqlserver
