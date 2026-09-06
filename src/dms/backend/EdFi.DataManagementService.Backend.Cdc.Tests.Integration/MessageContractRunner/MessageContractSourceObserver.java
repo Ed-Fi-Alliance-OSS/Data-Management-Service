@@ -27,6 +27,7 @@ public final class MessageContractSourceObserver implements Transformation<Sourc
     private static final Set<String> TABLES = Set.of("Document", "DocumentCache", "CdcHeartbeat");
     private static final ObjectMapper JSON = new ObjectMapper();
     private String server;
+    private String database;
     private int count;
 
     // The qualified image supports Java source launch and the compiler module, but has no javac/jar executables.
@@ -53,8 +54,13 @@ public final class MessageContractSourceObserver implements Transformation<Sourc
     }
 
     public ConfigDef config() { return new ConfigDef().define("expected.server", ConfigDef.Type.STRING,
-            ConfigDef.Importance.HIGH, "Isolated fixture server for equality checks only"); }
-    public void configure(Map<String, ?> props) { server = (String) props.get("expected.server"); }
+            ConfigDef.Importance.HIGH, "Isolated fixture server for equality checks only")
+            .define("expected.database", ConfigDef.Type.STRING, "", ConfigDef.Importance.HIGH,
+                    "Isolated fixture database for equality checks only"); }
+    public void configure(Map<String, ?> props) {
+        server = (String) props.get("expected.server");
+        database = props.get("expected.database") instanceof String value ? value : "";
+    }
     public void close() { }
 
     public synchronized SourceRecord apply(SourceRecord record) {
@@ -70,9 +76,14 @@ public final class MessageContractSourceObserver implements Transformation<Sourc
             Object op = field(envelope, "op");
             observation.put("operation", Set.of("c", "u", "r", "d", "t").contains(String.valueOf(op)) ? op : "other");
             observation.put("topicMatches", record.topic().equals(nativeHeartbeat
-                    ? "__debezium-heartbeat." + server : server + ".dms." + table));
+                    ? "__debezium-heartbeat." + server : server + (database.isEmpty() ? "" : "." + database) + ".dms." + table));
             observation.put("serverMatches", server.equals(record.sourcePartition().get("server")));
             observation.put("partitionFields", record.sourcePartition().size());
+            observation.put("databaseMatches", database.isEmpty()
+                    ? !record.sourcePartition().containsKey("database")
+                    : database.equals(record.sourcePartition().get("database")));
+            observation.put("sourceDatabaseMatches", source == null || database.isEmpty()
+                    || database.equals(field(source, "db")));
             observation.put("schemaIsDms", "dms".equals(field(source, "schema")));
             observation.put("keyIsStruct", record.key() instanceof Struct);
             observation.put("keyIsNull", record.key() == null);
@@ -88,6 +99,16 @@ public final class MessageContractSourceObserver implements Transformation<Sourc
             Struct before = field(envelope, "before") instanceof Struct value ? value : null;
             observation.put("beforeUuidMatches", !canonicalUuid(uuid).isEmpty()
                     && canonicalUuid(uuid).equals(canonicalUuid(field(before, "DocumentUuid"))));
+            observation.put("beforeUuidState", before == null ? "absent" :
+                    "__debezium_unavailable_value".equals(field(before, "DocumentUuid")) ? "unavailable" :
+                    field(before, "DocumentUuid") == null ? "null" :
+                    canonicalUuid(field(before, "DocumentUuid")).isEmpty() ? "other" : "uuid");
+            observation.put("beforeJsonState", before == null ? "absent" :
+                    "__debezium_unavailable_value".equals(field(before, "DocumentJson")) ? "unavailable" :
+                    field(before, "DocumentJson") == null ? "null" : "present");
+            Object time = field(row, "LastModifiedAt");
+            observation.put("timeHasSevenFractionalDigits", time instanceof String text
+                    && text.matches(".*\\.\\d{7}Z"));
             observation.put("valueIsNull", record.value() == null);
             Object lsn = record.sourceOffset().get("lsn");
             observation.put("lsn", lsn instanceof Long ? lsn : 0L);

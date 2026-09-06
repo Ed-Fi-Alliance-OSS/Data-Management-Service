@@ -437,3 +437,58 @@ Configure the qualified immutable Connect digest, PostgreSQL and Redpanda image
 variables described under MC-07. The suite starts no API or projector. The fixture's
 optional partition count defaults to one for existing smoke tests; its topic setup
 now explicitly applies compaction and delete retention for both binding topics.
+
+## SQL Server capture and broker contract (MC-09)
+
+`Given_MessageContractSqlServer` mirrors the four PostgreSQL public scenarios through
+SQL Server 2025 function-mode CDC, using the existing provider setup, renderer and
+isolated Connect/broker fixture. Stable IDs are `MC-SQLSERVER-SNAPSHOT-LIVE`,
+`MC-SQLSERVER-DELETE-EXCLUSION`, `MC-SQLSERVER-PROGRESS`, and
+`MC-SQLSERVER-WORK-EXCLUSION`. Seven compacted public partitions and one compacted
+progress partition use at least seven days of delete retention. No API or projector
+workflow is involved.
+
+The fixture checks major version 17, Agent/capture job readiness, snapshot isolation,
+exact capture inventory, the cache primary/foreign keys and its non-indexed UUID.
+All generated settings are checked against the running connector, including
+`data.query.mode=function`, `snapshot.isolation.mode=snapshot`,
+`time.precision.mode=isostring`, custom UUID message keys and disabled automatic
+tombstones. Four shared E18 cases are resolved at runtime; fixed UUID vectors and
+live metadata are substituted without changing or copying materializer goldens.
+
+Before registration, a captured heartbeat drains the seed insert into CDC so the
+initial snapshot has a settled capture boundary. Each subsequent phase captures a
+later heartbeat after-image through the actual CDC function, then waits for the
+matching server/database committed `(commit_lsn, change_lsn, event_serial_no)` to
+reach that barrier (the heartbeat after-image serial is 2). Existing committed-offset
+parsing/comparison rejects snapshot and malformed positions. Only then are the Kafka
+partition ends frozen and scanned from the preceding phase's exclusive ends.
+Neither source-table heartbeat values nor Kafka offsets substitute for that fence.
+
+The pass-through source observer validates the database-qualified relational topics
+and source partition by equality flags, retaining no database/server names. It records
+plain STRING UUID/JSON schemas, IsoTimestamp/INT64 schemas, fractional-precision flags
+and bounded before-image availability categories. The live canonical UUID before
+images and changed JSON LOB before images are available in this matrix; MC-04 owns
+injected unavailable-marker delete evidence. The actual native heartbeat has a
+one-field structured key; MC-05 separately covers injected null native keys.
+Broker assertions require complete semantic envelopes, opaque ETags, whole-second truncation, fixed lowercase UUID key
+bytes, same-key partition/order and one true Kafka tombstone per canonical delete.
+Cache deletes and canonical non-delete operations produce no public records; fenced
+work insert/update/delete is absent from capture, public output and attributable
+progress. Legitimate periodic/native/relational heartbeats remain separately allowed.
+
+Run with `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` set to the qualified immutable digest,
+`CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE` and
+`CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE` configured:
+
+```sh
+CDC_CONNECTOR_TEMPLATE_FAIL_FAST=true dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.csproj --filter 'Category=CdcMessageContract&FullyQualifiedName~MessageContractSqlServer' --logger trx
+```
+
+NUnit attaches sanitized JSON from `TestResults/MessageContractSqlServer`: image digest,
+five captured/committed LSN fences, source shape observations, partition bounds and
+record lengths/null flags. Containers and their source-observation file are removed
+by the existing fixture's independent cleanup, including setup failures. Optional local
+prerequisite skips never count as provider/broker evidence; fail-fast qualification
+requires actual execution.

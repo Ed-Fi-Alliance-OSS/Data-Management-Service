@@ -611,6 +611,10 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                 ["transforms.contractObserver.type"] = "org.edfi.contract.MessageContractSourceObserver",
                 ["transforms.contractObserver.expected.server"] = rendered.ConnectorName.Value,
             };
+            if (Provider == CdcProvider.SqlServer)
+            {
+                observedConfig["transforms.contractObserver.expected.database"] = SqlServerDatabaseName;
+            }
             payload = new(rendered.ConnectorName, observedConfig);
         }
         using var content = new StringContent(

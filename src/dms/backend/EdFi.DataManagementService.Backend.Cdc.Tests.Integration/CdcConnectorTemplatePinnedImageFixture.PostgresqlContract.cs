@@ -111,17 +111,15 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
 
     public Task UpdateProjectionWorkAsync(long documentId, CancellationToken token) =>
         ExecuteProviderMutationAsync(
-            $"""
-            UPDATE "dms"."DocumentProjectionWork" SET "RequiredContentVersion" = 2,
-            "LastEnqueuedAt" = clock_timestamp() WHERE "DocumentId" = @DocumentId
-            """,
+            $"UPDATE {Quote("dms")}.{Quote("DocumentProjectionWork")} SET {Quote("RequiredContentVersion")} = 2, "
+                + $"{Quote("LastEnqueuedAt")} = {CurrentTimestamp} WHERE {Quote("DocumentId")} = @DocumentId",
             documentId,
             token
         );
 
     public Task DeleteProjectionWorkAsync(long documentId, CancellationToken token) =>
         ExecuteProviderMutationAsync(
-            "DELETE FROM \"dms\".\"DocumentProjectionWork\" WHERE \"DocumentId\" = @DocumentId",
+            $"DELETE FROM {Quote("dms")}.{Quote("DocumentProjectionWork")} WHERE {Quote("DocumentId")} = @DocumentId",
             documentId,
             token
         );
