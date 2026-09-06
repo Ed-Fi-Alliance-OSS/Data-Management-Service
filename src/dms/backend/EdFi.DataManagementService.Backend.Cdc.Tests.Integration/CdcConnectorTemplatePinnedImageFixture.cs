@@ -274,7 +274,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
 
             settings.StopOnPrerequisiteFailure(
                 provider,
-                $"Pinned-image fixture prerequisites are not ready for {provider}. Failure details are redacted."
+                $"Pinned-image fixture prerequisites are not ready for {provider}. "
+                    + (ex is BrokerStartupException ? ex.Message : "Failure details are redacted.")
             );
             throw;
         }
@@ -988,45 +989,74 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
 
     private async Task StartBrokerAsync(CancellationToken cancellationToken)
     {
-        // Reserve a loopback port for the external listener advertised to the test client.
-        using (var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0))
+        const int maximumAttempts = 3;
+        for (int attempt = 1; attempt <= maximumAttempts; attempt++)
         {
-            listener.Start();
-            _brokerHostPort = ((IPEndPoint)listener.LocalEndpoint).Port;
+            // The reservation must be released before Docker can bind it. Another process can
+            // claim it in that gap, so reserve again for each retry instead of reusing the field.
+            using (var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0))
+            {
+                listener.Start();
+                _brokerHostPort = ((IPEndPoint)listener.LocalEndpoint).Port;
+            }
+            DockerCommandResult result = await _docker.RunAllowingFailureAsync(
+                [
+                    "run",
+                    "--detach",
+                    "--name",
+                    BrokerContainerName,
+                    "--network",
+                    NetworkName,
+                    "-p",
+                    $"127.0.0.1:{_brokerHostPort}:19092",
+                    _settings.BrokerImage,
+                    "redpanda",
+                    "start",
+                    "--overprovisioned",
+                    "--smp",
+                    "1",
+                    "--memory",
+                    "512M",
+                    "--reserve-memory",
+                    "0M",
+                    "--node-id",
+                    "0",
+                    "--check=false",
+                    "--kafka-addr",
+                    "internal://0.0.0.0:9092,external://0.0.0.0:19092"
+                        + (_isolateSourceProducer ? ",producer://0.0.0.0:9094" : ""),
+                    "--advertise-kafka-addr",
+                    $"internal://{BrokerContainerName}:9092,external://127.0.0.1:{_brokerHostPort}"
+                        + (_isolateSourceProducer ? $",producer://{ConnectContainerName}:19094" : ""),
+                ],
+                cancellationToken
+            );
+            if (result.ExitCode == 0)
+            {
+                return;
+            }
+
+            _brokerHostPort = 0;
+            if (attempt == maximumAttempts || !IsBrokerPortBindFailure(result.StandardError))
+            {
+                throw new BrokerStartupException(result.ToFailureMessage(maximumOutputLength: 1024));
+            }
+
+            // Remove the container Docker may have created even when caller cancellation arrives.
+            // A failed cleanup stops startup; never retry with an occupied container name.
+            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            await _docker.RunAsync(["rm", "-f", BrokerContainerName], cleanup.Token);
+            cancellationToken.ThrowIfCancellationRequested();
         }
-        await _docker.RunAsync(
-            [
-                "run",
-                "--detach",
-                "--name",
-                BrokerContainerName,
-                "--network",
-                NetworkName,
-                "-p",
-                $"127.0.0.1:{_brokerHostPort}:19092",
-                _settings.BrokerImage,
-                "redpanda",
-                "start",
-                "--overprovisioned",
-                "--smp",
-                "1",
-                "--memory",
-                "512M",
-                "--reserve-memory",
-                "0M",
-                "--node-id",
-                "0",
-                "--check=false",
-                "--kafka-addr",
-                "internal://0.0.0.0:9092,external://0.0.0.0:19092"
-                    + (_isolateSourceProducer ? ",producer://0.0.0.0:9094" : ""),
-                "--advertise-kafka-addr",
-                $"internal://{BrokerContainerName}:9092,external://127.0.0.1:{_brokerHostPort}"
-                    + (_isolateSourceProducer ? $",producer://{ConnectContainerName}:19094" : ""),
-            ],
-            cancellationToken
-        );
     }
+
+    private static bool IsBrokerPortBindFailure(string error) =>
+        error.Contains("address already in use", StringComparison.OrdinalIgnoreCase)
+        || error.Contains("port is already allocated", StringComparison.OrdinalIgnoreCase)
+        || error.Contains("failed to bind host port", StringComparison.OrdinalIgnoreCase)
+        || error.Contains("bind: An attempt was made to access a socket", StringComparison.OrdinalIgnoreCase);
+
+    private sealed class BrokerStartupException(string message) : InvalidOperationException(message);
 
     private async Task StartProviderAsync(CancellationToken cancellationToken)
     {
@@ -3123,13 +3153,17 @@ internal sealed class DockerCli : IDockerCli
 
 internal sealed record DockerCommandResult(int ExitCode, string StandardOutput, string StandardError)
 {
-    public string ToFailureMessage()
+    public string ToFailureMessage(int maximumOutputLength = int.MaxValue)
     {
         string stderr = string.IsNullOrWhiteSpace(StandardError) ? "<empty>" : Sanitize(StandardError).Trim();
         string stdout = string.IsNullOrWhiteSpace(StandardOutput)
             ? "<empty>"
             : Sanitize(StandardOutput).Trim();
 
+        stdout =
+            stdout.Length > maximumOutputLength ? stdout[..maximumOutputLength] + " [truncated]" : stdout;
+        stderr =
+            stderr.Length > maximumOutputLength ? stderr[..maximumOutputLength] + " [truncated]" : stderr;
         return string.Create(
             CultureInfo.InvariantCulture,
             $"docker exited with code {ExitCode}. stdout: {stdout}. stderr: {stderr}"
