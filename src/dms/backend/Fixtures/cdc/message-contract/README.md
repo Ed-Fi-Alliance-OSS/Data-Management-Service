@@ -383,3 +383,57 @@ dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integra
 
 Only the qualified `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` is required; use
 `CDC_CONNECTOR_TEMPLATE_FAIL_FAST=true` in qualification lanes.
+
+## PostgreSQL capture and broker contract (MC-08)
+
+`Given_MessageContractPostgresql` runs one isolated PostgreSQL/Connect/broker fixture
+with seven public partitions and one progress partition. Both topics are compacted
+and retain delete markers for at least seven days. It loads the four E18 cases and
+substitutes the four fixed UUID vectors from `partition-vectors.json` at runtime;
+no shared golden changes. Explicit live-update metadata tests whole-second UTC
+truncation and opaque ETag copying against independently adjusted expectations.
+
+Stable scenario IDs are `MC-POSTGRESQL-SNAPSHOT-LIVE`,
+`MC-POSTGRESQL-DELETE-EXCLUSION`, `MC-POSTGRESQL-PROGRESS`, and
+`MC-POSTGRESQL-WORK-EXCLUSION`. Evidence includes a pre-registration snapshot row,
+three live inserts, four updates, four canonical tombstones (including one whose
+cache row was already deleted), excluded canonical/cache activity, and fenced
+work insert/update/delete activity. Truncate has no public output: the qualified
+PostgreSQL publication disables truncate capture; MC-04 separately proves the
+transform drops explicitly injected truncate records.
+
+Each phase captures PostgreSQL WAL **after** its writes, advances the retained
+heartbeat, and waits for the matching single-server committed `lsn_proc` to reach
+that barrier before freezing Kafka bounds. All scans use the prior exclusive ends
+as their next starts. Progress records are classified as relational heartbeat
+source metadata or native heartbeat values, so legitimate periodic heartbeats do
+not invalidate work-exclusion assertions. Topic ends and progress payloads never
+substitute for the provider fence. Output retains phase/partition boundaries and
+numeric WAL/committed positions without document bodies or connection properties.
+An NUnit JSON attachment under the test output `TestResults/MessageContractPostgresql`
+retains the qualified image, all six committed provider fences, source observations
+and per-phase broker bounds/record lengths. The live native heartbeat has a one-field
+structured source key; MC-05 separately covers injected null native source keys.
+
+`MessageContractSourceObserver.java` is a test-only pass-through SMT installed in
+the existing isolated worker before connector registration. The registration helper
+prepends it to the generated transform chain; every generated setting (including
+the actual DocumentState transform, converters, partitioner and source selection)
+is checked against live config read-back. It returns the identical `SourceRecord`
+and records only allowlisted schema descriptors, operation kinds, canonical UUIDs,
+boolean source-identity checks and numeric offsets. It never serializes documents,
+server/database names, connection strings, credentials or exception details, and
+fails closed after 4096 observations. This permits assertions about actual Debezium
+UUID/JSON/ZonedTimestamp/INT64 schemas and delete-before key availability. The raw
+observer file lives only in the isolated container and is removed during cleanup;
+its bounded observations are included in the NUnit attachment.
+It supplies source-shape evidence, not a second transformer or provider pipeline.
+
+```sh
+CDC_CONNECTOR_TEMPLATE_FAIL_FAST=true dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.csproj --filter 'Category=CdcMessageContract&FullyQualifiedName~MessageContractPostgresql'
+```
+
+Configure the qualified immutable Connect digest, PostgreSQL and Redpanda image
+variables described under MC-07. The suite starts no API or projector. The fixture's
+optional partition count defaults to one for existing smoke tests; its topic setup
+now explicitly applies compaction and delete retention for both binding topics.

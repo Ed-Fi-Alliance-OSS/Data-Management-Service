@@ -116,7 +116,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
     ];
 
     private readonly CdcConnectorTemplateSmokeSettings _settings;
-    private readonly HttpClient _httpClient;
+    private HttpClient _httpClient;
     private readonly IDockerCli _docker;
     private readonly ServiceProvider _serviceProvider;
     private readonly string _resourcePrefix;
@@ -270,7 +270,10 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         }
     }
 
-    public async Task<CdcConnectorTemplateRequest> CreateRequestAsync(CancellationToken cancellationToken)
+    public async Task<CdcConnectorTemplateRequest> CreateRequestAsync(
+        CancellationToken cancellationToken,
+        int partitionCount = 1
+    )
     {
         await CreateMinimalProviderObjectsAsync(cancellationToken);
         await AssertSqlServer2025Async(cancellationToken);
@@ -278,7 +281,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             CdcProviderSetupMode.InitialCreateOrExactMatch,
             cancellationToken
         );
-        CdcConnectorTemplateRequest request = BuildRequest(providerSetupResult);
+        CdcConnectorTemplateRequest request = BuildRequest(providerSetupResult, partitionCount);
         await CreateMinimalTopicsAsync(request, cancellationToken);
         return request;
     }
@@ -591,15 +594,27 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
 
     public async Task RegisterRenderedConnectorConfigDirectlyAsync(
         CdcConnectorTemplateResult rendered,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        bool observeSourceRecords = false
     )
     {
         await AssertKafkaConnectWorkerEnvConfigProviderEnabledAsync(cancellationToken);
         AssertRenderedProviderPasswordUsesEnvReference(rendered);
 
         rendered.RegistrationPayload.Should().NotBeNull();
+        CdcKafkaConnectRegistrationPayload payload = rendered.RegistrationPayload!;
+        if (observeSourceRecords)
+        {
+            Dictionary<string, string> observedConfig = new(rendered.Config)
+            {
+                ["transforms"] = $"contractObserver,{rendered.Config["transforms"]}",
+                ["transforms.contractObserver.type"] = "org.edfi.contract.MessageContractSourceObserver",
+                ["transforms.contractObserver.expected.server"] = rendered.ConnectorName.Value,
+            };
+            payload = new(rendered.ConnectorName, observedConfig);
+        }
         using var content = new StringContent(
-            JsonSerializer.Serialize(rendered.RegistrationPayload),
+            JsonSerializer.Serialize(payload),
             Encoding.UTF8,
             "application/json"
         );
@@ -836,9 +851,15 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         }
     }
 
-    private CdcConnectorTemplateRequest BuildRequest(CdcProviderSetupResult providerSetupResult) =>
+    private CdcConnectorTemplateRequest BuildRequest(
+        CdcProviderSetupResult providerSetupResult,
+        int partitionCount
+    ) =>
         new(
-            BuildBinding(Provider),
+            BuildBinding(Provider) with
+            {
+                PartitionCount = partitionCount,
+            },
             new CdcConnectorProviderSetupEvidence(BindingGeneration, providerSetupResult),
             new CdcConnectorTemplateDeploymentPolicy(
                 KafkaBootstrapServers,
@@ -1545,26 +1566,48 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         CancellationToken cancellationToken
     )
     {
-        List<string> topics = [request.PublicTopicName, request.ProgressTopicName];
+        foreach (string topic in new[] { request.PublicTopicName, request.ProgressTopicName })
+        {
+            await _docker.RunAsync(
+                [
+                    "exec",
+                    BrokerContainerName,
+                    "rpk",
+                    "topic",
+                    "create",
+                    "--if-not-exists",
+                    topic,
+                    "--partitions",
+                    (topic == request.PublicTopicName ? request.Binding.PartitionCount : 1).ToString(
+                        CultureInfo.InvariantCulture
+                    ),
+                    "-c",
+                    "cleanup.policy=compact",
+                    "-c",
+                    "delete.retention.ms=604800000",
+                    "--brokers",
+                    $"{BrokerContainerName}:9092",
+                ],
+                cancellationToken
+            );
+        }
         if (request.SchemaHistoryTopicName is not null)
         {
-            topics.Add(request.SchemaHistoryTopicName);
+            await _docker.RunAsync(
+                [
+                    "exec",
+                    BrokerContainerName,
+                    "rpk",
+                    "topic",
+                    "create",
+                    "--if-not-exists",
+                    request.SchemaHistoryTopicName,
+                    "--brokers",
+                    $"{BrokerContainerName}:9092",
+                ],
+                cancellationToken
+            );
         }
-
-        await _docker.RunAsync(
-            [
-                "exec",
-                BrokerContainerName,
-                "rpk",
-                "topic",
-                "create",
-                "--if-not-exists",
-                .. topics,
-                "--brokers",
-                $"{BrokerContainerName}:9092",
-            ],
-            cancellationToken
-        );
     }
 
     private async Task CreateMinimalProviderObjectsAsync(CancellationToken cancellationToken)
