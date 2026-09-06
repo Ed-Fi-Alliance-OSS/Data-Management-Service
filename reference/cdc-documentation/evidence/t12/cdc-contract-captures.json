@@ -1,0 +1,275 @@
+[
+  {
+    "test": "EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.Given_DocumentCacheAdminCdcJsonContracts.It_preserves_success_without_readiness_through_the_cli_contract(\"restart\",NotReady,\"notReady\")",
+    "boundary": "mocked dispatcher; CLI parser/executor/serializer",
+    "assertedExitCode": 0,
+    "assertedStandardError": "",
+    "emittedContract": {
+      "contractVersion": 1,
+      "observedAt": "1970-01-01T00:00:00+00:00",
+      "readiness": "notReady",
+      "primaryBlockingCategory": "projectionBacklog",
+      "targets": []
+    }
+  },
+  {
+    "test": "EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.Given_DocumentCacheAdminCdcJsonContracts.It_preserves_success_without_readiness_through_the_cli_contract(\"restart\",Unknown,\"unknown\")",
+    "boundary": "mocked dispatcher; CLI parser/executor/serializer",
+    "assertedExitCode": 0,
+    "assertedStandardError": "",
+    "emittedContract": {
+      "contractVersion": 1,
+      "observedAt": "1970-01-01T00:00:00+00:00",
+      "readiness": "unknown",
+      "primaryBlockingCategory": "projectionBacklog",
+      "targets": []
+    }
+  },
+  {
+    "test": "EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.Given_DocumentCacheAdminCdcJsonContracts.It_preserves_success_without_readiness_through_the_cli_contract(\"stop\",NotReady,\"notReady\")",
+    "boundary": "mocked dispatcher; CLI parser/executor/serializer",
+    "assertedExitCode": 0,
+    "assertedStandardError": "",
+    "emittedContract": {
+      "contractVersion": 1,
+      "observedAt": "1970-01-01T00:00:00+00:00",
+      "readiness": "notReady",
+      "primaryBlockingCategory": "projectionBacklog",
+      "targets": []
+    }
+  },
+  {
+    "test": "EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.Given_DocumentCacheAdminCdcJsonContracts.It_round_trips_the_status_contract_for_status(NotReady,\"notReady\")",
+    "boundary": "mocked dispatcher; CLI parser/executor/serializer",
+    "assertedExitCode": 0,
+    "assertedStandardError": "",
+    "emittedContract": {
+      "contractVersion": 1,
+      "observedAt": "1970-01-01T00:00:00+00:00",
+      "readiness": "notReady",
+      "primaryBlockingCategory": "projectionBacklog",
+      "targets": []
+    }
+  },
+  {
+    "test": "EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.Given_DocumentCacheAdminCdcJsonContracts.It_round_trips_the_status_contract_for_status(Unknown,\"unknown\")",
+    "boundary": "mocked dispatcher; CLI parser/executor/serializer",
+    "assertedExitCode": 0,
+    "assertedStandardError": "",
+    "emittedContract": {
+      "contractVersion": 1,
+      "observedAt": "1970-01-01T00:00:00+00:00",
+      "readiness": "unknown",
+      "primaryBlockingCategory": "projectionBacklog",
+      "targets": []
+    }
+  },
+  {
+    "test": "EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.Given_DocumentCacheAdminCdcShippedComposition.It_reports_a_cdc_status_contract_for_a_target_with_no_binding",
+    "boundary": "PostgreSQL target resolution; missing binding; no instance-database open, Kafka describe, or Connect request",
+    "assertedExitCode": 0,
+    "emittedContract": {
+      "contractVersion": 1,
+      "observedAt": "2026-09-06T23:15:59.6662952+00:00",
+      "readiness": "notReady",
+      "primaryBlockingCategory": "bindingMissing",
+      "targets": [
+        {
+          "targetIdentity": {
+            "deploymentKey": "local",
+            "tenantKey": "default",
+            "dataStoreId": "1",
+            "instanceKey": "ds1",
+            "generation": 1,
+            "provider": "postgresql"
+          },
+          "readiness": "notReady",
+          "primaryBlockingCategory": "bindingMissing",
+          "binding": {
+            "state": "notSatisfied",
+            "category": "bindingMissing",
+            "observedAt": "2026-09-06T23:15:59.6660029+00:00",
+            "message": "binding missing"
+          },
+          "projection": {
+            "state": "unknown",
+            "category": "statusObservationUnavailable",
+            "observedAt": null,
+            "message": "projection observation unavailable"
+          },
+          "providerSetup": {
+            "state": "unknown",
+            "category": "statusObservationUnavailable",
+            "observedAt": null,
+            "message": "providerSetup observation unavailable"
+          },
+          "providerBarrier": {
+            "state": "unknown",
+            "category": "statusObservationUnavailable",
+            "observedAt": null,
+            "message": "providerBarrier observation unavailable"
+          },
+          "sourceHistory": {
+            "state": "unknown",
+            "category": "statusObservationUnavailable",
+            "observedAt": null,
+            "message": "sourceHistory observation unavailable",
+            "continuity": "unknown",
+            "incidentLatched": false
+          },
+          "kafkaPolicy": {
+            "state": "unknown",
+            "category": "statusObservationUnavailable",
+            "observedAt": null,
+            "message": "kafkaPolicy observation unavailable"
+          },
+          "connectOffsetStore": {
+            "state": "unknown",
+            "category": "statusObservationUnavailable",
+            "observedAt": null,
+            "message": "connectOffsetStore observation unavailable"
+          },
+          "connectorConfig": {
+            "state": "unknown",
+            "category": "statusObservationUnavailable",
+            "observedAt": null,
+            "message": "connectorConfig observation unavailable"
+          },
+          "connectorRuntime": {
+            "state": "unknown",
+            "category": "statusObservationUnavailable",
+            "observedAt": null,
+            "message": "connectorRuntime observation unavailable"
+          },
+          "lag": {
+            "state": "unknown",
+            "category": "statusObservationUnavailable",
+            "observedAt": null,
+            "message": "lag observation unavailable"
+          },
+          "diagnostics": [
+            {
+              "code": "missingRequiredField",
+              "category": "missingRequiredField",
+              "severity": "error",
+              "component": "observationValidation",
+              "observedAt": "2026-09-06T23:15:59.6662952+00:00",
+              "message": "Missing required field projection.",
+              "retryable": false,
+              "artifactKind": null,
+              "artifactName": null,
+              "expected": null,
+              "observed": null
+            },
+            {
+              "code": "missingRequiredField",
+              "category": "missingRequiredField",
+              "severity": "error",
+              "component": "observationValidation",
+              "observedAt": "2026-09-06T23:15:59.6662952+00:00",
+              "message": "Missing required field providerSetup.",
+              "retryable": false,
+              "artifactKind": null,
+              "artifactName": null,
+              "expected": null,
+              "observed": null
+            },
+            {
+              "code": "missingRequiredField",
+              "category": "missingRequiredField",
+              "severity": "error",
+              "component": "observationValidation",
+              "observedAt": "2026-09-06T23:15:59.6662952+00:00",
+              "message": "Missing required field providerBarrier.",
+              "retryable": false,
+              "artifactKind": null,
+              "artifactName": null,
+              "expected": null,
+              "observed": null
+            },
+            {
+              "code": "missingRequiredField",
+              "category": "missingRequiredField",
+              "severity": "error",
+              "component": "observationValidation",
+              "observedAt": "2026-09-06T23:15:59.6662952+00:00",
+              "message": "Missing required field sourceHistory.",
+              "retryable": false,
+              "artifactKind": null,
+              "artifactName": null,
+              "expected": null,
+              "observed": null
+            },
+            {
+              "code": "missingRequiredField",
+              "category": "missingRequiredField",
+              "severity": "error",
+              "component": "observationValidation",
+              "observedAt": "2026-09-06T23:15:59.6662952+00:00",
+              "message": "Missing required field kafkaPolicy.",
+              "retryable": false,
+              "artifactKind": null,
+              "artifactName": null,
+              "expected": null,
+              "observed": null
+            },
+            {
+              "code": "missingRequiredField",
+              "category": "missingRequiredField",
+              "severity": "error",
+              "component": "observationValidation",
+              "observedAt": "2026-09-06T23:15:59.6662952+00:00",
+              "message": "Missing required field connectOffsetStore.",
+              "retryable": false,
+              "artifactKind": null,
+              "artifactName": null,
+              "expected": null,
+              "observed": null
+            },
+            {
+              "code": "missingRequiredField",
+              "category": "missingRequiredField",
+              "severity": "error",
+              "component": "observationValidation",
+              "observedAt": "2026-09-06T23:15:59.6662952+00:00",
+              "message": "Missing required field connectorConfig.",
+              "retryable": false,
+              "artifactKind": null,
+              "artifactName": null,
+              "expected": null,
+              "observed": null
+            },
+            {
+              "code": "missingRequiredField",
+              "category": "missingRequiredField",
+              "severity": "error",
+              "component": "observationValidation",
+              "observedAt": "2026-09-06T23:15:59.6662952+00:00",
+              "message": "Missing required field connectorRuntime.",
+              "retryable": false,
+              "artifactKind": null,
+              "artifactName": null,
+              "expected": null,
+              "observed": null
+            },
+            {
+              "code": "missingRequiredField",
+              "category": "missingRequiredField",
+              "severity": "error",
+              "component": "observationValidation",
+              "observedAt": "2026-09-06T23:15:59.6662952+00:00",
+              "message": "Missing required field lag.",
+              "retryable": false,
+              "artifactKind": null,
+              "artifactName": null,
+              "expected": null,
+              "observed": null
+            }
+          ]
+        }
+      ]
+    },
+    "standardErrorFromTrx": "%3|1788736559.392|FAIL|rdkafka#producer-1| [thrd:localhost:9092/bootstrap]: localhost:9092/bootstrap: Connect to ipv4#127.0.0.1:9092 failed: Connection refused (after 0ms in state CONNECT)\n%3|1788736559.392|ERROR|rdkafka#producer-1| [thrd:localhost:9092/bootstrap]: 1/1 brokers are down\n%3|1788736559.394|ERROR|rdkafka#producer-1| [thrd:app]: rdkafka#producer-1: localhost:9092/bootstrap: Connect to ipv4#127.0.0.1:9092 failed: Connection refused (after 0ms in state CONNECT)\n",
+    "renderedTrxOutput": "{\"ExitCode\":0,\"StandardOutput\":\"{\"contractVersion\":1,\"observedAt\":\"2026-09-06T23:15:59.6662952+00:00\",\"readiness\":\"notReady\",\"primaryBlockingCategory\":\"bindingMissing\",\"targets\":[{\"targetIdentity\":{\"deploymentKey\":\"local\",\"tenantKey\":\"default\",\"dataStoreId\":\"1\",\"instanceKey\":\"ds1\",\"generation\":1,\"provider\":\"postgresql\"},\"readiness\":\"notReady\",\"primaryBlockingCategory\":\"bindingMissing\",\"binding\":{\"state\":\"notSatisfied\",\"category\":\"bindingMissing\",\"observedAt\":\"2026-09-06T23:15:59.6660029+00:00\",\"message\":\"binding missing\"},\"projection\":{\"state\":\"unknown\",\"category\":\"statusObservationUnavailable\",\"observedAt\":null,\"message\":\"projection observation unavailable\"},\"providerSetup\":{\"state\":\"unknown\",\"category\":\"statusObservationUnavailable\",\"observedAt\":null,\"message\":\"providerSetup observation unavailable\"},\"providerBarrier\":{\"state\":\"unknown\",\"category\":\"statusObservationUnavailable\",\"observedAt\":null,\"message\":\"providerBarrier observation unavailable\"},\"sourceHistory\":{\"state\":\"unknown\",\"category\":\"statusObservationUnavailable\",\"observedAt\":null,\"message\":\"sourceHistory observation unavailable\",\"continuity\":\"unknown\",\"incidentLatched\":false},\"kafkaPolicy\":{\"state\":\"unknown\",\"category\":\"statusObservationUnavailable\",\"observedAt\":null,\"message\":\"kafkaPolicy observation unavailable\"},\"connectOffsetStore\":{\"state\":\"unknown\",\"category\":\"statusObservationUnavailable\",\"observedAt\":null,\"message\":\"connectOffsetStore observation unavailable\"},\"connectorConfig\":{\"state\":\"unknown\",\"category\":\"statusObservationUnavailable\",\"observedAt\":null,\"message\":\"connectorConfig observation unavailable\"},\"connectorRuntime\":{\"state\":\"unknown\",\"category\":\"statusObservationUnavailable\",\"observedAt\":null,\"message\":\"connectorRuntime observation unavailable\"},\"lag\":{\"state\":\"unknown\",\"category\":\"statusObservationUnavailable\",\"observedAt\":null,\"message\":\"lag observation unavailable\"},\"diagnostics\":[{\"code\":\"missingRequiredField\",\"category\":\"missingRequiredField\",\"severity\":\"error\",\"component\":\"observationValidation\",\"observedAt\":\"2026-09-06T23:15:59.6662952+00:00\",\"message\":\"Missing required field projection.\",\"retryable\":false,\"artifactKind\":null,\"artifactName\":null,\"expected\":null,\"observed\":null},{\"code\":\"missingRequiredField\",\"category\":\"missingRequiredField\",\"severity\":\"error\",\"component\":\"observationValidation\",\"observedAt\":\"2026-09-06T23:15:59.6662952+00:00\",\"message\":\"Missing required field providerSetup.\",\"retryable\":false,\"artifactKind\":null,\"artifactName\":null,\"expected\":null,\"observed\":null},{\"code\":\"missingRequiredField\",\"category\":\"missingRequiredField\",\"severity\":\"error\",\"component\":\"observationValidation\",\"observedAt\":\"2026-09-06T23:15:59.6662952+00:00\",\"message\":\"Missing required field providerBarrier.\",\"retryable\":false,\"artifactKind\":null,\"artifactName\":null,\"expected\":null,\"observed\":null},{\"code\":\"missingRequiredField\",\"category\":\"missingRequiredField\",\"severity\":\"error\",\"component\":\"observationValidation\",\"observedAt\":\"2026-09-06T23:15:59.6662952+00:00\",\"message\":\"Missing required field sourceHistory.\",\"retryable\":false,\"artifactKind\":null,\"artifactName\":null,\"expected\":null,\"observed\":null},{\"code\":\"missingRequiredField\",\"category\":\"missingRequiredField\",\"severity\":\"error\",\"component\":\"observationValidation\",\"observedAt\":\"2026-09-06T23:15:59.6662952+00:00\",\"message\":\"Missing required field kafkaPolicy.\",\"retryable\":false,\"artifactKind\":null,\"artifactName\":null,\"expected\":null,\"observed\":null},{\"code\":\"missingRequiredField\",\"category\":\"missingRequiredField\",\"severity\":\"error\",\"component\":\"observationValidation\",\"observedAt\":\"2026-09-06T23:15:59.6662952+00:00\",\"message\":\"Missing required field connectOffsetStore.\",\"retryable\":false,\"artifactKind\":null,\"artifactName\":null,\"expected\":null,\"observed\":null},{\"code\":\"missingRequiredField\",\"category\":\"missingRequiredField\",\"severity\":\"error\",\"component\":\"observationValidation\",\"observedAt\":\"2026-09-06T23:15:59.6662952+00:00\",\"message\":\"Missing required field connectorConfig.\",\"retryable\":false,\"artifactKind\":null,\"artifactName\":null,\"expected\":null,\"observed\":null},{\"code\":\"missingRequiredField\",\"category\":\"missingRequiredField\",\"severity\":\"error\",\"component\":\"observationValidation\",\"observedAt\":\"2026-09-06T23:15:59.6662952+00:00\",\"message\":\"Missing required field connectorRuntime.\",\"retryable\":false,\"artifactKind\":null,\"artifactName\":null,\"expected\":null,\"observed\":null},{\"code\":\"missingRequiredField\",\"category\":\"missingRequiredField\",\"severity\":\"error\",\"component\":\"observationValidation\",\"observedAt\":\"2026-09-06T23:15:59.6662952+00:00\",\"message\":\"Missing required field lag.\",\"retryable\":false,\"artifactKind\":null,\"artifactName\":null,\"expected\":null,\"observed\":null}]}]}\\n\",\"StandardError\":\"%3|1788736559.392|FAIL|rdkafka#producer-1| [thrd:localhost:9092/bootstrap]: localhost:9092/bootstrap: Connect to ipv4#127.0.0.1:9092 failed: Connection refused (after 0ms in state CONNECT)\\n%3|1788736559.392|ERROR|rdkafka#producer-1| [thrd:localhost:9092/bootstrap]: 1/1 brokers are down\\n%3|1788736559.394|ERROR|rdkafka#producer-1| [thrd:app]: rdkafka#producer-1: localhost:9092/bootstrap: Connect to ipv4#127.0.0.1:9092 failed: Connection refused (after 0ms in state CONNECT)\\n\"}"
+  }
+]

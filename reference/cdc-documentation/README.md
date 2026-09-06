@@ -56,7 +56,9 @@ of prose; exclude documentation assertions from mixed Pester suites. Existing fi
 output can support authoring without a new live deployment. Capture output before
 sanitizing, preserve contract fields, and identify the evidence layer.
 
-T12 owns additional shipped-composition assertions; T13 adoption/replacement assertions;
+[T12 operator-path results](cdc-inv-evidence.md#t12-operator-path-review) cover packaged
+history rejection on both providers and the added CLI status contracts. T13 owns
+adoption/replacement assertions;
 T17 retirement assertions; T14 and T15 the PostgreSQL and SQL Server live exercises,
 respectively. Each requires actual selected test identities and nonzero execution counts.
 Unmet prerequisites and skips stay visible. Provider exercises use isolated disposable

@@ -830,6 +830,30 @@ internal sealed class DocumentCacheAdminCliStateInspector(
         );
     }
 
+    internal async Task<IReadOnlyDictionary<long, long>> ReadCachedVersionsByDocumentIdAsync()
+    {
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = postgresqlDatabase is not null
+            ? await postgresqlDatabase.QueryRowsAsync(
+                """
+                SELECT "DocumentId", "ContentVersion"
+                FROM "dms"."DocumentCache"
+                ORDER BY "DocumentId";
+                """
+            )
+            : await RequireMssqlDatabase()
+                .QueryRowsAsync(
+                    """
+                    SELECT [DocumentId], [ContentVersion]
+                    FROM [dms].[DocumentCache]
+                    ORDER BY [DocumentId];
+                    """
+                );
+        return rows.ToDictionary(
+            row => RequireInt64(row, "DocumentId"),
+            row => RequireInt64(row, "ContentVersion")
+        );
+    }
+
     public async Task<IReadOnlyDictionary<long, string>> ReadPostgresqlCachedJsonByDocumentIdAsync()
     {
         IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await RequirePostgresqlDatabase()
@@ -1465,7 +1489,7 @@ internal sealed class DocumentCacheAdminCliProcessHarness : IAsyncDisposable
     // binding state store before any artifact is named against a broker or a provider.
     internal const string CdcTopicPrefix = "edfi.dms";
     internal const string CdcSetupPrincipal = "postgres";
-    internal const string CdcConnectorPrincipal = "dms_connector";
+    internal const string CdcConnectorDatabasePrincipal = "dms_connector";
     private static readonly JsonSerializerOptions _writeOptions = new() { WriteIndented = true };
 
     private readonly string _tempDirectory;
@@ -1510,6 +1534,17 @@ internal sealed class DocumentCacheAdminCliProcessHarness : IAsyncDisposable
         return Task.FromResult(
             new DocumentCacheAdminCliProcessHarness(target, configurationService, tempDirectory, settingsPath)
         );
+    }
+
+    internal string CdcBindingStatePath => Path.Combine(_tempDirectory, "cdc-state");
+
+    internal async Task ConfigureCdcBindingStateAsync(string deploymentKey)
+    {
+        JsonObject settings = JsonNode.Parse(await File.ReadAllTextAsync(_settingsPath))!.AsObject();
+        JsonObject cdc = settings["DataManagement"]!["DocumentCache"]!["Cdc"]!.AsObject();
+        cdc["DeploymentKey"] = deploymentKey;
+        cdc["BindingStateStore"] = new JsonObject { ["RootPath"] = CdcBindingStatePath };
+        await File.WriteAllTextAsync(_settingsPath, settings.ToJsonString(_writeOptions));
     }
 
     public async Task<DocumentCacheAdminCliProcessResult> RunAsync(params string[] arguments)
@@ -1640,7 +1675,7 @@ internal sealed class DocumentCacheAdminCliProcessHarness : IAsyncDisposable
                         ["ConnectWorkerKey"] = "1",
                         ["ConnectOffsetStorageTopic"] = "debezium_source_offset",
                         ["SetupPrincipal"] = CdcSetupPrincipal,
-                        ["ConnectorPrincipal"] = CdcConnectorPrincipal,
+                        ["ConnectorDatabasePrincipal"] = CdcConnectorDatabasePrincipal,
                     },
                 },
             },

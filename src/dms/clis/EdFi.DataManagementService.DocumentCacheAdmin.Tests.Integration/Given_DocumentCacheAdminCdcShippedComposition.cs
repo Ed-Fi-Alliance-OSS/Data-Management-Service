@@ -145,17 +145,40 @@ public sealed class Given_DocumentCacheAdminCdcShippedComposition
 
         using AssertionScope scope = new();
 
+        result.ExitCode.Should().Be(DocumentCacheAdminExitCodes.Success);
         result
-            .ExitCode.Should()
-            .NotBe(
-                DocumentCacheAdminExitCodes.ConfigurationError,
-                "the shipped composition must resolve every service a cdc verb needs"
-            );
-        result.ExitCode.Should().NotBe(DocumentCacheAdminExitCodes.UnexpectedFailure);
+            .StandardError.Should()
+            .NotContain("\"contractVersion\"")
+            .And.NotContain(target.ConnectionString)
+            .And.NotContain(harness.SecretFromEnvironment);
+        result.StandardOutput.TrimEnd().Should().NotContain("\n");
+        result
+            .StandardOutput.Should()
+            .NotContain(target.ConnectionString)
+            .And.NotContain(harness.SecretFromEnvironment);
 
         JsonNode contract = ReadSingleContract(result);
-        contract["targets"].Should().NotBeNull("a cdc status reports the targets it observed");
-        contract["readiness"].Should().NotBeNull();
+        contract["contractVersion"]!.GetValue<int>().Should().Be(CdcJsonContract.CurrentContractVersion);
+        contract["readiness"]!.GetValue<string>().Should().Be("notReady");
+        JsonArray targets = contract["targets"]!.AsArray();
+        targets.Should().ContainSingle();
+        JsonNode observed = targets[0]!;
+        observed["targetIdentity"]!["tenantKey"]!.GetValue<string>().Should().Be("default");
+        observed["targetIdentity"]!["dataStoreId"]!.GetValue<string>().Should().Be("1");
+        observed["targetIdentity"]!["provider"]!.GetValue<string>().Should().Be("postgresql");
+        observed["targetIdentity"]!["generation"]!.GetValue<long>().Should().Be(Generation);
+        observed["binding"]!["state"]!.GetValue<string>().Should().Be("notSatisfied");
+        observed["binding"]!["category"]!.GetValue<string>().Should().Be("bindingMissing");
+        await TestContext.Out.WriteLineAsync(
+            JsonSerializer.Serialize(
+                new
+                {
+                    result.ExitCode,
+                    result.StandardOutput,
+                    result.StandardError,
+                }
+            )
+        );
     }
 
     private static string[] CdcStatusArguments(
@@ -236,7 +259,17 @@ public sealed class Given_DocumentCacheAdminCdcShippedComposition
                 System.IO.Path.GetTempPath(),
                 $"dms-cdc-composition-state-{Guid.NewGuid():N}"
             );
-            Directory.CreateDirectory(Path);
+            if (OperatingSystem.IsWindows())
+            {
+                Directory.CreateDirectory(Path);
+            }
+            else
+            {
+                Directory.CreateDirectory(
+                    Path,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+                );
+            }
         }
 
         public string Path { get; }

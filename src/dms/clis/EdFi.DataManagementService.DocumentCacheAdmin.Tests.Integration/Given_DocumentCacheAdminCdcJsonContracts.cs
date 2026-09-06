@@ -58,16 +58,17 @@ public sealed class Given_DocumentCacheAdminCdcJsonContracts
         AssertNoSecrets(stdout);
     }
 
-    [Test]
-    public async Task It_round_trips_the_status_contract_for_status()
+    [TestCase(CdcReadiness.NotReady, "notReady")]
+    [TestCase(CdcReadiness.Unknown, "unknown")]
+    public async Task It_round_trips_the_status_contract_for_status(CdcReadiness readiness, string outcome)
     {
         (int exitCode, string stdout, string stderr) = await ExecuteAsync(
             DocumentCacheAdminCommandSurface.CdcStatusVerbName,
             ContractResult(
                 DocumentCacheAdminCommandSurface.CdcStatusVerbName,
-                Status(CdcReadiness.NotReady),
+                Status(readiness),
                 DocumentCacheAdminExitCodes.Success,
-                "notReady"
+                outcome
             ),
             jsonOutput: true
         );
@@ -78,8 +79,37 @@ public sealed class Given_DocumentCacheAdminCdcJsonContracts
         CdcContractReadResult<CdcStatus> read = CdcJsonContract.Deserialize<CdcStatus>(stdout);
 
         read.Succeeded.Should().BeTrue(string.Join("; ", read.Diagnostics.Select(d => d.Message)));
-        read.Contract!.Readiness.Should().Be(CdcReadiness.NotReady);
+        read.Contract!.Readiness.Should().Be(readiness);
+        await TestContext.Out.WriteLineAsync(stdout);
         AssertNoSecrets(stdout);
+    }
+
+    // The dispatcher is substituted here. The real dispatcher/controller outcome mapping is
+    // covered by Given_DocumentCacheAdminCdcCommandDispatcher and the controller lifecycle suites.
+    [TestCase("stop", CdcReadiness.NotReady, "notReady")]
+    [TestCase("restart", CdcReadiness.NotReady, "notReady")]
+    [TestCase("restart", CdcReadiness.Unknown, "unknown")]
+    public async Task It_preserves_success_without_readiness_through_the_cli_contract(
+        string verb,
+        CdcReadiness readiness,
+        string outcome
+    )
+    {
+        (int exitCode, string stdout, string stderr) = await ExecuteAsync(
+            verb,
+            ContractResult(verb, Status(readiness), DocumentCacheAdminExitCodes.Success, outcome),
+            jsonOutput: true
+        );
+
+        exitCode.Should().Be(DocumentCacheAdminExitCodes.Success);
+        stderr.Should().BeEmpty();
+        stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Should().ContainSingle();
+        CdcContractReadResult<CdcStatus> read = CdcJsonContract.Deserialize<CdcStatus>(stdout);
+        read.Succeeded.Should().BeTrue();
+        read.Contract!.Readiness.Should().Be(readiness);
+        read.Contract.PrimaryBlockingCategory.Should().Be(CdcBlockingCategory.ProjectionBacklog);
+        AssertNoSecrets(stdout);
+        await TestContext.Out.WriteLineAsync(stdout);
     }
 
     [Test]

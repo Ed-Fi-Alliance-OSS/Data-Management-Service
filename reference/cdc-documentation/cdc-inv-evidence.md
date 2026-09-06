@@ -26,12 +26,15 @@ No executable documentation catalog or automated documentation/link tests are us
 | --- | --- | --- | --- | --- |
 | [Prerequisites](operations-runbook.md#prerequisites), [state](operations-runbook.md#deployment-state), [format](operations-runbook.md#procedure-format); T01 foundation | [Configuration](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#configuration-and-projection-target-selection), [binding](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-14/15 authoring support only | Manual review `T01-foundation`; no provider access | Reviewed; [record below](#t01-foundation-review), [root help](evidence/t01/help.txt), [CDC help](evidence/t01/cdc-help.txt) | Operational replay pending T14/T15; final reconciliation T16 |
 | [Prerequisites/configuration](operations-runbook.md#prerequisites); T01 validation support | [Configuration](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#configuration-and-projection-target-selection); CDC-INV-15 support, not exercised-runbook closure | `EdFi.DataManagementService.Backend.Cdc.Control.Tests.Unit.Given_CdcControlOptionsTests`; all 77 exact selected case identities in artifact; provider-independent unit behavior | 77 passed, 0 failed, 0 skipped; [case results](evidence/t01/options-test-results.txt) | Provider claims still pending T14/T15 |
-| [Monitoring](operations-runbook.md#monitoring), [routing](operations-runbook.md#incident-routing), [lag](operations-runbook.md#inspect-lag), [telemetry](operations-runbook.md#telemetry); T03 | [Status](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness), [telemetry](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations); CDC-INV-15 authoring support | Manual review `T03-monitoring`; provider-independent source/help/serialized fixture comparison | Reviewed; [record](#t03-monitoring-review), [projection help](evidence/t03/status-help.txt), [CDC status help](evidence/t03/cdc-status-help.txt) | T12 new assertions; T14/T15 deployed observations; T16 closure |
-| [Observe CDC](operations-runbook.md#observe-cdc); T03 CLI support | [Status](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness); CDC-INV-15 | `Given_DocumentCacheAdminCdcJsonContracts`; mocked-dispatch CLI integration, all 7 exact cases in artifact | 7 passed / 0 failed / 0 skipped; [results](evidence/t03/cdc-json-results.txt), [capture provenance](#t03-monitoring-review) | T12 additional assertions; no live provider evidence |
+| [Monitoring](operations-runbook.md#monitoring), [routing](operations-runbook.md#incident-routing), [lag](operations-runbook.md#inspect-lag), [telemetry](operations-runbook.md#telemetry); T03 | [Status](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness), [telemetry](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#security-telemetry-and-operations); CDC-INV-15 authoring support | Manual review `T03-monitoring`; provider-independent source/help/serialized fixture comparison | Reviewed; [record](#t03-monitoring-review), [projection help](evidence/t03/status-help.txt), [CDC status help](evidence/t03/cdc-status-help.txt) | [T12 assertions delivered](#t12-operator-path-review); T14/T15 deployed observations; T16 closure |
+| [Observe CDC](operations-runbook.md#observe-cdc); T03 CLI support | [Status](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness); CDC-INV-15 | `Given_DocumentCacheAdminCdcJsonContracts`; mocked-dispatch CLI integration, all 7 exact cases in artifact | 7 passed / 0 failed / 0 skipped; [results](evidence/t03/cdc-json-results.txt), [capture provenance](#t03-monitoring-review) | [T12 assertions delivered](#t12-operator-path-review); no live provider evidence |
 | [CDC containment](operations-runbook.md#observe-cdc), [continuity triage](operations-runbook.md#route-continuity-incident), [lag](operations-runbook.md#inspect-lag); T03 owning behavior reuse | [Continuity](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#source-history-continuity), [barrier](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#provider-source-position-barrier); CDC-INV-10/11/15 supporting evidence | `Given_CdcSetupControllerStatus`, `Given_CdcSetupControllerRestart`, `Given_CdcConnectorLagObservationMapping`, `Given_CdcSetupControllerStatusEndpointPreflight`; fake provider/Connect and HTTP unit fixtures | 104 passed / 0 failed / 0 skipped; [exact cases](evidence/t03/cdc-status-lag-results.txt), [JSON artifact mapping](#t03-monitoring-review) | T14/T15 live read-back/replay; T16 closure |
-| [Projection handoff](operations-runbook.md#projection-repair-handoff), [cache-ahead](operations-runbook.md#cache-ahead-containment), [representation correction](operations-runbook.md#representation-correction-handoff); T04 | [Repair](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations), [projection administration](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-administration); CDC-INV-14/15 authoring support | Manual review `T04-projection-handoff`; source/help, existing E18 evidence and CLI fixture assertions | Reviewed; [record](#t04-projection-handoff-review), [E18 matrix](../document-cache-documentation/cdc-inv-evidence.md) | T12 missing assertions; T14/T15 downstream replay; T16 closure; E18-S08 restamp handoff unmet |
-| [Packaged rejection](operations-runbook.md#cache-ahead-containment); T04 existing provider evidence | [History gate](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-administration); CDC-INV-14/15 | `Given_DocumentCacheAdminPostgresqlRunbookWorkflows`, `Given_DocumentCacheAdminMssqlRunbookWorkflows`, `Given_DocumentCacheAdminCdcShippedComposition`; real PostgreSQL/SQL Server plus subprocess CLI and fake CMS; no broker/Connect | Configured run 8 passed / 0 failed / 0 skipped; [exact cases](evidence/t04/runbook-shipped-configured-results.txt). Initial missing-setting run 7 passed / 1 failed / 0 skipped: [results](evidence/t04/runbook-shipped-results.txt) | T12 per-command/per-shape shipped assertions and fixture configuration; success here is not complete downstream evidence |
-| [History interpretation](operations-runbook.md#cache-ahead-containment); T04 provider behavior reuse | [Binding history](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-11/14 support | `Given_CdcDownstreamPublicationHistoryProvider`, 27 exact cases in artifact; real provider/evaluator with fake lifecycle store, no database/broker | 27 passed / 0 failed / 0 skipped; [case results](evidence/t04/downstream-history-results.txt) | T12 production command composition across evidence shapes; T14/T15 replay |
+| [Projection handoff](operations-runbook.md#projection-repair-handoff), [cache-ahead](operations-runbook.md#cache-ahead-containment), [representation correction](operations-runbook.md#representation-correction-handoff); T04 | [Repair](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#contract-change-and-repair-operations), [projection administration](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-administration); CDC-INV-14/15 authoring support | Manual review `T04-projection-handoff`; source/help, existing E18 evidence and CLI fixture assertions | Reviewed; [record](#t04-projection-handoff-review), [E18 matrix](../document-cache-documentation/cdc-inv-evidence.md) | [T12 assertions delivered](#t12-operator-path-review); T14/T15 downstream replay; T16 closure; E18-S08 restamp handoff unmet |
+| [Packaged rejection](operations-runbook.md#cache-ahead-containment); T04 existing provider evidence | [History gate](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-administration); CDC-INV-14/15 | `Given_DocumentCacheAdminPostgresqlRunbookWorkflows`, `Given_DocumentCacheAdminMssqlRunbookWorkflows`, `Given_DocumentCacheAdminCdcShippedComposition`; real PostgreSQL/SQL Server plus subprocess CLI and fake CMS; no broker/Connect | Configured run 8 passed / 0 failed / 0 skipped; [exact cases](evidence/t04/runbook-shipped-configured-results.txt). Initial missing-setting run 7 passed / 1 failed / 0 skipped: [results](evidence/t04/runbook-shipped-results.txt) | [T12 matrix/configuration delivered](#t12-operator-path-review); live replay T14/T15 |
+| [History interpretation](operations-runbook.md#cache-ahead-containment); T04 provider behavior reuse | [Binding history](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-11/14 support | `Given_CdcDownstreamPublicationHistoryProvider`, 27 exact cases in artifact; real provider/evaluator with fake lifecycle store, no database/broker | 27 passed / 0 failed / 0 skipped; [case results](evidence/t04/downstream-history-results.txt) | [T12 command matrix delivered](#t12-operator-path-review); T14/T15 replay |
+| [Packaged rejection](operations-runbook.md#cache-ahead-containment); T12 | [History gate](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-administration); CDC-INV-14/15 | `Given_DocumentCacheAdminPackagedHistoryRejections(provider,command,evidence)`; 36 real-provider CLI tuples, synthetic durable state, four assertions each | 144 passed; [matrix](evidence/t12/operator-matrix.txt), [exact identities](evidence/t12/operator-path-results.txt), [review/captures](#t12-operator-path-review) | Live replay T14/T15; final reconciliation T16 |
+| [Observe CDC](operations-runbook.md#observe-cdc); T12 | [Status owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#projection-health-and-deployment-owned-cdc-readiness); CDC-INV-15 | `Given_DocumentCacheAdminCdcJsonContracts` (11 mocked-dispatch cases), `Given_DocumentCacheAdminCdcShippedComposition` (3 PostgreSQL composition/diagnostic cases); boundaries below | 14 passed; [results](evidence/t12/operator-path-results.txt), [status captures](evidence/t12/cdc-contract-captures.json) | No SQL Server CDC-status or live capture claim; T14/T15 |
+| [History interpretation](operations-runbook.md#projection-repair-handoff); T12 reuse | [Binding/history owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#deployment-owned-cdc-target-and-physical-source-binding); CDC-INV-14/15 support | Existing CLI dispatcher/service-registration and CDC history/registration unit cases, including both provider registrations; five existing real-provider Runbook cases | 70 unit + 5 integration passed; [review and exact selections](#t12-operator-path-review) | E18 internal-only successes remain test-only; restamp E18-S08; live replay T14/T15 |
 
 <a id="t01-foundation-review"></a>
 ## T01 foundation review
@@ -323,6 +326,119 @@ connector, topic, or DMS E2E stack was mutated. These help/test commands can be 
 with the same configured prerequisites. `git diff --check` is the whitespace check.
 No T04 blocker remains; T12, T14/T15, E18-S08, and T16 pending evidence is explicit above.
 
+<a id="t12-operator-path-review"></a>
+## T12 operator-path assertions and review
+
+Reviewed 2026-09-06 at `03510aa5e5042930665ebbbfd72cf3f05b15456f` plus T12 test/evidence
+changes. .NET SDK `10.0.102`, VSTest `18.0.1`, Linux/Bash; the PostgreSQL 16.8 and SQL
+Server 2025 instances, image IDs, and host ports are unchanged from the
+[T04 environment record](#t04-projection-handoff-review). Existing containers were retained;
+fixtures disposed their isolated databases, CMS endpoints, and temporary state roots.
+No production commands, authoritative inputs, or documentation-reading tests changed.
+
+**Selection and boundaries.** From the repository root, supply
+`ConnectionStrings__DatabaseConnection` and `ConnectionStrings__MssqlAdmin` through the
+test-process environment. Credentials were resolved from the existing local test
+containers without printing or committing them. No CDC configuration workaround from
+T04 is required: the harness now supplies `ConnectorDatabasePrincipal`.
+
+```bash
+dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration --list-tests --filter 'Category=Runbook|Category=CdcJsonContract|Category=CdcShippedComposition' -- NUnit.DisplayName=FullName
+dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration --no-build --filter 'Category=Runbook|Category=CdcJsonContract|Category=CdcShippedComposition' --logger 'trx;LogFileName=operator-paths.trx' --results-directory /tmp/dms-1326-t12
+dotnet test src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Unit --filter 'FullyQualifiedName~Given_DocumentCacheAdminCdcCommandDispatcher|FullyQualifiedName~Given_DocumentCacheAdminServiceRegistration' --logger 'trx;LogFileName=cli-mapping-registration.trx' --results-directory /tmp/dms-1326-t12
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Control.Tests.Unit --no-build --filter 'FullyQualifiedName~Given_CdcDownstreamPublicationHistoryProvider|FullyQualifiedName~It_supplies_the_downstream_publication_history_provider_ahead_of_the_document_cache_default' --logger 'trx;LogFileName=history-registration.trx' --results-directory /tmp/dms-1326-t12
+```
+
+The discovery command builds the changed integration project. The adapter prints tests
+outside the filter during discovery; `NUnit.DisplayName=FullName` distinguishes parameterized
+fixtures. Before execution, the requested category union was mapped to the 163 identifiers
+in [selection mapping](evidence/t12/selection-mapping.txt). The final TRX was checked against
+those identities, including all 36 provider/command/evidence tuples, rather than relying
+on category totals. Final results: **163 integration + 41 CLI unit + 29 history/registration
+unit tests passed; no failures or skips**. See [integration results](evidence/t12/operator-path-results.txt),
+[CLI mapping/registration](evidence/t12/cli-mapping-registration-results.txt), and
+[history/registration](evidence/t12/history-registration-results.txt).
+
+`Given_DocumentCacheAdminPackagedHistoryRejections(provider,command,evidence)` runs four
+assertions per tuple: JSON rejection/target/source, lifecycle/latch/database preservation,
+durable-record preservation, and output-stream/secret separation. Providers are
+`postgresql` and `mssql`; commands are `activate-offline`, `deactivate-offline`, and
+`recover-cache-ahead`. The [36-cell result matrix](evidence/t12/operator-matrix.txt) includes
+the observed history status and actual CLI exit/classification for every combination.
+
+| Fixture input | Shipped history observation | Boundary proved |
+| --- | --- | --- |
+| `active` | `active` | Matching target/current-source binding |
+| `historical` | `historical` | Retained retirement, live binding removed by the existing lifecycle service using a synthetic cleanup proof |
+| `unknown` | `unknown` | Unreadable binding record; no internal-only inference |
+| `missing` | `unknown` | Empty isolated state root with deployment key configured |
+| `mismatchedTarget` | `unknown` | Binding names another tenant with the same data-store ID |
+| `mismatchedSource` | `historical` | Binding names the requested target under a different physical source |
+
+These are **shipped CLI/history composition with real database execution and synthetic
+state inputs**. The fixture calls the existing artifact generator and lifecycle service;
+it does not implement a second store, run live capture, or establish a real cleanup proof.
+A separate observation through the shipped history provider asserts the input's history
+classification; that classification is not an additional CLI JSON field. All commands use
+the current resolved fingerprint so they reach the history gate. Earlier expected-source
+mismatch guards remain separately owned. Every tuple returns exit `10`,
+`rejectedNoMutation`, `downstreamHistoryPresentOrUnknown`, `mutated=false`, and a
+`phaseDiagnostics` entry with `diagnosticCategory=downstreamPublicationHistoryPresentOrUnknown`.
+Before/after checks include lifecycle, cache-ahead latch, cache JSON/content versions,
+work versions/oldest timestamp, counts, physical source, and durable binding/retirement bytes.
+No `internalOnly` success is implied.
+
+The existing `Given_DocumentCacheAdminCdcShippedComposition` remains **PostgreSQL-only**.
+Its missing-binding path resolves the target but returns before opening the instance
+connection, Kafka describes, or Connect requests; it cannot prove SQL Server CDC composition
+or live capture. Client construction can still start a background Kafka bootstrap connection
+and write diagnostics to stderr. Assertions now require exit `0`, `notReady`, the default-tenant
+binding identity, `binding.state=notSatisfied`, `binding.category=bindingMissing`, one stdout
+contract, and secret-free stream separation. Its private temporary root is created with
+owner-only Unix permissions so an inherited permissive umask cannot change the tested path
+to `statusObservationUnavailable`. See [captured status](evidence/t12/cdc-contract-captures.json).
+
+`Given_DocumentCacheAdminCdcJsonContracts` adds `status` unknown/exit-zero and successful
+`stop` notReady / `restart` notReady-or-unknown round trips through the real parser,
+executor, and serializer with a **substituted dispatcher**. Its minimal status fixtures
+have no target observations and prove transport/exit preservation only. Existing dispatcher
+unit tests independently prove applied/refused operation mapping; existing T03 controller
+[status/lag results](evidence/t03/cdc-status-lag-results.txt) retain containment/continuity
+coverage. Two-provider history registration and behavior were reused, not reimplemented.
+
+**Manual comparison and captures.** Reviewed the serialized results against
+[E18 packaged rejection](../document-cache-documentation/operations-runbook.md#packaged-downstream-history),
+[CDC repair routing](operations-runbook.md#projection-repair-handoff), and
+[CDC status interpretation](operations-runbook.md#observe-cdc); followed their owner/evidence
+links. T04 rejection fields/exit/latch claims match. Diagnostic details are under
+`phaseDiagnostics`, not the ignored compatibility `Diagnostics` property. SQL Server
+prerequisite correction, interrupted reset/rebuild, scrub, and scan-free restart retain
+[E18's existing identities and exclusions](../document-cache-documentation/cdc-inv-evidence.md#matrix);
+this selection reruns the existing five Runbook cases, not all E18 suites.
+
+Raw TRX/logs and all 36 JSON attachments were captured before review under
+`/tmp/dms-1326-t12` (attachments also originate in the test output directory). Committed
+results omit machine paths, test run IDs, and timings. Six representative captures retain
+raw stdout/stderr, exit code, synthetic durable records, and before/after observations:
+[PG active activation](evidence/t12/postgresql-activate-offline-active.json),
+[PG historical deactivation](evidence/t12/postgresql-deactivate-offline-historical.json),
+[PG unknown recovery](evidence/t12/postgresql-recover-cache-ahead-unknown.json),
+[SQL missing activation](evidence/t12/mssql-activate-offline-missing.json),
+[SQL target-mismatch deactivation](evidence/t12/mssql-deactivate-offline-mismatchedTarget.json),
+and [SQL source-mismatch recovery](evidence/t12/mssql-recover-cache-ahead-mismatchedSource.json).
+Synthetic source hashes, document IDs, timestamps, and contract fields are retained;
+formatting is normalized only. Status captures identify asserted exit/stderr separately
+from emitted contract JSON. VSTest rendered Unicode quote escapes inside the shipped-status
+wrapper; that rendered output is retained alongside its decoded inner contract and stderr.
+
+Initial test iterations caught invalid fixture artifact names, inherited state-root
+permissions, and overstrict status stderr/state assertions. These were corrected in tests;
+no production capability gap was identified. Final CSharpier and whitespace checks passed.
+T12's assertion gaps are closed. Live provider/broker/API replay remains T14/T15, adoption
+and replacement assertions T13, retirement operator assertions T17, final reconciliation
+T16, and the absent restamp handoff E18-S08. Repeat these tests only against disposable
+provider targets; the synthetic retirement proof is not an operator command or purge evidence.
+
 <a id="pending-delivery"></a>
 ## Pending delivery and verification
 
@@ -335,8 +451,8 @@ actual results before the story is complete.
 | Pending scope | Authoring / evidence owner | Result and required handoff |
 | --- | --- | --- |
 | Fresh PostgreSQL/SQL Server setup, API upsert/delete, planned stop/guarded restart | T02; T14/T15 live replay | Pending. Record qualified image, exact wrapper arguments, persistent mount, and E19-06 harness identities; an absent upstream harness is an unmet dependency. |
-| Monitoring/incident routing and status/lag JSON | T03 delivered; T12 assertions; T14/T15 live observations | Authoring and existing fixture capture reviewed in [T03](#t03-monitoring-review). Deployed endpoint/provider/metrics/fence read-back remains pending; fixture success does not close live evidence. |
-| E18 packaged downstream-history handoff and repair scope | T04 delivered; T12 additional assertions; E18-S08 restamp; T16 reconciliation | [T04 review](#t04-projection-handoff-review): 8 configured integration and 27 history unit cases passed; full per-command/per-provider history-shape composition remains T12. Dedicated restamp utility/procedure/evidence is absent; E18-S08 handoff unmet. |
+| Monitoring/incident routing and status/lag JSON | T03/T12 delivered; T14/T15 live observations | Authoring and existing fixture capture reviewed in [T03](#t03-monitoring-review); additional CLI contracts verified in [T12](#t12-operator-path-review). Deployed endpoint/provider/metrics/fence read-back remains pending; fixture success does not close live evidence. |
+| E18 packaged downstream-history handoff and repair scope | T04/T12 delivered; E18-S08 restamp; T16 reconciliation | [T04 review](#t04-projection-handoff-review): 8 configured integration and 27 history unit cases passed; [T12](#t12-operator-path-review) adds all 36 provider/command/evidence tuples with 144 passing assertions. Dedicated restamp utility/procedure/evidence is absent; E18-S08 handoff unmet. |
 | Continuity, complete-record adoption, physical-source replacement | T05; T13 assertions; T14/T15 replay | Pending. Record exact case identities, default-tenant translation, outcome/exit code, preserved generation, and retry evidence. |
 | Destructive retirement, partial failure, timeout and same-operation retry | T06; T17 assertions; T14/T15 replay | Pending. Distinguish successful cleanup proof from incomplete/refused cleanup; preserve shared state and retirement records. |
 | Security, consumer isolation, sensitive-data containment | T07; T14/T15 replay | Pending. Link authorizer-backed evidence separately from local ACL-disabled results; component cleanup cannot prove platform purge. |
