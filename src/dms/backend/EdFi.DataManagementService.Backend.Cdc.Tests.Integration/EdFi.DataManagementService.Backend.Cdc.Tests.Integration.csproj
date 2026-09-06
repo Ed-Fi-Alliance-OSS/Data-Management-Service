@@ -24,6 +24,7 @@
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.Cdc\EdFi.DataManagementService.Backend.Cdc.csproj" />
+        <ProjectReference Include="../EdFi.DataManagementService.Backend.Cdc.Control/EdFi.DataManagementService.Backend.Cdc.Control.csproj" />
     </ItemGroup>
     <ItemGroup>
         <!-- The CDC control plane's broker-backed fixture reuses this project's Docker CLI, mapped-port,
@@ -40,6 +41,10 @@
     </ItemGroup>
     <ItemGroup>
         <!-- Share test-only fixture helpers without referencing another test assembly. -->
+        <Compile
+            Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractAdmissionFixture.cs"
+            Link="MessageContractAdmissionFixture.cs"
+        />
         <Compile
             Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractFixtureCatalog.cs"
             Link="MessageContractFixtureCatalog.cs"

@@ -40,12 +40,13 @@ internal sealed class MessageContractAdmissionFixture : IDisposable
     private readonly ICdcConnectorObservationMapper _mapper;
     private readonly ICdcProviderSourcePositionAdapter _positions;
 
+    private readonly string _catalog = Catalog;
     public CdcBinding Binding { get; }
     public CdcArtifactInventory Inventory { get; }
     public CdcTargetIdentity Target => Binding.ToTargetIdentity();
-    public CdcObservationContext Context => new(OperationId, Target, SourceFingerprint);
+    public CdcObservationContext Context => new(OperationId, Target, Binding.PhysicalSourceFingerprint);
     public string PartitionHash =>
-        CdcSourcePartitionHashCalculator.Compute(Binding.Provider, Inventory.ConnectorName, Catalog).Hash!;
+        CdcSourcePartitionHashCalculator.Compute(Binding.Provider, Inventory.ConnectorName, _catalog).Hash!;
     public string ValidOffset =>
         Binding.Provider == CdcProvider.Postgresql
             ? """{"lsn_proc":42,"snapshot":false}"""
@@ -89,7 +90,75 @@ internal sealed class MessageContractAdmissionFixture : IDisposable
         _positions = _scope.ServiceProvider.GetRequiredService<ICdcProviderSourcePositionAdapter>();
     }
 
-    public CdcConnectorOffsetEntry Entry(string offset, string server = "", string database = Catalog)
+    // Live broker fixtures reuse the same focused prerequisites, with the actual binding and partition identity.
+    public MessageContractAdmissionFixture(
+        CdcProvider provider,
+        CdcBinding binding,
+        CdcArtifactInventory inventory,
+        string catalog
+    )
+        : this(provider)
+    {
+        Binding = binding;
+        Inventory = inventory;
+        _catalog = catalog;
+    }
+
+    public CdcProjectionCorrelationObservation ObserveFocusedProjection() =>
+        Projection(DateTimeOffset.UtcNow);
+
+    // The production mapper/adapter consume real offset and task observations. Other admission
+    // prerequisites stay focused test inputs; this is not a provider-history or projector workflow.
+    public CdcInitialAdmissionEvaluationInput ObserveLiveProgress(
+        CdcConnectorOffsetEntry entry,
+        string connectorState,
+        IReadOnlyList<string> taskStates,
+        CdcProviderBarrierCaptureResult capture,
+        DateTimeOffset firstProjectionAt
+    )
+    {
+        CdcInitialAdmissionEvaluationInput input = ValidInput();
+        _clock.UtcNow = DateTimeOffset.UtcNow;
+        var offsets = new CdcConnectResult<CdcConnectorOffsets>(
+            CdcConnectOutcome.Succeeded,
+            new([entry]),
+            null
+        );
+        CdcConnectorOffsetObservation offset = _mapper.MapOffset(Context, Binding, _catalog, offsets);
+        CdcConnectorRuntimeObservation runtime = _mapper.MapRuntime(
+            Context,
+            Binding,
+            new(
+                CdcConnectOutcome.Succeeded,
+                new(
+                    connectorState,
+                    taskStates.Select((state, id) => new CdcConnectorTaskStatus(id, state, null)).ToArray()
+                ),
+                null
+            ),
+            offsets
+        );
+        _clock.UtcNow = DateTimeOffset.UtcNow;
+        CdcProviderBarrierObservation barrier = _positions.ObserveProviderBarrier(
+            new(OperationId, Binding, firstProjectionAt, capture, offset, PartitionHash)
+        );
+        DateTimeOffset historyAt = DateTimeOffset.UtcNow;
+        DateTimeOffset secondAt = historyAt.AddTicks(1);
+        DateTimeOffset now = secondAt.AddTicks(1);
+        return input with
+        {
+            ObservedAt = now,
+            NowUtc = now,
+            FirstProjectionCaughtUp = Projection(firstProjectionAt),
+            ConnectorRuntime = runtime,
+            ProviderBarrier = barrier,
+            SourceHistory = input.SourceHistory! with { ObservedAt = historyAt },
+            SecondProjectionCaughtUp = Projection(secondAt),
+            Lag = input.Lag! with { ObservedAt = secondAt },
+        };
+    }
+
+    public CdcConnectorOffsetEntry Entry(string offset, string server = "", string database = "")
     {
         Dictionary<string, string> partition = new()
         {
@@ -97,7 +166,7 @@ internal sealed class MessageContractAdmissionFixture : IDisposable
         };
         if (Binding.Provider == CdcProvider.SqlServer)
         {
-            partition["database"] = database;
+            partition["database"] = database.Length == 0 ? _catalog : database;
         }
         using JsonDocument document = JsonDocument.Parse(offset);
         return new(JsonSerializer.SerializeToElement(partition), document.RootElement.Clone());
@@ -109,7 +178,7 @@ internal sealed class MessageContractAdmissionFixture : IDisposable
         return _mapper.MapOffset(
             Context,
             Binding,
-            Catalog,
+            _catalog,
             new(CdcConnectOutcome.Succeeded, new(entries), null)
         );
     }
@@ -150,7 +219,7 @@ internal sealed class MessageContractAdmissionFixture : IDisposable
             Now,
             Now,
             Target,
-            SourceFingerprint,
+            Binding.PhysicalSourceFingerprint,
             new(
                 1,
                 "proof-1",
@@ -169,7 +238,7 @@ internal sealed class MessageContractAdmissionFixture : IDisposable
                 Now.AddSeconds(-59),
                 Target,
                 Binding.Provider,
-                SourceFingerprint,
+                Binding.PhysicalSourceFingerprint,
                 "setup-1",
                 "proof-1",
                 CdcConsistencyScope.SingleProviderTransaction,
@@ -190,7 +259,7 @@ internal sealed class MessageContractAdmissionFixture : IDisposable
                 FirstAt,
                 Target,
                 Binding.Provider,
-                SourceFingerprint,
+                Binding.PhysicalSourceFingerprint,
                 CdcProviderSetupMode.ValidateOnly,
                 CdcProviderSetupOutcome.Satisfied,
                 CdcProviderSetupState.Matched,
@@ -205,7 +274,7 @@ internal sealed class MessageContractAdmissionFixture : IDisposable
                 FirstAt,
                 Target,
                 Binding.Provider,
-                SourceFingerprint,
+                Binding.PhysicalSourceFingerprint,
                 CdcKafkaPolicyState.Satisfied,
                 "single-node",
                 new(Inventory.TopicName, CdcKafkaPolicyItemState.Satisfied, 1, "compact", 1, 1),
@@ -232,7 +301,7 @@ internal sealed class MessageContractAdmissionFixture : IDisposable
                 FirstAt,
                 Target,
                 Binding.Provider,
-                SourceFingerprint,
+                Binding.PhysicalSourceFingerprint,
                 "worker-1",
                 "connect-offsets",
                 CdcConnectOffsetStorePolicyState.Satisfied,
@@ -248,7 +317,7 @@ internal sealed class MessageContractAdmissionFixture : IDisposable
                 FirstAt,
                 Target,
                 Binding.Provider,
-                SourceFingerprint,
+                Binding.PhysicalSourceFingerprint,
                 Inventory.ConnectorName,
                 CdcConnectorConfigurationState.Matched,
                 Inventory.TopicPrefix,
@@ -273,7 +342,7 @@ internal sealed class MessageContractAdmissionFixture : IDisposable
                 HistoryAt,
                 Target,
                 Binding.Provider,
-                SourceFingerprint,
+                Binding.PhysicalSourceFingerprint,
                 CdcSourceHistoryContinuity.Healthy,
                 false,
                 CdcProviderArtifactContinuityState.ExactMatch,
@@ -308,7 +377,7 @@ internal sealed class MessageContractAdmissionFixture : IDisposable
                 SecondAt,
                 Target,
                 Binding.Provider,
-                SourceFingerprint,
+                Binding.PhysicalSourceFingerprint,
                 CdcConnectorLagState.WithinThreshold,
                 250,
                 1000,
@@ -327,7 +396,7 @@ internal sealed class MessageContractAdmissionFixture : IDisposable
             at,
             Target,
             Binding.Provider,
-            SourceFingerprint,
+            Binding.PhysicalSourceFingerprint,
             at,
             new DocumentCacheStatusTargetKey("", 1),
             CdcProjectionCorrelationState.Matched,

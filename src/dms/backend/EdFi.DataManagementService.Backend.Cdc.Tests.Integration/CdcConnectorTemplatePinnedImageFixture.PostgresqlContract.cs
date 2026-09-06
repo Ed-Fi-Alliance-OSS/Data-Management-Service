@@ -69,6 +69,10 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
         foreach (var (key, value) in rendered.Config)
         {
             string expected = key == "transforms" ? $"contractObserver,{value}" : value;
+            if (_isolateSourceProducer && key == "producer.override.bootstrap.servers")
+            {
+                expected = $"{ConnectContainerName}:19094";
+            }
             (json.RootElement.GetProperty(key).GetString() == expected)
                 .Should()
                 .BeTrue($"generated property {key} must remain effective (values redacted)");

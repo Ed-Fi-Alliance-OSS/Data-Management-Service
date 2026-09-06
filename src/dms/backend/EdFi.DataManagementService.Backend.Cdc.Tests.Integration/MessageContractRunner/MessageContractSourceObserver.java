@@ -112,6 +112,10 @@ public final class MessageContractSourceObserver implements Transformation<Sourc
             observation.put("valueIsNull", record.value() == null);
             Object lsn = record.sourceOffset().get("lsn");
             observation.put("lsn", lsn instanceof Long ? lsn : 0L);
+            observation.put("commitLsn", safeLsn(record.sourceOffset().get("commit_lsn")));
+            observation.put("changeLsn", safeLsn(record.sourceOffset().get("change_lsn")));
+            Object serial = record.sourceOffset().get("event_serial_no");
+            observation.put("eventSerialNo", serial instanceof Long value && value >= 0 ? value : 0L);
             // No body, timestamps, credentials, database/server/tenant names or arbitrary metadata are serialized.
             Files.writeString(OUTPUT, JSON.writeValueAsString(observation) + "\n",
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND);
@@ -119,6 +123,10 @@ public final class MessageContractSourceObserver implements Transformation<Sourc
         } catch (Exception failure) {
             throw new DataException("Source observation failed; details redacted");
         }
+    }
+
+    private static String safeLsn(Object value) {
+        return value instanceof String text && text.matches("[0-9a-fA-F]{8}:[0-9a-fA-F]{8}:[0-9a-fA-F]{4}") ? text : "";
     }
 
     private static Object field(Struct value, String name) {

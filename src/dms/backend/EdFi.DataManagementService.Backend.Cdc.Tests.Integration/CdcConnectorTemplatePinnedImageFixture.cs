@@ -203,7 +203,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
 
     public static async Task<CdcConnectorTemplatePinnedImageFixture> StartAsync(
         CdcProvider provider,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        bool isolateSourceProducer = false
     )
     {
         CdcConnectorTemplateSmokeSettings settings = CdcConnectorTemplateSmokeSettings.FromEnvironment(
@@ -219,7 +220,14 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         );
 
         string resourcePrefix = $"dms-cdc-template-{Guid.NewGuid():N}";
-        return await StartAsync(provider, settings, docker, resourcePrefix, cancellationToken);
+        return await StartAsync(
+            provider,
+            settings,
+            docker,
+            resourcePrefix,
+            cancellationToken,
+            isolateSourceProducer: isolateSourceProducer
+        );
     }
 
     internal static async Task<CdcConnectorTemplatePinnedImageFixture> StartAsync(
@@ -228,7 +236,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         IDockerCli docker,
         string resourcePrefix,
         CancellationToken cancellationToken,
-        bool applyPrerequisitePolicy = true
+        bool applyPrerequisitePolicy = true,
+        bool isolateSourceProducer = false
     )
     {
         var fixture = new CdcConnectorTemplatePinnedImageFixture(
@@ -241,6 +250,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
 
         try
         {
+            fixture._isolateSourceProducer = isolateSourceProducer;
             await fixture.StartDockerResourcesAsync(cancellationToken);
             Uri connectBaseUri = await fixture.ReadMappedConnectBaseUriAsync(cancellationToken);
 
@@ -616,6 +626,14 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                 observedConfig["transforms.contractObserver.expected.database"] = SqlServerDatabaseName;
             }
             payload = new(rendered.ConnectorName, observedConfig);
+        }
+        if (_isolateSourceProducer)
+        {
+            Dictionary<string, string> isolatedConfig = new(payload.Config)
+            {
+                ["producer.override.bootstrap.servers"] = $"{ConnectContainerName}:19094",
+            };
+            payload = new(rendered.ConnectorName, isolatedConfig);
         }
         using var content = new StringContent(
             JsonSerializer.Serialize(payload),
@@ -1000,9 +1018,11 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                 "0",
                 "--check=false",
                 "--kafka-addr",
-                "internal://0.0.0.0:9092,external://0.0.0.0:19092",
+                "internal://0.0.0.0:9092,external://0.0.0.0:19092"
+                    + (_isolateSourceProducer ? ",producer://0.0.0.0:9094" : ""),
                 "--advertise-kafka-addr",
-                $"internal://{BrokerContainerName}:9092,external://127.0.0.1:{_brokerHostPort}",
+                $"internal://{BrokerContainerName}:9092,external://127.0.0.1:{_brokerHostPort}"
+                    + (_isolateSourceProducer ? $",producer://{ConnectContainerName}:19094" : ""),
             ],
             cancellationToken
         );

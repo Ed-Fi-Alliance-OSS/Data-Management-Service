@@ -589,3 +589,50 @@ digest, interruption state checks, bounded provider fences, source operation kin
 Kafka boundaries and ordered record offsets/lengths/null flags. It omits bodies,
 keys, physical topic names, source identities and credentials. Missing prerequisites
 use the existing local-skip/qualification-fail-fast policy.
+
+## Idle progress acknowledgement and admission (MC-12)
+
+`Given_MessageContractProgressAcknowledgement` runs both real providers with no
+public document writes. It uses the existing generated connector and compacted,
+single-partition progress topic. A test-only proxy runs inside the owned Connect
+container and forwards to a separate broker listener. Only the source producer's
+bootstrap route changes. The worker's config/status/offset producer retains its
+original listener. Connect REST offset inspection may also use the overridden
+route, so the proxy permits metadata and fetch requests while disconnecting Kafka
+Produce requests (API key 0) before forwarding them. It never decodes record bodies.
+The block is confirmed after closing existing sockets, before barrier capture.
+This uses Kafka's [connector client overrides](https://kafka.apache.org/25/kafka-connect/user-guide/)
+and [named broker listeners](https://docs.redpanda.com/streaming/current/manage/security/listener-configuration/).
+
+Stable IDs use `MC-PROGRESS-ACK-{PG|SQL}-` with these suffixes:
+
+- `GATING`: after a focused caught-up observation, capture real PostgreSQL WAL or a
+  later SQL Server CDC function heartbeat after-image (commit/change/serial 2).
+  The pass-through source observer sees a retained heartbeat at/beyond that barrier;
+  the proxy reports rejected Produce requests. Repeated successful REST offset reads
+  across several worker flush intervals remain below the barrier using production
+  provider adapters. The broker, metadata/fetch path, task and worker stay available.
+- `IDLE-RECOVERY`: lift the fault without restarting or registering a connector.
+  Committed provider position reaches the original barrier. Consume through frozen
+  progress bounds and require non-null UTF-8 `cdc-progress` keys and non-null values;
+  the public topic stays empty. Source-table changes, payloads and topic ends are
+  never substituted for acknowledged committed source positions.
+- `READINESS`: use MC-11's focused admission prerequisites with the actual fixture
+  binding, source fingerprint and source partition. Production admission remains
+  false during failure and with a missing second caught-up observation after recovery;
+  restoring the full focused sequence can admit. Projection, history and lag evidence
+  are focused inputs, not a claim about API/projector or initial-enable orchestration.
+
+Use the same four image settings as MC-07/08/09, then run:
+
+```sh
+CDC_CONNECTOR_TEMPLATE_FAIL_FAST=true dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.csproj --filter 'Category=CdcMessageContract&FullyQualifiedName~MessageContractProgressAcknowledgement' --logger trx
+```
+
+NUnit attaches bounded evidence under `TestResults/MessageContractProgressAcknowledgement`:
+scenario IDs, image digest, fault/capture ordering, typed provider positions, source
+identity equality, proxy counters, Kafka bounds/record lengths and admission states.
+Bodies, physical source/topic names and credentials are omitted. The proxy is restored
+with an independent cancellation budget; existing fixture disposal removes its owning
+worker and broker containers. No extra image, provisioning path or external service is
+required. Existing local-skip versus qualification-fail-fast prerequisites still apply.
