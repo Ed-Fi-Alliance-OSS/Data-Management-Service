@@ -1424,6 +1424,14 @@ jobs:
           $env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE | Set-Content "$results/connect-image.txt"
           Copy-Item "TestArtifacts/integration-test-assemblies/backend-cdc/Fixtures/cdc/message-contract/traceability.json" "$results/traceability.json"
 
+      - name: Pull Qualified CDC Connect Image
+        id: cdc-connect-image
+        run: |
+          docker pull "$env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to pull CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE for CDC qualification."
+          }
+
       - name: Verify Packaged Scenario Traceability
         run: |
           dotnet test ${{ env.TEST_ASSEMBLY }} `
@@ -1439,7 +1447,7 @@ jobs:
             --logger "trx;LogFileName=serialized.trx" --nologo
 
       - name: Qualify Broker Message Contracts and Existing Template Smoke Tests
-        if: ${{ !cancelled() && steps.cdc-settings.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.cdc-settings.outcome == 'success' && steps.cdc-connect-image.outcome == 'success' }}
         run: |
           dotnet test ${{ env.TEST_ASSEMBLY }} `
             --filter "(Category=CdcMessageContractKafka|Category=CdcConnectorTemplateSmoke)&Category=${{ matrix.provider }}" `
