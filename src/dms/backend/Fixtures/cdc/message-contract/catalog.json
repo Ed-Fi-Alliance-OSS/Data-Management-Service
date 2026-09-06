@@ -86,6 +86,18 @@
       "materializedCase": "document-cache/materialized-documents/ordinary-link-bearing-student-school-association",
       "providerInput": "providers/sqlserver-upsert.json",
       "upsertVariant": "variants/sqlserver-seven-digit-fraction.json"
+    },
+    {
+      "scenarioId": "MC-FIX-PG-NESTED-TRANSPORT-FIELDS",
+      "materializedCase": "document-cache/materialized-documents/ordinary-link-bearing-student-school-association",
+      "providerInput": "providers/postgresql-upsert.json",
+      "upsertVariant": "variants/nested-transport-fields.json"
+    },
+    {
+      "scenarioId": "MC-FIX-SQL-NESTED-TRANSPORT-FIELDS",
+      "materializedCase": "document-cache/materialized-documents/ordinary-link-bearing-student-school-association",
+      "providerInput": "providers/sqlserver-upsert.json",
+      "upsertVariant": "variants/nested-transport-fields.json"
     }
   ]
 }

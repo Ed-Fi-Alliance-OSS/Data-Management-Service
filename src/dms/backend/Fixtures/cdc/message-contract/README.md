@@ -49,17 +49,21 @@ materializer goldens. The shared opaque ETag is deliberately unchanged even when
 synthetic variant changes the version or body: these scenarios test copying, not
 ETag composition or materializer consistency for synthetic data.
 
-MC-03's `Given_MessageContractUpsert` executes 42 scenarios (both providers, seven
+MC-03's `Given_MessageContractUpsert` executes 48 scenarios (both providers, eight
 cases, create/update/read) in two image-only runner batches. Stable runner IDs use
 `MC-UPSERT-{PG|SQL}-{case}-{C|U|R}`. The four baseline case names match the catalog;
-the additional cases are `EXACT-NUMBERS`, `SIGNED-INT64-MIN`, and
-`FRACTIONAL-SECOND`. PostgreSQL supplies six fractional digits; SQL Server supplies
-seven. Numeric data includes adjacent integers beyond IEEE-754 and INT64 precision,
+the additional cases are `EXACT-NUMBERS`, `SIGNED-INT64-MIN`,
+`FRACTIONAL-SECOND`, and `NESTED-TRANSPORT-FIELDS`. PostgreSQL supplies six fractional
+digits; SQL Server supplies seven. Numeric data includes adjacent integers beyond IEEE-754 and INT64 precision,
 exact decimal/exponent values, mixed nested arrays, Unicode strings, and absent
 versus explicitly null sibling properties. Updates also supply uppercase source
 UUIDs and a distinct before row to detect stale metadata or body selection.
 Provider upsert templates include `ComputedAt`
 distinct from `LastModifiedAt` to prove that computation metadata does not leak.
+The nested-field variant preserves resource properties named `source`, `schema`,
+`payload`, `deleted`, and `_etag` inside objects and collection items. Transport-field
+exclusions apply to the eight envelope properties; complete semantic equality and the
+explicit `document._etag` assertion check the document body and injected ETag placement.
 
 Each scenario independently asserts the complete semantic public envelope, derived
 topic and unquoted UTF-8 key, exact required logical BYTES schema/version and

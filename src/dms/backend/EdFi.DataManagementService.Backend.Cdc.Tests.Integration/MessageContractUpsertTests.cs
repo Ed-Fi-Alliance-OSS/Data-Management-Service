@@ -37,6 +37,7 @@ public sealed class Given_MessageContractUpsert(CdcProvider provider)
             "EXTENSION-STUDENT-SCHOOL-ASSOCIATION",
             "SCHOOL-ADDRESS-PROPERTY-ABSENCE",
             "EXACT-NUMBERS",
+            "NESTED-TRANSPORT-FIELDS",
             "SIGNED-INT64-MIN",
             "FRACTIONAL-SECOND",
         ];
@@ -221,30 +222,22 @@ public sealed class Given_MessageContractUpsert(CdcProvider provider)
             .GetString()
             .Should()
             .Be(Fixture(name).CacheRow.GetProperty("streamEtag").GetString());
-        string[] names = PropertyNames(envelope).ToArray();
-        names.Count(n => n == "_etag").Should().Be(1);
-        string[] forbidden =
-        [
-            "DocumentId",
-            "documentId",
-            "ComputedAt",
-            "computedAt",
-            "StreamEtag",
-            "streamEtag",
-            "schema",
-            "payload",
-            "before",
-            "after",
-            "source",
-            "op",
-            "EdFiDoc",
-            "deleted",
-            "DocumentProjectionWork",
-            "DocumentCacheState",
-            "CacheGeneration",
-            "cacheGeneration",
-        ];
-        names.Should().NotIntersectWith(forbidden);
+        // Transport exclusions apply to the envelope; nested resource names remain document data.
+        envelope
+            .EnumerateObject()
+            .Select(property => property.Name)
+            .Should()
+            .BeEquivalentTo(
+                "contractVersion",
+                "documentUuid",
+                "projectName",
+                "resourceName",
+                "resourceVersion",
+                "contentVersion",
+                "lastModifiedAt",
+                "document"
+            );
+        MessageContractJson.ShouldEqual(envelope, Fixture(name).ExpectedEnvelope);
     }
 
     private MessageContractFixture Fixture(string name) => _fixtures[$"MC-FIX-{ProviderPrefix}-{name}"];
@@ -274,30 +267,5 @@ public sealed class Given_MessageContractUpsert(CdcProvider provider)
         byte[] bytes = serialized.GetProperty("base64").GetBytesFromBase64();
         bytes.Length.Should().Be(serialized.GetProperty("length").GetInt32()).And.BePositive();
         return bytes;
-    }
-
-    private static IEnumerable<string> PropertyNames(JsonElement value)
-    {
-        if (value.ValueKind == JsonValueKind.Object)
-        {
-            foreach (JsonProperty property in value.EnumerateObject())
-            {
-                yield return property.Name;
-                foreach (string name in PropertyNames(property.Value))
-                {
-                    yield return name;
-                }
-            }
-        }
-        else if (value.ValueKind == JsonValueKind.Array)
-        {
-            foreach (JsonElement item in value.EnumerateArray())
-            {
-                foreach (string name in PropertyNames(item))
-                {
-                    yield return name;
-                }
-            }
-        }
     }
 }

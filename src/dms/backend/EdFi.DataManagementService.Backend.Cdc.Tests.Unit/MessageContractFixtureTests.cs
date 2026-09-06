@@ -173,7 +173,10 @@ public class Given_MessageContractFixtureCatalog
                 Parse(after.GetProperty("DocumentJson").GetString()!),
                 fixture.CacheRow.GetProperty("documentJson")
             );
-            after.GetProperty("DocumentJson").GetString().Should().NotContain("_etag");
+            Parse(after.GetProperty("DocumentJson").GetString()!)
+                .TryGetProperty("_etag", out _)
+                .Should()
+                .BeFalse();
             after
                 .GetProperty("StreamEtag")
                 .GetString()
@@ -381,7 +384,7 @@ public class Given_MessageContractFixtureArtifactFiles
 
     [Test]
     public void It_loads_from_detached_build_artifacts_without_the_checkout() =>
-        MessageContractFixtureCatalog.LoadAll(_directory).Should().HaveCount(16);
+        MessageContractFixtureCatalog.LoadAll(_directory).Should().HaveCount(18);
 
     [Test]
     public void It_resolves_the_same_catalog_from_a_checkout_layout()
