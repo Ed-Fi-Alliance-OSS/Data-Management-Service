@@ -29,4 +29,10 @@
              and output-redaction helpers rather than standing up a second copy of them. -->
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Cdc.Control.Tests.Integration" />
     </ItemGroup>
+    <Import Project="../Fixtures/cdc/message-contract/MessageContractFixtures.props" />
+    <ItemGroup>
+        <!-- Share test-only fixture helpers without referencing another test assembly. -->
+        <Compile Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractFixtureCatalog.cs" Link="MessageContractFixtureCatalog.cs" />
+        <Compile Include="../EdFi.DataManagementService.Backend.Cdc.Tests.Unit/MessageContractJson.cs" Link="MessageContractJson.cs" />
+    </ItemGroup>
 </Project>

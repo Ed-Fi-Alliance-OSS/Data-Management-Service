@@ -1,0 +1,172 @@
+{
+  "formatVersion": 1,
+  "provider": "sqlserver",
+  "unavailableValuePlaceholder": "__debezium_unavailable_value",
+  "schemas": {
+    "row": {
+      "type": "STRUCT",
+      "optional": true,
+      "fields": {
+        "ProjectName": {
+          "type": "STRING",
+          "optional": false
+        },
+        "ResourceName": {
+          "type": "STRING",
+          "optional": false
+        },
+        "ResourceVersion": {
+          "type": "STRING",
+          "optional": false
+        },
+        "StreamEtag": {
+          "type": "STRING",
+          "optional": false
+        },
+        "DocumentId": {
+          "type": "INT64",
+          "optional": false
+        },
+        "DocumentUuid": {
+          "type": "STRING",
+          "optional": false
+        },
+        "ContentVersion": {
+          "type": "INT64",
+          "optional": false
+        },
+        "LastModifiedAt": {
+          "type": "STRING",
+          "optional": false,
+          "name": "io.debezium.time.IsoTimestamp"
+        },
+        "DocumentJson": {
+          "type": "STRING",
+          "optional": false
+        }
+      }
+    }
+  },
+  "sourceTopic": "contract-source.contract_db.dms.DocumentCache",
+  "sourcePartition": {
+    "server": "contract-source",
+    "database": "contract_db"
+  },
+  "sourceOffset": {
+    "commit_lsn": "00000027:00000758:0003",
+    "change_lsn": "00000027:00000758:0002",
+    "event_serial_no": 1
+  },
+  "operation": "c",
+  "keySchema": {
+    "type": "STRUCT",
+    "optional": false,
+    "name": "contract.DocumentCache.Key",
+    "fields": {
+      "DocumentUuid": {
+        "type": "STRING",
+        "optional": false
+      }
+    }
+  },
+  "key": {
+    "DocumentUuid": {
+      "$cacheRow": "documentUuid"
+    }
+  },
+  "valueSchema": {
+    "type": "STRUCT",
+    "optional": false,
+    "name": "contract.DocumentCache.Envelope",
+    "fields": {
+      "before": {
+        "$schema": "row"
+      },
+      "after": {
+        "$schema": "row"
+      },
+      "source": {
+        "type": "STRUCT",
+        "optional": false,
+        "fields": {
+          "connector": {
+            "type": "STRING",
+            "optional": false
+          },
+          "name": {
+            "type": "STRING",
+            "optional": false
+          },
+          "db": {
+            "type": "STRING",
+            "optional": false
+          },
+          "schema": {
+            "type": "STRING",
+            "optional": false
+          },
+          "table": {
+            "type": "STRING",
+            "optional": false
+          }
+        }
+      },
+      "op": {
+        "type": "STRING",
+        "optional": false
+      }
+    }
+  },
+  "value": {
+    "before": null,
+    "after": {
+      "ProjectName": {
+        "$cacheRow": "projectName"
+      },
+      "ResourceName": {
+        "$cacheRow": "resourceName"
+      },
+      "ResourceVersion": {
+        "$cacheRow": "resourceVersion"
+      },
+      "StreamEtag": {
+        "$cacheRow": "streamEtag"
+      },
+      "DocumentId": {
+        "$cacheRow": "documentId"
+      },
+      "DocumentUuid": {
+        "$cacheRow": "documentUuid"
+      },
+      "ContentVersion": {
+        "$cacheRow": "contentVersion"
+      },
+      "LastModifiedAt": {
+        "$cacheRow": "lastModifiedAt"
+      },
+      "DocumentJson": {
+        "$cacheRow": "documentJson",
+        "encoding": "json-string"
+      }
+    },
+    "source": {
+      "connector": "sqlserver",
+      "name": "contract-source",
+      "db": "contract_db",
+      "schema": "dms",
+      "table": "DocumentCache"
+    },
+    "op": "c"
+  },
+  "headers": [
+    {
+      "key": "fixture-header",
+      "schema": {
+        "type": "STRING",
+        "optional": false
+      },
+      "value": "fixture-value"
+    }
+  ],
+  "timestamp": 1785420916123
+}

@@ -1,0 +1,55 @@
+{
+  "formatVersion": 1,
+  "scenarios": [
+    {
+      "scenarioId": "MC-FIX-PG-ORDINARY-LINK-BEARING-STUDENT-SCHOOL-ASSOCIATION",
+      "materializedCase": "document-cache/materialized-documents/ordinary-link-bearing-student-school-association",
+      "providerInput": "providers/postgresql-upsert.json"
+    },
+    {
+      "scenarioId": "MC-FIX-PG-DESCRIPTOR-SCHOOL-TYPE",
+      "materializedCase": "document-cache/materialized-documents/descriptor-school-type",
+      "providerInput": "providers/postgresql-upsert.json"
+    },
+    {
+      "scenarioId": "MC-FIX-PG-EXTENSION-STUDENT-SCHOOL-ASSOCIATION",
+      "materializedCase": "document-cache/materialized-documents/extension-student-school-association",
+      "providerInput": "providers/postgresql-upsert.json"
+    },
+    {
+      "scenarioId": "MC-FIX-PG-SCHOOL-ADDRESS-PROPERTY-ABSENCE",
+      "materializedCase": "document-cache/materialized-documents/school-address-property-absence",
+      "providerInput": "providers/postgresql-upsert.json"
+    },
+    {
+      "scenarioId": "MC-FIX-PG-DOCUMENT-DELETE",
+      "materializedCase": "document-cache/materialized-documents/ordinary-link-bearing-student-school-association",
+      "providerInput": "providers/postgresql-delete.json"
+    },
+    {
+      "scenarioId": "MC-FIX-SQL-ORDINARY-LINK-BEARING-STUDENT-SCHOOL-ASSOCIATION",
+      "materializedCase": "document-cache/materialized-documents/ordinary-link-bearing-student-school-association",
+      "providerInput": "providers/sqlserver-upsert.json"
+    },
+    {
+      "scenarioId": "MC-FIX-SQL-DESCRIPTOR-SCHOOL-TYPE",
+      "materializedCase": "document-cache/materialized-documents/descriptor-school-type",
+      "providerInput": "providers/sqlserver-upsert.json"
+    },
+    {
+      "scenarioId": "MC-FIX-SQL-EXTENSION-STUDENT-SCHOOL-ASSOCIATION",
+      "materializedCase": "document-cache/materialized-documents/extension-student-school-association",
+      "providerInput": "providers/sqlserver-upsert.json"
+    },
+    {
+      "scenarioId": "MC-FIX-SQL-SCHOOL-ADDRESS-PROPERTY-ABSENCE",
+      "materializedCase": "document-cache/materialized-documents/school-address-property-absence",
+      "providerInput": "providers/sqlserver-upsert.json"
+    },
+    {
+      "scenarioId": "MC-FIX-SQL-DOCUMENT-DELETE",
+      "materializedCase": "document-cache/materialized-documents/ordinary-link-bearing-student-school-association",
+      "providerInput": "providers/sqlserver-delete.json"
+    }
+  ]
+}

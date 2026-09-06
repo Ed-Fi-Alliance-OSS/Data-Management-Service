@@ -1,0 +1,112 @@
+{
+  "formatVersion": 1,
+  "provider": "sqlserver",
+  "unavailableValuePlaceholder": "__debezium_unavailable_value",
+  "schemas": {
+    "row": {
+      "type": "STRUCT",
+      "optional": true,
+      "fields": {
+        "DocumentUuid": {
+          "type": "STRING",
+          "optional": false
+        }
+      }
+    }
+  },
+  "sourceTopic": "contract-source.contract_db.dms.Document",
+  "sourcePartition": {
+    "server": "contract-source",
+    "database": "contract_db"
+  },
+  "sourceOffset": {
+    "commit_lsn": "00000027:00000758:0003",
+    "change_lsn": "00000027:00000758:0002",
+    "event_serial_no": 1
+  },
+  "operation": "d",
+  "keySchema": {
+    "type": "STRUCT",
+    "optional": false,
+    "name": "contract.Document.Key",
+    "fields": {
+      "DocumentUuid": {
+        "type": "STRING",
+        "optional": false
+      }
+    }
+  },
+  "key": {
+    "DocumentUuid": {
+      "$cacheRow": "documentUuid"
+    }
+  },
+  "valueSchema": {
+    "type": "STRUCT",
+    "optional": false,
+    "name": "contract.Document.Envelope",
+    "fields": {
+      "before": {
+        "$schema": "row"
+      },
+      "after": {
+        "$schema": "row"
+      },
+      "source": {
+        "type": "STRUCT",
+        "optional": false,
+        "fields": {
+          "connector": {
+            "type": "STRING",
+            "optional": false
+          },
+          "name": {
+            "type": "STRING",
+            "optional": false
+          },
+          "db": {
+            "type": "STRING",
+            "optional": false
+          },
+          "schema": {
+            "type": "STRING",
+            "optional": false
+          },
+          "table": {
+            "type": "STRING",
+            "optional": false
+          }
+        }
+      },
+      "op": {
+        "type": "STRING",
+        "optional": false
+      }
+    }
+  },
+  "value": {
+    "before": {
+      "DocumentUuid": "__debezium_unavailable_value"
+    },
+    "after": null,
+    "source": {
+      "connector": "sqlserver",
+      "name": "contract-source",
+      "db": "contract_db",
+      "schema": "dms",
+      "table": "Document"
+    },
+    "op": "d"
+  },
+  "headers": [
+    {
+      "key": "fixture-header",
+      "schema": {
+        "type": "STRING",
+        "optional": false
+      },
+      "value": "fixture-value"
+    }
+  ],
+  "timestamp": 1785420916123
+}
