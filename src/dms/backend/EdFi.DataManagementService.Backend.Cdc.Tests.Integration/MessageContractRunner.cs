@@ -12,7 +12,8 @@ internal sealed record MessageContractRunnerScenario(
     string ScenarioId,
     JsonElement SourceRecord,
     IReadOnlyDictionary<string, string> TransformConfig,
-    int PartitionCount
+    int PartitionCount,
+    bool MeasureProducerSize = false
 )
 {
     public override string ToString() => ScenarioId;

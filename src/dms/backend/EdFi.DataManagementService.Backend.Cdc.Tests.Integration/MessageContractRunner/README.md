@@ -59,3 +59,11 @@ classpath. Negative prerequisite tests inject secret sentinels and cover failed 
 class loading, caller cancellation, execution timeout, and cleanup failure. The image
 smoke runs both providers through upsert, tombstone, drop, failure, and native progress,
 plus an actual missing-class probe. Broader message assertions belong to MC-03–MC-06.
+
+MC-13 can opt into `measureProducerSize=true`. For public records with empty headers,
+the runner additionally observes the pinned Kafka client's framing-aware
+`AbstractRecords.estimateSizeInBytesUpperBound` with current magic and no compression,
+and its client version. This uses the same Kafka API as the producer's local size check;
+.NET does not reproduce the framing calculation. The broker suite separately exercises
+the measured below/above boundary through the actual source producer. The size estimate
+is not a measurement of the complete network request.

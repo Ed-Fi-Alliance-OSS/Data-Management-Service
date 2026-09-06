@@ -14,6 +14,9 @@ import org.apache.kafka.common.Cluster;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.config.ConfigException;
+import org.apache.kafka.common.record.AbstractRecords;
+import org.apache.kafka.common.record.CompressionType;
+import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.connect.data.*;
 import org.apache.kafka.connect.errors.DataException;
 import org.apache.kafka.connect.header.ConnectHeaders;
@@ -95,6 +98,15 @@ class MessageContractRunner {
             observed.set("sourceOffset", JSON.valueToTree(output.sourceOffset()));
             observed.put("partition", partition);
             observed.put("partitionCount", count);
+            // The pinned KafkaProducer uses this Kafka client API for its local max.request.size check.
+            // Keep the algorithm in the image; this estimate includes framing, not just JSON length.
+            if (scenario.path("measureProducerSize").asBoolean()) {
+                if (output.headers().iterator().hasNext()) throw new IllegalArgumentException();
+                observed.put("producerSizeUpperBound", AbstractRecords.estimateSizeInBytesUpperBound(
+                    RecordBatch.CURRENT_MAGIC_VALUE, CompressionType.NONE, keyBytes, valueBytes,
+                    new org.apache.kafka.common.header.Header[0]));
+                observed.put("kafkaClientVersion", org.apache.kafka.common.utils.AppInfoParser.getVersion());
+            }
             // Observe both byte equality and object identity; do not reproduce the converter handshake.
             if (output.value() instanceof byte[] raw) {
                 observed.put("converterBytesEqual", Arrays.equals(raw, valueBytes));

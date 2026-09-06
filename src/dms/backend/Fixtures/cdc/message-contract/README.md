@@ -636,3 +636,53 @@ Bodies, physical source/topic names and credentials are omitted. The proxy is re
 with an independent cancellation budget; existing fixture disposal removes its owning
 worker and broker containers. No extra image, provisioning path or external service is
 required. Existing local-skip versus qualification-fail-fast prerequisites still apply.
+
+## Synthetic producer record-size boundary (MC-13)
+
+`Given_MessageContractRecordSize` owns six stable scenarios:
+`MC-RECORD-SIZE-{PG|SQL}-{BOUNDARY|FAILURE|RECOVERY}`. Both providers use the existing
+source setup, generated connector, qualified Connect image and isolated broker. The
+ordinary link-bearing E18 row is loaded at runtime and extended with the explicitly
+synthetic `syntheticRecordSizePadding` string. This is a producer-boundary fixture,
+not a materializer golden or a claim about the largest schema-valid document.
+
+The image-only runner invokes the pinned Kafka client's
+`AbstractRecords.estimateSizeInBytesUpperBound(CURRENT_MAGIC_VALUE, NONE, ...)`, the API
+used by the producer's local size check. Bounded calibration accounts for variable-length
+framing. ASCII padding produces records at `maxRecordBytes - 1` and `maxRecordBytes + 1`
+for a 16,384-byte budget. Evidence records serialized key/value lengths, framing allowance,
+client version and measured estimate; JSON-body length is not used as the budget.
+The live producer's observed acceptance/rejection is the conformance evidence. The API
+estimate is the pinned producer enforcement calculation, not a packet-capture measurement
+of every byte on the wire.
+
+Generated/read-back settings require compression `none`, explicit `max.request.size`,
+32 MiB `buffer.memory`, and `errors.tolerance=none`. Both topic limits are set/read back;
+Redpanda batch/request limits and observer fetch limits must accommodate the budget.
+The isolated topic has one in-sync replica, so there is no inter-broker replication hop;
+this does not qualify a production multi-broker replication configuration.
+
+The below-boundary live insert must match the entire independent expected envelope
+through a committed provider fence. The above-boundary insert must reach the source
+observer and fail the task with `RecordTooLargeException`; frozen topic bounds must remain
+unchanged and contain no record for its key. Production admission consumes the actual
+failed task and committed source offset, while focused caught-up/history/healthy-lag
+prerequisites remain satisfied. Previously acknowledged progress cannot make it ready.
+
+Recovery first aligns downstream limits to 32,768 bytes, then updates the same retained
+connector with newly rendered producer settings and resumes it. No source row correction,
+connector registration, topic generation or offset reset is performed. Provider-fenced
+consumption must find the complete previously rejected row, retain/advance the existing
+source position, and permit focused readiness again. This is an isolated recovery test,
+not the operational policy-update workflow.
+
+Use the same four image settings as MC-07/08/09, then run:
+
+```sh
+CDC_CONNECTOR_TEMPLATE_FAIL_FAST=true dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.csproj --filter 'Category=CdcMessageContract&FullyQualifiedName~MessageContractRecordSize' --logger trx
+```
+
+NUnit attaches bounded JSON under `TestResults/MessageContractRecordSize`: stable IDs,
+image digest, policy/lengths, calibration, provider fences, task failure category, broker
+bounds and readiness states. Task traces, padded documents, credentials and physical
+source/topic names are omitted. Existing cancellation-safe fixture disposal owns cleanup.
