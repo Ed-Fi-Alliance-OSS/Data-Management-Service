@@ -2,8 +2,9 @@
 
 Start with the [operations runbook](operations-runbook.md#prerequisites) for deployment
 prerequisites and procedure conventions. This reference set is being delivered in
-DMS-1326: T01 establishes its structure and configuration catalog; provider exercises and
-incident procedures remain pending in the [evidence index](cdc-inv-evidence.md).
+DMS-1326: configuration and [monitoring/incident routing](operations-runbook.md#monitoring)
+are available; provider exercises and recovery procedures remain pending in the
+[evidence index](cdc-inv-evidence.md).
 Pending work is not evidence that an operator procedure has passed.
 
 - [CDC evidence index](cdc-inv-evidence.md): manual reviews, exact behavior-test identities,
@@ -48,7 +49,8 @@ tools, executable documentation catalogs, or link-checking tests in this workflo
 
 T01's exact commands and captured results are in the
 [foundation review](cdc-inv-evidence.md#t01-foundation-review). T02–T09 add their command
-selections while authoring. Test selections must exercise product behavior independently
+selections while authoring; [T03 monitoring results](cdc-inv-evidence.md#t03-monitoring-review)
+include status/lag contracts and containment fixtures. Test selections must exercise product behavior independently
 of prose; exclude documentation assertions from mixed Pester suites. Existing fixture
 output can support authoring without a new live deployment. Capture output before
 sanitizing, preserve contract fields, and identify the evidence layer.

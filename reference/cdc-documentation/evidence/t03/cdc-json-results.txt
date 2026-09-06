@@ -1,0 +1,11 @@
+Source revision: e3bef5730c0296ced3e1aaf2a4f1905685847e4d
+Exit code: 0
+{'total': '7', 'executed': '7', 'passed': '7', 'failed': '0', 'error': '0', 'timeout': '0', 'aborted': '0', 'inconclusive': '0', 'passedButRunAborted': '0', 'notRunnable': '0', 'notExecuted': '0', 'disconnected': '0', 'warning': '0', 'completed': '0', 'inProgress': '0', 'pending': '0'}
+
+Passed | EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.Given_DocumentCacheAdminCdcJsonContracts | It_prints_the_governed_names_without_secrets_in_human_mode
+Passed | EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.Given_DocumentCacheAdminCdcJsonContracts | It_reports_diagnostics_on_stderr_when_no_contract_was_produced_in_json_mode
+Passed | EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.Given_DocumentCacheAdminCdcJsonContracts | It_round_trips_the_admission_contract_for_enable
+Passed | EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.Given_DocumentCacheAdminCdcJsonContracts | It_round_trips_the_adoption_proof_for_adopt
+Passed | EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.Given_DocumentCacheAdminCdcJsonContracts | It_round_trips_the_cleanup_proof_for_retire
+Passed | EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.Given_DocumentCacheAdminCdcJsonContracts | It_round_trips_the_status_contract_for_status
+Passed | EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration.Given_DocumentCacheAdminCdcJsonContracts | It_writes_exactly_one_json_document_to_stdout
