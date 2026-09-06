@@ -542,3 +542,50 @@ and durable state/checkpoint transitions. Public bodies, keys and physical topic
 are omitted. Prerequisite skips are not passes; fail-fast qualification requires the
 broker run. Existing fixture cleanup removes owned containers and topics on success
 or failure unless the explicit keep-containers diagnostic setting is enabled.
+
+## Delivery interruption and retained-history replay (MC-10)
+
+`Given_MessageContractRetry` runs PostgreSQL and SQL Server through the existing
+provider setup, generated connector, published transform/converters/partitioner,
+and seven-partition compacted public topic. After a live upsert and committed
+provider fence, it pauses the isolated broker, writes a higher-version cache update
+and canonical delete, and waits for the pass-through source observer to see both
+while delivery is interrupted. It kills the worker before restoring the broker,
+then starts the same worker container with its existing connector and offsets.
+The provider, slot/capture instances, SQL history, binding and topics are retained;
+recovery does not register a connector, reset offsets or resnapshot.
+
+Stable scenario IDs use `MC-RETRY-{PG|SQL}-` and these assertion suffixes:
+
+- `INTERRUPTION`: verified broker pause and worker stop/start, source update/delete
+  observed both before the kill and after restart, unchanged source partition
+  identity, and committed provider position advancement with no snapshot records.
+- `PARTITION`: every original/replayed public record has the same UUID bytes and
+  original partition; complete upserts match the shared E18 envelope or independent
+  higher-version expectation, and tombstones are Kafka null.
+- `CONVERGENCE`: consume through frozen Kafka ends only after the recovery provider
+  fence. The sequence includes the replayed update and delete and finishes deleted.
+  Duplicates and temporary resurrection are allowed; this is not exactly-once or
+  globally monotonic delivery evidence.
+
+`Given_MessageContractRetryCleanup` supplies deterministic failure-control checks
+under `MC-RETRY-CLEANUP-{success|pause|callback|cancel|kill|unpause|start}`, with
+`RESTORATION` and `DIAGNOSTICS` assertion suffixes. Every mutation failure/cancellation
+attempts broker and worker restoration using independent cleanup tokens; command
+failure prose and synthetic body/credential sentinels are excluded. Fixture disposal
+then removes owned Docker resources unless keep-containers diagnostics are enabled.
+Whole-broker interruption here is **not** progress acknowledgement-gating or
+readiness evidence; MC-12 owns that isolated failure boundary.
+
+Supply the existing Connect digest, Redpanda, PostgreSQL and SQL Server 2025 image
+settings described above, then run (twice for restart determinism):
+
+```sh
+CDC_CONNECTOR_TEMPLATE_FAIL_FAST=true dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.csproj --filter 'Category=CdcMessageContract&FullyQualifiedName~MessageContractRetry' --logger trx
+```
+
+NUnit attaches JSON under `TestResults/MessageContractRetry`: scenario IDs, image
+digest, interruption state checks, bounded provider fences, source operation kinds,
+Kafka boundaries and ordered record offsets/lengths/null flags. It omits bodies,
+keys, physical topic names, source identities and credentials. Missing prerequisites
+use the existing local-skip/qualification-fail-fast policy.
