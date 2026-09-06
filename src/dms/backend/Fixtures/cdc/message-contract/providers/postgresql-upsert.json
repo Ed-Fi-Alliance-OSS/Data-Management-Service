@@ -48,6 +48,12 @@
           "optional": false,
           "name": "io.debezium.data.Json",
           "version": 1
+        },
+        "ComputedAt": {
+          "type": "STRING",
+          "optional": false,
+          "name": "io.debezium.time.ZonedTimestamp",
+          "version": 1
         }
       }
     }
@@ -153,7 +159,8 @@
       "DocumentJson": {
         "$cacheRow": "documentJson",
         "encoding": "json-string"
-      }
+      },
+      "ComputedAt": "2026-08-01T01:02:03.123456Z"
     },
     "source": {
       "connector": "postgresql",

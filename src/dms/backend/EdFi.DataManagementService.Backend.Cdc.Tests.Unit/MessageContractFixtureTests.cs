@@ -34,7 +34,7 @@ public class Given_MessageContractFixtureCatalog
         {
             _fixtures
                 .Where(f =>
-                    f.MaterializedCase.EndsWith('/' + name, StringComparison.Ordinal)
+                    f.ScenarioId.EndsWith('-' + name.ToUpperInvariant(), StringComparison.Ordinal)
                     && f.SourceRecord.GetProperty("operation").GetString() == "c"
                 )
                 .Select(f => f.SourceRecord.GetProperty("provider").GetString())
@@ -207,6 +207,67 @@ public class Given_MessageContractFixtureCatalog
         }
     }
 
+    [TestCase("PG")]
+    [TestCase("SQL")]
+    public void It_derives_exact_numbers_without_losing_precision_or_changing_the_shared_etag(string provider)
+    {
+        MessageContractFixture fixture = _fixtures.Single(f =>
+            f.ScenarioId == $"MC-FIX-{provider}-EXACT-NUMBERS"
+        );
+        fixture.ExpectedEnvelope.GetProperty("contentVersion").GetInt64().Should().Be(long.MaxValue);
+        JsonElement numbers = fixture.ExpectedEnvelope.GetProperty("document").GetProperty("numericContract");
+        numbers.GetProperty("integers")[1].GetRawText().Should().Be("9007199254740993");
+        numbers.GetProperty("integers")[3].GetRawText().Should().Be("9223372036854775809");
+        numbers
+            .GetProperty("nested")[0]
+            .GetProperty("decimal")
+            .GetRawText()
+            .Should()
+            .Be("0.1234567890123456789012345678901");
+        fixture
+            .ExpectedEnvelope.GetProperty("document")
+            .GetProperty("_etag")
+            .GetString()
+            .Should()
+            .Be("222-01234567.j._.l.i");
+        _fixtures
+            .Single(f => f.ScenarioId == $"MC-FIX-{provider}-SIGNED-INT64-MIN")
+            .ExpectedEnvelope.GetProperty("contentVersion")
+            .GetInt64()
+            .Should()
+            .Be(long.MinValue);
+    }
+
+    [TestCase("PG", "2026-12-31T23:59:59.999999Z")]
+    [TestCase("SQL", "2026-12-31T23:59:59.9999999Z")]
+    public void It_keeps_provider_fractional_input_separate_from_the_explicit_expected_second(
+        string provider,
+        string timestamp
+    )
+    {
+        MessageContractFixture fixture = _fixtures.Single(f =>
+            f.ScenarioId == $"MC-FIX-{provider}-FRACTIONAL-SECOND"
+        );
+        fixture
+            .SourceRecord.GetProperty("value")
+            .GetProperty("after")
+            .GetProperty("LastModifiedAt")
+            .GetString()
+            .Should()
+            .Be(timestamp);
+        fixture
+            .ExpectedEnvelope.GetProperty("lastModifiedAt")
+            .GetString()
+            .Should()
+            .Be("2026-12-31T23:59:59Z");
+        fixture
+            .ExpectedEnvelope.GetProperty("document")
+            .GetProperty("_lastModifiedDate")
+            .GetString()
+            .Should()
+            .Be("2026-12-31T23:59:59Z");
+    }
+
     private static string LogicalName(JsonElement schema) =>
         schema.TryGetProperty("name", out JsonElement name) ? name.GetString()! : "";
 
@@ -320,7 +381,7 @@ public class Given_MessageContractFixtureArtifactFiles
 
     [Test]
     public void It_loads_from_detached_build_artifacts_without_the_checkout() =>
-        MessageContractFixtureCatalog.LoadAll(_directory).Should().HaveCount(10);
+        MessageContractFixtureCatalog.LoadAll(_directory).Should().HaveCount(16);
 
     [Test]
     public void It_resolves_the_same_catalog_from_a_checkout_layout()
@@ -394,6 +455,46 @@ public class Given_MessageContractFixtureArtifactFiles
     }
 
     private string CatalogPath() => Path.Combine(_directory, "Fixtures/cdc/message-contract/catalog.json");
+
+    [Test]
+    public void It_identifies_missing_variant_inputs()
+    {
+        File.Delete(Path.Combine(_directory, "Fixtures/cdc/message-contract/variants/exact-numbers.json"));
+        Action act = () => MessageContractFixtureCatalog.LoadAll(_directory);
+        act.Should().Throw<MessageContractFixtureException>().WithMessage("*file-missing*");
+    }
+
+    [TestCase("""{"formatVersion":1,"contentVersion":9223372036854775808}""", "variant-content-version")]
+    [TestCase(
+        """{"formatVersion":1,"documentProperties":{"id":"synthetic-secret"}}""",
+        "variant-document-property-conflict"
+    )]
+    [TestCase(
+        """{"formatVersion":1,"documentProperties":{"_etag":"synthetic-secret"}}""",
+        "variant-document-property-conflict"
+    )]
+    [TestCase(
+        """{"formatVersion":1,"lastModifiedAt":"2026-12-31T23:59:59.9999999Z","expectedLastModifiedAt":"2027-01-01T00:00:00Z"}""",
+        "public-body-metadata"
+    )]
+    [TestCase(
+        """{"formatVersion":1,"expectedLastModifiedAt":"2026-12-31T23:59:59Z"}""",
+        "variant-timestamp-pair"
+    )]
+    [TestCase("""{"formatVersion":1,"unknown":"synthetic-secret"}""", "variant-field")]
+    public void It_rejects_invalid_variants_with_bounded_diagnostics(string json, string reason)
+    {
+        File.WriteAllText(
+            Path.Combine(_directory, "Fixtures/cdc/message-contract/variants/exact-numbers.json"),
+            json
+        );
+        Action act = () => MessageContractFixtureCatalog.LoadAll(_directory);
+        act.Should()
+            .Throw<MessageContractFixtureException>()
+            .WithMessage($"*{reason}*")
+            .Which.Message.Should()
+            .NotContain("synthetic-secret");
+    }
 
     [TestCase("expected-cache-row.json")]
     [TestCase("expected-stream-etag.json")]

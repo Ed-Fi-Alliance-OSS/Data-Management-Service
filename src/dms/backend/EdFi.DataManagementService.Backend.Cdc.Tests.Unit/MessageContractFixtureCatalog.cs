@@ -82,7 +82,16 @@ public static class MessageContractFixtureCatalog
         JsonElement cacheRow = Read(Path.Combine(caseDirectory, "expected-cache-row.json"));
         JsonElement etag = Read(Path.Combine(caseDirectory, "expected-stream-etag.json"));
         JsonElement publicBody = Read(Path.Combine(caseDirectory, "expected-public-cdc-document.json"));
+        // Always validate the authoritative shared files before deriving a synthetic variant.
         JsonElement envelope = BuildExpectedEnvelope(cacheRow, etag, publicBody);
+        if (entry.TryGetProperty("upsertVariant", out _))
+        {
+            JsonElement variant = Read(
+                ResolveRelative(Path.Combine(root, "cdc/message-contract"), Text(entry, "upsertVariant"))
+            );
+            (cacheRow, publicBody) = ApplyUpsertVariant(cacheRow, publicBody, variant);
+            envelope = BuildExpectedEnvelope(cacheRow, etag, publicBody);
+        }
         string providerPath = ResolveRelative(
             Path.Combine(root, "cdc/message-contract"),
             Text(entry, "providerInput")
@@ -93,6 +102,63 @@ public static class MessageContractFixtureCatalog
         JsonElement sourceRecord = JsonSerializer.SerializeToElement(expanded);
         ValidateSourceRecord(sourceRecord);
         return new(scenarioId, caseIdentity, cacheRow, envelope, sourceRecord);
+    }
+
+    private static (JsonElement CacheRow, JsonElement PublicBody) ApplyUpsertVariant(
+        JsonElement cacheRow,
+        JsonElement publicBody,
+        JsonElement variant
+    )
+    {
+        Require(variant.GetProperty("formatVersion").GetInt32() == 1, "variant-version");
+        Require(
+            variant
+                .EnumerateObject()
+                .All(p =>
+                    p.Name
+                        is "formatVersion"
+                            or "contentVersion"
+                            or "lastModifiedAt"
+                            or "expectedLastModifiedAt"
+                            or "documentProperties"
+                ),
+            "variant-field"
+        );
+        JsonNode row = JsonNode.Parse(cacheRow.GetRawText())!;
+        JsonNode body = JsonNode.Parse(publicBody.GetRawText())!;
+        if (variant.TryGetProperty("contentVersion", out JsonElement version))
+        {
+            Require(version.TryGetInt64(out long contentVersion), "variant-content-version");
+            row["contentVersion"] = contentVersion;
+        }
+        if (variant.TryGetProperty("lastModifiedAt", out _))
+        {
+            row["lastModifiedAt"] = Text(variant, "lastModifiedAt");
+            // The expected second is explicit input, independent of the transform's truncation.
+            string expectedTime = Text(variant, "expectedLastModifiedAt");
+            row["documentJson"]!["_lastModifiedDate"] = expectedTime;
+            body["document"]!["_lastModifiedDate"] = expectedTime;
+        }
+        else
+        {
+            Require(!variant.TryGetProperty("expectedLastModifiedAt", out _), "variant-timestamp-pair");
+        }
+        if (variant.TryGetProperty("documentProperties", out JsonElement properties))
+        {
+            Require(properties.ValueKind == JsonValueKind.Object, "variant-document-properties");
+            foreach (JsonProperty property in properties.EnumerateObject())
+            {
+                // Variants add focused data; they cannot replace shared fields or reserved metadata.
+                Require(
+                    !property.Name.StartsWith('_')
+                        && !body["document"]!.AsObject().ContainsKey(property.Name),
+                    "variant-document-property-conflict"
+                );
+                row["documentJson"]![property.Name] = JsonNode.Parse(property.Value.GetRawText());
+                body["document"]![property.Name] = JsonNode.Parse(property.Value.GetRawText());
+            }
+        }
+        return (JsonSerializer.SerializeToElement(row), JsonSerializer.SerializeToElement(body));
     }
 
     public static JsonElement BuildExpectedEnvelope(

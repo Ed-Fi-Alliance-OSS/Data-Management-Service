@@ -44,6 +44,12 @@
         "DocumentJson": {
           "type": "STRING",
           "optional": false
+        },
+        "ComputedAt": {
+          "type": "STRING",
+          "optional": false,
+          "name": "io.debezium.time.IsoTimestamp",
+          "version": 1
         }
       }
     }
@@ -149,7 +155,8 @@
       "DocumentJson": {
         "$cacheRow": "documentJson",
         "encoding": "json-string"
-      }
+      },
+      "ComputedAt": "2026-08-01T01:02:03.123456Z"
     },
     "source": {
       "connector": "sqlserver",

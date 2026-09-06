@@ -50,6 +50,42 @@
       "scenarioId": "MC-FIX-SQL-DOCUMENT-DELETE",
       "materializedCase": "document-cache/materialized-documents/ordinary-link-bearing-student-school-association",
       "providerInput": "providers/sqlserver-delete.json"
+    },
+    {
+      "scenarioId": "MC-FIX-PG-EXACT-NUMBERS",
+      "materializedCase": "document-cache/materialized-documents/ordinary-link-bearing-student-school-association",
+      "providerInput": "providers/postgresql-upsert.json",
+      "upsertVariant": "variants/exact-numbers.json"
+    },
+    {
+      "scenarioId": "MC-FIX-PG-SIGNED-INT64-MIN",
+      "materializedCase": "document-cache/materialized-documents/ordinary-link-bearing-student-school-association",
+      "providerInput": "providers/postgresql-upsert.json",
+      "upsertVariant": "variants/signed-int64-min.json"
+    },
+    {
+      "scenarioId": "MC-FIX-PG-FRACTIONAL-SECOND",
+      "materializedCase": "document-cache/materialized-documents/ordinary-link-bearing-student-school-association",
+      "providerInput": "providers/postgresql-upsert.json",
+      "upsertVariant": "variants/postgresql-fractional-second.json"
+    },
+    {
+      "scenarioId": "MC-FIX-SQL-EXACT-NUMBERS",
+      "materializedCase": "document-cache/materialized-documents/ordinary-link-bearing-student-school-association",
+      "providerInput": "providers/sqlserver-upsert.json",
+      "upsertVariant": "variants/exact-numbers.json"
+    },
+    {
+      "scenarioId": "MC-FIX-SQL-SIGNED-INT64-MIN",
+      "materializedCase": "document-cache/materialized-documents/ordinary-link-bearing-student-school-association",
+      "providerInput": "providers/sqlserver-upsert.json",
+      "upsertVariant": "variants/signed-int64-min.json"
+    },
+    {
+      "scenarioId": "MC-FIX-SQL-FRACTIONAL-SECOND",
+      "materializedCase": "document-cache/materialized-documents/ordinary-link-bearing-student-school-association",
+      "providerInput": "providers/sqlserver-upsert.json",
+      "upsertVariant": "variants/sqlserver-seven-digit-fraction.json"
     }
   ]
 }

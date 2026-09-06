@@ -39,6 +39,47 @@ The integration project links the test helpers; no production project consumes t
 The integration project's `MessageContractRunner/README.md` describes the MC-02
 image-only runner, its resource packaging, observations, and prerequisite diagnostics.
 
+`upsertVariant` optionally names a file under this root. The loader validates the
+shared E18 files first, then applies only the variant's signed `contentVersion`,
+paired source/expected timestamps, and additive `documentProperties`. Additions
+cannot overwrite shared document fields or reserved metadata. Expected timestamps
+are explicit whole-second values checked against the cache timestamp, so rounding
+across the year boundary is not accepted. Variant files are test inputs, not new
+materializer goldens. The shared opaque ETag is deliberately unchanged even when a
+synthetic variant changes the version or body: these scenarios test copying, not
+ETag composition or materializer consistency for synthetic data.
+
+MC-03's `Given_MessageContractUpsert` executes 42 scenarios (both providers, seven
+cases, create/update/read) in two image-only runner batches. Stable runner IDs use
+`MC-UPSERT-{PG|SQL}-{case}-{C|U|R}`. The four baseline case names match the catalog;
+the additional cases are `EXACT-NUMBERS`, `SIGNED-INT64-MIN`, and
+`FRACTIONAL-SECOND`. PostgreSQL supplies six fractional digits; SQL Server supplies
+seven. Numeric data includes adjacent integers beyond IEEE-754 and INT64 precision,
+exact decimal/exponent values, mixed nested arrays, Unicode strings, and absent
+versus explicitly null sibling properties. Updates also supply uppercase source
+UUIDs and a distinct before row to detect stale metadata or body selection.
+Provider upsert templates include `ComputedAt`
+distinct from `LastModifiedAt` to prove that computation metadata does not leak.
+
+Each scenario independently asserts the complete semantic public envelope, derived
+topic and unquoted UTF-8 key, exact required logical BYTES schema/version and
+converter defensive copy, whole-second document time and cleared Connect metadata,
+and opaque ETag placement/internal-field exclusion. Public JSON object order and
+equivalent numeric spelling/scale are not golden byte contracts. Byte equality is
+asserted separately only across the transform-to-converter boundary.
+
+Run with the qualified immutable `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` configured:
+
+```sh
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.csproj --filter 'Category=CdcMessageContract&FullyQualifiedName~MessageContractUpsert'
+```
+
+This suite needs no broker/provider image settings or running Connect worker. It
+uses `DatabaseIntegration`, `CdcMessageContract`, `CdcMessageContractSerialized`,
+and the applicable `PostgresqlIntegration`/`MssqlIntegration` categories. Set
+`CDC_CONNECTOR_TEMPLATE_FAIL_FAST=true` in qualification to fail on missing
+prerequisites instead of skipping.
+
 Schema/value validation checks representability as Connect data, not transform
 acceptance: a plain string under an incorrect logical schema can be structurally
 valid and still be a negative transform test. Diagnostics expose fixed reason codes
